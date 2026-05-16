@@ -422,17 +422,23 @@ export function buildApp(): Express {
   });
 
   // Stand up a public-share record so an anonymous visit to
-  // `/rides/shared/:token` can resolve to a seeded ride. Token defaults
-  // to a generated one; tests can pin a known token for deterministic
-  // URLs.
+  // `/rides/shared/:token` can resolve to a seeded ride. Token
+  // defaults to a generated one; `is_public` defaults to true so the
+  // share also flows through the public `/rides/community` feed —
+  // tests that need a private/unlisted share can pass `is_public:
+  // false`.
   app.post("/__test__/seed-ride-share", (req, res) => {
-    const { ride_id, token } = req.body ?? {};
+    const { ride_id, token, is_public } = req.body ?? {};
     if (!ride_id || !state.rides.has(ride_id)) {
       res.status(400).json({ message: "ride-not-found" });
       return;
     }
     const finalToken = String(token ?? randomUUID());
-    state.rideShares.set(finalToken, ride_id);
+    state.rideShares.set(finalToken, {
+      ride_id,
+      is_public: is_public !== false,
+      view_count: 0,
+    });
     res.status(201).json({ token: finalToken });
   });
 
@@ -1404,12 +1410,53 @@ export function buildApp(): Express {
 
   // ── Community feed ───────────────────────────────────────────────
   // Production `SharingController.listCommunityRides` is an anonymous
-  // endpoint — no `@UseGuards(AuthGuard)`. The mock follows suit so
-  // an unauthenticated visit (or the SSR pass before a session is
-  // established) gets the same 200 + empty list, not a 401 from a
-  // mock-only auth check.
-  app.get("/api/v1/rides/community", (_req, res) => {
-    res.json({ items: [], total: 0, limit: 9, offset: 0 });
+  // endpoint — no `@UseGuards(AuthGuard)`. It reads `SharedRide` rows
+  // with `sr.is_public = true` and joins to the ride row. The mock
+  // mirrors that by scanning `state.rideShares` for public entries
+  // and serializing each backing ride as a community card. Empty
+  // state remains the default when nothing is seeded.
+  app.get("/api/v1/rides/community", (req, res) => {
+    const limit = Math.max(0, Number(req.query.limit ?? 9));
+    const offset = Math.max(0, Number(req.query.offset ?? 0));
+    const all: Array<{
+      ride: import("./state").MockRide;
+      share: { token: string; view_count: number };
+    }> = [];
+    for (const [token, share] of state.rideShares.entries()) {
+      if (!share.is_public) continue;
+      const ride = state.rides.get(share.ride_id);
+      if (!ride) continue;
+      all.push({ ride, share: { token, view_count: share.view_count } });
+    }
+    // Newest first — matches `SharingService.listCommunityRides`'s
+    // default `ORDER BY r.started_at DESC` when no explicit sort is
+    // requested.
+    all.sort((a, b) => b.ride.started_at.localeCompare(a.ride.started_at));
+    const page = all.slice(offset, offset + limit);
+    res.json({
+      items: page.map(({ ride, share }) => {
+        const owner = state.users.get(ride.user_id);
+        return {
+          id: ride.id,
+          share_token: share.token,
+          rider_id: ride.user_id,
+          rider_name: owner?.display_name ?? "Anonymous Rider",
+          rider_avatar_url: null,
+          ride_type: ride.ride_type,
+          started_at: ride.started_at,
+          distance_km: ride.distance_km,
+          avg_speed: ride.avg_speed,
+          avg_road_quality: ride.avg_road_quality,
+          avg_curviness: null,
+          duration_min: deriveDurationMin(ride),
+          view_count: share.view_count,
+          route_geometry: ride.route_geometry,
+        };
+      }),
+      total: all.length,
+      limit,
+      offset,
+    });
   });
 
   // ── Route collections ────────────────────────────────────────────
@@ -1451,7 +1498,19 @@ export function buildApp(): Express {
     const ownerPrivacy = state.privacy.get(collection.owner_id);
     const maskOwner =
       ownerPrivacy?.profile_visibility === "private" && !viewerOwns;
-    res.json(serializeCollectionDetail(collection, viewerOwns, { maskOwner }));
+    // `viewer_is_following` reflects the signed-in viewer's follow
+    // state — anonymous and the owner themselves always see false.
+    const viewerIsFollowing =
+      session != null && !viewerOwns
+        ? (state.collectionFollows.get(session.user_id)?.has(collection.id) ??
+          false)
+        : false;
+    res.json(
+      serializeCollectionDetail(collection, viewerOwns, {
+        maskOwner,
+        viewerIsFollowing,
+      }),
+    );
   });
 
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
@@ -1477,6 +1536,51 @@ export function buildApp(): Express {
         .filter((c) => c.owner_id === session.user_id)
         .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
       res.json({ owned, followed: [] });
+    },
+  );
+
+  // Follow / unfollow a collection. Production guards with auth +
+  // looks up `route_collection_follows`; the mock mirrors that with a
+  // per-user set in `state.collectionFollows`. Same precedence as
+  // `/by-slug/:slug` — register before `:id` so the `:id` route
+  // doesn't capture the `follow` path segment.
+  app.post(
+    "/api/v1/collections/:id/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const collection = state.collections.get(param(req, "id"));
+      if (!collection) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      // Owners can't follow their own collection — production rejects
+      // with the same 400.
+      if (collection.owner_id === session.user_id) {
+        res.status(400).json({ message: "cannot-follow-own-collection" });
+        return;
+      }
+      let follows = state.collectionFollows.get(session.user_id);
+      if (!follows) {
+        follows = new Set();
+        state.collectionFollows.set(session.user_id, follows);
+      }
+      follows.add(collection.id);
+      res.status(201).json({
+        collection_id: collection.id,
+        followed_at: new Date().toISOString(),
+      });
+    },
+  );
+
+  app.delete(
+    "/api/v1/collections/:id/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const follows = state.collectionFollows.get(session.user_id);
+      follows?.delete(param(req, "id"));
+      res.status(204).end();
     },
   );
 
@@ -1564,12 +1668,16 @@ export function buildApp(): Express {
   // Must register BEFORE `/api/v1/rides/:rideId` so the "shared"
   // segment isn't captured as a rideId.
   app.get("/api/v1/rides/shared/:token", (req, res) => {
-    const rideId = state.rideShares.get(param(req, "token"));
-    const ride = rideId ? state.rides.get(rideId) : null;
-    if (!ride) {
+    const share = state.rideShares.get(param(req, "token"));
+    const ride = share ? state.rides.get(share.ride_id) : null;
+    if (!share || !ride) {
       res.status(404).json({ message: "not-found" });
       return;
     }
+    // Production increments the view counter on every fetch — mirror
+    // so subsequent `view_count` reads through the same token reflect
+    // accumulating views.
+    share.view_count += 1;
     const owner = state.users.get(ride.user_id);
     res.json({
       id: ride.id,
@@ -1583,7 +1691,7 @@ export function buildApp(): Express {
       avg_road_quality: ride.avg_road_quality,
       avg_curviness: null,
       duration_min: deriveDurationMin(ride),
-      view_count: 1,
+      view_count: share.view_count,
       embed_click_count: 0,
       route_geometry: ride.route_geometry,
     });
@@ -2087,7 +2195,7 @@ function serializeCollectionSummary(
 function serializeCollectionDetail(
   collection: import("./state").MockCollection,
   viewerOwns: boolean,
-  opts: { maskOwner?: boolean } = {},
+  opts: { maskOwner?: boolean; viewerIsFollowing?: boolean } = {},
 ) {
   return {
     ...serializeCollectionSummary(collection, {
@@ -2096,6 +2204,6 @@ function serializeCollectionDetail(
     }),
     items: [] as unknown[],
     viewer_is_owner: viewerOwns,
-    viewer_is_following: false,
+    viewer_is_following: opts.viewerIsFollowing ?? false,
   };
 }

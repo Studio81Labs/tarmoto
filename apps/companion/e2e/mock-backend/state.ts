@@ -240,12 +240,25 @@ export class MockState {
   collections = new Map<string, MockCollection>();
   collectionsBySlug = new Map<string, string>();
   /**
-   * Token → ride-id lookup for `GET /api/v1/rides/shared/:token`. The
-   * shared-ride endpoint is anonymous, so we deliberately store the
-   * mapping separately from the ride row rather than tagging the row
-   * with a token (which would require the row to know about sharing).
+   * Per-user set of followed collection ids. Mirrors production's
+   * `route_collection_follows` table: a row exists per (viewer,
+   * collection) pair when the viewer has followed the collection.
+   * `RouteCollectionsService.getBySlug` reads this to set
+   * `viewer_is_following` on the response.
    */
-  rideShares = new Map<string, string>();
+  collectionFollows = new Map<string, Set<string>>();
+  /**
+   * Per-share-token metadata for `GET /api/v1/rides/shared/:token`
+   * AND the public `/rides/community` feed. The community feed
+   * filters by `is_public === true` per
+   * `SharingService.listCommunityRides`'s `sr.is_public = true`
+   * predicate; private shares stay reachable by token but don't show
+   * up in the feed.
+   */
+  rideShares = new Map<
+    string,
+    { ride_id: string; is_public: boolean; view_count: number }
+  >();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
   roadReviews = new Map<string, MockRoadReview[]>();
@@ -299,6 +312,7 @@ export class MockState {
     this.rideShares.clear();
     this.collections.clear();
     this.collectionsBySlug.clear();
+    this.collectionFollows.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();
