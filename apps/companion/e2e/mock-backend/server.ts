@@ -1518,6 +1518,39 @@ export function buildApp(): Express {
   // `POST /closures/check-route` (route intersection check); a test
   // seeding a closure expects both calls to surface the row.
   //
+  // Production `ListClosuresQueryDto.active_on` /
+  // `CheckRouteClosuresDto.active_on` both apply `@IsISO8601`.
+  // Without an explicit guard the mock would feed a malformed
+  // string into `new Date(...)` (e.g. `Invalid Date`), then
+  // `filterActiveOn` would drop every closure and the test would
+  // silently land on the empty-state path. Returns the validated
+  // string on success, sends 400 on failure (and returns null so
+  // the caller bails out).
+  function parseActiveOn(
+    raw: unknown,
+    res: import("express").Response,
+  ): string | null | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== "string") {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "active_on must be an ISO 8601 date string",
+      });
+      return null;
+    }
+    const t = Date.parse(raw);
+    if (!Number.isFinite(t)) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "active_on must be an ISO 8601 date string",
+      });
+      return null;
+    }
+    return raw;
+  }
+
   // Both paths share the production `active_on` filter:
   //   starts_at <= activeOn AND (ends_at IS NULL OR ends_at >= activeOn)
   // `include_past=true` (list endpoint) opts out entirely.
@@ -1535,8 +1568,8 @@ export function buildApp(): Express {
   }
   app.get("/api/v1/closures", (req, res) => {
     const includePast = req.query.include_past === "true";
-    const activeOn =
-      typeof req.query.active_on === "string" ? req.query.active_on : undefined;
+    const activeOn = parseActiveOn(req.query.active_on, res);
+    if (activeOn === null) return;
     let rows = includePast
       ? [...state.closures.values()]
       : filterActiveOn(state.closures.values(), activeOn);
@@ -1620,10 +1653,35 @@ export function buildApp(): Express {
       });
       return;
     }
-    const activeOn =
-      typeof req.body?.active_on === "string" ? req.body.active_on : undefined;
+    const activeOn = parseActiveOn(req.body?.active_on, res);
+    if (activeOn === null) return;
+    // Mirror `CheckRouteClosuresDto.buffer_m`: `@IsNumber()`,
+    // `@Min(10)`, `@Max(5000)`. The mock previously accepted any
+    // number, which lets a client regression pass with `0` /
+    // negative / over-cap values that production 400s.
+    const rawBuffer = req.body?.buffer_m;
+    if (rawBuffer !== undefined) {
+      if (typeof rawBuffer !== "number" || !Number.isFinite(rawBuffer)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "buffer_m must be a finite number",
+        });
+        return;
+      }
+      if (rawBuffer < 10 || rawBuffer > 5000) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "buffer_m must be between 10 and 5000",
+        });
+        return;
+      }
+    }
     const bufferM =
-      typeof req.body?.buffer_m === "number" ? req.body.buffer_m : 100;
+      typeof rawBuffer === "number" && Number.isFinite(rawBuffer)
+        ? rawBuffer
+        : 100;
     const bufferKm = bufferM / 1000;
     // Exact polyline-polyline min distance, so segments running
     // parallel-but-close to the route, or crossing through the
