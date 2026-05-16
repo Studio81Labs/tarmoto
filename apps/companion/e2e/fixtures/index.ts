@@ -85,7 +85,13 @@ export interface MockApi {
     id?: string;
     title?: string;
     severity?: "advisory" | "partial" | "full";
-    reason?: "construction" | "snow" | "rockfall" | "event" | "permanent";
+    reason?:
+      | "closure"
+      | "roadworks"
+      | "seasonal"
+      | "weather"
+      | "event"
+      | "other";
   }): Promise<{ id: string }>;
 }
 

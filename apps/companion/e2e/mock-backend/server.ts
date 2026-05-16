@@ -536,8 +536,8 @@ export function buildApp(): Express {
     const now = new Date().toISOString();
     const closure: import("./state").MockRoadClosure = {
       id,
-      title: String(c.title ?? "Construction on the demo route"),
-      reason: c.reason ?? "construction",
+      title: String(c.title ?? "Roadworks on the demo route"),
+      reason: c.reason ?? "roadworks",
       severity: c.severity ?? "full",
       geometry: c.geometry ?? [
         { lat: 46.45, lng: 10.3 },
@@ -1514,19 +1514,32 @@ export function buildApp(): Express {
     // supplied route. The mock doesn't run a geometry intersection —
     // tests seed a single closure conceptually-over the trip route
     // and assert on the rendered "Current trip crosses N closures"
-    // copy, not on coordinate math. An empty route still gets the
-    // full list back, matching the conservative behaviour the real
-    // backend would have (returning 0 closures when checked against
-    // an empty polyline).
+    // copy, not on coordinate math. An empty route gets an empty
+    // response (zero counts), matching the conservative behaviour
+    // the real backend would have when checked against an empty
+    // polyline.
     const route = (req.body?.route ?? []) as Array<{
       lat: number;
       lng: number;
     }>;
-    if (route.length === 0) {
-      res.json({ closures: [] });
-      return;
+    const matched = route.length === 0 ? [] : [...state.closures.values()];
+    // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
+    // severity counts so consumers reading the count fields hit
+    // numbers instead of `undefined`.
+    let fullCount = 0;
+    let partialCount = 0;
+    let advisoryCount = 0;
+    for (const c of matched) {
+      if (c.severity === "full") fullCount += 1;
+      else if (c.severity === "partial") partialCount += 1;
+      else if (c.severity === "advisory") advisoryCount += 1;
     }
-    res.json({ closures: [...state.closures.values()] });
+    res.json({
+      closures: matched,
+      full_count: fullCount,
+      partial_count: partialCount,
+      advisory_count: advisoryCount,
+    });
   });
   app.get("/api/v1/passes", (_req, res) => {
     res.json([]);

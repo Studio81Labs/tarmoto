@@ -122,7 +122,7 @@ export interface MockRide {
 export interface MockRoadClosure {
   id: string;
   title: string;
-  reason: "construction" | "snow" | "rockfall" | "event" | "permanent";
+  reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other";
   severity: "advisory" | "partial" | "full";
   geometry: Array<{ lat: number; lng: number }>;
   detour: Array<{ lat: number; lng: number }> | null;

@@ -15,7 +15,7 @@ test.describe("trip planner — closures (T13)", () => {
     await mockApi.seedClosure({
       title: "Stelvio Pass closed",
       severity: "full",
-      reason: "construction",
+      reason: "roadworks",
     });
 
     await page.goto("/trips/planner");
