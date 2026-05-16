@@ -1403,10 +1403,12 @@ export function buildApp(): Express {
   });
 
   // ── Community feed ───────────────────────────────────────────────
-  // Default to an empty feed — the empty-state branch is what the page
-  // ships today and what T37 asserts. Follow-up work can seed rides
-  // here once the public-share flow is mocked end-to-end.
-  app.get("/api/v1/rides/community", requireAuth, (_req, res) => {
+  // Production `SharingController.listCommunityRides` is an anonymous
+  // endpoint — no `@UseGuards(AuthGuard)`. The mock follows suit so
+  // an unauthenticated visit (or the SSR pass before a session is
+  // established) gets the same 200 + empty list, not a 401 from a
+  // mock-only auth check.
+  app.get("/api/v1/rides/community", (_req, res) => {
     res.json({ items: [], total: 0, limit: 9, offset: 0 });
   });
 

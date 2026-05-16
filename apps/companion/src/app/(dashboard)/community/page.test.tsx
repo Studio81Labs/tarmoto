@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CommunityFeedPage from "./page";
 import { api, communityApi, type CommunityRidePage } from "@/lib/api";
-import { useAuthStore } from "@/stores/auth";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -53,18 +52,6 @@ describe("CommunityFeedPage", () => {
   beforeEach(() => {
     geocodeMock.mockReset();
     listMock.mockReset();
-    // The community page now gates its fetch on `useAuthStore.accessToken`
-    // (matches the AuthSync race fix). Seed a session so the effect
-    // actually fires under test.
-    useAuthStore.setState({
-      accessToken: "test-token",
-      isAuthenticated: true,
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "Test Rider",
-      },
-    });
   });
 
   it("loads and renders community ride cards from the API", async () => {
