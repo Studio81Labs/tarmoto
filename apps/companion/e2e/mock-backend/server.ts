@@ -546,7 +546,14 @@ export function buildApp(): Express {
       detour: c.detour ?? null,
       country_code: c.country_code ?? "IT",
       region: c.region ?? "Lombardia",
-      starts_at: c.starts_at ?? now,
+      // Default to a stable past start so the closure passes the
+      // `active_on` filter regardless of which calendar day the
+      // suite runs on. The planner's `useClosures` derives
+      // `active_on` from the user's `travelMonth` (15th of that
+      // month); seeding `now()` would let a closure sit in the
+      // future on the 15th of any month and disappear from the
+      // production-correct filter.
+      starts_at: c.starts_at ?? "2020-01-01T00:00:00.000Z",
       ends_at: c.ends_at ?? null,
       notes: c.notes ?? null,
       source: c.source ?? "operator",
@@ -1506,8 +1513,30 @@ export function buildApp(): Express {
   // hits both `GET /closures` (bbox-filtered list) AND
   // `POST /closures/check-route` (route intersection check); a test
   // seeding a closure expects both calls to surface the row.
-  app.get("/api/v1/closures", (_req, res) => {
-    res.json([...state.closures.values()]);
+  //
+  // Both paths share the production `active_on` filter:
+  //   starts_at <= activeOn AND (ends_at IS NULL OR ends_at >= activeOn)
+  // `include_past=true` (list endpoint) opts out entirely.
+  function filterActiveOn(
+    closures: Iterable<import("./state").MockRoadClosure>,
+    activeOnIso: string | undefined,
+  ): import("./state").MockRoadClosure[] {
+    const activeOn = activeOnIso ? new Date(activeOnIso) : new Date();
+    const t = activeOn.getTime();
+    return [...closures].filter(
+      (c) =>
+        new Date(c.starts_at).getTime() <= t &&
+        (c.ends_at == null || new Date(c.ends_at).getTime() >= t),
+    );
+  }
+  app.get("/api/v1/closures", (req, res) => {
+    const includePast = req.query.include_past === "true";
+    const activeOn =
+      typeof req.query.active_on === "string" ? req.query.active_on : undefined;
+    const rows = includePast
+      ? [...state.closures.values()]
+      : filterActiveOn(state.closures.values(), activeOn);
+    res.json(rows);
   });
   app.post("/api/v1/closures/check-route", (req, res) => {
     // Simplification: any seeded closure is reported as crossing the
@@ -1533,7 +1562,9 @@ export function buildApp(): Express {
       });
       return;
     }
-    const matched = [...state.closures.values()];
+    const activeOn =
+      typeof req.body?.active_on === "string" ? req.body.active_on : undefined;
+    const matched = filterActiveOn(state.closures.values(), activeOn);
     // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
     // severity counts so consumers reading the count fields hit
     // numbers instead of `undefined`.
