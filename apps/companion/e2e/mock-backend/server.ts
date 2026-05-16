@@ -1457,11 +1457,33 @@ export function buildApp(): Express {
     const filterLat = q.lat != null ? Number(q.lat) : null;
     const filterLng = q.lng != null ? Number(q.lng) : null;
     const rawRadius = q.radius_km != null ? Number(q.radius_km) : null;
-    const locationActive =
-      filterLat != null &&
-      filterLng != null &&
-      Number.isFinite(filterLat) &&
-      Number.isFinite(filterLng);
+    const latValid = filterLat != null && Number.isFinite(filterLat);
+    const lngValid = filterLng != null && Number.isFinite(filterLng);
+    // Production `CommunityRidesQueryDto` requires both coordinates
+    // whenever `sort === 'nearest'` (`@ValidateIf((o) => ... || o.sort
+    // === 'nearest')` + `@IsLatitude`/`@IsLongitude`) AND when one
+    // coordinate is supplied without the other (so we never run a
+    // half-defined spatial query). Reject the same way — a 400 here
+    // surfaces companion bugs (e.g. the nearest option leaking
+    // through after the place is cleared) instead of letting the mock
+    // silently re-sort to popularity.
+    if (sort === "nearest" && !(latValid && lngValid)) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "nearest sort requires lat and lng",
+      });
+      return;
+    }
+    if (latValid !== lngValid) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "lat and lng must be provided together",
+      });
+      return;
+    }
+    const locationActive = latValid && lngValid;
     const filterRadiusKm = locationActive
       ? rawRadius != null && Number.isFinite(rawRadius)
         ? rawRadius
