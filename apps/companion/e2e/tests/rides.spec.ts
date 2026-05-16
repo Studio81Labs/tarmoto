@@ -217,18 +217,27 @@ test.describe("rides read path", () => {
     await expect(page.getByLabel(/ride route map/i)).toBeVisible();
     await expect(page.getByText(/no gps track was recorded/i)).toBeHidden();
 
-    // Speed graph: the Speed-graph SectionHeader has two subtitle
-    // branches — empty ("Speed samples are attached once segment
-    // telemetry…") and populated ("X km/h peak across recorded
-    // segments."). Seeding two segments puts it into the populated
-    // branch with a 110 km/h peak; asserting that phrase catches a
-    // regression that dropped per-segment hydration on the wire.
+    // Speed graph: assert two independent signals so a regression in
+    // either the subtitle wiring OR the chart rendering itself fails
+    // the test.
+    //
+    // 1) The SectionHeader subtitle reads "X km/h peak across recorded
+    //    segments" only when segments hydrated; the empty-state copy is
+    //    hidden. Catches a regression that drops segment wire data.
+    // 2) The chart component renders an `<svg role="img" aria-label=
+    //    "Ride speed graph">`. Asserting that directly catches a
+    //    regression that deletes the chart or makes it return null
+    //    even when the subtitle (which is computed upstream) still
+    //    shows the populated copy.
     await expect(
       page.getByText(/km\/h peak across recorded segments/i),
     ).toBeVisible();
     await expect(
       page.getByText(/speed samples are attached once segment telemetry/i),
     ).toBeHidden();
+    await expect(
+      page.getByRole("img", { name: /ride speed graph/i }),
+    ).toBeVisible();
 
     // Segments table: each seeded segment surfaces by its road_name.
     // Also covers the "Per-segment road quality, speed, and lean
