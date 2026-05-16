@@ -1650,11 +1650,13 @@ function filterRides(
     if (maxDistance != null && ride.distance_km > maxDistance) return false;
     if (minQuality != null && ride.avg_road_quality < minQuality) return false;
     if (maxQuality != null && ride.avg_road_quality > maxQuality) return false;
-    if (
-      search &&
-      !(ride.name ?? "").toLowerCase().includes(search) &&
-      !ride.ride_type.toLowerCase().includes(search)
-    ) {
+    // Production filter only searches the user-set `name` column
+    // (`RidesService.applyRidesFilters` uses `ride.name ILIKE :q`), and
+    // the UI labels this field "Search name". Matching `ride_type` here
+    // too would let an e2e search for a built-in type (e.g. "commute")
+    // and pass against the mock while a real backend would return zero
+    // rows — keep the mock honest.
+    if (search && !(ride.name ?? "").toLowerCase().includes(search)) {
       return false;
     }
     if (type && ride.ride_type !== type) return false;

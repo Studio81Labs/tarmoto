@@ -184,9 +184,17 @@ test.describe("rides read path", () => {
       .first();
     await expect(elevationCard).toContainText("1200");
 
-    // Route subtitle confirms the map mounted with route data.
-    await expect(
-      page.getByText(/interactive ride route with road quality overlay/i),
-    ).toBeVisible();
+    // Distinguish "map rendered with the seeded geometry" from the
+    // "No GPS track was recorded" fallback: both branches share the
+    // same SectionHeader subtitle above them, so asserting on the
+    // subtitle alone wouldn't catch a regression that dropped to the
+    // fallback. The route map element is aria-labelled, and the
+    // fallback only appears when `route_geometry` is null or has
+    // fewer than 2 points — we assert both directions explicitly.
+    // `RideRouteMap` renders a `<div aria-label="Ride route map">` — a
+    // bare div doesn't carry an implicit landmark role, so we locate
+    // it by its aria-label rather than `getByRole("region", …)`.
+    await expect(page.getByLabel(/ride route map/i)).toBeVisible();
+    await expect(page.getByText(/no gps track was recorded/i)).toBeHidden();
   });
 });
