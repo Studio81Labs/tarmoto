@@ -1418,6 +1418,7 @@ export function buildApp(): Express {
   app.get("/api/v1/rides/community", (req, res) => {
     const limit = Math.max(0, Number(req.query.limit ?? 9));
     const offset = Math.max(0, Number(req.query.offset ?? 0));
+    const sort = String(req.query.sort ?? "most_popular");
     const all: Array<{
       ride: import("./state").MockRide;
       share: { token: string; view_count: number };
@@ -1426,12 +1427,28 @@ export function buildApp(): Express {
       if (!share.is_public) continue;
       const ride = state.rides.get(share.ride_id);
       if (!ride) continue;
+      // `SharingService.listCommunityRides` also filters out rides
+      // owned by riders that are soft-deleted or whose profile is
+      // private — production hides their cards from the public feed
+      // even when the share row stays public.
+      if (state.deletedUsers.has(ride.user_id)) continue;
+      const ownerPrivacy = state.privacy.get(ride.user_id);
+      if (ownerPrivacy?.profile_visibility === "private") continue;
       all.push({ ride, share: { token, view_count: share.view_count } });
     }
-    // Newest first — matches `SharingService.listCommunityRides`'s
-    // default `ORDER BY r.started_at DESC` when no explicit sort is
-    // requested.
-    all.sort((a, b) => b.ride.started_at.localeCompare(a.ride.started_at));
+    // Production's default sort is `most_popular` (view_count DESC,
+    // then ride id as a stable tiebreaker). `newest` uses
+    // started_at DESC. Anything else falls through to newest so the
+    // mock stays forgiving when new sort keys land.
+    all.sort((a, b) => {
+      if (sort === "newest") {
+        const dt = b.ride.started_at.localeCompare(a.ride.started_at);
+        return dt !== 0 ? dt : a.ride.id.localeCompare(b.ride.id);
+      }
+      // most_popular (default)
+      const dv = b.share.view_count - a.share.view_count;
+      return dv !== 0 ? dv : a.ride.id.localeCompare(b.ride.id);
+    });
     const page = all.slice(offset, offset + limit);
     res.json({
       items: page.map(({ ride, share }) => {
@@ -1529,13 +1546,29 @@ export function buildApp(): Express {
     requireAuth,
     (req: AuthedRequest, res) => {
       const session = req.session!;
-      // `owned` is the rider's own rows → owner_name null. `followed`
-      // surfaces other riders' collections so their names stay
-      // populated (no rows here yet — follow state isn't modelled).
+      // `owned` is the rider's own rows → owner_name null.
       const owned = [...state.collections.values()]
         .filter((c) => c.owner_id === session.user_id)
         .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
-      res.json({ owned, followed: [] });
+      // `followed` surfaces other riders' collections the viewer has
+      // followed. Skip rows whose owner has been soft-deleted or
+      // gone private (matches `RouteCollectionsService.listLibrary`
+      // which filters those out before returning). Owner_name stays
+      // populated except for private owners, where it gets masked
+      // alongside owner_id per the privacy contract.
+      const followIds = state.collectionFollows.get(session.user_id);
+      const followed = followIds
+        ? [...followIds]
+            .map((id) => state.collections.get(id))
+            .filter((c): c is import("./state").MockCollection => c != null)
+            .filter((c) => !state.deletedUsers.has(c.owner_id))
+            .filter((c) => {
+              const p = state.privacy.get(c.owner_id);
+              return p?.profile_visibility !== "private";
+            })
+            .map((c) => serializeCollectionSummary(c))
+        : [];
+      res.json({ owned, followed });
     },
   );
 
@@ -1551,6 +1584,18 @@ export function buildApp(): Express {
       const session = req.session!;
       const collection = state.collections.get(param(req, "id"));
       if (!collection) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      // `RouteCollectionsService.follow` 404s when the collection is
+      // private or the owner has been soft-deleted, BEFORE creating
+      // the follow row. Mirror both checks so privacy-aware e2es
+      // exercise the same paths the real backend serves.
+      if (collection.visibility === "private") {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      if (state.deletedUsers.has(collection.owner_id)) {
         res.status(404).json({ message: "not-found" });
         return;
       }
