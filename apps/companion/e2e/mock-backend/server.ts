@@ -524,6 +524,40 @@ export function buildApp(): Express {
     res.status(201).json({ token: finalToken });
   });
 
+  // Stand up a road closure that the planner's closures panel will
+  // surface once a trip route is generated. Tests seed one closure
+  // conceptually-over the demo trip route and assert on the rendered
+  // counter copy — the mock's `check-route` endpoint reports any
+  // seeded closure as crossing the supplied route, so geometry
+  // fidelity isn't required here.
+  app.post("/__test__/seed-closure", (req, res) => {
+    const c = req.body?.closure ?? {};
+    const id = c.id ?? randomUUID();
+    const now = new Date().toISOString();
+    const closure: import("./state").MockRoadClosure = {
+      id,
+      title: String(c.title ?? "Construction on the demo route"),
+      reason: c.reason ?? "construction",
+      severity: c.severity ?? "full",
+      geometry: c.geometry ?? [
+        { lat: 46.45, lng: 10.3 },
+        { lat: 46.46, lng: 10.32 },
+      ],
+      detour: c.detour ?? null,
+      country_code: c.country_code ?? "IT",
+      region: c.region ?? "Lombardia",
+      starts_at: c.starts_at ?? now,
+      ends_at: c.ends_at ?? null,
+      notes: c.notes ?? null,
+      source: c.source ?? "operator",
+      created_by: c.created_by ?? null,
+      created_at: c.created_at ?? now,
+      updated_at: c.updated_at ?? now,
+    };
+    state.closures.set(id, closure);
+    res.status(201).json({ id });
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -1467,10 +1501,32 @@ export function buildApp(): Express {
     });
   });
 
-  // Endpoints the planner / explorer hit but don't strictly need real
-  // data for E2E to pass.
+  // The planner + explorer poll these public-ish endpoints to render
+  // the closures + passes panels. `useClosures(travelMonth, routes)`
+  // hits both `GET /closures` (bbox-filtered list) AND
+  // `POST /closures/check-route` (route intersection check); a test
+  // seeding a closure expects both calls to surface the row.
   app.get("/api/v1/closures", (_req, res) => {
-    res.json([]);
+    res.json([...state.closures.values()]);
+  });
+  app.post("/api/v1/closures/check-route", (req, res) => {
+    // Simplification: any seeded closure is reported as crossing the
+    // supplied route. The mock doesn't run a geometry intersection —
+    // tests seed a single closure conceptually-over the trip route
+    // and assert on the rendered "Current trip crosses N closures"
+    // copy, not on coordinate math. An empty route still gets the
+    // full list back, matching the conservative behaviour the real
+    // backend would have (returning 0 closures when checked against
+    // an empty polyline).
+    const route = (req.body?.route ?? []) as Array<{
+      lat: number;
+      lng: number;
+    }>;
+    if (route.length === 0) {
+      res.json({ closures: [] });
+      return;
+    }
+    res.json({ closures: [...state.closures.values()] });
   });
   app.get("/api/v1/passes", (_req, res) => {
     res.json([]);
