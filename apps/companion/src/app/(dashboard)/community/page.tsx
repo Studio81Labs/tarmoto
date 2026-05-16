@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Route, Users } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
@@ -63,7 +64,13 @@ export default function CommunityFeedPage() {
       offset,
     ],
   );
+  // Wait for `AuthSync` to hydrate the access token before fetching.
+  // Without this, the cold-load race fires the request without a
+  // Bearer header → 401 → `onUnauthorized` wipes the session. Same
+  // pattern as `useUserTrips` and the rides pages.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -86,7 +93,7 @@ export default function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [authReady, query]);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   return (

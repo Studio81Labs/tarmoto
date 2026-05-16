@@ -393,6 +393,34 @@ export function buildApp(): Express {
     res.status(201).json({ id });
   });
 
+  // Stand up a route collection so `/community/collections/*` flows
+  // have something to render. Caller controls visibility + slug so a
+  // shared-by-slug e2e can hit a deterministic URL.
+  app.post("/__test__/seed-collection", (req, res) => {
+    const { owner_id, collection } = req.body ?? {};
+    if (!owner_id || !state.users.has(owner_id)) {
+      res.status(400).json({ message: "owner-not-found" });
+      return;
+    }
+    const c = collection ?? {};
+    const id = c.id ?? randomUUID();
+    const slug = String(c.slug ?? `collection-${id.slice(0, 8)}`);
+    const now = new Date().toISOString();
+    const seeded: import("./state").MockCollection = {
+      id,
+      owner_id,
+      title: String(c.title ?? "Untitled collection"),
+      description: c.description ?? null,
+      visibility: c.visibility ?? "private",
+      slug,
+      created_at: c.created_at ?? now,
+      updated_at: c.updated_at ?? now,
+    };
+    state.collections.set(id, seeded);
+    state.collectionsBySlug.set(slug, id);
+    res.status(201).json({ id, slug });
+  });
+
   // Stand up a public-share record so an anonymous visit to
   // `/rides/shared/:token` can resolve to a seeded ride. Token defaults
   // to a generated one; tests can pin a known token for deterministic
@@ -1374,6 +1402,69 @@ export function buildApp(): Express {
     res.json([]);
   });
 
+  // ── Community feed ───────────────────────────────────────────────
+  // Default to an empty feed — the empty-state branch is what the page
+  // ships today and what T37 asserts. Follow-up work can seed rides
+  // here once the public-share flow is mocked end-to-end.
+  app.get("/api/v1/rides/community", requireAuth, (_req, res) => {
+    res.json({ items: [], total: 0, limit: 9, offset: 0 });
+  });
+
+  // ── Route collections ────────────────────────────────────────────
+  // Public shared-collection view is registered BEFORE the authed
+  // `:id` route so the literal `by-slug` path segment isn't captured
+  // as a collection id.
+  app.get("/api/v1/collections/by-slug/:slug", (req, res) => {
+    const collectionId = state.collectionsBySlug.get(param(req, "slug"));
+    const collection = collectionId
+      ? state.collections.get(collectionId)
+      : null;
+    if (
+      !collection ||
+      (collection.visibility !== "public" &&
+        collection.visibility !== "unlisted")
+    ) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json(serializeCollectionDetail(collection, /* viewerOwns */ false));
+  });
+
+  app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const items = [...state.collections.values()]
+      .filter((c) => c.owner_id === session.user_id)
+      .map(serializeCollectionSummary);
+    res.json({ items, total: items.length });
+  });
+
+  app.get(
+    "/api/v1/collections/me/library",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const owned = [...state.collections.values()]
+        .filter((c) => c.owner_id === session.user_id)
+        .map(serializeCollectionSummary);
+      res.json({ owned, followed: [] });
+    },
+  );
+
+  app.get("/api/v1/collections/:id", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const collection = state.collections.get(param(req, "id"));
+    if (!collection) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    const viewerOwns = collection.owner_id === session.user_id;
+    if (!viewerOwns && collection.visibility === "private") {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json(serializeCollectionDetail(collection, viewerOwns));
+  });
+
   // ── Rides ────────────────────────────────────────────────────────
   // Three endpoints back the rides surface: list (paginated + filtered),
   // tracks (geometry only, same filters minus sort/page — used for the
@@ -1909,5 +2000,38 @@ function serializeRideDetail(ride: import("./state").MockRide) {
     fuel_estimate_l: ride.fuel_estimate_l,
     route_geometry: ride.route_geometry,
     segments: ride.segments,
+  };
+}
+
+function serializeCollectionSummary(
+  collection: import("./state").MockCollection,
+) {
+  const owner = state.users.get(collection.owner_id);
+  return {
+    id: collection.id,
+    owner_id: collection.owner_id,
+    title: collection.title,
+    description: collection.description,
+    visibility: collection.visibility,
+    slug: collection.slug,
+    item_count: 0,
+    // /collections/me suppresses owner_name (rider knows their own
+    // name); other surfaces echo it. The serializer always returns
+    // the display name and lets each endpoint null it out if needed.
+    owner_name: owner?.display_name ?? "Anonymous Rider",
+    created_at: collection.created_at,
+    updated_at: collection.updated_at,
+  };
+}
+
+function serializeCollectionDetail(
+  collection: import("./state").MockCollection,
+  viewerOwns: boolean,
+) {
+  return {
+    ...serializeCollectionSummary(collection),
+    items: [],
+    viewer_is_owner: viewerOwns,
+    viewer_is_following: false,
   };
 }

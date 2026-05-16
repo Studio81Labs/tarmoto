@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/auth";
 import {
   ArrowLeft,
   Calendar,
@@ -113,11 +114,15 @@ export default function CollectionDetailPage() {
       });
     }
   }, []);
+  // Gate the detail fetch on AuthSync hydrating the access token —
+  // without it the cold-load race 401s and the page never recovers.
+  // Same pattern as the rides pages.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
-    if (!collectionId) return;
+    if (!collectionId || !authReady) return;
     setLoad({ phase: "loading" });
     void reload(collectionId);
-  }, [collectionId, reload]);
+  }, [collectionId, authReady, reload]);
   const collection = load.phase === "ready" ? load.collection : null;
   const handleAddItems = async (input: {
     tripIds: string[];

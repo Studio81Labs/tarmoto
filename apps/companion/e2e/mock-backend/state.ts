@@ -32,6 +32,22 @@ export interface MockTrip {
 }
 
 /**
+ * Cloud-synced route collection (US-56). The backend exposes both a
+ * private "my collections" surface and a public-by-slug surface; the
+ * mock row carries everything both endpoints need to serialise.
+ */
+export interface MockCollection {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  visibility: "private" | "unlisted" | "public";
+  slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Recorded ride row. Matches the `RideSummary` + `RideDetail` shapes the
  * companion reads from `/api/v1/rides`, `/api/v1/rides/:id`, and
  * `/api/v1/rides/tracks` — list and detail responses are derived from a
@@ -221,6 +237,8 @@ export class MockState {
 
   trips = new Map<string, MockTrip>();
   rides = new Map<string, MockRide>();
+  collections = new Map<string, MockCollection>();
+  collectionsBySlug = new Map<string, string>();
   /**
    * Token → ride-id lookup for `GET /api/v1/rides/shared/:token`. The
    * shared-ride endpoint is anonymous, so we deliberately store the
@@ -279,6 +297,8 @@ export class MockState {
     this.trips.clear();
     this.rides.clear();
     this.rideShares.clear();
+    this.collections.clear();
+    this.collectionsBySlug.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();
