@@ -14,6 +14,81 @@ interface AuthedRequest extends Request {
 const MOCK_FUN_ZONE_ID = "11111111-2222-4333-8444-555555555000";
 const MOCK_ROAD_SEGMENT_ID = "11111111-2222-4333-8444-555555555111";
 
+// Mirrors `BADGE_DEFINITIONS` in
+// `apps/backend/src/modules/badges/badge-definitions.ts`. Production
+// `BadgesService.listBadges` always returns this 7-entry catalogue
+// with `tier`/`earned_at` set to null for badges the rider hasn't
+// earned yet. The mock doesn't compute progress (no real
+// rides/hazards/reviews aggregation), so `current: 0` is the right
+// default — it lets the profile page render the catalogue with the
+// "No badges earned yet" state instead of the empty-catalogue state.
+// Keep this list in sync if a badge is added/removed upstream.
+const MOCK_BADGE_CATALOGUE = [
+  {
+    key: "total_distance",
+    name: "Road Warrior",
+    description: "Total distance ridden",
+    category: "distance",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 100, silver: 1000, gold: 10000 },
+  },
+  {
+    key: "single_ride",
+    name: "Iron Butt",
+    description: "Longest single ride distance",
+    category: "distance",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 50, silver: 200, gold: 500 },
+  },
+  {
+    key: "ride_count",
+    name: "Regular Rider",
+    description: "Total number of completed rides",
+    category: "distance",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 10, silver: 50, gold: 200 },
+  },
+  {
+    key: "roads_discovered",
+    name: "Explorer",
+    description: "Unique road segments ridden",
+    category: "exploration",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 25, silver: 100, gold: 500 },
+  },
+  {
+    key: "reviews_written",
+    name: "Road Critic",
+    description: "Road reviews written",
+    category: "exploration",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 5, silver: 25, gold: 100 },
+  },
+  {
+    key: "hazards_reported",
+    name: "Safety Scout",
+    description: "Hazards reported to the community",
+    category: "community",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 5, silver: 25, gold: 100 },
+  },
+  {
+    key: "rides_shared",
+    name: "Social Rider",
+    description: "Rides shared with the community",
+    category: "community",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 3, silver: 15, gold: 50 },
+  },
+] as const;
+
 // `@types/express-serve-static-core` 5.x types `req.params[key]` as
 // `string | string[]` because Express 5 supports repeated-segment route
 // params. The mock never uses those patterns, so tunnel each access
@@ -2037,10 +2112,14 @@ export function buildApp(): Express {
     },
   );
 
-  // Badges are a secondary surface on the profile page — the mock
-  // doesn't model the gamification catalogue, so an empty list is the
-  // right default. Production also returns `[]` for a rider who hasn't
-  // earned any badge yet; the page renders a "no badges earned" state.
+  // Production `BadgesService.listBadges` always returns the full
+  // 7-entry catalogue with `tier: null` + `earned_at: null` for
+  // badges the rider hasn't earned yet — the profile page branches
+  // between "No badges available yet" (catalogue empty) and "No
+  // badges earned yet" (catalogue non-empty, nothing earned), so
+  // an empty array on the mock would let an e2e assert the wrong
+  // empty state. Keep the catalogue in sync with
+  // `apps/backend/src/modules/badges/badge-definitions.ts`.
   app.get(
     "/api/v1/users/:userId/badges",
     requireAuth,
@@ -2050,7 +2129,7 @@ export function buildApp(): Express {
         res.status(404).json({ message: "user-not-found" });
         return;
       }
-      res.json([]);
+      res.json(MOCK_BADGE_CATALOGUE);
     },
   );
 
