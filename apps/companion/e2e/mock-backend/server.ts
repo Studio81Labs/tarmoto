@@ -1526,12 +1526,18 @@ export function buildApp(): Express {
   // silently land on the empty-state path. Returns the validated
   // string on success, sends 400 on failure (and returns null so
   // the caller bails out).
+  // Strict ISO 8601 (date or date+time, optional ms + tz). Mirrors
+  // class-validator's `@IsISO8601` — `Date.parse` is too lenient
+  // (it accepts `1` or `2026-7-5`), so we filter through the regex
+  // first and only then sanity-check the resulting Date.
+  const ISO_8601_REGEX =
+    /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
   function parseActiveOn(
     raw: unknown,
     res: import("express").Response,
   ): string | null | undefined {
     if (raw === undefined || raw === null) return undefined;
-    if (typeof raw !== "string") {
+    if (typeof raw !== "string" || !ISO_8601_REGEX.test(raw)) {
       res.status(400).json({
         statusCode: 400,
         error: "Bad Request",
