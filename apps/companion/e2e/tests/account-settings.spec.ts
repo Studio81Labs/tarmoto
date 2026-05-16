@@ -129,7 +129,21 @@ test.describe("account & settings", () => {
   // non-empty href.
   test("T56: requesting a data export surfaces a download link", async ({
     authedPage: page,
+    user,
   }) => {
+    // Warm-up: navigate to /settings first so `AuthSync` hydrates
+    // `useAuthStore` from the NextAuth session before the data
+    // page mounts. `/settings/data` itself fires no GET on mount,
+    // so without this the Request-export click can race the
+    // bearer token into a `401` on CI (locally the AuthSync
+    // effect usually wins). The settings form pre-fills with
+    // `user.displayName` only once the auth-store is populated.
+    await page.goto("/settings");
+    await expect(page.locator("#settings-display-name")).toHaveValue(
+      user.displayName,
+      { timeout: 10_000 },
+    );
+
     await page.goto("/settings/data");
 
     await expect(
