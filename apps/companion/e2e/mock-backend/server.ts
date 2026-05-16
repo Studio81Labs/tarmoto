@@ -1416,9 +1416,43 @@ export function buildApp(): Express {
   // and serializing each backing ride as a community card. Empty
   // state remains the default when nothing is seeded.
   app.get("/api/v1/rides/community", (req, res) => {
-    const limit = Math.max(0, Number(req.query.limit ?? 9));
-    const offset = Math.max(0, Number(req.query.offset ?? 0));
-    const sort = String(req.query.sort ?? "most_popular");
+    const q = req.query;
+    const limit = Math.max(0, Number(q.limit ?? 9));
+    const offset = Math.max(0, Number(q.offset ?? 0));
+    const sort = String(q.sort ?? "most_popular");
+    // Companion-side `buildCommunityRideQuery` ships these filters;
+    // production applies each as a SQL predicate before paging
+    // (`SharingService.listCommunityRides`). Parse once so the inner
+    // loop stays linear.
+    const filterRideType = q.ride_type ? String(q.ride_type) : null;
+    const filterMinQuality =
+      q.min_quality != null ? Number(q.min_quality) : null;
+    const filterMinPopularity =
+      q.min_popularity != null ? Number(q.min_popularity) : null;
+    const filterMinDistance =
+      q.min_distance_km != null ? Number(q.min_distance_km) : null;
+    const filterMaxDistance =
+      q.max_distance_km != null ? Number(q.max_distance_km) : null;
+    // Location filter: `?lat=&lng=&radius_km=` — all three required
+    // for the predicate to apply (matches the companion's all-or-
+    // nothing serialisation).
+    const filterLat = q.lat != null ? Number(q.lat) : null;
+    const filterLng = q.lng != null ? Number(q.lng) : null;
+    const filterRadiusKm = q.radius_km != null ? Number(q.radius_km) : null;
+    const locationActive =
+      filterLat != null &&
+      filterLng != null &&
+      filterRadiusKm != null &&
+      Number.isFinite(filterLat) &&
+      Number.isFinite(filterLng) &&
+      Number.isFinite(filterRadiusKm);
+    // `min_curviness` is in the contract but `MockRide` doesn't track
+    // a curviness value, so the mock can't faithfully apply it — let
+    // any ride through when the filter is set so the test still
+    // exercises the wire shape. Tracked as a known mock limitation;
+    // an e2e specifically for curviness filtering would need a
+    // backing field on `MockRide` first.
+
     const all: Array<{
       ride: import("./state").MockRide;
       share: { token: string; view_count: number };
@@ -1427,20 +1461,66 @@ export function buildApp(): Express {
       if (!share.is_public) continue;
       const ride = state.rides.get(share.ride_id);
       if (!ride) continue;
-      // `SharingService.listCommunityRides` also filters out rides
-      // owned by riders that are soft-deleted or whose profile is
-      // private — production hides their cards from the public feed
-      // even when the share row stays public.
+      // `SharingService.listCommunityRides` excludes rides whose
+      // owner has been soft-deleted or whose profile is private —
+      // production hides their cards from the public feed even when
+      // the share row stays public.
       if (state.deletedUsers.has(ride.user_id)) continue;
       const ownerPrivacy = state.privacy.get(ride.user_id);
       if (ownerPrivacy?.profile_visibility === "private") continue;
+
+      // Filter predicates — each mirrors the corresponding SQL
+      // clause in `applyCommunityRidesFilters`.
+      if (filterRideType && ride.ride_type !== filterRideType) continue;
+      if (
+        filterMinQuality != null &&
+        ride.avg_road_quality < filterMinQuality
+      ) {
+        continue;
+      }
+      if (
+        filterMinPopularity != null &&
+        share.view_count < filterMinPopularity
+      ) {
+        continue;
+      }
+      if (filterMinDistance != null && ride.distance_km < filterMinDistance) {
+        continue;
+      }
+      if (filterMaxDistance != null && ride.distance_km > filterMaxDistance) {
+        continue;
+      }
+      if (locationActive) {
+        // No route geometry ⇒ can't satisfy `ST_DWithin`; drop the
+        // ride from the location-scoped feed, matching production.
+        if (ride.route_geometry.length === 0) continue;
+        const dist = kmToPolyline(
+          { lat: filterLat!, lng: filterLng! },
+          ride.route_geometry,
+        );
+        if (dist > filterRadiusKm!) continue;
+      }
+
       all.push({ ride, share: { token, view_count: share.view_count } });
     }
     // Production's default sort is `most_popular` (view_count DESC,
     // then ride id as a stable tiebreaker). `newest` uses
-    // started_at DESC. Anything else falls through to newest so the
-    // mock stays forgiving when new sort keys land.
+    // started_at DESC. `nearest` is location-scoped (asc by distance
+    // from the center) when the location filter is active.
+    // Anything else falls through to newest.
     all.sort((a, b) => {
+      if (sort === "nearest" && locationActive) {
+        const da = kmToPolyline(
+          { lat: filterLat!, lng: filterLng! },
+          a.ride.route_geometry,
+        );
+        const db = kmToPolyline(
+          { lat: filterLat!, lng: filterLng! },
+          b.ride.route_geometry,
+        );
+        const dd = da - db;
+        return dd !== 0 ? dd : a.ride.id.localeCompare(b.ride.id);
+      }
       if (sort === "newest") {
         const dt = b.ride.started_at.localeCompare(a.ride.started_at);
         return dt !== 0 ? dt : a.ride.id.localeCompare(b.ride.id);
@@ -1550,23 +1630,24 @@ export function buildApp(): Express {
       const owned = [...state.collections.values()]
         .filter((c) => c.owner_id === session.user_id)
         .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
-      // `followed` surfaces other riders' collections the viewer has
-      // followed. Skip rows whose owner has been soft-deleted or
-      // gone private (matches `RouteCollectionsService.listLibrary`
-      // which filters those out before returning). Owner_name stays
-      // populated except for private owners, where it gets masked
-      // alongside owner_id per the privacy contract.
+      // `followed` surfaces other riders' collections the viewer
+      // already followed. Production `RouteCollectionsService
+      // .listLibrary` drops rows whose owner has been soft-deleted
+      // (the rider is effectively gone) but KEEPS rows owned by a
+      // private rider — they're returned with `owner_id` and
+      // `owner_name` masked to `null` so the saved card stays in
+      // the library shelf without leaking identity.
       const followIds = state.collectionFollows.get(session.user_id);
       const followed = followIds
         ? [...followIds]
             .map((id) => state.collections.get(id))
             .filter((c): c is import("./state").MockCollection => c != null)
             .filter((c) => !state.deletedUsers.has(c.owner_id))
-            .filter((c) => {
-              const p = state.privacy.get(c.owner_id);
-              return p?.profile_visibility !== "private";
+            .map((c) => {
+              const ownerPrivacy = state.privacy.get(c.owner_id);
+              const maskOwner = ownerPrivacy?.profile_visibility === "private";
+              return serializeCollectionSummary(c, { maskOwner });
             })
-            .map((c) => serializeCollectionSummary(c))
         : [];
       res.json({ owned, followed });
     },
