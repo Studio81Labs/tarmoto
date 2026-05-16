@@ -23,7 +23,9 @@ import {
 import { tripsApi, tripFoldersApi } from "@/lib/api";
 import {
   tripFromDetail,
+  tripSummaryFromWire,
   type TripDetailResponse,
+  type TripSummaryWire,
 } from "@/lib/trip-from-detail";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
@@ -46,7 +48,7 @@ import {
   type TripFolder,
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
-import type { Trip } from "@/lib/types";
+import type { TripSummary } from "@/lib/types";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -122,12 +124,12 @@ export default function TripListPage() {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        const body = data as unknown as
-          | {
-              data?: Trip[];
-            }
-          | Trip[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
+        // Wire rows arrive as `TripSummaryDto` (`title`, `created_at`).
+        // Adapt to the companion's `TripSummary` (`name`, `createdAt`)
+        // so cards / sorts read populated fields.
+        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
+        const rows = Array.isArray(body) ? body : (body?.data ?? []);
+        setTrips(rows.map(tripSummaryFromWire));
       })
       .catch(() => {
         if (cancelled) return;
@@ -283,7 +285,10 @@ export default function TripListPage() {
       setErrorBanner("Couldn't delete the folder. Try again.");
     }
   };
-  const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
+  const moveTripToFolder = async (
+    trip: TripSummary,
+    folderId: string | null,
+  ) => {
     const previousFolderId = trip.folder_id ?? null;
     // Read fresh state so concurrent optimistic updates don't clobber each
     // other when two actions fire in the same render.
@@ -316,7 +321,7 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-  const duplicateTrip = async (trip: Trip) => {
+  const duplicateTrip = async (trip: TripSummary) => {
     markBusy(trip.id);
     try {
       const { data } = await tripsApi.duplicate(trip.id);
@@ -346,7 +351,7 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-  const deleteTrip = async (trip: Trip) => {
+  const deleteTrip = async (trip: TripSummary) => {
     if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
     // Read fresh state so concurrent optimistic updates don't clobber each
     // other when two actions fire in the same render.
@@ -917,7 +922,7 @@ function TripToolbar({
 // Trip card + actions
 // ─────────────────────────────────────────────────────────
 interface TripCardProps {
-  trip: Trip;
+  trip: TripSummary;
   folders: TripFolder[];
   busy: boolean;
   onDuplicate: () => void;
@@ -959,20 +964,19 @@ function TripCard({
           </span>
         </div>
 
-        {trip.description && (
-          <p className="text-xs text-slate-500 line-clamp-2 mb-3">
-            {trip.description}
-          </p>
-        )}
+        {/* `description` / per-day distance / collaborator names /
+            `updatedAt` aren't on `TripSummaryDto`; the list endpoint
+            doesn't surface them so the card now reads only what the
+            wire actually returns. `num_days` and `member_count` are
+            the summary equivalents. */}
 
         <div className="space-y-1.5 text-sm text-slate-400">
           <div className="flex items-center gap-2">
             <Calendar size={13} />
             <span>
-              {t(
-                (trip.days?.length ?? 0) === 1 ? "{count} day" : "{count} days",
-                { count: trip.days?.length ?? 0 },
-              )}
+              {t(trip.num_days === 1 ? "{count} day" : "{count} days", {
+                count: trip.num_days,
+              })}
             </span>
           </div>
           {distance !== null && (
@@ -983,12 +987,12 @@ function TripCard({
               </span>
             </div>
           )}
-          {(trip.collaborators?.length ?? 0) > 1 && (
+          {(trip.member_count ?? 0) > 1 && (
             <div className="flex items-center gap-2">
               <Users size={13} />
               <span>
                 {t("{count} riders", {
-                  count: trip.collaborators?.length ?? 0,
+                  count: trip.member_count ?? 0,
                 })}
               </span>
             </div>
@@ -1002,8 +1006,8 @@ function TripCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          {t("Updated ")}
-          {formatRelativeTime(trip.updatedAt)}
+          {t("Created ")}
+          {formatRelativeTime(trip.createdAt)}
         </p>
       </Link>
 

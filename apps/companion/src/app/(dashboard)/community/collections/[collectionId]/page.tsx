@@ -54,7 +54,7 @@ import {
 import { tripDistanceKmOrNull } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
-import type { Trip, TripDay } from "@/lib/types";
+import type { TripDay, TripSummary } from "@/lib/types";
 type LoadState =
   | {
       phase: "loading";
@@ -321,7 +321,7 @@ export default function CollectionDetailPage() {
   // ready
   const presentTrips = collection!.tripRefs
     .map((ref) => tripById.get(ref.tripId))
-    .filter((trip): trip is Trip => trip != null);
+    .filter((trip): trip is TripSummary => trip != null);
   const presentRides = collection!.rideRefs
     .map((ref) => rideById.get(ref.rideId))
     .filter((r): r is UserRide => r != null);
@@ -352,13 +352,8 @@ export default function CollectionDetailPage() {
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
   // alongside the planner-day count.
   // `presentTrips` is fed by `useUserTrips()` which surfaces
-  // TripSummaryDto[] from the list endpoint — `days` is undefined there,
-  // so prefer `num_days`. Falls back to `days.length` for any detail-
-  // hydrated entries.
-  const totalDays = presentTrips.reduce(
-    (sum, trip) => sum + (trip.num_days ?? trip.days?.length ?? 0),
-    0,
-  );
+  // `TripSummary[]` — the list endpoint only carries `num_days`.
+  const totalDays = presentTrips.reduce((sum, trip) => sum + trip.num_days, 0);
   const totalMissing =
     collection!.tripRefs.length -
     presentTrips.length +
@@ -831,14 +826,18 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
     </div>
   );
 }
-function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
-  // List-endpoint trips arrive without `days` (TripSummaryDto): the route
-  // preview silently degrades to no-line, and `distance === null` hides
-  // the distance pill below rather than showing "0 km" for a value we
-  // don't actually know.
-  const days = trip.days ?? [];
-  const dayCount = trip.num_days ?? days.length;
-  const points = useMemo(() => combineTripRoutePoints(days), [days]);
+function TripRow({
+  trip,
+  onRemove,
+}: {
+  trip: TripSummary;
+  onRemove: () => void;
+}) {
+  // List-endpoint trips (TripSummary) don't carry `days` or per-day
+  // geometry, so the row keeps the preview empty and hides the
+  // distance pill — `null` instead of a confidently-wrong `0 km`.
+  const dayCount = trip.num_days;
+  const points: Array<{ lat: number; lng: number }> = [];
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKmOrNull(trip);
   return (
@@ -1016,7 +1015,7 @@ function RoutePickerModal({
   onAdd,
   onPlanTrip,
 }: {
-  trips: Trip[];
+  trips: TripSummary[];
   rides: UserRide[];
   loadingTrips: boolean;
   loadingRides: boolean;
@@ -1055,9 +1054,9 @@ function RoutePickerModal({
   const visibleTrips = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return trips;
-    return trips.filter((trip) =>
-      `${trip.name} ${trip.description ?? ""}`.toLowerCase().includes(needle),
-    );
+    // `description` isn't on `TripSummaryDto` — search only matches
+    // `name`, which is what the wire actually carries here.
+    return trips.filter((trip) => trip.name.toLowerCase().includes(needle));
   }, [trips, search]);
   const visibleRides = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -1243,8 +1242,8 @@ function TripPickerList({
   onToggle,
   onPlanTrip,
 }: {
-  trips: Trip[];
-  visibleTrips: Trip[];
+  trips: TripSummary[];
+  visibleTrips: TripSummary[];
   loading: boolean;
   error: boolean;
   hasAnyTrips: boolean;
@@ -1318,7 +1317,7 @@ function TripPickerList({
         // `distance === null` ⇒ summary-only; drop the distance segment from
         // the meta line rather than rendering "0 km".
         const distance = tripDistanceKmOrNull(trip);
-        const dayCount = trip.num_days ?? trip.days?.length ?? 0;
+        const dayCount = trip.num_days;
         const dayLabel =
           dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount });
         const metaParts = [dayLabel];

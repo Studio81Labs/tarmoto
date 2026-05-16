@@ -7,6 +7,7 @@ const minimalTrip: Trip = {
   id: "trip-1",
   name: "Pyrenees Loop",
   status: "planned",
+  num_days: 0,
   parameters: {
     days: 1,
     dailyKmTarget: 150,

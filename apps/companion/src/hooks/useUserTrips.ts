@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { tripsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
-import type { Trip } from "@/lib/types";
+import {
+  tripSummaryFromWire,
+  type TripSummaryWire,
+} from "@/lib/trip-from-detail";
+import type { TripSummary } from "@/lib/types";
 
 /**
  * Fetches the signed-in user's trips on mount and whenever the `userId`
@@ -23,10 +27,10 @@ import type { Trip } from "@/lib/types";
  * migrate it in a follow-up PR to keep this change scoped to collections.
  */
 export function useUserTrips(): {
-  trips: Trip[];
+  trips: TripSummary[];
   loading: boolean;
   error: boolean;
-  tripById: Map<string, Trip>;
+  tripById: Map<string, TripSummary>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const trips = useTripStore((s) => s.trips);
@@ -49,8 +53,15 @@ export function useUserTrips(): {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        const body = data as unknown as { data?: Trip[] } | Trip[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
+        // The list endpoint may return either a raw array or a
+        // `{ data }` envelope depending on backend version. Either
+        // way, each row is a wire-shape `TripSummaryDto` (`title`,
+        // `created_at`) — adapt to the companion's `TripSummary`
+        // (`name`, `createdAt`) before storing so list consumers
+        // don't read undefined fields.
+        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
+        const rows = Array.isArray(body) ? body : (body?.data ?? []);
+        setTrips(rows.map(tripSummaryFromWire));
       })
       .catch(() => {
         if (cancelled) return;
@@ -69,7 +80,7 @@ export function useUserTrips(): {
   }, [setTrips, userId]);
 
   const tripById = useMemo(() => {
-    const map = new Map<string, Trip>();
+    const map = new Map<string, TripSummary>();
     for (const t of trips) map.set(t.id, t);
     return map;
   }, [trips]);

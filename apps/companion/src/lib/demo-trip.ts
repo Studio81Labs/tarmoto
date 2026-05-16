@@ -10,6 +10,7 @@ export const DEMO_TRIP: Trip = {
   name: "Alps loop — demo",
   description: "Seeded route used to preview the Road Preview Cards sidebar.",
   status: "draft",
+  num_days: 2,
   createdAt: "2026-04-01T09:00:00Z",
   updatedAt: "2026-04-14T09:00:00Z",
   parameters: {

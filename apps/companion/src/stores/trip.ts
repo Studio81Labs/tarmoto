@@ -6,10 +6,21 @@ import {
   rebuildPlannerDay,
 } from "@/lib/trip-planner-builder";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
-import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
+import type {
+  RoutePreviewSegment,
+  Trip,
+  TripSummary,
+  Waypoint,
+} from "@/lib/types";
 
 interface TripState {
-  trips: Trip[];
+  /**
+   * Trip rows from the list endpoint. Typed as `TripSummary[]`
+   * (no `days` / `parameters` / `collaborators`) — list consumers
+   * must not reach for detail-only fields, and the compiler now
+   * enforces it.
+   */
+  trips: TripSummary[];
   activeTrip: Trip | null;
   isGenerating: boolean;
   canUndo: boolean;
@@ -20,7 +31,7 @@ interface TripState {
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
 
-  setTrips: (trips: Trip[]) => void;
+  setTrips: (trips: TripSummary[]) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
 

@@ -11,21 +11,23 @@ import {
 import type { Trip } from "../types";
 
 function makeTrip(overrides: Partial<Trip> = {}): Trip {
+  const days = overrides.days ?? [
+    {
+      dayNumber: 1,
+      waypoints: [],
+      distanceKm: 100,
+      durationMinutes: 120,
+      elevationGain: 500,
+      avgQuality: 4,
+    },
+  ];
   return {
     id: overrides.id ?? "trip_1",
     name: overrides.name ?? "Untitled",
     description: overrides.description,
     status: overrides.status ?? "draft",
-    days: overrides.days ?? [
-      {
-        dayNumber: 1,
-        waypoints: [],
-        distanceKm: 100,
-        durationMinutes: 120,
-        elevationGain: 500,
-        avgQuality: 4,
-      },
-    ],
+    num_days: overrides.num_days ?? days.length,
+    days,
     parameters: overrides.parameters ?? {
       days: 1,
       dailyKmTarget: 100,
@@ -98,15 +100,14 @@ describe("applyTripFilters", () => {
     expect(result.map((t) => t.id)).toEqual(["b"]);
   });
 
-  it("searches across name, description, and collaborator names", () => {
+  it("searches against the trip name (the only field on TripSummary)", () => {
+    // `description` and `collaborator` searches were dropped along
+    // with the type split — `TripSummaryDto` doesn't carry either
+    // on the wire, so the previous behaviour was silently broken.
     const trips = [
       makeTrip({ id: "a", name: "Alps Loop" }),
-      makeTrip({ id: "b", description: "Through the Black Forest" }),
-      makeTrip({
-        id: "c",
-        collaborators: [{ userId: "u2", displayName: "Akiko", role: "editor" }],
-      }),
-      makeTrip({ id: "d", name: "Coastal Ride" }),
+      makeTrip({ id: "b", name: "Black Forest tour" }),
+      makeTrip({ id: "c", name: "Coastal Ride" }),
     ];
     expect(
       applyTripFilters(trips, makeFilters({ search: "alps" })).map((t) => t.id),
@@ -116,18 +117,16 @@ describe("applyTripFilters", () => {
         (t) => t.id,
       ),
     ).toEqual(["b"]);
-    expect(
-      applyTripFilters(trips, makeFilters({ search: "akiko" })).map(
-        (t) => t.id,
-      ),
-    ).toEqual(["c"]);
   });
 
-  it("sorts by updated date descending by default", () => {
+  it("sorts by created date descending when 'updated' is requested", () => {
+    // The list endpoint omits `updated_at` so the comparator falls
+    // back to `createdAt`. Test fixture mirrors what the wire
+    // actually returns.
     const trips = [
-      makeTrip({ id: "old", updatedAt: "2026-01-01T00:00:00Z" }),
-      makeTrip({ id: "new", updatedAt: "2026-04-15T00:00:00Z" }),
-      makeTrip({ id: "mid", updatedAt: "2026-03-01T00:00:00Z" }),
+      makeTrip({ id: "old", createdAt: "2026-01-01T00:00:00Z" }),
+      makeTrip({ id: "new", createdAt: "2026-04-15T00:00:00Z" }),
+      makeTrip({ id: "mid", createdAt: "2026-03-01T00:00:00Z" }),
     ];
     const result = applyTripFilters(trips, makeFilters());
     expect(result.map((t) => t.id)).toEqual(["new", "mid", "old"]);
@@ -147,38 +146,19 @@ describe("applyTripFilters", () => {
     ]);
   });
 
-  it("sorts by total distance descending", () => {
-    const short = makeTrip({
-      id: "short",
-      days: [
-        {
-          dayNumber: 1,
-          waypoints: [],
-          distanceKm: 50,
-          durationMinutes: 60,
-          elevationGain: 0,
-          avgQuality: 3,
-        },
-      ],
-    });
-    const long = makeTrip({
-      id: "long",
-      days: [
-        {
-          dayNumber: 1,
-          waypoints: [],
-          distanceKm: 300,
-          durationMinutes: 300,
-          elevationGain: 0,
-          avgQuality: 3,
-        },
-      ],
-    });
+  it("preserves filter order when 'distance' is requested on summary rows", () => {
+    // Summary rows have no per-day distance, so the "distance" sort
+    // is intentionally a no-op (rather than crashing or sorting on
+    // a random key). The UI dropdown is unchanged; the comparator
+    // just leaves the filter-stage order in place. Detail surfaces
+    // sort via the standalone `tripDistanceKm` helper.
+    const short = makeTrip({ id: "short" });
+    const long = makeTrip({ id: "long" });
     const result = applyTripFilters(
       [short, long],
       makeFilters({ sort: "distance" }),
     );
-    expect(result.map((t) => t.id)).toEqual(["long", "short"]);
+    expect(result.map((t) => t.id)).toEqual(["short", "long"]);
   });
 
   it("does not mutate the input array", () => {
@@ -235,45 +215,14 @@ describe("tripDistanceKm", () => {
 });
 
 describe("tripDistanceKmOrNull", () => {
-  it("sums every day's distance when days are present", () => {
-    const trip = makeTrip({
-      days: [
-        {
-          dayNumber: 1,
-          waypoints: [],
-          distanceKm: 60,
-          durationMinutes: 0,
-          elevationGain: 0,
-          avgQuality: 3,
-        },
-        {
-          dayNumber: 2,
-          waypoints: [],
-          distanceKm: 40,
-          durationMinutes: 0,
-          elevationGain: 0,
-          avgQuality: 3,
-        },
-      ],
-    });
-    expect(tripDistanceKmOrNull(trip)).toBe(100);
-  });
-
-  it("returns null when days is undefined (TripSummaryDto from list endpoint)", () => {
+  // The summary-aware variant always returns `null` — the list
+  // endpoint never returns per-day distance, so the helper exists
+  // mainly to type-check call-sites that mistakenly try to compute
+  // distance from a `TripSummary`. Detail-flow callers should use
+  // `tripDistanceKm` directly.
+  it("returns null for summary rows", () => {
     const trip = makeTrip();
-    // Simulates the wire shape: backend list endpoint omits days.
-    const summary: Trip = {
-      ...trip,
-      days: undefined as unknown as Trip["days"],
-    };
-    expect(tripDistanceKmOrNull(summary)).toBeNull();
-  });
-
-  it("returns 0 when days is an empty array (detail with no days yet)", () => {
-    const trip = makeTrip({ days: [] });
-    // Empty days[] is a valid early-draft state — distance is genuinely 0
-    // and consumers should render "0 km", not hide the field.
-    expect(tripDistanceKmOrNull(trip)).toBe(0);
+    expect(tripDistanceKmOrNull(trip)).toBeNull();
   });
 });
 

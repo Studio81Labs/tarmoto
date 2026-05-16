@@ -2520,34 +2520,23 @@ export function buildApp(): Express {
 }
 
 function serializeTripCard(trip: import("./state").MockTrip) {
+  // Mirrors production `TripSummaryDto` (`apps/backend/src/modules
+  // /trips/dto/trip-response.dto.ts::TripSummaryDto`): list rows
+  // carry `title` + `created_at` (snake_case wire shape), NOT the
+  // companion's camelCase `name` + `createdAt`. The companion's
+  // `tripSummaryFromWire` adapter handles the translation. Previous
+  // versions of this mock returned a richer detail-like payload
+  // which let e2e tests pass against fields production never serves.
   return {
     id: trip.id,
-    name: trip.title,
+    owner_id: trip.owner_id,
+    title: trip.title,
+    region: null,
+    num_days: trip.num_days,
     status: trip.status,
-    days: serializedTripDays(trip),
-    collaborators: trip.members.map((userId) => {
-      const user = state.users.get(userId);
-      return {
-        userId,
-        displayName: user?.display_name ?? "Unknown",
-        role: userId === trip.owner_id ? "owner" : "viewer",
-      };
-    }),
-    parameters: {
-      days: trip.num_days,
-      dailyKmTarget: Math.round(
-        ((trip.daily_km_min ?? 200) + (trip.daily_km_max ?? 300)) / 2,
-      ),
-      roadPreference: trip.road_preference === "fast" ? "direct" : "mixed",
-      surfacePreference: ["asphalt"],
-      avoidHighways: true,
-      avoidTolls: false,
-      avoidUnpaved: true,
-      minQuality: 3,
-    },
-    createdAt: trip.created_at,
-    updatedAt: trip.updated_at,
-    folderId: null,
+    member_count: trip.members.length,
+    folder_id: trip.folder_id ?? null,
+    created_at: trip.created_at,
   };
 }
 

@@ -11,16 +11,7 @@ import {
   ArrowUpRight,
   ChevronRight,
 } from "lucide-react";
-import {
-  Card,
-  Heading,
-  Mono,
-  Pill,
-  QualityBars,
-  Stamp,
-} from "@/components/tarmoto/atoms";
-import { formatDistance } from "@/lib/utils";
-import type { Trip } from "@/lib/types";
+import { Card, Heading, Mono, Pill, Stamp } from "@/components/tarmoto/atoms";
 
 const QUICK_ACTIONS = [
   {
@@ -53,25 +44,10 @@ const QUICK_ACTIONS = [
   },
 ] as const;
 
-function tripTotalKm(trip: Trip): number {
-  // `trip.days` is absent on list-endpoint payloads (TripSummaryDto only
-  // carries `num_days`). Without per-day distance we can't compute a
-  // total — return 0 and rely on the call-site `km > 0` guard to hide
-  // the chip. Pending the Trip / TripSummary type split.
-  return (trip.days ?? []).reduce((acc, d) => acc + (d.distanceKm ?? 0), 0);
-}
-
-function tripAvgQualityTier(trip: Trip): number | null {
-  // Same shape caveat as tripTotalKm — summary payloads have no
-  // per-day quality, so this returns null and the chip stays hidden.
-  const days = trip.days ?? [];
-  const scores = days
-    .map((d) => d.avgQuality)
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (scores.length === 0) return null;
-  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-  return Math.max(1, Math.min(5, Math.round(mean)));
-}
+// Note: the dashboard list reads `TripSummary` from
+// `useUserTrips()` — list-endpoint payloads don't carry `days`, so
+// per-day total km / avg quality can't be computed here. The chips
+// stay hidden via the `km > 0` / `q !== null` guards below.
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
@@ -228,12 +204,7 @@ export default function HomePage() {
           ) : (
             <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
               {draftTrips.map((trip) => {
-                const km = tripTotalKm(trip);
-                // Prefer the summary's `num_days` (always present on the
-                // list endpoint); fall back to `days.length` for detail-
-                // shaped trips that might land here in the future.
-                const days = trip.num_days ?? trip.days?.length ?? 0;
-                const q = tripAvgQualityTier(trip);
+                const days = trip.num_days;
                 return (
                   <Link
                     key={trip.id}
@@ -244,13 +215,8 @@ export default function HomePage() {
                       <span className="line-clamp-2 text-[15px] font-bold leading-tight text-ink">
                         {trip.name}
                       </span>
-                      {q !== null && <QualityBars q={q} size={4} />}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-ink/55">
-                      {km > 0 && <Mono>{formatDistance(km)}</Mono>}
-                      {km > 0 && days > 0 && (
-                        <span className="text-ink/30">·</span>
-                      )}
                       {days > 0 && (
                         <Mono>
                           {days} {days > 1 ? t("days") : t("day")}
