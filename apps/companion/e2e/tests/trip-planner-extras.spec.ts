@@ -91,11 +91,18 @@ test.describe("trip planner extras", () => {
 
   // T14 — Print: `/trips/[tripId]/print` renders a printer-friendly
   // body without app chrome. Save a generated demo trip via the
-  // planner (same flow as T6) so we have a real id, then navigate
-  // to the print page and assert the trip name surfaces as the
-  // page-level h1.
-  test("T14: /trips/:id/print renders the printer-friendly view", async ({
+  // planner (same flow as T6) so we have a real id, then open the
+  // print URL in a **fresh page** within the same authenticated
+  // context. The fresh page is the operational signal: production
+  // export menu opens the print URL via `window.open(..., "noopener")`,
+  // which severs the creator and starts the new tab with an empty
+  // Zustand store — exactly the AuthSync race the bundled
+  // production fix addresses. Reusing the original page keeps the
+  // store warm and would let the gate silently regress without
+  // failing the test.
+  test("T14: /trips/:id/print renders the printer-friendly view in a new tab", async ({
     authedPage: page,
+    context,
   }) => {
     await page.goto("/trips/planner");
     await page.getByRole("button", { name: /load demo trip/i }).click();
@@ -111,14 +118,18 @@ test.describe("trip planner extras", () => {
     await page.getByRole("button", { name: /^Save$/ }).click();
     await expect(page).toHaveURL(new RegExp(`/trips/${tripId}$`));
 
-    // Navigate directly — same surface the export menu's "Print"
-    // action would open in a new tab. Asserting on the trip's name
-    // as the page-level heading proves the print body hydrated
-    // from the API and that the print layout (not the dashboard
-    // chrome) is rendering.
-    await page.goto(`/trips/${tripId}/print`);
-    await expect(
-      page.getByRole("heading", { level: 1, name: /alps loop/i }),
-    ).toBeVisible({ timeout: 10_000 });
+    // Fresh page in the same context: NextAuth's session cookie
+    // carries over so AuthSync can re-hydrate, but the Zustand
+    // auth-store starts empty — exercises the gate the
+    // production fix adds to the print page's fetch effect.
+    const printPage = await context.newPage();
+    try {
+      await printPage.goto(`/trips/${tripId}/print`);
+      await expect(
+        printPage.getByRole("heading", { level: 1, name: /alps loop/i }),
+      ).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await printPage.close();
+    }
   });
 });
