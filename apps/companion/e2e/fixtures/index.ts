@@ -38,6 +38,7 @@ export interface SeedRideOpts {
   avg_speed?: number;
   max_speed?: number;
   avg_road_quality?: number;
+  avg_curviness?: number | null;
   elevation_gain?: number;
   elevation_loss?: number;
   curve_count?: number;

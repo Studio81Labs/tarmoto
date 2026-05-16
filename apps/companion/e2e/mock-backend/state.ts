@@ -72,6 +72,14 @@ export interface MockRide {
   avg_speed: number;
   max_speed: number;
   avg_road_quality: number;
+  /**
+   * Length-weighted average curviness across the road segments this
+   * ride crossed (0–10). Mirrors `ride.avg_curviness` on the
+   * production schema and powers `min_curviness` filtering + the
+   * `curviest` sort in `SharingService.listCommunityRides`. Null on
+   * rides whose route never crossed a curviness-scored segment.
+   */
+  avg_curviness: number | null;
   elevation_gain: number;
   elevation_loss: number;
   curve_count: number;

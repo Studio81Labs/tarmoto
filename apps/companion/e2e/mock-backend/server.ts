@@ -360,6 +360,13 @@ export function buildApp(): Express {
       avg_speed: Number(ride.avg_speed ?? 80),
       max_speed: Number(ride.max_speed ?? 130),
       avg_road_quality: Number(ride.avg_road_quality ?? 4),
+      // `avg_curviness` is explicitly nullable on the wire — production
+      // returns null when no scored segments were crossed. Default to a
+      // mid-range value (3) so seeded rides exercise the populated
+      // branch; tests that want the null branch can pass `avg_curviness:
+      // null` explicitly.
+      avg_curviness:
+        ride.avg_curviness === null ? null : Number(ride.avg_curviness ?? 3),
       elevation_gain: Number(ride.elevation_gain ?? 500),
       elevation_loss: Number(ride.elevation_loss ?? 500),
       curve_count: Number(ride.curve_count ?? 80),
@@ -1446,12 +1453,8 @@ export function buildApp(): Express {
       Number.isFinite(filterLat) &&
       Number.isFinite(filterLng) &&
       Number.isFinite(filterRadiusKm);
-    // `min_curviness` is in the contract but `MockRide` doesn't track
-    // a curviness value, so the mock can't faithfully apply it — let
-    // any ride through when the filter is set so the test still
-    // exercises the wire shape. Tracked as a known mock limitation;
-    // an e2e specifically for curviness filtering would need a
-    // backing field on `MockRide` first.
+    const filterMinCurviness =
+      q.min_curviness != null ? Number(q.min_curviness) : null;
 
     const all: Array<{
       ride: import("./state").MockRide;
@@ -1490,6 +1493,14 @@ export function buildApp(): Express {
       if (filterMaxDistance != null && ride.distance_km > filterMaxDistance) {
         continue;
       }
+      // `applyCommunityRidesFilters` uses `ride.avg_curviness IS NOT
+      // NULL AND ride.avg_curviness >= :min_curviness` — both halves
+      // matter: a ride with `null` curviness is dropped by the filter
+      // even if the threshold is 0.
+      if (filterMinCurviness != null) {
+        if (ride.avg_curviness == null) continue;
+        if (ride.avg_curviness < filterMinCurviness) continue;
+      }
       if (locationActive) {
         // No route geometry ⇒ can't satisfy `ST_DWithin`; drop the
         // ride from the location-scoped feed, matching production.
@@ -1506,24 +1517,25 @@ export function buildApp(): Express {
     // Sort comparators mirror `SharingService.applySort` predicate-
     // by-predicate. Every CommunityRideSort the companion ships has
     // a real ORDER BY in production:
-    //   newest          → started_at DESC
-    //   oldest          → started_at ASC
-    //   longest         → distance_km DESC
-    //   shortest        → distance_km ASC
-    //   highest_quality → avg_road_quality DESC
-    //   most_popular    → view_count DESC (default)
-    //   nearest         → polyline-to-center distance ASC (location
-    //                     filter must be active)
-    //   curviest        → falls through to most_popular because
-    //                     `MockRide` doesn't carry a curviness value
-    //                     yet; an e2e for that ordering needs the
-    //                     row extended first.
-    // Each branch uses ride.id as a stable tiebreaker so paging is
-    // deterministic across runs.
-    const tiebreak = (
+    //   newest          → started_at DESC, ride.id DESC
+    //   oldest          → started_at ASC,  ride.id ASC
+    //   longest         → distance_km DESC, ride.id DESC
+    //   shortest        → distance_km ASC,  ride.id ASC
+    //   highest_quality → avg_road_quality DESC, ride.id DESC
+    //   curviest        → avg_curviness DESC NULLS LAST, ride.id DESC
+    //   most_popular    → view_count DESC, ride.id DESC (default)
+    //   nearest         → polyline-to-center ASC, ride.id ASC (only
+    //                     when the location filter is active)
+    // Tiebreaker direction matches the primary key's direction so
+    // ties paginate in the same order the backend serves them.
+    const idTiebreak = (
       a: { ride: { id: string } },
       b: { ride: { id: string } },
-    ) => a.ride.id.localeCompare(b.ride.id);
+      direction: "asc" | "desc",
+    ) =>
+      direction === "asc"
+        ? a.ride.id.localeCompare(b.ride.id)
+        : b.ride.id.localeCompare(a.ride.id);
     all.sort((a, b) => {
       switch (sort) {
         case "nearest": {
@@ -1537,32 +1549,43 @@ export function buildApp(): Express {
             b.ride.route_geometry,
           );
           const dd = da - db;
-          return dd !== 0 ? dd : tiebreak(a, b);
+          return dd !== 0 ? dd : idTiebreak(a, b, "asc");
         }
         case "newest": {
           const dt = b.ride.started_at.localeCompare(a.ride.started_at);
-          return dt !== 0 ? dt : tiebreak(a, b);
+          return dt !== 0 ? dt : idTiebreak(a, b, "desc");
         }
         case "oldest": {
           const dt = a.ride.started_at.localeCompare(b.ride.started_at);
-          return dt !== 0 ? dt : tiebreak(a, b);
+          return dt !== 0 ? dt : idTiebreak(a, b, "asc");
         }
         case "longest": {
           const dd = b.ride.distance_km - a.ride.distance_km;
-          return dd !== 0 ? dd : tiebreak(a, b);
+          return dd !== 0 ? dd : idTiebreak(a, b, "desc");
         }
         case "shortest": {
           const dd = a.ride.distance_km - b.ride.distance_km;
-          return dd !== 0 ? dd : tiebreak(a, b);
+          return dd !== 0 ? dd : idTiebreak(a, b, "asc");
         }
         case "highest_quality": {
           const dq = b.ride.avg_road_quality - a.ride.avg_road_quality;
-          return dq !== 0 ? dq : tiebreak(a, b);
+          return dq !== 0 ? dq : idTiebreak(a, b, "desc");
         }
-        // most_popular (default), and curviest fallback.
+        case "curviest": {
+          // NULLS LAST: rides without a curviness reading sort after
+          // those with one regardless of direction.
+          const av = a.ride.avg_curviness;
+          const bv = b.ride.avg_curviness;
+          if (av == null && bv == null) return idTiebreak(a, b, "desc");
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          const dc = bv - av;
+          return dc !== 0 ? dc : idTiebreak(a, b, "desc");
+        }
+        // most_popular (default).
       }
       const dv = b.share.view_count - a.share.view_count;
-      return dv !== 0 ? dv : tiebreak(a, b);
+      return dv !== 0 ? dv : idTiebreak(a, b, "desc");
     });
     const page = all.slice(offset, offset + limit);
     res.json({
@@ -1579,7 +1602,7 @@ export function buildApp(): Express {
           distance_km: ride.distance_km,
           avg_speed: ride.avg_speed,
           avg_road_quality: ride.avg_road_quality,
-          avg_curviness: null,
+          avg_curviness: ride.avg_curviness,
           duration_min: deriveDurationMin(ride),
           view_count: share.view_count,
           route_geometry: ride.route_geometry,
@@ -1855,7 +1878,7 @@ export function buildApp(): Express {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
-      avg_curviness: null,
+      avg_curviness: ride.avg_curviness,
       duration_min: deriveDurationMin(ride),
       view_count: share.view_count,
       embed_click_count: 0,
