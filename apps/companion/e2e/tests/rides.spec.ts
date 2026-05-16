@@ -260,3 +260,184 @@ test.describe("rides read path", () => {
     ).toBeVisible();
   });
 });
+
+test.describe("rides extras", () => {
+  // T32 — Ride stats: `/rides/stats` aggregates all the rider's rides
+  // (via `fetchAllRides` → paginated `/api/v1/rides`) and renders the
+  // Statistics page with totals + a monthly chart. We seed two rides
+  // and assert the heading, the "N rides in view" subtitle, and the
+  // totals grid (specifically Total rides + Total distance) so a
+  // regression in either the aggregation logic or the totals render
+  // fails the test.
+  test("T32: /rides/stats renders totals + chart for the rider's rides", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    await mockApi.seedRide(user, RIDE_OLD);
+    await mockApi.seedRide(user, RIDE_RECENT);
+
+    await page.goto("/rides/stats");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /^Statistics$/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    // Subtitle line tracks rides in view; with two seeded rides we
+    // expect "2 rides in view." Catches both the count and the
+    // pluralisation logic.
+    await expect(page.getByText(/^2 rides in view\.?$/i)).toBeVisible();
+    // Totals grid: at least the Total rides + Total distance cards
+    // surface their labels and a non-empty numeric value. The exact
+    // distance text depends on rounding (`.toFixed(0)`) so we accept
+    // any digit run.
+    const totalRidesCard = page
+      .locator("div")
+      .filter({ hasText: "Total rides" })
+      .first();
+    await expect(totalRidesCard).toContainText("2");
+    await expect(page.getByText(/total distance/i).first()).toBeVisible();
+    // Monthly chart header proves the chart section mounted.
+    await expect(page.getByText(/monthly distance —/i)).toBeVisible();
+  });
+
+  // T33 — Personal road map: `/rides/road-map` overlays the rider's
+  // ridden segments on a map. With the seeded zero-exploration stats
+  // the page mounts in the "no segments yet" empty path but the
+  // chrome (heading, subtitle, "X% explored" badge) still renders.
+  // Asserting those three signals catches deletion-style regressions.
+  test("T33: /rides/road-map renders the personal road-map shell", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    await mockApi.seedRide(user, RIDE_DETAIL);
+
+    await page.goto("/rides/road-map");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /my road map/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/every road you've ridden/i)).toBeVisible();
+    // The exploration badge renders "0% explored" because the mock's
+    // `/api/v1/exploration/stats` returns zeros — proves the fetch
+    // completed (otherwise the badge stays at "…"). The page renders
+    // the same text in both the header badge and a body paragraph,
+    // so `.first()` is fine and stable.
+    await expect(page.getByText(/0% explored/i).first()).toBeVisible();
+  });
+
+  // T34 — Compare rides: `/rides/compare` exposes two <select>
+  // dropdowns. The page auto-picks the two most-recent rides on
+  // mount, then a side-by-side comparison view renders fed by
+  // `/api/v1/rides/:id` for both rows. Seed three rides so we can
+  // explicitly change one of the picks without racing the
+  // auto-default (auto-default would otherwise re-clobber whatever
+  // we typed).
+  test("T34: /rides/compare renders a side-by-side view after picking two rides", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    const a = await mockApi.seedRide(user, RIDE_OLD); // 80 km, March
+    await mockApi.seedRide(user, RIDE_RECENT); // 220 km, April
+    await mockApi.seedRide(user, RIDE_DETAIL); // 175 km, April-20
+
+    await page.goto("/rides/compare");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /compare rides/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Wait for the auto-default to settle (both params in URL) before
+    // overriding ride A. Without this the test races the effect and
+    // can lose our selection.
+    await expect
+      .poll(() => {
+        const u = new URL(page.url());
+        return u.searchParams.get("a") && u.searchParams.get("b");
+      })
+      .toBeTruthy();
+
+    // Now explicitly switch ride A to the older 80 km ride. The
+    // "Ride A" label appears both on the picker `<select>` and the
+    // route map's aria-label, so scope to the combobox role.
+    await page.getByRole("combobox", { name: /ride a/i }).selectOption(a.id);
+
+    // The Stats-diff table renders one row per metric with the value
+    // and unit in sibling DOM nodes, so scope to the table by its
+    // heading. Ride A is our explicit pick (RIDE_OLD = 80.0 km); Ride
+    // B is whatever the auto-default landed on first (the second-
+    // most-recent ride, RIDE_RECENT = 220.0 km). Asserting both
+    // distances catches a regression that loses either pick or only
+    // re-fetches one side after the explicit override.
+    const statsTable = page
+      .locator("section")
+      .filter({ hasText: "Stats diff" })
+      .first();
+    await expect(statsTable).toBeVisible({ timeout: 10_000 });
+    await expect(statsTable).toContainText("80.0");
+    await expect(statsTable).toContainText("220.0");
+    // Sanity check the delta arithmetic surfaced. Catches regressions
+    // in `computeStatRows`'s `b - a` formula.
+    await expect(statsTable).toContainText("+140.0");
+  });
+
+  // T35 — Export ride data: the ride detail page's Export menu offers
+  // CSV + GPX downloads via `downloadRideExport` →
+  // `/api/v1/rides/:id/<format>`. Triggering CSV should fire a
+  // browser download with a `tarmoto-ride-…csv` filename. Playwright's
+  // download event is the cleanest contract assertion — it confirms
+  // the mock returned a streamable response with the right headers.
+  test("T35: clicking Export · CSV downloads the ride file", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    const seeded = await mockApi.seedRide(user, RIDE_DETAIL);
+    await page.goto(`/rides/${seeded.id}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /^Ride on / }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: /export csv/i }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^tarmoto-ride-.*\.csv$/);
+  });
+
+  // T36 — Shared ride: `/rides/shared/<token>` is a public route — no
+  // auth, no app chrome. The mock backend resolves the token to a
+  // seeded ride and returns the shared-ride DTO; the page renders the
+  // rider's name + a route preview heading. Using `browser` (not
+  // `authedPage`) here proves anonymous access works.
+  test("T36: /rides/shared/:token renders a public ride without auth", async ({
+    browser,
+    mockApi,
+    user,
+  }) => {
+    const seeded = await mockApi.seedRide(user, RIDE_DETAIL);
+    const { token } = await mockApi.seedRideShare(seeded.id, {
+      token: "share-tok-detail",
+    });
+
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(`/rides/shared/${token}`);
+
+      // The page heading is `<h1>{rider_name}</h1>` — the mock fills
+      // rider_name with the seeded user's display_name, which is
+      // randomised per-test ("Rider <suffix>"). Assert the prefix
+      // rather than a fixed string.
+      await expect(
+        page.getByRole("heading", { level: 1, name: /^Rider /i }),
+      ).toBeVisible({ timeout: 10_000 });
+      await expect(
+        page.getByRole("heading", { name: /route preview/i }),
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+});

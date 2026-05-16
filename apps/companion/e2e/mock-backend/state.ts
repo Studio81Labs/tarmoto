@@ -221,6 +221,13 @@ export class MockState {
 
   trips = new Map<string, MockTrip>();
   rides = new Map<string, MockRide>();
+  /**
+   * Token → ride-id lookup for `GET /api/v1/rides/shared/:token`. The
+   * shared-ride endpoint is anonymous, so we deliberately store the
+   * mapping separately from the ride row rather than tagging the row
+   * with a token (which would require the row to know about sharing).
+   */
+  rideShares = new Map<string, string>();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
   roadReviews = new Map<string, MockRoadReview[]>();
@@ -271,6 +278,7 @@ export class MockState {
     this.sessionsByRefresh.clear();
     this.trips.clear();
     this.rides.clear();
+    this.rideShares.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();

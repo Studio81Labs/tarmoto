@@ -393,6 +393,21 @@ export function buildApp(): Express {
     res.status(201).json({ id });
   });
 
+  // Stand up a public-share record so an anonymous visit to
+  // `/rides/shared/:token` can resolve to a seeded ride. Token defaults
+  // to a generated one; tests can pin a known token for deterministic
+  // URLs.
+  app.post("/__test__/seed-ride-share", (req, res) => {
+    const { ride_id, token } = req.body ?? {};
+    if (!ride_id || !state.rides.has(ride_id)) {
+      res.status(400).json({ message: "ride-not-found" });
+      return;
+    }
+    const finalToken = String(token ?? randomUUID());
+    state.rideShares.set(finalToken, ride_id);
+    res.status(201).json({ token: finalToken });
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -1424,6 +1439,35 @@ export function buildApp(): Express {
     });
   });
 
+  // Public shared-ride view — anonymous access, no auth middleware.
+  // Must register BEFORE `/api/v1/rides/:rideId` so the "shared"
+  // segment isn't captured as a rideId.
+  app.get("/api/v1/rides/shared/:token", (req, res) => {
+    const rideId = state.rideShares.get(param(req, "token"));
+    const ride = rideId ? state.rides.get(rideId) : null;
+    if (!ride) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    const owner = state.users.get(ride.user_id);
+    res.json({
+      id: ride.id,
+      rider_name: owner?.display_name ?? "Anonymous Rider",
+      ride_type: ride.ride_type,
+      started_at: ride.started_at,
+      ended_at: ride.ended_at,
+      distance_km: ride.distance_km,
+      avg_speed: ride.avg_speed,
+      max_speed: ride.max_speed,
+      avg_road_quality: ride.avg_road_quality,
+      avg_curviness: null,
+      duration_min: deriveDurationMin(ride),
+      view_count: 1,
+      embed_click_count: 0,
+      route_geometry: ride.route_geometry,
+    });
+  });
+
   app.get("/api/v1/rides/:rideId", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const ride = state.rides.get(param(req, "rideId"));
@@ -1433,6 +1477,47 @@ export function buildApp(): Express {
     }
     res.json(serializeRideDetail(ride));
   });
+
+  // Export: `downloadRideExport` calls `/api/v1/rides/:rideId/csv` or
+  // `/api/v1/rides/:rideId/gpx` and consumes the response as a blob.
+  // Return a tiny representative body with the correct Content-Type /
+  // Content-Disposition so the test can confirm a download fired
+  // without having to validate file contents byte-for-byte. Express 5
+  // dropped inline-regex route params (`:format(csv|gpx)`), so the
+  // two formats are registered separately and share a helper.
+  const sendRideExport = (
+    req: AuthedRequest,
+    res: Response,
+    format: "csv" | "gpx",
+  ) => {
+    const session = req.session!;
+    const ride = state.rides.get(param(req, "rideId"));
+    if (!ride || ride.user_id !== session.user_id) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    const filename = `tarmoto-ride-${ride.id}.${format}`;
+    res.setHeader(
+      "Content-Type",
+      format === "csv" ? "text/csv" : "application/gpx+xml",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    if (format === "csv") {
+      res.send(
+        `started_at,distance_km,duration_min\n${ride.started_at},${ride.distance_km},${deriveDurationMin(ride) ?? ""}\n`,
+      );
+    } else {
+      res.send(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1"><trk><name>${ride.name ?? ride.id}</name></trk></gpx>\n`,
+      );
+    }
+  };
+  app.get("/api/v1/rides/:rideId/csv", requireAuth, (req: AuthedRequest, res) =>
+    sendRideExport(req, res, "csv"),
+  );
+  app.get("/api/v1/rides/:rideId/gpx", requireAuth, (req: AuthedRequest, res) =>
+    sendRideExport(req, res, "gpx"),
+  );
 
   // Catch-all for unhandled routes — return 200 with an empty body so a
   // page that fires off a non-critical fetch (e.g. for a feature we

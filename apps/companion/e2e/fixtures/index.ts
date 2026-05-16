@@ -66,6 +66,10 @@ export interface MockApi {
     payload: { title: string; num_days?: number },
   ): Promise<{ id: string; title: string }>;
   seedRide(user: SeededUser, ride?: SeedRideOpts): Promise<{ id: string }>;
+  seedRideShare(
+    rideId: string,
+    opts?: { token?: string },
+  ): Promise<{ token: string }>;
 }
 
 function buildMockApi(api: APIRequestContext): MockApi {
@@ -134,6 +138,18 @@ function buildMockApi(api: APIRequestContext): MockApi {
         throw new Error(`seedRide failed: ${res.status()} ${await res.text()}`);
       }
       return (await res.json()) as { id: string };
+    },
+    async seedRideShare(rideId, opts = {}) {
+      const res = await api.post(
+        `${MOCK_BACKEND_URL}/__test__/seed-ride-share`,
+        { data: { ride_id: rideId, token: opts.token } },
+      );
+      if (!res.ok()) {
+        throw new Error(
+          `seedRideShare failed: ${res.status()} ${await res.text()}`,
+        );
+      }
+      return (await res.json()) as { token: string };
     },
   };
 }

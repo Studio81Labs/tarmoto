@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import CompareRidesPage from "./page";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
@@ -94,6 +95,18 @@ describe("CompareRidesPage analytics", () => {
     vi.clearAllMocks();
     mockSearchParams.value = new URLSearchParams("a=ride-a&b=ride-b");
     vi.mocked(api.GET).mockReset();
+    // Compare page gates fetches on `useAuthStore.accessToken` (the
+    // AuthSync race fix). Seed a session so the options + detail
+    // effects actually run under test.
+    useAuthStore.setState({
+      accessToken: "test-token",
+      isAuthenticated: true,
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Test Rider",
+      },
+    });
   });
 
   it("renders T34 side-by-side maps and stats diff for the selected rides", async () => {

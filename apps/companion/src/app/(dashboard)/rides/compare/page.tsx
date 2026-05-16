@@ -13,6 +13,7 @@ import {
   Minus,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
@@ -45,7 +46,12 @@ function CompareRidesPageInner() {
   const [options, setOptions] = useState<RideOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState<string | null>(null);
+  // Wait for `AuthSync` to populate the bearer token; without this the
+  // initial GET races and 401s, the dropdowns stay disabled, and the
+  // compare flow never gets off the ground.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setOptionsLoading(true);
     api
@@ -68,7 +74,7 @@ function CompareRidesPageInner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
   // Auto-pick sensible defaults (two most recent rides) once options are
   // loaded and no selection is present in the URL. Users can still change
   // either slot via the dropdowns.
@@ -227,7 +233,11 @@ function ComparisonView({
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Both `fetchRide` calls hit the authed detail endpoint — gate the
+  // effect on auth so a comparison opened cold doesn't race AuthSync.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -252,7 +262,7 @@ function ComparisonView({
     return () => {
       cancelled = true;
     };
-  }, [rideAId, rideBId]);
+  }, [rideAId, rideBId, authReady]);
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
     return computeStatRows(rideA, rideB);

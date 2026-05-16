@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
 import { fetchAllRides } from "@/lib/rides-fetch";
+import { useAuthStore } from "@/stores/auth";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -54,7 +55,12 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
+  // Wait for `AuthSync` to populate the access token before paginating
+  // `/api/v1/rides` — otherwise the first request races AuthSync and
+  // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     fetchAllRides()
@@ -71,7 +77,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
   const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
