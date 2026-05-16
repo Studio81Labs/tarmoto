@@ -102,6 +102,7 @@ describe("buildTripClosureRoutes", () => {
       id: "trip-1",
       name: "Dolomites",
       status: "planned",
+      num_days: 2,
       createdAt: "2026-04-01T00:00:00Z",
       updatedAt: "2026-04-02T00:00:00Z",
       parameters: {

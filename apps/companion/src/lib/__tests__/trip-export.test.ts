@@ -19,6 +19,7 @@ function minimalTrip(overrides: Partial<Trip> = {}): Trip {
     id: "t-1",
     name: "Test trip",
     status: "draft",
+    num_days: 1,
     days: [
       {
         dayNumber: 1,

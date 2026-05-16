@@ -102,6 +102,7 @@ export function generateTripOptions(
         name: buildTripName(normalizedParams, preset),
         description: preset.summary,
         status: "draft",
+        num_days: days.length,
         createdAt: now,
         updatedAt: now,
         parameters: cloneTripParameters(normalizedParams),

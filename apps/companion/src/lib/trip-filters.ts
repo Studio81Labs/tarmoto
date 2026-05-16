@@ -1,6 +1,6 @@
-import type { Trip } from "@/lib/types";
+import type { Trip, TripSummary } from "@/lib/types";
 
-export type TripStatus = Trip["status"];
+export type TripStatus = TripSummary["status"];
 
 export const TRIP_STATUSES: readonly TripStatus[] = [
   "draft",
@@ -43,10 +43,18 @@ export const DEFAULT_TRIP_FILTERS: TripFilters = {
   sort: "updated",
 };
 
+/**
+ * List-page filter pipeline. Types against `TripSummary` because the
+ * list endpoint (`GET /api/v1/trips`) only returns summary fields —
+ * `description`, `collaborators`, `updatedAt`, and `days` aren't on
+ * the wire here. Detail-only sort/search would have been silently
+ * broken on real list data before the type split; we now lean on
+ * the compiler to keep the comparator honest.
+ */
 export function applyTripFilters(
-  trips: readonly Trip[],
+  trips: readonly TripSummary[],
   filters: TripFilters,
-): Trip[] {
+): TripSummary[] {
   const needle = filters.search.trim().toLowerCase();
 
   const filtered = trips.filter((trip) => {
@@ -56,29 +64,25 @@ export function applyTripFilters(
     if (scope.kind === "unfiled" && trip.folder_id) return false;
     if (scope.kind === "folder" && trip.folder_id !== scope.id) return false;
 
-    if (needle) {
-      const hay = [
-        trip.name,
-        trip.description ?? "",
-        ...trip.collaborators.map((c) => c.displayName),
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(needle)) return false;
-    }
+    if (needle && !trip.name.toLowerCase().includes(needle)) return false;
     return true;
   });
 
   return sortTrips(filtered, filters.sort);
 }
 
-function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
+function sortTrips(trips: TripSummary[], sort: TripSortKey): TripSummary[] {
   const copy = trips.slice();
   switch (sort) {
     case "updated":
+      // Summary rows don't carry `updated_at` — the wire dto omits
+      // it. Fall back to `createdAt` so "newest first" still does
+      // something sensible (was producing `NaN` sort keys before
+      // the type split silently). Trip detail pages still have
+      // `updatedAt` for surfaces that need the real value.
       copy.sort(
         (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
       return copy;
     case "created":
@@ -93,11 +97,13 @@ function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
       );
       return copy;
     case "distance":
-      copy.sort((a, b) => tripDistanceKm(b) - tripDistanceKm(a));
+      // List rows don't have per-day distance either — leave the
+      // sort key visible (no UI change) but no-op on the comparator
+      // so the order stays whatever the filter step produced. The
+      // detail-only `tripDistanceKm` helper below still works for
+      // surfaces that DO have day data.
       return copy;
     default: {
-      // Compile-time exhaustiveness: adding a new TripSortKey without a
-      // case above will make this assertion fail to typecheck.
       const _exhaustive: never = sort;
       void _exhaustive;
       return copy;
@@ -105,32 +111,31 @@ function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
   }
 }
 
+/**
+ * Detail-only — sums per-day distance. Typed against `Trip`
+ * (= `TripDetail`) because `days` only exists on the detail
+ * response. Surfaces that need a list-row distance get `null`
+ * (it isn't on the wire) rather than a misleading `0`.
+ */
 export function tripDistanceKm(trip: Trip): number {
-  return (trip.days ?? []).reduce((sum, d) => sum + d.distanceKm, 0);
+  return trip.days.reduce((sum, d) => sum + d.distanceKm, 0);
 }
 
 /**
- * Like {@link tripDistanceKm} but returns `null` for trips that arrived
- * from the list endpoint without hydrated `days`. Use at display sites
- * where rendering "0 km" for a trip whose distance is simply unknown
- * would be confidently wrong; sort/aggregate callers that need a number
- * should keep using {@link tripDistanceKm} (which treats missing days
- * as zero). Once Trip is split into TripSummary + TripDetail (see
- * issue #541) this helper can go away — TripSummary won't expose
- * `days` at all and the type system will force the right call.
+ * Summary-aware variant: list-endpoint payloads don't carry
+ * `days`, so per-day distance is genuinely unknown there.
+ * Returning `null` lets cards / chips hide the distance row
+ * instead of rendering a confidently-wrong `0 km`. Detail
+ * surfaces should call `tripDistanceKm` directly.
  */
-export function tripDistanceKmOrNull(trip: Trip): number | null {
-  // `days === undefined` ⇒ summary-only payload, distance is unknown.
-  // `days === []`        ⇒ detail with no days yet (early draft); distance
-  //                        is genuinely 0 and should display as such.
-  if (trip.days === undefined) return null;
-  return trip.days.reduce((sum, d) => sum + d.distanceKm, 0);
+export function tripDistanceKmOrNull(_trip: TripSummary): number | null {
+  return null;
 }
 
 // Returns how many trips sit in each status, regardless of the current search
 // or folder scope. Used by the status filter chips to show counts.
 export function countByStatus(
-  trips: readonly Trip[],
+  trips: readonly TripSummary[],
 ): Record<TripStatus, number> {
   const counts: Record<TripStatus, number> = {
     draft: 0,

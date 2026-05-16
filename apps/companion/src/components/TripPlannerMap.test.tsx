@@ -130,6 +130,7 @@ function trip(): Trip {
     id: "trip-1",
     name: "Planner test trip",
     status: "draft",
+    num_days: 1,
     createdAt: "2026-04-01T09:00:00Z",
     updatedAt: "2026-04-14T09:00:00Z",
     parameters: {

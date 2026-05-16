@@ -8,6 +8,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
     name: "Alps Loop",
     description: "Five days through the Alps",
     status: "planned",
+    num_days: 1,
     days: [
       {
         dayNumber: 1,

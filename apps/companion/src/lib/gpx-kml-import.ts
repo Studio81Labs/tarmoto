@@ -86,6 +86,7 @@ export function importedRouteToTrip(route: ImportedRoute): Trip {
     description: `Imported from ${route.sourceFormat.toUpperCase()} · ${totalDistanceKm.toFixed(1)} km`,
     importSourceFormat: route.sourceFormat,
     status: "draft",
+    num_days: 1,
     days: [
       {
         dayNumber: 1,

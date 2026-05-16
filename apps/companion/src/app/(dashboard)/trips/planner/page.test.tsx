@@ -11,7 +11,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
-import type { Trip } from "@/lib/types";
+import type { Trip, TripSummary } from "@/lib/types";
 
 const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -112,6 +112,7 @@ function buildTrip(name: string): Trip {
     id: name.toLowerCase().replace(/\s+/g, "-"),
     name,
     status: "draft",
+    num_days: 3,
     createdAt: "2026-04-23T09:00:00Z",
     updatedAt: "2026-04-23T09:00:00Z",
     collaborators: [],
@@ -271,7 +272,7 @@ function buildGenerationResponse(selected = "best-fit") {
 }
 
 type TripStoreSnapshot = {
-  trips: Trip[];
+  trips: TripSummary[];
   activeTrip: Trip | null;
   isGenerating: boolean;
   canUndo: boolean;
@@ -280,7 +281,7 @@ type TripStoreSnapshot = {
   hoveredSegmentId: string | null;
   undoStack: Array<Trip | null>;
   redoStack: Array<Trip | null>;
-  setTrips: (trips: Trip[]) => void;
+  setTrips: (trips: TripSummary[]) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
   focusSegment: (segmentId: string | null) => void;

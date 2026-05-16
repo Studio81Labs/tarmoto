@@ -86,53 +86,82 @@ export interface Hazard {
 }
 
 // ── Trips ──
+//
+// The backend exposes two distinct shapes:
+// - `GET /api/v1/trips` (list) → `TripSummaryDto[]` — no `days`,
+//   no `parameters`, no `collaborators`; carries `num_days`,
+//   `member_count`, etc.
+// - `GET /api/v1/trips/:id` (detail) → `TripDetailDto extends
+//   TripSummaryDto` — full shape with day-by-day breakdown.
+//
+// Modelling them as separate interfaces lets the compiler reject
+// list-endpoint consumers that touch detail-only fields. Before
+// this split, the merged `Trip` type lied — `days` was declared
+// required but absent at runtime on list responses, surfacing as
+// crashes (see #541 / the `tripTotalKm` regression).
+//
+// `Trip` stays as a transitional alias for `TripDetail` so existing
+// detail-flow imports keep working; new code should import
+// `TripSummary` or `TripDetail` explicitly.
 
-export interface Trip {
+/** Fields both endpoints return — list + detail. */
+export interface TripSummary {
   id: string;
   name: string;
-  description?: string;
-  importSourceFormat?: "gpx" | "kml";
   status: "draft" | "planned" | "active" | "completed";
   /**
-   * Day-by-day breakdown. Hydrated by `tripFromDetail` for detail
-   * responses. **Note:** the backend's list endpoint
-   * (`GET /api/v1/trips`) returns `TripSummaryDto[]` which carries
-   * `num_days` instead and does not include this field at runtime.
-   * Until this interface is split into `TripSummary` + `TripDetail`,
-   * list-endpoint consumers must defensively read `trip.num_days`
-   * (or guard with `trip.days ?? []`) and may not access day-level
-   * fields like `distanceKm` / `avgQuality`.
-   */
-  days: TripDay[];
-  /**
    * Number of days on the trip, surfaced on the wire as `num_days`.
-   * Present on summary responses; absent on detail responses
-   * (where `days.length` is authoritative). Until the type split
-   * lands, this is the only safe day-count source on list-endpoint
-   * data.
+   * Authoritative on summary responses (list endpoint); on detail
+   * responses `TripDetail.days.length` is the real count, but the
+   * field is still populated so summary→detail derivations stay
+   * lossless.
    */
-  num_days?: number;
-  parameters: TripParameters;
-  collaborators: TripCollaborator[];
+  num_days: number;
+  /**
+   * Number of members on the trip, including the owner.
+   * Backend surfaces this as `member_count` on summary responses.
+   */
+  member_count?: number;
+  region?: string | null;
   /**
    * US-37 — owner uuid surfaced on the wire for the trips list. Used
    * by the duplicate flow to decide whether to carry the source's
    * `folder_id` forward (folders are private per-user). Optional
    * because the planner-side `tripFromDetail` adapter doesn't
-   * populate it from the detail response — duplicates from the
-   * detail screen would have to fall back to an explicit ownership
-   * check there.
+   * always populate it from the detail response.
    */
   owner_id?: string;
   /**
-   * US-37 — backend-persisted folder uuid. Null/undefined for unfiled
-   * trips. Snake_case to mirror the wire format so consumers can read
-   * the API response without an adapter pass.
+   * US-37 — backend-persisted folder uuid. Null/undefined for
+   * unfiled trips. Snake_case to mirror the wire format so
+   * consumers can read the API response without an adapter pass.
    */
   folder_id?: string | null;
   createdAt: string;
+}
+
+/** Hydrated detail — extends summary with day-level + planner data. */
+export interface TripDetail extends TripSummary {
+  description?: string;
+  importSourceFormat?: "gpx" | "kml";
+  /**
+   * Day-by-day breakdown. Hydrated by `tripFromDetail` for detail
+   * responses. Absent on summary rows — type-checked at compile
+   * time now that `TripSummary` doesn't carry `days`.
+   */
+  days: TripDay[];
+  parameters: TripParameters;
+  collaborators: TripCollaborator[];
   updatedAt: string;
 }
+
+/**
+ * Transitional alias kept so detail-flow imports
+ * (`import type { Trip } from "@/lib/types"`) keep working without
+ * a sweep. New code should import `TripDetail` (or `TripSummary`
+ * on list surfaces) directly.
+ */
+export type Trip = TripDetail;
 
 export interface TripDay {
   dayNumber: number;

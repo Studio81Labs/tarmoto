@@ -119,6 +119,11 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
     status: VALID_TRIP_STATUSES.has(detail.status as Trip["status"])
       ? (detail.status as Trip["status"])
       : "draft",
+    // `num_days` is required on `TripSummary` (and inherited by
+    // `TripDetail`). Backend's `TripDetailDto` carries the field
+    // directly; fall back to `days.length` if the response shape
+    // ever lands here without it.
+    num_days: detail.num_days ?? days.length,
     days,
     parameters: parametersFromDetail(detail),
     collaborators: (detail.members ?? []).map((m) => ({

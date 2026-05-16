@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { tripsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
-import type { Trip } from "@/lib/types";
+import type { TripSummary } from "@/lib/types";
 
 /**
  * Fetches the signed-in user's trips on mount and whenever the `userId`
@@ -23,10 +23,10 @@ import type { Trip } from "@/lib/types";
  * migrate it in a follow-up PR to keep this change scoped to collections.
  */
 export function useUserTrips(): {
-  trips: Trip[];
+  trips: TripSummary[];
   loading: boolean;
   error: boolean;
-  tripById: Map<string, Trip>;
+  tripById: Map<string, TripSummary>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const trips = useTripStore((s) => s.trips);
@@ -49,7 +49,12 @@ export function useUserTrips(): {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        const body = data as unknown as { data?: Trip[] } | Trip[];
+        // The list endpoint is documented to return either a raw
+        // array or a `{ data }` envelope depending on backend
+        // version. Both branches yield `TripSummary[]` directly —
+        // no `as unknown as` shape coercion now that the types
+        // match the wire.
+        const body = data as { data?: TripSummary[] } | TripSummary[];
         setTrips(Array.isArray(body) ? body : (body?.data ?? []));
       })
       .catch(() => {
@@ -69,7 +74,7 @@ export function useUserTrips(): {
   }, [setTrips, userId]);
 
   const tripById = useMemo(() => {
-    const map = new Map<string, Trip>();
+    const map = new Map<string, TripSummary>();
     for (const t of trips) map.set(t.id, t);
     return map;
   }, [trips]);

@@ -32,6 +32,7 @@ export function createPlannerDraftTrip(
     id: `planner-${slugFromIso(nowIso)}`,
     name: "New Trip",
     status: "draft",
+    num_days: 1,
     createdAt: nowIso,
     updatedAt: nowIso,
     parameters: { ...parameters },

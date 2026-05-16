@@ -10,6 +10,7 @@ const validTrip: Trip = {
   id: "trip-1",
   name: "Pyrenees Loop",
   status: "planned",
+  num_days: 2,
   parameters: {
     days: 2,
     dailyKmTarget: 250,
