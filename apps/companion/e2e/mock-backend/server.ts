@@ -1423,7 +1423,13 @@ export function buildApp(): Express {
       state.dataExports.set(id, view);
       const { user_id: _u, ...client } = view;
       void _u;
-      res.json(client);
+      // OpenAPI contract returns 202 (`Accepted`) — the typed
+      // client `openApiData<DataExportRequestView>` reads that
+      // exact response code. 200 here would surface as an error
+      // branch on the typed-fetch wrapper, trapping the settings
+      // page on "Could not start export" even when the body is
+      // a valid ready view.
+      res.status(202).json(client);
     },
   );
 
@@ -2063,6 +2069,80 @@ export function buildApp(): Express {
   // the `PublicProfile` wire shape; follow + badges + shared-rides
   // are auth-only sub-resources the page mounts alongside the
   // profile.
+
+  // `GET /users/me` returns the rich `UserResponseDto` shape that
+  // backs `/settings` (profile name + avatar + bio + home_region).
+  // Production also serves this via auth login/register/refresh, but
+  // the mock keeps the shorter tokenResponse on those flows; this is
+  // the canonical place that surfaces `bio` + `home_region` for
+  // settings rehydration.
+  app.get("/api/v1/users/me", requireAuth, (req: AuthedRequest, res) => {
+    const user = state.users.get(req.session!.user_id)!;
+    res.json({
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      phone: user.phone,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+      home_region: user.home_region,
+      home_location: null,
+      work_location: null,
+      preferences: {},
+      created_at: user.created_at,
+    });
+  });
+
+  // `PATCH /users/me` mutates the user's profile fields. Production
+  // accepts `display_name` / `avatar_url` / `bio` / `home_region` /
+  // `phone` and validates display_name min-length on save. The mock
+  // mirrors the validation that the settings page also enforces
+  // client-side so an e2e that submits an empty name sees the same
+  // 400 the real backend serves.
+  app.patch("/api/v1/users/me", requireAuth, (req: AuthedRequest, res) => {
+    const user = state.users.get(req.session!.user_id)!;
+    const body = req.body ?? {};
+    if (
+      body.display_name !== undefined &&
+      (typeof body.display_name !== "string" ||
+        body.display_name.trim().length === 0)
+    ) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "display_name must be a non-empty string",
+      });
+      return;
+    }
+    if (body.display_name !== undefined) {
+      user.display_name = body.display_name;
+    }
+    if (body.avatar_url !== undefined) {
+      user.avatar_url = body.avatar_url;
+    }
+    if (body.bio !== undefined) {
+      user.bio = body.bio;
+    }
+    if (body.home_region !== undefined) {
+      user.home_region = body.home_region;
+    }
+    if (body.phone !== undefined) {
+      user.phone = body.phone;
+    }
+    res.json({
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      phone: user.phone,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+      home_region: user.home_region,
+      home_location: null,
+      work_location: null,
+      preferences: {},
+      created_at: user.created_at,
+    });
+  });
 
   app.get(
     "/api/v1/users/:userId/profile",
