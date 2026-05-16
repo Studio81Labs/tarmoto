@@ -104,29 +104,41 @@ test.describe("account & settings", () => {
     });
     await expect(setActiveBtn).toBeVisible();
 
-    // Wait for the response (not just the outbound request) — the
-    // bikes page flips the active flag optimistically before
-    // `accountApi.updateBike` resolves, so asserting on the
-    // re-rendered UI before the response would let a server-side
-    // failure (404/500) pass against the temporary snapshot the
-    // catch handler is about to roll back.
-    const [patchRes] = await Promise.all([
+    // Wait for both the PATCH response and the follow-up bikes
+    // refresh:
+    // - The bikes page flips active optimistically before the
+    //   PATCH resolves, so a server failure (404/500) would let
+    //   the post-click UI assertions pass against the temporary
+    //   snapshot the catch handler is about to roll back.
+    // - After the PATCH, `handleSetActive` calls `refresh()`
+    //   which fires `GET /account/bikes`. If that 401s/500s or
+    //   returns stale data, the page flips to the load-error
+    //   state AFTER our optimistic assertions land — so the test
+    //   would pass against a UI that's seconds away from showing
+    //   an error.
+    const [patchRes, refreshRes] = await Promise.all([
       page.waitForResponse(
         (r) =>
           /\/account\/bikes\/[0-9a-f-]+/.test(r.url()) &&
           r.request().method() === "PATCH",
         { timeout: 10_000 },
       ),
+      page.waitForResponse(
+        (r) =>
+          /\/account\/bikes$/.test(r.url()) && r.request().method() === "GET",
+        { timeout: 10_000 },
+      ),
       setActiveBtn.click(),
     ]);
     expect(patchRes.ok()).toBe(true);
+    expect(refreshRes.ok()).toBe(true);
     const body = JSON.parse(patchRes.request().postData() ?? "{}");
     expect(body.is_active).toBe(true);
 
-    // After the PATCH resolves the list re-renders: Honda's "Set
-    // active" button disappears and Yamaha's appears. Asserting
-    // both prevents a false-pass on a UI that flips one direction
-    // without un-flipping the other.
+    // After both the PATCH and the post-PATCH refresh resolve,
+    // the list re-renders with the server-confirmed state.
+    // Asserting both buttons prevents a false-pass on a UI that
+    // flips one direction without un-flipping the other.
     await expect(
       page.getByRole("button", { name: /set Honda Africa Twin as active/i }),
     ).toBeHidden({ timeout: 5_000 });
