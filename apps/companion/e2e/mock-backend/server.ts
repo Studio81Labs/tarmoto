@@ -329,6 +329,70 @@ export function buildApp(): Express {
     res.json({ ok: true });
   });
 
+  app.post("/__test__/seed-ride", (req, res) => {
+    const { user_id, ride } = req.body ?? {};
+    if (!user_id || !ride) {
+      res.status(400).json({ message: "missing-fields" });
+      return;
+    }
+    const id = ride.id ?? randomUUID();
+    const startedAt = ride.started_at ?? new Date().toISOString();
+    // Production derives `duration_min` from `ended_at - started_at`,
+    // so the source of truth is the timestamps. The seed API still
+    // accepts `duration_min` as an ergonomic hint — use it to fix
+    // `ended_at` when callers didn't supply one — but the row no
+    // longer carries a separate stored duration that could drift.
+    const endedAt: string =
+      ride.ended_at ??
+      new Date(
+        new Date(startedAt).getTime() +
+          Number(ride.duration_min ?? 60) * 60 * 1000,
+      ).toISOString();
+    const seeded: import("./state").MockRide = {
+      id,
+      user_id,
+      name: ride.name ?? null,
+      ride_type: ride.ride_type ?? "leisure",
+      status: ride.status ?? "completed",
+      started_at: startedAt,
+      ended_at: endedAt,
+      distance_km: Number(ride.distance_km ?? 100),
+      avg_speed: Number(ride.avg_speed ?? 80),
+      max_speed: Number(ride.max_speed ?? 130),
+      avg_road_quality: Number(ride.avg_road_quality ?? 4),
+      elevation_gain: Number(ride.elevation_gain ?? 500),
+      elevation_loss: Number(ride.elevation_loss ?? 500),
+      curve_count: Number(ride.curve_count ?? 80),
+      max_lean_angle: Number(ride.max_lean_angle ?? 35),
+      fuel_estimate_l: Number(ride.fuel_estimate_l ?? 5),
+      route_geometry: Array.isArray(ride.route_geometry)
+        ? ride.route_geometry
+        : [
+            { lat: 46.47, lng: 10.37 },
+            { lat: 46.55, lng: 10.45 },
+          ],
+      segments: Array.isArray(ride.segments)
+        ? ride.segments.map(
+            (s: {
+              road_name?: string | null;
+              quality_reading?: number | null;
+              speed_avg?: number | null;
+              speed_max?: number | null;
+              lean_angle_max?: number | null;
+            }) => ({
+              road_name: s.road_name ?? null,
+              quality_reading: s.quality_reading ?? null,
+              speed_avg: s.speed_avg ?? null,
+              speed_max: s.speed_max ?? null,
+              lean_angle_max: s.lean_angle_max ?? null,
+            }),
+          )
+        : [],
+    };
+    state.rides.set(id, seeded);
+    res.status(201).json({ id });
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -1295,6 +1359,81 @@ export function buildApp(): Express {
     res.json([]);
   });
 
+  // ── Rides ────────────────────────────────────────────────────────
+  // Three endpoints back the rides surface: list (paginated + filtered),
+  // tracks (geometry only, same filters minus sort/page — used for the
+  // map overlay), and detail. All three filter by `user_id === session`
+  // so a seeded ride only shows up for the rider who owns it.
+  app.get("/api/v1/rides", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const filtered = filterRides(req, session.user_id);
+    const sort = String(req.query.sort ?? "started_at");
+    const order = String(req.query.order ?? "desc") === "asc" ? 1 : -1;
+    // `duration_min` is a derived value — read it through the same
+    // `deriveDurationMin` helper the serializers use so sort + display
+    // stay consistent. Other fields read straight off the row.
+    const valueFor = (ride: import("./state").MockRide): unknown => {
+      if (sort === "duration_min") return deriveDurationMin(ride);
+      return (ride as unknown as Record<string, unknown>)[sort];
+    };
+    const sorted = filtered.slice().sort((a, b) => {
+      const va = valueFor(a);
+      const vb = valueFor(b);
+      if (typeof va === "number" && typeof vb === "number") {
+        return (va - vb) * order;
+      }
+      return String(va ?? "").localeCompare(String(vb ?? "")) * order;
+    });
+    const limit = Math.max(0, Number(req.query.limit ?? 20));
+    const offset = Math.max(0, Number(req.query.offset ?? 0));
+    const page = sorted.slice(offset, offset + limit);
+    res.json({
+      rides: page.map(serializeRideSummary),
+      total: sorted.length,
+    });
+  });
+
+  app.get("/api/v1/rides/tracks", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    // `RidesService.getTracks` filters `route_geom IS NOT NULL` first,
+    // then orders by `started_at DESC`, then caps at 500. The mock has
+    // to apply the same order so a test seeding many no-GPS rides plus
+    // one older route-bearing ride doesn't see the route get dropped
+    // by the cap (which would falsely flip `truncated` to true while
+    // production happily returns the route).
+    const MAX = 500;
+    const filtered = filterRides(req, session.user_id).filter(
+      (ride) => ride.route_geometry.length >= 2,
+    );
+    const ordered = filtered
+      .slice()
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    const truncated = ordered.length > MAX;
+    const visible = ordered.slice(0, MAX);
+    res.json({
+      tracks: visible.map((ride) => ({
+        id: ride.id,
+        geometry: {
+          type: "LineString" as const,
+          coordinates: ride.route_geometry.map(
+            (p) => [p.lng, p.lat] as [number, number],
+          ),
+        },
+      })),
+      truncated,
+    });
+  });
+
+  app.get("/api/v1/rides/:rideId", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const ride = state.rides.get(param(req, "rideId"));
+    if (!ride || ride.user_id !== session.user_id) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json(serializeRideDetail(ride));
+  });
+
   // Catch-all for unhandled routes — return 200 with an empty body so a
   // page that fires off a non-critical fetch (e.g. for a feature we
   // haven't mocked) doesn't block the test on a JSON parse error.
@@ -1522,4 +1661,168 @@ function pushActivity(
     payload,
     created_at: new Date().toISOString(),
   });
+}
+
+type LatLng = { lat: number; lng: number };
+
+// Distance in km from point `p` to the nearest point on segment AB,
+// where "segment" means the geodesic between two WGS84 vertices.
+// `ST_DWithin` on a LineString geography measures perpendicular
+// distance to the line itself, not its vertices — a test point
+// near the middle of a long leg can be inside `radius_m` of the line
+// while being far from every vertex. We approximate that with a
+// local equirectangular projection at the segment's mean latitude,
+// which is faithful to a few centimetres at the kilometre scale
+// these tests care about and avoids dragging in a full geography
+// library.
+function kmToSegment(p: LatLng, a: LatLng, b: LatLng): number {
+  const toRad = (n: number) => (n * Math.PI) / 180;
+  const meanLat = (a.lat + b.lat) / 2;
+  const kmPerDegLat = 111;
+  const kmPerDegLng = 111 * Math.cos(toRad(meanLat));
+  const ax = a.lng * kmPerDegLng;
+  const ay = a.lat * kmPerDegLat;
+  const bx = b.lng * kmPerDegLng;
+  const by = b.lat * kmPerDegLat;
+  const px = p.lng * kmPerDegLng;
+  const py = p.lat * kmPerDegLat;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  // Degenerate "segment" of zero length collapses to point-to-point.
+  let t = 0;
+  if (lenSq > 0) {
+    t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+// Min distance from `p` to the polyline. Mirrors `ST_Distance(
+// route_geom::geography, ST_MakePoint(...))` for the
+// `ST_DWithin(...) <= radius_m` predicate.
+function kmToPolyline(p: LatLng, polyline: readonly LatLng[]): number {
+  if (polyline.length === 0) return Infinity;
+  if (polyline.length === 1) return kmToSegment(p, polyline[0]!, polyline[0]!);
+  let min = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = kmToSegment(p, polyline[i]!, polyline[i + 1]!);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+function filterRides(
+  req: Request,
+  userId: string,
+): import("./state").MockRide[] {
+  const q = req.query;
+  const startedFrom = q.started_from ? String(q.started_from) : null;
+  const startedTo = q.started_to ? String(q.started_to) : null;
+  const minDistance =
+    q.min_distance_km != null ? Number(q.min_distance_km) : null;
+  const maxDistance =
+    q.max_distance_km != null ? Number(q.max_distance_km) : null;
+  const minQuality = q.min_quality != null ? Number(q.min_quality) : null;
+  const maxQuality = q.max_quality != null ? Number(q.max_quality) : null;
+  const search = q.q ? String(q.q).toLowerCase() : null;
+  const type = q.type ? String(q.type) : null;
+  // `RidesService.applyRidesFilters` runs `ST_DWithin(route_geom, :pt,
+  // :radius_m)` when all three params are present; the companion's
+  // `useRidesQuery::toListParams` only ships the trio together, so
+  // require the full set here too. Partial params silently drop the
+  // proximity filter (matches production's all-or-nothing behaviour).
+  const nearLat = q.near_lat != null ? Number(q.near_lat) : null;
+  const nearLng = q.near_lng != null ? Number(q.near_lng) : null;
+  const nearKm = q.near_km != null ? Number(q.near_km) : null;
+  const nearActive =
+    nearLat != null &&
+    nearLng != null &&
+    nearKm != null &&
+    Number.isFinite(nearLat) &&
+    Number.isFinite(nearLng) &&
+    Number.isFinite(nearKm);
+  return [...state.rides.values()].filter((ride) => {
+    if (ride.user_id !== userId) return false;
+    if (startedFrom && ride.started_at < startedFrom) return false;
+    // Real backend treats `started_to` as inclusive end-of-day; mirror by
+    // letting `YYYY-MM-DD` compare loosely against the ISO timestamp.
+    if (startedTo && ride.started_at.slice(0, 10) > startedTo) return false;
+    if (minDistance != null && ride.distance_km < minDistance) return false;
+    if (maxDistance != null && ride.distance_km > maxDistance) return false;
+    if (minQuality != null && ride.avg_road_quality < minQuality) return false;
+    if (maxQuality != null && ride.avg_road_quality > maxQuality) return false;
+    // Production filter only searches the user-set `name` column
+    // (`RidesService.applyRidesFilters` uses `ride.name ILIKE :q`), and
+    // the UI labels this field "Search name". Matching `ride_type` here
+    // too would let an e2e search for a built-in type (e.g. "commute")
+    // and pass against the mock while a real backend would return zero
+    // rows — keep the mock honest.
+    if (search && !(ride.name ?? "").toLowerCase().includes(search)) {
+      return false;
+    }
+    if (type && ride.ride_type !== type) return false;
+    if (nearActive) {
+      // `ST_DWithin` against a NULL geometry is false; rides with no
+      // route geometry can never satisfy a proximity filter.
+      if (ride.route_geometry.length === 0) return false;
+      const center = { lat: nearLat, lng: nearLng };
+      if (kmToPolyline(center, ride.route_geometry) > nearKm) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Production derives `duration_min` from `ended_at - started_at` (the
+ * rides table has no stored duration column). Mirror that here so a
+ * test seeding inconsistent timestamps + duration can't get a green
+ * assertion against a value the real backend would never produce.
+ * Returns null when the ride is still active (ended_at unset).
+ */
+function deriveDurationMin(ride: import("./state").MockRide): number | null {
+  if (!ride.ended_at) return null;
+  const diffMs =
+    new Date(ride.ended_at).getTime() - new Date(ride.started_at).getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) return null;
+  return Math.round(diffMs / 60_000);
+}
+
+function serializeRideSummary(ride: import("./state").MockRide) {
+  return {
+    id: ride.id,
+    name: ride.name,
+    started_at: ride.started_at,
+    ended_at: ride.ended_at,
+    ride_type: ride.ride_type,
+    status: ride.status,
+    distance_km: ride.distance_km,
+    avg_speed: ride.avg_speed,
+    avg_road_quality: ride.avg_road_quality,
+    duration_min: deriveDurationMin(ride),
+  };
+}
+
+function serializeRideDetail(ride: import("./state").MockRide) {
+  return {
+    id: ride.id,
+    status: ride.status,
+    ride_type: ride.ride_type,
+    started_at: ride.started_at,
+    ended_at: ride.ended_at,
+    distance_km: ride.distance_km,
+    duration_min: deriveDurationMin(ride),
+    avg_speed: ride.avg_speed,
+    max_speed: ride.max_speed,
+    avg_road_quality: ride.avg_road_quality,
+    elevation_gain: ride.elevation_gain,
+    elevation_loss: ride.elevation_loss,
+    curve_count: ride.curve_count,
+    max_lean_angle: ride.max_lean_angle,
+    fuel_estimate_l: ride.fuel_estimate_l,
+    route_geometry: ride.route_geometry,
+    segments: ride.segments,
+  };
 }
