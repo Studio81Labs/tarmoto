@@ -69,7 +69,7 @@ export interface MockApi {
   seedRide(user: SeededUser, ride?: SeedRideOpts): Promise<{ id: string }>;
   seedRideShare(
     rideId: string,
-    opts?: { token?: string },
+    opts?: { token?: string; is_public?: boolean },
   ): Promise<{ token: string }>;
   seedCollection(
     user: SeededUser,
@@ -153,7 +153,13 @@ function buildMockApi(api: APIRequestContext): MockApi {
     async seedRideShare(rideId, opts = {}) {
       const res = await api.post(
         `${MOCK_BACKEND_URL}/__test__/seed-ride-share`,
-        { data: { ride_id: rideId, token: opts.token } },
+        {
+          data: {
+            ride_id: rideId,
+            token: opts.token,
+            is_public: opts.is_public,
+          },
+        },
       );
       if (!res.ok()) {
         throw new Error(
