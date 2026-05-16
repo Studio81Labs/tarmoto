@@ -1554,18 +1554,13 @@ export function buildApp(): Express {
           number,
           number,
         ];
-        // Densify the closure line so segments that cross the
-        // bbox while both endpoints sit outside still match —
-        // mirrors `ST_Intersects(c.geom, envelope)` more faithfully
-        // than a pure-vertex check.
+        // Exact segment-vs-rectangle intersection so a closure
+        // whose vertices are both outside the bbox but whose
+        // segment crosses through still matches — mirrors
+        // `ST_Intersects(c.geom, envelope)` without sampling
+        // tolerance.
         rows = rows.filter((c) =>
-          densifyPolyline(c.geometry).some(
-            (pt) =>
-              pt.lng >= minLng &&
-              pt.lng <= maxLng &&
-              pt.lat >= minLat &&
-              pt.lat <= maxLat,
-          ),
+          polylineIntersectsBbox(c.geometry, minLng, minLat, maxLng, maxLat),
         );
       }
     }
@@ -1606,20 +1601,13 @@ export function buildApp(): Express {
     const bufferM =
       typeof req.body?.buffer_m === "number" ? req.body.buffer_m : 100;
     const bufferKm = bufferM / 1000;
-    // Production `ClosuresService.checkRoute` returns closures
-    // whose geometry comes within `buffer_m` of the route polyline
-    // (`ST_DWithin(c.geom, route.geom, buffer_m)`). Approximate
-    // that by densifying the closure line (so segments running
-    // parallel-but-close to the route still match between their
-    // vertices) and checking each sampled point's distance to the
-    // route polyline. Without this, a long closure that crosses
-    // the route between its vertices would be dropped here while
-    // production reports it.
+    // Exact polyline-polyline min distance, so segments running
+    // parallel-but-close to the route, or crossing through the
+    // route between their vertices, still match — mirrors
+    // `ST_DWithin(c.geom, route.geom, buffer_m)` without any
+    // sampling tolerance.
     const matched = filterActiveOn(state.closures.values(), activeOn).filter(
-      (c) =>
-        densifyPolyline(c.geometry).some(
-          (pt) => kmToPolyline(pt, route) <= bufferKm,
-        ),
+      (c) => polylinesMinKm(c.geometry, route) <= bufferKm,
     );
     // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
     // severity counts so consumers reading the count fields hit
@@ -2929,33 +2917,116 @@ function kmToSegment(p: LatLng, a: LatLng, b: LatLng): number {
   return Math.hypot(px - cx, py - cy);
 }
 
-// Densify a polyline by sampling `samplesPerSegment` interior
-// points along each segment. Lets bbox / proximity checks treat
-// each segment as a continuous line rather than just its two
-// vertices — without this, a closure whose midpoint is inside the
-// bbox (but both vertices are outside) would be dropped by a
-// pure-vertex check while production's `ST_Intersects` still
-// returns it. Five samples per segment keeps the result faithful
-// to a few hundred metres at the scale these mocks operate on.
-function densifyPolyline(
+// Project lat/lng to local equirectangular kilometre coordinates
+// at the supplied mean latitude. Shared by the segment helpers
+// below so segment-vs-segment / segment-vs-rectangle math stays
+// in a flat plane.
+function toKm(p: LatLng, meanLat: number): { x: number; y: number } {
+  const kmPerDegLat = 111;
+  const kmPerDegLng = 111 * Math.cos((meanLat * Math.PI) / 180);
+  return { x: p.lng * kmPerDegLng, y: p.lat * kmPerDegLat };
+}
+
+// Standard 2D segment-segment intersection. Returns true when AB
+// and CD touch or cross. Operates in the local projection — the
+// approximation is faithful to a few centimetres at the kilometre
+// scale these mocks operate on.
+function segmentsCross(a: LatLng, b: LatLng, c: LatLng, d: LatLng): boolean {
+  const meanLat = (a.lat + b.lat + c.lat + d.lat) / 4;
+  const A = toKm(a, meanLat);
+  const B = toKm(b, meanLat);
+  const C = toKm(c, meanLat);
+  const D = toKm(d, meanLat);
+  const denom = (B.x - A.x) * (D.y - C.y) - (B.y - A.y) * (D.x - C.x);
+  if (denom === 0) return false; // parallel or collinear (treat as no-cross)
+  const t = ((C.x - A.x) * (D.y - C.y) - (C.y - A.y) * (D.x - C.x)) / denom;
+  const s = ((C.x - A.x) * (B.y - A.y) - (C.y - A.y) * (B.x - A.x)) / denom;
+  return t >= 0 && t <= 1 && s >= 0 && s <= 1;
+}
+
+// Min km distance between two line segments. Handles the crossing
+// case (distance is 0) and the disjoint case via the four
+// endpoint-to-segment distances — exact for any non-degenerate
+// pair, no sampling required.
+function kmSegmentToSegment(
+  a: LatLng,
+  b: LatLng,
+  c: LatLng,
+  d: LatLng,
+): number {
+  if (segmentsCross(a, b, c, d)) return 0;
+  return Math.min(
+    kmToSegment(a, c, d),
+    kmToSegment(b, c, d),
+    kmToSegment(c, a, b),
+    kmToSegment(d, a, b),
+  );
+}
+
+// Min km distance between two polylines. Min over every (segment,
+// segment) pair — mirrors `ST_Distance(closure::geography,
+// route::geography)`. The companion mock uses this for the
+// `/closures/check-route` buffer check so closures running
+// parallel to (or crossing) the route between vertices still
+// register, unlike a vertex-only sample.
+function polylinesMinKm(a: readonly LatLng[], b: readonly LatLng[]): number {
+  if (a.length === 0 || b.length === 0) return Infinity;
+  if (a.length === 1 && b.length === 1) return kmToSegment(a[0]!, b[0]!, b[0]!);
+  if (a.length === 1) return kmToPolyline(a[0]!, b);
+  if (b.length === 1) return kmToPolyline(b[0]!, a);
+  let min = Infinity;
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      const d = kmSegmentToSegment(a[i]!, a[i + 1]!, b[j]!, b[j + 1]!);
+      if (d < min) min = d;
+      if (min === 0) return 0;
+    }
+  }
+  return min;
+}
+
+// True iff the polyline intersects the lat/lng envelope. Used for
+// bbox-filtering closures: a closure whose vertices are both
+// outside the box but whose segment crosses through still matches
+// (mirrors `ST_Intersects(c.geom, envelope)`).
+function polylineIntersectsBbox(
   polyline: readonly LatLng[],
-  samplesPerSegment = 5,
-): LatLng[] {
-  if (polyline.length === 0) return [];
-  if (polyline.length === 1) return [polyline[0]!];
-  const out: LatLng[] = [];
+  minLng: number,
+  minLat: number,
+  maxLng: number,
+  maxLat: number,
+): boolean {
+  if (polyline.length === 0) return false;
+  // Any vertex inside the envelope is an immediate hit.
+  for (const pt of polyline) {
+    if (
+      pt.lng >= minLng &&
+      pt.lng <= maxLng &&
+      pt.lat >= minLat &&
+      pt.lat <= maxLat
+    ) {
+      return true;
+    }
+  }
+  if (polyline.length === 1) return false;
+  // No vertex inside — check each segment against the four edges
+  // of the envelope. Any crossing counts.
+  const corners: LatLng[] = [
+    { lat: minLat, lng: minLng },
+    { lat: minLat, lng: maxLng },
+    { lat: maxLat, lng: maxLng },
+    { lat: maxLat, lng: minLng },
+  ];
   for (let i = 0; i < polyline.length - 1; i++) {
     const a = polyline[i]!;
     const b = polyline[i + 1]!;
-    for (let s = 0; s <= samplesPerSegment; s++) {
-      const t = s / samplesPerSegment;
-      out.push({
-        lat: a.lat + (b.lat - a.lat) * t,
-        lng: a.lng + (b.lng - a.lng) * t,
-      });
+    for (let e = 0; e < 4; e++) {
+      const c = corners[e]!;
+      const d = corners[(e + 1) % 4]!;
+      if (segmentsCross(a, b, c, d)) return true;
     }
   }
-  return out;
+  return false;
 }
 
 // Min distance from `p` to the polyline. Mirrors `ST_Distance(
