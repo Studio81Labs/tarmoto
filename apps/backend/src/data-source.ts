@@ -94,6 +94,7 @@ import { AddModelEvalSamples1717500000000 } from './migrations/1717500000000-Add
 import { AddModelEvalReconcileAttemptedAt1717600000000 } from './migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
 import { AddTripFolders1717700000000 } from './migrations/1717700000000-AddTripFolders.js';
 import { AddInAppNotifications1717800000000 } from './migrations/1717800000000-AddInAppNotifications.js';
+import { AddHazardReportPhotoUrl1717900000000 } from './migrations/1717900000000-AddHazardReportPhotoUrl.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -206,6 +207,7 @@ export const AppDataSource = new DataSource({
     AddModelEvalReconcileAttemptedAt1717600000000,
     AddTripFolders1717700000000,
     AddInAppNotifications1717800000000,
+    AddHazardReportPhotoUrl1717900000000,
   ],
   synchronize: false,
 });
