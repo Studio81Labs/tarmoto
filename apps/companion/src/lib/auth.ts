@@ -10,24 +10,12 @@ import {
   exchangeOAuthUserForBackendTokens,
   type BackendAuthResponse,
 } from "@/lib/social-auth-bridge";
+import { dedupedRefresh } from "@/lib/auth-refresh";
 import {
   SOCIAL_ACCOUNT_CONFLICT_ERROR,
   SOCIAL_ACCOUNT_CONFLICT_MESSAGE,
   SOCIAL_SIGNIN_FAILED_ERROR,
 } from "@/lib/auth-errors";
-
-async function refreshAccessToken(
-  refreshToken: string,
-): Promise<BackendAuthResponse> {
-  const res = await fetch(`${API_BASE_SERVER}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-
-  if (!res.ok) throw new Error("Token refresh failed");
-  return res.json();
-}
 
 const providers: NextAuthConfig["providers"] = [
   Credentials({
@@ -158,9 +146,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
-      // Token expired — attempt refresh
+      // Token expired — attempt refresh (deduped across tabs).
       try {
-        const data = await refreshAccessToken(token.refreshToken);
+        const data = await dedupedRefresh(token.id, token.refreshToken);
         return {
           ...token,
           accessToken: data.access_token,
@@ -169,6 +157,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           error: undefined,
         };
       } catch {
+        // If the access token is still technically valid (we entered
+        // this branch because of the 5 min refresh buffer, not because
+        // the token already expired), a transient backend hiccup —
+        // 429, a rotated refresh token, or a brief network blip —
+        // shouldn't bounce the user to /login. Keep the existing
+        // token and let the next 4 min poll retry. Only surface
+        // `RefreshTokenError` once the access token is genuinely
+        // past its expiry, where the user can no longer make API
+        // calls anyway.
+        if (Date.now() / 1000 < token.expiresAt) {
+          return token;
+        }
         return { ...token, error: "RefreshTokenError" as const };
       }
     },
