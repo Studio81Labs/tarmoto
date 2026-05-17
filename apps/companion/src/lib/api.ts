@@ -908,13 +908,16 @@ export interface AlongRoutePoisResponse {
 }
 
 export const poiApi = {
-  getAccommodations: (params: {
-    lat: number;
-    lng: number;
-    radius_km?: number;
-    min_stars?: number;
-    kinds?: AccommodationKind[];
-  }) => {
+  getAccommodations: (
+    params: {
+      lat: number;
+      lng: number;
+      radius_km?: number;
+      min_stars?: number;
+      kinds?: AccommodationKind[];
+    },
+    init?: RequestInit,
+  ) => {
     const query = new URLSearchParams({
       lat: String(params.lat),
       lng: String(params.lng),
@@ -928,14 +931,19 @@ export const poiApi = {
     }
     return apiFetch<AccommodationsResponse>(
       `/poi/accommodations?${query.toString()}`,
+      init,
     );
   },
-  getAlongRoute: (data: {
-    route: Array<{ lat: number; lng: number }>;
-    buffer_km?: number;
-    kinds?: PoiKind[];
-  }) =>
+  getAlongRoute: (
+    data: {
+      route: Array<{ lat: number; lng: number }>;
+      buffer_km?: number;
+      kinds?: PoiKind[];
+    },
+    init?: RequestInit,
+  ) =>
     apiFetch<AlongRoutePoisResponse>("/poi/along-route", {
+      ...init,
       method: "POST",
       body: JSON.stringify(data),
     }),

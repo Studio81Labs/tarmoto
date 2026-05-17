@@ -3,20 +3,21 @@ import createFetchClient, {
   type ClientOptions,
 } from "openapi-fetch";
 
-import type { paths } from "./generated/schema";
+import type { BrowserSafePaths } from "./browser-safe";
 
 /**
- * Raw openapi-fetch client, strongly typed against the generated
- * `paths`. Mirrors the previous `createApiClient` signature so
- * existing consumers (companion's `lib/api.ts`, mobile's
- * `typedClient.ts`) keep working with minimal import-site churn.
+ * Raw openapi-fetch client, strongly typed against the
+ * `BrowserSafePaths` view of the generated paths — internal-only
+ * headers like `X-Internal-Token` are stripped at the type level,
+ * so a browser consumer can't accidentally call internal routes
+ * with a token it shouldn't have. See `./browser-safe`.
  *
  * Mobile pulls this via the default package entry; the React
  * Query helper lives in `./react-query` so RN apps that don't
  * use TanStack Query don't pay for `openapi-react-query` /
  * `@tanstack/react-query` as a transitive dep.
  */
-export type TarmotoClient = Client<paths>;
+export type TarmotoClient = Client<BrowserSafePaths>;
 
 export interface CreateTarmotoClientOptions extends ClientOptions {
   /**
@@ -37,7 +38,7 @@ export function createTarmotoClient(
   options: CreateTarmotoClientOptions = {},
 ): TarmotoClient {
   const { getToken, onUnauthorized, ...rest } = options;
-  const client = createFetchClient<paths>(rest);
+  const client = createFetchClient<BrowserSafePaths>(rest);
 
   if (getToken) {
     client.use({

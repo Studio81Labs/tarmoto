@@ -5,6 +5,7 @@ import { poiApi } from "@/lib/api";
 import { useTripStops } from "./useTripStops";
 import type { Trip } from "@/lib/types";
 import type { TripStopsOptions } from "@/lib/trip-stops";
+import { withQueryClient } from "./test-utils";
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -96,6 +97,7 @@ describe("useTripStops", () => {
       ({ activeTrip }) => useTripStops(activeTrip, options),
       {
         initialProps: { activeTrip: firstTrip },
+        wrapper: withQueryClient(),
       },
     );
 

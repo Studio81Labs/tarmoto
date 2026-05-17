@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { RouteCollectionFollowCta } from "./RouteCollectionFollowCta";
+import { withQueryClient } from "@/hooks/test-utils";
 
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (
@@ -18,6 +19,7 @@ describe("RouteCollectionFollowCta", () => {
         slug="alpine-weekend"
         ownerName="Mira"
       />,
+      { wrapper: withQueryClient() },
     );
 
     const signInLink = await screen.findByRole("link", { name: "Sign in" });

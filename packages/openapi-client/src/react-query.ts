@@ -1,6 +1,6 @@
 import createReactQueryClient from "openapi-react-query";
 
-import type { paths } from "./generated/schema";
+import type { BrowserSafePaths } from "./browser-safe";
 import type { TarmotoClient } from "./client";
 
 /**
@@ -19,11 +19,11 @@ import type { TarmotoClient } from "./client";
  * + response shape inferred.
  */
 export type TarmotoQueryClient = ReturnType<
-  typeof createReactQueryClient<paths>
+  typeof createReactQueryClient<BrowserSafePaths>
 >;
 
 export function createTarmotoQueryClient(
   client: TarmotoClient,
 ): TarmotoQueryClient {
-  return createReactQueryClient<paths>(client);
+  return createReactQueryClient<BrowserSafePaths>(client);
 }

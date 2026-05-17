@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   routeCollectionsApi,
   type CreateRouteCollectionInput,
@@ -18,15 +19,12 @@ import {
 export type CollectionsStatus = "idle" | "loading" | "ready" | "error";
 
 export interface MigrationOpportunity {
-  /** How many legacy collections we found in localStorage. */
   count: number;
-  /** Promise resolver — call once the user accepts/declines. */
   accept: () => Promise<void>;
   decline: () => void;
 }
 
 export interface UseCollectionsResult {
-  /** Collections the user owns (sorted by name). */
   collections: RouteCollectionView[];
   /**
    * Collections the user has followed via the public/unlisted slug page,
@@ -37,7 +35,6 @@ export interface UseCollectionsResult {
   followed: RouteCollectionView[];
   status: CollectionsStatus;
   errorMessage: string | null;
-  /** Reload the list from the server. */
   refresh: () => Promise<void>;
   createCollection: (
     input: CreateRouteCollectionInput,
@@ -47,83 +44,98 @@ export interface UseCollectionsResult {
     input: UpdateRouteCollectionInput,
   ) => Promise<RouteCollectionView>;
   removeCollection: (id: string) => Promise<void>;
-  /**
-   * Unfollow a saved collection. Optimistic — drops the row locally first,
-   * then re-fetches on failure so the UI doesn't strand a stale entry.
-   */
   unfollowCollection: (id: string) => Promise<void>;
-  /**
-   * If the user has legacy localStorage collections AND has not yet been
-   * prompted, this is non-null and the page can render a banner asking the
-   * user to opt into migration. The hook does NOT auto-migrate — that's the
-   * "user opt-in" gate from the issue.
-   */
   migration: MigrationOpportunity | null;
 }
 
+interface LibraryCacheShape {
+  owned: RouteCollectionView[];
+  followed: RouteCollectionView[];
+}
+
 /**
- * Cloud-backed route collections (US-56). Mirrors the previous localStorage
- * hook's shape (`refresh`, mutators) but every call hits the backend. The
- * `migration` field surfaces a one-time, user-confirmed import of the legacy
- * localStorage row into the new endpoint.
+ * Stable prefix for the cached library payload. Exported so flows
+ * that mutate follow state outside this hook (e.g. the public
+ * shared-collection page's `RouteCollectionFollowCta`) can drop the
+ * cached library on success — without that, a 30-second `staleTime`
+ * lets the library page render the pre-follow `followed` list when
+ * the user navigates back from the share page.
+ */
+export const COLLECTIONS_LIBRARY_QUERY_PREFIX = [
+  "collections",
+  "library",
+] as const;
+
+const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null) =>
+  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId] as const;
+
+const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
+
+/**
+ * Cloud-backed route collections (US-56). The library list is driven
+ * by `@tanstack/react-query` — keyed by `userId`, so an account
+ * switch can't show the previous user's library on the next mount.
+ * Mutations write the new row directly into the cached owned list,
+ * so the UI updates synchronously without waiting on a refetch.
  *
- * Pass `userId === null` to render an empty list (e.g. signed-out visitors).
+ * The `migration` field surfaces a one-time, user-confirmed import
+ * of legacy localStorage rows into the new endpoint.
+ *
+ * Pass `userId === null` to render an empty list (signed-out
+ * visitors); the query is disabled and the migration prompt won't
+ * trigger.
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
-  const [collections, setCollections] = useState<RouteCollectionView[]>([]);
-  const [followed, setFollowed] = useState<RouteCollectionView[]>([]);
-  const [status, setStatus] = useState<CollectionsStatus>("idle");
+  const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [migration, setMigration] = useState<MigrationOpportunity | null>(null);
 
-  // Track the userId the in-memory state belongs to so a refresh that lands
-  // after an account switch doesn't write the previous user's data into the
-  // new view (mirrors the guard the legacy hook had against localStorage).
-  const activeUserIdRef = useRef<string | null>(userId);
-  activeUserIdRef.current = userId;
+  const query = useQuery<LibraryCacheShape>({
+    queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+    enabled: userId != null,
+    queryFn: async () => {
+      // The library endpoint returns owned + followed in one
+      // payload so the page never renders half the library while
+      // waiting on the other half.
+      const { data } = await routeCollectionsApi.listLibrary();
+      return {
+        owned: sortCollectionsByName(data.owned.map(mapSummaryToView)),
+        // Server order (followed_at desc) — most-recently-saved
+        // collection lands at the top.
+        followed: data.followed.map(mapSummaryToView),
+      };
+    },
+  });
 
-  const replaceOne = useCallback((next: RouteCollectionView) => {
-    setCollections((prev) => {
-      const without = prev.filter((c) => c.id !== next.id);
-      return sortCollectionsByName([...without, next]);
-    });
-  }, []);
-
-  const removeOne = useCallback((id: string) => {
-    setCollections((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const writeCache = useCallback(
+    (updater: (prev: LibraryCacheShape) => LibraryCacheShape) => {
+      queryClient.setQueryData<LibraryCacheShape>(
+        COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+        (prev) => updater(prev ?? EMPTY_CACHE),
+      );
+    },
+    [queryClient, userId],
+  );
 
   const refresh = useCallback(async () => {
-    const owner = activeUserIdRef.current;
-    if (!owner) {
-      setCollections([]);
-      setFollowed([]);
-      setStatus("ready");
-      return;
-    }
-    setStatus("loading");
     setErrorMessage(null);
-    try {
-      // Single round trip — the library endpoint returns owned + followed in
-      // one response so the page never renders one half of the library while
-      // waiting on the other.
-      const { data } = await routeCollectionsApi.listLibrary();
-      // Drop the result if the user has switched accounts mid-flight.
-      if (activeUserIdRef.current !== owner) return;
-      setCollections(sortCollectionsByName(data.owned.map(mapSummaryToView)));
-      // Followed list keeps server order (followed_at desc) so the most
-      // recently saved collection lands at the top, matching how curators
-      // expect their own additions to surface.
-      setFollowed(data.followed.map(mapSummaryToView));
-      setStatus("ready");
-    } catch (err) {
-      if (activeUserIdRef.current !== owner) return;
-      setStatus("error");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Failed to load route collections",
-      );
-    }
-  }, []);
+    await queryClient.invalidateQueries({
+      queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+    });
+  }, [queryClient, userId]);
+
+  const replaceOne = useCallback(
+    (next: RouteCollectionView) => {
+      writeCache((prev) => ({
+        ...prev,
+        owned: sortCollectionsByName([
+          ...prev.owned.filter((c) => c.id !== next.id),
+          next,
+        ]),
+      }));
+    },
+    [writeCache],
+  );
 
   const createCollection = useCallback(
     async (input: CreateRouteCollectionInput) => {
@@ -148,100 +160,109 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   const removeCollection = useCallback(
     async (id: string) => {
       await routeCollectionsApi.delete(id);
-      removeOne(id);
+      writeCache((prev) => ({
+        ...prev,
+        owned: prev.owned.filter((c) => c.id !== id),
+      }));
     },
-    [removeOne],
+    [writeCache],
   );
 
-  const unfollowCollection = useCallback(async (id: string) => {
-    // Optimistic drop — the unfollow endpoint is idempotent (US-56) so a
-    // network failure won't leave the row in a half-state. We capture the
-    // single dropped row (not the full list) so a rapid second unfollow
-    // landing while the first is in-flight doesn't see the closure restore
-    // an old snapshot that re-adds rows another call has already removed.
-    // Held as `.current` on a stable object so TypeScript's control-flow
-    // analysis doesn't narrow the value to `null` after assignment inside
-    // the setState callback.
-    const removed: { current: RouteCollectionView | null } = { current: null };
-    setFollowed((prev) => {
-      const target = prev.find((c) => c.id === id);
-      if (!target) return prev;
-      removed.current = target;
-      return prev.filter((c) => c.id !== id);
-    });
-    try {
-      await routeCollectionsApi.unfollow(id);
-    } catch (err) {
-      // Re-insert just the failed row, keeping any other concurrent
-      // optimistic updates intact.
-      const restored = removed.current;
-      if (restored != null) {
-        setFollowed((prev) =>
-          prev.some((c) => c.id === restored.id) ? prev : [...prev, restored],
-        );
+  const unfollowCollection = useCallback(
+    async (id: string) => {
+      // Optimistic drop — the unfollow endpoint is idempotent
+      // (US-56) so a network failure won't leave the row in a
+      // half-state. Capture the single dropped row (not the full
+      // list) so a rapid second unfollow landing while the first is
+      // in-flight doesn't see the closure restore an old snapshot
+      // that re-adds rows another call has already removed.
+      // Held as `.current` on a stable object so TypeScript's
+      // control-flow analysis doesn't narrow the value back to
+      // `null` after assignment inside the setQueryData callback.
+      const removed: { current: RouteCollectionView | null } = {
+        current: null,
+      };
+      writeCache((prev) => {
+        const target = prev.followed.find((c) => c.id === id);
+        if (!target) return prev;
+        removed.current = target;
+        return {
+          ...prev,
+          followed: prev.followed.filter((c) => c.id !== id),
+        };
+      });
+      try {
+        await routeCollectionsApi.unfollow(id);
+      } catch (err) {
+        const restored = removed.current;
+        if (restored != null) {
+          writeCache((prev) =>
+            prev.followed.some((c) => c.id === restored.id)
+              ? prev
+              : { ...prev, followed: [...prev.followed, restored] },
+          );
+        }
+        throw err;
       }
-      throw err;
-    }
-  }, []);
+    },
+    [writeCache],
+  );
 
-  // Item-level mutations (add/remove trip) live on the detail page rather
-  // than this hook. The detail page already loads /collections/:id and
-  // owns the item state — routing those calls through the hook would just
-  // round-trip them via this hook's `collections` list, which the list
-  // page doesn't render anyway.
-
-  // Initial load + migration-opportunity check whenever userId changes.
+  // Migration prompt: one-shot per user. Surface only when the
+  // legacy localStorage key has data AND we haven't already
+  // migrated/skipped for this user. Storage helpers are no-ops
+  // server-side so the SSR pass quietly resolves to no prompt.
   useEffect(() => {
-    setCollections([]);
-    setFollowed([]);
     setMigration(null);
-    if (!userId) {
-      setStatus("ready");
-      setErrorMessage(null);
-      return;
-    }
-    void refresh();
-
-    // Migration prompt: only surface if the legacy key has data AND we haven't
-    // already migrated (or skipped) for this user. Storage helpers are no-ops
-    // server-side; readLegacyCollections returns [] there.
-    if (!isMigrationDone(userId)) {
-      const legacy = readLegacyCollections(userId);
-      if (legacy.length > 0) {
-        setMigration({
-          count: legacy.length,
-          accept: async () => {
-            const result = await migrateLegacyCollections(userId);
-            // Merge migrated collections into the view; refresh anyway in case
-            // listMine is the source of truth (e.g. legacy row had odd data).
-            await refresh();
-            if (result.errorMessage) {
-              setErrorMessage(result.errorMessage);
-            }
-            setMigration(null);
-          },
-          decline: () => {
-            // Mark as done so we don't keep prompting; legacy data stays in
-            // localStorage in case the user changes their mind via dev tools.
-            try {
-              if (typeof window !== "undefined") {
-                window.localStorage.setItem(migrationDoneKey(userId), "1");
-              }
-            } catch {
-              // Quota / private mode — best-effort.
-            }
-            setMigration(null);
-          },
-        });
-      }
-    }
+    setErrorMessage(null);
+    if (!userId) return;
+    if (isMigrationDone(userId)) return;
+    const legacy = readLegacyCollections(userId);
+    if (legacy.length === 0) return;
+    setMigration({
+      count: legacy.length,
+      accept: async () => {
+        const result = await migrateLegacyCollections(userId);
+        await refresh();
+        if (result.errorMessage) {
+          setErrorMessage(result.errorMessage);
+        }
+        setMigration(null);
+      },
+      decline: () => {
+        try {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(migrationDoneKey(userId), "1");
+          }
+        } catch {
+          // Quota / private mode — best-effort.
+        }
+        setMigration(null);
+      },
+    });
   }, [userId, refresh]);
 
+  const data = query.data ?? EMPTY_CACHE;
+  const status: CollectionsStatus =
+    userId == null
+      ? "ready"
+      : query.isLoading
+        ? "loading"
+        : query.isError
+          ? "error"
+          : "ready";
+
   return {
-    collections,
-    followed,
+    collections: data.owned,
+    followed: data.followed,
     status,
-    errorMessage,
+    errorMessage:
+      errorMessage ??
+      (query.isError
+        ? query.error instanceof Error
+          ? query.error.message
+          : "Failed to load route collections"
+        : null),
     refresh,
     createCollection,
     updateCollection,
