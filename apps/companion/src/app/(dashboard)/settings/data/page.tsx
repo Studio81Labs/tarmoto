@@ -86,11 +86,21 @@ const EXPORT_CONTENTS = [
 ];
 export default function DataPage() {
   const user = useAuthStore((s) => s.user);
+  // Gate the export button on `AuthSync` hydrating the access
+  // token. The data page is reachable on a hard navigation
+  // (deep-linked, browser back from /settings, etc.) where the
+  // in-memory Zustand store starts empty; without this gate, the
+  // first click races AuthSync and `accountApi.requestDataExport`
+  // ships without a bearer → 401 → "Could not start export"
+  // error toast. Same fix as `/trips/[tripId]/print` and
+  // `/rides/[rideId]`.
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [exportState, setExportState] = useState<ExportState>({ kind: "idle" });
   const [confirmOpen, setConfirmOpen] = useState(false);
   async function requestExport() {
     if (exportState.kind === "requesting" || exportState.kind === "polling")
       return;
+    if (!accessToken) return;
     setExportState({ kind: "requesting" });
     try {
       const { data: view } = await accountApi.requestDataExport();
@@ -217,6 +227,7 @@ export default function DataPage() {
             type="button"
             onClick={requestExport}
             disabled={
+              !accessToken ||
               exportState.kind === "requesting" ||
               exportState.kind === "polling"
             }

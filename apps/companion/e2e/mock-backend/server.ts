@@ -1627,10 +1627,41 @@ export function buildApp(): Express {
         polylineIntersectsBbox(c.geometry, minLng, minLat, maxLng, maxLat),
       );
     }
+    // Mirror production `ListClosuresQueryDto` enum guards
+    // (`@IsIn(ROAD_CLOSURE_SEVERITIES)`,
+    // `@IsIn(ROAD_CLOSURE_REASONS)`). A bad value like
+    // `severity=closed` or `reason=construction` now surfaces 400
+    // instead of silently filtering to an empty list.
+    const VALID_SEVERITIES = new Set(["advisory", "partial", "full"]);
+    const VALID_REASONS = new Set([
+      "closure",
+      "roadworks",
+      "seasonal",
+      "weather",
+      "event",
+      "other",
+    ]);
     if (typeof req.query.severity === "string") {
+      if (!VALID_SEVERITIES.has(req.query.severity)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "severity must be one of: advisory, partial, full",
+        });
+        return;
+      }
       rows = rows.filter((c) => c.severity === req.query.severity);
     }
     if (typeof req.query.reason === "string") {
+      if (!VALID_REASONS.has(req.query.reason)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message:
+            "reason must be one of: closure, roadworks, seasonal, weather, event, other",
+        });
+        return;
+      }
       rows = rows.filter((c) => c.reason === req.query.reason);
     }
     res.json(rows);
@@ -1658,6 +1689,35 @@ export function buildApp(): Express {
         message: "Route must have at least 2 points",
       });
       return;
+    }
+    // Mirror `ClosurePointDto`: `@IsLatitude` (lat ∈ [-90, 90])
+    // and `@IsLongitude` (lng ∈ [-180, 180]) plus both fields
+    // required and finite. Without this guard a missing or
+    // corrupted coordinate would fall through as `NaN`/`undefined`
+    // and the proximity math would still produce a 200 (usually
+    // with zero matches) — masking a planner regression where
+    // generated geometry drops a field.
+    for (let i = 0; i < route.length; i++) {
+      const pt = route[i] as unknown;
+      if (
+        !pt ||
+        typeof pt !== "object" ||
+        typeof (pt as { lat: unknown }).lat !== "number" ||
+        typeof (pt as { lng: unknown }).lng !== "number" ||
+        !Number.isFinite((pt as { lat: number }).lat) ||
+        !Number.isFinite((pt as { lng: number }).lng) ||
+        (pt as { lat: number }).lat < -90 ||
+        (pt as { lat: number }).lat > 90 ||
+        (pt as { lng: number }).lng < -180 ||
+        (pt as { lng: number }).lng > 180
+      ) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `route[${i}] must have lat ∈ [-90, 90] and lng ∈ [-180, 180]`,
+        });
+        return;
+      }
     }
     const activeOn = parseActiveOn(req.body?.active_on, res);
     if (activeOn === null) return;
