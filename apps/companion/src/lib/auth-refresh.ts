@@ -32,10 +32,19 @@ export async function refreshAccessToken(
  *     surface a 429 as `RefreshTokenError`, which would cascade
  *     into `signOut` and yank every other tab to /login.
  *
- * Sharing the in-flight promise keyed by user id collapses all
- * concurrent attempts into one backend round-trip. Multi-instance
- * Coolify replicas still serialize per-process, not globally, but
- * per-process dedup eliminates the realistic within-browser storm.
+ * Sharing the in-flight promise keyed by **refresh token** —
+ * not user id — collapses all concurrent attempts for the same
+ * session into one backend round-trip. Keying by user would
+ * incorrectly merge two independent sessions (e.g. the same
+ * rider signed in on laptop and phone, each with its own
+ * refresh-token chain): the second JWT callback would inherit
+ * the first session's rotated tokens and overwrite its cookie
+ * with someone else's lifetime, including the backend's
+ * `orig_iat` max-lifetime anchor.
+ *
+ * Multi-instance Coolify replicas still serialize per-process,
+ * not globally, but per-process dedup eliminates the realistic
+ * within-browser storm.
  *
  * The grace window keeps the entry around briefly after the
  * promise settles so a tab that read the *old* cookie just before
@@ -61,22 +70,21 @@ interface DedupOptions {
 const inflight = new Map<string, Promise<BackendAuthResponse>>();
 
 export function dedupedRefresh(
-  userId: string,
   refreshToken: string,
   options: DedupOptions = {},
 ): Promise<BackendAuthResponse> {
   const { refresh = refreshAccessToken, graceMs = REFRESH_GRACE_MS } = options;
-  const existing = inflight.get(userId);
+  const existing = inflight.get(refreshToken);
   if (existing) return existing;
   const promise = refresh(refreshToken);
-  inflight.set(userId, promise);
+  inflight.set(refreshToken, promise);
   const scheduleEviction = () => {
     if (graceMs === 0) {
-      if (inflight.get(userId) === promise) inflight.delete(userId);
+      if (inflight.get(refreshToken) === promise) inflight.delete(refreshToken);
       return;
     }
     setTimeout(() => {
-      if (inflight.get(userId) === promise) inflight.delete(userId);
+      if (inflight.get(refreshToken) === promise) inflight.delete(refreshToken);
     }, graceMs);
   };
   // `.then(_, _)` (not `.finally`) so a rejection from `refresh`

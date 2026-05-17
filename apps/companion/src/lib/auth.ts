@@ -146,9 +146,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
-      // Token expired — attempt refresh (deduped across tabs).
+      // Token expired — attempt refresh (deduped per refresh-token
+      // so concurrent tabs in the same session share one backend
+      // round-trip, but two independent sessions for the same
+      // rider remain isolated).
       try {
-        const data = await dedupedRefresh(token.id, token.refreshToken);
+        const data = await dedupedRefresh(token.refreshToken);
         return {
           ...token,
           accessToken: data.access_token,
