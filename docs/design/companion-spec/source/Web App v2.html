@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tarmoto · Web Companion (v2 · Cream)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    background: #F5EFE6;
+    color: #0E0E10;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: rgba(14,14,16,0.18); border-radius: 4px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#6FD38A",
+  "palette": "traffic",
+  "mapMode": "paper",
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+
+// ---- MOBILE PALETTE (matches atoms.jsx) ----
+const ACCENT = '#FF6A1A';
+const INK = '#0E0E10';
+const CREAM = '#F5EFE6';
+const PAPER = '#EDE6DA';   // slightly darker cream panel
+const PAPER_2 = '#E5DBCB'; // card bg
+const LINE = 'rgba(14,14,16,0.10)';
+const LINE_2 = 'rgba(14,14,16,0.18)';
+const INK_DIM = 'rgba(14,14,16,0.62)';
+const INK_MUTE = 'rgba(14,14,16,0.40)';
+const TARMAC = '#2B2C30';
+
+const PALETTES = {
+  traffic: ['#E05A3C', '#F0A03C', '#E8D66A', '#C7D36A', '#6FD38A'],
+  muted:   ['#C26A5E', '#C9A06E', '#C9BA7E', '#9EB07E', '#7EA88E'],
+  mono:    ['#8A8070', '#9A9080', '#AAA090', '#BAB0A0', '#CAC0B0'],
+};
+
+// ---- ATOMS ----
+function Stamp({ children, color = INK_DIM, style }) {
+  return <span style={{
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700,
+    letterSpacing: 1.6, textTransform: 'uppercase', color, ...style,
+  }}>{children}</span>;
+}
+function Mono({ children, style }) {
+  return <span style={{ fontFamily: "'JetBrains Mono', monospace", ...style }}>{children}</span>;
+}
+function Heading({ children, size = 28, style }) {
+  return <div style={{
+    fontFamily: "'Space Grotesk', system-ui", fontWeight: 800, fontSize: size,
+    letterSpacing: -0.5, lineHeight: 1.05, color: INK, ...style,
+  }}>{children}</div>;
+}
+function Pill({ children, bg = INK, color = CREAM, border, style, onClick }) {
+  return <div onClick={onClick} style={{
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '5px 10px', borderRadius: 999, background: bg, color,
+    border: border || 'none', fontWeight: 700, fontSize: 11,
+    letterSpacing: 0.2, cursor: onClick ? 'pointer' : 'default', whiteSpace: 'nowrap',
+    ...style,
+  }}>{children}</div>;
+}
+function QualityBars({ q, palette, size = 6 }) {
+  const colors = PALETTES[palette] || PALETTES.traffic;
+  return <div style={{ display: 'inline-flex', gap: 2 }}>
+    {[1,2,3,4,5].map(n => (
+      <div key={n} style={{
+        width: size, height: size * 2.2, borderRadius: 1.5,
+        background: n <= q ? colors[q - 1] : 'rgba(14,14,16,0.08)',
+      }} />
+    ))}
+  </div>;
+}
+function Dot({ color = INK, size = 8, style }) {
+  return <div style={{ width: size, height: size, borderRadius: '50%', background: color, ...style }} />;
+}
+function Divider({ vertical, style }) {
+  return <div style={{ background: LINE,
+    ...(vertical ? { width: 1, alignSelf: 'stretch' } : { height: 1, width: '100%' }),
+    ...style }} />;
+}
+function Card({ children, style }) {
+  return <div style={{
+    background: CREAM, border: `1px solid ${LINE}`, borderRadius: 14,
+    ...style,
+  }}>{children}</div>;
+}
+
+// =============================================================
+// ALPS MAP — paper/topo aesthetic on cream
+// =============================================================
+function AlpsMap({ palette = 'traffic', mapMode = 'paper',
+  showFunZones = true, showHazards = true, showRoute = true,
+  showWaypoints = true, showCollab = false, tick = 0 }) {
+  const colors = PALETTES[palette] || PALETTES.traffic;
+  const dark = mapMode === 'dark';
+  const bg = dark ? '#17181C' : (mapMode === 'paper' ? '#EDE6DA' : '#F5EFE6');
+  const topo = dark ? 'rgba(255,255,255,0.06)' : 'rgba(14,14,16,0.08)';
+  const topoStrong = dark ? 'rgba(255,255,255,0.12)' : 'rgba(14,14,16,0.14)';
+  const riverCol = dark ? 'rgba(92,140,180,0.35)' : 'rgba(80,120,160,0.55)';
+  const labelCol = dark ? 'rgba(245,239,230,0.6)' : 'rgba(14,14,16,0.62)';
+  const roadBase = dark ? '#1E1F23' : '#C4BBA8';
+  const textMain = dark ? CREAM : INK;
+
+  return (
+    <svg viewBox="0 0 1200 820" preserveAspectRatio="xMidYMid slice"
+      style={{ width: '100%', height: '100%', display: 'block', background: bg }}>
+      <defs>
+        <filter id="paperNoise2">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="3"/>
+          <feColorMatrix values="0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.06 0"/>
+        </filter>
+        <radialGradient id="fun1" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={colors[4]} stopOpacity="0.55"/>
+          <stop offset="60%" stopColor={colors[4]} stopOpacity="0.18"/>
+          <stop offset="100%" stopColor={colors[4]} stopOpacity="0"/>
+        </radialGradient>
+        <radialGradient id="fun2" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={colors[3]} stopOpacity="0.5"/>
+          <stop offset="100%" stopColor={colors[3]} stopOpacity="0"/>
+        </radialGradient>
+      </defs>
+
+      {!dark && <rect width="1200" height="820" filter="url(#paperNoise2)" opacity="0.7"/>}
+
+      {/* Topo contours */}
+      <g stroke={topo} strokeWidth="1" fill="none">
+        {Array.from({length: 14}).map((_, i) => {
+          const y = 40 + i * 55;
+          return <path key={i} d={`M -20 ${y} C 150 ${y - 28 + (i%3)*8}, 320 ${y + 22}, 520 ${y - 12} S 820 ${y + 18}, 1050 ${y - 6} S 1220 ${y + 6}, 1240 ${y}`}/>;
+        })}
+      </g>
+      <g stroke={topoStrong} strokeWidth="1.3" fill="none">
+        <path d="M 160 280 C 260 240, 360 300, 480 260 S 700 220, 860 280"/>
+        <path d="M 280 480 C 380 440, 500 510, 640 470 S 880 430, 980 490"/>
+        <path d="M 140 620 C 250 590, 360 640, 520 600"/>
+      </g>
+
+      {/* Peaks */}
+      {[
+        {x: 310, y: 255, name: 'Passo Stelvio', h: '2757m'},
+        {x: 555, y: 235, name: 'Passo Gavia', h: '2621m'},
+        {x: 790, y: 300, name: 'Umbrail', h: '2503m'},
+        {x: 440, y: 460, name: 'Foscagno', h: '2291m'},
+        {x: 900, y: 560, name: 'Mortirolo', h: '1854m'},
+      ].map((p, i) => (
+        <g key={i}>
+          <path d={`M ${p.x-9} ${p.y+7} L ${p.x} ${p.y-9} L ${p.x+9} ${p.y+7} Z`}
+            fill="none" stroke={labelCol} strokeWidth="1.5"/>
+          <circle cx={p.x} cy={p.y-9} r="1.8" fill={labelCol}/>
+          <text x={p.x + 15} y={p.y - 2} fill={labelCol}
+            style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: 0.5}}>
+            {p.name.toUpperCase()}
+          </text>
+          <text x={p.x + 15} y={p.y + 10} fill={labelCol} opacity="0.7"
+            style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 9}}>
+            {p.h}
+          </text>
+        </g>
+      ))}
+
+      {/* Rivers */}
+      <g stroke={riverCol} strokeWidth="2" fill="none" strokeLinecap="round">
+        <path d="M 80 700 C 220 680, 340 720, 500 680 S 800 660, 1100 700"/>
+        <path d="M 620 780 C 680 720, 720 660, 700 560"/>
+      </g>
+
+      {/* Towns */}
+      {[
+        {x: 180, y: 640, name: 'Bormio'},
+        {x: 720, y: 660, name: 'Tirano'},
+        {x: 960, y: 420, name: 'Livigno'},
+        {x: 240, y: 180, name: 'Trafoi'},
+        {x: 1060, y: 720, name: 'Sondrio'},
+      ].map((t, i) => (
+        <g key={i}>
+          <circle cx={t.x} cy={t.y} r="4.5" fill={textMain}/>
+          <circle cx={t.x} cy={t.y} r="9" fill="none" stroke={textMain} strokeOpacity="0.3"/>
+          <text x={t.x + 14} y={t.y + 4} fill={textMain}
+            style={{fontFamily: "'Space Grotesk', system-ui", fontSize: 13, fontWeight: 700}}>
+            {t.name}
+          </text>
+        </g>
+      ))}
+
+      {/* Fun Zones */}
+      {showFunZones && (
+        <g>
+          <ellipse cx="440" cy="290" rx="180" ry="100" fill="url(#fun1)" transform="rotate(-20 440 290)"/>
+          <ellipse cx="790" cy="470" rx="140" ry="80" fill="url(#fun2)" transform="rotate(15 790 470)"/>
+          <ellipse cx="260" cy="500" rx="90" ry="60" fill="url(#fun2)"/>
+        </g>
+      )}
+
+      {/* Road base */}
+      <g stroke={roadBase} strokeWidth="4.5" fill="none" strokeLinecap="round" opacity="0.85">
+        <path d="M 80 660 C 200 640, 280 620, 340 580 S 440 440, 520 350 S 620 240, 720 240 S 880 280, 960 360 S 1080 480, 1100 620"/>
+        <path d="M 180 640 C 280 620, 360 580, 420 540 S 540 500, 640 520 S 780 540, 900 520"/>
+        <path d="M 240 180 L 310 255 C 360 280, 420 320, 480 380"/>
+        <path d="M 720 660 C 800 620, 880 560, 960 420"/>
+      </g>
+
+      {/* Planned quality route */}
+      {showRoute && (
+        <g strokeWidth="5.5" fill="none" strokeLinecap="round">
+          <path d="M 80 660 C 180 640, 260 620, 310 600" stroke={colors[4]}/>
+          <path d="M 310 600 C 340 585, 370 555, 400 500" stroke={colors[3]}/>
+          <path d="M 400 500 C 440 430, 480 370, 530 330" stroke={colors[4]}/>
+          <path d="M 530 330 C 560 305, 590 280, 640 265" stroke={colors[3]}/>
+          <path d="M 640 265 C 690 250, 740 248, 790 265" stroke={colors[1]}/>
+          <path d="M 790 265 C 840 280, 890 310, 940 370" stroke={colors[4]}/>
+          <path d="M 940 370 C 990 440, 1050 520, 1095 620" stroke={colors[3]}/>
+        </g>
+      )}
+
+      {/* Waypoints */}
+      {showWaypoints && [
+        {x: 80, y: 660, i: 'A'}, {x: 400, y: 500, i: 'B'}, {x: 640, y: 265, i: 'C'},
+        {x: 940, y: 370, i: 'D'}, {x: 1095, y: 620, i: 'E'},
+      ].map((w, i) => (
+        <g key={i}>
+          <circle cx={w.x} cy={w.y} r="15" fill={INK} stroke={CREAM} strokeWidth="2.5"/>
+          <text x={w.x} y={w.y + 4} textAnchor="middle" fill={CREAM}
+            style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700}}>
+            {w.i}
+          </text>
+        </g>
+      ))}
+
+      {/* Hazards */}
+      {showHazards && [
+        {x: 480, y: 400}, {x: 760, y: 275}, {x: 330, y: 560},
+      ].map((h, i) => (
+        <g key={i}>
+          <circle cx={h.x} cy={h.y} r="10" fill={ACCENT} stroke={CREAM} strokeWidth="1.8"/>
+          <text x={h.x} y={h.y + 3.5} textAnchor="middle" fill={CREAM}
+            style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800}}>!</text>
+        </g>
+      ))}
+
+      {/* Collab cursors */}
+      {showCollab && [
+        {x: 620, y: 380, name: 'Mira', c: '#6FD38A', off: tick},
+        {x: 820, y: 540, name: 'Jakub', c: '#6EB4E8', off: tick * 1.2},
+      ].map((c, i) => {
+        const cx = c.x + Math.sin(c.off/30 + i) * 18;
+        const cy = c.y + Math.cos(c.off/40 + i) * 10;
+        return (
+          <g key={i}>
+            <path d={`M ${cx} ${cy} L ${cx + 16} ${cy + 6} L ${cx + 7} ${cy + 8} L ${cx + 11} ${cy + 17} L ${cx + 8} ${cy + 18} L ${cx + 4} ${cy + 10} L ${cx} ${cy + 14} Z`}
+              fill={c.c} stroke={INK} strokeWidth="1"/>
+            <rect x={cx + 18} y={cy + 2} rx="4" ry="4" width={String(c.name).length * 7 + 14} height="18" fill={c.c}/>
+            <text x={cx + 25} y={cy + 15} fill={INK}
+              style={{fontFamily: "'Space Grotesk', system-ui", fontSize: 11, fontWeight: 700}}>
+              {c.name}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Scale / compass */}
+      <g transform="translate(40 780)">
+        <line x1="0" y1="0" x2="60" y2="0" stroke={labelCol} strokeWidth="2"/>
+        <line x1="0" y1="-4" x2="0" y2="4" stroke={labelCol} strokeWidth="2"/>
+        <line x1="60" y1="-4" x2="60" y2="4" stroke={labelCol} strokeWidth="2"/>
+        <text x="68" y="4" fill={labelCol}
+          style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: 1}}>10 KM</text>
+      </g>
+      <g transform="translate(1130 60)">
+        <circle r="18" fill="none" stroke={labelCol} strokeWidth="1"/>
+        <path d="M 0 -14 L -5 4 L 0 0 L 5 4 Z" fill={labelCol}/>
+        <text y="-22" textAnchor="middle" fill={labelCol}
+          style={{fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700}}>N</text>
+      </g>
+    </svg>
+  );
+}
+
+// ==============================================================
+// ROAD PREVIEW CARD — cream/ink, matches mobile pre-ride card
+// ==============================================================
+function RoadPreviewCard({ seg, palette, density, onClick, active }) {
+  const colors = PALETTES[palette] || PALETTES.traffic;
+  const compact = density === 'compact';
+  return (
+    <div onClick={onClick} style={{
+      border: `1px solid ${active ? INK : LINE}`,
+      background: active ? INK : CREAM, color: active ? CREAM : INK,
+      borderRadius: 14, padding: compact ? 12 : 14,
+      cursor: 'pointer', transition: 'all 0.15s',
+      display: 'flex', flexDirection: 'column', gap: compact ? 8 : 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 22, height: 22, borderRadius: 6,
+            background: active ? 'rgba(245,239,230,0.15)' : PAPER,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700,
+          }}>{seg.idx}</div>
+          <div style={{ fontWeight: 700, fontSize: compact ? 13 : 14 }}>{seg.name}</div>
+        </div>
+        <QualityBars q={seg.q} palette={palette} size={4}/>
+      </div>
+
+      <div style={{ position: 'relative', height: compact ? 36 : 52, borderRadius: 8, overflow: 'hidden',
+        background: active ? 'rgba(245,239,230,0.08)' : PAPER }}>
+        <svg viewBox="0 0 200 60" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+          <path d={seg.elev} fill={colors[seg.q - 1]} fillOpacity="0.25" stroke={colors[seg.q - 1]} strokeWidth="1.2"/>
+          <g>
+            {seg.qSegs.map((s, i) => {
+              const x = (i / seg.qSegs.length) * 200;
+              const w = 200 / seg.qSegs.length;
+              return <rect key={i} x={x} y="54" width={w} height="6" fill={colors[s - 1]}/>;
+            })}
+          </g>
+        </svg>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11,
+        color: active ? 'rgba(245,239,230,0.7)' : INK_DIM }}>
+        <Mono>{seg.km} KM</Mono>
+        <Mono>↗ {seg.gain}M</Mono>
+        <Mono>{seg.turns} TURNS</Mono>
+        {seg.hazards > 0 && <Mono style={{ color: ACCENT }}>⚠ {seg.hazards}</Mono>}
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// VIEW: TRIP PLANNER
+// ==============================================================
+function TripPlannerView({ tokens }) {
+  const { palette, mapMode, density, accent } = tokens;
+  const [activeSeg, setActiveSeg] = useState(1);
+  const [params, setParams] = useState({ days: 4, kmPerDay: 180, roadType: 'twisty', avoidGravel: false, scenic: true });
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 60); return () => clearInterval(t); }, []);
+
+  const segments = [
+    { idx: '01', name: 'Bormio → Passo Stelvio', km: 22, gain: 1536, turns: 48, q: 5, hazards: 0,
+      elev: 'M 0 50 L 20 48 40 42 60 35 80 28 100 20 120 14 140 10 160 8 180 6 200 4 L 200 60 L 0 60 Z',
+      qSegs: [5,5,4,5,4,5,5,5,5,4] },
+    { idx: '02', name: 'Stelvio → Santa Maria', km: 18, gain: -980, turns: 36, q: 4, hazards: 1,
+      elev: 'M 0 5 L 20 8 40 14 60 22 80 30 100 38 120 42 140 44 160 48 180 50 200 52 L 200 60 L 0 60 Z',
+      qSegs: [4,4,5,3,4,4,3,4,4,4] },
+    { idx: '03', name: 'Umbrail Pass climb', km: 13, gain: 1200, turns: 34, q: 2, hazards: 1,
+      elev: 'M 0 50 L 40 44 80 36 120 26 160 16 200 8 L 200 60 L 0 60 Z',
+      qSegs: [3,2,2,3,2,2,1,2,3,3] },
+    { idx: '04', name: 'Livigno valley floor', km: 28, gain: 180, turns: 22, q: 5, hazards: 0,
+      elev: 'M 0 30 L 50 28 100 26 150 24 200 22 L 200 60 L 0 60 Z',
+      qSegs: [5,5,5,5,5,5,5,4,5,5] },
+    { idx: '05', name: 'Forcola → Tirano', km: 26, gain: -1400, turns: 54, q: 4, hazards: 1,
+      elev: 'M 0 6 L 30 10 60 18 90 26 120 32 150 40 180 46 200 50 L 200 60 L 0 60 Z',
+      qSegs: [4,4,5,4,3,4,4,5,4,4] },
+    { idx: '06', name: 'Tirano → Aprica → Sondrio', km: 42, gain: 640, turns: 38, q: 3, hazards: 0,
+      elev: 'M 0 40 L 40 34 80 28 120 32 160 38 200 44 L 200 60 L 0 60 Z',
+      qSegs: [3,4,3,3,4,3,2,3,4,3] },
+  ];
+
+  const days = [
+    { n: 1, km: 112, stops: 2, highlight: 'Stelvio + Umbrail', q: 4, overnight: 'Santa Maria' },
+    { n: 2, km: 186, stops: 3, highlight: 'Livigno valley', q: 5, overnight: 'Livigno' },
+    { n: 3, km: 164, stops: 2, highlight: 'Forcola descent', q: 4, overnight: 'Tirano' },
+    { n: 4, km: 148, stops: 4, highlight: 'Aprica return', q: 3, overnight: 'Sondrio (home)' },
+  ];
+
+  return (
+    <div style={{ height: '100%', display: 'grid', gridTemplateColumns: '360px 1fr 340px', background: CREAM }}>
+      {/* LEFT */}
+      <div style={{ borderRight: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column', minHeight: 0, background: CREAM }}>
+        <div style={{ padding: '18px 20px 12px', borderBottom: `1px solid ${LINE}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Stamp>Route · Day 1 of 4</Stamp>
+            <Pill bg={ACCENT} color={INK}>
+              <Dot color={INK} size={6}/> AI draft
+            </Pill>
+          </div>
+          <Heading size={24} style={{ marginTop: 8 }}>Alps Loop</Heading>
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, color: INK_DIM, fontSize: 12 }}>
+            <span><Mono style={{ color: INK, fontWeight: 700 }}>610</Mono> km</span>
+            <span><Mono style={{ color: INK, fontWeight: 700 }}>6</Mono> passes</span>
+            <span><Mono style={{ color: INK, fontWeight: 700 }}>4</Mono> days</span>
+            <span><Mono style={{ color: ACCENT, fontWeight: 700 }}>3</Mono> hazards</span>
+          </div>
+        </div>
+
+        <div style={{ padding: '12px 16px 8px', display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {['All', 'Day 1', 'Day 2', 'Day 3', 'Day 4'].map((d, i) => (
+            <Pill key={i} bg={i === 1 ? INK : 'transparent'}
+              color={i === 1 ? CREAM : INK_DIM}
+              border={i === 1 ? 'none' : `1px solid ${LINE_2}`}>
+              {d}
+            </Pill>
+          ))}
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: '8px 16px 20px',
+          display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+          {segments.map((s, i) => (
+            <RoadPreviewCard key={i} seg={s} palette={palette} density={density}
+              active={activeSeg === i} onClick={() => setActiveSeg(i)}/>
+          ))}
+        </div>
+      </div>
+
+      {/* MIDDLE — map */}
+      <div style={{ position: 'relative', minHeight: 0, minWidth: 0 }}>
+        <div style={{ position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', gap: 8, pointerEvents: 'auto' }}>
+            <div style={{ background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10,
+              padding: 4, display: 'flex', gap: 2,
+              boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+              {['Draw region', 'Waypoints', 'Fun Zones', 'Heatmap'].map((t, i) => (
+                <div key={i} style={{
+                  padding: '8px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                  background: i === 2 ? INK : 'transparent',
+                  color: i === 2 ? CREAM : INK, cursor: 'pointer',
+                }}>{t}</div>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, pointerEvents: 'auto' }}>
+            <div style={{ background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10, padding: '8px 12px',
+              display: 'flex', alignItems: 'center', gap: 10,
+              boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {['#6FD38A', '#6EB4E8', ACCENT].map((c, i) => (
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: '50%', background: c,
+                    border: `2px solid ${CREAM}`, marginLeft: i > 0 ? -8 : 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, color: INK }}>
+                    {['M','J','L'][i]}
+                  </div>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: INK_DIM }}>3 editing</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <AlpsMap mapMode={mapMode} palette={palette} showCollab tick={tick}/>
+        </div>
+
+        {/* Day timeline */}
+        <div style={{
+          position: 'absolute', left: 16, right: 16, bottom: 16, zIndex: 10,
+          background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 14, padding: 14,
+          boxShadow: '0 12px 32px rgba(14,14,16,0.14)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Stamp>Multi-day itinerary</Stamp>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>
+                <Mono>Export GPX</Mono>
+              </Pill>
+              <Pill bg={INK} color={CREAM}>
+                <Mono>Push to phone →</Mono>
+              </Pill>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {days.map((d, i) => (
+              <div key={i} style={{
+                background: i === 0 ? INK : PAPER,
+                color: i === 0 ? CREAM : INK,
+                border: `1px solid ${i === 0 ? INK : LINE}`,
+                borderRadius: 10, padding: 10,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Stamp color={i === 0 ? ACCENT : INK_DIM}>Day {d.n}</Stamp>
+                  <QualityBars q={d.q} palette={palette} size={3}/>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{d.highlight}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 11,
+                  color: i === 0 ? 'rgba(245,239,230,0.7)' : INK_DIM }}>
+                  <Mono>{d.km} KM</Mono>
+                  <Mono>{d.stops} STOPS</Mono>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11, color: i === 0 ? 'rgba(245,239,230,0.55)' : INK_MUTE }}>
+                  Overnight · {d.overnight}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* RIGHT — params */}
+      <div style={{ borderLeft: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column',
+        overflowY: 'auto', background: PAPER }}>
+        <div style={{ padding: '18px 20px', borderBottom: `1px solid ${LINE}` }}>
+          <Stamp>Parameters</Stamp>
+          <Heading size={20} style={{ marginTop: 6 }}>Tune the AI draft</Heading>
+          <div style={{ color: INK_DIM, fontSize: 12, marginTop: 4 }}>
+            Changes re-run Fun Zone discovery live.
+          </div>
+        </div>
+
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Stamp>Days</Stamp>
+              <Mono style={{ color: ACCENT, fontWeight: 700 }}>{params.days}</Mono>
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[2,3,4,5,6,7,8].map(n => (
+                <div key={n} onClick={() => setParams(p => ({...p, days: n}))} style={{
+                  flex: 1, padding: '8px 0', borderRadius: 6, textAlign: 'center',
+                  background: params.days === n ? INK : CREAM,
+                  color: params.days === n ? CREAM : INK_DIM,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', border: `1px solid ${params.days === n ? INK : LINE}`,
+                }}>{n}</div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Stamp>Km per day</Stamp>
+              <Mono style={{ color: ACCENT, fontWeight: 700 }}>{params.kmPerDay}</Mono>
+            </div>
+            <div style={{ position: 'relative', height: 28 }}>
+              <div style={{ position: 'absolute', left: 0, right: 0, top: 13, height: 2, background: LINE_2 }}/>
+              <div style={{ position: 'absolute', left: 0, width: `${(params.kmPerDay - 80) / 220 * 100}%`,
+                top: 13, height: 2, background: INK }}/>
+              <div style={{ position: 'absolute', left: `${(params.kmPerDay - 80) / 220 * 100}%`,
+                top: 6, width: 16, height: 16, background: ACCENT, borderRadius: '50%',
+                transform: 'translateX(-50%)', border: `2px solid ${INK}` }}/>
+              <input type="range" min="80" max="300" step="10" value={params.kmPerDay}
+                onChange={e => setParams(p => ({...p, kmPerDay: +e.target.value}))}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}/>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: INK_MUTE, fontSize: 10 }}>
+              <Mono>80</Mono><Mono>300</Mono>
+            </div>
+          </div>
+
+          <div>
+            <Stamp style={{ marginBottom: 8, display: 'block' }}>Road preference</Stamp>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { id: 'twisty', label: 'Maximum twisty', sub: 'Fun-factor first, chain passes' },
+                { id: 'scenic', label: 'Scenic balance', sub: 'Views + curves mixed' },
+                { id: 'efficient', label: 'Efficient loop', sub: 'Minimize backtracking' },
+              ].map(opt => (
+                <div key={opt.id} onClick={() => setParams(p => ({...p, roadType: opt.id}))} style={{
+                  padding: '10px 12px', borderRadius: 8,
+                  border: `1px solid ${params.roadType === opt.id ? INK : LINE}`,
+                  background: params.roadType === opt.id ? CREAM : 'transparent',
+                  cursor: 'pointer',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: '50%',
+                      border: `1.5px solid ${params.roadType === opt.id ? INK : INK_MUTE}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {params.roadType === opt.id && <Dot color={INK} size={6}/>}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: INK_MUTE, marginTop: 4, marginLeft: 24 }}>
+                    {opt.sub}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Stamp style={{ marginBottom: 8, display: 'block' }}>Filters</Stamp>
+            {[
+              { k: 'avoidGravel', label: 'Avoid gravel & unpaved', v: params.avoidGravel },
+              { k: 'scenic', label: 'Prefer scenic routes', v: params.scenic },
+            ].map(f => (
+              <div key={f.k} onClick={() => setParams(p => ({...p, [f.k]: !f.v}))} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 0', cursor: 'pointer', borderBottom: `1px solid ${LINE}`,
+              }}>
+                <span style={{ fontSize: 13 }}>{f.label}</span>
+                <div style={{ width: 34, height: 20, borderRadius: 999,
+                  background: f.v ? INK : 'rgba(14,14,16,0.12)',
+                  position: 'relative', transition: 'background 0.15s' }}>
+                  <div style={{ position: 'absolute', top: 2, left: f.v ? 16 : 2,
+                    width: 16, height: 16, borderRadius: '50%', background: f.v ? ACCENT : CREAM,
+                    transition: 'left 0.15s' }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <Stamp style={{ marginBottom: 8, display: 'block' }}>Overnight stops</Stamp>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { name: 'Hotel Funivia', town: 'Santa Maria', price: '€84' },
+                { name: 'Baita Nicola', town: 'Livigno', price: '€96' },
+                { name: 'Ostello Tirano', town: 'Tirano', price: '€62' },
+              ].map((h, i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 10px', borderRadius: 8, background: CREAM, border: `1px solid ${LINE}`,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{h.name}</div>
+                    <div style={{ fontSize: 10, color: INK_MUTE }}>{h.town}</div>
+                  </div>
+                  <Mono style={{ color: ACCENT, fontWeight: 700, fontSize: 12 }}>{h.price}</Mono>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{
+            padding: 14, borderRadius: 10, background: INK, color: CREAM,
+            textAlign: 'center', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+          }}>
+            Re-generate itinerary ↺
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// ROAD QUALITY EXPLORER
+// ==============================================================
+function RoadExplorerView({ tokens }) {
+  const { palette, mapMode, accent } = tokens;
+  const colors = PALETTES[palette];
+  const [surface, setSurface] = useState(['asphalt']);
+  const [minQ, setMinQ] = useState(3);
+  const toggleSurf = (s) => setSurface(cur =>
+    cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]);
+
+  return (
+    <div style={{ height: '100%', display: 'grid', gridTemplateColumns: '1fr 380px', background: CREAM }}>
+      <div style={{ position: 'relative', minHeight: 0 }}>
+        <div style={{ position: 'absolute', top: 16, left: 16, right: 16, zIndex: 10,
+          display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10, padding: '8px 12px',
+            display: 'flex', alignItems: 'center', gap: 10,
+            boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+            <Stamp>Quality ≥</Stamp>
+            {[1,2,3,4,5].map(q => (
+              <div key={q} onClick={() => setMinQ(q)} style={{
+                width: 24, height: 24, borderRadius: 6, cursor: 'pointer',
+                background: minQ <= q ? colors[q - 1] : PAPER,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700,
+                color: minQ <= q ? INK : INK_MUTE,
+                border: minQ === q ? `2px solid ${INK}` : 'none',
+              }}>{q}</div>
+            ))}
+          </div>
+
+          <div style={{ background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10, padding: 6,
+            display: 'flex', gap: 4, boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+            {['asphalt', 'concrete', 'cobblestone', 'gravel', 'dirt'].map(s => (
+              <div key={s} onClick={() => toggleSurf(s)} style={{
+                padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: 0.8, cursor: 'pointer',
+                background: surface.includes(s) ? INK : 'transparent',
+                color: surface.includes(s) ? CREAM : INK_DIM,
+              }}>{s}</div>
+            ))}
+          </div>
+
+          <div style={{ background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10, padding: '8px 14px',
+            display: 'flex', alignItems: 'center', gap: 8, color: INK_DIM, fontSize: 12,
+            boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+            <Dot color={ACCENT}/>
+            <span>12 active hazards</span>
+          </div>
+        </div>
+
+        <div style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 10,
+          background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 10, padding: '10px 14px',
+          color: INK_DIM, fontSize: 12, boxShadow: '0 6px 16px rgba(14,14,16,0.08)' }}>
+          <Mono style={{ color: INK_MUTE }}>EXPLORER / </Mono>
+          <Mono style={{ color: INK, fontWeight: 700 }}>LOMBARDY / STELVIO NATIONAL PARK</Mono>
+          <span style={{ marginLeft: 10, color: INK_MUTE }}>· 2,847 segments · 186k rider passes</span>
+        </div>
+
+        <div style={{ height: '100%' }}>
+          <AlpsMap mapMode={mapMode} palette={palette} showFunZones showHazards showRoute={false} showWaypoints={false}/>
+        </div>
+      </div>
+
+      <div style={{ borderLeft: `1px solid ${LINE}`, padding: '22px 22px', overflowY: 'auto', background: PAPER }}>
+        <Stamp>Selected segment</Stamp>
+        <Heading size={22} style={{ marginTop: 6 }}>Passo Stelvio · East ramp</Heading>
+        <div style={{ color: INK_DIM, fontSize: 12, marginTop: 4 }}>
+          SS38 · Prato allo Stelvio → pass summit · 24.3 km
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginTop: 20, marginBottom: 20 }}>
+          <div style={{ fontSize: 76, fontWeight: 800, lineHeight: 1,
+            color: INK, letterSpacing: -3,
+            fontFamily: "'Space Grotesk', system-ui" }}>
+            4.6
+          </div>
+          <div style={{ paddingBottom: 10 }}>
+            <QualityBars q={5} palette={palette} size={7}/>
+            <div style={{ color: INK_DIM, fontSize: 11, marginTop: 4 }}>out of 5.0</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+          {[
+            { k: 'Surface', v: 'Asphalt' },
+            { k: 'Confidence', v: '94%' },
+            { k: 'Rider passes', v: '4,128' },
+            { k: 'Last updated', v: '2 days ago' },
+            { k: 'Curviness', v: '9.2 / 10' },
+            { k: 'Elevation', v: '+1,536 m' },
+          ].map((f, i) => (
+            <div key={i} style={{
+              padding: 10, borderRadius: 8, background: CREAM, border: `1px solid ${LINE}`,
+            }}>
+              <Stamp style={{ fontSize: 9 }}>{f.k}</Stamp>
+              <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}>{f.v}</div>
+            </div>
+          ))}
+        </div>
+
+        <Stamp>Quality trend · 12 months</Stamp>
+        <div style={{ height: 80, marginTop: 10, marginBottom: 20, position: 'relative',
+          background: CREAM, borderRadius: 8, padding: 8, border: `1px solid ${LINE}` }}>
+          <svg viewBox="0 0 320 64" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+            <path d="M 0 20 L 30 22 60 18 90 24 120 28 150 20 180 14 210 12 240 14 270 10 300 8 320 10"
+              stroke={INK} strokeWidth="2" fill="none"/>
+            <path d="M 0 20 L 30 22 60 18 90 24 120 28 150 20 180 14 210 12 240 14 270 10 300 8 320 10 L 320 64 L 0 64 Z"
+              fill={colors[4]} fillOpacity="0.3"/>
+          </svg>
+        </div>
+
+        <Stamp>Recent activity</Stamp>
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[
+            { who: 'Lukas M.', what: 'Confirmed pothole at KM 14', when: '2h ago', c: ACCENT },
+            { who: 'Anna K.', what: 'Rated 5/5 · "resurfaced June"', when: '1d ago', c: colors[4] },
+            { who: 'Marco B.', what: 'Uploaded 3 photos', when: '2d ago', c: '#6EB4E8' },
+          ].map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start',
+              padding: '10px 12px', borderRadius: 10, background: CREAM, border: `1px solid ${LINE}` }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: r.c,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: INK, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                {r.who[0]}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>{r.who}</div>
+                <div style={{ fontSize: 11, color: INK_DIM, marginTop: 2 }}>{r.what}</div>
+              </div>
+              <Mono style={{ color: INK_MUTE, fontSize: 10 }}>{r.when}</Mono>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+          <div style={{ flex: 1, padding: '12px', borderRadius: 10, background: INK, color: CREAM,
+            textAlign: 'center', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+            Add to trip
+          </div>
+          <div style={{ flex: 1, padding: '12px', borderRadius: 10, background: 'transparent',
+            border: `1px solid ${INK}`, color: INK,
+            textAlign: 'center', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+            Share embed
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// RIDE HISTORY
+// ==============================================================
+function RideHistoryView({ tokens }) {
+  const { palette, accent } = tokens;
+  const colors = PALETTES[palette];
+  const rides = [
+    { date: '18 Apr', name: 'Stelvio Loop', km: 186, dur: '4h 12m', avg: 64, lean: 38, q: 4 },
+    { date: '15 Apr', name: 'Commute · HQ', km: 34, dur: '52m', avg: 48, lean: 22, q: 3 },
+    { date: '13 Apr', name: 'Passo Gavia', km: 142, dur: '3h 28m', avg: 58, lean: 34, q: 5 },
+    { date: '10 Apr', name: 'Lake Como sunset', km: 96, dur: '2h 14m', avg: 62, lean: 28, q: 4 },
+    { date: '07 Apr', name: 'Morning Beskydy', km: 68, dur: '1h 48m', avg: 50, lean: 32, q: 3 },
+    { date: '05 Apr', name: 'Mortirolo test', km: 74, dur: '2h 02m', avg: 46, lean: 40, q: 2 },
+  ];
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', padding: '24px 28px', background: CREAM }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22 }}>
+        <div>
+          <Stamp>Ride history</Stamp>
+          <Heading size={32} style={{ marginTop: 4 }}>April 2026 · 12 rides</Heading>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['Week', 'Month', 'Year', 'All time'].map((r, i) => (
+            <Pill key={i} bg={i === 1 ? INK : 'transparent'}
+              color={i === 1 ? CREAM : INK_DIM}
+              border={i === 1 ? 'none' : `1px solid ${LINE_2}`}>{r}</Pill>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+        {[
+          { k: 'Distance', v: '1,284', u: 'KM', d: '+18% vs March', col: ACCENT, bg: INK, dark: true },
+          { k: 'Ride time', v: '32', u: 'HRS', d: '+4h vs March', col: INK, bg: CREAM, dark: false },
+          { k: 'New roads', v: '47', u: 'DISCOVERED', d: '+12 this month', col: INK, bg: CREAM, dark: false },
+          { k: 'Lean angle', v: '41°', u: 'MAX', d: 'Passo Gavia', col: ACCENT, bg: PAPER, dark: false },
+        ].map((t, i) => (
+          <div key={i} style={{
+            background: t.bg, color: t.dark ? CREAM : INK,
+            border: `1px solid ${t.dark ? INK : LINE}`, borderRadius: 14, padding: 18,
+          }}>
+            <Stamp color={t.dark ? 'rgba(245,239,230,0.6)' : INK_DIM}>{t.k}</Stamp>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
+              <div style={{ fontSize: 38, fontWeight: 800, color: t.col, letterSpacing: -1, lineHeight: 1 }}>
+                {t.v}
+              </div>
+              <Mono style={{ color: t.dark ? 'rgba(245,239,230,0.6)' : INK_DIM, fontSize: 11 }}>{t.u}</Mono>
+            </div>
+            <div style={{ fontSize: 11, color: t.dark ? 'rgba(245,239,230,0.55)' : INK_MUTE, marginTop: 6 }}>{t.d}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        <Card style={{ padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
+            <div>
+              <Stamp>Distance by month</Stamp>
+              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 4 }}>Last 12 months</div>
+            </div>
+            <Mono style={{ color: INK_DIM, fontSize: 11 }}>11,842 km total</Mono>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160 }}>
+            {[340, 280, 560, 820, 1240, 1680, 1920, 1540, 1280, 880, 520, 1284].map((v, i) => {
+              const h = (v / 1920) * 140;
+              const current = i === 11;
+              return (
+                <div key={i} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column',
+                  justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: '100%', height: h,
+                    background: current ? ACCENT : INK,
+                    borderRadius: '4px 4px 0 0', opacity: current ? 1 : 0.85 }}/>
+                  <Mono style={{ fontSize: 9, color: INK_MUTE }}>
+                    {['M','J','J','A','S','O','N','D','J','F','M','A'][i]}
+                  </Mono>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card style={{ padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <Stamp>Your personal road map</Stamp>
+              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 4 }}>42% of Lombardy ridden</div>
+            </div>
+            <Pill bg={ACCENT} color={INK}>Unlock 58% more</Pill>
+          </div>
+          <div style={{ borderRadius: 10, overflow: 'hidden', height: 180, background: PAPER, border: `1px solid ${LINE}` }}>
+            <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%' }}>
+              <g stroke="rgba(14,14,16,0.10)" strokeWidth="2" fill="none" strokeLinecap="round">
+                <path d="M 20 140 C 60 120, 120 100, 180 90 S 280 80, 310 60"/>
+                <path d="M 50 60 C 90 90, 140 120, 180 90"/>
+                <path d="M 180 90 C 220 70, 260 100, 300 140"/>
+                <path d="M 100 40 L 150 90 L 200 140"/>
+                <path d="M 40 100 L 120 160"/>
+                <path d="M 220 30 L 280 80"/>
+              </g>
+              <g stroke={INK} strokeWidth="2.5" fill="none" strokeLinecap="round">
+                <path d="M 20 140 C 60 120, 120 100, 180 90"/>
+                <path d="M 180 90 C 220 70, 260 100, 300 140"/>
+                <path d="M 50 60 C 90 90, 140 120, 180 90"/>
+              </g>
+              {[{x:20,y:140},{x:180,y:90},{x:300,y:140},{x:50,y:60}].map((p,i)=>(
+                <circle key={i} cx={p.x} cy={p.y} r="4" fill={ACCENT} stroke={INK} strokeWidth="1"/>
+              ))}
+            </svg>
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: INK_DIM }}>
+            <span><Mono style={{color: INK, fontWeight: 700}}>842</Mono> km ridden</span>
+            <span><Mono style={{color: INK_MUTE}}>1,168</Mono> km remaining</span>
+          </div>
+        </Card>
+      </div>
+
+      <Card style={{ marginTop: 20, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${LINE}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Stamp>Recent rides</Stamp>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>12 rides · click to inspect</div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>Export CSV</Pill>
+            <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>Compare rides</Pill>
+          </div>
+        </div>
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px 90px 70px 70px 90px 40px',
+            padding: '10px 20px', fontSize: 10, color: INK_MUTE,
+            fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, textTransform: 'uppercase',
+            borderBottom: `1px solid ${LINE}`, background: PAPER }}>
+            <span>DATE</span><span>RIDE</span><span>KM</span><span>DURATION</span>
+            <span>AVG</span><span>LEAN</span><span>QUALITY</span><span></span>
+          </div>
+          {rides.map((r, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px 90px 70px 70px 90px 40px',
+              padding: '14px 20px', alignItems: 'center', fontSize: 13,
+              borderBottom: i < rides.length - 1 ? `1px solid ${LINE}` : 'none',
+              cursor: 'pointer',
+            }}>
+              <Mono style={{ color: INK_DIM }}>{r.date}</Mono>
+              <span style={{ fontWeight: 700 }}>{r.name}</span>
+              <Mono style={{ fontWeight: 700 }}>{r.km}</Mono>
+              <Mono style={{ color: INK_DIM }}>{r.dur}</Mono>
+              <Mono>{r.avg}</Mono>
+              <Mono>{r.lean}°</Mono>
+              <QualityBars q={r.q} palette={palette} size={4}/>
+              <span style={{ color: INK_MUTE }}>→</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ==============================================================
+// COMMUNITY
+// ==============================================================
+function CommunityView({ tokens }) {
+  const { palette } = tokens;
+  const colors = PALETTES[palette];
+  const routes = [
+    { name: 'Three Passes Sunday', author: 'Mira Hájková', km: 218, q: 5, likes: 142, region: 'Alps',
+      desc: 'Stelvio + Umbrail + Bernina. All resurfaced in May. Skip the coffee at Tibet Hütte — queue is brutal.' },
+    { name: 'Beskydy pocket loop', author: 'Jakub Svoboda', km: 94, q: 4, likes: 88, region: 'Beskydy',
+      desc: 'Tight twisty backroads most locals skip. Two dirt sections — fine in dry.' },
+    { name: 'Dolomites · east wall', author: 'Luca Berti', km: 164, q: 5, likes: 216, region: 'Dolomites',
+      desc: 'Giau + Falzarego + Tre Croci. Go early, Passo Giau empties by 8:30 AM.' },
+    { name: 'Moravian wine country', author: 'Anna Král', km: 112, q: 3, likes: 54, region: 'Moravia',
+      desc: 'Low-intensity Sunday loop. Stop in Znojmo for lunch at Sklep 1290.' },
+  ];
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', padding: '24px 28px', background: CREAM }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22 }}>
+        <div>
+          <Stamp>Community</Stamp>
+          <Heading size={32} style={{ marginTop: 4 }}>Routes from riders you follow</Heading>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Pill bg={INK} color={CREAM}>Following</Pill>
+          <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>Popular</Pill>
+          <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>Nearby</Pill>
+          <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>My region</Pill>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {routes.map((r, i) => (
+            <Card key={i} style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 20, padding: 16, cursor: 'pointer' }}>
+              <div style={{ height: 140, borderRadius: 10, overflow: 'hidden', background: PAPER, border: `1px solid ${LINE}` }}>
+                <svg viewBox="0 0 200 140" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%' }}>
+                  {[30, 60, 90, 120].map((y, k) => (
+                    <path key={k} d={`M -10 ${y} C 60 ${y-10+(i+k)*3}, 140 ${y+8-(i+k)*2}, 220 ${y}`}
+                      stroke="rgba(14,14,16,0.08)" strokeWidth="1" fill="none"/>
+                  ))}
+                  <path d={`M 10 ${100+i*5} C 40 ${80-i*3}, 80 ${60+i*4}, 120 ${50-i*2} S 180 ${40+i*3}, 195 ${30}`}
+                    stroke={colors[r.q - 1]} strokeWidth="3.5" fill="none" strokeLinecap="round"/>
+                  <circle cx="10" cy={100 + i*5} r="4" fill={INK}/>
+                  <circle cx="195" cy="30" r="4" fill={ACCENT} stroke={INK} strokeWidth="1"/>
+                </svg>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.2 }}>{r.name}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, color: INK_DIM, fontSize: 12 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: '50%', background: colors[i % 5],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: INK,
+                        fontSize: 10, fontWeight: 800 }}>{r.author[0]}</div>
+                      <span style={{ fontWeight: 600 }}>{r.author}</span>
+                      <span style={{ color: INK_MUTE }}>·</span>
+                      <span>{r.region}</span>
+                    </div>
+                  </div>
+                  <QualityBars q={r.q} palette={palette} size={5}/>
+                </div>
+                <div style={{ color: INK_DIM, fontSize: 13, marginTop: 10, lineHeight: 1.5, flex: 1 }}>
+                  {r.desc}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                  <div style={{ display: 'flex', gap: 14, fontSize: 11, color: INK_DIM }}>
+                    <Mono><span style={{color: INK, fontWeight: 700}}>{r.km}</span> KM</Mono>
+                    <Mono>♥ {r.likes}</Mono>
+                    <Mono>↓ Clone</Mono>
+                  </div>
+                  <Pill bg={ACCENT} color={INK}>Add to trips →</Pill>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* challenge */}
+          <div style={{ background: INK, color: CREAM, borderRadius: 14, padding: 18 }}>
+            <Stamp color={ACCENT}>Active challenge</Stamp>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6, letterSpacing: -0.2 }}>
+              Ride 10 new passes in April
+            </div>
+            <div style={{ marginTop: 14, position: 'relative', height: 6,
+              background: 'rgba(245,239,230,0.14)', borderRadius: 3 }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%',
+                width: '70%', background: ACCENT, borderRadius: 3 }}/>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8,
+              fontSize: 11, color: 'rgba(245,239,230,0.7)' }}>
+              <Mono>7 / 10 passes</Mono>
+              <Mono>11 days left</Mono>
+            </div>
+          </div>
+
+          <Card style={{ padding: 18 }}>
+            <Stamp>Badges · 14 earned</Stamp>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 12 }}>
+              {[
+                { n: 'Pothole Hawk', i: '⚠', col: ACCENT, earned: true },
+                { n: '10K Club', i: '10K', col: INK, earned: true },
+                { n: 'Alps Five', i: '△', col: '#6EB4E8', earned: true },
+                { n: 'Dawn Patrol', i: '☼', col: colors[3], earned: true },
+                { n: 'Hazard Hero', i: '!', col: ACCENT, earned: false },
+                { n: 'Cross-border', i: '⇄', col: '#C28AE8', earned: false },
+                { n: 'Gravel', i: '▦', col: colors[2], earned: false },
+                { n: 'Year One', i: '365', col: INK_MUTE, earned: false },
+              ].map((b, i) => (
+                <div key={i} style={{
+                  aspectRatio: '1', borderRadius: 10,
+                  background: b.earned ? PAPER : 'transparent',
+                  border: `1px solid ${b.earned ? b.col : LINE}`,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  opacity: b.earned ? 1 : 0.45,
+                }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800,
+                    fontSize: 14, color: b.col }}>{b.i}</div>
+                  <div style={{ fontSize: 8, color: INK_DIM, marginTop: 4, textAlign: 'center',
+                    lineHeight: 1.2, padding: '0 4px' }}>{b.n}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card style={{ padding: 18 }}>
+            <Stamp>Your region · Lombardy</Stamp>
+            <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>Km ridden · April</div>
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { r: 1, n: 'Luca B.', km: 1892 },
+                { r: 2, n: 'Mira H.', km: 1466 },
+                { r: 3, n: 'Matteo F.', km: 1340 },
+                { r: 7, n: 'You', km: 1284, you: true },
+                { r: 8, n: 'Jakub S.', km: 1208 },
+              ].map((p, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '6px 10px', borderRadius: 8,
+                  background: p.you ? INK : 'transparent',
+                  color: p.you ? CREAM : INK,
+                }}>
+                  <Mono style={{ color: p.you ? ACCENT : INK_MUTE, width: 18, fontWeight: 700 }}>#{p.r}</Mono>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: p.you ? 700 : 500 }}>{p.n}</span>
+                  <Mono style={{ fontSize: 11, color: p.you ? 'rgba(245,239,230,0.7)' : INK_DIM }}>{p.km} km</Mono>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// ACCOUNT
+// ==============================================================
+function AccountView({ tokens }) {
+  const { palette } = tokens;
+  const colors = PALETTES[palette];
+  const [tab, setTab] = useState('profile');
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', padding: '24px 28px', background: CREAM }}>
+      <Stamp>Account</Stamp>
+      <Heading size={32} style={{ marginTop: 4, marginBottom: 20 }}>Luca Berti</Heading>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 28 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {[
+            ['profile', 'Profile', 'User, home region, privacy'],
+            ['subscription', 'Subscription', 'Pro · renews Jan 2027'],
+            ['bikes', 'My bikes', '2 bikes · 1 active'],
+            ['notifications', 'Notifications', 'Email + hazard alerts'],
+            ['privacy', 'Privacy & data', 'Export, delete, GDPR'],
+            ['devices', 'Devices & sync', 'iPhone 16 Pro · CarPlay'],
+          ].map(([id, label, sub]) => (
+            <div key={id} onClick={() => setTab(id)} style={{
+              padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+              background: tab === id ? INK : 'transparent',
+              color: tab === id ? CREAM : INK,
+              border: `1px solid ${tab === id ? INK : 'transparent'}`,
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{label}</div>
+              <div style={{ fontSize: 11,
+                color: tab === id ? 'rgba(245,239,230,0.65)' : INK_MUTE, marginTop: 2 }}>{sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {tab === 'profile' && (
+            <>
+              <Card style={{ padding: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18 }}>
+                  <div style={{ width: 68, height: 68, borderRadius: '50%', background: ACCENT,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 26, fontWeight: 800, color: INK }}>L</div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>Luca Berti</div>
+                    <div style={{ color: INK_DIM, fontSize: 12 }}>luca.berti@tarmoto.app · Joined Mar 2026</div>
+                  </div>
+                  <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`} style={{ marginLeft: 'auto' }}>
+                    Change avatar
+                  </Pill>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {[
+                    ['Display name', 'Luca Berti'],
+                    ['Home region', 'Lombardy, IT'],
+                    ['Primary language', 'Italian'],
+                    ['Units', 'Metric (km, °C)'],
+                  ].map(([k, v]) => (
+                    <div key={k}>
+                      <Stamp style={{ display: 'block', marginBottom: 6 }}>{k}</Stamp>
+                      <div style={{ padding: '10px 12px', borderRadius: 8,
+                        border: `1px solid ${LINE_2}`, background: PAPER,
+                        fontSize: 13, fontWeight: 600 }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+              <Card style={{ padding: 22, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Dot color={colors[4]}/>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>iPhone 16 Pro · last synced 4 minutes ago</span>
+                <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`} style={{ marginLeft: 'auto' }}>Manage</Pill>
+              </Card>
+            </>
+          )}
+
+          {tab === 'subscription' && (
+            <>
+              <div style={{ background: INK, color: CREAM, borderRadius: 14, padding: 22 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <Stamp color={ACCENT}>Current tier</Stamp>
+                    <Heading size={28} style={{ marginTop: 4, color: CREAM }}>Tarmoto Pro</Heading>
+                    <div style={{ color: 'rgba(245,239,230,0.7)', fontSize: 13, marginTop: 4 }}>
+                      €49.99 / year · renews Jan 14, 2027
+                    </div>
+                  </div>
+                  <Pill bg={ACCENT} color={INK}>Manage billing</Pill>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                {[
+                  { name: 'Free', price: '€0', active: false },
+                  { name: 'Premium', price: '€29.99/yr', active: false },
+                  { name: 'Pro', price: '€49.99/yr', active: true },
+                ].map((t, i) => (
+                  <div key={i} style={{
+                    background: t.active ? INK : CREAM, color: t.active ? CREAM : INK,
+                    border: `1px solid ${t.active ? INK : LINE}`,
+                    borderRadius: 12, padding: 16,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div style={{ fontWeight: 800 }}>{t.name}</div>
+                      {t.active && <Dot color={ACCENT}/>}
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6 }}>{t.price}</div>
+                  </div>
+                ))}
+              </div>
+              <Card style={{ padding: 22 }}>
+                <Stamp>Billing history</Stamp>
+                <div style={{ marginTop: 12 }}>
+                  {[
+                    { d: 'Jan 14, 2026', k: 'Tarmoto Pro · annual', v: '€49.99' },
+                    { d: 'Jan 14, 2025', k: 'Tarmoto Premium · annual', v: '€29.99' },
+                  ].map((b, i) => (
+                    <div key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 0', borderBottom: i === 0 ? `1px solid ${LINE}` : 'none',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{b.k}</div>
+                        <Mono style={{ color: INK_MUTE, fontSize: 11 }}>{b.d}</Mono>
+                      </div>
+                      <Mono style={{ fontWeight: 700 }}>{b.v}</Mono>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </>
+          )}
+
+          {tab === 'bikes' && (
+            <Card style={{ padding: 22 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+                <Stamp>My bikes</Stamp>
+                <Pill bg={INK} color={CREAM}>+ Add bike</Pill>
+              </div>
+              {[
+                { make: 'Ducati', model: 'Monster 937', year: 2023, active: true, km: 8240 },
+                { make: 'Honda', model: 'CRF 300 Rally', year: 2022, active: false, km: 3160 },
+              ].map((b, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 16,
+                  padding: 14, borderRadius: 10,
+                  background: b.active ? INK : PAPER,
+                  color: b.active ? CREAM : INK,
+                  border: `1px solid ${b.active ? INK : LINE}`,
+                  marginBottom: 10,
+                }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 10,
+                    background: b.active ? 'rgba(245,239,230,0.1)' : CREAM,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 22 }}>🏍</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 800 }}>{b.make} {b.model}</div>
+                    <div style={{ color: b.active ? 'rgba(245,239,230,0.65)' : INK_DIM,
+                      fontSize: 12, marginTop: 2 }}>
+                      {b.year} · {b.km.toLocaleString()} km on Tarmoto
+                    </div>
+                  </div>
+                  {b.active
+                    ? <Pill bg={ACCENT} color={INK}>Active</Pill>
+                    : <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>Make active</Pill>}
+                </div>
+              ))}
+            </Card>
+          )}
+
+          {tab === 'notifications' && (
+            <Card style={{ padding: 22 }}>
+              <Stamp>Notification preferences</Stamp>
+              <div style={{ marginTop: 14 }}>
+                {[
+                  ['Hazard alerts on saved routes', true],
+                  ['Weekly commute summary email', true],
+                  ['Community activity digest', false],
+                  ['New road quality data in my region', true],
+                  ['Trip collaboration invites', true],
+                  ['Marketing & product updates', false],
+                ].map(([label, on], i) => (
+                  <div key={i} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '14px 0', borderBottom: i < 5 ? `1px solid ${LINE}` : 'none',
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
+                    <div style={{ width: 36, height: 20, borderRadius: 999,
+                      background: on ? INK : 'rgba(14,14,16,0.12)', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: 2, left: on ? 18 : 2,
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: on ? ACCENT : CREAM }}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {tab === 'privacy' && (
+            <>
+              <Card style={{ padding: 22 }}>
+                <Stamp>Data contribution</Stamp>
+                <div style={{ fontSize: 14, marginTop: 8, fontWeight: 600 }}>
+                  Contribute anonymized road quality data to the Tarmoto community dataset.
+                </div>
+                <div style={{ fontSize: 12, color: INK_DIM, marginTop: 6, lineHeight: 1.5 }}>
+                  Your accelerometer readings are hashed and unlinked from your account before upload.
+                  This is what makes the map better for every rider.
+                </div>
+                <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+                  <Pill bg={ACCENT} color={INK}>Opted in</Pill>
+                  <Pill bg="transparent" color={INK} border={`1px solid ${LINE_2}`}>How it works</Pill>
+                </div>
+              </Card>
+              <Card style={{ padding: 22 }}>
+                <Stamp>GDPR tools</Stamp>
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[
+                    ['Export all my data', 'Rides, routes, profile — JSON + GPX bundle'],
+                    ['Download ride history', 'CSV of all tracked rides'],
+                    ['Delete my account', 'Permanently erase all data within 30 days', true],
+                  ].map(([label, sub, danger], i) => (
+                    <div key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: 14, borderRadius: 10, background: PAPER, border: `1px solid ${LINE}`,
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: danger ? '#E05A3C' : INK }}>
+                          {label}
+                        </div>
+                        <div style={{ fontSize: 11, color: INK_MUTE, marginTop: 4 }}>{sub}</div>
+                      </div>
+                      <Pill bg="transparent" border={`1px solid ${danger ? '#E05A3C' : LINE_2}`}
+                        color={danger ? '#E05A3C' : INK}>
+                        {danger ? 'Delete' : 'Export'}
+                      </Pill>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </>
+          )}
+
+          {tab === 'devices' && (
+            <Card style={{ padding: 22 }}>
+              <Stamp>Connected devices</Stamp>
+              <div style={{ marginTop: 14 }}>
+                {[
+                  ['iPhone 16 Pro', 'iOS 26 · Tarmoto 1.4.2', 'Active', true],
+                  ['Apple CarPlay · Ducati Monster', 'Last seen 18 Apr', 'Paired', false],
+                  ['Garmin Zumo XT2', 'GPX sync enabled', 'Connected', false],
+                ].map(([n, sub, status, active], i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: 14, borderRadius: 10, background: PAPER,
+                    border: `1px solid ${LINE}`, marginBottom: 10,
+                  }}>
+                    <Dot color={active ? colors[4] : INK_MUTE}/>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{n}</div>
+                      <div style={{ color: INK_MUTE, fontSize: 11, marginTop: 2 }}>{sub}</div>
+                    </div>
+                    <Mono style={{ fontSize: 10, color: INK_DIM, fontWeight: 700 }}>{status}</Mono>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// TWEAKS
+// ==============================================================
+function TweaksPanel({ tokens, setTokens, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', right: 20, bottom: 20, width: 300, zIndex: 1000,
+      background: CREAM, border: `1px solid ${LINE_2}`, borderRadius: 14, padding: 18,
+      boxShadow: '0 24px 60px rgba(14,14,16,0.2)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <Stamp color={ACCENT}>Tweaks</Stamp>
+        <div onClick={onClose} style={{ cursor: 'pointer', color: INK_MUTE, fontSize: 18 }}>×</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <TweakRow label="Map mode" value={tokens.mapMode} options={['paper', 'light', 'dark']}
+          onChange={v => setTokens(t => ({...t, mapMode: v}))}/>
+        <TweakRow label="Quality palette" value={tokens.palette} options={['traffic', 'muted', 'mono']}
+          onChange={v => setTokens(t => ({...t, palette: v}))}/>
+        <TweakRow label="Density" value={tokens.density} options={['comfortable', 'compact']}
+          onChange={v => setTokens(t => ({...t, density: v}))}/>
+        <div>
+          <Stamp style={{ display: 'block', marginBottom: 8 }}>Accent color</Stamp>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['#FF6A1A', '#E8D66A', '#6FD38A', '#6EB4E8', '#C28AE8', '#E05A3C'].map(c => (
+              <div key={c} onClick={() => setTokens(t => ({...t, accent: c}))} style={{
+                width: 28, height: 28, borderRadius: '50%', background: c, cursor: 'pointer',
+                border: tokens.accent === c ? `2px solid ${INK}` : `2px solid transparent`,
+              }}/>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function TweakRow({ label, value, options, onChange }) {
+  return (
+    <div>
+      <Stamp style={{ display: 'block', marginBottom: 6 }}>{label}</Stamp>
+      <div style={{ display: 'flex', gap: 4, background: PAPER, padding: 3, borderRadius: 7 }}>
+        {options.map(opt => (
+          <div key={opt} onClick={() => onChange(opt)} style={{
+            flex: 1, padding: '6px 8px', borderRadius: 5, textAlign: 'center',
+            fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
+            background: value === opt ? INK : 'transparent',
+            color: value === opt ? CREAM : INK_DIM,
+          }}>{opt}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================
+// SHELL
+// ==============================================================
+const VIEWS = [
+  { id: 'planner',   label: 'Trip Planner', stamp: '01', comp: TripPlannerView },
+  { id: 'explorer',  label: 'Road Explorer', stamp: '02', comp: RoadExplorerView },
+  { id: 'history',   label: 'Ride History', stamp: '03', comp: RideHistoryView },
+  { id: 'community', label: 'Community',    stamp: '04', comp: CommunityView },
+  { id: 'account',   label: 'Account',      stamp: '05', comp: AccountView },
+];
+
+function App() {
+  const [view, setView] = useState(() => localStorage.getItem('tarmoto_v2_view') || 'planner');
+  const [tokens, setTokens] = useState(TWEAK_DEFAULTS);
+  const [tweaksOn, setTweaksOn] = useState(false);
+  useEffect(() => { localStorage.setItem('tarmoto_v2_view', view); }, [view]);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOn(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOn(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+  useEffect(() => {
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: tokens }, '*');
+  }, [tokens]);
+
+  const CurrentView = VIEWS.find(v => v.id === view).comp;
+
+  return (
+    <div data-screen-label={view} style={{
+      height: '100vh', width: '100vw', display: 'grid',
+      gridTemplateColumns: '220px 1fr', background: CREAM, color: INK,
+    }}>
+      {/* LEFT RAIL — cream on ink */}
+      <div style={{ borderRight: `1px solid ${LINE}`, display: 'flex', flexDirection: 'column',
+        padding: '20px 14px', gap: 20, background: INK, color: CREAM }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: ACCENT,
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="18" height="18" viewBox="0 0 20 20">
+              <path d="M 3 15 L 10 4 L 17 15 Z" fill={INK}/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: -0.2 }}>TARMOTO</div>
+            <Mono style={{ fontSize: 9, color: 'rgba(245,239,230,0.5)', letterSpacing: 1 }}>WEB · v1.4</Mono>
+          </div>
+        </div>
+
+        <div style={{ height: 1, background: 'rgba(245,239,230,0.08)' }}/>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {VIEWS.map(v => (
+            <div key={v.id} onClick={() => setView(v.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+              background: view === v.id ? ACCENT : 'transparent',
+              color: view === v.id ? INK : CREAM,
+              transition: 'all 0.12s',
+            }}>
+              <Mono style={{ fontSize: 10,
+                color: view === v.id ? INK : 'rgba(245,239,230,0.4)', width: 18, fontWeight: 700 }}>
+                {v.stamp}
+              </Mono>
+              <span style={{ fontSize: 13, fontWeight: view === v.id ? 800 : 600 }}>
+                {v.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ flex: 1 }}/>
+
+        <div style={{ background: 'rgba(245,239,230,0.06)',
+          border: `1px solid rgba(245,239,230,0.08)`, borderRadius: 10, padding: 12 }}>
+          <Stamp color="rgba(245,239,230,0.55)">Your contribution</Stamp>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, letterSpacing: -0.5, color: CREAM }}>
+            4,284 <Mono style={{ fontSize: 10, color: 'rgba(245,239,230,0.6)', fontWeight: 500 }}>KM MAPPED</Mono>
+          </div>
+          <div style={{ height: 4, background: 'rgba(245,239,230,0.1)', borderRadius: 2, marginTop: 8 }}>
+            <div style={{ width: '68%', height: '100%', background: ACCENT, borderRadius: 2 }}/>
+          </div>
+          <Mono style={{ fontSize: 9, color: 'rgba(245,239,230,0.5)', marginTop: 6, display: 'block' }}>
+            Top 8% of riders in Lombardy
+          </Mono>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: ACCENT,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 800, color: INK }}>L</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: CREAM }}>Luca Berti</div>
+            <Mono style={{ fontSize: 9, color: 'rgba(245,239,230,0.5)' }}>PRO · LOMBARDY</Mono>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: 'relative', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+        <CurrentView tokens={tokens}/>
+      </div>
+
+      {tweaksOn && <TweaksPanel tokens={tokens} setTokens={setTokens} onClose={() => setTweaksOn(false)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
