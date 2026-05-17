@@ -178,7 +178,7 @@ export default function SubscriptionPage() {
   }
   const billingBusy = actionState.kind !== null;
   return (
-    <div className="mx-auto max-w-6xl animate-fade-in p-6">
+    <div className="mx-auto max-w-page-narrow animate-fade-in p-6">
       <Link
         href="/settings"
         className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 transition hover:text-white"

@@ -127,7 +127,7 @@ export default function NotificationsPage() {
   }
   if (loading) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="p-6 max-w-page-narrow mx-auto">
         <div className="flex items-center gap-2 text-slate-400">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading preferences\u2026 ")}
@@ -137,7 +137,7 @@ export default function NotificationsPage() {
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
         <Link
           href="/settings"
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
@@ -154,7 +154,7 @@ export default function NotificationsPage() {
     );
   }
   return (
-    <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"

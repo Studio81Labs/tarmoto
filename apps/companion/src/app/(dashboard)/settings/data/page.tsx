@@ -180,7 +180,7 @@ export default function DataPage() {
     };
   }, [pollingId]);
   return (
-    <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
