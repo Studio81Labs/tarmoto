@@ -277,7 +277,7 @@ export default function AccountPage() {
     };
   }, [mobileLinkHref]);
   return (
-    <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <h1 className="text-2xl font-bold mb-6">{t("Settings")}</h1>
 
       {/* Settings navigation */}

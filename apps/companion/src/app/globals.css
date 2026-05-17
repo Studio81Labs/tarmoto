@@ -50,6 +50,22 @@
      translations are handled separately in @layer utilities below. */
   --color-slate-850: #ede6da;
 
+  /* ─── Canonical page widths ───
+     Two named tokens cover every signed-in dashboard route. Tailwind v4
+     auto-generates `max-w-page` and `max-w-page-narrow` utilities from
+     these `--container-*` entries.
+
+     • `--container-page` (72rem) — default content tier: home, rides
+       detail / compare / stats, community children, gamification.
+     • `--container-page-narrow` (48rem) — form / list tier: every
+       `/settings/*` page including subscription, so the shell feels
+       consistent the moment a rider drills into account chrome.
+
+     Map-driven pages (`/explore`, `/trips/planner`, `/rides/road-map`)
+     intentionally have no width cap — the canvas is the content. */
+  --container-page: 72rem;
+  --container-page-narrow: 48rem;
+
   --font-sans: "Space Grotesk", "Plus Jakarta Sans", system-ui, -apple-system,
     sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
