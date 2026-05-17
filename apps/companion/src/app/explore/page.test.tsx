@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ExplorerPage from "./page";
 import { roadsApi } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
+import { useAuthStore } from "@/stores/auth";
 import { DEFAULT_MAP_FILTERS, cloneFilters } from "@/lib/map-filters";
 import { usePreferencesStore } from "@/stores/preferences";
 
@@ -193,6 +194,19 @@ describe("ExplorerPage", () => {
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
+    // Tests run against the authenticated explore path by default —
+    // the search input only renders for signed-in riders (the public
+    // geocode endpoint is AuthGuard-protected so we hide rather than
+    // 401 on every keystroke).
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "test-token",
+    });
   });
 
   it("T29: typing in the search input geocodes and flies the map to the picked place (#573)", async () => {
@@ -229,6 +243,20 @@ describe("ExplorerPage", () => {
     const state = useMapStore.getState();
     expect(state.center).toEqual({ lng: 19.973, lat: 49.165 });
     expect(state.zoom).toBe(12);
+  });
+
+  it("hides the place search on the public explorer path (geocode is AuthGuard-protected)", () => {
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
+    });
+
+    render(<ExplorerPage />);
+
+    expect(
+      screen.queryByRole("textbox", { name: /search for a place/i }),
+    ).toBeNull();
   });
 
   it("fetches canonical detail and opens the segment sidebar when a map segment is selected", async () => {

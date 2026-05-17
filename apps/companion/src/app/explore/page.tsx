@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
+import { useAuthStore } from "@/stores/auth";
 import { Filter, MapPin, Search, RotateCcw } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -178,6 +179,7 @@ function ExplorerPageInner() {
     setZoom,
     resetFilters,
   } = useMapStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   // Hydrate the store from URL params on mount and on back/forward navigation.
   // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
   // that follows the store update — otherwise it would see stale `filters` from
@@ -265,14 +267,22 @@ function ExplorerPageInner() {
     // identical and lets the WCAG-AA contrast budget here apply to
     // a single canvas.
     <div className="tarmoto-no-cream flex flex-col h-full bg-slate-950">
-      {/* Search bar */}
+      {/* Search bar — only rendered for signed-in riders. The
+          underlying `/api/v1/geocode` endpoint sits behind
+          AuthGuard, so a public visitor would get 401 on every
+          query. Hide rather than show-an-error-state, matching
+          how the rest of the public explore degrades. */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
-        <ExploreSearch
-          onPick={(place) => {
-            setCenter({ lng: place.lng, lat: place.lat });
-            setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
-          }}
-        />
+        {isAuthenticated ? (
+          <ExploreSearch
+            onPick={(place) => {
+              setCenter({ lng: place.lng, lat: place.lat });
+              setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
+            }}
+          />
+        ) : (
+          <div className="flex-1 max-w-md" />
+        )}
 
         <div className="flex items-center gap-1.5">
           {/* Active toggle: filled brand accent (high-contrast primary
@@ -621,7 +631,15 @@ function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
           }
         });
     }, EXPLORE_SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      // Cancel both the pending debounce AND any request that
+      // already left — without the abort, a late response from
+      // a stale query could repopulate `matches` for the wrong
+      // input after the rider has already typed something else
+      // (or cleared the field).
+      clearTimeout(timer);
+      abortRef.current?.abort();
+    };
   }, [draft]);
 
   const handlePick = (place: GeocodeMatch) => {
