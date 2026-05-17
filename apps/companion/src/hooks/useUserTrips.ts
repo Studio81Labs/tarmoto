@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -63,18 +63,28 @@ export function useUserTrips(): {
     },
   });
 
-  // Clear the previous account's trips on every `userId` change.
-  // Combined with the render-time owner gate below, this means
-  // even a hook consumer that runs SYNCHRONOUSLY during render
-  // never sees user A's rows under user B.
+  // Clear the previous account's trips on an actual userId change
+  // (mount-with-A → mount-with-B, or sign-out). On initial mount
+  // there's no prior user to clean up — running `removeQueries`
+  // there would drop the query this very mount just kicked off
+  // and defeat React Query's `staleTime`.
+  const prevUserIdRef = useRef<string | null>(null);
   useEffect(() => {
+    const prev = prevUserIdRef.current;
+    prevUserIdRef.current = userId;
+    if (prev === userId) return;
+    // Always mark the store as owned by the new id (or null) so
+    // the render-time gate below can short-circuit immediately —
+    // the upcoming write-through repopulates if there's data.
     setTrips([], userId);
-    // Drop the prior user's cache too — Codex flagged that
-    // `invalidateQueries` leaves stale data callable while the
-    // refetch is in flight. `removeQueries` clears it outright.
-    queryClient.removeQueries({ queryKey: ["user-trips"] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run on userId
-  }, [userId]);
+    // Drop only the PREVIOUS user's cached query, not the current
+    // user's freshly-registered observer.
+    if (prev !== null) {
+      queryClient.removeQueries({
+        queryKey: USER_TRIPS_QUERY_KEY(prev),
+      });
+    }
+  }, [userId, setTrips, queryClient]);
 
   // Write-through into the Zustand store. The list endpoint may
   // return either a raw array or a `{ data: [] }` envelope
