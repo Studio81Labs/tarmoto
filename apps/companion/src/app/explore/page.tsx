@@ -98,17 +98,17 @@ function parseDateInputValue(value: string): Date | null {
 // the current instant — closures starting later today wouldn't
 // match `active_on=<now>` until the rider re-picked the visible
 // date, even though the picker UI already shows today.
+//
+// The year/month/day come from the rider's *local* calendar
+// (`getFullYear()` / `getMonth()` / `getDate()`), not UTC. A user
+// in California at 18:00 PST sees Friday on their device even
+// though UTC is already Saturday at 02:00; pulling UTC fields
+// here would boot the picker on Saturday's preview while the
+// browser still reads Friday.
 function todayAsPreviewDate(): Date {
   const now = new Date();
   return new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
-      12,
-      0,
-      0,
-    ),
+    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0),
   );
 }
 
