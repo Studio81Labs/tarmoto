@@ -35,17 +35,37 @@ import { t } from "@/i18n";
  * inside the user menu now.
  */
 
+type NavSubItem = {
+  href: string;
+  label: string;
+};
+
 type NavItem = {
   href: string;
   label: string;
   stamp: string;
+  // Sub-routes that render under the parent when the rider is
+  // somewhere inside the section. Replaces per-page top tab
+  // strips (e.g. the old `RidesSubNav`) — the same affordance
+  // lives inside the sidebar now, matching the rest of the
+  // navigation chrome.
+  children?: NavSubItem[];
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", stamp: "00", label: "Home" },
   { href: "/trips", stamp: "01", label: "Trips" },
   { href: "/explore", stamp: "02", label: "Road Explorer" },
-  { href: "/rides", stamp: "03", label: "Ride History" },
+  {
+    href: "/rides",
+    stamp: "03",
+    label: "Ride History",
+    children: [
+      { href: "/rides/stats", label: "Statistics" },
+      { href: "/rides/road-map", label: "Road map" },
+      { href: "/rides/compare", label: "Compare rides" },
+    ],
+  },
   { href: "/community", stamp: "04", label: "Community" },
   { href: "/gamification", stamp: "05", label: "Achievements" },
 ];
@@ -122,6 +142,10 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex flex-col gap-0.5">
         {NAV_ITEMS.map((item) => {
+          const inSection =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(item.href);
           const isActive = (() => {
             if (item.href === "/") return pathname === "/";
             if (!pathname.startsWith(item.href)) return false;
@@ -134,38 +158,72 @@ export function Sidebar() {
             return !hasMoreSpecific;
           })();
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
-              className={clsx(
-                "flex items-center rounded-lg py-2.5 transition-colors",
-                collapsed ? "justify-center px-0" : "gap-2.5 px-3",
-                isActive ? "bg-accent text-ink" : "text-cream hover:bg-cream/5",
-              )}
-            >
-              <span
-                aria-hidden="true"
+            <div key={item.href} className="flex flex-col gap-0.5">
+              <Link
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
                 className={clsx(
-                  "font-mono text-[10px] font-bold tracking-[1px]",
-                  collapsed ? "" : "w-6",
-                  isActive ? "text-ink" : "text-cream/40",
+                  "flex items-center rounded-lg py-2.5 transition-colors",
+                  collapsed ? "justify-center px-0" : "gap-2.5 px-3",
+                  isActive
+                    ? "bg-accent text-ink"
+                    : "text-cream hover:bg-cream/5",
                 )}
               >
-                {item.stamp}
-              </span>
-              {!collapsed && (
                 <span
+                  aria-hidden="true"
                   className={clsx(
-                    "text-[13px]",
-                    isActive ? "font-bold" : "font-semibold",
+                    "font-mono text-[10px] font-bold tracking-[1px]",
+                    collapsed ? "" : "w-6",
+                    isActive ? "text-ink" : "text-cream/40",
                   )}
                 >
-                  {item.label}
+                  {item.stamp}
                 </span>
+                {!collapsed && (
+                  <span
+                    className={clsx(
+                      "text-[13px]",
+                      isActive ? "font-bold" : "font-semibold",
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                )}
+              </Link>
+
+              {/* Sub-items only render when the rider is inside this
+                  section and the sidebar is expanded — replaces the
+                  per-section top tab strip with sidebar nesting,
+                  consistent with shell v2's "sidebar owns nav"
+                  principle. Collapsed mode hides them; the parent
+                  link's title tooltip carries the section label and
+                  the rider can always tap through to see the
+                  sub-routes inline. */}
+              {!collapsed && inSection && item.children && (
+                <div className="ml-9 flex flex-col gap-0.5 border-l border-cream/10 pl-2">
+                  {item.children.map((child) => {
+                    const childActive = pathname.startsWith(child.href);
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        aria-current={childActive ? "page" : undefined}
+                        className={clsx(
+                          "rounded-md px-2 py-1.5 text-[12px] transition-colors",
+                          childActive
+                            ? "bg-cream/10 font-semibold text-cream"
+                            : "text-cream/60 hover:bg-cream/5 hover:text-cream",
+                        )}
+                      >
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            </Link>
+            </div>
           );
         })}
       </nav>

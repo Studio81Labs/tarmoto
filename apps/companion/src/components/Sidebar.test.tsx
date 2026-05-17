@@ -13,8 +13,9 @@ vi.mock("next-auth/react", () => ({
   signOut: (...args: unknown[]) => signOutMock(...args),
 }));
 
+const pathnameRef = { current: "/" };
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: () => pathnameRef.current,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -44,6 +45,7 @@ beforeEach(() => {
     data: { items: [], unread_count: 0 },
   });
   localStorage.clear();
+  pathnameRef.current = "/";
 });
 
 afterEach(() => {
@@ -107,6 +109,37 @@ describe("Sidebar — shell v2", () => {
     fireEvent.click(screen.getByRole("button", { name: /rider smith/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /log out/i }));
     expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/login" });
+  });
+
+  it("renders Ride History sub-items only when the rider is inside the section (#572)", () => {
+    // Default route ("/") — sub-items hidden.
+    pathnameRef.current = "/";
+    const { rerender } = render(<Sidebar />);
+    expect(screen.queryByRole("link", { name: /^statistics$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^road map$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^compare rides$/i })).toBeNull();
+
+    // Navigate into /rides — sub-items appear.
+    pathnameRef.current = "/rides";
+    rerender(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /^statistics$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^road map$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^compare rides$/i }),
+    ).toBeInTheDocument();
+
+    // Deep sub-route still keeps the section open AND marks the
+    // matching sub-item active via aria-current.
+    pathnameRef.current = "/rides/stats";
+    rerender(<Sidebar />);
+    expect(screen.getByRole("link", { name: /^statistics$/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("user menu closes on Escape", () => {
