@@ -614,8 +614,15 @@ function FolderChipRow({
   onRename,
   onDelete,
 }: FolderChipRowProps) {
+  // Chips wrap to a second line on narrow viewports rather than
+  // scrolling horizontally. An `overflow-x-auto` ancestor would
+  // clip the per-chip rename/delete dropdown — CSS forces the
+  // other axis to `auto` too whenever one is scrollable — so we
+  // pay the cost of a slightly taller header in exchange for
+  // never trapping the kebab menu behind the scroller. With the
+  // typical handful of folders this rarely matters.
   return (
-    <div className="-mx-1 mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-1 pb-1">
+    <div className="-mx-1 mb-4 flex flex-wrap items-center gap-2 px-1">
       <FolderChip
         icon={<Route size={12} />}
         label={t("All trips")}
