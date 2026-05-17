@@ -14,7 +14,7 @@
  * rendering goes through `gamification-fetch.ts` and the real backend.
  */
 
-import type { components } from "@tarmoto/openapi";
+import type { components } from "@tarmoto/openapi-client";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];

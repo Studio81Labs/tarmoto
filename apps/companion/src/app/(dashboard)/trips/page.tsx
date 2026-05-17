@@ -27,8 +27,10 @@ import {
   type TripDetailResponse,
   type TripSummaryWire,
 } from "@/lib/trip-from-detail";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
+import { USER_TRIPS_QUERY_KEY } from "@/hooks/useUserTrips";
 import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
@@ -71,6 +73,18 @@ export default function TripListPage() {
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const queryClient = useQueryClient();
+  // After any optimistic mutation that touches the persisted list,
+  // drop the React Query cache for `useUserTrips`. `removeQueries`
+  // (not `invalidateQueries`) — invalidation leaves the stale data
+  // available until the refetch lands, which would let the hook's
+  // write-through copy the pre-mutation snapshot back over the
+  // freshly-mutated store. Removing forces the next mount to fetch
+  // fresh, so the store and the cache can't diverge.
+  const invalidateTripsCache = () =>
+    queryClient.removeQueries({
+      queryKey: USER_TRIPS_QUERY_KEY(userId),
+    });
   const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
@@ -259,6 +273,12 @@ export default function TripListPage() {
     );
     try {
       await tripFoldersApi.delete(folder.id);
+      // The cascade on `trips.folder_id` runs server-side, so the
+      // next `/api/v1/trips` fetch will return the affected trips
+      // with `folder_id: null`. Invalidate the cache so a hook
+      // consumer remounting within `staleTime` doesn't write the
+      // pre-delete `folder_id` values back into the Zustand store.
+      void invalidateTripsCache();
     } catch {
       // Roll back the folder list, the per-trip optimistic unfile, AND
       // the folder-scope filter so the rider isn't left looking at a
@@ -304,6 +324,7 @@ export default function TripListPage() {
     markBusy(trip.id);
     try {
       await tripsApi.update(trip.id, { folder_id: folderId });
+      void invalidateTripsCache();
     } catch {
       // Targeted rollback: touch only this trip so concurrent duplicates or
       // deletes made during the await aren't clobbered by a stale snapshot.
@@ -345,6 +366,7 @@ export default function TripListPage() {
         // or moves made during the await shouldn't be silently reverted.
         setTrips([created, ...useTripStore.getState().trips]);
       }
+      void invalidateTripsCache();
     } catch {
       setErrorBanner("Couldn't duplicate the trip. Try again.");
     } finally {
@@ -363,6 +385,7 @@ export default function TripListPage() {
     markBusy(trip.id);
     try {
       await tripsApi.delete(trip.id);
+      void invalidateTripsCache();
     } catch {
       // Targeted rollback: splice the deleted trip back into the fresh list
       // so concurrent adds/moves aren't clobbered.

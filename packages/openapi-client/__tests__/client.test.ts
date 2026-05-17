@@ -1,24 +1,28 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createApiClient } from "../client.js";
+import { createTarmotoClient } from "../src/client";
 
-// openapi-fetch captures globalThis.fetch at createClient() time, so we must
-// stub the global before creating the client in each test that needs to inspect
-// the outgoing request.
+// openapi-fetch captures globalThis.fetch at createClient() time, so we
+// must stub the global before creating the client in each test that
+// needs to inspect the outgoing request.
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("createApiClient", () => {
+describe("createTarmotoClient", () => {
   it("should create a client with the given baseUrl", () => {
-    const client = createApiClient({ baseUrl: "http://localhost:3000/api/v1" });
+    const client = createTarmotoClient({
+      baseUrl: "http://localhost:3000/api/v1",
+    });
     expect(client).toBeDefined();
     expect(client.GET).toBeDefined();
     expect(client.POST).toBeDefined();
   });
 
   it("should work without getToken option", () => {
-    const client = createApiClient({ baseUrl: "http://localhost:3000/api/v1" });
+    const client = createTarmotoClient({
+      baseUrl: "http://localhost:3000/api/v1",
+    });
     expect(client).toBeDefined();
   });
 
@@ -29,8 +33,7 @@ describe("createApiClient", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        capturedRequest =
-          input instanceof Request ? input : new Request(input);
+        capturedRequest = input instanceof Request ? input : new Request(input);
         return new Response(JSON.stringify({}), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -38,7 +41,7 @@ describe("createApiClient", () => {
       }),
     );
 
-    const client = createApiClient({
+    const client = createTarmotoClient({
       baseUrl: "http://localhost:3000/api/v1",
       getToken: () => "test-token-123",
     });
@@ -57,8 +60,7 @@ describe("createApiClient", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        capturedRequest =
-          input instanceof Request ? input : new Request(input);
+        capturedRequest = input instanceof Request ? input : new Request(input);
         return new Response(JSON.stringify({}), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -66,7 +68,7 @@ describe("createApiClient", () => {
       }),
     );
 
-    const client = createApiClient({
+    const client = createTarmotoClient({
       baseUrl: "http://localhost:3000/api/v1",
       getToken: () => null,
     });

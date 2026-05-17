@@ -1,7 +1,7 @@
 /**
- * Typed @tarmoto/openapi client singleton for the mobile app.
+ * Typed @tarmoto/openapi-client singleton for the mobile app.
  *
- * Wraps `createApiClient` with:
+ * Wraps `createTarmotoClient` with:
  *   - MMKV-backed access/refresh token storage
  *   - A 401 middleware that refreshes the access token once and retries
  *     the original request transparently. Refresh + auth endpoints are
@@ -16,7 +16,7 @@
  */
 
 import { createMMKV } from "react-native-mmkv";
-import { createApiClient } from "@tarmoto/openapi/client";
+import { createTarmotoClient } from "@tarmoto/openapi-client";
 import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
 import { clearCachedPreferences } from "./privacyCache";
@@ -276,7 +276,7 @@ async function refreshAccessToken(): Promise<boolean> {
   return inflightRefresh;
 }
 
-const baseClient = createApiClient({
+const baseClient = createTarmotoClient({
   baseUrl: API_BASE_URL,
   getToken: getAccessToken,
 });

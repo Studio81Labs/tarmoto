@@ -2,7 +2,7 @@
  * Tarmoto Core Types
  * Mirrors the OpenAPI schema — keep in sync with backend DTOs.
  *
- * Generated `components["schemas"]` from `@tarmoto/openapi` are re-exported
+ * Generated `components["schemas"]` from `@tarmoto/openapi-client` are re-exported
  * below so screen-level consumers can refer to the spec-derived shapes
  * without reaching into the openapi-typescript output directly. Drift in a
  * backend DTO that matters to a screen propagates through these aliases
@@ -23,10 +23,10 @@ export type { MeProfile } from "@tarmoto/shared";
 
 // Generated OpenAPI component schemas — re-exported so screens, services,
 // and stores can refer to spec-derived shapes through `@/types` instead
-// of importing from `@tarmoto/openapi` directly. `Schemas["FooDto"]`
+// of importing from `@tarmoto/openapi-client` directly. `Schemas["FooDto"]`
 // reads cleaner at call sites than the underlying
 // `components["schemas"]["FooDto"]`.
-import type { components } from "@tarmoto/openapi";
+import type { components } from "@tarmoto/openapi-client";
 export type Schemas = components["schemas"];
 
 // ── Primitives ──

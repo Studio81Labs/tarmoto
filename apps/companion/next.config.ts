@@ -4,7 +4,7 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@tarmoto/shared"],
+  transpilePackages: ["@tarmoto/shared", "@tarmoto/openapi-client"],
   // Allow loopback hosts for local development and Playwright E2E. Next 16
   // tightens cross-origin asset requests in dev mode and blocks anything
   // not on this list, which breaks tests served via 127.0.0.1.

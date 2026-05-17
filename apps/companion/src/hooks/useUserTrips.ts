@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { tripsApi } from "@/lib/api";
+import { useEffect, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import {
@@ -9,22 +10,36 @@ import {
 import type { TripSummary } from "@/lib/types";
 
 /**
- * Fetches the signed-in user's trips on mount and whenever the `userId`
- * changes. Writes into the shared `useTripStore` so other components (the
- * planner, the trip card in `/trips`, etc.) keep reading the same list.
+ * Stable query key for the user-trips list. Exported so the trips
+ * page's optimistic-mutation flows (duplicate / move / delete /
+ * folder-delete) can drop the cache after a successful API
+ * round-trip — without that, a hook consumer remounting within
+ * `staleTime` would serve the pre-mutation cache through React
+ * Query and let the write-through effect copy it back over the
+ * freshly-mutated store.
+ */
+export const USER_TRIPS_QUERY_KEY = (userId: string | null) =>
+  ["user-trips", userId] as const;
+
+/**
+ * Fetches the signed-in user's trips on mount and whenever the
+ * `userId` changes. Driven by `@tanstack/react-query`: cancellation,
+ * dedup, and stale-while-revalidate cache semantics come for free.
  *
- * Encapsulates the cancellation guard, response-shape normalisation, and
- * sign-out reset that would otherwise be copy-pasted into every consumer —
- * and which were already drifting across the two collection pages.
+ * Account-switch safety:
+ * - The React Query cache key includes `userId`, so cached A data
+ *   is never served on B's first render.
+ * - The Zustand `trips` field is gated on `tripsOwnerId === userId`
+ *   AT RENDER TIME, so even if the store still holds A's rows
+ *   when B mounts, the hook returns `[]` until B's data lands.
+ *   The post-commit clear effect zeroes the store for subsequent
+ *   reads.
  *
- * Returns `trips`, a loading flag, a `tripById` lookup, and an `error` flag.
- * Consumers that do destructive things based on trip presence (the
- * collection detail "missing trip" row, for instance) must not act while
- * `error` is true — otherwise a transient API outage would look
- * indistinguishable from every trip having been deleted.
- *
- * NOTE: `trips/page.tsx` also inlines this pattern and predates the hook;
- * migrate it in a follow-up PR to keep this change scoped to collections.
+ * Mutation safety: the trips page's optimistic flows call
+ * `queryClient.removeQueries({ queryKey: USER_TRIPS_QUERY_KEY })`
+ * (not invalidateQueries — invalidate keeps the stale data
+ * available until refetch lands, which would let this write-
+ * through overwrite the post-mutation store).
  */
 export function useUserTrips(): {
   trips: TripSummary[];
@@ -33,51 +48,67 @@ export function useUserTrips(): {
   tripById: Map<string, TripSummary>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const storeTrips = useTripStore((s) => s.trips);
+  const tripsOwnerId = useTripStore((s) => s.tripsOwnerId);
+  const queryClient = useQueryClient();
 
+  const query = useQuery({
+    queryKey: USER_TRIPS_QUERY_KEY(userId),
+    enabled: userId != null,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/trips", { signal });
+      if (error) throw new Error("trips fetch failed");
+      return data;
+    },
+  });
+
+  // Clear the previous account's trips on an actual userId change
+  // (mount-with-A → mount-with-B, or sign-out). On initial mount
+  // there's no prior user to clean up — running `removeQueries`
+  // there would drop the query this very mount just kicked off
+  // and defeat React Query's `staleTime`.
+  const prevUserIdRef = useRef<string | null>(null);
   useEffect(() => {
-    // Clear the store on every userId change so the *previous* user's trips
-    // can't briefly leak after sign-in/out or account switch.
-    setTrips([]);
-    setError(false);
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    tripsApi
-      .list()
-      .then(({ data }) => {
-        if (cancelled) return;
-        // The list endpoint may return either a raw array or a
-        // `{ data }` envelope depending on backend version. Either
-        // way, each row is a wire-shape `TripSummaryDto` (`title`,
-        // `created_at`) — adapt to the companion's `TripSummary`
-        // (`name`, `createdAt`) before storing so list consumers
-        // don't read undefined fields.
-        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
-        const rows = Array.isArray(body) ? body : (body?.data ?? []);
-        setTrips(rows.map(tripSummaryFromWire));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Deliberately leave `trips` untouched here — a transient API
-        // failure mustn't masquerade as "every trip deleted" or consumers
-        // will offer destructive actions (e.g. the collection detail's
-        // MissingTripRow) against perfectly valid references.
-        setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+    const prev = prevUserIdRef.current;
+    prevUserIdRef.current = userId;
+    if (prev === userId) return;
+    // Always mark the store as owned by the new id (or null) so
+    // the render-time gate below can short-circuit immediately —
+    // the upcoming write-through repopulates if there's data.
+    setTrips([], userId);
+    // Drop only the PREVIOUS user's cached query, not the current
+    // user's freshly-registered observer.
+    if (prev !== null) {
+      queryClient.removeQueries({
+        queryKey: USER_TRIPS_QUERY_KEY(prev),
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [setTrips, userId]);
+    }
+  }, [userId, setTrips, queryClient]);
+
+  // Write-through into the Zustand store. The list endpoint may
+  // return either a raw array or a `{ data: [] }` envelope
+  // depending on backend version — both branches yield
+  // `TripSummaryWire[]` and the adapter normalises to the
+  // companion's camelCase shape. Each write also marks the store
+  // as owned by the current `userId` so the render-time gate
+  // returns the freshly-fetched rows immediately.
+  useEffect(() => {
+    if (!userId || !query.data) return;
+    const body = query.data as unknown as
+      | { data?: TripSummaryWire[] }
+      | TripSummaryWire[];
+    const rows = Array.isArray(body) ? body : (body?.data ?? []);
+    setTrips(rows.map(tripSummaryFromWire), userId);
+  }, [query.data, userId, setTrips]);
+
+  // Render-time owner gate. If the store still holds the previous
+  // account's trips (the post-commit clear hasn't run yet), return
+  // `[]` so callers can't briefly see or act on the wrong user's
+  // data. `tripsOwnerId` flips to the new `userId` synchronously
+  // inside `setTrips`, ahead of `query.data` landing.
+  const trips =
+    tripsOwnerId !== null && tripsOwnerId === userId ? storeTrips : [];
 
   const tripById = useMemo(() => {
     const map = new Map<string, TripSummary>();
@@ -85,5 +116,14 @@ export function useUserTrips(): {
     return map;
   }, [trips]);
 
-  return { trips, loading, error, tripById };
+  return {
+    trips,
+    loading: query.isLoading,
+    // React Query exposes `isError` for fetch failures (network,
+    // 5xx, 401 once `onUnauthorized` has cleared the session). The
+    // optimistic-update consumers in `(dashboard)/trips/page.tsx`
+    // gate destructive prompts on this flag.
+    error: query.isError,
+    tripById,
+  };
 }

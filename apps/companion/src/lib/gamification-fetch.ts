@@ -13,7 +13,7 @@
  * one-shot `fetchGamificationSnapshot`.
  */
 
-import type { components } from "@tarmoto/openapi";
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import {
   buildLiveSnapshot,

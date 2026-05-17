@@ -1,4 +1,4 @@
-import type { paths } from "@tarmoto/openapi/types";
+import type { paths } from "@tarmoto/openapi-client";
 
 export type MountainPass = NonNullable<
   paths["/api/v1/passes"]["get"]["responses"][200]["content"]["application/json"]
