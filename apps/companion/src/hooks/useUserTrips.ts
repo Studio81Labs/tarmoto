@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { $api } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import {
@@ -9,18 +10,36 @@ import {
 import type { TripSummary } from "@/lib/types";
 
 /**
- * Fetches the signed-in user's trips on mount and whenever the `userId`
- * changes. Internally driven by `openapi-react-query`'s `useQuery` — the
- * hook handles cancellation, dedup, and stale-while-revalidate cache
- * semantics; we keep the Zustand store as a write-through cache so
- * `(dashboard)/trips/page.tsx`'s optimistic add/move/delete flows
- * (which mutate `useTripStore.trips` directly) keep working without
- * threading state through React Query mutations.
+ * Stable query key for the user-trips list. Exported so the trips
+ * page's optimistic-mutation flows (duplicate / move / delete) can
+ * invalidate the cache after a successful API round-trip — without
+ * the invalidate, a remount within React Query's `staleTime` would
+ * serve the pre-mutation cache back into the Zustand store and
+ * silently undo the user's edit.
+ */
+export const USER_TRIPS_QUERY_KEY = (userId: string | null) =>
+  ["user-trips", userId] as const;
+
+/**
+ * Fetches the signed-in user's trips on mount and whenever the
+ * `userId` changes. Driven by `@tanstack/react-query`: cancellation,
+ * dedup, and stale-while-revalidate cache semantics come for free.
  *
- * Returns `trips`, a loading flag, a `tripById` lookup, and an `error`
- * flag. Consumers that do destructive things based on trip presence
- * must not act while `error` is true — otherwise a transient API outage
- * looks indistinguishable from every trip having been deleted.
+ * The cache key includes `userId`, so switching accounts can't
+ * serve the previous user's trips to the new one even within the
+ * default `staleTime` window.
+ *
+ * The Zustand store is kept as a write-through cache because
+ * `(dashboard)/trips/page.tsx`'s optimistic mutations operate on
+ * the store directly. After every mutation that page also calls
+ * `queryClient.invalidateQueries({ queryKey: USER_TRIPS_QUERY_KEY })`
+ * so a subsequent remount refetches instead of clobbering the
+ * post-mutation store with stale cache.
+ *
+ * Returns `trips`, a loading flag, a `tripById` lookup, and an
+ * `error` flag. Consumers that do destructive things based on trip
+ * presence must not act while `error` is true — a transient API
+ * outage shouldn't look like every trip was deleted.
  */
 export function useUserTrips(): {
   trips: TripSummary[];
@@ -32,17 +51,20 @@ export function useUserTrips(): {
   const setTrips = useTripStore((s) => s.setTrips);
   const trips = useTripStore((s) => s.trips);
 
-  const query = $api.useQuery(
-    "get",
-    "/api/v1/trips",
-    {},
-    { enabled: userId != null },
-  );
+  const query = useQuery({
+    queryKey: USER_TRIPS_QUERY_KEY(userId),
+    enabled: userId != null,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/trips", { signal });
+      if (error) throw new Error("trips fetch failed");
+      return data;
+    },
+  });
 
-  // Write-through into the Zustand store. The list endpoint may return
-  // either a raw array or a `{ data: [] }` envelope depending on
-  // backend version — both branches yield `TripSummaryWire[]` and the
-  // adapter normalises to the companion's camelCase shape.
+  // Write-through into the Zustand store. The list endpoint may
+  // return either a raw array or a `{ data: [] }` envelope depending
+  // on backend version — both branches yield `TripSummaryWire[]` and
+  // the adapter normalises to the companion's camelCase shape.
   useEffect(() => {
     if (!userId) {
       setTrips([]);
@@ -56,12 +78,6 @@ export function useUserTrips(): {
     setTrips(rows.map(tripSummaryFromWire));
   }, [query.data, userId, setTrips]);
 
-  // Clear on sign-out so a brief stale read doesn't surface the
-  // previous account's trips between sign-out and sign-in.
-  useEffect(() => {
-    if (!userId) setTrips([]);
-  }, [userId, setTrips]);
-
   const tripById = useMemo(() => {
     const map = new Map<string, TripSummary>();
     for (const t of trips) map.set(t.id, t);
@@ -71,8 +87,8 @@ export function useUserTrips(): {
   return {
     trips,
     loading: query.isLoading,
-    // React Query exposes `isError` for fetch failures (network, 5xx,
-    // 401 once `onUnauthorized` has cleared the session). The
+    // React Query exposes `isError` for fetch failures (network,
+    // 5xx, 401 once `onUnauthorized` has cleared the session). The
     // optimistic-update consumers in `(dashboard)/trips/page.tsx`
     // gate destructive prompts on this flag.
     error: query.isError,

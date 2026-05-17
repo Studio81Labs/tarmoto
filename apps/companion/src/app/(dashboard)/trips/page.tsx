@@ -27,8 +27,10 @@ import {
   type TripDetailResponse,
   type TripSummaryWire,
 } from "@/lib/trip-from-detail";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
+import { USER_TRIPS_QUERY_KEY } from "@/hooks/useUserTrips";
 import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
@@ -71,6 +73,17 @@ export default function TripListPage() {
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const queryClient = useQueryClient();
+  // After any optimistic mutation that touches the persisted list,
+  // also invalidate the React Query cache for `useUserTrips`. The
+  // store update keeps the current UI consistent; the invalidation
+  // ensures a subsequent remount (different component or a fresh
+  // hook consumer) doesn't write the pre-mutation snapshot back
+  // over the store within React Query's `staleTime` window.
+  const invalidateTripsCache = () =>
+    queryClient.invalidateQueries({
+      queryKey: USER_TRIPS_QUERY_KEY(userId),
+    });
   const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
@@ -304,6 +317,7 @@ export default function TripListPage() {
     markBusy(trip.id);
     try {
       await tripsApi.update(trip.id, { folder_id: folderId });
+      void invalidateTripsCache();
     } catch {
       // Targeted rollback: touch only this trip so concurrent duplicates or
       // deletes made during the await aren't clobbered by a stale snapshot.
@@ -345,6 +359,7 @@ export default function TripListPage() {
         // or moves made during the await shouldn't be silently reverted.
         setTrips([created, ...useTripStore.getState().trips]);
       }
+      void invalidateTripsCache();
     } catch {
       setErrorBanner("Couldn't duplicate the trip. Try again.");
     } finally {
@@ -363,6 +378,7 @@ export default function TripListPage() {
     markBusy(trip.id);
     try {
       await tripsApi.delete(trip.id);
+      void invalidateTripsCache();
     } catch {
       // Targeted rollback: splice the deleted trip back into the fresh list
       // so concurrent adds/moves aren't clobbered.
