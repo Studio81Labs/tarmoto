@@ -24,10 +24,43 @@ frozen reference the migration is implementing against.
 | [`source/atoms.jsx`](./source/atoms.jsx)                                           | Canonical React-ish atom implementations: Stamp, Heading, Pill, QualityBars, RouteMini.                                                          |
 | [`source/Web App v2.html`](./source/Web%20App%20v2.html)                           | The actual web-companion design — every view (Trip Planner, Road Explorer, Ride History, Community, Account), every shared component, exact JSX. |
 | [`source/Web App v2 Design Map.html`](./source/Web%20App%20v2%20Design%20Map.html) | A developer-facing reference doc — 21 sections covering tokens, atoms, components, map vocab, layouts. Read alongside the Web App v2 file.       |
+| [`source/chats/`](./source/chats/)                                                 | The three design-iteration transcripts. The HANDOFF README explicitly says **read these first** — they capture intent that isn't in the HTML.    |
+| [`source/ui_kits/web/web.html`](./source/ui_kits/web/web.html)                     | The web-companion UI kit (focused subset of `Web App v2.html`) — useful when you want one component in isolation.                                |
 
 When you need to know "what should this look like?", read those two HTML
 files. They render in any browser if you want to see it, but the source is
 already plain HTML/CSS/JSX — you can read it directly.
+
+### Vendoring scope
+
+The upstream bundle from Claude Design is larger than what's checked in
+here. We intentionally vendored only the companion-relevant subset:
+
+- **Included** above.
+- **Excluded** to keep the repo lean: mobile and marketing UI kits, the
+  per-component `preview/` cards, the standalone-source/offline
+  variants of the design-map HTML, and the rider-app prototypes
+  (`Ride Mode.html`, `App Tour.html`, `Glove Mode.html`,
+  `Web App v3 Garage.html`, marketing-site files).
+
+If you need any excluded file during a phase, re-fetch the original
+handoff (URL in the chat transcripts) and add the file to `source/` in
+that phase's PR.
+
+### Known caveats in the canonical files
+
+These are quirks of the upstream prototype, not bugs we should "fix" in
+the vendored copy — note them when porting:
+
+- `colors_and_type.css` uses Sass `@extend` for the `.tarmoto h1/h2/h3`
+  rules at the bottom of the file. That's prototype-only syntax; plain
+  CSS won't apply it. When implementing the companion's typography,
+  treat the `.ty-*` rules as the source of truth and either re-apply
+  them as element selectors or wire them up via component classes —
+  don't ship the `@extend` block as-is.
+- `PROJECT_README.md` references a wider `ui_kits/`, `preview/`, and
+  `chats/` tree than what's vendored here. See **Vendoring scope**
+  above for what was kept and why.
 
 ## The six rules (from SKILL.md)
 
