@@ -74,12 +74,56 @@ function formatBbox(bbox: readonly [number, number, number, number]): string {
   return bbox.join(",");
 }
 
+// `<input type="date">` round-trip helpers. The element wants
+// `YYYY-MM-DD` strings keyed off the browser locale's calendar day;
+// the closures API consumes ISO instants. We anchor each round-trip
+// at noon UTC so a viewer in any timezone parses the local date the
+// rider picked into the same calendar day instant.
+function toDateInputValue(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
+}
+
+// `Filters` panel — endpoint mapping reference
+// ──────────────────────────────────────────────
+// Each filter section corresponds to a specific backend contract;
+// changing the section signature here means touching the matching
+// endpoint:
+//
+//  • Road quality / Surface  → GET /api/v1/tiles/... (segment vector
+//    tiles). Filtering is done client-side via the MapLibre opacity
+//    expression in `QualityMap.buildQualityOpacityExpression` —
+//    the tile payload carries `quality_score` and `surface_type` and
+//    the active toggle simply dims non-matching segments.
+//  • Hazards                 → GET /api/v1/hazards (PostGIS bbox).
+//    `HazardOverlay` reads `filters.hazardTypes` to filter the
+//    rendered markers.
+//  • Road conditions         → GET /api/v1/closures + GET /api/v1/passes.
+//    `ClosuresPanel` / `PassesPanel` accept either a `month` (15th-of-
+//    month proxy used by trip planner) or an explicit `previewDate`
+//    (used here so the rider can preview "tomorrow", "next weekend").
+//
+// Pages can opt into a new filter only after the corresponding tile/
+// endpoint actually serves it — for example, the prior `Curviness`
+// slider was removed (#576) because `road_segments.curviness_score`
+// holds quality-shaped 0–5 values, not the 0–100 the slider implied,
+// so the filter was effectively a no-op for every realistic value.
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
+  const [conditionsDate, setConditionsDate] = useState<Date>(() => new Date());
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
@@ -102,7 +146,6 @@ function ExplorerPageInner() {
     toggleQualityTier,
     toggleSurfaceType,
     toggleHazardType,
-    setMinCurviness,
     setFilters,
     setCenter,
     setZoom,
@@ -364,40 +407,30 @@ function ExplorerPageInner() {
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  {t("Curviness ")}
-                </h3>
-                <span className="text-xs text-slate-400 tabular-nums">
-                  {filters.minCurviness === 0
-                    ? "Any"
-                    : `≥ ${filters.minCurviness}`}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={filters.minCurviness}
-                onChange={(e) => setMinCurviness(Number(e.target.value))}
-                aria-label={t("Minimum curviness")}
-                className="w-full accent-tarmoto-cyan"
-              />
-              <div className="flex justify-between text-xs text-slate-500 mt-1">
-                <span>{t("Straight")}</span>
-                <span>{t("Very twisty")}</span>
-              </div>
-            </div>
-
             <div className="space-y-4">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 {t("Road conditions ")}
               </h3>
+              <label className="block space-y-1.5">
+                <span className="text-xs text-slate-300">
+                  {t("Preview closures on")}
+                </span>
+                <input
+                  type="date"
+                  value={toDateInputValue(conditionsDate)}
+                  onChange={(e) => {
+                    const next = parseDateInputValue(e.target.value);
+                    if (next) setConditionsDate(next);
+                  }}
+                  aria-label={t("Preview closures on")}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent transition"
+                />
+              </label>
               {conditionBbox ? (
                 <>
                   <ClosuresPanel
                     month={conditionsMonth}
+                    previewDate={conditionsDate}
                     routes={[]}
                     bbox={conditionBbox}
                     showRouteWarnings={false}

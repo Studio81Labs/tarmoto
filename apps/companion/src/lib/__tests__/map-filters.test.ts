@@ -18,7 +18,6 @@ function makeFilters(overrides: Partial<MapFilters> = {}): MapFilters {
     hazardTypes: new Set(
       overrides.hazardTypes ?? DEFAULT_MAP_FILTERS.hazardTypes,
     ),
-    minCurviness: overrides.minCurviness ?? DEFAULT_MAP_FILTERS.minCurviness,
   };
 }
 
@@ -44,31 +43,22 @@ describe("filtersToSearchParams", () => {
     expect(params.get("q")).toBeNull();
   });
 
-  it("serializes curviness only when non-zero", () => {
-    const none = filtersToSearchParams(makeFilters({ minCurviness: 0 }));
-    expect(none.get("c")).toBeNull();
-
-    const some = filtersToSearchParams(makeFilters({ minCurviness: 42 }));
-    expect(some.get("c")).toBe("42");
-  });
-
   it("preserves unrelated params on the base", () => {
     const base = new URLSearchParams("tab=map&zoom=12");
     const params = filtersToSearchParams(
-      makeFilters({ minCurviness: 30 }),
+      makeFilters({ quality: new Set(["good"]) }),
       base,
     );
     expect(params.get("tab")).toBe("map");
     expect(params.get("zoom")).toBe("12");
-    expect(params.get("c")).toBe("30");
+    expect(params.get("q")).toBe("good");
   });
 
   it("drops stale filter params from the base when reverting to defaults", () => {
-    const base = new URLSearchParams("q=excellent&s=asphalt&c=50&tab=map");
+    const base = new URLSearchParams("q=excellent&s=asphalt&tab=map");
     const params = filtersToSearchParams(makeFilters(), base);
     expect(params.get("q")).toBeNull();
     expect(params.get("s")).toBeNull();
-    expect(params.get("c")).toBeNull();
     expect(params.get("tab")).toBe("map");
   });
 
@@ -113,11 +103,10 @@ describe("filtersFromSearchParams", () => {
 
   it("parses partial quality and surface selections", () => {
     const filters = filtersFromSearchParams(
-      new URLSearchParams("q=excellent,good&s=asphalt,gravel&c=25"),
+      new URLSearchParams("q=excellent,good&s=asphalt,gravel"),
     );
     expect([...filters.quality].sort()).toEqual(["excellent", "good"]);
     expect([...filters.surface].sort()).toEqual(["asphalt", "gravel"]);
-    expect(filters.minCurviness).toBe(25);
   });
 
   it("ignores unknown values and falls back to defaults when all invalid", () => {
@@ -154,23 +143,10 @@ describe("filtersFromSearchParams", () => {
     expect([...filters.surface]).toEqual(["asphalt"]);
   });
 
-  it("clamps curviness to [0,100] and treats garbage as 0", () => {
-    expect(
-      filtersFromSearchParams(new URLSearchParams("c=-5")).minCurviness,
-    ).toBe(0);
-    expect(
-      filtersFromSearchParams(new URLSearchParams("c=250")).minCurviness,
-    ).toBe(100);
-    expect(
-      filtersFromSearchParams(new URLSearchParams("c=abc")).minCurviness,
-    ).toBe(0);
-  });
-
   it("round-trips through serialize → parse", () => {
     const original = makeFilters({
       quality: new Set(["fair", "poor"]),
       surface: new Set(["gravel"]),
-      minCurviness: 60,
     });
     const parsed = filtersFromSearchParams(filtersToSearchParams(original));
     expect(filtersEqual(original, parsed)).toBe(true);
@@ -180,12 +156,10 @@ describe("filtersFromSearchParams", () => {
     const original = makeFilters({
       quality: new Set(),
       surface: new Set(),
-      minCurviness: 10,
     });
     const parsed = filtersFromSearchParams(filtersToSearchParams(original));
     expect(parsed.quality.size).toBe(0);
     expect(parsed.surface.size).toBe(0);
-    expect(parsed.minCurviness).toBe(10);
   });
 
   it("treats the 'none' sentinel as an empty set", () => {
@@ -201,58 +175,36 @@ describe("matchesFilters", () => {
   const filters = makeFilters({
     quality: new Set(["excellent", "good"]),
     surface: new Set(["asphalt"]),
-    minCurviness: 30,
   });
 
   it("passes segment that satisfies every axis", () => {
     expect(
-      matchesFilters(
-        { quality: "good", surface: "asphalt", curviness: 40 },
-        filters,
-      ),
+      matchesFilters({ quality: "good", surface: "asphalt" }, filters),
     ).toBe(true);
   });
 
   it("rejects when quality tier is excluded", () => {
     expect(
-      matchesFilters(
-        { quality: "poor", surface: "asphalt", curviness: 40 },
-        filters,
-      ),
+      matchesFilters({ quality: "poor", surface: "asphalt" }, filters),
     ).toBe(false);
   });
 
   it("rejects when surface is excluded", () => {
     expect(
-      matchesFilters(
-        { quality: "good", surface: "gravel", curviness: 40 },
-        filters,
-      ),
-    ).toBe(false);
-  });
-
-  it("rejects when curviness is below minimum", () => {
-    expect(
-      matchesFilters(
-        { quality: "good", surface: "asphalt", curviness: 10 },
-        filters,
-      ),
+      matchesFilters({ quality: "good", surface: "gravel" }, filters),
     ).toBe(false);
   });
 
   it("treats unknown surface as always allowed by the surface filter", () => {
     expect(
-      matchesFilters(
-        { quality: "good", surface: "unknown", curviness: 50 },
-        filters,
-      ),
+      matchesFilters({ quality: "good", surface: "unknown" }, filters),
     ).toBe(true);
   });
 
   it("default filters accept any segment", () => {
     expect(
       matchesFilters(
-        { quality: "very-poor", surface: "dirt", curviness: 0 },
+        { quality: "very-poor", surface: "dirt" },
         DEFAULT_MAP_FILTERS,
       ),
     ).toBe(true);
