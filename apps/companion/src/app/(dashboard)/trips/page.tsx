@@ -18,7 +18,6 @@ import {
   Pencil,
   Inbox,
   X,
-  ChevronDown,
 } from "lucide-react";
 import { tripsApi, tripFoldersApi } from "@/lib/api";
 import {
@@ -457,137 +456,120 @@ export default function TripListPage() {
     }
   };
   return (
-    <div className="flex h-full">
-      <FolderNav
-        folders={folders}
-        scope={filters.folderScope}
-        unfiledCount={unfiledCount}
-        totalCount={trips.length}
-        tripsPerFolder={tripsPerFolder}
-        onSelect={(scope) => setFilters({ ...filters, folderScope: scope })}
-        onNew={() => setFolderModal({ mode: "create" })}
-        onRename={(folder) => setFolderModal({ mode: "rename", folder })}
-        onDelete={handleDeleteFolder}
-      />
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold">{t("My Trips")}</h1>
-              <p className="text-sm text-slate-500 mt-0.5">
-                {t(trips.length === 1 ? "{count} trip" : "{count} trips", {
-                  count: trips.length,
-                })}{" "}
-                ·{" "}
-                {t(
-                  folders.length === 1 ? "{count} folder" : "{count} folders",
-                  {
-                    count: folders.length,
-                  },
-                )}
-              </p>
-            </div>
-            <Link
-              href="/trips/planner"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
-            >
-              <Plus size={16} />
-              {t("New trip")}
-            </Link>
+    <div className="overflow-y-auto h-full">
+      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">{t("My Trips")}</h1>
+            <p className="text-sm text-slate-500 mt-0.5">
+              {t(trips.length === 1 ? "{count} trip" : "{count} trips", {
+                count: trips.length,
+              })}{" "}
+              ·{" "}
+              {t(folders.length === 1 ? "{count} folder" : "{count} folders", {
+                count: folders.length,
+              })}
+            </p>
           </div>
-
-          {errorBanner && (
-            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-              <span>{errorBanner}</span>
-              <button
-                type="button"
-                aria-label={t("Dismiss error")}
-                onClick={() => setErrorBanner(null)}
-                className="text-red-200 hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {migrationToast && (
-            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-3 text-sm text-tarmoto-cyan">
-              <span>{migrationToast}</span>
-              <button
-                type="button"
-                aria-label={t("Dismiss notice")}
-                onClick={() => setMigrationToast(null)}
-                className="text-tarmoto-cyan hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          <MobileFolderBar
-            folders={folders}
-            scope={filters.folderScope}
-            unfiledCount={unfiledCount}
-            totalCount={trips.length}
-            tripsPerFolder={tripsPerFolder}
-            onSelect={(next) => setFilters({ ...filters, folderScope: next })}
-            onNew={() => setFolderModal({ mode: "create" })}
-            onRename={(folder) => setFolderModal({ mode: "rename", folder })}
-            onDelete={handleDeleteFolder}
-          />
-
-          <TripToolbar
-            filters={filters}
-            statusCounts={statusCounts}
-            onChange={setFilters}
-          />
-
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-48 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse"
-                />
-              ))}
-            </div>
-          ) : trips.length === 0 ? (
-            <EmptyState
-              title={t("No trips yet")}
-              body="Plan your first ride with the trip planner."
-              action={{ label: "Create trip", href: "/trips/planner" }}
-            />
-          ) : visibleTrips.length === 0 ? (
-            <EmptyState
-              title={t("No trips match your filters")}
-              body="Try clearing the search or selecting a different folder."
-              action={{
-                label: "Clear filters",
-                onClick: () =>
-                  setFilters({
-                    ...DEFAULT_TRIP_FILTERS,
-                    statuses: new Set(DEFAULT_TRIP_FILTERS.statuses),
-                    folderScope: { ...DEFAULT_TRIP_FILTERS.folderScope },
-                  }),
-              }}
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
-              {visibleTrips.map((trip) => (
-                <TripCard
-                  key={trip.id}
-                  trip={trip}
-                  folders={folders}
-                  busy={busyTripIds.has(trip.id)}
-                  onDuplicate={() => duplicateTrip(trip)}
-                  onDelete={() => deleteTrip(trip)}
-                  onMove={(folderId) => moveTripToFolder(trip, folderId)}
-                />
-              ))}
-            </div>
-          )}
+          <Link
+            href="/trips/planner"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+          >
+            <Plus size={16} />
+            {t("New trip")}
+          </Link>
         </div>
+
+        {errorBanner && (
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <span>{errorBanner}</span>
+            <button
+              type="button"
+              aria-label={t("Dismiss error")}
+              onClick={() => setErrorBanner(null)}
+              className="text-red-200 hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {migrationToast && (
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-3 text-sm text-tarmoto-cyan">
+            <span>{migrationToast}</span>
+            <button
+              type="button"
+              aria-label={t("Dismiss notice")}
+              onClick={() => setMigrationToast(null)}
+              className="text-tarmoto-cyan hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <FolderChipRow
+          folders={folders}
+          scope={filters.folderScope}
+          unfiledCount={unfiledCount}
+          totalCount={trips.length}
+          tripsPerFolder={tripsPerFolder}
+          onSelect={(next) => setFilters({ ...filters, folderScope: next })}
+          onNew={() => setFolderModal({ mode: "create" })}
+          onRename={(folder) => setFolderModal({ mode: "rename", folder })}
+          onDelete={handleDeleteFolder}
+        />
+
+        <TripToolbar
+          filters={filters}
+          statusCounts={statusCounts}
+          onChange={setFilters}
+        />
+
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-48 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : trips.length === 0 ? (
+          <EmptyState
+            title={t("No trips yet")}
+            body="Plan your first ride with the trip planner."
+            action={{ label: "Create trip", href: "/trips/planner" }}
+          />
+        ) : visibleTrips.length === 0 ? (
+          <EmptyState
+            title={t("No trips match your filters")}
+            body="Try clearing the search or selecting a different folder."
+            action={{
+              label: "Clear filters",
+              onClick: () =>
+                setFilters({
+                  ...DEFAULT_TRIP_FILTERS,
+                  statuses: new Set(DEFAULT_TRIP_FILTERS.statuses),
+                  folderScope: { ...DEFAULT_TRIP_FILTERS.folderScope },
+                }),
+            }}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
+            {visibleTrips.map((trip) => (
+              <TripCard
+                key={trip.id}
+                trip={trip}
+                folders={folders}
+                busy={busyTripIds.has(trip.id)}
+                onDuplicate={() => duplicateTrip(trip)}
+                onDelete={() => deleteTrip(trip)}
+                onMove={(folderId) => moveTripToFolder(trip, folderId)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {folderModal && (
@@ -608,9 +590,9 @@ export default function TripListPage() {
   );
 }
 // ─────────────────────────────────────────────────────────
-// Folder sidebar
+// Folder chip row (replaces the legacy desktop sidebar + mobile drawer)
 // ─────────────────────────────────────────────────────────
-interface FolderNavProps {
+interface FolderChipRowProps {
   folders: TripFolder[];
   scope: FolderScope;
   unfiledCount: number;
@@ -621,7 +603,7 @@ interface FolderNavProps {
   onRename: (folder: TripFolder) => void;
   onDelete: (folder: TripFolder) => void;
 }
-function FolderNav({
+function FolderChipRow({
   folders,
   scope,
   unfiledCount,
@@ -631,229 +613,171 @@ function FolderNav({
   onNew,
   onRename,
   onDelete,
-}: FolderNavProps) {
+}: FolderChipRowProps) {
+  // Chips wrap to a second line on narrow viewports rather than
+  // scrolling horizontally. An `overflow-x-auto` ancestor would
+  // clip the per-chip rename/delete dropdown — CSS forces the
+  // other axis to `auto` too whenever one is scrollable — so we
+  // pay the cost of a slightly taller header in exchange for
+  // never trapping the kebab menu behind the scroller. With the
+  // typical handful of folders this rarely matters.
   return (
-    <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-950/60 px-3 py-5">
-      <FolderNavContent
-        folders={folders}
-        scope={scope}
-        unfiledCount={unfiledCount}
-        totalCount={totalCount}
-        tripsPerFolder={tripsPerFolder}
-        onSelect={onSelect}
-        onNew={onNew}
-        onRename={onRename}
-        onDelete={onDelete}
+    <div className="-mx-1 mb-4 flex flex-wrap items-center gap-2 px-1">
+      <FolderChip
+        icon={<Route size={12} />}
+        label={t("All trips")}
+        count={totalCount}
+        active={scope.kind === "all"}
+        onSelect={() => onSelect({ kind: "all" })}
       />
-    </aside>
-  );
-}
-function FolderNavContent({
-  folders,
-  scope,
-  unfiledCount,
-  totalCount,
-  tripsPerFolder,
-  onSelect,
-  onNew,
-  onRename,
-  onDelete,
-}: FolderNavProps) {
-  return (
-    <>
-      <div className="flex items-center justify-between mb-3 px-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-          {t("Folders ")}
-        </span>
-        <button
-          type="button"
-          onClick={onNew}
-          className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          aria-label={t("New folder")}
-          title={t("New folder")}
-        >
-          <FolderPlus size={14} />
-        </button>
-      </div>
-
-      <nav className="flex flex-col gap-0.5 text-sm">
-        <FolderNavItem
-          icon={<Route size={14} />}
-          label="All trips"
-          count={totalCount}
-          active={scope.kind === "all"}
-          onClick={() => onSelect({ kind: "all" })}
+      <FolderChip
+        icon={<Inbox size={12} />}
+        label={t("Unfiled")}
+        count={unfiledCount}
+        active={scope.kind === "unfiled"}
+        onSelect={() => onSelect({ kind: "unfiled" })}
+      />
+      {folders.map((folder) => (
+        <FolderChip
+          key={folder.id}
+          icon={<Folder size={12} />}
+          label={folder.name}
+          count={tripsPerFolder.get(folder.id) ?? 0}
+          active={scope.kind === "folder" && scope.id === folder.id}
+          onSelect={() => onSelect({ kind: "folder", id: folder.id })}
+          onRename={() => onRename(folder)}
+          onDelete={() => onDelete(folder)}
         />
-        <FolderNavItem
-          icon={<Inbox size={14} />}
-          label="Unfiled"
-          count={unfiledCount}
-          active={scope.kind === "unfiled"}
-          onClick={() => onSelect({ kind: "unfiled" })}
-        />
-
-        {folders.length > 0 && (
-          <div className="mt-3 space-y-0.5">
-            {folders.map((folder) => (
-              <FolderRow
-                key={folder.id}
-                folder={folder}
-                count={tripsPerFolder.get(folder.id) ?? 0}
-                active={scope.kind === "folder" && scope.id === folder.id}
-                onSelect={() => onSelect({ kind: "folder", id: folder.id })}
-                onRename={() => onRename(folder)}
-                onDelete={() => onDelete(folder)}
-              />
-            ))}
-          </div>
-        )}
-      </nav>
-    </>
-  );
-}
-function MobileFolderBar(props: FolderNavProps) {
-  const [open, setOpen] = useState(false);
-  const { folders, scope, unfiledCount, totalCount, tripsPerFolder, onSelect } =
-    props;
-  const activeLabel =
-    scope.kind === "all"
-      ? "All trips"
-      : scope.kind === "unfiled"
-        ? "Unfiled"
-        : (folders.find((f) => f.id === scope.id)?.name ?? "Folder");
-  const activeCount =
-    scope.kind === "all"
-      ? totalCount
-      : scope.kind === "unfiled"
-        ? unfiledCount
-        : (tripsPerFolder.get(scope.id) ?? 0);
-  // When the user picks a folder, collapse the panel — keeps the mobile flow
-  // close to a native picker.
-  const handleSelect = (next: FolderScope) => {
-    onSelect(next);
-    setOpen(false);
-  };
-  return (
-    <div className="md:hidden mb-4">
+      ))}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:border-slate-700 transition"
+        onClick={onNew}
+        className="flex items-center gap-1.5 rounded-full border border-dashed border-slate-700 px-3 py-1 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
+        aria-label={t("New folder")}
+        title={t("New folder")}
       >
-        <span className="flex items-center gap-2 truncate">
-          <Folder size={14} className="text-slate-500" />
-          <span className="truncate">{activeLabel}</span>
-          <span className="text-xs tabular-nums text-slate-500">
-            {activeCount}
-          </span>
-        </span>
-        <ChevronDown
-          size={14}
-          className={`text-slate-500 transition ${open ? "rotate-180" : ""}`}
-        />
+        <FolderPlus size={12} />
+        {t("New folder")}
       </button>
-      {open && (
-        <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-3">
-          <FolderNavContent {...props} onSelect={handleSelect} />
-        </div>
-      )}
     </div>
   );
 }
-function FolderNavItem({
+// Menu width must match the `w-56` in `<Menu>` (224px) — we use it
+// to decide which side of the chip to anchor the dropdown to.
+const FOLDER_MENU_WIDTH_PX = 224;
+
+function FolderChip({
   icon,
   label,
   count,
   active,
-  onClick,
+  onSelect,
+  onRename,
+  onDelete,
 }: {
   icon: React.ReactNode;
   label: string;
   count: number;
   active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition ${
-        active
-          ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-          : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
-      }`}
-    >
-      <span className="flex items-center gap-2 truncate">
-        {icon}
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="text-xs tabular-nums text-slate-500">{count}</span>
-    </button>
-  );
-}
-function FolderRow({
-  folder,
-  count,
-  active,
-  onSelect,
-  onRename,
-  onDelete,
-}: {
-  folder: TripFolder;
-  count: number;
-  active: boolean;
   onSelect: () => void;
-  onRename: () => void;
-  onDelete: () => void;
+  // User-owned folder chips get rename/delete; "All trips" and "Unfiled"
+  // omit these (they're system scopes) and render without a context menu.
+  onRename?: () => void;
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Chip menus need to flip alignment based on where the chip
+  // lands on the wrapping row. A leftmost wrapped chip with the
+  // default `align="right"` (menu anchored to chip's right edge,
+  // extending left) would render its left edge off-screen on
+  // mobile; a rightmost chip with `align="left"` does the same
+  // thing in the other direction.
+  const [menuAlign, setMenuAlign] = useState<"left" | "right">("right");
+  const chipRef = useRef<HTMLDivElement | null>(null);
+  const hasActions = !!(onRename && onDelete);
+
+  const handleToggleMenu = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = chipRef.current?.getBoundingClientRect();
+    if (rect) {
+      // `align="right"` anchors menu to chip's right edge and extends
+      // LEFT — fits only when there's enough room left of the chip's
+      // right edge. `align="left"` is the mirror — fits only when
+      // there's room to the right. If both fit, prefer right (matches
+      // the original kebab UX). If neither, pick whichever overflows
+      // less.
+      const fitsLeftOfRightEdge = rect.right - FOLDER_MENU_WIDTH_PX >= 0;
+      const fitsRightOfLeftEdge =
+        rect.left + FOLDER_MENU_WIDTH_PX <= window.innerWidth;
+      if (fitsLeftOfRightEdge) {
+        setMenuAlign("right");
+      } else if (fitsRightOfLeftEdge) {
+        setMenuAlign("left");
+      } else {
+        setMenuAlign(
+          rect.left > window.innerWidth - rect.right ? "right" : "left",
+        );
+      }
+    }
+    setOpen(true);
+  };
+
   return (
-    <div data-menu-root className="group relative flex items-center">
+    <div
+      ref={chipRef}
+      data-menu-root
+      className="group relative flex shrink-0 items-center"
+    >
       <button
         type="button"
         onClick={onSelect}
-        className={`flex flex-1 items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition ${
+        aria-pressed={active}
+        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
           active
-            ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-            : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
-        }`}
+            ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/10 text-tarmoto-cyan"
+            : "border-slate-800 bg-transparent text-slate-300 hover:border-slate-700 hover:text-white"
+        } ${hasActions ? "pr-7" : ""}`}
       >
-        <span className="flex items-center gap-2 truncate">
-          <Folder size={14} />
-          <span className="truncate">{folder.name}</span>
-        </span>
-        <span className="text-xs tabular-nums text-slate-500">{count}</span>
+        {icon}
+        <span className="max-w-[14ch] truncate">{label}</span>
+        <span className="tabular-nums text-slate-500">{count}</span>
       </button>
-      <button
-        type="button"
-        data-menu-trigger
-        onClick={() => setOpen((v) => !v)}
-        aria-label={`Folder actions for ${folder.name}`}
-        className="absolute right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-      >
-        <MoreVertical size={12} />
-      </button>
-      {open && (
-        <Menu onClose={() => setOpen(false)} align="right">
-          <MenuItem
-            icon={<Pencil size={13} />}
-            label="Rename"
-            onClick={() => {
-              setOpen(false);
-              onRename();
-            }}
-          />
-          <MenuItem
-            icon={<Trash2 size={13} />}
-            label="Delete folder"
-            tone="danger"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-          />
-        </Menu>
+      {hasActions && (
+        <>
+          <button
+            type="button"
+            data-menu-trigger
+            onClick={handleToggleMenu}
+            aria-label={`Folder actions for ${label}`}
+            className="absolute right-1 rounded p-0.5 text-slate-400 opacity-60 transition hover:bg-slate-800 hover:text-white hover:opacity-100 focus:opacity-100"
+          >
+            <MoreVertical size={11} />
+          </button>
+          {open && (
+            <Menu onClose={() => setOpen(false)} align={menuAlign}>
+              <MenuItem
+                icon={<Pencil size={13} />}
+                label="Rename"
+                onClick={() => {
+                  setOpen(false);
+                  onRename?.();
+                }}
+              />
+              <MenuItem
+                icon={<Trash2 size={13} />}
+                label="Delete folder"
+                tone="danger"
+                onClick={() => {
+                  setOpen(false);
+                  onDelete?.();
+                }}
+              />
+            </Menu>
+          )}
+        </>
       )}
     </div>
   );
