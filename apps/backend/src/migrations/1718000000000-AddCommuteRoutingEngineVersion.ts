@@ -9,14 +9,23 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * checks for null. The column is nullable so legacy rows already
  * resolved against the previous engine fall through to a re-fill on
  * first read.
+ *
+ * Originally authored as `1716900000000-AddCommuteRoutingEngineVersion.ts`
+ * but the timestamp collided with `1716900000000-AddBikes.ts` and only
+ * the latter got registered in `data-source.ts`. The column ended up
+ * on our DBs by other means (manual ALTER, or a now-removed adjacent
+ * migration), but a from-scratch bootstrap would miss it and the
+ * commute service would `routing_engine_version IS DISTINCT FROM
+ * route.routing_engine_version` against a nonexistent column. Same
+ * pattern as #555 — re-stamp at the tail, make idempotent, register.
  */
-export class AddCommuteRoutingEngineVersion1716900000000 implements MigrationInterface {
-  name = 'AddCommuteRoutingEngineVersion1716900000000';
+export class AddCommuteRoutingEngineVersion1718000000000 implements MigrationInterface {
+  name = 'AddCommuteRoutingEngineVersion1718000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       ALTER TABLE commute_routes
-        ADD COLUMN routing_engine_version VARCHAR(64);
+        ADD COLUMN IF NOT EXISTS routing_engine_version VARCHAR(64);
     `);
   }
 
