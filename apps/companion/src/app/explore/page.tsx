@@ -183,7 +183,18 @@ function ExplorerPageInner() {
   }, [selectedSegmentId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   return (
-    <div className="flex flex-col h-full">
+    // `tarmoto-no-cream` opts the entire map page out of the
+    // signed-in AppShell's cream theme. The whole experience was
+    // authored for a dark mapping surface (basemap tiles, semantic
+    // overlay colours, dark legend) and the cream remap turns
+    // `bg-slate-800 text-slate-300` toolbar buttons into ink-on-
+    // paper for authenticated users while leaving translucent
+    // `bg-quality-good/20 text-quality-good` washes unremapped —
+    // a mix that broke contrast on the toggle pills. Pinning the
+    // page to dark keeps signed-in and public renderings visually
+    // identical and lets the WCAG-AA contrast budget here apply to
+    // a single canvas.
+    <div className="tarmoto-no-cream flex flex-col h-full bg-slate-950">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
         <div className="relative flex-1 max-w-md">
