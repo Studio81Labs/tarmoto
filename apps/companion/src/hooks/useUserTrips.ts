@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
@@ -11,11 +11,12 @@ import type { TripSummary } from "@/lib/types";
 
 /**
  * Stable query key for the user-trips list. Exported so the trips
- * page's optimistic-mutation flows (duplicate / move / delete) can
- * invalidate the cache after a successful API round-trip — without
- * the invalidate, a remount within React Query's `staleTime` would
- * serve the pre-mutation cache back into the Zustand store and
- * silently undo the user's edit.
+ * page's optimistic-mutation flows (duplicate / move / delete /
+ * folder-delete) can drop the cache after a successful API
+ * round-trip — without that, a hook consumer remounting within
+ * `staleTime` would serve the pre-mutation cache through React
+ * Query and let the write-through effect copy it back over the
+ * freshly-mutated store.
  */
 export const USER_TRIPS_QUERY_KEY = (userId: string | null) =>
   ["user-trips", userId] as const;
@@ -25,21 +26,20 @@ export const USER_TRIPS_QUERY_KEY = (userId: string | null) =>
  * `userId` changes. Driven by `@tanstack/react-query`: cancellation,
  * dedup, and stale-while-revalidate cache semantics come for free.
  *
- * The cache key includes `userId`, so switching accounts can't
- * serve the previous user's trips to the new one even within the
- * default `staleTime` window.
+ * Account-switch safety:
+ * - The React Query cache key includes `userId`, so cached A data
+ *   is never served on B's first render.
+ * - The Zustand `trips` field is gated on `tripsOwnerId === userId`
+ *   AT RENDER TIME, so even if the store still holds A's rows
+ *   when B mounts, the hook returns `[]` until B's data lands.
+ *   The post-commit clear effect zeroes the store for subsequent
+ *   reads.
  *
- * The Zustand store is kept as a write-through cache because
- * `(dashboard)/trips/page.tsx`'s optimistic mutations operate on
- * the store directly. After every mutation that page also calls
- * `queryClient.invalidateQueries({ queryKey: USER_TRIPS_QUERY_KEY })`
- * so a subsequent remount refetches instead of clobbering the
- * post-mutation store with stale cache.
- *
- * Returns `trips`, a loading flag, a `tripById` lookup, and an
- * `error` flag. Consumers that do destructive things based on trip
- * presence must not act while `error` is true — a transient API
- * outage shouldn't look like every trip was deleted.
+ * Mutation safety: the trips page's optimistic flows call
+ * `queryClient.removeQueries({ queryKey: USER_TRIPS_QUERY_KEY })`
+ * (not invalidateQueries — invalidate keeps the stale data
+ * available until refetch lands, which would let this write-
+ * through overwrite the post-mutation store).
  */
 export function useUserTrips(): {
   trips: TripSummary[];
@@ -49,7 +49,9 @@ export function useUserTrips(): {
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const setTrips = useTripStore((s) => s.setTrips);
-  const trips = useTripStore((s) => s.trips);
+  const storeTrips = useTripStore((s) => s.trips);
+  const tripsOwnerId = useTripStore((s) => s.tripsOwnerId);
+  const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: USER_TRIPS_QUERY_KEY(userId),
@@ -61,27 +63,42 @@ export function useUserTrips(): {
     },
   });
 
-  // Clear the previous account's trips on every `userId` change
-  // (including A→B account switches, not just sign-out). Without
-  // this, the load window of the new user's fetch would briefly
-  // serve the previous user's trips out of the Zustand store —
-  // the React Query cache is user-keyed, but the store is global.
+  // Clear the previous account's trips on every `userId` change.
+  // Combined with the render-time owner gate below, this means
+  // even a hook consumer that runs SYNCHRONOUSLY during render
+  // never sees user A's rows under user B.
   useEffect(() => {
-    setTrips([]);
-  }, [userId, setTrips]);
+    setTrips([], userId);
+    // Drop the prior user's cache too — Codex flagged that
+    // `invalidateQueries` leaves stale data callable while the
+    // refetch is in flight. `removeQueries` clears it outright.
+    queryClient.removeQueries({ queryKey: ["user-trips"] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-run on userId
+  }, [userId]);
 
   // Write-through into the Zustand store. The list endpoint may
-  // return either a raw array or a `{ data: [] }` envelope depending
-  // on backend version — both branches yield `TripSummaryWire[]` and
-  // the adapter normalises to the companion's camelCase shape.
+  // return either a raw array or a `{ data: [] }` envelope
+  // depending on backend version — both branches yield
+  // `TripSummaryWire[]` and the adapter normalises to the
+  // companion's camelCase shape. Each write also marks the store
+  // as owned by the current `userId` so the render-time gate
+  // returns the freshly-fetched rows immediately.
   useEffect(() => {
     if (!userId || !query.data) return;
     const body = query.data as unknown as
       | { data?: TripSummaryWire[] }
       | TripSummaryWire[];
     const rows = Array.isArray(body) ? body : (body?.data ?? []);
-    setTrips(rows.map(tripSummaryFromWire));
+    setTrips(rows.map(tripSummaryFromWire), userId);
   }, [query.data, userId, setTrips]);
+
+  // Render-time owner gate. If the store still holds the previous
+  // account's trips (the post-commit clear hasn't run yet), return
+  // `[]` so callers can't briefly see or act on the wrong user's
+  // data. `tripsOwnerId` flips to the new `userId` synchronously
+  // inside `setTrips`, ahead of `query.data` landing.
+  const trips =
+    tripsOwnerId !== null && tripsOwnerId === userId ? storeTrips : [];
 
   const tripById = useMemo(() => {
     const map = new Map<string, TripSummary>();

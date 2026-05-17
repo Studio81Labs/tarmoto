@@ -2,7 +2,6 @@ import createFetchClient, {
   type Client,
   type ClientOptions,
 } from "openapi-fetch";
-import createReactQueryClient from "openapi-react-query";
 
 import type { paths } from "./generated/schema";
 
@@ -11,20 +10,13 @@ import type { paths } from "./generated/schema";
  * `paths`. Mirrors the previous `createApiClient` signature so
  * existing consumers (companion's `lib/api.ts`, mobile's
  * `typedClient.ts`) keep working with minimal import-site churn.
+ *
+ * Mobile pulls this via the default package entry; the React
+ * Query helper lives in `./react-query` so RN apps that don't
+ * use TanStack Query don't pay for `openapi-react-query` /
+ * `@tanstack/react-query` as a transitive dep.
  */
 export type TarmotoClient = Client<paths>;
-
-/**
- * React Query wrapper. Exposes `useQuery` / `useMutation` factories
- * pre-bound to the typed paths so consumers can call
- * `$api.useQuery("get", "/api/v1/trips")` and have the full param
- * + response shape inferred. Optional — non-React consumers
- * (mobile RN screens that prefer their own data layer, the e2e
- * mock backend, scripts) can use `createTarmotoClient` alone.
- */
-export type TarmotoQueryClient = ReturnType<
-  typeof createReactQueryClient<paths>
->;
 
 export interface CreateTarmotoClientOptions extends ClientOptions {
   /**
@@ -70,10 +62,4 @@ export function createTarmotoClient(
   }
 
   return client;
-}
-
-export function createTarmotoQueryClient(
-  client: TarmotoClient,
-): TarmotoQueryClient {
-  return createReactQueryClient<paths>(client);
 }

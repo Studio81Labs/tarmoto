@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./react-query": {
+      "types": "./src/react-query.ts",
+      "default": "./src/react-query.ts"
+    },
     "./schema": {
       "types": "./src/generated/schema.d.ts",
       "default": "./src/generated/schema.d.ts"

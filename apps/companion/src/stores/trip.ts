@@ -21,6 +21,15 @@ interface TripState {
    * enforces it.
    */
   trips: TripSummary[];
+  /**
+   * The signed-in user-id whose trips currently live in the store.
+   * Consumers (e.g. `useUserTrips`) read this and gate their
+   * returned list on a match against the active session id, so an
+   * A→B account switch doesn't briefly serve user A's trips
+   * during user B's first render — the gate runs synchronously
+   * during render, ahead of the post-commit `setTrips` clear.
+   */
+  tripsOwnerId: string | null;
   activeTrip: Trip | null;
   isGenerating: boolean;
   canUndo: boolean;
@@ -31,7 +40,7 @@ interface TripState {
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
 
-  setTrips: (trips: TripSummary[]) => void;
+  setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
 
@@ -71,6 +80,7 @@ const MAX_HISTORY_ENTRIES = 50;
 
 export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   trips: [],
+  tripsOwnerId: null,
   activeTrip: null,
   isGenerating: false,
   canUndo: false,
@@ -80,7 +90,10 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   undoStack: [],
   redoStack: [],
 
-  setTrips: (trips) => set({ trips }),
+  setTrips: (trips, ownerId) =>
+    set((state) =>
+      ownerId === undefined ? { trips } : { trips, tripsOwnerId: ownerId },
+    ),
   setActiveTrip: (activeTrip) =>
     set({
       activeTrip,

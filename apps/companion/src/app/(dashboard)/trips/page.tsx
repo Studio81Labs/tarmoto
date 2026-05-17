@@ -75,13 +75,14 @@ export default function TripListPage() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const queryClient = useQueryClient();
   // After any optimistic mutation that touches the persisted list,
-  // also invalidate the React Query cache for `useUserTrips`. The
-  // store update keeps the current UI consistent; the invalidation
-  // ensures a subsequent remount (different component or a fresh
-  // hook consumer) doesn't write the pre-mutation snapshot back
-  // over the store within React Query's `staleTime` window.
+  // drop the React Query cache for `useUserTrips`. `removeQueries`
+  // (not `invalidateQueries`) — invalidation leaves the stale data
+  // available until the refetch lands, which would let the hook's
+  // write-through copy the pre-mutation snapshot back over the
+  // freshly-mutated store. Removing forces the next mount to fetch
+  // fresh, so the store and the cache can't diverge.
   const invalidateTripsCache = () =>
-    queryClient.invalidateQueries({
+    queryClient.removeQueries({
       queryKey: USER_TRIPS_QUERY_KEY(userId),
     });
   const [loading, setLoading] = useState(true);

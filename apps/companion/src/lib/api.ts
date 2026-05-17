@@ -1,7 +1,5 @@
-import {
-  createTarmotoClient,
-  createTarmotoQueryClient,
-} from "@tarmoto/openapi-client";
+import { createTarmotoClient } from "@tarmoto/openapi-client";
+import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
 import type {
   InAppNotification,

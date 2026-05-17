@@ -273,6 +273,7 @@ function buildGenerationResponse(selected = "best-fit") {
 
 type TripStoreSnapshot = {
   trips: TripSummary[];
+  tripsOwnerId: string | null;
   activeTrip: Trip | null;
   isGenerating: boolean;
   canUndo: boolean;
@@ -281,7 +282,7 @@ type TripStoreSnapshot = {
   hoveredSegmentId: string | null;
   undoStack: Array<Trip | null>;
   redoStack: Array<Trip | null>;
-  setTrips: (trips: TripSummary[]) => void;
+  setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
   focusSegment: (segmentId: string | null) => void;
@@ -401,6 +402,7 @@ describe("TripPlannerPage", () => {
     });
     storeState = {
       trips: [],
+      tripsOwnerId: null,
       activeTrip: null,
       isGenerating: false,
       canUndo: false,
