@@ -272,6 +272,12 @@ export default function TripListPage() {
     );
     try {
       await tripFoldersApi.delete(folder.id);
+      // The cascade on `trips.folder_id` runs server-side, so the
+      // next `/api/v1/trips` fetch will return the affected trips
+      // with `folder_id: null`. Invalidate the cache so a hook
+      // consumer remounting within `staleTime` doesn't write the
+      // pre-delete `folder_id` values back into the Zustand store.
+      void invalidateTripsCache();
     } catch {
       // Roll back the folder list, the per-trip optimistic unfile, AND
       // the folder-scope filter so the rider isn't left looking at a
