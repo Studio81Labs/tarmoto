@@ -20,7 +20,8 @@
     "src"
   ],
   "scripts": {
-    "generate": "openapi-typescript ../openapi/openapi.yaml --output src/generated/schema.d.ts --root-types"
+    "generate": "openapi-typescript ../openapi/openapi.yaml --output src/generated/schema.d.ts --root-types",
+    "test": "vitest run"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "openapi-typescript": "^7.0.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.5"
   }
 }

@@ -61,16 +61,21 @@ export function useUserTrips(): {
     },
   });
 
+  // Clear the previous account's trips on every `userId` change
+  // (including A→B account switches, not just sign-out). Without
+  // this, the load window of the new user's fetch would briefly
+  // serve the previous user's trips out of the Zustand store —
+  // the React Query cache is user-keyed, but the store is global.
+  useEffect(() => {
+    setTrips([]);
+  }, [userId, setTrips]);
+
   // Write-through into the Zustand store. The list endpoint may
   // return either a raw array or a `{ data: [] }` envelope depending
   // on backend version — both branches yield `TripSummaryWire[]` and
   // the adapter normalises to the companion's camelCase shape.
   useEffect(() => {
-    if (!userId) {
-      setTrips([]);
-      return;
-    }
-    if (!query.data) return;
+    if (!userId || !query.data) return;
     const body = query.data as unknown as
       | { data?: TripSummaryWire[] }
       | TripSummaryWire[];
