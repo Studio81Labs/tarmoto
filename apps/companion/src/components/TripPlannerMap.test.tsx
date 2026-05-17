@@ -773,6 +773,28 @@ describe("TripPlannerMap", () => {
     });
   });
 
+  it("refits when fitRouteToken bumps (same trip id, route geometry swap)", async () => {
+    // Scenario: user picks a different generated route option —
+    // `trip.id` stays the same but the route geometry can change
+    // dramatically. The page bumps `fitRouteToken` so the map
+    // re-frames the new bounds; the per-trip-id auto-fit alone
+    // would let the new geometry render off-screen.
+    const { rerender } = render(
+      <TripPlannerMap trip={trip()} month={7} fitRouteToken={0} />,
+    );
+
+    await waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    });
+    mockMap.fitBounds.mockClear();
+
+    rerender(<TripPlannerMap trip={trip()} month={7} fitRouteToken={1} />);
+
+    await waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("refits when the user clicks Fit to route", async () => {
     render(<TripPlannerMap trip={trip()} month={7} />);
 

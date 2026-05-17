@@ -119,6 +119,16 @@ interface TripPlannerMapProps {
    * Pass undefined to disable cursor sharing.
    */
   onCursorMove?: (lat: number, lng: number) => void;
+  /**
+   * Bump to trigger a one-shot refit to the current route bounds,
+   * independent of the per-`trip.id` auto-fit. The auto-fit fires
+   * once per trip so waypoint edits don't rip the viewport
+   * (#559) — but page-level flows that change route geometry while
+   * the trip id stays the same (selecting a different generated
+   * option, replacing an imported route, etc.) need to re-frame
+   * the new geometry. Increment this token after each such action.
+   */
+  fitRouteToken?: number;
 }
 export function TripPlannerMap({
   trip,
@@ -133,6 +143,7 @@ export function TripPlannerMap({
   collaboratorCursors,
   suggestions,
   onCursorMove,
+  fitRouteToken,
 }: TripPlannerMapProps) {
   if (closuresData && passesData) {
     return (
@@ -149,6 +160,7 @@ export function TripPlannerMap({
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
         onCursorMove={onCursorMove}
+        fitRouteToken={fitRouteToken}
       />
     );
   }
@@ -164,6 +176,7 @@ export function TripPlannerMap({
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
+      fitRouteToken={fitRouteToken}
     />
   );
 }
@@ -178,6 +191,7 @@ function FetchedTripPlannerMap({
   collaboratorCursors,
   suggestions,
   onCursorMove,
+  fitRouteToken,
 }: {
   trip: Trip | null;
   month: number;
@@ -193,6 +207,7 @@ function FetchedTripPlannerMap({
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
   onCursorMove?: (lat: number, lng: number) => void;
+  fitRouteToken?: number;
 }) {
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
@@ -211,6 +226,7 @@ function FetchedTripPlannerMap({
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
+      fitRouteToken={fitRouteToken}
     />
   );
 }
@@ -227,6 +243,7 @@ function TripPlannerMapContent({
   collaboratorCursors,
   suggestions,
   onCursorMove,
+  fitRouteToken,
 }: {
   trip: Trip | null;
   month: number;
@@ -244,6 +261,7 @@ function TripPlannerMapContent({
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
   onCursorMove?: (lat: number, lng: number) => void;
+  fitRouteToken?: number;
 }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
@@ -898,6 +916,20 @@ function TripPlannerMapContent({
     fittedTripIdRef.current = trip.id;
     fitMapToTrip();
   }, [ready, trip, tripBounds, fitMapToTrip]);
+
+  // Imperative refit triggered by the parent — page-level flows
+  // that swap route geometry without changing `trip.id` (selecting
+  // a different generated option, replacing an imported route)
+  // bump `fitRouteToken` to re-frame the new bounds. Skipped on
+  // initial mount (the per-trip-id auto-fit above handles that).
+  const lastFitTokenRef = useRef<number | undefined>(fitRouteToken);
+  useEffect(() => {
+    if (fitRouteToken === undefined) return;
+    if (lastFitTokenRef.current === fitRouteToken) return;
+    lastFitTokenRef.current = fitRouteToken;
+    if (!ready || !tripBounds) return;
+    fitMapToTrip();
+  }, [fitRouteToken, ready, tripBounds, fitMapToTrip]);
   useEffect(() => {
     return () => {
       drawRef.current?.destroy();
