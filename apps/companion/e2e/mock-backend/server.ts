@@ -524,6 +524,51 @@ export function buildApp(): Express {
     res.status(201).json({ token: finalToken });
   });
 
+  // Stand up a road closure that the planner's closures panel will
+  // surface once a trip route is generated. Tests seed one closure
+  // conceptually-over the demo trip route and assert on the rendered
+  // counter copy — the mock's `check-route` endpoint reports any
+  // seeded closure as crossing the supplied route, so geometry
+  // fidelity isn't required here.
+  app.post("/__test__/seed-closure", (req, res) => {
+    const c = req.body?.closure ?? {};
+    const id = c.id ?? randomUUID();
+    const now = new Date().toISOString();
+    const closure: import("./state").MockRoadClosure = {
+      id,
+      title: String(c.title ?? "Roadworks on the demo route"),
+      reason: c.reason ?? "roadworks",
+      severity: c.severity ?? "full",
+      // Default geometry overlaps the demo-trip's generated start
+      // point (46.47, 10.37) so the production-like proximity
+      // filter on `/closures/check-route` actually matches with
+      // the default 100m buffer.
+      geometry: c.geometry ?? [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.48, lng: 10.39 },
+      ],
+      detour: c.detour ?? null,
+      country_code: c.country_code ?? "IT",
+      region: c.region ?? "Lombardia",
+      // Default to a stable past start so the closure passes the
+      // `active_on` filter regardless of which calendar day the
+      // suite runs on. The planner's `useClosures` derives
+      // `active_on` from the user's `travelMonth` (15th of that
+      // month); seeding `now()` would let a closure sit in the
+      // future on the 15th of any month and disappear from the
+      // production-correct filter.
+      starts_at: c.starts_at ?? "2020-01-01T00:00:00.000Z",
+      ends_at: c.ends_at ?? null,
+      notes: c.notes ?? null,
+      source: c.source ?? "operator",
+      created_by: c.created_by ?? null,
+      created_at: c.created_at ?? now,
+      updated_at: c.updated_at ?? now,
+    };
+    state.closures.set(id, closure);
+    res.status(201).json({ id });
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -1467,10 +1512,268 @@ export function buildApp(): Express {
     });
   });
 
-  // Endpoints the planner / explorer hit but don't strictly need real
-  // data for E2E to pass.
-  app.get("/api/v1/closures", (_req, res) => {
-    res.json([]);
+  // The planner + explorer poll these public-ish endpoints to render
+  // the closures + passes panels. `useClosures(travelMonth, routes)`
+  // hits both `GET /closures` (bbox-filtered list) AND
+  // `POST /closures/check-route` (route intersection check); a test
+  // seeding a closure expects both calls to surface the row.
+  //
+  // Production `ListClosuresQueryDto.active_on` /
+  // `CheckRouteClosuresDto.active_on` both apply `@IsISO8601`.
+  // Without an explicit guard the mock would feed a malformed
+  // string into `new Date(...)` (e.g. `Invalid Date`), then
+  // `filterActiveOn` would drop every closure and the test would
+  // silently land on the empty-state path. Returns the validated
+  // string on success, sends 400 on failure (and returns null so
+  // the caller bails out).
+  // Strict ISO 8601 (date or date+time, optional ms + tz). Mirrors
+  // class-validator's `@IsISO8601` — `Date.parse` is too lenient
+  // (it accepts `1` or `2026-7-5`), so we filter through the regex
+  // first and only then sanity-check the resulting Date.
+  const ISO_8601_REGEX =
+    /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+  function parseActiveOn(
+    raw: unknown,
+    res: import("express").Response,
+  ): string | null | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== "string" || !ISO_8601_REGEX.test(raw)) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "active_on must be an ISO 8601 date string",
+      });
+      return null;
+    }
+    const t = Date.parse(raw);
+    if (!Number.isFinite(t)) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "active_on must be an ISO 8601 date string",
+      });
+      return null;
+    }
+    return raw;
+  }
+
+  // Both paths share the production `active_on` filter:
+  //   starts_at <= activeOn AND (ends_at IS NULL OR ends_at >= activeOn)
+  // `include_past=true` (list endpoint) opts out entirely.
+  function filterActiveOn(
+    closures: Iterable<import("./state").MockRoadClosure>,
+    activeOnIso: string | undefined,
+  ): import("./state").MockRoadClosure[] {
+    const activeOn = activeOnIso ? new Date(activeOnIso) : new Date();
+    const t = activeOn.getTime();
+    return [...closures].filter(
+      (c) =>
+        new Date(c.starts_at).getTime() <= t &&
+        (c.ends_at == null || new Date(c.ends_at).getTime() >= t),
+    );
+  }
+  app.get("/api/v1/closures", (req, res) => {
+    const includePast = req.query.include_past === "true";
+    const activeOn = parseActiveOn(req.query.active_on, res);
+    if (activeOn === null) return;
+    let rows = includePast
+      ? [...state.closures.values()]
+      : filterActiveOn(state.closures.values(), activeOn);
+    // Mirror production `ClosuresService.list` filters: bbox
+    // (intersection), severity (exact match), reason (exact
+    // match). Without these, an e2e seeding an out-of-region or
+    // off-severity closure would still see it surface, drifting
+    // from what the real backend would return.
+    if (typeof req.query.bbox === "string") {
+      // Mirror production: `ListClosuresQueryDto.bbox` matches
+      // `/^-?\d+(?:\.\d+)?(?:,-?\d+(?:\.\d+)?){3}$/` (exactly four
+      // numeric tokens separated by commas). Splitting + `Number()`
+      // on its own coerces blank parts like `10,,11,12` to `0` and
+      // passes the finite check, so explicitly require non-empty
+      // numeric tokens before parsing.
+      const rawParts = req.query.bbox.split(",");
+      const parts =
+        rawParts.length === 4 &&
+        rawParts.every((s) => s.trim().length > 0 && Number.isFinite(Number(s)))
+          ? rawParts.map(Number)
+          : null;
+      if (parts === null) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: 'bbox must be "minLng,minLat,maxLng,maxLat"',
+        });
+        return;
+      }
+      const [minLng, minLat, maxLng, maxLat] = parts as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      if (minLng >= maxLng || minLat >= maxLat) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "bbox min must be strictly less than max for both axes",
+        });
+        return;
+      }
+      // Exact segment-vs-rectangle intersection so a closure whose
+      // vertices are both outside the bbox but whose segment crosses
+      // through still matches — mirrors `ST_Intersects(c.geom,
+      // envelope)`.
+      rows = rows.filter((c) =>
+        polylineIntersectsBbox(c.geometry, minLng, minLat, maxLng, maxLat),
+      );
+    }
+    // Mirror production `ListClosuresQueryDto` enum guards
+    // (`@IsIn(ROAD_CLOSURE_SEVERITIES)`,
+    // `@IsIn(ROAD_CLOSURE_REASONS)`). A bad value like
+    // `severity=closed` or `reason=construction` now surfaces 400
+    // instead of silently filtering to an empty list.
+    const VALID_SEVERITIES = new Set(["advisory", "partial", "full"]);
+    const VALID_REASONS = new Set([
+      "closure",
+      "roadworks",
+      "seasonal",
+      "weather",
+      "event",
+      "other",
+    ]);
+    if (typeof req.query.severity === "string") {
+      if (!VALID_SEVERITIES.has(req.query.severity)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "severity must be one of: advisory, partial, full",
+        });
+        return;
+      }
+      rows = rows.filter((c) => c.severity === req.query.severity);
+    }
+    if (typeof req.query.reason === "string") {
+      if (!VALID_REASONS.has(req.query.reason)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message:
+            "reason must be one of: closure, roadworks, seasonal, weather, event, other",
+        });
+        return;
+      }
+      rows = rows.filter((c) => c.reason === req.query.reason);
+    }
+    res.json(rows);
+  });
+  app.post("/api/v1/closures/check-route", (req, res) => {
+    // Simplification: any seeded closure is reported as crossing the
+    // supplied route. The mock doesn't run a geometry intersection —
+    // tests seed a single closure conceptually-over the trip route
+    // and assert on the rendered "Current trip crosses N closures"
+    // copy, not on coordinate math.
+    const route = (req.body?.route ?? []) as Array<{
+      lat: number;
+      lng: number;
+    }>;
+    // Production `CheckRouteClosuresDto` requires `@ArrayMinSize(2)`
+    // AND `ClosuresService.checkRoute` throws `BadRequestException
+    // ("Route must have at least 2 points")` for shorter polylines.
+    // Mirror that so a planner regression that ships a degenerate
+    // single-point route surfaces the same 400 instead of silently
+    // getting a closure list back.
+    if (route.length < 2) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "Route must have at least 2 points",
+      });
+      return;
+    }
+    // Mirror `ClosurePointDto`: `@IsLatitude` (lat ∈ [-90, 90])
+    // and `@IsLongitude` (lng ∈ [-180, 180]) plus both fields
+    // required and finite. Without this guard a missing or
+    // corrupted coordinate would fall through as `NaN`/`undefined`
+    // and the proximity math would still produce a 200 (usually
+    // with zero matches) — masking a planner regression where
+    // generated geometry drops a field.
+    for (let i = 0; i < route.length; i++) {
+      const pt = route[i] as unknown;
+      if (
+        !pt ||
+        typeof pt !== "object" ||
+        typeof (pt as { lat: unknown }).lat !== "number" ||
+        typeof (pt as { lng: unknown }).lng !== "number" ||
+        !Number.isFinite((pt as { lat: number }).lat) ||
+        !Number.isFinite((pt as { lng: number }).lng) ||
+        (pt as { lat: number }).lat < -90 ||
+        (pt as { lat: number }).lat > 90 ||
+        (pt as { lng: number }).lng < -180 ||
+        (pt as { lng: number }).lng > 180
+      ) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `route[${i}] must have lat ∈ [-90, 90] and lng ∈ [-180, 180]`,
+        });
+        return;
+      }
+    }
+    const activeOn = parseActiveOn(req.body?.active_on, res);
+    if (activeOn === null) return;
+    // Mirror `CheckRouteClosuresDto.buffer_m`: `@IsNumber()`,
+    // `@Min(10)`, `@Max(5000)`. The mock previously accepted any
+    // number, which lets a client regression pass with `0` /
+    // negative / over-cap values that production 400s.
+    const rawBuffer = req.body?.buffer_m;
+    if (rawBuffer !== undefined) {
+      if (typeof rawBuffer !== "number" || !Number.isFinite(rawBuffer)) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "buffer_m must be a finite number",
+        });
+        return;
+      }
+      if (rawBuffer < 10 || rawBuffer > 5000) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "buffer_m must be between 10 and 5000",
+        });
+        return;
+      }
+    }
+    const bufferM =
+      typeof rawBuffer === "number" && Number.isFinite(rawBuffer)
+        ? rawBuffer
+        : 100;
+    const bufferKm = bufferM / 1000;
+    // Exact polyline-polyline min distance, so segments running
+    // parallel-but-close to the route, or crossing through the
+    // route between their vertices, still match — mirrors
+    // `ST_DWithin(c.geom, route.geom, buffer_m)` without any
+    // sampling tolerance.
+    const matched = filterActiveOn(state.closures.values(), activeOn).filter(
+      (c) => polylinesMinKm(c.geometry, route) <= bufferKm,
+    );
+    // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
+    // severity counts so consumers reading the count fields hit
+    // numbers instead of `undefined`.
+    let fullCount = 0;
+    let partialCount = 0;
+    let advisoryCount = 0;
+    for (const c of matched) {
+      if (c.severity === "full") fullCount += 1;
+      else if (c.severity === "partial") partialCount += 1;
+      else if (c.severity === "advisory") advisoryCount += 1;
+    }
+    res.json({
+      closures: matched,
+      full_count: fullCount,
+      partial_count: partialCount,
+      advisory_count: advisoryCount,
+    });
   });
   app.get("/api/v1/passes", (_req, res) => {
     res.json([]);
@@ -2760,6 +3063,118 @@ function kmToSegment(p: LatLng, a: LatLng, b: LatLng): number {
   const cx = ax + t * dx;
   const cy = ay + t * dy;
   return Math.hypot(px - cx, py - cy);
+}
+
+// Project lat/lng to local equirectangular kilometre coordinates
+// at the supplied mean latitude. Shared by the segment helpers
+// below so segment-vs-segment / segment-vs-rectangle math stays
+// in a flat plane.
+function toKm(p: LatLng, meanLat: number): { x: number; y: number } {
+  const kmPerDegLat = 111;
+  const kmPerDegLng = 111 * Math.cos((meanLat * Math.PI) / 180);
+  return { x: p.lng * kmPerDegLng, y: p.lat * kmPerDegLat };
+}
+
+// Standard 2D segment-segment intersection. Returns true when AB
+// and CD touch or cross. Operates in the local projection — the
+// approximation is faithful to a few centimetres at the kilometre
+// scale these mocks operate on.
+function segmentsCross(a: LatLng, b: LatLng, c: LatLng, d: LatLng): boolean {
+  const meanLat = (a.lat + b.lat + c.lat + d.lat) / 4;
+  const A = toKm(a, meanLat);
+  const B = toKm(b, meanLat);
+  const C = toKm(c, meanLat);
+  const D = toKm(d, meanLat);
+  const denom = (B.x - A.x) * (D.y - C.y) - (B.y - A.y) * (D.x - C.x);
+  if (denom === 0) return false; // parallel or collinear (treat as no-cross)
+  const t = ((C.x - A.x) * (D.y - C.y) - (C.y - A.y) * (D.x - C.x)) / denom;
+  const s = ((C.x - A.x) * (B.y - A.y) - (C.y - A.y) * (B.x - A.x)) / denom;
+  return t >= 0 && t <= 1 && s >= 0 && s <= 1;
+}
+
+// Min km distance between two line segments. Handles the crossing
+// case (distance is 0) and the disjoint case via the four
+// endpoint-to-segment distances — exact for any non-degenerate
+// pair, no sampling required.
+function kmSegmentToSegment(
+  a: LatLng,
+  b: LatLng,
+  c: LatLng,
+  d: LatLng,
+): number {
+  if (segmentsCross(a, b, c, d)) return 0;
+  return Math.min(
+    kmToSegment(a, c, d),
+    kmToSegment(b, c, d),
+    kmToSegment(c, a, b),
+    kmToSegment(d, a, b),
+  );
+}
+
+// Min km distance between two polylines. Min over every (segment,
+// segment) pair — mirrors `ST_Distance(closure::geography,
+// route::geography)`. The companion mock uses this for the
+// `/closures/check-route` buffer check so closures running
+// parallel to (or crossing) the route between vertices still
+// register, unlike a vertex-only sample.
+function polylinesMinKm(a: readonly LatLng[], b: readonly LatLng[]): number {
+  if (a.length === 0 || b.length === 0) return Infinity;
+  if (a.length === 1 && b.length === 1) return kmToSegment(a[0]!, b[0]!, b[0]!);
+  if (a.length === 1) return kmToPolyline(a[0]!, b);
+  if (b.length === 1) return kmToPolyline(b[0]!, a);
+  let min = Infinity;
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      const d = kmSegmentToSegment(a[i]!, a[i + 1]!, b[j]!, b[j + 1]!);
+      if (d < min) min = d;
+      if (min === 0) return 0;
+    }
+  }
+  return min;
+}
+
+// True iff the polyline intersects the lat/lng envelope. Used for
+// bbox-filtering closures: a closure whose vertices are both
+// outside the box but whose segment crosses through still matches
+// (mirrors `ST_Intersects(c.geom, envelope)`).
+function polylineIntersectsBbox(
+  polyline: readonly LatLng[],
+  minLng: number,
+  minLat: number,
+  maxLng: number,
+  maxLat: number,
+): boolean {
+  if (polyline.length === 0) return false;
+  // Any vertex inside the envelope is an immediate hit.
+  for (const pt of polyline) {
+    if (
+      pt.lng >= minLng &&
+      pt.lng <= maxLng &&
+      pt.lat >= minLat &&
+      pt.lat <= maxLat
+    ) {
+      return true;
+    }
+  }
+  if (polyline.length === 1) return false;
+  // No vertex inside — check each segment against the four edges
+  // of the envelope. Any crossing counts.
+  const corners: LatLng[] = [
+    { lat: minLat, lng: minLng },
+    { lat: minLat, lng: maxLng },
+    { lat: maxLat, lng: maxLng },
+    { lat: maxLat, lng: minLng },
+  ];
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i]!;
+    const b = polyline[i + 1]!;
+    for (let e = 0; e < 4; e++) {
+      const c = corners[e]!;
+      const d = corners[(e + 1) % 4]!;
+      if (segmentsCross(a, b, c, d)) return true;
+    }
+  }
+  return false;
 }
 
 // Min distance from `p` to the polyline. Mirrors `ST_Distance(

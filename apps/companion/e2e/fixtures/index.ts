@@ -81,6 +81,18 @@ export interface MockApi {
       slug?: string;
     },
   ): Promise<{ id: string; slug: string }>;
+  seedClosure(opts?: {
+    id?: string;
+    title?: string;
+    severity?: "advisory" | "partial" | "full";
+    reason?:
+      | "closure"
+      | "roadworks"
+      | "seasonal"
+      | "weather"
+      | "event"
+      | "other";
+  }): Promise<{ id: string }>;
 }
 
 function buildMockApi(api: APIRequestContext): MockApi {
@@ -179,6 +191,17 @@ function buildMockApi(api: APIRequestContext): MockApi {
         );
       }
       return (await res.json()) as { id: string; slug: string };
+    },
+    async seedClosure(opts = {}) {
+      const res = await api.post(`${MOCK_BACKEND_URL}/__test__/seed-closure`, {
+        data: { closure: opts },
+      });
+      if (!res.ok()) {
+        throw new Error(
+          `seedClosure failed: ${res.status()} ${await res.text()}`,
+        );
+      }
+      return (await res.json()) as { id: string };
     },
   };
 }

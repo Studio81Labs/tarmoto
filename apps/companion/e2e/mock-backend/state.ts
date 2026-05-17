@@ -112,6 +112,31 @@ export interface MockRide {
   }>;
 }
 
+/**
+ * Mirrors the companion's `RoadClosure` wire shape (and the
+ * backend `RoadClosureDto`). Geometry is a `[lat,lng]` polyline
+ * along the closed road; `detour` is optional. The mock keeps a
+ * minimal subset — tests assert on `title` / `severity` / count,
+ * not on geometry details.
+ */
+export interface MockRoadClosure {
+  id: string;
+  title: string;
+  reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other";
+  severity: "advisory" | "partial" | "full";
+  geometry: Array<{ lat: number; lng: number }>;
+  detour: Array<{ lat: number; lng: number }> | null;
+  country_code: string;
+  region: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  notes: string | null;
+  source: "operator" | "osm" | "official";
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MockSuggestion {
   id: string;
   trip_id: string;
@@ -288,6 +313,16 @@ export class MockState {
     string,
     { ride_id: string; is_public: boolean; view_count: number }
   >();
+  /**
+   * Seeded road closures. The planner's `useClosures` hook polls
+   * `/api/v1/closures` for the bbox + `/api/v1/closures/check-route`
+   * for each trip-day route. To keep the mock simple, the check-route
+   * endpoint reports every seeded closure as crossing the supplied
+   * route — tests that assert the planner's "Current trip crosses N
+   * closures" copy only need to seed one row that conceptually sits
+   * over the trip's geometry.
+   */
+  closures = new Map<string, MockRoadClosure>();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
   roadReviews = new Map<string, MockRoadReview[]>();
@@ -343,6 +378,7 @@ export class MockState {
     this.collectionsBySlug.clear();
     this.collectionFollows.clear();
     this.userFollows.clear();
+    this.closures.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();
