@@ -121,8 +121,9 @@ test.describe("cross-cutting", () => {
   });
 
   // T66 + T67 — Offline indicator + reconnect: when the browser
-  // goes offline the `OfflineIndicator` mounts in the topbar; when
-  // it reconnects the indicator disappears. Playwright's
+  // goes offline the sidebar mounts an indicator chip (lives in the
+  // sidebar footer alongside the notification bell since shell v2);
+  // when it reconnects the indicator disappears. Playwright's
   // `context.setOffline` fires the same `online`/`offline` events
   // the component listens to.
   test("T66/T67: offline indicator surfaces and clears on reconnect", async ({
