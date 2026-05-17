@@ -697,7 +697,11 @@ describe("TripPlannerMap", () => {
     expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
-  it("re-fits the map when trip bounds change on the same trip id", () => {
+  it("does NOT auto-refit when waypoint changes mutate bounds on the same trip (#559)", () => {
+    // Regression #559: clicking the map to add / move a waypoint
+    // used to refit the bounds and rip the user's zoom/pan away.
+    // The auto-fit is now one-shot per `trip.id`; only the explicit
+    // Fit-to-route button below should refit on subsequent edits.
     const { rerender } = render(<TripPlannerMap trip={trip()} month={7} />);
 
     return waitFor(() => {
@@ -741,21 +745,74 @@ describe("TripPlannerMap", () => {
         />,
       );
 
+      // Give React a tick to flush effects before asserting the
+      // negative — `waitFor` would only catch a delayed call.
+      return new Promise<void>((resolve) => setTimeout(resolve, 20)).then(
+        () => {
+          expect(mockMap.fitBounds).not.toHaveBeenCalled();
+        },
+      );
+    });
+  });
+
+  it("auto-fits again when the trip identity changes (different trip.id)", () => {
+    const { rerender } = render(<TripPlannerMap trip={trip()} month={7} />);
+
+    return waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    }).then(() => {
+      mockMap.fitBounds.mockClear();
+
+      rerender(
+        <TripPlannerMap trip={{ ...trip(), id: "trip-other" }} month={7} />,
+      );
+
       return waitFor(() => {
         expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
-        expect(mockMap.fitBounds).toHaveBeenCalledWith(
-          [
-            [15.11, 50.58],
-            [15.61, 50.79],
-          ],
-          expect.objectContaining({
-            padding: 72,
-            duration: 0,
-            maxZoom: 11,
-          }),
-        );
       });
     });
+  });
+
+  it("refits when fitRouteToken bumps (same trip id, route geometry swap)", async () => {
+    // Scenario: user picks a different generated route option —
+    // `trip.id` stays the same but the route geometry can change
+    // dramatically. The page bumps `fitRouteToken` so the map
+    // re-frames the new bounds; the per-trip-id auto-fit alone
+    // would let the new geometry render off-screen.
+    const { rerender } = render(
+      <TripPlannerMap trip={trip()} month={7} fitRouteToken={0} />,
+    );
+
+    await waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    });
+    mockMap.fitBounds.mockClear();
+
+    rerender(<TripPlannerMap trip={trip()} month={7} fitRouteToken={1} />);
+
+    await waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("refits when the user clicks Fit to route", async () => {
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    await waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    });
+    mockMap.fitBounds.mockClear();
+
+    const fitBtn = screen.getByRole("button", {
+      name: /fit map to the whole route/i,
+    });
+    fitBtn.click();
+
+    expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    expect(mockMap.fitBounds).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ padding: 72, duration: 0, maxZoom: 11 }),
+    );
   });
 
   it("destroys the previous draw control before reinitializing onReady", () => {

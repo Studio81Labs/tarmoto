@@ -170,6 +170,12 @@ export default function TripPlannerPage() {
     string | null
   >(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  // Bumped after any flow that swaps route geometry without
+  // changing `trip.id` (initial generation, regenerate, picking a
+  // different generated option) so the map refits the new bounds.
+  // The map's per-trip-id auto-fit suppresses these by design to
+  // preserve user zoom/pan during waypoint edits (#559).
+  const [fitRouteToken, setFitRouteToken] = useState(0);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -780,6 +786,7 @@ export default function TripPlannerPage() {
       );
       setSelectedOptionId(selected?.id ?? null);
       setActiveTrip(selected?.trip ?? null);
+      setFitRouteToken((t) => t + 1);
       setServerTripId(tripId);
       setServerTripOwnerId(currentUserId);
       setServerTripCallerRole("owner");
@@ -815,6 +822,13 @@ export default function TripPlannerPage() {
       if (option.selected || !serverTripId) {
         setSelectedOptionId(option.id);
         setActiveTrip(option.trip);
+        // Only refit when the click actually swaps the displayed
+        // route. Re-clicking the already-active option keeps the
+        // same geometry on screen, so a refit there would rip the
+        // user's panned/zoomed viewport for no visible change.
+        if (!option.selected) {
+          setFitRouteToken((t) => t + 1);
+        }
         return;
       }
       const latestTrip = activeTripRef.current;
@@ -856,6 +870,7 @@ export default function TripPlannerPage() {
         );
         setSelectedOptionId(selected?.id ?? option.id);
         setActiveTrip(selected?.trip ?? option.trip);
+        setFitRouteToken((t) => t + 1);
       } catch {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
@@ -1303,6 +1318,7 @@ export default function TripPlannerPage() {
             collaboratorCursors={collabSession.cursors}
             suggestions={collabSession.suggestions}
             onCursorMove={serverTripId ? collabSession.emitCursor : undefined}
+            fitRouteToken={fitRouteToken}
           />
 
           {/* Drop overlay */}
