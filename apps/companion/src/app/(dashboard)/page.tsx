@@ -11,7 +11,7 @@ import {
   ArrowUpRight,
   ChevronRight,
 } from "lucide-react";
-import { Card, Heading, Mono, Pill, Stamp } from "@/components/tarmoto/atoms";
+import { Card, Heading, Mono, Stamp } from "@/components/tarmoto/atoms";
 
 const QUICK_ACTIONS = [
   {
@@ -60,21 +60,14 @@ export default function HomePage() {
   return (
     <div className="mx-auto w-full max-w-6xl animate-fade-in space-y-8 p-7">
       {/* Hero stamp + title */}
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Stamp>{t("Welcome back")}</Stamp>
-          <Heading size="xl" className="mt-2">
-            {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
-          </Heading>
-          <p className="mt-2 max-w-lg text-[15px] text-ink/60">
-            {t("Know the road before you ride it.")}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Pill variant="outline">
-            <Mono>{t("Metric · °C / km")}</Mono>
-          </Pill>
-        </div>
+      <header>
+        <Stamp>{t("Welcome back")}</Stamp>
+        <Heading size="xl" className="mt-2">
+          {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
+        </Heading>
+        <p className="mt-2 max-w-lg text-[15px] text-ink/60">
+          {t("Know the road before you ride it.")}
+        </p>
       </header>
 
       {/* Quick actions */}
