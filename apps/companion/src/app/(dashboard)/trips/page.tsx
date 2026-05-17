@@ -662,6 +662,10 @@ function FolderChipRow({
     </div>
   );
 }
+// Menu width must match the `w-56` in `<Menu>` (224px) — we use it
+// to decide which side of the chip to anchor the dropdown to.
+const FOLDER_MENU_WIDTH_PX = 224;
+
 function FolderChip({
   icon,
   label,
@@ -682,9 +686,51 @@ function FolderChip({
   onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Chip menus need to flip alignment based on where the chip
+  // lands on the wrapping row. A leftmost wrapped chip with the
+  // default `align="right"` (menu anchored to chip's right edge,
+  // extending left) would render its left edge off-screen on
+  // mobile; a rightmost chip with `align="left"` does the same
+  // thing in the other direction.
+  const [menuAlign, setMenuAlign] = useState<"left" | "right">("right");
+  const chipRef = useRef<HTMLDivElement | null>(null);
   const hasActions = !!(onRename && onDelete);
+
+  const handleToggleMenu = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = chipRef.current?.getBoundingClientRect();
+    if (rect) {
+      // `align="right"` anchors menu to chip's right edge and extends
+      // LEFT — fits only when there's enough room left of the chip's
+      // right edge. `align="left"` is the mirror — fits only when
+      // there's room to the right. If both fit, prefer right (matches
+      // the original kebab UX). If neither, pick whichever overflows
+      // less.
+      const fitsLeftOfRightEdge = rect.right - FOLDER_MENU_WIDTH_PX >= 0;
+      const fitsRightOfLeftEdge =
+        rect.left + FOLDER_MENU_WIDTH_PX <= window.innerWidth;
+      if (fitsLeftOfRightEdge) {
+        setMenuAlign("right");
+      } else if (fitsRightOfLeftEdge) {
+        setMenuAlign("left");
+      } else {
+        setMenuAlign(
+          rect.left > window.innerWidth - rect.right ? "right" : "left",
+        );
+      }
+    }
+    setOpen(true);
+  };
+
   return (
-    <div data-menu-root className="group relative flex shrink-0 items-center">
+    <div
+      ref={chipRef}
+      data-menu-root
+      className="group relative flex shrink-0 items-center"
+    >
       <button
         type="button"
         onClick={onSelect}
@@ -704,14 +750,14 @@ function FolderChip({
           <button
             type="button"
             data-menu-trigger
-            onClick={() => setOpen((v) => !v)}
+            onClick={handleToggleMenu}
             aria-label={`Folder actions for ${label}`}
             className="absolute right-1 rounded p-0.5 text-slate-400 opacity-60 transition hover:bg-slate-800 hover:text-white hover:opacity-100 focus:opacity-100"
           >
             <MoreVertical size={11} />
           </button>
           {open && (
-            <Menu onClose={() => setOpen(false)} align="right">
+            <Menu onClose={() => setOpen(false)} align={menuAlign}>
               <MenuItem
                 icon={<Pencil size={13} />}
                 label="Rename"
