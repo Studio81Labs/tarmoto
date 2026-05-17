@@ -20,6 +20,11 @@ test.describe("cross-cutting", () => {
   // T60 — Logout: clicking "Log out" inside the user menu calls
   // `signOut({ callbackUrl: "/login" })` and the rider lands on the
   // login page with their session cleared.
+  //
+  // Shell v2 (#566) gives the dropdown proper menu semantics —
+  // `role="menu"` on the panel, `role="menuitem"` on the entries —
+  // so Playwright exposes the entries as `menuitem` instead of the
+  // underlying native `link`/`button` roles.
   test("T60: logging out routes back to /login", async ({
     authedPage: page,
     user,
@@ -30,7 +35,7 @@ test.describe("cross-cutting", () => {
     await page
       .getByRole("button", { name: new RegExp(user.displayName, "i") })
       .click();
-    await page.getByRole("button", { name: /^log out$/i }).click();
+    await page.getByRole("menuitem", { name: /^log out$/i }).click();
     await expect(page).toHaveURL(/\/login(\?|$)/, { timeout: 10_000 });
   });
 
@@ -44,9 +49,11 @@ test.describe("cross-cutting", () => {
     await page
       .getByRole("button", { name: new RegExp(user.displayName, "i") })
       .click();
-    await expect(page.getByRole("link", { name: /^settings$/i })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^log out$/i }),
+      page.getByRole("menuitem", { name: /^settings$/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("menuitem", { name: /^log out$/i }),
     ).toBeVisible();
   });
 
