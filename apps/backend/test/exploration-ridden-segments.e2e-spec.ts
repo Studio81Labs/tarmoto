@@ -43,7 +43,7 @@ describe('exploration: GET /ridden-segments — query executes (#557)', () => {
           // Exploration only consults privacy prefs for the
           // `getNearbyUnridden` path; `getRiddenSegments` doesn't
           // touch it, so a stub is enough.
-          useValue: { loadPreferences: async () => ({}) },
+          useValue: { loadPreferences: () => Promise.resolve({}) },
         },
       ],
     }).compile();
