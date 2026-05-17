@@ -61,6 +61,23 @@ the vendored copy — note them when porting:
 - `PROJECT_README.md` references a wider `ui_kits/`, `preview/`, and
   `chats/` tree than what's vendored here. See **Vendoring scope**
   above for what was kept and why.
+- `HANDOFF_README.md` and `PROJECT_README.md` were written against the
+  original upstream layout (`tarmoto/README.md`, `tarmoto/project/…`).
+  We flattened it when vendoring so the files sit directly under
+  `source/`. Use this translation when following their path
+  references:
+
+  | Upstream path                                | Vendored at                         |
+  | -------------------------------------------- | ----------------------------------- |
+  | `tarmoto/README.md`                          | `source/HANDOFF_README.md`          |
+  | `tarmoto/chats/`                             | `source/chats/`                     |
+  | `tarmoto/project/README.md`                  | `source/PROJECT_README.md`          |
+  | `tarmoto/project/SKILL.md`                   | `source/SKILL.md`                   |
+  | `tarmoto/project/colors_and_type.css`        | `source/colors_and_type.css`        |
+  | `tarmoto/project/atoms.jsx`                  | `source/atoms.jsx`                  |
+  | `tarmoto/project/Web App v2.html`            | `source/Web App v2.html`            |
+  | `tarmoto/project/Web App v2 Design Map.html` | `source/Web App v2 Design Map.html` |
+  | `tarmoto/project/ui_kits/web/web.html`       | `source/ui_kits/web/web.html`       |
 
 ## The six rules (from SKILL.md)
 
