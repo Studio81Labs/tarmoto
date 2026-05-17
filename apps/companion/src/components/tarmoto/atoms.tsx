@@ -198,9 +198,21 @@ export function Card({
  * Tarmoto triangle mountain glyph — used in the sidebar logo, marketing
  * sites, and any place that needs the brand mark inline.
  */
+/**
+ * Canonical Tarmoto mark — geometry mirrors `docs/design/brand/logo-mark.svg`.
+ * The earlier triangle was a placeholder pulled from the design sketches
+ * before the brand was finalised; this one matches every other surface
+ * (marketing site, favicon, mobile splash).
+ *
+ * Composed of two rounded rects forming a `T` and a wavy road path
+ * below — the road-quality signal motif that runs through the brand.
+ * Callers wrap it in an accent square (the sidebar / AppLogo do this);
+ * the mark itself ships transparent so the same component works on any
+ * background.
+ */
 export function TarmotoMark({
   size = 18,
-  color = "#0E0E10",
+  color = "#1A120D",
   className,
 }: {
   size?: number;
@@ -211,11 +223,20 @@ export function TarmotoMark({
     <svg
       width={size}
       height={size}
-      viewBox="0 0 20 20"
+      viewBox="0 0 100 100"
       className={className}
       aria-hidden="true"
     >
-      <path d="M 3 15 L 10 4 L 17 15 Z" fill={color} />
+      <rect x="18" y="20" width="64" height="12" rx="4" fill={color} />
+      <rect x="40" y="20" width="20" height="42" rx="4" fill={color} />
+      <path
+        d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
+        stroke={color}
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </svg>
   );
 }

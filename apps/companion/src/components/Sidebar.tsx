@@ -48,7 +48,7 @@ export function Sidebar() {
         aria-label={t("Tarmoto")}
       >
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-          <TarmotoMark size={18} color="#0E0E10" />
+          <TarmotoMark size={18} />
         </span>
         <span className="leading-none">
           <span className="block text-[15px] font-bold tracking-tight text-cream">
