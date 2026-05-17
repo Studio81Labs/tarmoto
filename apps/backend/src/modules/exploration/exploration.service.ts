@@ -172,14 +172,19 @@ export class ExplorationService {
       .addSelect('latest.last_quality_score', 'last_quality_score')
       .addSelect('counts.ride_count', 'ride_count')
       .from((qb) => {
+        // `distinctOn(...)` is the API for Postgres `SELECT DISTINCT ON`.
+        // Inlining it into the first `select()` expression looks
+        // ergonomic but TypeORM reorders the column list when
+        // assembling the SELECT clause (the DISTINCT ON column lands
+        // mid-list instead of right after SELECT), which Postgres
+        // rejects with `syntax error at or near "DISTINCT"` — exactly
+        // the 500 #557 was reporting.
         return qb
           .subQuery()
-          .select(
-            'DISTINCT ON (rs2.road_segment_id) rs2.road_segment_id',
-            'segment_id',
-          )
+          .select('rs2.road_segment_id', 'segment_id')
           .addSelect(lastTouchExpr, 'last_ridden_at')
           .addSelect('rs2.quality_reading', 'last_quality_score')
+          .distinctOn(['rs2.road_segment_id'])
           .from('ride_segments', 'rs2')
           .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
           .where('r2.user_id = :userId', { userId })
