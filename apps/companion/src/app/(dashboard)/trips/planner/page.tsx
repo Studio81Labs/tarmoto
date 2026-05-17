@@ -822,7 +822,13 @@ export default function TripPlannerPage() {
       if (option.selected || !serverTripId) {
         setSelectedOptionId(option.id);
         setActiveTrip(option.trip);
-        setFitRouteToken((t) => t + 1);
+        // Only refit when the click actually swaps the displayed
+        // route. Re-clicking the already-active option keeps the
+        // same geometry on screen, so a refit there would rip the
+        // user's panned/zoomed viewport for no visible change.
+        if (!option.selected) {
+          setFitRouteToken((t) => t + 1);
+        }
         return;
       }
       const latestTrip = activeTripRef.current;
