@@ -27,37 +27,129 @@ export interface CreateTarmotoClientOptions extends ClientOptions {
    */
   getToken?: () => string | null;
   /**
-   * Called whenever a response returns 401. The companion uses this
-   * to clear the Zustand auth-store session and bounce the user to
-   * /login.
+   * Called whenever a response returns 401 AND the
+   * `onUnauthorizedRetry` hook (if provided) couldn't recover. The
+   * companion uses this to clear the Zustand auth-store session
+   * and bounce the user to /login.
    */
   onUnauthorized?: () => void;
+  /**
+   * Optional defense-in-depth: when a 401 arrives, this hook is
+   * given a chance to refresh the session and return a new bearer.
+   * If it returns a non-null token, the original request is replayed
+   * once with that token; if the replay also 401s (or the hook
+   * returns null), `onUnauthorized` fires. Concurrent 401s share a
+   * single refresh promise so we don't fan out N session-refresh
+   * calls and burn the refresh token via parallel rotation. Pass
+   * `null`/omit to keep the old "clear immediately" behavior used by
+   * mobile (which doesn't ride NextAuth's session machinery).
+   */
+  onUnauthorizedRetry?: () => Promise<string | null>;
 }
 
 export function createTarmotoClient(
   options: CreateTarmotoClientOptions = {},
 ): TarmotoClient {
-  const { getToken, onUnauthorized, ...rest } = options;
+  const { getToken, onUnauthorized, onUnauthorizedRetry, ...rest } = options;
   const client = createFetchClient<BrowserSafePaths>(rest);
 
-  if (getToken) {
+  // Cache request bodies as raw strings keyed by the Request object
+  // so a 401 retry can rebuild the request with the same payload.
+  // POST/PATCH/PUT bodies are normally one-shot ReadableStreams that
+  // can't be replayed once `fetch` has consumed them; capturing the
+  // serialized body in `onRequest` sidesteps that.
+  const capturedBodies = new WeakMap<Request, string | null>();
+
+  // Single in-flight refresh promise — if three queries 401 in the
+  // same tick we want one `getSession()` round-trip, not three (the
+  // backend rotates refresh tokens on use, so a parallel rotation
+  // would invalidate two of the three).
+  let pendingRefresh: Promise<string | null> | null = null;
+  const startRefresh = (): Promise<string | null> => {
+    if (!onUnauthorizedRetry) return Promise.resolve(null);
+    if (pendingRefresh) return pendingRefresh;
+    const inflight = (async () => {
+      try {
+        return await onUnauthorizedRetry();
+      } catch {
+        return null;
+      }
+    })();
+    pendingRefresh = inflight;
+    // Clear after the promise settles so a *new* 401 after the
+    // refresh resolves can start a fresh refresh attempt.
+    void inflight.finally(() => {
+      if (pendingRefresh === inflight) pendingRefresh = null;
+    });
+    return inflight;
+  };
+
+  if (getToken || onUnauthorizedRetry) {
     client.use({
       async onRequest({ request }) {
-        const token = getToken();
-        if (token) {
-          request.headers.set("Authorization", `Bearer ${token}`);
+        if (getToken) {
+          const token = getToken();
+          if (token) {
+            request.headers.set("Authorization", `Bearer ${token}`);
+          }
+        }
+        // Cache the body so we can replay on 401. Avoid touching
+        // empty bodies — `request.clone()` is cheap but `.text()`
+        // on a null stream returns `""` which we'd then carry into
+        // the retry as an empty-string body and trip strict
+        // content-length handlers.
+        if (onUnauthorizedRetry && request.body) {
+          try {
+            capturedBodies.set(request, await request.clone().text());
+          } catch {
+            capturedBodies.set(request, null);
+          }
         }
         return request;
       },
     });
   }
-  if (onUnauthorized) {
+
+  if (onUnauthorized || onUnauthorizedRetry) {
     client.use({
-      async onResponse({ response }) {
-        if (response.status === 401) {
-          onUnauthorized();
+      async onResponse({ request, response }) {
+        if (response.status !== 401) return response;
+
+        // Without a retry hook there's nothing to try — fall back
+        // to the old "clear session" behavior.
+        if (!onUnauthorizedRetry) {
+          onUnauthorized?.();
+          return response;
         }
-        return response;
+
+        const newToken = await startRefresh();
+        if (!newToken) {
+          onUnauthorized?.();
+          return response;
+        }
+
+        // Replay the original request once with the fresh token.
+        // Going through bare `fetch` (not the openapi-fetch client)
+        // intentionally bypasses these middlewares so we can't
+        // loop: a second 401 here is terminal.
+        const retryHeaders = new Headers(request.headers);
+        retryHeaders.set("Authorization", `Bearer ${newToken}`);
+        const replayBody = capturedBodies.get(request) ?? null;
+        const replay = await fetch(request.url, {
+          method: request.method,
+          headers: retryHeaders,
+          body: replayBody,
+          signal: request.signal,
+          credentials: request.credentials,
+          mode: request.mode,
+          redirect: request.redirect,
+          referrer: request.referrer,
+        });
+
+        if (replay.status === 401) {
+          onUnauthorized?.();
+        }
+        return replay;
       },
     });
   }
