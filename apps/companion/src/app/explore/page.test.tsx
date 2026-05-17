@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
 import { roadsApi } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
+import { useAuthStore } from "@/stores/auth";
 import { DEFAULT_MAP_FILTERS, cloneFilters } from "@/lib/map-filters";
 import { usePreferencesStore } from "@/stores/preferences";
 
@@ -20,6 +22,7 @@ type MockQualityMapProps = {
   }) => void;
 };
 
+const flyToMock = vi.fn();
 const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
   <>
     <button
@@ -53,7 +56,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("./_components/QualityMap", () => ({
-  QualityMap: (props: MockQualityMapProps) => mockQualityMap(props),
+  // forwardRef so the page can call `mapRef.current.flyTo(...)` —
+  // /explore wires the search-pick path through that imperative
+  // handle (T29 asserts the call here).
+  QualityMap: forwardRef<
+    { flyTo: (t: { lng: number; lat: number; zoom: number }) => void },
+    MockQualityMapProps
+  >(function MockQualityMap(props, ref) {
+    useImperativeHandle(ref, () => ({ flyTo: flyToMock }), []);
+    return mockQualityMap(props);
+  }),
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -98,6 +110,7 @@ vi.mock("@/components/PassesPanel", () => ({
   ),
 }));
 
+const apiGetMock = vi.fn();
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -105,6 +118,10 @@ vi.mock("@/lib/api", async () => {
     roadsApi: {
       ...actual.roadsApi,
       getSegmentDetail: vi.fn(),
+    },
+    api: {
+      ...actual.api,
+      GET: (path: string, init: unknown) => apiGetMock(path, init),
     },
   };
 });
@@ -116,6 +133,8 @@ function resetMapStore() {
     showQualityOverlay: true,
     showHazardOverlay: true,
     showSurfaceOverlay: false,
+    showClosuresLayer: false,
+    showPassesLayer: false,
     filters: cloneFilters(DEFAULT_MAP_FILTERS),
   });
 }
@@ -185,6 +204,82 @@ describe("ExplorerPage", () => {
     resetMapStore();
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
+    apiGetMock.mockReset();
+    flyToMock.mockReset();
+    // Tests run against the authenticated explore path by default —
+    // the search input only renders for signed-in riders (the public
+    // geocode endpoint is AuthGuard-protected so we hide rather than
+    // 401 on every keystroke).
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "test-token",
+    });
+  });
+
+  it("T29: typing in the search input geocodes and flies the map to the picked place (#573)", async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: {
+        results: [
+          { label: "Tatra Mountains, Slovakia", lat: 49.165, lng: 19.973 },
+        ],
+      },
+      error: undefined,
+    });
+
+    render(<ExplorerPage />);
+
+    const input = screen.getByRole("textbox", {
+      name: /search for a place/i,
+    });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Tatra" } });
+
+    // The geocode is debounced ~350ms; wait for the API call.
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledWith(
+        "/api/v1/geocode",
+        expect.objectContaining({ params: { query: { q: "Tatra" } } }),
+      );
+    });
+
+    const result = await screen.findByRole("button", {
+      name: /tatra mountains/i,
+    });
+    fireEvent.click(result);
+
+    // Camera fly: MapCanvas reads center/zoom only at init, so
+    // a store-only update wouldn't move the visible map. Assert
+    // the imperative `flyTo` fires on pick.
+    expect(flyToMock).toHaveBeenCalledWith({
+      lng: 19.973,
+      lat: 49.165,
+      zoom: 12,
+    });
+
+    // Store mirror still updates so a subsequent remount lands
+    // at the picked place.
+    const state = useMapStore.getState();
+    expect(state.center).toEqual({ lng: 19.973, lat: 49.165 });
+    expect(state.zoom).toBe(12);
+  });
+
+  it("hides the place search on the public explorer path (geocode is AuthGuard-protected)", () => {
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
+    });
+
+    render(<ExplorerPage />);
+
+    expect(
+      screen.queryByRole("textbox", { name: /search for a place/i }),
+    ).toBeNull();
   });
 
   it("fetches canonical detail and opens the segment sidebar when a map segment is selected", async () => {
