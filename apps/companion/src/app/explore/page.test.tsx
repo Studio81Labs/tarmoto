@@ -98,6 +98,7 @@ vi.mock("@/components/PassesPanel", () => ({
   ),
 }));
 
+const apiGetMock = vi.fn();
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -105,6 +106,10 @@ vi.mock("@/lib/api", async () => {
     roadsApi: {
       ...actual.roadsApi,
       getSegmentDetail: vi.fn(),
+    },
+    api: {
+      ...actual.api,
+      GET: (path: string, init: unknown) => apiGetMock(path, init),
     },
   };
 });
@@ -116,6 +121,8 @@ function resetMapStore() {
     showQualityOverlay: true,
     showHazardOverlay: true,
     showSurfaceOverlay: false,
+    showClosuresLayer: false,
+    showPassesLayer: false,
     filters: cloneFilters(DEFAULT_MAP_FILTERS),
   });
 }
@@ -185,6 +192,43 @@ describe("ExplorerPage", () => {
     resetMapStore();
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
+    apiGetMock.mockReset();
+  });
+
+  it("T29: typing in the search input geocodes and flies the map to the picked place (#573)", async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: {
+        results: [
+          { label: "Tatra Mountains, Slovakia", lat: 49.165, lng: 19.973 },
+        ],
+      },
+      error: undefined,
+    });
+
+    render(<ExplorerPage />);
+
+    const input = screen.getByRole("textbox", {
+      name: /search for a place/i,
+    });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Tatra" } });
+
+    // The geocode is debounced ~350ms; wait for the API call.
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledWith(
+        "/api/v1/geocode",
+        expect.objectContaining({ params: { query: { q: "Tatra" } } }),
+      );
+    });
+
+    const result = await screen.findByRole("button", {
+      name: /tatra mountains/i,
+    });
+    fireEvent.click(result);
+
+    const state = useMapStore.getState();
+    expect(state.center).toEqual({ lng: 19.973, lat: 49.165 });
+    expect(state.zoom).toBe(12);
   });
 
   it("fetches canonical detail and opens the segment sidebar when a map segment is selected", async () => {

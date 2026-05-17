@@ -1,9 +1,9 @@
 "use client";
 import { t } from "@/i18n";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
-import { Filter, Search, RotateCcw } from "lucide-react";
+import { Filter, MapPin, Search, RotateCcw } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
   filtersEqual,
@@ -19,7 +19,7 @@ import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
 } from "./_components/SegmentDetailSidebar";
-import { ApiError, roadsApi } from "@/lib/api";
+import { ApiError, api, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { currentUtcMonth } from "@/lib/passes-summary";
@@ -141,7 +141,6 @@ function todayAsPreviewDate(): Date {
 // so the filter was effectively a no-op for every realistic value.
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -268,19 +267,12 @@ function ExplorerPageInner() {
     <div className="tarmoto-no-cream flex flex-col h-full bg-slate-950">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
-        <div className="relative flex-1 max-w-md">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t("Search roads, regions...")}
-            className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
-          />
-        </div>
+        <ExploreSearch
+          onPick={(place) => {
+            setCenter({ lng: place.lng, lat: place.lat });
+            setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
+          }}
+        />
 
         <div className="flex items-center gap-1.5">
           {/* Active toggle: filled brand accent (high-contrast primary
@@ -550,6 +542,158 @@ function ExplorerPageInner() {
     </div>
   );
 }
+// Geocode search for the /explore header. Reuses the same
+// `/api/v1/geocode` endpoint the rides + community PlaceSearch
+// drives — the planner's existing provider, so we don't introduce
+// another geocoder dependency. UX is intentionally narrower than
+// PlaceSearch (no radius picker, no persistent selection state):
+// type → see matches → click → fly the map there. Documented as
+// the answer to the issue's first AC ("Behavior decided +
+// documented…").
+const EXPLORE_SEARCH_DEBOUNCE_MS = 350;
+const EXPLORE_SEARCH_MIN_CHARS = 2;
+const EXPLORE_SEARCH_RESULT_ZOOM = 12;
+
+interface GeocodeMatch {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
+function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
+  const [draft, setDraft] = useState("");
+  const [matches, setMatches] = useState<GeocodeMatch[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Outside-click closes the dropdown.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  // Debounced geocode fetch — mirrors the PlaceSearch pattern so
+  // a rider typing across keystrokes doesn't fan out one request
+  // per character.
+  useEffect(() => {
+    const q = draft.trim();
+    if (q.length < EXPLORE_SEARCH_MIN_CHARS) {
+      setMatches([]);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      setLoading(true);
+      setError(false);
+      api
+        .GET("/api/v1/geocode", {
+          params: { query: { q } as never },
+          signal: ctrl.signal,
+        })
+        .then(({ data, error: apiError }) => {
+          if (ctrl.signal.aborted) return;
+          setLoading(false);
+          if (apiError) {
+            setMatches([]);
+            setError(true);
+            return;
+          }
+          const body = data as unknown as { results: GeocodeMatch[] };
+          setMatches(body.results ?? []);
+        })
+        .catch((err: Error) => {
+          if (ctrl.signal.aborted) return;
+          setLoading(false);
+          if (err.name !== "AbortError") {
+            setMatches([]);
+            setError(true);
+          }
+        });
+    }, EXPLORE_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [draft]);
+
+  const handlePick = (place: GeocodeMatch) => {
+    setDraft(place.label);
+    setOpen(false);
+    setMatches([]);
+    onPick(place);
+  };
+
+  const showResults =
+    open &&
+    (loading ||
+      error ||
+      matches.length > 0 ||
+      draft.trim().length >= EXPLORE_SEARCH_MIN_CHARS);
+
+  return (
+    <div ref={containerRef} className="relative flex-1 max-w-md">
+      <Search
+        size={16}
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+      />
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder={t("Search for a place…")}
+        aria-label={t("Search for a place")}
+        autoComplete="off"
+        className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-accent transition"
+      />
+      {showResults && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl">
+          {loading && matches.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-400">
+              {t("Searching…")}
+            </div>
+          ) : error ? (
+            <div className="px-3 py-2 text-xs text-red-300">
+              {t("Couldn't search right now. Try again.")}
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-400">
+              {t("No places found.")}
+            </div>
+          ) : (
+            matches.map((m, i) => (
+              <button
+                key={`${m.lat},${m.lng},${i}`}
+                type="button"
+                onClick={() => handlePick(m)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+              >
+                <MapPin
+                  size={12}
+                  className="shrink-0 text-slate-500"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{m.label}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface MapLegendProps {
   showQuality: boolean;
   showSurface: boolean;
