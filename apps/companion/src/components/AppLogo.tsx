@@ -10,7 +10,7 @@ export function AppLogo({ inverted = false }: { inverted?: boolean }) {
       aria-label={t("Tarmoto")}
     >
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-        <TarmotoMark size={18} color="#0E0E10" />
+        <TarmotoMark size={18} />
       </span>
       <span className="leading-none">
         <span
