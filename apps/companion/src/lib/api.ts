@@ -1,3 +1,4 @@
+import { getSession } from "next-auth/react";
 import { createTarmotoClient } from "@tarmoto/openapi-client";
 import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
@@ -14,11 +15,47 @@ import type { MountainPass } from "./passes-summary";
 import type { PartialPrivacySettings } from "./privacy-settings";
 import type { PrivacySettings } from "./types";
 
-// Typed openapi-fetch client for all spec-defined endpoints
+// Typed openapi-fetch client for all spec-defined endpoints.
+//
+// `onUnauthorizedRetry` is the defense-in-depth pair to the
+// SessionProvider `refetchInterval`: the poll keeps the access
+// token fresh under normal continuous use, but a backgrounded
+// tab can still wake up with a stale token and click Save before
+// the focus-triggered session refresh lands. When that happens,
+// `getSession()` forces the NextAuth `jwt` callback to rotate the
+// token and we replay the request once with the new bearer —
+// fully transparent to the caller. Only if THAT also 401s do we
+// clear the session and bounce to /login.
 export const api = createTarmotoClient({
   baseUrl: API_HOST,
   getToken: () => useAuthStore.getState().accessToken,
   onUnauthorized: () => useAuthStore.getState().clearSession(),
+  onUnauthorizedRetry: async () => {
+    const session = await getSession();
+    if (!session?.accessToken) return null;
+    // RefreshTokenError means the refresh round-trip failed — no
+    // point replaying, just let the session clear normally.
+    if (session.error === "RefreshTokenError") return null;
+    // Hydrate the Zustand store inline so the raw-fetch helpers in
+    // this file (`apiFetch`, FormData uploads, trip-share/collab
+    // helpers) see the fresh token immediately — `AuthSync`'s
+    // useEffect lands a tick later, and any caller firing in that
+    // gap would otherwise read the stale token, hit 401, and clear
+    // the session before the replayed typed-client call has had a
+    // chance to succeed.
+    if (session.user) {
+      useAuthStore.getState().setSession(
+        {
+          id: session.user.id,
+          email: session.user.email!,
+          displayName: session.user.displayName,
+          phone: session.user.phone,
+        },
+        session.accessToken,
+      );
+    }
+    return session.accessToken;
+  },
 });
 
 // React Query bindings on top of the same client. Hooks consume
