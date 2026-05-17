@@ -183,7 +183,18 @@ function ExplorerPageInner() {
   }, [selectedSegmentId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   return (
-    <div className="flex flex-col h-full">
+    // `tarmoto-no-cream` opts the entire map page out of the
+    // signed-in AppShell's cream theme. The whole experience was
+    // authored for a dark mapping surface (basemap tiles, semantic
+    // overlay colours, dark legend) and the cream remap turns
+    // `bg-slate-800 text-slate-300` toolbar buttons into ink-on-
+    // paper for authenticated users while leaving translucent
+    // `bg-quality-good/20 text-quality-good` washes unremapped —
+    // a mix that broke contrast on the toggle pills. Pinning the
+    // page to dark keeps signed-in and public renderings visually
+    // identical and lets the WCAG-AA contrast budget here apply to
+    // a single canvas.
+    <div className="tarmoto-no-cream flex flex-col h-full bg-slate-950">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
         <div className="relative flex-1 max-w-md">
@@ -201,11 +212,22 @@ function ExplorerPageInner() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Active toggle: filled brand accent (high-contrast primary
+              affordance from the design system). Inactive: slate
+              surface with cream text. The old `bg-tarmoto-cyan/10
+              text-tarmoto-cyan` for the Filters button rendered as
+              ~4:1 orange-on-dark — failed WCAG AA and read as a
+              dim glow rather than an actionable state. Quality /
+              Hazards / Surface keep their semantic data colours
+              (the green / red / blue cues map to the layer the
+              button toggles) but the inactive text bumps from
+              slate-400 → slate-300 to clear the AA threshold on
+              the slate-800 backdrop. */}
           <button
             onClick={() => setFilterOpen(!filterOpen)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition ${
               filterOpen
-                ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
+                ? "bg-accent text-ink"
                 : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
           >
@@ -217,8 +239,8 @@ function ExplorerPageInner() {
             onClick={toggleQuality}
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showQualityOverlay
-                ? "bg-quality-good/10 text-quality-good"
-                : "bg-slate-800 text-slate-400"
+                ? "bg-quality-good/20 text-quality-good"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
           >
             {t("Quality ")}
@@ -228,8 +250,8 @@ function ExplorerPageInner() {
             onClick={toggleHazards}
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showHazardOverlay
-                ? "bg-red-500/10 text-red-400"
-                : "bg-slate-800 text-slate-400"
+                ? "bg-red-500/20 text-red-300"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
           >
             {t("Hazards ")}
@@ -239,8 +261,8 @@ function ExplorerPageInner() {
             onClick={toggleSurface}
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showSurfaceOverlay
-                ? "bg-blue-500/10 text-blue-400"
-                : "bg-slate-800 text-slate-400"
+                ? "bg-blue-500/20 text-blue-300"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
           >
             {t("Surface ")}
@@ -431,10 +453,10 @@ interface MapLegendProps {
 function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
   if (!showQuality && !showSurface && !showHazards) return null;
   return (
-    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-3 py-2.5 text-xs text-slate-300 space-y-2 pointer-events-none">
+    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-slate-950/90 border border-slate-700 backdrop-blur px-3 py-2.5 text-xs text-slate-200 space-y-2 pointer-events-none">
       {showQuality && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
             {t("Road quality ")}
           </p>
           <div className="flex items-center gap-2">
@@ -449,7 +471,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       )}
       {showSurface && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
             {t("Surface ")}
           </p>
           <div className="flex items-center gap-2">
@@ -464,7 +486,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       )}
       {showHazards && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
             {t("Hazards ")}
           </p>
           <div className="flex items-center gap-x-2 gap-y-1 flex-wrap max-w-[260px]">
