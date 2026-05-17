@@ -93,6 +93,25 @@ function parseDateInputValue(value: string): Date | null {
   return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
 }
 
+// Today, normalised to the same noon-UTC anchor the date picker
+// produces. Using a raw `new Date()` would feed the closures API
+// the current instant — closures starting later today wouldn't
+// match `active_on=<now>` until the rider re-picked the visible
+// date, even though the picker UI already shows today.
+function todayAsPreviewDate(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      12,
+      0,
+      0,
+    ),
+  );
+}
+
 // `Filters` panel — endpoint mapping reference
 // ──────────────────────────────────────────────
 // Each filter section corresponds to a specific backend contract;
@@ -123,7 +142,9 @@ function ExplorerPageInner() {
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
-  const [conditionsDate, setConditionsDate] = useState<Date>(() => new Date());
+  const [conditionsDate, setConditionsDate] = useState<Date>(() =>
+    todayAsPreviewDate(),
+  );
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );

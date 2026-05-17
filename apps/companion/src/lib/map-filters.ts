@@ -30,6 +30,12 @@ export const DEFAULT_MAP_FILTERS: MapFilters = {
 const QUALITY_PARAM = "q";
 const SURFACE_PARAM = "s";
 const HAZARD_PARAM = "h";
+// `c` is the legacy curviness param — the filter was removed (#576)
+// but old shared links still carry `?c=...`. We keep stripping it on
+// every sync so the param doesn't outlive the feature it described,
+// and the Reset button continues to clear *every* filter param for
+// users arriving from a pre-removal link.
+const LEGACY_CURVINESS_PARAM = "c";
 
 // Sentinel emitted when the user has explicitly cleared every option in a set
 // filter. Needed to distinguish "nothing selected" from "param absent" (which
@@ -56,6 +62,7 @@ export function filtersToSearchParams(
   params.delete(QUALITY_PARAM);
   params.delete(SURFACE_PARAM);
   params.delete(HAZARD_PARAM);
+  params.delete(LEGACY_CURVINESS_PARAM);
 
   const allQuality = QUALITY_TIERS.every((t) => filters.quality.has(t));
   if (filters.quality.size === 0) {
