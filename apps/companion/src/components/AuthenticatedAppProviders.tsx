@@ -27,8 +27,16 @@ export function AuthenticatedAppProviders({
       }),
   );
 
+  // Re-fetch the NextAuth session every 4 minutes. The backend
+  // access token lives for 1 hour (auth.service.ts ACCESS_TOKEN_EXPIRY)
+  // and the `jwt` callback refreshes it lazily when the session is
+  // requested; without a polling cadence, a user who keeps the planner
+  // open past the 1h mark hits 401 on the next API call because the
+  // session in client state still carries the expired token. 4 min
+  // leaves plenty of headroom against the 5 min refresh buffer used by
+  // the `jwt` callback.
   return (
-    <SessionProvider>
+    <SessionProvider refetchInterval={4 * 60} refetchOnWindowFocus>
       <QueryClientProvider client={queryClient}>
         <AuthSync />
         <RealtimeProvider />

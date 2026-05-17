@@ -149,8 +149,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       }
 
-      // Token still valid — return as-is (with 60s buffer)
-      if (Date.now() / 1000 < token.expiresAt - 60) {
+      // Token still valid — return as-is (with 5 min buffer). The
+      // buffer is intentionally larger than the SessionProvider
+      // `refetchInterval` (4 min) so the next poll always catches an
+      // about-to-expire token and rotates it before any API call sees
+      // an expired bearer.
+      if (Date.now() / 1000 < token.expiresAt - 5 * 60) {
         return token;
       }
 
