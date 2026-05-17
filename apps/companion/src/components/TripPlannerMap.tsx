@@ -11,6 +11,7 @@ import type {
 import {
   AlertTriangle,
   Layers3,
+  Maximize2,
   Mountain,
   Route,
   Sparkles,
@@ -246,7 +247,13 @@ function TripPlannerMapContent({
 }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
-  const fittedBoundsKeyRef = useRef<string | null>(null);
+  // Tracks the trip whose bounds we've already auto-fit. Keyed on
+  // `trip.id` (not `tripBoundsKey`) so adding/moving/removing
+  // waypoints — which all change the geometry but keep the trip id
+  // stable — doesn't re-rip the viewport. The auto-fit fires once
+  // when the user opens a trip; further "show me the whole route"
+  // intent is served by the explicit Fit-to-route button below.
+  const fittedTripIdRef = useRef<string | null>(null);
   // Set true on `mousedown`/`touchstart` over a waypoint so the synthetic
   // `click` MapLibre fires for tap-without-drag (the pointer never moved
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
@@ -296,10 +303,6 @@ function TripPlannerMapContent({
     [trip],
   );
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
-  const tripBoundsKey = useMemo(
-    () => (tripBounds ? tripBounds.join(",") : null),
-    [tripBounds],
-  );
   const waypointCount = waypointCollection.features.length;
   const {
     closures,
@@ -384,14 +387,16 @@ function TripPlannerMapContent({
     );
   }
   useEffect(() => {
-    if (!tripBoundsKey) {
-      fittedBoundsKeyRef.current = null;
-      return;
+    // Drop the "already fitted" marker when the trip is closed so
+    // the next opened trip gets its initial fit. We intentionally
+    // do NOT clear it on `tripBoundsKey` change — that's the bug
+    // #559 reported: clicking the map to add a waypoint advances
+    // the bounds key, which used to reset this ref and trigger an
+    // immediate refit, ripping the user's zoom/pan away.
+    if (!trip) {
+      fittedTripIdRef.current = null;
     }
-    if (tripBoundsKey !== fittedBoundsKeyRef.current) {
-      fittedBoundsKeyRef.current = null;
-    }
-  }, [tripBoundsKey]);
+  }, [trip]);
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
@@ -866,18 +871,9 @@ function TripPlannerMapContent({
       setCursor("");
     };
   }, [drawMode, dragEnabled, ready]);
-  useEffect(() => {
+  const fitMapToTrip = useCallback(() => {
     const map = handleRef.current?.map;
-    if (
-      !map ||
-      !ready ||
-      !tripBounds ||
-      !tripBoundsKey ||
-      fittedBoundsKeyRef.current === tripBoundsKey
-    ) {
-      return;
-    }
-    fittedBoundsKeyRef.current = tripBoundsKey;
+    if (!map || !tripBounds) return;
     map.fitBounds(
       [
         [tripBounds[0], tripBounds[1]],
@@ -889,7 +885,19 @@ function TripPlannerMapContent({
         maxZoom: 11,
       },
     );
-  }, [ready, tripBounds, tripBoundsKey]);
+  }, [tripBounds]);
+
+  useEffect(() => {
+    // One-shot auto-fit per trip: only the first time we see a
+    // given `trip.id` do we frame the route. Subsequent waypoint
+    // edits keep the user's chosen zoom/pan; the Fit-to-route
+    // button below is the explicit opt-in.
+    const map = handleRef.current?.map;
+    if (!map || !ready || !trip || !tripBounds) return;
+    if (fittedTripIdRef.current === trip.id) return;
+    fittedTripIdRef.current = trip.id;
+    fitMapToTrip();
+  }, [ready, trip, tripBounds, fitMapToTrip]);
   useEffect(() => {
     return () => {
       drawRef.current?.destroy();
@@ -926,6 +934,16 @@ function TripPlannerMapContent({
           >
             <Layers3 size={14} />
             {t("Surface ")}
+          </button>
+          <button
+            type="button"
+            aria-label="Fit map to the whole route"
+            onClick={fitMapToTrip}
+            disabled={!ready || !tripBounds}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Maximize2 size={14} />
+            {t("Fit to route ")}
           </button>
         </div>
 
