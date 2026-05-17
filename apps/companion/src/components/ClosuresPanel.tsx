@@ -37,6 +37,14 @@ interface ClosuresPanelProps {
   bbox?: string;
   showRouteWarnings?: boolean;
   data?: ClosuresQueryResult;
+  /**
+   * Optional explicit preview date. When omitted the panel falls back
+   * to the month-derived preview (the 15th of the chosen month) —
+   * useful for trip planner where the rider picks a target month for
+   * a multi-day plan. /explore passes a concrete date so the rider
+   * can preview "what's closed tomorrow" / "next weekend".
+   */
+  previewDate?: Date;
 }
 export function ClosuresPanel({
   month,
@@ -44,6 +52,7 @@ export function ClosuresPanel({
   bbox,
   showRouteWarnings = true,
   data,
+  previewDate,
 }: ClosuresPanelProps) {
   if (data) {
     return (
@@ -61,6 +70,7 @@ export function ClosuresPanel({
       routes={routes}
       bbox={bbox}
       showRouteWarnings={showRouteWarnings}
+      previewDate={previewDate}
     />
   );
 }
@@ -69,8 +79,18 @@ function FetchedClosuresPanel({
   routes,
   bbox,
   showRouteWarnings = true,
+  previewDate,
 }: Omit<ClosuresPanelProps, "data">) {
-  const data = useClosures(month, routes, bbox ? { bbox } : undefined);
+  const data = useClosures(
+    month,
+    routes,
+    bbox || previewDate
+      ? {
+          ...(bbox ? { bbox } : {}),
+          ...(previewDate ? { previewDate } : {}),
+        }
+      : undefined,
+  );
   return (
     <ClosuresPanelBody
       month={month}

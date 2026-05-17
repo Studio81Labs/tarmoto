@@ -26,6 +26,13 @@ export interface ClosuresQueryResult {
 
 interface UseClosuresOptions {
   bbox?: string;
+  /**
+   * Overrides the month-derived preview date when set. Trip planner
+   * passes month-of-year (so closures preview reflects a future
+   * trip) and computes a 15th-of-month proxy; /explore lets the
+   * rider pick an exact date and threads it through directly.
+   */
+  previewDate?: Date;
 }
 
 const EMPTY_COUNTS: ClosureSeverityCounts = {
@@ -44,7 +51,11 @@ export function useClosures(
 ): ClosuresQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
-  const previewDate = useMemo(() => previewDateForMonth(month), [month]);
+  const previewDateOverride = options?.previewDate;
+  const previewDate = useMemo(
+    () => previewDateOverride ?? previewDateForMonth(month),
+    [previewDateOverride, month],
+  );
   const previewIso = previewDate.toISOString();
 
   const listQuery = useQuery({

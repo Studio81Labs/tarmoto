@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import {
   DEFAULT_MAP_FILTERS,
-  clampCurviness,
   cloneFilters,
   filtersEqual,
   type FilterableSurface,
@@ -31,7 +30,6 @@ interface MapState {
   toggleQualityTier: (tier: QualityTier) => void;
   toggleSurfaceType: (surface: FilterableSurface) => void;
   toggleHazardType: (type: HazardType) => void;
-  setMinCurviness: (value: number) => void;
   setFilters: (filters: MapFilters) => void;
   resetFilters: () => void;
 }
@@ -75,10 +73,6 @@ export const useMapStore = create<MapState>((set) => ({
       else next.add(type);
       return { filters: { ...s.filters, hazardTypes: next } };
     }),
-  setMinCurviness: (value) =>
-    set((s) => ({
-      filters: { ...s.filters, minCurviness: clampCurviness(value) },
-    })),
   setFilters: (filters) =>
     set((s) =>
       filtersEqual(s.filters, filters)

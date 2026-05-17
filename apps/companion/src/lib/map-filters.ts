@@ -19,20 +19,23 @@ export interface MapFilters {
   quality: Set<QualityTier>;
   surface: Set<FilterableSurface>;
   hazardTypes: Set<HazardType>;
-  minCurviness: number;
 }
 
 export const DEFAULT_MAP_FILTERS: MapFilters = {
   quality: new Set(QUALITY_TIERS),
   surface: new Set(FILTERABLE_SURFACES),
   hazardTypes: new Set(HAZARD_TYPES_UI),
-  minCurviness: 0,
 };
 
 const QUALITY_PARAM = "q";
 const SURFACE_PARAM = "s";
 const HAZARD_PARAM = "h";
-const CURVINESS_PARAM = "c";
+// `c` is the legacy curviness param — the filter was removed (#576)
+// but old shared links still carry `?c=...`. We keep stripping it on
+// every sync so the param doesn't outlive the feature it described,
+// and the Reset button continues to clear *every* filter param for
+// users arriving from a pre-removal link.
+const LEGACY_CURVINESS_PARAM = "c";
 
 // Sentinel emitted when the user has explicitly cleared every option in a set
 // filter. Needed to distinguish "nothing selected" from "param absent" (which
@@ -59,7 +62,7 @@ export function filtersToSearchParams(
   params.delete(QUALITY_PARAM);
   params.delete(SURFACE_PARAM);
   params.delete(HAZARD_PARAM);
-  params.delete(CURVINESS_PARAM);
+  params.delete(LEGACY_CURVINESS_PARAM);
 
   const allQuality = QUALITY_TIERS.every((t) => filters.quality.has(t));
   if (filters.quality.size === 0) {
@@ -83,10 +86,6 @@ export function filtersToSearchParams(
   } else if (!allHazards) {
     const ordered = HAZARD_TYPES_UI.filter((h) => filters.hazardTypes.has(h));
     params.set(HAZARD_PARAM, ordered.join(","));
-  }
-
-  if (filters.minCurviness > 0) {
-    params.set(CURVINESS_PARAM, String(clampCurviness(filters.minCurviness)));
   }
 
   return params;
@@ -113,19 +112,12 @@ export function filtersFromSearchParams(
     isHazardType,
   );
 
-  const rawCurviness = params.get(CURVINESS_PARAM);
-  const minCurviness =
-    rawCurviness === null
-      ? 0
-      : clampCurviness(Number.parseInt(rawCurviness, 10));
-
-  return { quality, surface, hazardTypes, minCurviness };
+  return { quality, surface, hazardTypes };
 }
 
 export interface FilterableSegment {
   quality: QualityTier;
   surface: FilterableSurface | "unknown";
-  curviness: number;
 }
 
 export function matchesFilters(
@@ -136,12 +128,10 @@ export function matchesFilters(
   if (segment.surface !== "unknown" && !filters.surface.has(segment.surface)) {
     return false;
   }
-  if (segment.curviness < filters.minCurviness) return false;
   return true;
 }
 
 export function filtersEqual(a: MapFilters, b: MapFilters): boolean {
-  if (a.minCurviness !== b.minCurviness) return false;
   if (!setsEqual(a.quality, b.quality)) return false;
   if (!setsEqual(a.surface, b.surface)) return false;
   if (!setsEqual(a.hazardTypes, b.hazardTypes)) return false;
@@ -153,7 +143,6 @@ export function cloneFilters(filters: MapFilters): MapFilters {
     quality: new Set(filters.quality),
     surface: new Set(filters.surface),
     hazardTypes: new Set(filters.hazardTypes),
-    minCurviness: filters.minCurviness,
   };
 }
 
@@ -171,13 +160,6 @@ function parseCsvSet<T extends string>(
   const valid = parts.filter(guard);
   if (valid.length === 0) return new Set(all);
   return new Set(valid);
-}
-
-export function clampCurviness(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 100) return 100;
-  return Math.round(value);
 }
 
 function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {

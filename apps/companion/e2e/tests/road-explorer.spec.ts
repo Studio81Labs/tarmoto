@@ -257,34 +257,6 @@ test.describe("road quality explorer", () => {
     }
   });
 
-  // T20 — curviness slider drives `?c=N`. The default minimum is 0; any
-  // positive value should round-trip through the URL.
-  test("T20: moving the curviness slider mirrors the URL with ?c=...", async ({
-    browser,
-    mockApi,
-  }) => {
-    await mockApi.reset();
-    const context = await browser.newContext();
-    try {
-      const page = await context.newPage();
-      await page.goto("/explore");
-
-      const slider = page.getByRole("slider", { name: /minimum curviness/i });
-      await expect(slider).toBeVisible();
-      // Setting the slider via keyboard avoids the per-browser jitter of
-      // pointer drag in CI. Focus then press ArrowRight; each step bumps
-      // the value by 1 unit on this control.
-      await slider.focus();
-      await slider.press("ArrowRight");
-      await slider.press("ArrowRight");
-      await expect
-        .poll(() => new URL(page.url()).searchParams.get("c"))
-        .toMatch(/^[1-9]$/);
-    } finally {
-      await context.close();
-    }
-  });
-
   // T21 — URL round-trip: filters set on one tab survive a reload. This
   // is the inverse of the existing hydration test (which only loads
   // with params); here we set, reload, and re-read.

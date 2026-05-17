@@ -485,15 +485,9 @@ function buildQualityOpacityExpression(
     ],
   ];
 
-  const curvinessMatch: ExpressionSpecification = [
-    ">=",
-    ["coalesce", ["get", "curviness_score"], 0],
-    filters.minCurviness,
-  ];
-
   return [
     "case",
-    ["all", qualityMatch, surfaceMatch, curvinessMatch],
+    ["all", qualityMatch, surfaceMatch],
     ACTIVE_OPACITY,
     DIMMED_OPACITY,
   ] as ExpressionSpecification;
@@ -514,15 +508,9 @@ function buildSurfaceOpacityExpression(
       ["literal", surfaceValues],
     ],
   ];
-  const curvinessMatch: ExpressionSpecification = [
-    ">=",
-    ["coalesce", ["get", "curviness_score"], 0],
-    filters.minCurviness,
-  ];
-
   return [
     "case",
-    ["all", surfaceMatch, curvinessMatch],
+    ["all", surfaceMatch],
     0.75,
     DIMMED_OPACITY,
   ] as ExpressionSpecification;
