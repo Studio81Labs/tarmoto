@@ -9,7 +9,7 @@ import type { HazardResponse } from "@/lib/api";
  * subscribe via the typed helpers below.
  *
  * Connection lifecycle is mirrored into `useRealtimeStore` so UI components
- * (e.g. OfflineIndicator) can react without importing this module directly.
+ * (e.g. the sidebar's offline chip) can react without importing this module directly.
  *
  * Listeners registered via the `on*` helpers are tracked module-side and
  * re-attached automatically if the underlying socket is replaced (e.g. on
@@ -85,7 +85,7 @@ export function connectSocket(token: string | null = null): Socket {
 
   // socket.active is true as long as socket.io will auto-reconnect — this
   // avoids a status flip to "disconnected" between each failed attempt, which
-  // would make the OfflineIndicator flicker between "Offline" and
+  // would make the sidebar offline chip flicker between "Offline" and
   // "Reconnecting…" on every transport hiccup.
   next.on("disconnect", (reason) => {
     setStatus(next.active ? "connecting" : "disconnected");

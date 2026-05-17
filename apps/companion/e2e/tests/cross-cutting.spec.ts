@@ -20,6 +20,11 @@ test.describe("cross-cutting", () => {
   // T60 — Logout: clicking "Log out" inside the user menu calls
   // `signOut({ callbackUrl: "/login" })` and the rider lands on the
   // login page with their session cleared.
+  //
+  // Shell v2 (#566) gives the dropdown proper menu semantics —
+  // `role="menu"` on the panel, `role="menuitem"` on the entries —
+  // so Playwright exposes the entries as `menuitem` instead of the
+  // underlying native `link`/`button` roles.
   test("T60: logging out routes back to /login", async ({
     authedPage: page,
     user,
@@ -30,7 +35,7 @@ test.describe("cross-cutting", () => {
     await page
       .getByRole("button", { name: new RegExp(user.displayName, "i") })
       .click();
-    await page.getByRole("button", { name: /^log out$/i }).click();
+    await page.getByRole("menuitem", { name: /^log out$/i }).click();
     await expect(page).toHaveURL(/\/login(\?|$)/, { timeout: 10_000 });
   });
 
@@ -44,9 +49,11 @@ test.describe("cross-cutting", () => {
     await page
       .getByRole("button", { name: new RegExp(user.displayName, "i") })
       .click();
-    await expect(page.getByRole("link", { name: /^settings$/i })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^log out$/i }),
+      page.getByRole("menuitem", { name: /^settings$/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("menuitem", { name: /^log out$/i }),
     ).toBeVisible();
   });
 
@@ -69,24 +76,23 @@ test.describe("cross-cutting", () => {
     ).toBeVisible({ timeout: 5_000 });
   });
 
-  // T63 — Active nav highlighting: a sub-route like /settings/bikes
-  // should mark the "Account" item active (it points at /settings,
-  // the parent). With the new `aria-current="page"` attribute on the
-  // active link, the test asserts only the Account link carries it.
+  // T63 — Active nav highlighting: a sub-route inside one of the
+  // top-level sections should mark that section's nav item active
+  // via `aria-current="page"`, and no sibling section should claim
+  // the active state at the same time.
+  //
+  // Shell v2 (#568) dropped `/settings` from the sidebar nav — it
+  // lives only in the user menu now, so the original /settings/bikes
+  // scenario no longer maps to a sidebar item. Re-aiming the test at
+  // `/rides/road-map`, a deep child of the still-top-level "Ride
+  // History" item, exercises the same parent-highlight contract.
   test("T63: sub-route highlights the parent nav item only", async ({
     authedPage: page,
   }) => {
-    await page.goto("/settings/bikes");
-    // The "Account" link is the parent of /settings/bikes and should
-    // claim the active state. The sidebar also renders a separate
-    // footer link with the same href but a richer accessible name
-    // ("T Rider ACCOUNT" or similar) — use `exact: true` to scope to
-    // the primary nav entry.
+    await page.goto("/rides/road-map");
     await expect(
-      page.getByRole("link", { name: "Account", exact: true }),
+      page.getByRole("link", { name: "Ride History", exact: true }),
     ).toHaveAttribute("aria-current", "page");
-    // No other top-level nav item should claim active at the same
-    // time — pick Trips as a representative sibling.
     await expect(
       page.getByRole("link", { name: "Trips", exact: true }),
     ).not.toHaveAttribute("aria-current", "page");
@@ -121,8 +127,9 @@ test.describe("cross-cutting", () => {
   });
 
   // T66 + T67 — Offline indicator + reconnect: when the browser
-  // goes offline the `OfflineIndicator` mounts in the topbar; when
-  // it reconnects the indicator disappears. Playwright's
+  // goes offline the sidebar mounts an indicator chip (lives in the
+  // sidebar footer alongside the notification bell since shell v2);
+  // when it reconnects the indicator disappears. Playwright's
   // `context.setOffline` fires the same `online`/`offline` events
   // the component listens to.
   test("T66/T67: offline indicator surfaces and clears on reconnect", async ({

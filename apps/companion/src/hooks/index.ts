@@ -77,22 +77,47 @@ export function useDropdown() {
 }
 
 /**
- * Local storage hook with JSON serialization
+ * Local storage hook with JSON serialization.
+ *
+ * SSR-safe: the first render always returns `initial` (both on the
+ * server and on the client's hydration pass) so the markup matches
+ * across both, then a post-mount effect reads the stored value and
+ * applies it. The trade-off is a single render flicker on first
+ * paint for users whose stored value differs from `initial`, which
+ * we accept in exchange for a clean hydration with no React
+ * warnings or content-shift mismatches.
  */
 export function useLocalStorage<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initial;
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : initial;
-    } catch {
-      return initial;
-    }
-  });
+  const [value, setValue] = useState<T>(initial);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(key, JSON.stringify(value));
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored !== null) setValue(JSON.parse(stored) as T);
+    } catch {
+      // localStorage may be unavailable (quota, private mode). The
+      // hook still works; we just stay on `initial`.
+    }
+    // We deliberately only read on mount — subsequent writes flow
+    // through `setValue` and are persisted by the next effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Skip the initial write so we don't overwrite a stored value
+    // with `initial` on the first paint before the read-effect runs.
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Quota / private mode — best-effort.
+    }
   }, [key, value]);
 
   return [value, setValue] as const;
