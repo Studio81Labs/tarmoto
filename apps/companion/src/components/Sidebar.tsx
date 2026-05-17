@@ -487,12 +487,22 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
     void signOut({ callbackUrl: "/login" });
   };
 
+  // Stable accessible name across collapsed / expanded states.
+  // Collapsed renders only the avatar initial, so without an
+  // explicit `aria-label` AT would expose this as a one-letter
+  // button ("R") — a rider on a screen reader would have no
+  // discoverable Settings / Log out entry behind it.
+  const accountLabel = user?.displayName
+    ? `${t("Account menu")} — ${user.displayName}`
+    : t("Account menu");
+
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
         onClick={toggle}
         title={collapsed ? (user?.displayName ?? t("Rider")) : undefined}
+        aria-label={accountLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         className={clsx(
