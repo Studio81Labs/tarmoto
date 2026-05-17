@@ -35,10 +35,32 @@
 
   /* Legacy "tarmoto-cyan" accent — remapped to the warm orange so old utility
      classes (text-tarmoto-cyan, bg-tarmoto-cyan/10 …) automatically pick up
-     the new accent without touching every page. */
+     the new accent without touching every page.
+
+     TODO(companion design spec phase 4): ~30 source files still reference
+     `*-tarmoto-cyan` classes (public ride/embed pages, discover, explore,
+     best-roads). A dedicated sweep PR replaces them with `accent` utilities
+     before these aliases can be dropped. Keep them in place until then. */
   --color-tarmoto-cyan: #ff6a1a;
   --color-tarmoto-cyan-light: #ff8a44;
   --color-tarmoto-cyan-dark: #d44f00;
+
+  /* Canonical semantic foreground tones (matches colors_and_type.css from
+     the design package). Exposed as Tailwind utilities (`text-fg-dim`,
+     `text-fg-mute`, …) so components can apply ink-on-cream opacity steps
+     without inlining raw rgba(). */
+  --color-fg-dim: rgba(14, 14, 16, 0.62);
+  --color-fg-mute: rgba(14, 14, 16, 0.42);
+  --color-fg-faint: rgba(14, 14, 16, 0.22);
+  --color-fg-on-dark: #f5efe6;
+  --color-fg-on-dark-dim: rgba(245, 239, 230, 0.65);
+  --color-fg-on-dark-mute: rgba(245, 239, 230, 0.45);
+
+  /* Canonical hairline tones. Use `border-line` / `border-line-strong` for
+     paper-on-paper surfaces; `border-line-on-dark` on tarmac/ink panels. */
+  --color-line: rgba(14, 14, 16, 0.1);
+  --color-line-strong: rgba(14, 14, 16, 0.22);
+  --color-line-on-dark: rgba(245, 239, 230, 0.12);
 
   /* Custom slate-850 hue kept for the few call sites that reference it
      directly. The rest of the slate scale is *not* remapped at the token
@@ -115,11 +137,11 @@
   --tk-paper-2: #e5dbcb;
   --tk-ink: #0e0e10;
   --tk-ink-dim: rgba(14, 14, 16, 0.62);
-  --tk-ink-mute: rgba(14, 14, 16, 0.4);
+  --tk-ink-mute: rgba(14, 14, 16, 0.42);
   --tk-ink-faint: rgba(14, 14, 16, 0.22);
   --tk-accent: #ff6a1a;
   --tk-line: rgba(14, 14, 16, 0.1);
-  --tk-line-strong: rgba(14, 14, 16, 0.18);
+  --tk-line-strong: rgba(14, 14, 16, 0.22);
   --tk-line-on-dark: rgba(245, 239, 230, 0.12);
   --tk-on-dark: #f5efe6;
   --tk-on-dark-dim: rgba(245, 239, 230, 0.65);
