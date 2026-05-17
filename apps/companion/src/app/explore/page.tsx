@@ -126,10 +126,13 @@ function todayAsPreviewDate(): Date {
 //  • Hazards                 → GET /api/v1/hazards (PostGIS bbox).
 //    `HazardOverlay` reads `filters.hazardTypes` to filter the
 //    rendered markers.
-//  • Road conditions         → GET /api/v1/closures + GET /api/v1/passes.
-//    `ClosuresPanel` / `PassesPanel` accept either a `month` (15th-of-
-//    month proxy used by trip planner) or an explicit `previewDate`
-//    (used here so the rider can preview "tomorrow", "next weekend").
+//  • Closures / Passes       → GET /api/v1/closures + GET /api/v1/passes.
+//    Driven from the top-bar info-layer toggles (#570), not the
+//    filter column. When either toggle is on, a right-docked panel
+//    surfaces the structured list for the current viewport bbox.
+//    `ClosuresPanel` carries a noon-UTC date picker so the rider
+//    can preview "tomorrow", "next weekend", etc.; `PassesPanel`
+//    keeps its month-of-year selector (passes are seasonal).
 //
 // Pages can opt into a new filter only after the corresponding tile/
 // endpoint actually serves it — for example, the prior `Curviness`
@@ -160,9 +163,13 @@ function ExplorerPageInner() {
     showQualityOverlay,
     showHazardOverlay,
     showSurfaceOverlay,
+    showClosuresLayer,
+    showPassesLayer,
     toggleQuality,
     toggleHazards,
     toggleSurface,
+    toggleClosuresLayer,
+    togglePassesLayer,
     filters,
     toggleQualityTier,
     toggleSurfaceType,
@@ -331,6 +338,33 @@ function ExplorerPageInner() {
           >
             {t("Surface ")}
           </button>
+
+          {/* Info-layer toggles — open a docked side panel with the
+              closures/passes data for the current viewport. Visually
+              grouped with the data-layer paint toggles above (Quality
+              / Hazards / Surface) because they share the same "tap
+              to reveal information about this map area" intent. */}
+          <button
+            onClick={toggleClosuresLayer}
+            className={`px-3 py-2 rounded-lg text-sm transition ${
+              showClosuresLayer
+                ? "bg-amber-500/20 text-amber-300"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {t("Closures ")}
+          </button>
+
+          <button
+            onClick={togglePassesLayer}
+            className={`px-3 py-2 rounded-lg text-sm transition ${
+              showPassesLayer
+                ? "bg-purple-500/20 text-purple-300"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+          >
+            {t("Passes ")}
+          </button>
         </div>
       </div>
 
@@ -427,45 +461,6 @@ function ExplorerPageInner() {
                 ))}
               </div>
             </div>
-
-            <div className="space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                {t("Road conditions ")}
-              </h3>
-              <label className="block space-y-1.5">
-                <span className="text-xs text-slate-300">
-                  {t("Preview closures on")}
-                </span>
-                <input
-                  type="date"
-                  value={toDateInputValue(conditionsDate)}
-                  onChange={(e) => {
-                    const next = parseDateInputValue(e.target.value);
-                    if (next) setConditionsDate(next);
-                  }}
-                  aria-label={t("Preview closures on")}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent transition"
-                />
-              </label>
-              {conditionBbox ? (
-                <>
-                  <ClosuresPanel
-                    month={conditionsMonth}
-                    previewDate={conditionsDate}
-                    routes={[]}
-                    bbox={conditionBbox}
-                    showRouteWarnings={false}
-                  />
-                  <PassesPanel
-                    month={conditionsMonth}
-                    onMonthChange={setConditionsMonth}
-                    routes={[]}
-                    bbox={conditionBbox}
-                    showRouteWarnings={false}
-                  />
-                </>
-              ) : null}
-            </div>
           </div>
         )}
 
@@ -495,6 +490,62 @@ function ExplorerPageInner() {
             onClose={() => setSelectedSegmentId(null)}
           />
         </div>
+
+        {/* Info-layer panel — docks to the right whenever the rider
+            toggles Closures or Passes on. Shares the panel rather
+            than spawning two competing right-rail drawers; the
+            date picker is scoped to Closures (Passes uses month
+            selection inside `PassesPanel` itself). */}
+        {(showClosuresLayer || showPassesLayer) && (
+          <div className="w-80 border-l border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-4 animate-slide-in-right">
+            {showClosuresLayer && (
+              <div className="space-y-3">
+                <label className="block space-y-1.5">
+                  <span className="text-xs uppercase tracking-wider text-slate-300">
+                    {t("Preview closures on")}
+                  </span>
+                  <input
+                    type="date"
+                    value={toDateInputValue(conditionsDate)}
+                    onChange={(e) => {
+                      const next = parseDateInputValue(e.target.value);
+                      if (next) setConditionsDate(next);
+                    }}
+                    aria-label={t("Preview closures on")}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent transition"
+                  />
+                </label>
+                {conditionBbox ? (
+                  <ClosuresPanel
+                    month={conditionsMonth}
+                    previewDate={conditionsDate}
+                    routes={[]}
+                    bbox={conditionBbox}
+                    showRouteWarnings={false}
+                  />
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    {t("Pan the map to load closures for this area.")}
+                  </p>
+                )}
+              </div>
+            )}
+            {showPassesLayer &&
+              (conditionBbox ? (
+                <PassesPanel
+                  month={conditionsMonth}
+                  onMonthChange={setConditionsMonth}
+                  routes={[]}
+                  bbox={conditionBbox}
+                  showRouteWarnings={false}
+                />
+              ) : (
+                <p className="text-xs text-slate-400">
+                  {t("Pan the map to load passes for this area.")}
+                </p>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );
