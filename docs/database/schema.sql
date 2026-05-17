@@ -207,6 +207,7 @@ CREATE TABLE hazard_reports (
     hazard_type     VARCHAR(30) NOT NULL,    -- pothole, gravel, oil_spill, roadworks, animals, police, flooding, ice, other
     severity        VARCHAR(10) DEFAULT 'medium', -- low, medium, high
     note            TEXT,
+    photo_url       TEXT,                    -- optional single photo (US-4); managed-origin URL returned by POST /hazards/photos
     confirmations   INT DEFAULT 0,
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
