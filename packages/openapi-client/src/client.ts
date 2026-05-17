@@ -53,12 +53,19 @@ export function createTarmotoClient(
   const { getToken, onUnauthorized, onUnauthorizedRetry, ...rest } = options;
   const client = createFetchClient<BrowserSafePaths>(rest);
 
-  // Cache request bodies as raw strings keyed by the Request object
-  // so a 401 retry can rebuild the request with the same payload.
+  // Cache request bodies as raw bytes keyed by the Request object so
+  // a 401 retry can rebuild the request with the exact same payload.
   // POST/PATCH/PUT bodies are normally one-shot ReadableStreams that
   // can't be replayed once `fetch` has consumed them; capturing the
   // serialized body in `onRequest` sidesteps that.
-  const capturedBodies = new WeakMap<Request, string | null>();
+  //
+  // We store the `ArrayBuffer` (not the decoded text). Binary
+  // payloads exist in the generated paths — multipart uploads for
+  // hazard photos, avatars, and review photos — and `.text()` would
+  // UTF-8-decode their bytes and corrupt the replay; `.arrayBuffer()`
+  // preserves the raw bytes for any content type, JSON and binary
+  // alike.
+  const capturedBodies = new WeakMap<Request, ArrayBuffer | null>();
 
   // Single in-flight refresh promise — if three queries 401 in the
   // same tick we want one `getSession()` round-trip, not three (the
@@ -94,13 +101,13 @@ export function createTarmotoClient(
           }
         }
         // Cache the body so we can replay on 401. Avoid touching
-        // empty bodies — `request.clone()` is cheap but `.text()`
-        // on a null stream returns `""` which we'd then carry into
-        // the retry as an empty-string body and trip strict
-        // content-length handlers.
+        // empty bodies — `request.clone()` is cheap but draining a
+        // missing stream isn't useful and we'd then carry an empty
+        // buffer into the retry and trip strict content-length
+        // handlers.
         if (onUnauthorizedRetry && request.body) {
           try {
-            capturedBodies.set(request, await request.clone().text());
+            capturedBodies.set(request, await request.clone().arrayBuffer());
           } catch {
             capturedBodies.set(request, null);
           }

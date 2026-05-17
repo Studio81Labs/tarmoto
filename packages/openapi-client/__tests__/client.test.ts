@@ -87,12 +87,26 @@ describe("createTarmotoClient", () => {
         method: string;
         authorization: string | null;
         body: string | null;
+        bodyBytes: Uint8Array | null;
       }> = [];
       let i = 0;
       vi.stubGlobal(
         "fetch",
         vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
           const req = input instanceof Request ? input : null;
+          // openapi-fetch sends the original request as a Request
+          // object with `body` set to its serialized stream. The
+          // 401 replay path goes through bare `fetch(url, { body })`
+          // with `body` set to the ArrayBuffer we cached in
+          // onRequest — so handle both shapes.
+          let bodyBytes: Uint8Array | null = null;
+          if (req?.body) {
+            bodyBytes = new Uint8Array(await req.clone().arrayBuffer());
+          } else if (init?.body instanceof ArrayBuffer) {
+            bodyBytes = new Uint8Array(init.body);
+          } else if (typeof init?.body === "string") {
+            bodyBytes = new TextEncoder().encode(init.body);
+          }
           calls.push({
             url: req?.url ?? String(input),
             method: req?.method ?? init?.method ?? "GET",
@@ -104,12 +118,8 @@ describe("createTarmotoClient", () => {
                     "Authorization"
                   ]) ??
               null,
-            body:
-              typeof init?.body === "string"
-                ? init.body
-                : req && req.body
-                  ? await req.clone().text()
-                  : null,
+            body: bodyBytes ? new TextDecoder().decode(bodyBytes) : null,
+            bodyBytes,
           });
           const next = responses[i++] ?? responses[responses.length - 1];
           return new Response(JSON.stringify(next.body ?? {}), {
@@ -183,6 +193,74 @@ describe("createTarmotoClient", () => {
       expect(calls[0]?.body).toBe(JSON.stringify({ name: "Stelvio loop" }));
       expect(calls[1]?.body).toBe(JSON.stringify({ name: "Stelvio loop" }));
       expect(calls[1]?.authorization).toBe("Bearer fresh-token");
+    });
+
+    it("preserves binary multipart body bytes across the retry without UTF-8 corruption", async () => {
+      const calls = stubFetchSequence([
+        { status: 401, body: { message: "Unauthorized" } },
+        { status: 201, body: { id: "photo-1" } },
+      ]);
+      const onUnauthorizedRetry = vi.fn(async () => "fresh-token");
+
+      // Bytes that are NOT valid UTF-8 (lone continuation, unpaired
+      // surrogates encoded as raw bytes). Real photo uploads route
+      // through `multipart/form-data` with a Blob payload — exactly
+      // the shape that breaks if the replay path round-trips the
+      // body through `.text()` and re-encodes the replacement
+      // character back to bytes.
+      const photoBytes = new Uint8Array([
+        0xff, 0xfe, 0x80, 0x81, 0xc0, 0xc1, 0xed, 0xa0, 0x80, 0x00, 0x7f,
+      ]);
+      const formData = new FormData();
+      formData.append(
+        "photo",
+        new Blob([photoBytes], { type: "image/jpeg" }),
+        "hazard.jpg",
+      );
+
+      const client = createTarmotoClient({
+        baseUrl: "http://localhost:3000/api/v1",
+        getToken: () => "stale-token",
+        onUnauthorizedRetry,
+      });
+
+      await client.POST(
+        "/api/v1/hazards" as never,
+        {
+          body: formData,
+        } as never,
+      );
+
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.authorization).toBe("Bearer fresh-token");
+      // The replay must send the EXACT same bytes the server saw on
+      // the original 401 — including the binary payload embedded in
+      // the multipart serialization. Comparing byte-for-byte catches
+      // any UTF-8 round-trip corruption.
+      expect(calls[0]?.bodyBytes).toBeTruthy();
+      expect(calls[1]?.bodyBytes).toBeTruthy();
+      expect(Array.from(calls[1]!.bodyBytes!)).toEqual(
+        Array.from(calls[0]!.bodyBytes!),
+      );
+      // And sanity-check the binary bytes survived inside the
+      // multipart payload — replacement characters (0xEF 0xBF 0xBD)
+      // would mean we lost them.
+      const haystack = calls[1]!.bodyBytes!;
+      let found = false;
+      for (let i = 0; i <= haystack.length - photoBytes.length; i++) {
+        let match = true;
+        for (let j = 0; j < photoBytes.length; j++) {
+          if (haystack[i + j] !== photoBytes[j]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          found = true;
+          break;
+        }
+      }
+      expect(found).toBe(true);
     });
 
     it("falls back to onUnauthorized when retry returns null", async () => {
