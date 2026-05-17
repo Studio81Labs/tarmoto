@@ -2,9 +2,11 @@
 import { t } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bookmark, BookmarkCheck, Loader2 } from "lucide-react";
 import { ApiError, routeCollectionsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
 interface Props {
   collectionId: string;
   slug: string;
@@ -51,6 +53,7 @@ export function RouteCollectionFollowCta({
   )}`;
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const queryClient = useQueryClient();
   const [state, setState] = useState<ViewerState>({ kind: "loading" });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +158,13 @@ export function RouteCollectionFollowCta({
       } else {
         await routeCollectionsApi.follow(collectionId);
       }
+      // Drop any cached `useCollections` payload across users so the
+      // library page picks up the new follow/unfollow on next mount
+      // instead of serving the pre-mutation snapshot for the 30s
+      // shared `staleTime`.
+      await queryClient.invalidateQueries({
+        queryKey: COLLECTIONS_LIBRARY_QUERY_PREFIX,
+      });
     } catch (err) {
       // Revert the local state so the button label matches reality and the
       // user can retry. We surface the message inline rather than via a

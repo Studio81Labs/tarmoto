@@ -53,8 +53,21 @@ interface LibraryCacheShape {
   followed: RouteCollectionView[];
 }
 
+/**
+ * Stable prefix for the cached library payload. Exported so flows
+ * that mutate follow state outside this hook (e.g. the public
+ * shared-collection page's `RouteCollectionFollowCta`) can drop the
+ * cached library on success — without that, a 30-second `staleTime`
+ * lets the library page render the pre-follow `followed` list when
+ * the user navigates back from the share page.
+ */
+export const COLLECTIONS_LIBRARY_QUERY_PREFIX = [
+  "collections",
+  "library",
+] as const;
+
 const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null) =>
-  ["collections", "library", userId] as const;
+  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId] as const;
 
 const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
 
