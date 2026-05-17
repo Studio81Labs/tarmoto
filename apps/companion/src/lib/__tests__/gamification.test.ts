@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { components } from "@tarmoto/openapi";
+import type { components } from "@tarmoto/openapi-client";
 import type { RiderStats } from "../types";
 import {
   activeChallenges,

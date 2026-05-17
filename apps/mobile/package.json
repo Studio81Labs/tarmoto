@@ -23,7 +23,7 @@
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native": "^7.0.0",
     "@react-navigation/native-stack": "^7.0.0",
-    "@tarmoto/openapi": "workspace:*",
+    "@tarmoto/openapi-client": "workspace:*",
     "@tarmoto/shared": "workspace:*",
     "immer": "^11.1.4",
     "react": "^19.2.3",

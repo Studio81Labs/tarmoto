@@ -1,5 +1,5 @@
 import { API_BASE } from "@/lib/config";
-import type { paths } from "@tarmoto/openapi/types";
+import type { paths } from "@tarmoto/openapi-client";
 
 export type FunZoneListItem =
   paths["/api/v1/roads/fun-zones"]["get"]["responses"]["200"]["content"]["application/json"][number];

@@ -1,4 +1,4 @@
-import type { paths } from "@tarmoto/openapi/types";
+import type { paths } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { API_BASE_SERVER } from "@/lib/config";
 

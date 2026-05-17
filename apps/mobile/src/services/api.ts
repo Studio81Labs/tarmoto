@@ -1,7 +1,7 @@
 /**
  * Tarmoto API Service
  *
- * Thin facade over the typed `@tarmoto/openapi` client. Each method
+ * Thin facade over the typed `@tarmoto/openapi-client` client. Each method
  * resolves a single spec-defined operation; request bodies, path
  * params, and response shapes are all type-checked against the
  * generated `paths` / `components` types. A drift between the backend

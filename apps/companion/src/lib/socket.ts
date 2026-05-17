@@ -194,7 +194,7 @@ export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
 /**
  * Payloads mirror the backend DTOs (`TripCursorPayload`,
  * `TripPresencePayload`, `SuggestionResponseDto`, `TripActivityEntryDto`).
- * Kept local to avoid reaching into @tarmoto/openapi for socket-only types.
+ * Kept local to avoid reaching into @tarmoto/openapi-client for socket-only types.
  */
 export interface TripCursorEvent {
   user_id: string;

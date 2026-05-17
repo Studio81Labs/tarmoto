@@ -1,5 +1,5 @@
 import { expectTypeOf, test } from "vitest";
-import type { paths } from "@tarmoto/openapi/types";
+import type { paths } from "@tarmoto/openapi-client";
 import { accountApi, explorationApi, tripsApi } from "./api";
 
 type JsonResponse<

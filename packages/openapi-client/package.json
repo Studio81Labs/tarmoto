@@ -1,0 +1,34 @@
+{
+  "name": "@tarmoto/openapi-client",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Generated TypeScript types, OpenAPI client, and React Query hooks for the Tarmoto backend.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schema": {
+      "types": "./src/generated/schema.d.ts",
+      "default": "./src/generated/schema.d.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "generate": "openapi-typescript ../openapi/openapi.yaml --output src/generated/schema.d.ts --root-types"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0",
+    "openapi-react-query": "^0.5.4"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0",
+    "typescript": "^5.9.2"
+  }
+}

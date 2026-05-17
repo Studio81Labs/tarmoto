@@ -1,5 +1,5 @@
 import { API_BASE_SERVER } from "@/lib/config";
-import type { paths } from "@tarmoto/openapi/types";
+import type { paths } from "@tarmoto/openapi-client";
 
 type BestRoadsResponse =
   paths["/api/v1/roads/best"]["get"]["responses"]["200"]["content"]["application/json"];

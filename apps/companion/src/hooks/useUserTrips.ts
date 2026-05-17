@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { tripsApi } from "@/lib/api";
+import { useEffect, useMemo } from "react";
+import { $api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import {
@@ -10,21 +10,17 @@ import type { TripSummary } from "@/lib/types";
 
 /**
  * Fetches the signed-in user's trips on mount and whenever the `userId`
- * changes. Writes into the shared `useTripStore` so other components (the
- * planner, the trip card in `/trips`, etc.) keep reading the same list.
+ * changes. Internally driven by `openapi-react-query`'s `useQuery` — the
+ * hook handles cancellation, dedup, and stale-while-revalidate cache
+ * semantics; we keep the Zustand store as a write-through cache so
+ * `(dashboard)/trips/page.tsx`'s optimistic add/move/delete flows
+ * (which mutate `useTripStore.trips` directly) keep working without
+ * threading state through React Query mutations.
  *
- * Encapsulates the cancellation guard, response-shape normalisation, and
- * sign-out reset that would otherwise be copy-pasted into every consumer —
- * and which were already drifting across the two collection pages.
- *
- * Returns `trips`, a loading flag, a `tripById` lookup, and an `error` flag.
- * Consumers that do destructive things based on trip presence (the
- * collection detail "missing trip" row, for instance) must not act while
- * `error` is true — otherwise a transient API outage would look
- * indistinguishable from every trip having been deleted.
- *
- * NOTE: `trips/page.tsx` also inlines this pattern and predates the hook;
- * migrate it in a follow-up PR to keep this change scoped to collections.
+ * Returns `trips`, a loading flag, a `tripById` lookup, and an `error`
+ * flag. Consumers that do destructive things based on trip presence
+ * must not act while `error` is true — otherwise a transient API outage
+ * looks indistinguishable from every trip having been deleted.
  */
 export function useUserTrips(): {
   trips: TripSummary[];
@@ -33,51 +29,38 @@ export function useUserTrips(): {
   tripById: Map<string, TripSummary>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const trips = useTripStore((s) => s.trips);
 
+  const query = $api.useQuery(
+    "get",
+    "/api/v1/trips",
+    {},
+    { enabled: userId != null },
+  );
+
+  // Write-through into the Zustand store. The list endpoint may return
+  // either a raw array or a `{ data: [] }` envelope depending on
+  // backend version — both branches yield `TripSummaryWire[]` and the
+  // adapter normalises to the companion's camelCase shape.
   useEffect(() => {
-    // Clear the store on every userId change so the *previous* user's trips
-    // can't briefly leak after sign-in/out or account switch.
-    setTrips([]);
-    setError(false);
     if (!userId) {
-      setLoading(false);
+      setTrips([]);
       return;
     }
-    let cancelled = false;
-    setLoading(true);
-    tripsApi
-      .list()
-      .then(({ data }) => {
-        if (cancelled) return;
-        // The list endpoint may return either a raw array or a
-        // `{ data }` envelope depending on backend version. Either
-        // way, each row is a wire-shape `TripSummaryDto` (`title`,
-        // `created_at`) — adapt to the companion's `TripSummary`
-        // (`name`, `createdAt`) before storing so list consumers
-        // don't read undefined fields.
-        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
-        const rows = Array.isArray(body) ? body : (body?.data ?? []);
-        setTrips(rows.map(tripSummaryFromWire));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Deliberately leave `trips` untouched here — a transient API
-        // failure mustn't masquerade as "every trip deleted" or consumers
-        // will offer destructive actions (e.g. the collection detail's
-        // MissingTripRow) against perfectly valid references.
-        setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [setTrips, userId]);
+    if (!query.data) return;
+    const body = query.data as unknown as
+      | { data?: TripSummaryWire[] }
+      | TripSummaryWire[];
+    const rows = Array.isArray(body) ? body : (body?.data ?? []);
+    setTrips(rows.map(tripSummaryFromWire));
+  }, [query.data, userId, setTrips]);
+
+  // Clear on sign-out so a brief stale read doesn't surface the
+  // previous account's trips between sign-out and sign-in.
+  useEffect(() => {
+    if (!userId) setTrips([]);
+  }, [userId, setTrips]);
 
   const tripById = useMemo(() => {
     const map = new Map<string, TripSummary>();
@@ -85,5 +68,14 @@ export function useUserTrips(): {
     return map;
   }, [trips]);
 
-  return { trips, loading, error, tripById };
+  return {
+    trips,
+    loading: query.isLoading,
+    // React Query exposes `isError` for fetch failures (network, 5xx,
+    // 401 once `onUnauthorized` has cleared the session). The
+    // optimistic-update consumers in `(dashboard)/trips/page.tsx`
+    // gate destructive prompts on this flag.
+    error: query.isError,
+    tripById,
+  };
 }

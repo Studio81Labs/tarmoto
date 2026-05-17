@@ -1,5 +1,8 @@
-import { createApiClient } from "@tarmoto/openapi/client";
-import type { paths } from "@tarmoto/openapi/types";
+import {
+  createTarmotoClient,
+  createTarmotoQueryClient,
+} from "@tarmoto/openapi-client";
+import type { paths } from "@tarmoto/openapi-client";
 import type {
   InAppNotification,
   InAppNotificationListResponse,
@@ -14,11 +17,16 @@ import type { PartialPrivacySettings } from "./privacy-settings";
 import type { PrivacySettings } from "./types";
 
 // Typed openapi-fetch client for all spec-defined endpoints
-export const api = createApiClient({
+export const api = createTarmotoClient({
   baseUrl: API_HOST,
   getToken: () => useAuthStore.getState().accessToken,
   onUnauthorized: () => useAuthStore.getState().clearSession(),
 });
+
+// React Query bindings on top of the same client. Hooks consume
+// this as `$api.useQuery("get", "/api/v1/trips")` etc., inferring
+// params + response shape from the generated `paths`.
+export const $api = createTarmotoQueryClient(api);
 
 export class ApiError extends Error {
   readonly status: number;

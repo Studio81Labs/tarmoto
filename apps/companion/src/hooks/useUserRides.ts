@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -32,13 +33,17 @@ const MAX_PAGES = 10;
 /**
  * Fetches the signed-in user's recent rides (up to `PAGE_SIZE * MAX_PAGES`)
  * for the route-collections picker. Mirrors `useUserTrips` semantics: the
- * `error` flag distinguishes a transient API failure from "no rides", so the
- * detail page can suppress destructive prompts (e.g. removing missing-ride
- * rows) while the fetch is genuinely broken.
+ * `error` flag distinguishes a transient API failure from "no rides", so
+ * the detail page can suppress destructive prompts (e.g. removing
+ * missing-ride rows) while the fetch is genuinely broken.
  *
- * The cap matches `fetchAllRides` (the stats helper) — riders with that many
- * recorded rides curate manually anyway, and the picker has its own search
- * field for narrowing within the loaded list.
+ * The cap matches `fetchAllRides` (the stats helper) — riders with that
+ * many recorded rides curate manually anyway, and the picker has its own
+ * search field for narrowing within the loaded list. Driven by
+ * `@tanstack/react-query` so cancellation, dedup, and stale-while-
+ * revalidate semantics come for free; the page-loop runs inside the
+ * `queryFn` because React Query's `useInfiniteQuery` API is overkill
+ * when the picker always wants the accumulated result anyway.
  */
 export function useUserRides(): {
   rides: UserRide[];
@@ -47,48 +52,31 @@ export function useUserRides(): {
   rideById: Map<string, UserRide>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const [rides, setRides] = useState<UserRide[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    setRides([]);
-    setError(false);
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-    const ctrl = new AbortController();
-    setLoading(true);
-
-    (async () => {
+  const query = useQuery({
+    queryKey: ["user-rides", userId],
+    enabled: userId != null,
+    queryFn: async ({ signal }) => {
       const collected: UserRide[] = [];
-      try {
-        for (let page = 0; page < MAX_PAGES; page += 1) {
-          const { data, error: apiError } = await api.GET("/api/v1/rides", {
-            params: {
-              query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE },
-            },
-            signal: ctrl.signal,
-          });
-          if (ctrl.signal.aborted) return;
-          if (apiError) throw new Error("rides fetch failed");
-          const d = data as unknown as RideListResponse;
-          const batch = d.rides ?? [];
-          collected.push(...batch);
-          const total = d.total ?? collected.length;
-          if (collected.length >= total || batch.length < PAGE_SIZE) break;
-        }
-        if (!ctrl.signal.aborted) setRides(collected);
-      } catch {
-        if (!ctrl.signal.aborted) setError(true);
-      } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const { data, error: apiError } = await api.GET("/api/v1/rides", {
+          params: {
+            query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE },
+          },
+          signal,
+        });
+        if (apiError) throw new Error("rides fetch failed");
+        const d = data as unknown as RideListResponse;
+        const batch = d.rides ?? [];
+        collected.push(...batch);
+        const total = d.total ?? collected.length;
+        if (collected.length >= total || batch.length < PAGE_SIZE) break;
       }
-    })();
+      return collected;
+    },
+  });
 
-    return () => ctrl.abort();
-  }, [userId]);
+  const rides = query.data ?? [];
 
   const rideById = useMemo(() => {
     const map = new Map<string, UserRide>();
@@ -96,5 +84,10 @@ export function useUserRides(): {
     return map;
   }, [rides]);
 
-  return { rides, loading, error, rideById };
+  return {
+    rides,
+    loading: query.isLoading,
+    error: query.isError,
+    rideById,
+  };
 }
