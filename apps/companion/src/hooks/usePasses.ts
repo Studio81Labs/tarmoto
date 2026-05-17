@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, passesApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -10,8 +11,7 @@ import {
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
-const EMPTY_ROUTE_PASSES: MountainPass[] = [];
-const EMPTY_ROUTE_POINTS: PlannerClosureRoute["points"][] = [];
+const EMPTY_PASSES: MountainPass[] = [];
 
 export interface PassesQueryResult {
   passes: MountainPass[];
@@ -28,32 +28,14 @@ interface UsePassesOptions {
   bbox?: string;
 }
 
-interface PassesState extends PassesQueryResult {
-  routeQueryKey: string | null;
-}
-
-function buildRouteQueryKey(
-  forMonth: number | undefined,
-  routes: PlannerClosureRoute[],
-): string | null {
-  if (routes.length === 0) return null;
-
-  return JSON.stringify({
-    forMonth: forMonth ?? null,
-    routes: routes.map((route) => ({
-      id: route.id,
-      points: route.points,
-    })),
-  });
-}
-
 /**
- * Fetches `/passes?for_month=<month>` and re-runs whenever `forMonth`
- * changes. `forMonth` is 1..12; omit (pass `undefined`) to let the backend
- * fall back to the current UTC month.
+ * Fetches `/passes` for the current month/bbox and (optionally) runs
+ * a per-route check across `routes`. Driven by `@tanstack/react-query`
+ * — cancellation, dedup, and reconnect retry come for free.
  *
- * Mirrors the AbortController pattern used by `useRidesQuery` so an in-flight
- * request from a stale month can't clobber a newer one.
+ * The list query is keyed by `[forMonth, bbox]`, the route query by
+ * `[forMonth, routes]`, so distinct planner panels in the same tree
+ * share the same cache entry instead of refetching independently.
  */
 export function usePasses(
   forMonth: number | undefined,
@@ -62,149 +44,11 @@ export function usePasses(
 ): PassesQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
-  const routeQueryKey = useMemo(
-    () => buildRouteQueryKey(forMonth, routes),
-    [forMonth, routes],
-  );
-  const routePointsRef =
-    useRef<PlannerClosureRoute["points"][]>(EMPTY_ROUTE_POINTS);
-  const routePointsQueryKeyRef = useRef<string | null>(null);
 
-  if (routePointsQueryKeyRef.current !== routeQueryKey) {
-    routePointsQueryKeyRef.current = routeQueryKey;
-    routePointsRef.current =
-      routeQueryKey == null
-        ? EMPTY_ROUTE_POINTS
-        : routes.map((route) => route.points);
-  }
-
-  const routePoints = routePointsRef.current;
-  const [state, setState] = useState<PassesState>({
-    passes: [],
-    routePasses: [],
-    routeClosedCount: 0,
-    routeUnknownCount: 0,
-    loading: true,
-    routeLoading: routes.length > 0,
-    error: null,
-    routeError: null,
-    routeQueryKey,
-  });
-
-  const hasPendingRouteCheck =
-    routeQueryKey != null && state.routeQueryKey !== routeQueryKey;
-
-  useEffect(() => {
-    if (routePoints.length === 0) {
-      setState((current) =>
-        current.routePasses.length === 0 &&
-        current.routeClosedCount === 0 &&
-        current.routeUnknownCount === 0 &&
-        !current.routeLoading &&
-        current.routeError == null &&
-        current.routeQueryKey == null
-          ? current
-          : {
-              ...current,
-              routePasses: EMPTY_ROUTE_PASSES,
-              routeClosedCount: 0,
-              routeUnknownCount: 0,
-              routeLoading: false,
-              routeError: null,
-              routeQueryKey: null,
-            },
-      );
-      return;
-    }
-
-    const ctrl = new AbortController();
-    setState((current) => ({
-      ...current,
-      routeLoading: true,
-      routeError: null,
-    }));
-
-    Promise.allSettled(
-      routePoints.map((points) =>
-        passesApi.checkRoute(
-          {
-            route: points,
-            for_month: forMonth,
-          },
-          { signal: ctrl.signal },
-        ),
-      ),
-    )
-      .then((results) => {
-        if (ctrl.signal.aborted) return;
-
-        const fulfilled = results.filter(
-          (
-            result,
-          ): result is PromiseFulfilledResult<
-            Awaited<ReturnType<typeof passesApi.checkRoute>>
-          > => result.status === "fulfilled",
-        );
-        const rejectedCount = results.length - fulfilled.length;
-
-        if (fulfilled.length === 0 && rejectedCount > 0) {
-          setState((current) => ({
-            ...current,
-            routePasses: EMPTY_ROUTE_PASSES,
-            routeClosedCount: 0,
-            routeUnknownCount: 0,
-            routeLoading: false,
-            routeError: "Failed to check route passes",
-            routeQueryKey,
-          }));
-          return;
-        }
-
-        const routePasses = dedupePasses(
-          fulfilled.flatMap(({ value }) => value.data.passes),
-        );
-        const grouped = partitionByStatus(routePasses);
-        const orderedRoutePasses = [
-          ...grouped.closed,
-          ...grouped.unknown,
-          ...grouped.open,
-        ];
-        const counts = countByStatus(routePasses);
-
-        setState((current) => ({
-          ...current,
-          routePasses: orderedRoutePasses,
-          routeClosedCount: counts.closed,
-          routeUnknownCount: counts.unknown,
-          routeLoading: false,
-          routeError:
-            rejectedCount > 0
-              ? "Some route segments could not be checked."
-              : null,
-          routeQueryKey,
-        }));
-      })
-      .catch((err: Error) => {
-        if (ctrl.signal.aborted) return;
-        setState((current) => ({
-          ...current,
-          routePasses: EMPTY_ROUTE_PASSES,
-          routeClosedCount: 0,
-          routeUnknownCount: 0,
-          routeLoading: false,
-          routeError: err.message || "Failed to check route passes",
-          routeQueryKey,
-        }));
-      });
-
-    return () => ctrl.abort();
-  }, [forMonth, routePoints, routeQueryKey, reconnectRevision]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setState((s) => ({ ...s, loading: true, error: null }));
-    api
-      .GET("/api/v1/passes", {
+  const listQuery = useQuery({
+    queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/passes", {
         params: {
           query:
             forMonth != null || bbox
@@ -214,41 +58,94 @@ export function usePasses(
                 } as never)
               : undefined,
         },
-        signal: ctrl.signal,
-      })
-      .then(({ data, error }) => {
-        if (ctrl.signal.aborted) return;
-        if (error || !data) {
-          setState((current) => ({
-            ...current,
-            passes: [],
-            loading: false,
-            error: "Failed to load passes",
-          }));
-          return;
-        }
-        setState((current) => ({
-          ...current,
-          passes: data as MountainPass[],
-          loading: false,
-          error: null,
-        }));
-      })
-      .catch((err: Error) => {
-        if (ctrl.signal.aborted) return;
-        setState((current) => ({
-          ...current,
-          passes: [],
-          loading: false,
-          error: err.message,
-        }));
+        signal,
       });
-    return () => ctrl.abort();
-  }, [bbox, forMonth, reconnectRevision]);
+      if (error || !data) throw new Error("Failed to load passes");
+      return data as MountainPass[];
+    },
+  });
+
+  // The query key intentionally excludes `route.label` (and anything
+  // else metadata-only): only the fields the request body actually
+  // consumes (`id`, `points`) decide whether a re-render reuses the
+  // cached response or kicks a new fetch. Without this filter,
+  // renaming a route in the planner UI would refire the per-route
+  // check.
+  const routeRequestKey = useMemo(
+    () => routes.map((r) => ({ id: r.id, points: r.points })),
+    [routes],
+  );
+
+  const routeQuery = useQuery({
+    queryKey: [
+      "passes",
+      "check-route",
+      forMonth ?? null,
+      routeRequestKey,
+      reconnectRevision,
+    ],
+    enabled: routes.length > 0,
+    queryFn: async ({ signal }) => {
+      const results = await Promise.allSettled(
+        routeRequestKey.map(({ points }) =>
+          passesApi.checkRoute(
+            { route: points, for_month: forMonth },
+            { signal },
+          ),
+        ),
+      );
+      const fulfilled = results.filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<
+          Awaited<ReturnType<typeof passesApi.checkRoute>>
+        > => result.status === "fulfilled",
+      );
+      const rejectedCount = results.length - fulfilled.length;
+      if (fulfilled.length === 0 && rejectedCount > 0) {
+        throw new Error("Failed to check route passes");
+      }
+      const routePasses = dedupePasses(
+        fulfilled.flatMap(({ value }) => value.data.passes),
+      );
+      const grouped = partitionByStatus(routePasses);
+      const ordered = [...grouped.closed, ...grouped.unknown, ...grouped.open];
+      const counts = countByStatus(routePasses);
+      return {
+        passes: ordered,
+        closedCount: counts.closed,
+        unknownCount: counts.unknown,
+        partial: rejectedCount > 0,
+      };
+    },
+  });
+
+  const passes = listQuery.data ?? EMPTY_PASSES;
+  const routePasses =
+    routes.length > 0
+      ? (routeQuery.data?.passes ?? EMPTY_PASSES)
+      : EMPTY_PASSES;
 
   return {
-    ...state,
-    routeLoading: state.routeLoading || hasPendingRouteCheck,
-    routeError: hasPendingRouteCheck ? null : state.routeError,
+    passes,
+    routePasses,
+    routeClosedCount:
+      routes.length > 0 ? (routeQuery.data?.closedCount ?? 0) : 0,
+    routeUnknownCount:
+      routes.length > 0 ? (routeQuery.data?.unknownCount ?? 0) : 0,
+    loading: listQuery.isLoading,
+    routeLoading: routes.length > 0 && routeQuery.isLoading,
+    error: listQuery.isError
+      ? (listQuery.error as Error)?.message || "Failed to load passes"
+      : null,
+    routeError:
+      routes.length === 0
+        ? null
+        : routeQuery.isError
+          ? (routeQuery.error as Error)?.message ||
+            "Failed to check route passes"
+          : routeQuery.data?.partial
+            ? "Some route segments could not be checked."
+            : null,
   };
 }

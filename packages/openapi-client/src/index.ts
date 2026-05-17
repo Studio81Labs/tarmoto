@@ -1,4 +1,5 @@
 export type { paths, components, operations } from "./generated/schema";
+export type { BrowserSafePaths } from "./browser-safe";
 export {
   createTarmotoClient,
   type TarmotoClient,

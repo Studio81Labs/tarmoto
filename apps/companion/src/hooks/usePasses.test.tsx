@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { usePasses } from "./usePasses";
 import { api, passesApi } from "@/lib/api";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
+import { withQueryClient } from "./test-utils";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -50,7 +51,9 @@ describe("usePasses", () => {
   });
 
   it("does not loop when routes are omitted", async () => {
-    expect(() => render(<TestHarness />)).not.toThrow();
+    expect(() =>
+      render(<TestHarness />, { wrapper: withQueryClient() }),
+    ).not.toThrow();
 
     await waitFor(() => {
       expect(screen.getByText("loaded")).toBeInTheDocument();
@@ -61,7 +64,9 @@ describe("usePasses", () => {
   });
 
   it("passes the viewport bbox into the public passes list query", async () => {
-    render(<TestHarness bbox="17.557,49.644,18.963,49.996" />);
+    render(<TestHarness bbox="17.557,49.644,18.963,49.996" />, {
+      wrapper: withQueryClient(),
+    });
 
     await waitFor(() => {
       expect(api.GET).toHaveBeenCalledWith(
@@ -89,7 +94,9 @@ describe("usePasses", () => {
     });
     vi.mocked(passesApi.checkRoute).mockReturnValue(routeCheck as never);
 
-    const { rerender } = render(<TestHarness />);
+    const { rerender } = render(<TestHarness />, {
+      wrapper: withQueryClient(),
+    });
 
     await waitFor(() => {
       expect(screen.getByText("loaded")).toBeInTheDocument();
@@ -123,7 +130,9 @@ describe("usePasses", () => {
       },
     } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
 
-    const { rerender } = render(<TestHarness routes={[route]} />);
+    const { rerender } = render(<TestHarness routes={[route]} />, {
+      wrapper: withQueryClient(),
+    });
 
     await waitFor(() => {
       expect(screen.getByText("route-idle")).toBeInTheDocument();

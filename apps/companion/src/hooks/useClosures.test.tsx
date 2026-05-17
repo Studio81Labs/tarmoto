@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { closuresApi } from "@/lib/api";
 import { useClosures } from "./useClosures";
+import { withQueryClient } from "./test-utils";
 
 vi.mock("@/lib/api", () => ({
   closuresApi: {
@@ -24,7 +25,9 @@ describe("useClosures", () => {
   });
 
   it("passes the viewport bbox into the public closures list query", async () => {
-    render(<TestHarness bbox="17.557,49.644,18.963,49.996" />);
+    render(<TestHarness bbox="17.557,49.644,18.963,49.996" />, {
+      wrapper: withQueryClient(),
+    });
 
     await waitFor(() => {
       expect(screen.getByText("loaded")).toBeInTheDocument();
