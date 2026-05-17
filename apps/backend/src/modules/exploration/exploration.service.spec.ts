@@ -27,6 +27,13 @@ describe('ExplorationService', () => {
     from: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
+    // `distinctOn` is consumed inside the `from(qb => qb.subQuery()...)`
+    // callback of `getRiddenSegments`. The mock's `from()` is a
+    // `mockReturnThis` that never invokes the callback, so the test
+    // suite happens to pass without this stub — but mirroring the
+    // real surface keeps the mock honest if a future test ever
+    // exercises the subquery body directly.
+    distinctOn: jest.fn().mockReturnThis(),
     getQuery: jest.fn().mockReturnValue(''),
     getRawOne: jest.fn().mockResolvedValue({ count: '15' }),
     getRawMany: jest.fn().mockResolvedValue([{ id: 'seg-1' }, { id: 'seg-2' }]),
