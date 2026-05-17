@@ -100,17 +100,36 @@ export function createTarmotoClient(
             request.headers.set("Authorization", `Bearer ${token}`);
           }
         }
-        // Cache the body so we can replay on 401. Avoid touching
-        // empty bodies — `request.clone()` is cheap but draining a
-        // missing stream isn't useful and we'd then carry an empty
-        // buffer into the retry and trip strict content-length
-        // handlers.
+        // Capture the body so we can replay on 401. `request.clone()`
+        // is the textbook way to read a Request body without
+        // consuming the original, but undici (Node's fetch impl)
+        // tees the underlying ReadableStream and the original side
+        // doesn't survive cleanly when both sides are touched — the
+        // body ends up empty by the time fetch sends it. The robust
+        // alternative is to drain the original here and return a
+        // *fresh* Request built from the captured bytes; openapi-
+        // fetch uses whatever Request we return, so the upcoming
+        // fetch sees a fully-populated stream and the replay path
+        // also has the bytes cached for later.
         if (onUnauthorizedRetry && request.body) {
+          let bytes: ArrayBuffer;
           try {
-            capturedBodies.set(request, await request.clone().arrayBuffer());
+            bytes = await request.arrayBuffer();
           } catch {
-            capturedBodies.set(request, null);
+            return request;
           }
+          const replay = new Request(request.url, {
+            method: request.method,
+            headers: request.headers,
+            body: bytes,
+            signal: request.signal,
+            credentials: request.credentials,
+            mode: request.mode,
+            redirect: request.redirect,
+            referrer: request.referrer,
+          });
+          capturedBodies.set(replay, bytes);
+          return replay;
         }
         return request;
       },
