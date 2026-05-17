@@ -88,9 +88,14 @@ describe("dedupedRefresh", () => {
   });
 
   it("propagates errors to all concurrent callers and clears the entry", async () => {
-    const refresh = vi.fn(async () => {
-      throw new Error("backend 429");
-    });
+    // Annotate the mock signature explicitly — `vi.fn(async () => { throw … })`
+    // alone infers the return type as `Promise<never>`, which then narrows
+    // `mockImplementationOnce` and rejects the recovery branch below.
+    const refresh = vi.fn<(rt: string) => Promise<BackendAuthResponse>>(
+      async () => {
+        throw new Error("backend 429");
+      },
+    );
 
     const results = await Promise.allSettled([
       dedupedRefresh("user-1", "RT-old", { refresh, graceMs: 0 }),
