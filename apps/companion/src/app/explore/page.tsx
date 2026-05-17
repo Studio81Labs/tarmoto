@@ -15,7 +15,7 @@ import {
 } from "@/lib/map-filters";
 import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
 import type { HazardType } from "@tarmoto/shared";
-import { QualityMap } from "./_components/QualityMap";
+import { QualityMap, type QualityMapHandle } from "./_components/QualityMap";
 import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
@@ -180,6 +180,11 @@ function ExplorerPageInner() {
     resetFilters,
   } = useMapStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // Imperative handle to the MapLibre camera. `MapCanvas` reads
+  // its initial center/zoom only at mount (to avoid yanking user
+  // pans), so search-pick flows need this narrow opt-in channel
+  // to actually fly the map.
+  const mapRef = useRef<QualityMapHandle | null>(null);
   // Hydrate the store from URL params on mount and on back/forward navigation.
   // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
   // that follows the store update — otherwise it would see stale `filters` from
@@ -276,6 +281,17 @@ function ExplorerPageInner() {
         {isAuthenticated ? (
           <ExploreSearch
             onPick={(place) => {
+              // Fly the actual MapLibre camera. Updating the
+              // store alone wouldn't move the visible map —
+              // MapCanvas reads center/zoom only at init. We
+              // still mirror the new position back into the
+              // store so a subsequent remount lands in the same
+              // place.
+              mapRef.current?.flyTo({
+                lng: place.lng,
+                lat: place.lat,
+                zoom: EXPLORE_SEARCH_RESULT_ZOOM,
+              });
               setCenter({ lng: place.lng, lat: place.lat });
               setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
             }}
@@ -469,6 +485,7 @@ function ExplorerPageInner() {
         {/* Map */}
         <div className="flex-1 relative bg-slate-900">
           <QualityMap
+            ref={mapRef}
             center={center}
             zoom={zoom}
             filters={filters}

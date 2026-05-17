@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
 import { roadsApi } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
@@ -21,6 +22,7 @@ type MockQualityMapProps = {
   }) => void;
 };
 
+const flyToMock = vi.fn();
 const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
   <>
     <button
@@ -54,7 +56,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("./_components/QualityMap", () => ({
-  QualityMap: (props: MockQualityMapProps) => mockQualityMap(props),
+  // forwardRef so the page can call `mapRef.current.flyTo(...)` —
+  // /explore wires the search-pick path through that imperative
+  // handle (T29 asserts the call here).
+  QualityMap: forwardRef<
+    { flyTo: (t: { lng: number; lat: number; zoom: number }) => void },
+    MockQualityMapProps
+  >(function MockQualityMap(props, ref) {
+    useImperativeHandle(ref, () => ({ flyTo: flyToMock }), []);
+    return mockQualityMap(props);
+  }),
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -194,6 +205,7 @@ describe("ExplorerPage", () => {
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
+    flyToMock.mockReset();
     // Tests run against the authenticated explore path by default —
     // the search input only renders for signed-in riders (the public
     // geocode endpoint is AuthGuard-protected so we hide rather than
@@ -240,6 +252,17 @@ describe("ExplorerPage", () => {
     });
     fireEvent.click(result);
 
+    // Camera fly: MapCanvas reads center/zoom only at init, so
+    // a store-only update wouldn't move the visible map. Assert
+    // the imperative `flyTo` fires on pick.
+    expect(flyToMock).toHaveBeenCalledWith({
+      lng: 19.973,
+      lat: 49.165,
+      zoom: 12,
+    });
+
+    // Store mirror still updates so a subsequent remount lands
+    // at the picked place.
     const state = useMapStore.getState();
     expect(state.center).toEqual({ lng: 19.973, lat: 49.165 });
     expect(state.zoom).toBe(12);

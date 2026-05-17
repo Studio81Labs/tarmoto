@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import maplibregl, {
   type GeoJSONSource,
   type Map as MapLibreMap,
@@ -92,350 +98,384 @@ function readMapView(map: MapLibreMap): MapCanvasViewChange {
   };
 }
 
-export function QualityMap({
-  center,
-  zoom,
-  filters,
-  showQuality,
-  showSurface,
-  showHazards,
-  onSegmentSelect,
-  onViewChange,
-}: Props) {
-  const handleRef = useRef<MapCanvasHandle>(null);
-  const [ready, setReady] = useState(false);
-  const segmentSelectionRef = useRef({
-    showQuality,
-    showSurface,
-    onSegmentSelect,
-  });
+/**
+ * Imperative handle exposed by `QualityMap` so callers can drive
+ * the underlying MapLibre camera programmatically. `MapCanvas`
+ * reads `center` / `zoom` only at init (otherwise it would yank
+ * user pans), so search-pick / fit-to-route style flows need this
+ * narrow opt-in channel instead.
+ */
+export interface QualityMapHandle {
+  flyTo(target: { lng: number; lat: number; zoom: number }): void;
+}
 
-  const rawHazardsRef = useRef<HazardResponse[]>([]);
-  // Tracks when each WS-delivered hazard arrived, so an in-flight REST
-  // fetch whose snapshot predates the arrival doesn't overwrite it.
-  const wsHazardArrivalRef = useRef<Map<string, number>>(new Map());
-  const [hazardsRevision, setHazardsRevision] = useState(0);
-  const [hazardNow, setHazardNow] = useState(() => Date.now());
-  const realtimeStatus = useRealtimeStore((s) => s.status);
-  const reconnectRevision = useNetworkReconnectRevision();
+export const QualityMap = forwardRef<QualityMapHandle, Props>(
+  function QualityMap(
+    {
+      center,
+      zoom,
+      filters,
+      showQuality,
+      showSurface,
+      showHazards,
+      onSegmentSelect,
+      onViewChange,
+    },
+    ref,
+  ) {
+    const handleRef = useRef<MapCanvasHandle>(null);
 
-  const qualityOpacity = buildQualityOpacityExpression(filters);
-  const surfaceOpacity = buildSurfaceOpacityExpression(filters);
-
-  useEffect(() => {
-    segmentSelectionRef.current = {
+    useImperativeHandle(
+      ref,
+      () => ({
+        flyTo(target) {
+          const map = handleRef.current?.map;
+          if (!map) return;
+          map.flyTo({
+            center: [target.lng, target.lat],
+            zoom: target.zoom,
+            essential: true,
+          });
+        },
+      }),
+      [],
+    );
+    const [ready, setReady] = useState(false);
+    const segmentSelectionRef = useRef({
       showQuality,
       showSurface,
       onSegmentSelect,
+    });
+
+    const rawHazardsRef = useRef<HazardResponse[]>([]);
+    // Tracks when each WS-delivered hazard arrived, so an in-flight REST
+    // fetch whose snapshot predates the arrival doesn't overwrite it.
+    const wsHazardArrivalRef = useRef<Map<string, number>>(new Map());
+    const [hazardsRevision, setHazardsRevision] = useState(0);
+    const [hazardNow, setHazardNow] = useState(() => Date.now());
+    const realtimeStatus = useRealtimeStore((s) => s.status);
+    const reconnectRevision = useNetworkReconnectRevision();
+
+    const qualityOpacity = buildQualityOpacityExpression(filters);
+    const surfaceOpacity = buildSurfaceOpacityExpression(filters);
+
+    useEffect(() => {
+      segmentSelectionRef.current = {
+        showQuality,
+        showSurface,
+        onSegmentSelect,
+      };
+    }, [showQuality, showSurface, onSegmentSelect]);
+
+    const handleReady = (map: MapLibreMap) => {
+      map.addSource(HAZARDS_SOURCE, {
+        type: "geojson",
+        data: EMPTY_COLLECTION,
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 13,
+      });
+
+      map.addLayer({
+        id: HAZARD_CLUSTERS,
+        type: "circle",
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
+        layout: { visibility: showHazards ? "visible" : "none" },
+        paint: {
+          "circle-color": "#0ED3CF",
+          "circle-opacity": 0.85,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            14,
+            10,
+            18,
+            25,
+            24,
+          ] as ExpressionSpecification,
+        },
+      });
+
+      map.addLayer({
+        id: HAZARD_CLUSTER_COUNT,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
+        layout: {
+          visibility: showHazards ? "visible" : "none",
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-size": 12,
+          "text-font": [
+            "Noto Sans Bold",
+            "Open Sans Bold",
+            "Arial Unicode MS Bold",
+          ],
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#0f172a" },
+      });
+
+      map.addLayer({
+        id: HAZARD_BG,
+        type: "circle",
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: { visibility: showHazards ? "visible" : "none" },
+        paint: {
+          "circle-color": buildHazardColorExpression(),
+          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            9,
+            10,
+            14,
+            14,
+            18,
+            18,
+          ] as ExpressionSpecification,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
+        },
+      });
+
+      map.addLayer({
+        id: HAZARD_ICON,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          visibility: showHazards ? "visible" : "none",
+          "text-field": ["get", "emoji"],
+          "text-size": 16,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
+      });
+
+      // Cluster click → expand.
+      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const clusterId = feature.properties?.cluster_id as number | undefined;
+        if (clusterId == null) return;
+        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+        if (!src) return;
+        src
+          .getClusterExpansionZoom(clusterId)
+          .then((expZoom) => {
+            const geom = feature.geometry;
+            if (geom.type !== "Point") return;
+            map.easeTo({
+              center: geom.coordinates as [number, number],
+              zoom: expZoom,
+            });
+          })
+          .catch(() => {
+            // Cluster may have been superseded by a refetch; drop the zoom-in.
+          });
+      });
+
+      const onHazardClick = (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const props = feature.properties as HazardProps | null;
+        if (!props?.hazard_type) return;
+        new maplibregl.Popup({
+          closeButton: true,
+          offset: 12,
+          maxWidth: "280px",
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(renderHazardPopup(props))
+          .addTo(map);
+      };
+      map.on("click", HAZARD_BG, onHazardClick);
+      map.on("click", HAZARD_ICON, onHazardClick);
+
+      map.on("click", (e: MapLayerMouseEvent) => {
+        const {
+          showQuality: canSelectQuality,
+          showSurface: canSelectSurface,
+          onSegmentSelect: selectSegment,
+        } = segmentSelectionRef.current;
+        if (!selectSegment) return;
+        const layers = [
+          ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+          ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
+        ].filter((id) => map.getLayer(id));
+        if (layers.length === 0) return;
+        const feature = map.queryRenderedFeatures(e.point, { layers })[0];
+        const segmentId = readSegmentId(feature);
+        if (segmentId) selectSegment(segmentId);
+      });
+
+      const setPointer = () => {
+        map.getCanvas().style.cursor = "pointer";
+      };
+      const unsetPointer = () => {
+        map.getCanvas().style.cursor = "";
+      };
+      for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+        map.on("mouseenter", id, setPointer);
+        map.on("mouseleave", id, unsetPointer);
+      }
+      for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
+        map.on("mouseenter", id, setPointer);
+        map.on("mouseleave", id, unsetPointer);
+      }
+
+      setReady(true);
+      onViewChange?.(readMapView(map));
     };
-  }, [showQuality, showSurface, onSegmentSelect]);
 
-  const handleReady = (map: MapLibreMap) => {
-    map.addSource(HAZARDS_SOURCE, {
-      type: "geojson",
-      data: EMPTY_COLLECTION,
-      cluster: true,
-      clusterRadius: 50,
-      clusterMaxZoom: 13,
-    });
+    const handleViewChange = (view: MapCanvasViewChange) => {
+      onViewChange?.(view);
+    };
 
-    map.addLayer({
-      id: HAZARD_CLUSTERS,
-      type: "circle",
-      source: HAZARDS_SOURCE,
-      filter: ["has", "point_count"],
-      layout: { visibility: showHazards ? "visible" : "none" },
-      paint: {
-        "circle-color": "#0ED3CF",
-        "circle-opacity": 0.85,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 1.5,
-        "circle-radius": [
-          "step",
-          ["get", "point_count"],
-          14,
-          10,
-          18,
-          25,
-          24,
-        ] as ExpressionSpecification,
-      },
-    });
-
-    map.addLayer({
-      id: HAZARD_CLUSTER_COUNT,
-      type: "symbol",
-      source: HAZARDS_SOURCE,
-      filter: ["has", "point_count"],
-      layout: {
-        visibility: showHazards ? "visible" : "none",
-        "text-field": ["get", "point_count_abbreviated"],
-        "text-size": 12,
-        "text-font": [
-          "Noto Sans Bold",
-          "Open Sans Bold",
-          "Arial Unicode MS Bold",
-        ],
-        "text-allow-overlap": true,
-      },
-      paint: { "text-color": "#0f172a" },
-    });
-
-    map.addLayer({
-      id: HAZARD_BG,
-      type: "circle",
-      source: HAZARDS_SOURCE,
-      filter: ["!", ["has", "point_count"]],
-      layout: { visibility: showHazards ? "visible" : "none" },
-      paint: {
-        "circle-color": buildHazardColorExpression(),
-        "circle-opacity": ["coalesce", ["get", "opacity"], 1],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          9,
-          10,
-          14,
-          14,
-          18,
-          18,
-        ] as ExpressionSpecification,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 1.5,
-        "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
-      },
-    });
-
-    map.addLayer({
-      id: HAZARD_ICON,
-      type: "symbol",
-      source: HAZARDS_SOURCE,
-      filter: ["!", ["has", "point_count"]],
-      layout: {
-        visibility: showHazards ? "visible" : "none",
-        "text-field": ["get", "emoji"],
-        "text-size": 16,
-        "text-allow-overlap": true,
-        "text-ignore-placement": true,
-      },
-      paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
-    });
-
-    // Cluster click → expand.
-    map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const clusterId = feature.properties?.cluster_id as number | undefined;
-      if (clusterId == null) return;
+    // ── project raw hazards → filtered GeoJSON source ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
       const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
       if (!src) return;
-      src
-        .getClusterExpansionZoom(clusterId)
-        .then((expZoom) => {
-          const geom = feature.geometry;
-          if (geom.type !== "Point") return;
-          map.easeTo({
-            center: geom.coordinates as [number, number],
-            zoom: expZoom,
-          });
-        })
-        .catch(() => {
-          // Cluster may have been superseded by a refetch; drop the zoom-in.
-        });
-    });
+      src.setData(
+        toHazardFeatures(
+          selectHazards(rawHazardsRef.current, filters.hazardTypes),
+          hazardNow,
+        ),
+      );
+    }, [ready, filters.hazardTypes, hazardsRevision, hazardNow]);
 
-    const onHazardClick = (e: MapLayerMouseEvent) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const props = feature.properties as HazardProps | null;
-      if (!props?.hazard_type) return;
-      new maplibregl.Popup({
-        closeButton: true,
-        offset: 12,
-        maxWidth: "280px",
-      })
-        .setLngLat(e.lngLat)
-        .setHTML(renderHazardPopup(props))
-        .addTo(map);
-    };
-    map.on("click", HAZARD_BG, onHazardClick);
-    map.on("click", HAZARD_ICON, onHazardClick);
+    // ── keep fade-opacity live while the map is open ──
+    useEffect(() => {
+      if (!ready || !showHazards) return;
+      if (rawHazardsRef.current.length === 0) return;
+      const id = window.setInterval(() => setHazardNow(Date.now()), 60_000);
+      return () => window.clearInterval(id);
+    }, [ready, showHazards, hazardsRevision]);
 
-    map.on("click", (e: MapLayerMouseEvent) => {
-      const {
-        showQuality: canSelectQuality,
-        showSurface: canSelectSurface,
-        onSegmentSelect: selectSegment,
-      } = segmentSelectionRef.current;
-      if (!selectSegment) return;
-      const layers = [
-        ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
-        ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
-      ].filter((id) => map.getLayer(id));
-      if (layers.length === 0) return;
-      const feature = map.queryRenderedFeatures(e.point, { layers })[0];
-      const segmentId = readSegmentId(feature);
-      if (segmentId) selectSegment(segmentId);
-    });
+    // ── hazard layer visibility ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      for (const id of [
+        HAZARD_CLUSTERS,
+        HAZARD_CLUSTER_COUNT,
+        HAZARD_BG,
+        HAZARD_ICON,
+      ]) {
+        setVisibility(map, id, showHazards);
+      }
+    }, [ready, showHazards]);
 
-    const setPointer = () => {
-      map.getCanvas().style.cursor = "pointer";
-    };
-    const unsetPointer = () => {
-      map.getCanvas().style.cursor = "";
-    };
-    for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
-      map.on("mouseenter", id, setPointer);
-      map.on("mouseleave", id, unsetPointer);
-    }
-    for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
-      map.on("mouseenter", id, setPointer);
-      map.on("mouseleave", id, unsetPointer);
-    }
+    // ── fetch hazards when viewport settles ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
 
-    setReady(true);
-    onViewChange?.(readMapView(map));
-  };
+      if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
+        if (rawHazardsRef.current.length > 0) {
+          rawHazardsRef.current = [];
+          wsHazardArrivalRef.current.clear();
+          setHazardsRevision((r) => r + 1);
+        } else {
+          const src = map.getSource(HAZARDS_SOURCE) as
+            | GeoJSONSource
+            | undefined;
+          src?.setData(EMPTY_COLLECTION);
+        }
+        return;
+      }
 
-  const handleViewChange = (view: MapCanvasViewChange) => {
-    onViewChange?.(view);
-  };
+      let cancelled = false;
+      const controller = new AbortController();
+      const timer = window.setTimeout(async () => {
+        const fetchStartedAt = Date.now();
+        try {
+          const radius = viewportRadiusMeters(map);
+          const { data } = await hazardsApi.findNearby(
+            { lat: center.lat, lng: center.lng, radius },
+            { signal: controller.signal },
+          );
+          if (cancelled) return;
+          rawHazardsRef.current = mergeHazardsWithInFlightWsArrivals(
+            data,
+            rawHazardsRef.current,
+            wsHazardArrivalRef.current,
+            fetchStartedAt,
+          );
+          setHazardsRevision((r) => r + 1);
+        } catch (err) {
+          if ((err as { name?: string }).name === "AbortError") return;
+          console.warn("[explore] hazards fetch failed", err);
+        }
+      }, HAZARD_FETCH_DEBOUNCE_MS);
 
-  // ── project raw hazards → filtered GeoJSON source ──
-  useEffect(() => {
-    const map = handleRef.current?.map;
-    if (!map || !ready) return;
-    const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-    if (!src) return;
-    src.setData(
-      toHazardFeatures(
-        selectHazards(rawHazardsRef.current, filters.hazardTypes),
-        hazardNow,
-      ),
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+        controller.abort();
+      };
+    }, [ready, showHazards, center.lat, center.lng, zoom, reconnectRevision]);
+
+    // ── real-time: subscribe to hazards in viewport + merge incoming events ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (
+        !map ||
+        !ready ||
+        !showHazards ||
+        zoom < HAZARD_MIN_ZOOM ||
+        realtimeStatus !== "connected"
+      ) {
+        return;
+      }
+
+      // Debounce the subscribe emit to match the REST fetch cadence — a rapid
+      // pan would otherwise spam subscribe:hazards, forcing the backend to
+      // leave/join rooms on every frame when only the final viewport matters.
+      const subscribeTimer = window.setTimeout(() => {
+        subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
+      }, HAZARD_FETCH_DEBOUNCE_MS);
+
+      const unsubscribe = onHazardNew((hazard) => {
+        // Deduplicate against the existing list; the viewport REST fetch may
+        // race with the broadcast and return the same row.
+        const existing = rawHazardsRef.current;
+        if (existing.some((h) => h.id === hazard.id)) return;
+        wsHazardArrivalRef.current.set(hazard.id, Date.now());
+        rawHazardsRef.current = [...existing, hazard];
+        setHazardsRevision((r) => r + 1);
+      });
+
+      return () => {
+        window.clearTimeout(subscribeTimer);
+        unsubscribe();
+      };
+    }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
+
+    return (
+      <MapCanvas
+        ref={handleRef}
+        center={center}
+        zoom={zoom}
+        showQuality={showQuality}
+        showSurface={showSurface}
+        qualityOpacityExpression={qualityOpacity}
+        surfaceOpacityExpression={surfaceOpacity}
+        onReady={handleReady}
+        onViewChange={handleViewChange}
+      />
     );
-  }, [ready, filters.hazardTypes, hazardsRevision, hazardNow]);
-
-  // ── keep fade-opacity live while the map is open ──
-  useEffect(() => {
-    if (!ready || !showHazards) return;
-    if (rawHazardsRef.current.length === 0) return;
-    const id = window.setInterval(() => setHazardNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, [ready, showHazards, hazardsRevision]);
-
-  // ── hazard layer visibility ──
-  useEffect(() => {
-    const map = handleRef.current?.map;
-    if (!map || !ready) return;
-    for (const id of [
-      HAZARD_CLUSTERS,
-      HAZARD_CLUSTER_COUNT,
-      HAZARD_BG,
-      HAZARD_ICON,
-    ]) {
-      setVisibility(map, id, showHazards);
-    }
-  }, [ready, showHazards]);
-
-  // ── fetch hazards when viewport settles ──
-  useEffect(() => {
-    const map = handleRef.current?.map;
-    if (!map || !ready) return;
-
-    if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
-      if (rawHazardsRef.current.length > 0) {
-        rawHazardsRef.current = [];
-        wsHazardArrivalRef.current.clear();
-        setHazardsRevision((r) => r + 1);
-      } else {
-        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-        src?.setData(EMPTY_COLLECTION);
-      }
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      const fetchStartedAt = Date.now();
-      try {
-        const radius = viewportRadiusMeters(map);
-        const { data } = await hazardsApi.findNearby(
-          { lat: center.lat, lng: center.lng, radius },
-          { signal: controller.signal },
-        );
-        if (cancelled) return;
-        rawHazardsRef.current = mergeHazardsWithInFlightWsArrivals(
-          data,
-          rawHazardsRef.current,
-          wsHazardArrivalRef.current,
-          fetchStartedAt,
-        );
-        setHazardsRevision((r) => r + 1);
-      } catch (err) {
-        if ((err as { name?: string }).name === "AbortError") return;
-        console.warn("[explore] hazards fetch failed", err);
-      }
-    }, HAZARD_FETCH_DEBOUNCE_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [ready, showHazards, center.lat, center.lng, zoom, reconnectRevision]);
-
-  // ── real-time: subscribe to hazards in viewport + merge incoming events ──
-  useEffect(() => {
-    const map = handleRef.current?.map;
-    if (
-      !map ||
-      !ready ||
-      !showHazards ||
-      zoom < HAZARD_MIN_ZOOM ||
-      realtimeStatus !== "connected"
-    ) {
-      return;
-    }
-
-    // Debounce the subscribe emit to match the REST fetch cadence — a rapid
-    // pan would otherwise spam subscribe:hazards, forcing the backend to
-    // leave/join rooms on every frame when only the final viewport matters.
-    const subscribeTimer = window.setTimeout(() => {
-      subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
-    }, HAZARD_FETCH_DEBOUNCE_MS);
-
-    const unsubscribe = onHazardNew((hazard) => {
-      // Deduplicate against the existing list; the viewport REST fetch may
-      // race with the broadcast and return the same row.
-      const existing = rawHazardsRef.current;
-      if (existing.some((h) => h.id === hazard.id)) return;
-      wsHazardArrivalRef.current.set(hazard.id, Date.now());
-      rawHazardsRef.current = [...existing, hazard];
-      setHazardsRevision((r) => r + 1);
-    });
-
-    return () => {
-      window.clearTimeout(subscribeTimer);
-      unsubscribe();
-    };
-  }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
-
-  return (
-    <MapCanvas
-      ref={handleRef}
-      center={center}
-      zoom={zoom}
-      showQuality={showQuality}
-      showSurface={showSurface}
-      qualityOpacityExpression={qualityOpacity}
-      surfaceOpacityExpression={surfaceOpacity}
-      onReady={handleReady}
-      onViewChange={handleViewChange}
-    />
-  );
-}
+  },
+);
 
 function readSegmentId(
   feature: maplibregl.MapGeoJSONFeature | undefined,
