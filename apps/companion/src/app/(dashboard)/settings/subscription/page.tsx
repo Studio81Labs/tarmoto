@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { Stamp } from "@/components/tarmoto/atoms";
 import {
   buildFallbackSubscriptionSnapshot,
   describeRenewal,
@@ -51,10 +52,10 @@ type BillingAction =
   | "checkout-premium"
   | "checkout-pro";
 const STATUS_STYLES: Record<SubscriptionStatus, string> = {
-  active: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-  trialing: "bg-sky-500/10 text-sky-300 border-sky-500/20",
-  past_due: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-  canceled: "bg-rose-500/10 text-rose-300 border-rose-500/20",
+  active: "bg-quality-q5/20 text-emerald-700 border-quality-q5/40",
+  trialing: "bg-accent/15 text-accent border-accent/40",
+  past_due: "bg-quality-q2/25 text-amber-700 border-quality-q2/50",
+  canceled: "bg-quality-q1/15 text-red-400 border-quality-q1/40",
 };
 const STATUS_LABELS: Record<SubscriptionStatus, string> = {
   active: "Active",
@@ -181,7 +182,7 @@ export default function SubscriptionPage() {
     <div className="mx-auto max-w-page-narrow animate-fade-in p-6">
       <Link
         href="/settings"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 transition hover:text-white"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-fg-dim transition hover:text-ink"
       >
         <ArrowLeft size={16} />
         {t("Settings ")}
@@ -189,8 +190,11 @@ export default function SubscriptionPage() {
 
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{t("Subscription")}</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <Stamp className="block mb-2">{t("Billing")}</Stamp>
+          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
+            {t("Subscription")}
+          </h1>
+          <p className="mt-2 text-sm text-fg-dim">
             {t(
               "Manage your plan, payment method, billing history, and renewal choices from one place. ",
             )}
@@ -201,7 +205,7 @@ export default function SubscriptionPage() {
             type="button"
             onClick={() => void openPortal("manage")}
             disabled={billingBusy}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-slate-500 hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-cream px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:opacity-50"
           >
             {actionState.kind === "portal-manage" ? (
               <>
@@ -219,7 +223,7 @@ export default function SubscriptionPage() {
       </div>
 
       {actionState.error ? (
-        <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-200">
+        <div className="mb-6 rounded-2xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
           {actionState.error}
         </div>
       ) : null}
@@ -227,13 +231,13 @@ export default function SubscriptionPage() {
       {state.kind === "loading" ? (
         <LoadingState />
       ) : state.kind === "error" ? (
-        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5 text-sm text-rose-200">
+        <div className="rounded-2xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {state.message}
         </div>
       ) : snapshot ? (
         <>
           {snapshot.preview ? (
-            <div className="mb-6 rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-sm text-sky-100">
+            <div className="mb-6 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-ink">
               {t(
                 "Preview data shown while live billing management is still being wired up. ",
               )}
@@ -254,8 +258,8 @@ export default function SubscriptionPage() {
           </section>
 
           <section className="mb-6">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
-              <Sparkles size={16} className="text-tarmoto-cyan" />
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+              <Sparkles size={16} className="text-accent" />
               {t("Plan comparison ")}
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
@@ -311,57 +315,54 @@ function CurrentPlanCard({
 }) {
   const { currentPlan } = snapshot;
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
+    <section className="rounded-3xl border border-ink bg-ink p-6 text-cream">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+          <Stamp tone="accent" className="block">
             {t("Current plan ")}
-          </p>
+          </Stamp>
           <div className="mt-2 flex items-center gap-3">
-            <h2 className="text-3xl font-bold text-white">
+            <h2 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[28px] text-cream">
               {currentPlan.name}
             </h2>
             <span
-              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${STATUS_STYLES[currentPlan.status]}`}
+              className={`inline-flex items-center rounded-full border px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] ${STATUS_STYLES[currentPlan.status]}`}
             >
               {STATUS_LABELS[currentPlan.status]}
             </span>
           </div>
         </div>
-        <div className="rounded-2xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/10 px-4 py-3 text-right">
-          <p className="text-xs uppercase tracking-[0.2em] text-tarmoto-cyan/80">
+        <div className="rounded-2xl border border-accent/30 bg-accent/15 px-4 py-3 text-right">
+          <Stamp tone="accent" className="block">
             {t("Billing ")}
-          </p>
-          <p className="mt-1 text-2xl font-bold text-tarmoto-cyan">
+          </Stamp>
+          <p className="mt-1 text-2xl font-extrabold text-accent">
             {currentPlan.priceLabel}
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-          <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-slate-200">
-            <CalendarClock size={15} className="text-slate-500" />
+        <div className="rounded-2xl border border-line-on-dark bg-tarmac/60 p-4">
+          <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-cream">
+            <CalendarClock size={15} className="text-fg-on-dark-dim" />
             {t("Renewal ")}
           </div>
-          <p className="text-sm text-slate-300">{renewalLabel}</p>
+          <p className="text-sm text-fg-on-dark-dim">{renewalLabel}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-          <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-slate-200">
-            <BadgeCheck size={15} className="text-slate-500" />
+        <div className="rounded-2xl border border-line-on-dark bg-tarmac/60 p-4">
+          <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-cream">
+            <BadgeCheck size={15} className="text-fg-on-dark-dim" />
             {t("Included right now ")}
           </div>
-          <ul className="space-y-2 text-sm text-slate-300">
+          <ul className="space-y-2 text-sm text-fg-on-dark-dim">
             {snapshot.plans
               .find((plan) => plan.tier === currentPlan.tier)
               ?.features.slice(0, 3)
               .map((feature) => (
                 <li key={feature} className="flex items-start gap-2">
-                  <Check
-                    size={14}
-                    className="mt-0.5 shrink-0 text-tarmoto-cyan"
-                  />
+                  <Check size={14} className="mt-0.5 shrink-0 text-accent" />
                   <span>{feature}</span>
                 </li>
               ))}
@@ -384,30 +385,30 @@ function PaymentMethodCard({
 }) {
   const paymentMethod = snapshot.paymentMethod;
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
-        <CreditCard size={16} className="text-slate-500" />
+    <section className="rounded-3xl border border-line bg-cream p-6">
+      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+        <CreditCard size={16} className="text-fg-mute" />
         {t("Payment method ")}
       </div>
 
       {paymentMethod ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-lg font-semibold text-white">
+        <div className="rounded-2xl border border-line bg-paper p-4">
+          <p className="text-lg font-semibold text-ink">
             {formatPaymentMethodLabel(paymentMethod)}
           </p>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-fg-dim">
             {formatPaymentMethodExpiry(paymentMethod)}
           </p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-line-strong bg-paper p-4 text-sm text-fg-dim">
           {t(
             "No payment method on file yet. Upgrades and invoices will appear here once billing is connected. ",
           )}
         </div>
       )}
 
-      <div className="mt-4 space-y-2 text-sm text-slate-400">
+      <div className="mt-4 space-y-2 text-sm text-fg-dim">
         <p>
           {t(
             "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ",
@@ -418,7 +419,7 @@ function PaymentMethodCard({
             type="button"
             onClick={onUpdatePaymentMethod}
             disabled={busy}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full border border-line-strong px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
           >
             {updateBusy ? (
               <>
@@ -433,7 +434,7 @@ function PaymentMethodCard({
             )}
           </button>
         ) : (
-          <p className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-slate-300">
+          <p className="rounded-xl border border-line bg-paper px-3 py-2 text-fg-dim">
             {t(
               "Payment method editing will light up automatically as soon as the billing backend is available. ",
             )}
@@ -467,25 +468,27 @@ function PlanCard({
   return (
     <article
       className={`rounded-3xl border p-6 ${
-        isCurrent || plan.highlighted
-          ? "border-tarmoto-cyan/30 bg-tarmoto-cyan/5"
-          : "border-slate-800 bg-slate-900/90"
+        isCurrent
+          ? "border-accent/40 bg-accent/10"
+          : plan.highlighted
+            ? "border-accent/30 bg-cream"
+            : "border-line bg-cream"
       }`}
     >
       <div className="mb-4">
-        <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-        <p className="mt-1 text-2xl font-extrabold text-tarmoto-cyan">
+        <h3 className="text-lg font-extrabold text-ink">{plan.name}</h3>
+        <p className="mt-1 text-2xl font-extrabold text-accent">
           {plan.priceLabel}
         </p>
         {plan.description ? (
-          <p className="mt-2 text-sm text-slate-400">{plan.description}</p>
+          <p className="mt-2 text-sm text-fg-dim">{plan.description}</p>
         ) : null}
       </div>
 
-      <ul className="space-y-2 text-sm text-slate-300">
+      <ul className="space-y-2 text-sm text-ink">
         {plan.features.map((feature) => (
           <li key={feature} className="flex items-start gap-2">
-            <Check size={14} className="mt-0.5 shrink-0 text-tarmoto-cyan" />
+            <Check size={14} className="mt-0.5 shrink-0 text-accent" />
             <span>{feature}</span>
           </li>
         ))}
@@ -496,10 +499,10 @@ function PlanCard({
         onClick={onSelect}
         disabled={disabled}
         aria-busy={actionBusy}
-        className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+        className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] transition ${
           isCurrent
-            ? "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-            : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan-light"
+            ? "border border-line-strong bg-paper text-ink hover:bg-paper-2"
+            : "bg-accent text-ink hover:brightness-95"
         } disabled:cursor-not-allowed disabled:opacity-60`}
       >
         {actionBusy ? (
@@ -519,14 +522,14 @@ function PlanCard({
 }
 function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
-        <Receipt size={16} className="text-slate-500" />
+    <section className="rounded-3xl border border-line bg-cream p-6">
+      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+        <Receipt size={16} className="text-fg-mute" />
         {t("Billing history ")}
       </div>
 
       {snapshot.billingHistory.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-line-strong bg-paper p-4 text-sm text-fg-dim">
           {t(
             "Your invoices will appear here once the first subscription charge is created. ",
           )}
@@ -536,13 +539,13 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
           {snapshot.billingHistory.map((invoice) => (
             <li
               key={invoice.id}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-2xl border border-line bg-paper p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
-                <p className="text-sm font-medium text-white">
+                <p className="font-mono text-sm font-semibold text-ink tabular-nums">
                   {formatInvoiceDate(invoice.date)}
                 </p>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-sm text-fg-dim">
                   {invoice.amountLabel} · {invoiceStatusLabel(invoice.status)}
                 </p>
               </div>
@@ -552,13 +555,13 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
                   href={invoice.invoiceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-tarmoto-cyan transition hover:text-tarmoto-cyan-light"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-accent transition hover:brightness-95"
                 >
                   {t("Download invoice ")}
                   <ExternalLink size={14} />
                 </Link>
               ) : (
-                <span className="text-sm text-slate-500">
+                <span className="text-sm text-fg-mute">
                   {t("Invoice unavailable ")}
                 </span>
               )}
@@ -579,12 +582,12 @@ function CancelPlanCard({
   onCancel: () => void;
 }) {
   return (
-    <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-6">
-      <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100">
-        <ShieldAlert size={16} className="text-amber-300" />
+    <section className="rounded-3xl border border-quality-q2/40 bg-quality-q2/15 p-6">
+      <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+        <ShieldAlert size={16} className="text-amber-700" />
         {t("Cancellation options ")}
       </div>
-      <p className="text-sm text-amber-50">
+      <p className="text-sm text-ink">
         {currentTier === "free"
           ? "You're currently on Free, so there is nothing to cancel."
           : `${renewalLabel}. If you need to scale back, we will show a lower-friction option before you leave.`}
@@ -593,7 +596,7 @@ function CancelPlanCard({
         type="button"
         onClick={onCancel}
         disabled={currentTier === "free"}
-        className="mt-5 w-full rounded-xl border border-amber-400/30 bg-slate-950/30 px-4 py-2.5 text-sm font-semibold text-amber-50 transition hover:bg-slate-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-5 inline-flex items-center gap-2 rounded-full border border-quality-q2 bg-transparent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-amber-700 transition hover:bg-quality-q2/20 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {t("Cancel subscription ")}
       </button>
@@ -616,27 +619,27 @@ function RetentionDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t("Cancel subscription")}
-        className="w-full max-w-lg rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl"
+        className="w-full max-w-lg rounded-3xl border border-line bg-cream p-6 shadow-[0_24px_60px_rgba(14,14,16,0.2)]"
       >
-        <h2 className="text-xl font-bold text-white">
+        <h2 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[22px] text-ink">
           {t("Cancel subscription")}
         </h2>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-fg-dim">
           {t(
             "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ",
           )}
         </p>
 
-        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-          <p className="text-sm font-medium text-white">
+        <div className="mt-5 rounded-2xl border border-line bg-paper p-4">
+          <p className="text-sm font-semibold text-ink">
             {t("Downgrade to Free at the end of your current billing period. ")}
           </p>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-fg-dim">
             {renewalLabel}
             {t(". Your shared rides and account settings stay intact, while ")}
             {planName}
@@ -648,7 +651,7 @@ function RetentionDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+            className="rounded-full border border-line-strong px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper"
           >
             {`Keep ${planName}`}
           </button>
@@ -658,7 +661,7 @@ function RetentionDialog({
               type="button"
               onClick={onOpenPortal}
               disabled={busy}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-200"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-50"
             >
               {busy ? (
                 <>
@@ -676,7 +679,7 @@ function RetentionDialog({
             <button
               type="button"
               disabled
-              className="rounded-xl bg-amber-300/40 px-4 py-2.5 text-sm font-semibold text-slate-950"
+              className="rounded-full bg-accent/40 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink"
             >
               {t("Billing portal unavailable ")}
             </button>
@@ -688,8 +691,8 @@ function RetentionDialog({
 }
 function LoadingState() {
   return (
-    <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-8">
-      <div className="inline-flex items-center gap-2 text-sm text-slate-300">
+    <div className="rounded-3xl border border-line bg-cream p-8">
+      <div className="inline-flex items-center gap-2 text-sm text-fg-dim">
         <Loader2 size={16} className="animate-spin" />
         {t("Loading subscription settings\u2026 ")}
       </div>
