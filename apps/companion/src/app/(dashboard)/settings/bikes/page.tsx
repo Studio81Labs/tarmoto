@@ -147,7 +147,7 @@ export default function BikesPage() {
     }
   }
   return (
-    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"

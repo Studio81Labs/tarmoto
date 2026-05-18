@@ -121,7 +121,7 @@ export default function StatsPage() {
   );
   if (loading) {
     return (
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="p-6 max-w-page mx-auto">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
@@ -132,7 +132,7 @@ export default function StatsPage() {
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {loadError}
@@ -142,7 +142,7 @@ export default function StatsPage() {
   }
   if (rides.length === 0) {
     return (
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="rounded-2xl bg-cream border border-line p-16 text-center">
           <BarChart3 size={48} className="mx-auto text-fg-mute mb-4" />
@@ -159,7 +159,7 @@ export default function StatsPage() {
     );
   }
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
+    <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{t("Statistics")}</h1>

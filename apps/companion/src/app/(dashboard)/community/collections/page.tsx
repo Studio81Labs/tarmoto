@@ -142,7 +142,7 @@ export default function RouteCollectionsPage() {
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold">{t("Route Collections")}</h1>

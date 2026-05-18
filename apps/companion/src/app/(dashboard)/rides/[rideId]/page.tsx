@@ -494,7 +494,7 @@ function PageShell({
   header?: React.ReactNode;
 }) {
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       {header ?? (
         <div className="flex items-center gap-4 mb-6">
           <Link

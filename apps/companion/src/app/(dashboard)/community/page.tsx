@@ -91,7 +91,7 @@ export default function CommunityFeedPage() {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   return (
-    <div className="mx-auto max-w-7xl animate-fade-in p-6">
+    <div className="mx-auto max-w-page animate-fade-in p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Stamp className="block mb-1">{t("Community")}</Stamp>

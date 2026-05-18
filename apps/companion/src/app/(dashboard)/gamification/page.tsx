@@ -249,7 +249,7 @@ export default function GamificationPage() {
   );
   if (!userId) {
     return (
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <PageHeader />
         <EmptyCard
           icon={<Lock size={32} className="text-fg-mute" />}
@@ -271,7 +271,7 @@ export default function GamificationPage() {
         : null;
   if (!stateForUser) {
     return (
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
+      <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
         <PageHeader />
         <SkeletonGrid />
       </div>
@@ -279,7 +279,7 @@ export default function GamificationPage() {
   }
   if (stateForUser.status === "error") {
     return (
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <PageHeader />
         <ErrorCard
           message={stateForUser.message}
@@ -343,7 +343,7 @@ function Dashboard({
   );
   const earnedBadgeCount = snapshot.badges.filter((b) => b.earnedAt).length;
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
+    <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
       <PageHeader />
 
       {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
