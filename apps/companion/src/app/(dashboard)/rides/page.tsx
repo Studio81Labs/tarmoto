@@ -16,6 +16,7 @@ import {
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesMap } from "./_components/RidesMap";
 import { RidesTable } from "./_components/RidesTable";
+import { Stamp } from "@/components/tarmoto/atoms";
 import {
   useRidesQuery,
   type RideSummary,
@@ -64,13 +65,18 @@ function RidesPageInner() {
   return (
     <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold">{t("Ride History")}</h1>
+        <div>
+          <Stamp className="block mb-1">{t("Ride history")}</Stamp>
+          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
+            {t("Ride History")}
+          </h1>
+        </div>
         <div className="flex items-center gap-2">
           {list.rides.length > 0 && <BulkExportMenu />}
           {list.total >= 2 && (
             <Link
               href="/rides/compare"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
             >
               <Scale size={14} />
               {t("Compare rides ")}
@@ -82,14 +88,14 @@ function RidesPageInner() {
       <RidesFilters state={state} update={update} reset={reset} />
 
       {/* Mobile tab toggle */}
-      <div className="flex md:hidden items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 mb-3 w-fit">
+      <div className="flex md:hidden items-center rounded-lg bg-paper border border-line p-0.5 mb-3 w-fit">
         <button
           type="button"
           onClick={() => setMobileTab("map")}
-          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm ${
+          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
             mobileTab === "map"
-              ? "bg-slate-800 text-slate-100"
-              : "text-slate-400"
+              ? "bg-ink text-cream"
+              : "text-fg-dim hover:text-ink"
           }`}
         >
           <MapIcon size={14} />
@@ -98,10 +104,10 @@ function RidesPageInner() {
         <button
           type="button"
           onClick={() => setMobileTab("list")}
-          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm ${
+          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
             mobileTab === "list"
-              ? "bg-slate-800 text-slate-100"
-              : "text-slate-400"
+              ? "bg-ink text-cream"
+              : "text-fg-dim hover:text-ink"
           }`}
         >
           <ListIcon size={14} />
@@ -180,7 +186,7 @@ function BulkExportMenu() {
         disabled={busy !== null}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper disabled:opacity-50 disabled:cursor-not-allowed transition"
       >
         {busy ? (
           <Loader2 size={14} className="animate-spin" />
@@ -193,14 +199,14 @@ function BulkExportMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 w-44 rounded-lg bg-slate-900 border border-slate-800 shadow-lg overflow-hidden z-10"
+          className="absolute right-0 top-full mt-1 w-44 rounded-lg bg-cream border border-line shadow-[0_12px_32px_rgba(14,14,16,0.14)] overflow-hidden z-10"
         >
           <button
             type="button"
             role="menuitem"
             onClick={() => handleExport("csv")}
             disabled={busy !== null}
-            className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-paper disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {t("CSV (stats) ")}
           </button>
@@ -209,7 +215,7 @@ function BulkExportMenu() {
             role="menuitem"
             onClick={() => handleExport("gpx")}
             disabled={busy !== null}
-            className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition border-t border-slate-800"
+            className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-paper disabled:opacity-50 disabled:cursor-not-allowed transition border-t border-line"
           >
             {t("GPX (tracks) ")}
           </button>
