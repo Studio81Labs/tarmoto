@@ -11,6 +11,7 @@ import {
 import { CommunityRideCard } from "@/components/community/CommunityRideCard";
 import { PlaceSearch, type PlaceValue } from "../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
+import { Stamp } from "@/components/tarmoto/atoms";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
@@ -93,22 +94,25 @@ export default function CommunityFeedPage() {
     <div className="mx-auto max-w-7xl animate-fade-in p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{t("Community")}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <Stamp className="block mb-1">{t("Community")}</Stamp>
+          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
+            {t("Community")}
+          </h1>
+          <p className="mt-2 font-mono text-sm text-fg-dim tabular-nums">
             {total === 1
               ? "1 ride found"
               : `${total.toLocaleString()} rides found`}
           </p>
         </div>
 
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-fg-dim max-w-sm">
           {t(
             "Explore popular shared rides and discover routes worth repeating. ",
           )}
         </p>
       </div>
 
-      <div className="mb-6 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mb-6 grid gap-3 rounded-2xl border border-line bg-cream p-4 md:grid-cols-2 xl:grid-cols-3">
         <FilterSelect
           id="sort-feed"
           label="Sort feed"
@@ -185,13 +189,13 @@ export default function CommunityFeedPage() {
         />
 
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-500">
+          <span className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
             {t("Minimum distance ")}
           </span>
           <div className="relative">
             <Route
               size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
             />
             <input
               aria-label={t("Minimum distance")}
@@ -204,19 +208,19 @@ export default function CommunityFeedPage() {
                 setOffset(0);
               }}
               placeholder={t("Any")}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+              className="w-full rounded-lg border border-line bg-paper py-2 pl-8 pr-3 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
             />
           </div>
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-500">
+          <span className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
             {t("Maximum distance ")}
           </span>
           <div className="relative">
             <Route
               size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
             />
             <input
               aria-label={t("Maximum distance")}
@@ -229,7 +233,7 @@ export default function CommunityFeedPage() {
                 setOffset(0);
               }}
               placeholder={t("Any")}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+              className="w-full rounded-lg border border-line bg-paper py-2 pl-8 pr-3 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
             />
           </div>
         </label>
@@ -249,30 +253,30 @@ export default function CommunityFeedPage() {
       </div>
 
       {location && (
-        <p className="mb-6 text-sm text-slate-400">
+        <p className="mb-6 text-sm text-fg-dim">
           {t("Filtering within {distance} km of", {
             distance: location.km,
           })}{" "}
-          <span className="text-slate-200">{location.label}</span>.
+          <span className="font-semibold text-ink">{location.label}</span>.
         </p>
       )}
 
       {error ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-300">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-400">
           {error}
         </div>
       ) : loading ? (
-        <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+        <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading community rides\u2026 ")}
         </div>
       ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-16 text-center">
-          <Users size={48} className="mx-auto mb-4 text-slate-600" />
-          <p className="mb-2 text-lg text-slate-300">
+        <div className="rounded-2xl border border-line bg-cream p-16 text-center">
+          <Users size={48} className="mx-auto mb-4 text-fg-mute" />
+          <p className="mb-2 text-lg font-semibold text-ink">
             {t("No rides match these filters ")}
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-fg-dim">
             {t(
               "Try broadening the feed or switching back to the most popular rides. ",
             )}
@@ -286,8 +290,8 @@ export default function CommunityFeedPage() {
             ))}
           </div>
 
-          <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-sm text-slate-400">
+          <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-line bg-cream p-4">
+            <p className="font-mono text-sm text-fg-dim tabular-nums">
               {t("Page {currentPage} of {pageCount}", {
                 currentPage,
                 pageCount,
@@ -301,7 +305,7 @@ export default function CommunityFeedPage() {
                   setOffset((current) => Math.max(current - PAGE_SIZE, 0))
                 }
                 disabled={offset === 0}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t("Previous ")}
               </button>
@@ -315,7 +319,7 @@ export default function CommunityFeedPage() {
                   )
                 }
                 disabled={offset + PAGE_SIZE >= total}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {t("Next ")}
               </button>
@@ -346,7 +350,10 @@ function FilterSelect({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs text-slate-500">
+      <label
+        htmlFor={id}
+        className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+      >
         {label}
       </label>
       <select
@@ -354,7 +361,7 @@ function FilterSelect({
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+        className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink transition focus:border-ink focus:outline-none"
       >
         {options.map((option) => (
           <option
