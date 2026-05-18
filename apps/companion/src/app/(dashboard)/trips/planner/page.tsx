@@ -892,7 +892,7 @@ export default function TripPlannerPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-950/90 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold mr-4">
             {displayedTrip?.name ?? "New Trip"}
@@ -901,7 +901,7 @@ export default function TripPlannerPage() {
             type="button"
             onClick={handleGenerate}
             disabled={isGenerating}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60 disabled:cursor-wait"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60 disabled:cursor-wait"
             aria-label={t("Generate itinerary")}
           >
             <Sparkles size={14} />
@@ -911,7 +911,7 @@ export default function TripPlannerPage() {
             type="button"
             onClick={undo}
             disabled={!canUndo}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCcw size={14} />
             {t("Undo ")}
@@ -920,7 +920,7 @@ export default function TripPlannerPage() {
             type="button"
             onClick={redo}
             disabled={!canRedo}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCw size={14} />
             {t("Redo ")}
@@ -928,7 +928,7 @@ export default function TripPlannerPage() {
           <button
             type="button"
             onClick={() => openImport()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             <Upload size={14} />
             {t("Import GPX ")}
@@ -938,7 +938,7 @@ export default function TripPlannerPage() {
             type="button"
             onClick={handleSave}
             disabled={saving || isGenerating || !displayedTrip}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60"
           >
             {saving ? (
               <Loader2 size={14} className="animate-spin" />
@@ -956,7 +956,7 @@ export default function TripPlannerPage() {
                 setSelectedOptionId(null);
                 setActiveTrip(DEMO_TRIP);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-700 text-slate-400 text-sm hover:text-white hover:border-slate-500 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-line-strong text-fg-dim text-sm hover:text-ink hover:border-line-strong transition"
             >
               {t("Load demo trip ")}
             </button>
@@ -969,8 +969,8 @@ export default function TripPlannerPage() {
             aria-pressed={paramsOpen}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition ${
               paramsOpen
-                ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                ? "bg-accent/10 text-accent"
+                : "bg-paper text-ink hover:bg-paper-2"
             }`}
           >
             <Sliders size={14} />
@@ -979,7 +979,7 @@ export default function TripPlannerPage() {
           <button
             type="button"
             onClick={() => setCollaborateOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             <Users size={14} />
             {t("Collaborate ")}
@@ -989,8 +989,8 @@ export default function TripPlannerPage() {
             aria-pressed={sidebarOpen}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition ${
               sidebarOpen
-                ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                ? "bg-accent/10 text-accent"
+                : "bg-paper text-ink hover:bg-paper-2"
             }`}
           >
             <Layers size={14} />
@@ -1000,7 +1000,7 @@ export default function TripPlannerPage() {
       </div>
 
       {(generatedOptions.length > 0 || generationError) && (
-        <div className="border-b border-slate-800 bg-slate-950/80 px-4 py-3">
+        <div className="border-b border-line bg-paper/80 px-4 py-3">
           {generationError ? (
             <p
               role="alert"
@@ -1038,43 +1038,43 @@ export default function TripPlannerPage() {
                     disabled={isGenerating}
                     className={`rounded-2xl border px-4 py-3 text-left transition ${
                       option.id === selectedOptionId
-                        ? "border-tarmoto-cyan bg-tarmoto-cyan/10"
-                        : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
+                        ? "border-accent bg-accent/10"
+                        : "border-line bg-cream/60 hover:border-line-strong"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-white">
+                        <p className="text-sm font-semibold text-ink">
                           {option.label}
                         </p>
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="mt-1 text-xs text-fg-dim">
                           {option.summary}
                         </p>
                       </div>
                       {option.id === selectedOptionId && (
-                        <span className="rounded-full bg-tarmoto-cyan/20 px-2 py-0.5 text-[11px] font-medium text-tarmoto-cyan">
+                        <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
                           {t("Active")}
                         </span>
                       )}
                     </div>
 
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
-                      <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">{t("Distance")}</p>
-                        <p className="mt-1 font-medium text-white">
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Distance")}</p>
+                        <p className="mt-1 font-medium text-ink">
                           {Math.round(totalDistance)}
                           {t("km ")}
                         </p>
                       </div>
-                      <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">{t("Ride time")}</p>
-                        <p className="mt-1 font-medium text-white">
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Ride time")}</p>
+                        <p className="mt-1 font-medium text-ink">
                           {formatDuration(totalDuration)}
                         </p>
                       </div>
-                      <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">{t("Avg quality")}</p>
-                        <p className="mt-1 font-medium text-white">
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Avg quality")}</p>
+                        <p className="mt-1 font-medium text-ink">
                           {averageQuality.toFixed(1)}/5
                         </p>
                       </div>
@@ -1091,15 +1091,15 @@ export default function TripPlannerPage() {
       <div className="flex flex-1 overflow-hidden relative">
         {/* Parameters panel (left, collapsible) */}
         {paramsOpen && (
-          <div className="w-72 border-r border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-4 animate-slide-in-right">
-            <h3 className="text-sm font-semibold text-slate-300">
+          <div className="w-72 border-r border-line bg-paper overflow-y-auto p-4 space-y-4 animate-slide-in-right">
+            <h3 className="text-sm font-semibold text-ink">
               {t("Trip parameters ")}
             </h3>
 
             <div>
               <label
                 htmlFor="trip-planner-days"
-                className="block text-xs text-slate-500 mb-1"
+                className="block text-xs text-fg-dim mb-1"
               >
                 {t("Number of days ")}
               </label>
@@ -1112,14 +1112,14 @@ export default function TripPlannerPage() {
                 onChange={(event) =>
                   setDays(clampNumberInput(event.target.value, 1, 14, 3))
                 }
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
+                className="w-full px-3 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
               />
             </div>
 
             <div>
               <label
                 htmlFor="trip-planner-daily-km"
-                className="block text-xs text-slate-500 mb-1"
+                className="block text-xs text-fg-dim mb-1"
               >
                 {t("Daily km target ")}
               </label>
@@ -1135,14 +1135,14 @@ export default function TripPlannerPage() {
                     clampNumberInput(event.target.value, 100, 500, 250),
                   )
                 }
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
+                className="w-full px-3 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
               />
             </div>
 
             <div>
               <label
                 htmlFor="trip-planner-road-preference"
-                className="block text-xs text-slate-500 mb-1"
+                className="block text-xs text-fg-dim mb-1"
               >
                 {t("Road preference ")}
               </label>
@@ -1154,7 +1154,7 @@ export default function TripPlannerPage() {
                     event.target.value as TripParameters["roadPreference"],
                   )
                 }
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
+                className="w-full px-3 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
               >
                 <option value="curvy">{t("Maximum curviness")}</option>
                 <option value="scenic">{t("Scenic roads")}</option>
@@ -1164,21 +1164,21 @@ export default function TripPlannerPage() {
             </div>
 
             <div>
-              <p className="block text-xs text-slate-500 mb-2">
+              <p className="block text-xs text-fg-dim mb-2">
                 {t("Surface preference ")}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {SURFACE_OPTIONS.map((surface) => (
                   <label
                     key={surface.value}
-                    className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-300"
+                    className="flex items-center gap-2 rounded-lg border border-line bg-cream/70 px-3 py-2 text-sm text-ink"
                   >
                     <input
                       type="checkbox"
                       aria-label={surface.label}
                       checked={surfacePreference.includes(surface.value)}
                       onChange={() => handleSurfaceToggle(surface.value)}
-                      className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                     />
                     {surface.label}
                   </label>
@@ -1189,7 +1189,7 @@ export default function TripPlannerPage() {
             <div>
               <label
                 htmlFor="trip-planner-min-quality"
-                className="block text-xs text-slate-500 mb-1"
+                className="block text-xs text-fg-dim mb-1"
               >
                 {t("Minimum road quality ")}
               </label>
@@ -1197,7 +1197,7 @@ export default function TripPlannerPage() {
                 id="trip-planner-min-quality"
                 value={minQuality}
                 onChange={(event) => setMinQuality(Number(event.target.value))}
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
+                className="w-full px-3 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
               >
                 <option value="1">{t("Any condition")}</option>
                 <option value="2">{t("Fair or better")}</option>
@@ -1207,37 +1207,37 @@ export default function TripPlannerPage() {
             </div>
 
             <div className="space-y-2 pt-2">
-              <label className="flex items-center gap-2 text-sm text-slate-400">
+              <label className="flex items-center gap-2 text-sm text-fg-dim">
                 <input
                   type="checkbox"
                   checked={avoidHighways}
                   onChange={(event) => setAvoidHighways(event.target.checked)}
-                  className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                  className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                 />
                 {t("Avoid highways ")}
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-400">
+              <label className="flex items-center gap-2 text-sm text-fg-dim">
                 <input
                   type="checkbox"
                   checked={avoidTolls}
                   onChange={(event) => setAvoidTolls(event.target.checked)}
-                  className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                  className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                 />
                 {t("Avoid tolls ")}
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-400">
+              <label className="flex items-center gap-2 text-sm text-fg-dim">
                 <input
                   type="checkbox"
                   checked={avoidUnpaved}
                   onChange={(event) => setAvoidUnpaved(event.target.checked)}
-                  className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                  className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                 />
                 {t("Avoid unpaved roads ")}
               </label>
             </div>
-            <div className="space-y-3 pt-2 border-t border-slate-800">
-              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
-                <MapPin size={14} className="text-slate-500" />
+            <div className="space-y-3 pt-2 border-t border-line">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                <MapPin size={14} className="text-fg-dim" />
                 {t("Route builder ")}
               </div>
               {selectedDay ? (
@@ -1272,7 +1272,7 @@ export default function TripPlannerPage() {
                   />
                 </>
               ) : (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-fg-dim">
                   {t(
                     "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
                   )}
@@ -1296,7 +1296,7 @@ export default function TripPlannerPage() {
 
         {/* Map canvas */}
         <div
-          className="flex-1 relative bg-slate-900"
+          className="flex-1 relative bg-cream"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -1325,11 +1325,11 @@ export default function TripPlannerPage() {
           {isDragOver && (
             <div
               aria-hidden
-              className="absolute inset-4 rounded-2xl border-2 border-dashed border-tarmoto-cyan bg-tarmoto-cyan/10 flex items-center justify-center pointer-events-none z-10"
+              className="absolute inset-4 rounded-2xl border-2 border-dashed border-accent bg-accent/10 flex items-center justify-center pointer-events-none z-10"
             >
               <div className="text-center">
-                <FileUp size={40} className="mx-auto text-tarmoto-cyan mb-2" />
-                <p className="text-tarmoto-cyan font-semibold">
+                <FileUp size={40} className="mx-auto text-accent mb-2" />
+                <p className="text-accent font-semibold">
                   {t("Drop to import GPX or KML ")}
                 </p>
               </div>
@@ -1338,13 +1338,13 @@ export default function TripPlannerPage() {
 
           {/* Generating overlay */}
           {isGenerating && (
-            <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-20">
+            <div className="absolute inset-0 bg-paper/70 backdrop-blur-sm flex items-center justify-center z-20">
               <div className="text-center">
-                <div className="w-12 h-12 mx-auto mb-4 border-2 border-tarmoto-cyan/30 border-t-tarmoto-cyan rounded-full animate-spin" />
-                <p className="text-white font-medium">
+                <div className="w-12 h-12 mx-auto mb-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                <p className="text-ink font-medium">
                   {t("Generating your route... ")}
                 </p>
-                <p className="text-slate-400 text-sm mt-1">
+                <p className="text-fg-dim text-sm mt-1">
                   {t("Finding the best roads for you ")}
                 </p>
               </div>
@@ -1357,7 +1357,7 @@ export default function TripPlannerPage() {
       </div>
 
       {/* Timeline strip */}
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-800 bg-slate-950/90 overflow-x-auto">
+      <div className="flex items-center gap-2 px-4 py-3 border-t border-line bg-paper/90 overflow-x-auto">
         {timelineDays.map(
           (day: {
             dayNumber: number;
@@ -1371,7 +1371,7 @@ export default function TripPlannerPage() {
           }) => (
             <div
               key={day.dayNumber}
-              className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 whitespace-nowrap transition"
+              className="flex items-center gap-2 rounded-lg bg-paper px-4 py-2 text-sm text-ink whitespace-nowrap transition"
             >
               <button
                 type="button"
@@ -1384,12 +1384,12 @@ export default function TripPlannerPage() {
                 className="flex items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>
-                  <span className="block font-medium text-white">
+                  <span className="block font-medium text-ink">
                     {t("Day ")}
                     {day.dayNumber}
                     {day.title ? ` · ${day.title}` : ""}
                   </span>
-                  <span className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                  <span className="mt-1 flex flex-wrap items-center gap-3 text-xs text-fg-dim">
                     {day.distanceKm ? (
                       <span className="inline-flex items-center gap-1">
                         <Route size={12} />
@@ -1418,12 +1418,12 @@ export default function TripPlannerPage() {
                     ) : null}
                   </span>
                 </span>
-                <ChevronRight size={14} className="text-slate-500" />
+                <ChevronRight size={14} className="text-fg-dim" />
               </button>
             </div>
           ),
         )}
-        <button className="px-3 py-2 rounded-lg border border-dashed border-slate-700 text-sm text-slate-500 hover:text-slate-300 hover:border-slate-600 transition">
+        <button className="px-3 py-2 rounded-lg border border-dashed border-line-strong text-sm text-fg-dim hover:text-ink hover:border-line-strong transition">
           {t("+ Add day ")}
         </button>
       </div>
@@ -1856,12 +1856,12 @@ function PlannerStat({
   icon: typeof Clock3;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+    <div className="rounded-lg border border-line bg-cream/70 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wide text-fg-dim">
         {label}
       </div>
-      <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-100">
-        <Icon size={12} className="text-slate-500" />
+      <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <Icon size={12} className="text-fg-dim" />
         {value}
       </div>
     </div>
@@ -1883,7 +1883,7 @@ function WaypointEditor({
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   if (waypoints.length === 0) {
     return (
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-fg-dim">
         {t("No waypoints yet for Day ")}
         {dayNumber}
         {t(". Click the map to begin the route. ")}
@@ -1892,7 +1892,7 @@ function WaypointEditor({
   }
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-fg-dim">
         {t("Drag via points to reorder them. Start and finish stay pinned. ")}
       </p>
       {waypoints.map((waypoint, index) => {
@@ -1920,15 +1920,15 @@ function WaypointEditor({
             onDragEnd={() => setDragIndex(null)}
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
               draggable
-                ? "border-slate-800 bg-slate-900/70 text-slate-200"
-                : "border-slate-800 bg-slate-950 text-slate-400"
+                ? "border-line bg-cream/70 text-ink"
+                : "border-line bg-paper text-fg-dim"
             }`}
           >
             <GripVertical
               size={14}
-              className={draggable ? "text-slate-500" : "text-slate-700"}
+              className={draggable ? "text-fg-dim" : "text-fg-faint"}
             />
-            <span className="min-w-12 text-xs uppercase tracking-wide text-slate-500">
+            <span className="min-w-12 text-xs uppercase tracking-wide text-fg-dim">
               {waypoint.type}
             </span>
             <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
