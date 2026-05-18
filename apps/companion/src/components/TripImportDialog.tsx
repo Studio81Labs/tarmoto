@@ -181,7 +181,7 @@ export function TripImportDialog({
             <button
               type="button"
               onClick={handleAdopt}
-              className="px-3 py-1.5 rounded-lg bg-accent text-slate-950 text-sm font-semibold hover:bg-accent transition"
+              className="px-3 py-1.5 rounded-lg bg-accent text-ink text-sm font-semibold hover:brightness-95 transition"
             >
               {t("Adopt as trip draft ")}
             </button>

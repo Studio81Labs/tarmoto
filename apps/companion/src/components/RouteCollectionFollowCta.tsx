@@ -119,7 +119,7 @@ export function RouteCollectionFollowCta({
         </p>
         <Link
           href={loginHref}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-slate-950 text-sm font-semibold hover:bg-accent transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink text-sm font-semibold hover:brightness-95 transition"
         >
           {t("Sign in")}
         </Link>
@@ -203,7 +203,7 @@ export function RouteCollectionFollowCta({
         className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-50 ${
           isFollowing
             ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-            : "bg-accent text-slate-950 hover:bg-accent"
+            : "bg-accent text-ink hover:brightness-95"
         }`}
       >
         {pending ? (

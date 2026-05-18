@@ -286,7 +286,7 @@ function StopRow({
         className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
           added
             ? "cursor-not-allowed bg-emerald-500/10 text-emerald-300"
-            : "bg-accent text-slate-950 hover:bg-accent"
+            : "bg-accent text-ink hover:brightness-95"
         }`}
       >
         {added ? "Added" : "Add"}

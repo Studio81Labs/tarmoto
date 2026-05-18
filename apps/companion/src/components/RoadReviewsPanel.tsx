@@ -629,7 +629,7 @@ function ReviewEditor({
             type="button"
             onClick={onSubmit}
             disabled={disabled || uploading}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {disabled ? <Loader2 size={12} className="animate-spin" /> : null}
             {mode === "create" ? "Submit review" : "Save review"}
