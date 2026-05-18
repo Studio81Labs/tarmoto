@@ -558,16 +558,21 @@ function ElevationCompareSection({
         )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/*
+          Same A/B hue convention as RouteBox above — but ElevationBars has
+          no map context, so we pass only the darker cream-safe variant
+          (≥5:1 on cream, ≥3:1 on paper for the bar-fill UI cue).
+        */}
         <ElevationBars
           label="Ride A"
-          color="#0ED3CF"
+          color="#0E7A75"
           gain={rideA.elevation_gain}
           loss={rideA.elevation_loss}
           max={max}
         />
         <ElevationBars
           label="Ride B"
-          color="#F472B6"
+          color="#9D2C5C"
           gain={rideB.elevation_gain}
           loss={rideB.elevation_loss}
           max={max}
