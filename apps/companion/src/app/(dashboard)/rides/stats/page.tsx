@@ -40,11 +40,13 @@ const RIDE_TYPE_LABELS: Record<RideType, string> = {
 };
 // Year-over-year line palette tuned for cream surfaces. Each hue lands
 // at ≥3:1 against bg-cream so the chart lines read as distinct strokes
-// (WCAG 3:1 graphic-element bar). Anchored by canonical accent for
-// year 1; the other four are dark variants of the original cyan/violet/
-// pink/yellow/emerald spread so the per-year colour cue stays usable.
+// (WCAG 3:1 graphic-element bar). The plain canonical accent (#FF6A1A)
+// is only ~2.5:1 on cream, so year 1 uses a darker brand-orange variant
+// (#D44F00 ≈ 4.3:1) — same hue family but cream-safe as a chart line.
+// The other four are dark variants of the original cyan/violet/pink/
+// yellow/emerald spread so the per-year colour cue stays usable.
 const YOY_COLORS = [
-  "#FF6A1A", // canonical accent (was cyan-400)
+  "#D44F00", // dark brand orange (was canonical accent → ~2.5:1 fail)
   "#7C3AED", // violet-600 (was violet-400)
   "#9D2C5C", // deep magenta (matches compare RouteBox B)
   "#A16207", // amber-700 (was yellow-400)
@@ -215,7 +217,10 @@ export default function StatsPage() {
                   "Distance",
                 ]}
               />
-              <Bar dataKey="distanceKm" fill="#FF6A1A" radius={[4, 4, 0, 0]} />
+              {/* Dark brand-orange #D44F00 ≈ 4.3:1 on cream; canonical
+                  #FF6A1A is only ~2.5:1 and fails the WCAG 3:1
+                  graphic-element bar for the monthly distance bars. */}
+              <Bar dataKey="distanceKm" fill="#D44F00" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -561,17 +566,21 @@ function heatColor(intensity: number): string {
   // Empty cell: paper (visible as "no rides" against the surrounding
   // cream card without needing a border).
   if (intensity <= 0) return "#EDE6DA";
-  // Canonical accent (#FF6A1A) ramped from paper via opaque hex stops
-  // pre-blended against cream — hex keeps SSR + CSS identical and
-  // avoids alpha-on-cream contrast surprises across browsers.
+  // Brand-orange heat ramp tuned for cream — goes from a light paper-
+  // tinted orange ("low activity") through canonical accent up to a
+  // deep orange-900 brown ("peak"). The plain canonical accent
+  // (#FF6A1A) is only ~2.5:1 on cream so the top of the ramp anchors
+  // on #9A340A (~7:1) and the brightest hot cells read clearly. Hex
+  // stops keep SSR + CSS identical and dodge cross-browser alpha
+  // surprises.
   const stops: {
     stop: number;
     color: string;
   }[] = [
-    { stop: 0.15, color: "#F7D4BD" }, // ~20% accent over cream
-    { stop: 0.4, color: "#F9B38A" }, // ~45%
-    { stop: 0.7, color: "#FC8C4E" }, // ~75%
-    { stop: 1, color: "#FF6A1A" }, // full accent
+    { stop: 0.15, color: "#F8C8A4" }, // light cream-orange
+    { stop: 0.4, color: "#E89466" }, // mid orange
+    { stop: 0.7, color: "#C2410C" }, // Tailwind orange-700 (~4.3:1)
+    { stop: 1, color: "#9A340A" }, // deep brand orange (~7:1)
   ];
   for (const s of stops) {
     if (intensity <= s.stop) return s.color;
