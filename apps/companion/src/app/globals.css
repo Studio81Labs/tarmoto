@@ -35,12 +35,31 @@
 
   /* Legacy "tarmoto-cyan" accent — remapped to the warm orange so old utility
      classes (text-tarmoto-cyan, bg-tarmoto-cyan/10 …) automatically pick up
-     the new accent without touching every page.
+     the canonical accent without touching every page.
 
-     TODO(companion design spec phase 4): ~30 source files still reference
-     `*-tarmoto-cyan` classes (public ride/embed pages, discover, explore,
-     best-roads). A dedicated sweep PR replaces them with `accent` utilities
-     before these aliases can be dropped. Keep them in place until then. */
+     The dashboard surface has been fully migrated to `text-accent` /
+     `bg-accent` / `border-accent` (phases 3.1–3.18, June 2026). The
+     `tarmoto-cyan` aliases remain because ~30 public + shared-component
+     files still reference them:
+
+       - public routes:  /rides/shared, /rides/road-map/shared,
+                         /trips/shared, /community/collections/shared,
+                         /discover, /embed/{rides,roads}, /roads/best
+       - shared components used by both public + dashboard surfaces:
+                         TripPlannerMap, TripExportMenu, TripCollaborateModal,
+                         RoadPreviewCard, SharedRidesSection,
+                         SegmentTrendChart, RoadReviewsPanel, PassesPanel,
+                         TripStopsPanel, TripImportDialog,
+                         RouteCollectionFollowCta,
+                         RouteCollectionVisibilityPill,
+                         map/ElevationSparkline, map/FunZoneLayer,
+                         lib/road-map-layer
+       - one dashboard route not covered by the per-route sweeps:
+                         /(dashboard)/gamification
+
+     These call sites need their own sweep before the aliases can be
+     dropped from @theme. Until then the remap keeps them rendering
+     in the canonical brand orange. */
   --color-tarmoto-cyan: #ff6a1a;
   --color-tarmoto-cyan-light: #ff8a44;
   --color-tarmoto-cyan-dark: #d44f00;
@@ -302,88 +321,89 @@
      `bg-tarmoto-cyan text-slate-950` (primary CTAs) still get the dark
      foreground they were designed for.
 
-     The overrides are scoped to `body.bg-cream:not(:has(.tarmoto-no-cream))`
-     so they only fire on cream-themed surfaces — embed widgets keep
-     their original dark slate backgrounds. Each rule's specificity goes
-     to (0,2,1)/(0,3,1), comfortably beating the corresponding Tailwind
-     utility regardless of source order. */
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-50,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-50:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-50:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-50:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-50,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-100,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-100:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-100:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-100:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-100,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-900,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-900:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-900:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-900:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-900,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-950,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-950:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-950:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-950:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-950 {
+     The overrides are scoped to `body.bg-cream` so they only fire on
+     cream-themed surfaces — embed widgets that mount outside an
+     AppShell-wrapped tree keep their original dark slate backgrounds.
+     Each rule's specificity goes to (0,2,1), comfortably beating the
+     corresponding Tailwind utility regardless of source order. */
+  body.bg-cream .bg-slate-50,
+  body.bg-cream .hover\:bg-slate-50:hover,
+  body.bg-cream .focus\:bg-slate-50:focus,
+  body.bg-cream .active\:bg-slate-50:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-50,
+  body.bg-cream .bg-slate-100,
+  body.bg-cream .hover\:bg-slate-100:hover,
+  body.bg-cream .focus\:bg-slate-100:focus,
+  body.bg-cream .active\:bg-slate-100:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-100,
+  body.bg-cream .bg-slate-900,
+  body.bg-cream .hover\:bg-slate-900:hover,
+  body.bg-cream .focus\:bg-slate-900:focus,
+  body.bg-cream .active\:bg-slate-900:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-900,
+  body.bg-cream .bg-slate-950,
+  body.bg-cream .hover\:bg-slate-950:hover,
+  body.bg-cream .focus\:bg-slate-950:focus,
+  body.bg-cream .active\:bg-slate-950:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-950 {
     background-color: var(--tk-cream);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-200:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-200:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-300:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-300:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-400:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-400:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-400:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-700,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-700:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-700:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-700:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-700,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-800,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-800:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-800:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-800:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-800 {
+  body.bg-cream .bg-slate-200,
+  body.bg-cream .hover\:bg-slate-200:hover,
+  body.bg-cream .focus\:bg-slate-200:focus,
+  body.bg-cream .active\:bg-slate-200:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-200,
+  body.bg-cream .bg-slate-300,
+  body.bg-cream .hover\:bg-slate-300:hover,
+  body.bg-cream .focus\:bg-slate-300:focus,
+  body.bg-cream .active\:bg-slate-300:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-300,
+  body.bg-cream .bg-slate-400,
+  body.bg-cream .hover\:bg-slate-400:hover,
+  body.bg-cream .focus\:bg-slate-400:focus,
+  body.bg-cream .active\:bg-slate-400:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-400,
+  body.bg-cream .bg-slate-700,
+  body.bg-cream .hover\:bg-slate-700:hover,
+  body.bg-cream .focus\:bg-slate-700:focus,
+  body.bg-cream .active\:bg-slate-700:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-700,
+  body.bg-cream .bg-slate-800,
+  body.bg-cream .hover\:bg-slate-800:hover,
+  body.bg-cream .focus\:bg-slate-800:focus,
+  body.bg-cream .active\:bg-slate-800:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-800 {
     background-color: var(--tk-paper);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-500,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-500:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-500:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-500:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-500,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .bg-slate-600,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:bg-slate-600:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .focus\:bg-slate-600:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .active\:bg-slate-600:active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .group:hover .group-hover\:bg-slate-600 {
+  body.bg-cream .bg-slate-500,
+  body.bg-cream .hover\:bg-slate-500:hover,
+  body.bg-cream .focus\:bg-slate-500:focus,
+  body.bg-cream .active\:bg-slate-500:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-500,
+  body.bg-cream .bg-slate-600,
+  body.bg-cream .hover\:bg-slate-600:hover,
+  body.bg-cream .focus\:bg-slate-600:focus,
+  body.bg-cream .active\:bg-slate-600:active,
+  body.bg-cream .group:hover .group-hover\:bg-slate-600 {
     background-color: var(--tk-paper-2);
   }
 
   /* ─── Slate border remap ───
      Borders pick up the new hairline-ink line colour so card outlines stay
-     readable against the now-cream surfaces. Embed widgets keep their
-     original slate borders because of the `.tarmoto-no-cream` opt-out. */
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-700,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-800 {
+     readable against the now-cream surfaces. Embed widgets that render
+     outside an AppShell-wrapped tree (no body.bg-cream) keep their
+     original slate borders. */
+  body.bg-cream .border-slate-200,
+  body.bg-cream .border-slate-300,
+  body.bg-cream .border-slate-400,
+  body.bg-cream .border-slate-700,
+  body.bg-cream .border-slate-800 {
     border-color: var(--tk-line);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-500,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-600,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-900,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .border-slate-950 {
+  body.bg-cream .border-slate-500,
+  body.bg-cream .border-slate-600,
+  body.bg-cream .border-slate-900,
+  body.bg-cream .border-slate-950 {
     border-color: var(--tk-line-strong);
   }
 
@@ -400,149 +420,149 @@
      messages can disappear. Flip every pale shade to the corresponding
      `*-700` value in the cream context so the message reads against
      cream / paper / a pale same-family tint, while preserving the
-     originals on `.tarmoto-no-cream` pages (embed widgets, public dark
-     layouts). Hover variants flip to `*-800` for a darker pressed-state
-     contrast. */
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-400 {
+     originals on pages that render outside an AppShell-wrapped tree
+     (embed widgets, public dark layouts — no body.bg-cream). Hover
+     variants flip to `*-800` for a darker pressed-state contrast. */
+  body.bg-cream .text-red-200,
+  body.bg-cream .text-red-300,
+  body.bg-cream .text-red-400 {
     color: #b91c1c;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-400 {
+  body.bg-cream .text-rose-200,
+  body.bg-cream .text-rose-300,
+  body.bg-cream .text-rose-400 {
     color: #be123c;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-400 {
+  body.bg-cream .text-amber-200,
+  body.bg-cream .text-amber-300,
+  body.bg-cream .text-amber-400 {
     color: #b45309;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-400 {
+  body.bg-cream .text-yellow-200,
+  body.bg-cream .text-yellow-300,
+  body.bg-cream .text-yellow-400 {
     color: #a16207;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-400 {
+  body.bg-cream .text-emerald-200,
+  body.bg-cream .text-emerald-300,
+  body.bg-cream .text-emerald-400 {
     color: #047857;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-400 {
+  body.bg-cream .text-green-200,
+  body.bg-cream .text-green-300,
+  body.bg-cream .text-green-400 {
     color: #15803d;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-400 {
+  body.bg-cream .text-lime-200,
+  body.bg-cream .text-lime-300,
+  body.bg-cream .text-lime-400 {
     color: #4d7c0f;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-400 {
+  body.bg-cream .text-orange-200,
+  body.bg-cream .text-orange-300,
+  body.bg-cream .text-orange-400 {
     color: #c2410c;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-400 {
+  body.bg-cream .text-sky-200,
+  body.bg-cream .text-sky-300,
+  body.bg-cream .text-sky-400 {
     color: #0369a1;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-400 {
+  body.bg-cream .text-cyan-200,
+  body.bg-cream .text-cyan-300,
+  body.bg-cream .text-cyan-400 {
     color: #0e7490;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-400 {
+  body.bg-cream .text-blue-200,
+  body.bg-cream .text-blue-300,
+  body.bg-cream .text-blue-400 {
     color: #1d4ed8;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-400 {
+  body.bg-cream .text-indigo-200,
+  body.bg-cream .text-indigo-300,
+  body.bg-cream .text-indigo-400 {
     color: #4338ca;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-400 {
+  body.bg-cream .text-violet-200,
+  body.bg-cream .text-violet-300,
+  body.bg-cream .text-violet-400 {
     color: #6d28d9;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-400 {
+  body.bg-cream .text-purple-200,
+  body.bg-cream .text-purple-300,
+  body.bg-cream .text-purple-400 {
     color: #7e22ce;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-400 {
+  body.bg-cream .text-fuchsia-200,
+  body.bg-cream .text-fuchsia-300,
+  body.bg-cream .text-fuchsia-400 {
     color: #a21caf;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-400 {
+  body.bg-cream .text-pink-200,
+  body.bg-cream .text-pink-300,
+  body.bg-cream .text-pink-400 {
     color: #be185d;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-400 {
+  body.bg-cream .text-teal-200,
+  body.bg-cream .text-teal-300,
+  body.bg-cream .text-teal-400 {
     color: #0f766e;
   }
 
   /* Hover variants of the status colours: same logic for `hover:text-X`. */
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-400:hover {
+  body.bg-cream .hover\:text-red-200:hover,
+  body.bg-cream .hover\:text-red-300:hover,
+  body.bg-cream .hover\:text-red-400:hover {
     color: #991b1b;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-400:hover {
+  body.bg-cream .hover\:text-rose-200:hover,
+  body.bg-cream .hover\:text-rose-300:hover,
+  body.bg-cream .hover\:text-rose-400:hover {
     color: #9f1239;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-400:hover {
+  body.bg-cream .hover\:text-amber-200:hover,
+  body.bg-cream .hover\:text-amber-300:hover,
+  body.bg-cream .hover\:text-amber-400:hover {
     color: #92400e;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-400:hover {
+  body.bg-cream .hover\:text-emerald-200:hover,
+  body.bg-cream .hover\:text-emerald-300:hover,
+  body.bg-cream .hover\:text-emerald-400:hover {
     color: #065f46;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-400:hover {
+  body.bg-cream .hover\:text-lime-200:hover,
+  body.bg-cream .hover\:text-lime-300:hover,
+  body.bg-cream .hover\:text-lime-400:hover {
     color: #3f6212;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-400:hover {
+  body.bg-cream .hover\:text-orange-200:hover,
+  body.bg-cream .hover\:text-orange-300:hover,
+  body.bg-cream .hover\:text-orange-400:hover {
     color: #9a3412;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-400:hover {
+  body.bg-cream .hover\:text-sky-200:hover,
+  body.bg-cream .hover\:text-sky-300:hover,
+  body.bg-cream .hover\:text-sky-400:hover {
     color: #075985;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-400:hover {
+  body.bg-cream .hover\:text-cyan-200:hover,
+  body.bg-cream .hover\:text-cyan-300:hover,
+  body.bg-cream .hover\:text-cyan-400:hover {
     color: #155e75;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-400:hover {
+  body.bg-cream .hover\:text-blue-200:hover,
+  body.bg-cream .hover\:text-blue-300:hover,
+  body.bg-cream .hover\:text-blue-400:hover {
     color: #1e40af;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-400:hover {
+  body.bg-cream .hover\:text-violet-200:hover,
+  body.bg-cream .hover\:text-violet-300:hover,
+  body.bg-cream .hover\:text-violet-400:hover {
     color: #5b21b6;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-300:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-400:hover {
+  body.bg-cream .hover\:text-pink-200:hover,
+  body.bg-cream .hover\:text-pink-300:hover,
+  body.bg-cream .hover\:text-pink-400:hover {
     color: #9d174d;
   }
 
@@ -560,7 +580,7 @@
      inside an ancestor that does. Anchored matchers (space + start)
      keep `hover:bg-slate-X/N` / `focus:bg-slate-X/N` / `group-hover:`
      prefixes from triggering this restore in the resting state. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -575,7 +595,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-red-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -592,7 +612,7 @@
     ).text-red-200 {
     color: var(--color-red-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -607,7 +627,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-red-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -624,7 +644,7 @@
     ).text-red-300 {
     color: var(--color-red-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -639,7 +659,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-red-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -656,7 +676,7 @@
     ).text-red-400 {
     color: var(--color-red-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -671,7 +691,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-rose-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -688,7 +708,7 @@
     ).text-rose-200 {
     color: var(--color-rose-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -703,7 +723,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-rose-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -720,7 +740,7 @@
     ).text-rose-300 {
     color: var(--color-rose-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -735,7 +755,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-rose-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -752,7 +772,7 @@
     ).text-rose-400 {
     color: var(--color-rose-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -767,7 +787,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-amber-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -784,7 +804,7 @@
     ).text-amber-200 {
     color: var(--color-amber-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -799,7 +819,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-amber-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -816,7 +836,7 @@
     ).text-amber-300 {
     color: var(--color-amber-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -831,7 +851,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-amber-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -848,7 +868,7 @@
     ).text-amber-400 {
     color: var(--color-amber-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -863,7 +883,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-yellow-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -880,7 +900,7 @@
     ).text-yellow-200 {
     color: var(--color-yellow-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -895,7 +915,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-yellow-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -912,7 +932,7 @@
     ).text-yellow-300 {
     color: var(--color-yellow-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -927,7 +947,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-yellow-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -944,7 +964,7 @@
     ).text-yellow-400 {
     color: var(--color-yellow-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -959,7 +979,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-green-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -976,7 +996,7 @@
     ).text-green-200 {
     color: var(--color-green-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -991,7 +1011,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-green-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1008,7 +1028,7 @@
     ).text-green-300 {
     color: var(--color-green-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1023,7 +1043,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-green-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1040,7 +1060,7 @@
     ).text-green-400 {
     color: var(--color-green-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1055,7 +1075,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-emerald-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1072,7 +1092,7 @@
     ).text-emerald-200 {
     color: var(--color-emerald-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1087,7 +1107,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-emerald-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1104,7 +1124,7 @@
     ).text-emerald-300 {
     color: var(--color-emerald-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1119,7 +1139,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-emerald-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1136,7 +1156,7 @@
     ).text-emerald-400 {
     color: var(--color-emerald-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1151,7 +1171,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-lime-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1168,7 +1188,7 @@
     ).text-lime-200 {
     color: var(--color-lime-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1183,7 +1203,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-lime-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1200,7 +1220,7 @@
     ).text-lime-300 {
     color: var(--color-lime-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1215,7 +1235,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-lime-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1232,7 +1252,7 @@
     ).text-lime-400 {
     color: var(--color-lime-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1247,7 +1267,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-orange-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1264,7 +1284,7 @@
     ).text-orange-200 {
     color: var(--color-orange-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1279,7 +1299,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-orange-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1296,7 +1316,7 @@
     ).text-orange-300 {
     color: var(--color-orange-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1311,7 +1331,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-orange-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1328,7 +1348,7 @@
     ).text-orange-400 {
     color: var(--color-orange-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1343,7 +1363,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-teal-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1360,7 +1380,7 @@
     ).text-teal-200 {
     color: var(--color-teal-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1375,7 +1395,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-teal-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1392,7 +1412,7 @@
     ).text-teal-300 {
     color: var(--color-teal-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1407,7 +1427,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-teal-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1424,7 +1444,7 @@
     ).text-teal-400 {
     color: var(--color-teal-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1439,7 +1459,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-sky-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1456,7 +1476,7 @@
     ).text-sky-200 {
     color: var(--color-sky-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1471,7 +1491,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-sky-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1488,7 +1508,7 @@
     ).text-sky-300 {
     color: var(--color-sky-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1503,7 +1523,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-sky-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1520,7 +1540,7 @@
     ).text-sky-400 {
     color: var(--color-sky-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1535,7 +1555,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-cyan-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1552,7 +1572,7 @@
     ).text-cyan-200 {
     color: var(--color-cyan-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1567,7 +1587,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-cyan-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1584,7 +1604,7 @@
     ).text-cyan-300 {
     color: var(--color-cyan-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1599,7 +1619,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-cyan-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1616,7 +1636,7 @@
     ).text-cyan-400 {
     color: var(--color-cyan-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1631,7 +1651,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-blue-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1648,7 +1668,7 @@
     ).text-blue-200 {
     color: var(--color-blue-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1663,7 +1683,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-blue-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1680,7 +1700,7 @@
     ).text-blue-300 {
     color: var(--color-blue-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1695,7 +1715,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-blue-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1712,7 +1732,7 @@
     ).text-blue-400 {
     color: var(--color-blue-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1727,7 +1747,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-indigo-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1744,7 +1764,7 @@
     ).text-indigo-200 {
     color: var(--color-indigo-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1759,7 +1779,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-indigo-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1776,7 +1796,7 @@
     ).text-indigo-300 {
     color: var(--color-indigo-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1791,7 +1811,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-indigo-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1808,7 +1828,7 @@
     ).text-indigo-400 {
     color: var(--color-indigo-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1823,7 +1843,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-violet-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1840,7 +1860,7 @@
     ).text-violet-200 {
     color: var(--color-violet-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1855,7 +1875,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-violet-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1872,7 +1892,7 @@
     ).text-violet-300 {
     color: var(--color-violet-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1887,7 +1907,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-violet-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1904,7 +1924,7 @@
     ).text-violet-400 {
     color: var(--color-violet-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1919,7 +1939,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-purple-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1936,7 +1956,7 @@
     ).text-purple-200 {
     color: var(--color-purple-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1951,7 +1971,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-purple-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1968,7 +1988,7 @@
     ).text-purple-300 {
     color: var(--color-purple-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -1983,7 +2003,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-purple-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2000,7 +2020,7 @@
     ).text-purple-400 {
     color: var(--color-purple-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2015,7 +2035,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-fuchsia-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2032,7 +2052,7 @@
     ).text-fuchsia-200 {
     color: var(--color-fuchsia-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2047,7 +2067,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-fuchsia-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2064,7 +2084,7 @@
     ).text-fuchsia-300 {
     color: var(--color-fuchsia-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2079,7 +2099,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-fuchsia-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2096,7 +2116,7 @@
     ).text-fuchsia-400 {
     color: var(--color-fuchsia-400);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2111,7 +2131,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-pink-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2128,7 +2148,7 @@
     ).text-pink-200 {
     color: var(--color-pink-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2143,7 +2163,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-pink-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2160,7 +2180,7 @@
     ).text-pink-300 {
     color: var(--color-pink-300);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2175,7 +2195,7 @@
       [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
       [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
     ) .text-pink-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
   :where(
       [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
       [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
@@ -2204,43 +2224,43 @@
      appears behind ink text. Mirror the bare hover remap onto every
      opacity variant via attribute selectors so hover surfaces stay
      light and the row remains readable. */
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
+  body.bg-cream [class*="hover:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-50/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-100/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-900/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-950/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
     background-color: var(--tk-cream);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
+  body.bg-cream [class*="hover:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-200/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-300/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-400/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-700/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-800/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
     background-color: var(--tk-paper);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
+  body.bg-cream [class*="hover:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-500/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active,
+  body.bg-cream [class*="hover:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):hover,
+  body.bg-cream [class*="focus:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):focus,
+  body.bg-cream [class*="active:bg-slate-600/"]:where(:not([class*=" bg-slate-50/"], [class^="bg-slate-50/"], [class*=" bg-slate-100/"], [class^="bg-slate-100/"], [class*=" bg-slate-200/"], [class^="bg-slate-200/"], [class*=" bg-slate-300/"], [class^="bg-slate-300/"], [class*=" bg-slate-400/"], [class^="bg-slate-400/"], [class*=" bg-slate-500/"], [class^="bg-slate-500/"], [class*=" bg-slate-600/"], [class^="bg-slate-600/"], [class*=" bg-slate-700/"], [class^="bg-slate-700/"], [class*=" bg-slate-800/"], [class^="bg-slate-800/"], [class*=" bg-slate-850/"], [class^="bg-slate-850/"], [class*=" bg-slate-900/"], [class^="bg-slate-900/"], [class*=" bg-slate-950/"], [class^="bg-slate-950/"])):active {
     background-color: var(--tk-paper-2);
   }
 
@@ -2282,7 +2302,7 @@
   /* Common exclusion: coloured (non-slate) backgrounds + opacity-suffixed
      slate variants. Used by every selector below. */
   /* Static text utilities ------------------------------------------- */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2329,7 +2349,7 @@
           [class*="bg-["]
         )
     ).text-white,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2376,7 +2396,7 @@
           [class*="bg-["]
         )
     ).text-slate-50,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2423,7 +2443,7 @@
           [class*="bg-["]
         )
     ).text-slate-100,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2470,7 +2490,7 @@
           [class*="bg-["]
         )
     ).text-slate-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2525,9 +2545,10 @@
      (~2.3:1). The cream-shell muted equivalent is `--tk-ink-dim`
      (62% ink, ~5.7:1 on cream) so the visual hierarchy stays muted
      while the copy regains AA contrast. Same exclusion structure as
-     the other slate foreground classes; embed widgets and
-     `.tarmoto-no-cream` pages keep the original Tailwind slate-400. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+     the other slate foreground classes; embed widgets and pages
+     outside an AppShell-wrapped tree (no body.bg-cream) keep the
+     original Tailwind slate-400. */
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2582,7 +2603,7 @@
      exclusion: when an element paints a slate background on hover
      (e.g. `bg-slate-800 hover:bg-slate-700 hover:text-white`), the
      hover *text* needs to stay light on that still-dark hover surface. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2641,7 +2662,7 @@
           [class*="bg-["]
         )
     ).hover\:text-white:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2700,7 +2721,7 @@
           [class*="bg-["]
         )
     ).hover\:text-slate-50:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2759,7 +2780,7 @@
           [class*="bg-["]
         )
     ).hover\:text-slate-100:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2818,7 +2839,7 @@
           [class*="bg-["]
         )
     ).hover\:text-slate-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2881,7 +2902,7 @@
   }
 
   /* Muted secondary hover variant — see static `text-slate-400` block. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -2947,7 +2968,7 @@
      Adds `focus:bg-slate-*` to the exclusion: when an element paints a
      slate background on focus, the focus *text* needs to stay light on
      that still-dark focus surface. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -3006,7 +3027,7 @@
           [class*="bg-["]
         )
     ).focus\:text-white:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -3065,7 +3086,7 @@
           [class*="bg-["]
         )
     ).focus\:text-slate-100:focus,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -3128,7 +3149,7 @@
   }
 
   /* Muted secondary focus variant — see static `text-slate-400` block. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -3211,7 +3232,7 @@
      pseudo-state-prefixed translucent slate bg would match in its static
      state too, and the white-restore would fire on a still-cream parent —
      producing white-on-cream child text. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3256,7 +3277,7 @@
         )
     )
     .text-white,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3301,7 +3322,7 @@
         )
     )
     .hover\:text-white:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3348,7 +3369,7 @@
     .focus\:text-white:focus {
     color: #fff;
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3393,7 +3414,7 @@
         )
     )
     .text-slate-50,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3440,7 +3461,7 @@
     .hover\:text-slate-50:hover {
     color: var(--color-slate-50);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3485,7 +3506,7 @@
         )
     )
     .text-slate-100,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3530,7 +3551,7 @@
         )
     )
     .hover\:text-slate-100:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3577,7 +3598,7 @@
     .focus\:text-slate-100:focus {
     color: var(--color-slate-100);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3622,7 +3643,7 @@
         )
     )
     .text-slate-200,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3667,7 +3688,7 @@
         )
     )
     .hover\:text-slate-200:hover,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3714,7 +3735,7 @@
     .focus\:text-slate-200:focus {
     color: var(--color-slate-200);
   }
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3759,7 +3780,7 @@
         )
     )
     .text-slate-300,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3810,7 +3831,7 @@
   /* Descendant restore for the muted secondary tone (`text-slate-400`)
      when nested inside a dark slate-opacity ancestor — keep the original
      Tailwind colour, which still reads on the dark surface. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3855,7 +3876,7 @@
         )
     )
     .text-slate-400,
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class*=" bg-slate-50/"],
       [class^="bg-slate-50/"],
@@ -3920,7 +3941,7 @@
      panel — regardless of any further-out dark-slate-opacity ancestor.
      Source order is after the descendant restore, so at equal
      specificity this rule wins on the cascade. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class~="bg-slate-50"],
       [class~="bg-slate-100"],
@@ -3956,7 +3977,7 @@
   /* Same shield, but for `text-slate-400` (muted secondary). Inside
      a cream-remapped panel the muted ink-dim tone is the right
      equivalent — keeps the visual hierarchy while regaining contrast. */
-  body.bg-cream:not(:has(.tarmoto-no-cream))
+  body.bg-cream
     :where(
       [class~="bg-slate-50"],
       [class~="bg-slate-100"],
