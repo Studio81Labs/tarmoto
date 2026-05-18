@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { Stamp } from "@/components/tarmoto/atoms";
 import type {
   LocationRetention,
   PrivacySettings,
@@ -122,7 +123,7 @@ export default function PrivacyPage() {
   if (loading) {
     return (
       <div className="p-6 max-w-page-narrow mx-auto">
-        <div className="flex items-center gap-2 text-slate-400">
+        <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading settings\u2026 ")}
         </div>
@@ -134,13 +135,16 @@ export default function PrivacyPage() {
       <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
         <Link
           href="/settings"
-          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
         >
           <ArrowLeft size={16} />
           {t("Settings ")}
         </Link>
-        <h1 className="text-2xl font-bold mb-6">{t("Privacy & Data")}</h1>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <Stamp className="block mb-2">{t("Privacy")}</Stamp>
+        <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
+          {t("Privacy & Data")}
+        </h1>
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load settings: ")}
           {loadError}
         </div>
@@ -151,25 +155,28 @@ export default function PrivacyPage() {
     <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
       >
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <h1 className="text-2xl font-bold mb-2">{t("Privacy & Data")}</h1>
-      <p className="text-sm text-slate-400 mb-6">
+      <Stamp className="block mb-2">{t("Privacy")}</Stamp>
+      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
+        {t("Privacy & Data")}
+      </h1>
+      <p className="text-sm text-fg-dim mb-6">
         {t(
           "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses. ",
         )}
       </p>
 
       {/* Profile visibility */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-white">
+          <Stamp as="h2" className="block mb-1">
             {t("Profile visibility ")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          </Stamp>
+          <p className="text-xs text-fg-dim">
             {t("Who can see your profile, stats, and shared rides. ")}
           </p>
         </div>
@@ -189,12 +196,14 @@ export default function PrivacyPage() {
                 onClick={() => setProfileVisibility(opt.value)}
                 className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
                   active
-                    ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600"
+                    ? "border-ink bg-ink text-cream"
+                    : "border-line bg-paper text-ink hover:border-line-strong"
                 }`}
               >
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm font-semibold">{opt.label}</span>
+                <span
+                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+                >
                   {opt.description}
                 </span>
               </button>
@@ -204,12 +213,12 @@ export default function PrivacyPage() {
       </section>
 
       {/* Default ride sharing */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-white">
+          <Stamp as="h2" className="block mb-1">
             {t("Default ride sharing ")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          </Stamp>
+          <p className="text-xs text-fg-dim">
             {t(
               "How newly recorded rides are shared. You can always change visibility per ride. ",
             )}
@@ -231,12 +240,14 @@ export default function PrivacyPage() {
                 onClick={() => setRideSharing(opt.value)}
                 className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
                   active
-                    ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600"
+                    ? "border-ink bg-ink text-cream"
+                    : "border-line bg-paper text-ink hover:border-line-strong"
                 }`}
               >
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm font-semibold">{opt.label}</span>
+                <span
+                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+                >
                   {opt.description}
                 </span>
               </button>
@@ -246,13 +257,13 @@ export default function PrivacyPage() {
       </section>
 
       {/* Road data contribution */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-semibold text-ink">
               {t("Contribute to road quality data ")}
             </p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-fg-dim mt-0.5">
               {t(
                 "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ",
               )}
@@ -267,12 +278,12 @@ export default function PrivacyPage() {
       </section>
 
       {/* Location retention */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-white">
+          <Stamp as="h2" className="block mb-1">
             {t("Location data retention ")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          </Stamp>
+          <p className="text-xs text-fg-dim">
             {t(
               "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
             )}
@@ -294,13 +305,15 @@ export default function PrivacyPage() {
                 onClick={() => setLocationRetention(opt.value)}
                 className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
                   active
-                    ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600"
+                    ? "border-ink bg-ink text-cream"
+                    : "border-line bg-paper text-ink hover:border-line-strong"
                 }`}
               >
-                <span className="text-sm font-medium">{opt.label}</span>
+                <span className="text-sm font-semibold">{opt.label}</span>
                 {opt.description && (
-                  <span className="text-xs text-slate-500">
+                  <span
+                    className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+                  >
                     {opt.description}
                   </span>
                 )}
@@ -311,12 +324,12 @@ export default function PrivacyPage() {
       </section>
 
       {/* Data processing consent */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 divide-y divide-slate-800 mb-6">
+      <section className="rounded-2xl bg-cream border border-line divide-y divide-line mb-6">
         <header className="px-5 py-4">
-          <h2 className="text-sm font-semibold text-white">
+          <Stamp as="h2" className="block mb-1">
             {t("Data processing consent ")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          </Stamp>
+          <p className="text-xs text-fg-dim">
             {t(
               "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
             )}
@@ -325,10 +338,10 @@ export default function PrivacyPage() {
 
         <div className="px-5 py-4 flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-semibold text-ink">
               {t("Product analytics")}
             </p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-fg-dim mt-0.5">
               {t(
                 "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage). ",
               )}
@@ -343,10 +356,10 @@ export default function PrivacyPage() {
 
         <div className="px-5 py-4 flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-semibold text-ink">
               {t("Personalized recommendations ")}
             </p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-fg-dim mt-0.5">
               {t(
                 "Use your riding history to suggest routes, roads, and riders you may enjoy. ",
               )}
@@ -366,7 +379,7 @@ export default function PrivacyPage() {
           type="button"
           onClick={save}
           disabled={!isDirty || saveState.kind === "saving"}
-          className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          className="px-4 py-2 rounded-full bg-accent text-ink font-bold text-sm tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
           {saveState.kind === "saving" ? (
             <>
@@ -379,7 +392,7 @@ export default function PrivacyPage() {
         </button>
 
         {saveState.kind === "saved" && !isDirty && (
-          <span className="inline-flex items-center gap-1 text-sm text-tarmoto-cyan">
+          <span className="inline-flex items-center gap-1 text-sm text-accent">
             <Check size={14} />
             {t("Saved ")}
           </span>
@@ -388,7 +401,7 @@ export default function PrivacyPage() {
           <span className="text-sm text-red-400">{saveState.message}</span>
         )}
         {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-slate-500">{t("Unsaved changes")}</span>
+          <span className="text-sm text-fg-mute">{t("Unsaved changes")}</span>
         )}
       </div>
     </div>
@@ -406,10 +419,10 @@ function Toggle({ enabled, onToggle, label }: ToggleProps) {
       onClick={onToggle}
       aria-pressed={enabled}
       aria-label={label}
-      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 flex-shrink-0 ${enabled ? "bg-tarmoto-cyan" : "bg-slate-700"}`}
+      className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 flex-shrink-0 ${enabled ? "bg-ink" : "bg-ink/12"}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`}
+        className={`absolute top-0.5 w-4 h-4 rounded-full transform transition-transform ${enabled ? "bg-accent left-0.5 translate-x-4" : "bg-cream left-0.5"}`}
       />
     </button>
   );
