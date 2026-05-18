@@ -77,10 +77,10 @@ export function RidesMap({
           "line-color": [
             "case",
             ["boolean", ["feature-state", "selected"], false],
-            "#22d3ee", // cyan-400
+            "#FF6A1A", // canonical accent
             ["boolean", ["feature-state", "hover"], false],
-            "#22d3ee",
-            "#64748b", // slate-500
+            "#FF6A1A",
+            "rgba(14, 14, 16, 0.42)", // canonical fg-mute (ink at 42% alpha) for inactive ride lines
           ],
           "line-width": [
             "case",
@@ -220,15 +220,15 @@ export function RidesMap({
     appliedColorSchemeRef.current = colorScheme;
   }, [colorScheme, ready]);
   return (
-    <div className="relative w-full h-full rounded-xl overflow-hidden border border-slate-800">
+    <div className="relative w-full h-full rounded-xl overflow-hidden border border-line">
       <div ref={containerRef} className="absolute inset-0" />
       {loading && (
-        <div className="absolute top-2 right-2 rounded-full bg-slate-900/80 border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
+        <div className="absolute top-2 right-2 rounded-full bg-cream/90 backdrop-blur border border-line px-2.5 py-1 text-xs font-semibold text-ink">
           {t("Loading\u2026 ")}
         </div>
       )}
       {truncated && (
-        <div className="absolute bottom-2 left-2 rounded-lg bg-slate-900/90 border border-amber-600/50 px-3 py-1.5 text-xs text-amber-200 max-w-[320px]">
+        <div className="absolute bottom-2 left-2 rounded-lg bg-cream/95 backdrop-blur border border-quality-q2/50 px-3 py-1.5 text-xs text-amber-700 max-w-[320px]">
           {t(
             "Showing most recent 500 rides \u2014 refine filters to narrow the map. ",
           )}

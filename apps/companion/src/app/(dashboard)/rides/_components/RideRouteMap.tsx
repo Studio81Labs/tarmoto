@@ -54,7 +54,7 @@ export function RideRouteMap({
 
   return (
     <div
-      className="relative h-[360px] min-h-[280px] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950"
+      className="relative h-[360px] min-h-[280px] w-full overflow-hidden rounded-xl border border-line bg-paper"
       aria-label={label}
     >
       <MapCanvas
