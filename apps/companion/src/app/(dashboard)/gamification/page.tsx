@@ -70,15 +70,15 @@ const CATEGORY_STYLE: Record<
     accent: string;
   }
 > = {
-  distance: { label: "Distance", icon: Flag, accent: "text-tarmoto-cyan" },
-  discovery: { label: "Discovery", icon: Compass, accent: "text-violet-300" },
+  distance: { label: "Distance", icon: Flag, accent: "text-accent" },
+  discovery: { label: "Discovery", icon: Compass, accent: "text-violet-600" },
   safety: {
     label: "Safety",
     icon: AlertTriangle,
-    accent: "text-amber-300",
+    accent: "text-amber-700",
   },
-  social: { label: "Social", icon: Users, accent: "text-pink-300" },
-  seasonal: { label: "Seasonal", icon: Sparkles, accent: "text-emerald-300" },
+  social: { label: "Social", icon: Users, accent: "text-pink-600" },
+  seasonal: { label: "Seasonal", icon: Sparkles, accent: "text-emerald-700" },
 };
 // Every loaded state is tagged with the userId it represents so the render
 // can refuse to show snapshot data for a user that is no longer signed in.
@@ -252,7 +252,7 @@ export default function GamificationPage() {
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <PageHeader />
         <EmptyCard
-          icon={<Lock size={32} className="text-slate-600" />}
+          icon={<Lock size={32} className="text-fg-mute" />}
           title={t("Sign in to see your achievements")}
           body="Badges, challenges, and leaderboards appear once you're signed in."
         />
@@ -357,7 +357,7 @@ function Dashboard({
         />
         {snapshot.badges.length === 0 ? (
           <EmptyCard
-            icon={<Award size={32} className="text-slate-600" />}
+            icon={<Award size={32} className="text-fg-mute" />}
             title={t("No badges yet")}
             body="Ride, discover roads, or report hazards to start earning badges."
           />
@@ -384,7 +384,7 @@ function Dashboard({
         )}
         {visibleChallenges.length === 0 ? (
           <EmptyCard
-            icon={<Target size={32} className="text-slate-600" />}
+            icon={<Target size={32} className="text-fg-mute" />}
             title={t("No challenges to join yet")}
             body="Check back on Monday — new weekly challenges drop every week."
           />
@@ -423,7 +423,7 @@ function PageHeader() {
   return (
     <header>
       <h1 className="text-2xl font-bold">{t("Achievements")}</h1>
-      <p className="text-sm text-slate-400 mt-1">
+      <p className="text-sm text-fg-dim mt-1">
         {t(
           "Badges, challenges, leaderboards, and milestones for your riding region. ",
         )}
@@ -439,32 +439,32 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
   return (
     <section
       aria-label={t("Seasonal challenge")}
-      className="relative overflow-hidden rounded-2xl border border-tarmoto-cyan/30 bg-gradient-to-r from-tarmoto-cyan/10 via-slate-900 to-violet-500/10 p-6"
+      className="relative overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-r from-accent/10 via-paper to-violet-500/10 p-6"
     >
       <div
         aria-hidden="true"
-        className="absolute inset-y-0 right-0 w-48 opacity-10 pointer-events-none text-tarmoto-cyan"
+        className="absolute inset-y-0 right-0 w-48 opacity-10 pointer-events-none text-accent"
       >
         <Mountain className="w-full h-full" />
       </div>
       <div className="relative">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-tarmoto-cyan">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent">
           <Sparkles size={14} />
           {t("Seasonal \u00B7 {season}", { season: seasonal.season })}
         </div>
-        <h2 className="mt-2 text-2xl font-bold text-white">{seasonal.name}</h2>
-        <p className="mt-1 text-sm text-slate-300">{seasonal.tagline}</p>
-        <p className="mt-2 text-xs text-slate-400 max-w-xl">
+        <h2 className="mt-2 text-2xl font-bold text-ink">{seasonal.name}</h2>
+        <p className="mt-1 text-sm text-ink">{seasonal.tagline}</p>
+        <p className="mt-2 text-xs text-fg-dim max-w-xl">
           {seasonal.description}
         </p>
 
         <div className="mt-5 flex flex-col gap-2 max-w-md">
-          <div className="flex items-center justify-between text-xs text-slate-300">
+          <div className="flex items-center justify-between text-xs text-ink">
             <span className="tabular-nums">
               {Math.round(seasonal.current).toLocaleString()} /{" "}
               {seasonal.target.toLocaleString()} {seasonal.unit}
             </span>
-            <span className="text-slate-400">{daysLeft}</span>
+            <span className="text-fg-dim">{daysLeft}</span>
           </div>
           <ProgressBar fraction={fraction} ariaLabel={`${percent}% complete`} />
         </div>
@@ -490,8 +490,8 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
       className={clsx(
         "relative rounded-xl border p-4 flex flex-col items-center text-center transition",
         earned
-          ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
-          : "border-slate-800 bg-slate-900/60 opacity-60",
+          ? "border-accent/40 bg-accent/5"
+          : "border-line bg-cream/60 opacity-60",
       )}
       title={
         earned && badge.earnedAt
@@ -502,9 +502,7 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
       <span
         className={clsx(
           "w-12 h-12 rounded-full flex items-center justify-center",
-          earned
-            ? "bg-tarmoto-cyan/15 text-tarmoto-cyan"
-            : "bg-slate-800 text-slate-500",
+          earned ? "bg-accent/15 text-accent" : "bg-paper text-fg-dim",
         )}
       >
         {earned ? <Icon size={24} /> : <Lock size={20} />}
@@ -512,12 +510,12 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
       <p
         className={clsx(
           "mt-3 text-sm font-semibold",
-          earned ? "text-white" : "text-slate-400",
+          earned ? "text-ink" : "text-fg-dim",
         )}
       >
         {badge.name}
       </p>
-      <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">
+      <p className="mt-1 text-[11px] text-fg-dim line-clamp-2">
         {badge.description}
       </p>
     </div>
@@ -542,7 +540,7 @@ function ChallengeCard({
   const complete = fraction >= 1;
   const joined = meta?.joined ?? false;
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-line bg-cream p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div
@@ -554,28 +552,26 @@ function ChallengeCard({
             <Icon size={12} />
             {style.label}
           </div>
-          <p className="mt-1.5 text-sm font-semibold text-white">
+          <p className="mt-1.5 text-sm font-semibold text-ink">
             {challenge.name}
           </p>
-          <p className="mt-0.5 text-xs text-slate-400">
-            {challenge.description}
-          </p>
+          <p className="mt-0.5 text-xs text-fg-dim">{challenge.description}</p>
         </div>
-        <span className="shrink-0 text-[11px] text-slate-500">
+        <span className="shrink-0 text-[11px] text-fg-dim">
           {formatDaysRemaining(challenge.endsAt)}
         </span>
       </div>
 
       <div className="mt-4 space-y-1.5">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-300 tabular-nums">
+          <span className="text-ink tabular-nums">
             {Math.round(challenge.current).toLocaleString()} /{" "}
             {challenge.target.toLocaleString()} {challenge.unit}
           </span>
           <span
             className={clsx(
               "tabular-nums",
-              complete ? "text-tarmoto-cyan" : "text-slate-400",
+              complete ? "text-accent" : "text-fg-dim",
             )}
           >
             {percent}%
@@ -588,7 +584,7 @@ function ChallengeCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <div className="text-[11px] text-slate-500 flex items-center gap-3">
+        <div className="text-[11px] text-fg-dim flex items-center gap-3">
           {challenge.reward && (
             <span className="flex items-center gap-1">
               <Medal size={12} />
@@ -602,7 +598,7 @@ function ChallengeCard({
           )}
         </div>
         {joined ? (
-          <span className="text-[11px] uppercase tracking-widest text-tarmoto-cyan">
+          <span className="text-[11px] uppercase tracking-widest text-accent">
             {t("Joined")}
           </span>
         ) : (
@@ -610,7 +606,7 @@ function ChallengeCard({
             type="button"
             onClick={() => onJoin(challenge.id)}
             disabled={joining}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-tarmoto-cyan/15 text-tarmoto-cyan text-xs font-semibold hover:bg-tarmoto-cyan/25 disabled:opacity-60 disabled:cursor-not-allowed transition"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent/15 text-accent text-xs font-semibold hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
             {joining ? (
               <>
@@ -759,7 +755,7 @@ function RegionalLeaderboardsSection() {
           <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
         </div>
       ) : load.status === "loading" || dim === null ? (
-        <div className="h-48 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+        <div className="h-48 rounded-2xl bg-cream border border-line animate-pulse" />
       ) : (
         <RegionalLeaderboardTable dim={dim} />
       )}
@@ -781,7 +777,7 @@ function RegionToggle({
     <div
       role="radiogroup"
       aria-label={t("Region scope")}
-      className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
+      className="inline-flex rounded-lg border border-line bg-cream p-0.5 text-xs"
     >
       <ToggleButton
         active={scope === "global"}
@@ -814,7 +810,7 @@ function DimensionTabs({
     <div
       role="tablist"
       aria-label={t("Leaderboard dimension")}
-      className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
+      className="inline-flex rounded-lg border border-line bg-cream p-0.5 text-xs"
     >
       {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
         <ToggleButton
@@ -849,9 +845,7 @@ function ToggleButton({
       onClick={onClick}
       className={clsx(
         "px-3 py-1.5 rounded-md transition",
-        active
-          ? "bg-tarmoto-cyan/15 text-tarmoto-cyan"
-          : "text-slate-400 hover:text-slate-200",
+        active ? "bg-accent/15 text-accent" : "text-fg-dim hover:text-ink",
       )}
     >
       {children}
@@ -870,22 +864,22 @@ function RegionalLeaderboardTable({
   const showOutsideTop =
     dim.me !== null && !dim.entries.some((e) => e.userId === dim.me?.userId);
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
+    <div className="rounded-2xl border border-line bg-cream overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500 bg-slate-900/80">
+            <tr className="text-left text-xs uppercase tracking-wider text-fg-dim bg-cream/80">
               <th className="py-3 px-4 font-semibold w-12">#</th>
               <th className="py-3 px-4 font-semibold">{t("Rider")}</th>
               <th className="py-3 px-4 font-semibold text-right">{dim.unit}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-line">
             {dim.entries.length === 0 ? (
               <tr>
                 <td
                   colSpan={3}
-                  className="py-8 px-4 text-center text-sm text-slate-500"
+                  className="py-8 px-4 text-center text-sm text-fg-dim"
                 >
                   {t("No riders ranked in this region yet. ")}
                 </td>
@@ -925,9 +919,9 @@ function RegionalLeaderboardRow({
   return (
     <tr
       className={clsx(
-        "text-slate-200",
-        entry.isMe && "bg-tarmoto-cyan/5",
-        outsideTop && "border-t-2 border-slate-700/60",
+        "text-ink",
+        entry.isMe && "bg-accent/5",
+        outsideTop && "border-t-2 border-line-strong/60",
       )}
     >
       <td className="py-3 px-4">
@@ -937,12 +931,12 @@ function RegionalLeaderboardRow({
         <div className="font-medium">
           {entry.displayName}
           {entry.isMe && (
-            <span className="ml-2 text-[10px] uppercase tracking-widest text-tarmoto-cyan">
+            <span className="ml-2 text-[10px] uppercase tracking-widest text-accent">
               {t("You")}
             </span>
           )}
           {entry.homeRegion && (
-            <span className="ml-2 text-[11px] text-slate-500">
+            <span className="ml-2 text-[11px] text-fg-dim">
               · {entry.homeRegion}
             </span>
           )}
@@ -962,13 +956,13 @@ function RegionalLeaderboardSummary({
   unit: string;
 }) {
   return (
-    <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
-      <span className="text-slate-500 uppercase tracking-widest font-semibold">
+    <div className="border-t border-line px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-dim">
+      <span className="text-fg-dim uppercase tracking-widest font-semibold">
         {t("Your rank")}
       </span>
       <span className="tabular-nums">
         #{me.rank}{" "}
-        <span className="text-slate-500">
+        <span className="text-fg-dim">
           · {Math.round(me.value).toLocaleString()} {unit}
         </span>
       </span>
@@ -978,27 +972,27 @@ function RegionalLeaderboardSummary({
 function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) {
     return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-amber-400/20 text-amber-300">
+      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-amber-400/30 text-amber-700">
         <Trophy size={14} />
       </span>
     );
   }
   if (rank === 2) {
     return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-slate-400/20 text-slate-300">
+      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-paper text-ink border border-line">
         <Medal size={14} />
       </span>
     );
   }
   if (rank === 3) {
     return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-orange-500/20 text-orange-300">
+      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-orange-500/20 text-orange-700">
         <Medal size={14} />
       </span>
     );
   }
   return (
-    <span className="inline-flex w-7 h-7 items-center justify-center text-sm text-slate-400 tabular-nums">
+    <span className="inline-flex w-7 h-7 items-center justify-center text-sm text-fg-dim tabular-nums">
       {rank}
     </span>
   );
@@ -1008,26 +1002,26 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
   const percent = Math.round(progress.fraction * 100);
   const label = formatMilestoneLabel(progress);
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+    <div className="rounded-2xl border border-line bg-cream p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold text-ink">
             {progress.milestone.name}
           </p>
-          <p className="mt-1 text-xs text-slate-400 max-w-md">
+          <p className="mt-1 text-xs text-fg-dim max-w-md">
             {progress.milestone.description}
           </p>
         </div>
-        <span className="shrink-0 text-xs text-slate-400 tabular-nums">
+        <span className="shrink-0 text-xs text-fg-dim tabular-nums">
           {percent}%
         </span>
       </div>
 
       <div className="mt-4 space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-slate-300 tabular-nums">
+        <div className="flex items-center justify-between text-xs text-ink tabular-nums">
           <span>{label}</span>
           {progress.nextThreshold !== null && (
-            <span className="text-slate-500">
+            <span className="text-fg-dim">
               {t("{count} to go", {
                 count: Math.round(progress.remaining).toLocaleString(),
               })}
@@ -1062,8 +1056,8 @@ function TierTrack({
             className={clsx(
               "rounded-full border px-3 py-1 text-[11px] tabular-nums",
               reached
-                ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/10 text-tarmoto-cyan"
-                : "border-slate-700 bg-slate-900 text-slate-500",
+                ? "border-accent/40 bg-accent/10 text-accent"
+                : "border-line-strong bg-cream text-fg-dim",
             )}
           >
             {tier.toLocaleString()}
@@ -1089,10 +1083,10 @@ function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(percent)}
-      className="h-2 w-full rounded-full bg-slate-800 overflow-hidden"
+      className="h-2 w-full rounded-full bg-paper overflow-hidden"
     >
       <div
-        className="h-full bg-tarmoto-cyan transition-[width]"
+        className="h-full bg-accent transition-[width]"
         style={{ width: `${percent}%` }}
       />
     </div>
@@ -1111,13 +1105,13 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-2 text-white">
-        <span className="text-tarmoto-cyan">{icon}</span>
+      <div className="flex items-center gap-2 text-ink">
+        <span className="text-accent">{icon}</span>
         <h2 id={id} className="text-sm font-semibold">
           {title}
         </h2>
       </div>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -1131,12 +1125,12 @@ function EmptyCard({
   body: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
+    <div className="rounded-2xl border border-line bg-cream p-10 text-center">
       <div className="mx-auto w-10 h-10 flex items-center justify-center mb-3">
         {icon}
       </div>
-      <p className="text-slate-300 font-medium">{title}</p>
-      <p className="text-slate-500 text-sm mt-1">{body}</p>
+      <p className="text-ink font-medium">{title}</p>
+      <p className="text-fg-dim text-sm mt-1">{body}</p>
     </div>
   );
 }
@@ -1170,25 +1164,25 @@ function ErrorCard({
 function SkeletonGrid() {
   return (
     <div className="space-y-8" aria-busy="true" aria-live="polite">
-      <div className="h-32 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+      <div className="h-32 rounded-2xl bg-cream border border-line animate-pulse" />
       <div>
-        <div className="mb-3 h-4 w-24 bg-slate-800 rounded animate-pulse" />
+        <div className="mb-3 h-4 w-24 bg-paper rounded animate-pulse" />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-32 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+              className="h-32 rounded-xl bg-cream border border-line animate-pulse"
             />
           ))}
         </div>
       </div>
       <div>
-        <div className="mb-3 h-4 w-32 bg-slate-800 rounded animate-pulse" />
+        <div className="mb-3 h-4 w-32 bg-paper rounded animate-pulse" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-36 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+              className="h-36 rounded-xl bg-cream border border-line animate-pulse"
             />
           ))}
         </div>

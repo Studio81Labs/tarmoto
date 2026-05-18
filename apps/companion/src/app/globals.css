@@ -33,37 +33,6 @@
   --color-surface-gravel: #d97706;
   --color-surface-dirt: #92400e;
 
-  /* Legacy "tarmoto-cyan" accent — remapped to the warm orange so old utility
-     classes (text-tarmoto-cyan, bg-tarmoto-cyan/10 …) automatically pick up
-     the canonical accent without touching every page.
-
-     The dashboard surface has been fully migrated to `text-accent` /
-     `bg-accent` / `border-accent` (phases 3.1–3.18, June 2026). The
-     `tarmoto-cyan` aliases remain because ~30 public + shared-component
-     files still reference them:
-
-       - public routes:  /rides/shared, /rides/road-map/shared,
-                         /trips/shared, /community/collections/shared,
-                         /discover, /embed/{rides,roads}, /roads/best
-       - shared components used by both public + dashboard surfaces:
-                         TripPlannerMap, TripExportMenu, TripCollaborateModal,
-                         RoadPreviewCard, SharedRidesSection,
-                         SegmentTrendChart, RoadReviewsPanel, PassesPanel,
-                         TripStopsPanel, TripImportDialog,
-                         RouteCollectionFollowCta,
-                         RouteCollectionVisibilityPill,
-                         map/ElevationSparkline, map/FunZoneLayer,
-                         lib/road-map-layer
-       - one dashboard route not covered by the per-route sweeps:
-                         /(dashboard)/gamification
-
-     These call sites need their own sweep before the aliases can be
-     dropped from @theme. Until then the remap keeps them rendering
-     in the canonical brand orange. */
-  --color-tarmoto-cyan: #ff6a1a;
-  --color-tarmoto-cyan-light: #ff8a44;
-  --color-tarmoto-cyan-dark: #d44f00;
-
   /* Canonical semantic foreground tones (matches colors_and_type.css from
      the design package). Exposed as Tailwind utilities (`text-fg-dim`,
      `text-fg-mute`, …) so components can apply ink-on-cream opacity steps
@@ -87,7 +56,7 @@
      both `bg-*` and `text-*` utilities; remapping a single token there
      would force foreground and background to share the same colour,
      which breaks cases like `bg-white text-slate-900` (print pages) or
-     `bg-tarmoto-cyan text-slate-950` (primary CTAs). Background and text
+     `bg-accent text-slate-950` (primary CTAs). Background and text
      translations are handled separately in @layer utilities below. */
   --color-slate-850: #ede6da;
 
@@ -318,7 +287,7 @@
      group-hover) instead of remapping --color-slate-* in @theme so that
      the matching text-slate-X utilities keep their native dark colours —
      that way `bg-white text-slate-900` (print pages) and
-     `bg-tarmoto-cyan text-slate-950` (primary CTAs) still get the dark
+     `bg-accent text-slate-950` (primary CTAs) still get the dark
      foreground they were designed for.
 
      The overrides are scoped to `body.bg-cream:not(:has(.tarmoto-no-cream))`
@@ -2282,7 +2251,7 @@
      `text-slate-700/800/900/950` and the mid-range `text-slate-400/500/600`
      are left alone — Tailwind's native colours are dark enough to read on
      cream (and on white / coloured backgrounds for things like
-     `bg-tarmoto-cyan text-slate-950` primary CTAs).
+     `bg-accent text-slate-950` primary CTAs).
 
      Scoping uses `body.bg-cream:not(:has(.tarmoto-no-cream))` as the stable ancestor: layout.tsx puts
      `bg-cream` on `<body>`, so every cream-themed page (dashboard, auth
