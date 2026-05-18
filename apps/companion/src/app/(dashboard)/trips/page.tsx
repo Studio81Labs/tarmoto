@@ -469,7 +469,7 @@ export default function TripListPage() {
   };
   return (
     <div className="overflow-y-auto h-full">
-      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <Stamp className="block mb-1">{t("Plan")}</Stamp>

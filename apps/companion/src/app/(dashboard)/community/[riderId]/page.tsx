@@ -152,7 +152,7 @@ export default function RiderProfilePage() {
     }
   }
   return (
-    <div className="p-6 max-w-5xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Link
         href="/community"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-6 transition"

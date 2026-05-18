@@ -58,7 +58,7 @@ export default function HomePage() {
     .slice(0, 3);
 
   return (
-    <div className="mx-auto w-full max-w-6xl animate-fade-in space-y-8 p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in space-y-8 p-7">
       {/* Hero stamp + title */}
       <header>
         <Stamp>{t("Welcome back")}</Stamp>

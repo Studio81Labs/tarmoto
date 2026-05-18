@@ -260,7 +260,7 @@ export default function CollectionDetailPage() {
   };
   if (load.phase === "loading") {
     return (
-      <div className="p-6 max-w-4xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <div className="flex items-center gap-2 text-fg-dim text-sm">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading collection\u2026")}
@@ -270,7 +270,7 @@ export default function CollectionDetailPage() {
   }
   if (load.phase === "not-found") {
     return (
-      <div className="p-6 max-w-4xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <Link
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -294,7 +294,7 @@ export default function CollectionDetailPage() {
   }
   if (load.phase === "error") {
     return (
-      <div className="p-6 max-w-4xl mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <Link
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -366,7 +366,7 @@ export default function CollectionDetailPage() {
   const loadingMembers = loadingTrips || loadingRides;
   const memberLoadError = tripsError || ridesError;
   return (
-    <div className="p-6 max-w-4xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Link
         href="/community/collections"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"

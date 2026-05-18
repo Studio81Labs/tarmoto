@@ -63,7 +63,7 @@ function RidesPageInner() {
     }
   }
   return (
-    <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
+    <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-page mx-auto w-full animate-fade-in">
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <div>
           <Stamp className="block mb-1">{t("Ride history")}</Stamp>

@@ -109,7 +109,7 @@ function CompareRidesPageInner() {
     else router.push(url, { scroll: false });
   }
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <div className="flex items-center gap-4 mb-6">
         <Link
           href="/rides"
