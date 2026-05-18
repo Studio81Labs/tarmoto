@@ -20,7 +20,7 @@ export default function TripEditRedirectPage() {
     router.replace(`/trips/planner?tripId=${encodeURIComponent(tripId)}`);
   }, [tripId, router]);
   return (
-    <div className="flex h-full items-center justify-center text-slate-400">
+    <div className="flex h-full items-center justify-center text-fg-dim">
       <Loader2 size={20} className="mr-2 animate-spin" />
       {t("Opening planner\u2026 ")}
     </div>

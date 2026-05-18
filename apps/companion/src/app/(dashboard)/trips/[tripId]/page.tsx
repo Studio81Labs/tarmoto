@@ -163,7 +163,7 @@ export default function TripDetailPage() {
   }, [loaded, router]);
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-400">
+      <div className="flex h-full items-center justify-center text-fg-dim">
         <Loader2 size={20} className="mr-2 animate-spin" />
         {t("Loading trip\u2026 ")}
       </div>
@@ -174,17 +174,17 @@ export default function TripDetailPage() {
       <div className="p-6 max-w-2xl mx-auto animate-fade-in">
         <Link
           href="/trips"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition mb-6"
+          className="inline-flex items-center gap-1.5 text-sm text-fg-dim hover:text-ink transition mb-6"
         >
           <ArrowLeft size={14} />
           {t("Back to trips ")}
         </Link>
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
-          <Route size={36} className="mx-auto mb-3 text-slate-600" />
-          <h2 className="text-lg font-semibold text-white">
+        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
+          <Route size={36} className="mx-auto mb-3 text-fg-mute" />
+          <h2 className="text-lg font-semibold text-ink">
             {t("Trip not found")}
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-fg-dim">
             {t("The trip may have been deleted, or the link may be wrong. ")}
           </p>
         </div>
@@ -196,7 +196,7 @@ export default function TripDetailPage() {
       <div className="p-6 max-w-2xl mx-auto animate-fade-in">
         <Link
           href="/trips"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition mb-6"
+          className="inline-flex items-center gap-1.5 text-sm text-fg-dim hover:text-ink transition mb-6"
         >
           <ArrowLeft size={14} />
           {t("Back to trips ")}
@@ -216,23 +216,23 @@ export default function TripDetailPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header / action bar */}
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 bg-slate-950/90 px-4 py-3 backdrop-blur-sm">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-paper/90 px-4 py-3 backdrop-blur-sm">
         <div className="flex items-start gap-3">
           <Link
             href="/trips"
             aria-label={t("Back to trips")}
-            className="mt-1 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            className="mt-1 rounded-lg p-1.5 text-fg-dim hover:bg-paper hover:text-ink transition"
           >
             <ArrowLeft size={16} />
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-white">
+              <h1 className="text-base font-semibold text-ink">
                 {loaded.detail.title}
               </h1>
               <StatusBadge status={loaded.detail.status} />
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={11} />{" "}
                 {t(trip.days.length === 1 ? "{count} day" : "{count} days", {
@@ -273,7 +273,7 @@ export default function TripDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/trips/${loaded.detail.id}/edit`}
-            className="flex items-center gap-1.5 rounded-lg bg-tarmoto-cyan px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-tarmoto-cyan-light transition"
+            className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink hover:brightness-95 transition"
           >
             <Edit size={14} />
             {t("Edit ")}
@@ -281,7 +281,7 @@ export default function TripDetailPage() {
           <button
             type="button"
             onClick={() => setCollaborateOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 transition"
+            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink hover:bg-paper-2 transition"
           >
             <Share2 size={14} />
             {t("Share ")}
@@ -291,7 +291,7 @@ export default function TripDetailPage() {
             href={`/trips/${loaded.detail.id}/print`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 transition"
+            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink hover:bg-paper-2 transition"
           >
             <Printer size={14} />
             {t("Print ")}
@@ -302,7 +302,7 @@ export default function TripDetailPage() {
               onClick={handleDelete}
               disabled={deleting}
               aria-label={t("Delete trip")}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10 transition disabled:opacity-60 disabled:cursor-wait"
+              className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10 transition disabled:opacity-60 disabled:cursor-wait"
             >
               {deleting ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -326,7 +326,7 @@ export default function TripDetailPage() {
 
       {/* Main split: map | right column */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="relative flex-1 bg-slate-900">
+        <div className="relative flex-1 bg-cream">
           <TripPlannerMap
             trip={trip}
             month={travelMonth}
@@ -335,13 +335,13 @@ export default function TripDetailPage() {
             collaboratorCursors={collabSession.cursors}
             suggestions={collabSession.suggestions}
           />
-          <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300 backdrop-blur-sm">
+          <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-paper/80 px-2.5 py-1 text-[11px] text-ink backdrop-blur-sm">
             <label className="pointer-events-auto inline-flex items-center gap-2">
               {t("Travel month ")}
               <select
                 value={travelMonth}
                 onChange={(e) => setTravelMonth(Number(e.target.value))}
-                className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-200"
+                className="rounded border border-line-strong bg-cream px-1.5 py-0.5 text-[11px] text-ink"
                 aria-label={t("Travel month")}
               >
                 {MONTHS.map((label, idx) => (
@@ -356,12 +356,12 @@ export default function TripDetailPage() {
 
         <aside
           aria-label={t("Trip detail panel")}
-          className="hidden w-96 shrink-0 flex-col border-l border-slate-800 bg-slate-950 lg:flex"
+          className="hidden w-96 shrink-0 flex-col border-l border-line bg-paper lg:flex"
         >
           <nav
             role="tablist"
             aria-label={t("Trip detail tabs")}
-            className="flex shrink-0 border-b border-slate-800"
+            className="flex shrink-0 border-b border-line"
           >
             <TabButton
               id="days"
@@ -440,14 +440,18 @@ const MONTHS = [
   "Dec",
 ];
 function StatusBadge({ status }: { status: string }) {
+  // Mirrors the canonical STATUS_PILL map in /trips/page.tsx — the
+  // four trip statuses span q3 (planned) → accent (active) → q5
+  // (completed), with paper/fg-dim/line for drafts and anything else.
+  // Every tone keeps text-ink for ≥4.5:1 contrast on the 10px label.
   const tone =
     status === "active"
-      ? "bg-tarmoto-cyan text-slate-950"
+      ? "bg-accent text-ink"
       : status === "completed"
-        ? "bg-quality-excellent text-slate-950"
+        ? "bg-quality-q5/40 text-ink"
         : status === "planned"
-          ? "bg-blue-500 text-white"
-          : "bg-slate-700 text-slate-200";
+          ? "bg-quality-q3/50 text-ink"
+          : "bg-paper text-fg-dim border border-line";
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
@@ -475,8 +479,8 @@ function TabButton({
       onClick={() => onSelect(id)}
       className={`flex-1 px-3 py-3 text-xs font-medium transition ${
         active
-          ? "border-b-2 border-tarmoto-cyan text-white"
-          : "border-b-2 border-transparent text-slate-400 hover:text-white"
+          ? "border-b-2 border-accent text-ink"
+          : "border-b-2 border-transparent text-fg-dim hover:text-ink"
       }`}
     >
       {label}
@@ -490,7 +494,7 @@ function DaysList({
 }) {
   if (trip.days.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
+      <p className="rounded-lg border border-dashed border-line bg-cream/40 p-4 text-xs text-fg-dim">
         {t(
           "This trip has no days yet. Open it in the planner to generate the itinerary. ",
         )}
@@ -499,21 +503,21 @@ function DaysList({
   }
   return (
     <section className="space-y-2">
-      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
         {t("Day-by-day ")}
       </h2>
       <ul className="space-y-2">
         {trip.days.map((day) => (
           <li
             key={day.dayNumber}
-            className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"
+            className="rounded-lg border border-line bg-cream/60 p-3"
           >
             <div className="flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">
+              <h3 className="text-sm font-semibold text-ink">
                 {t("Day ")}
                 {day.dayNumber}
                 {day.title ? (
-                  <span className="ml-1 font-normal text-slate-400">
+                  <span className="ml-1 font-normal text-fg-dim">
                     · {day.title}
                   </span>
                 ) : null}
@@ -539,13 +543,13 @@ function DaysList({
               />
             </dl>
             {day.overnightStop && (
-              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-400">
-                <BedDouble size={11} className="text-slate-500" />
+              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-fg-dim">
+                <BedDouble size={11} className="text-fg-dim" />
                 {t("Overnight: ")}
                 {day.overnightStop.name}
               </p>
             )}
-            <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+            <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-fg-dim">
               <MapPin size={11} />
               {t("{count} {waypointLabel}", {
                 count: day.waypoints.length,
@@ -561,13 +565,11 @@ function DaysList({
 }
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-slate-950/60 px-2 py-1.5">
-      <dt className="text-[10px] uppercase tracking-wide text-slate-500">
+    <div className="rounded-md bg-paper/60 px-2 py-1.5">
+      <dt className="text-[10px] uppercase tracking-wide text-fg-dim">
         {label}
       </dt>
-      <dd className="mt-0.5 font-semibold tabular-nums text-slate-100">
-        {value}
-      </dd>
+      <dd className="mt-0.5 font-semibold tabular-nums text-ink">{value}</dd>
     </div>
   );
 }
@@ -577,7 +579,7 @@ function SegmentSidebarSection() {
   // showing an empty card list here would be noise — `SegmentSidebar`
   // handles the empty case itself.
   return (
-    <section className="-mx-4 -mb-4 border-t border-slate-800">
+    <section className="-mx-4 -mb-4 border-t border-line">
       <SegmentSidebar />
     </section>
   );
@@ -606,12 +608,12 @@ function MembersList({
   return (
     <div className="p-4 space-y-4">
       <section>
-        <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
           {t("Members ")}
         </h2>
         <ul className="mt-2 space-y-2">
           {members.length === 0 ? (
-            <li className="text-xs text-slate-500">{t("No members yet.")}</li>
+            <li className="text-xs text-fg-dim">{t("No members yet.")}</li>
           ) : (
             members.map((m) => <MemberRow key={m.user_id} member={m} />)
           )}
@@ -619,23 +621,23 @@ function MembersList({
       </section>
 
       {canInvite && (
-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-          <h3 className="text-xs font-semibold text-white">
+        <section className="rounded-lg border border-line bg-cream/40 p-3">
+          <h3 className="text-xs font-semibold text-ink">
             {t("Invite riders")}
           </h3>
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-[11px] text-fg-dim">
             {t(
               "Share the invite code for mobile riders, or copy a web link that lets signed-in riders join the group planner. ",
             )}
           </p>
           <div className="mt-3 flex items-center gap-2">
-            <code className="flex-1 truncate rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-tarmoto-cyan">
+            <code className="flex-1 truncate rounded-md border border-line-strong bg-paper px-2 py-1.5 text-xs font-mono text-accent">
               {inviteCode}
             </code>
             <button
               type="button"
               onClick={handleCopyCode}
-              className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-200 hover:bg-slate-700 transition"
+              className="inline-flex items-center gap-1 rounded-md bg-paper px-2.5 py-1.5 text-[11px] text-ink hover:bg-paper-2 transition"
             >
               {copied ? <Check size={12} /> : null} {copied ? "Copied" : "Copy"}
             </button>
@@ -643,7 +645,7 @@ function MembersList({
           <button
             type="button"
             onClick={onShareLinkClick}
-            className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-tarmoto-cyan hover:underline"
+            className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-accent hover:underline"
           >
             <Share2 size={11} />
             {t("Or share a group link ")}
@@ -659,20 +661,20 @@ function MemberRow({ member }: { member: TripDetailMember }) {
       ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
       : member.role === "admin"
         ? "bg-blue-500/10 text-blue-300 border-blue-500/30"
-        : "bg-slate-800 text-slate-300 border-slate-700";
+        : "bg-paper text-ink border-line-strong";
   const RoleIcon =
     member.role === "owner" ? Crown : member.role === "admin" ? Shield : User;
   return (
-    <li className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+    <li className="flex items-center gap-3 rounded-lg border border-line bg-cream/60 p-2.5">
       <div
         aria-hidden
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-slate-300"
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-paper text-xs font-semibold text-ink"
       >
         {member.display_name.charAt(0).toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-white">{member.display_name}</p>
-        <p className="text-[10px] text-slate-500">
+        <p className="truncate text-sm text-ink">{member.display_name}</p>
+        <p className="text-[10px] text-fg-dim">
           {t("Joined ")}
           {formatJoinedDate(member.joined_at)}
         </p>
@@ -694,16 +696,16 @@ function CollaborateTabSummary({
 }) {
   return (
     <div className="p-4 space-y-3">
-      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
         {t("Collaborate ")}
       </h2>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-fg-dim">
         {t(
           "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ",
         )}
       </p>
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-        <p className="text-xs text-slate-300">
+      <div className="rounded-lg border border-line bg-cream/60 p-3">
+        <p className="text-xs text-ink">
           {suggestionsCount}
           {t("open suggestion ")}
           {suggestionsCount === 1 ? "" : "s"}
@@ -711,7 +713,7 @@ function CollaborateTabSummary({
         <button
           type="button"
           onClick={onOpenModal}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-tarmoto-cyan px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-tarmoto-cyan-light transition"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink hover:brightness-95 transition"
         >
           {t("Open collaboration panel ")}
         </button>
