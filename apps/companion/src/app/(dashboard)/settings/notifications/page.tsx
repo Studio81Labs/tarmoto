@@ -179,7 +179,9 @@ export default function NotificationsPage() {
       {/* Email digest */}
       <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="mb-4">
-          <Stamp className="block mb-1">{t("Email digest")}</Stamp>
+          <Stamp as="h2" className="block mb-1">
+            {t("Email digest")}
+          </Stamp>
           <p className="text-xs text-fg-dim">
             {t("Summary of your riding stats and community activity. ")}
           </p>
