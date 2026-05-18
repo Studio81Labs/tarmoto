@@ -554,33 +554,40 @@ function CalendarCell({ cell, maxDistance }: CalendarCellProps) {
     cell.rides === 0
       ? `${cell.date}: no rides`
       : `${cell.date}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${cell.distanceKm.toFixed(0)} km`;
+  // Ridden cells get a 1px ink-line outline as a secondary cue alongside
+  // the fill intensity. Empty cells stay borderless so they read as the
+  // paper baseline against the surrounding cream card.
+  const isRidden = cell.rides > 0;
   return (
     <span
       title={title}
-      className="block rounded-sm"
+      className={`block rounded-sm ${isRidden ? "border border-line" : ""}`}
       style={{ backgroundColor: heatColor(intensity) }}
     />
   );
 }
 function heatColor(intensity: number): string {
   // Empty cell: paper (visible as "no rides" against the surrounding
-  // cream card without needing a border).
+  // cream card; ridden cells layer a 1px ink-line outline on top of
+  // the fill so the binary "any rides" cue doesn't depend on fill
+  // contrast alone).
   if (intensity <= 0) return "#EDE6DA";
-  // Brand-orange heat ramp tuned for cream — goes from a light paper-
-  // tinted orange ("low activity") through canonical accent up to a
-  // deep orange-900 brown ("peak"). The plain canonical accent
-  // (#FF6A1A) is only ~2.5:1 on cream so the top of the ramp anchors
-  // on #9A340A (~7:1) and the brightest hot cells read clearly. Hex
-  // stops keep SSR + CSS identical and dodge cross-browser alpha
+  // Brand-orange heat ramp tuned so every active stop clears WCAG 3:1
+  // against bg-cream — the brightest low-activity cell is still
+  // visibly distinct from the paper "no rides" baseline, even before
+  // the outline cue kicks in. Ladder ascends from a clean orange
+  // (~3:1) through orange-700 (~4.5:1) and deep brand orange (~7:1)
+  // up to a near-brown peak (~10:1) for the highest-distance days.
+  // Hex stops keep SSR + CSS identical and dodge cross-browser alpha
   // surprises.
   const stops: {
     stop: number;
     color: string;
   }[] = [
-    { stop: 0.15, color: "#F8C8A4" }, // light cream-orange
-    { stop: 0.4, color: "#E89466" }, // mid orange
-    { stop: 0.7, color: "#C2410C" }, // Tailwind orange-700 (~4.3:1)
-    { stop: 1, color: "#9A340A" }, // deep brand orange (~7:1)
+    { stop: 0.15, color: "#E08A4F" }, // light brand orange (~3.0:1)
+    { stop: 0.4, color: "#B85A1C" }, // mid brand orange (~4.5:1)
+    { stop: 0.7, color: "#7F3300" }, // deep brand orange (~7:1)
+    { stop: 1, color: "#4A1E00" }, // very deep brown (~10:1)
   ];
   for (const s of stops) {
     if (intensity <= s.stop) return s.color;
