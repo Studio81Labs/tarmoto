@@ -138,6 +138,27 @@ and exposed as CSS variables.
 - The wordmark belongs on dark surfaces only. There is no light-mode
   wordmark — the brand currently ships dark-only.
 
+## Companion design spec
+
+The companion app (`apps/companion/`) has its own canonical design
+package — cream-on-ink rather than the marketing site's dark-asphalt
+theme. The two share brand DNA (the accent orange, the type families,
+the quality scale) but differ in surface treatment, atom sizing, and
+component vocabulary because they're optimised for different rider
+contexts.
+
+See [`docs/design/companion-spec/`](../companion-spec/) for:
+
+- `source/` — the frozen Claude Design handoff (atoms.jsx,
+  colors_and_type.css, Web App v2.html, Web App v2 Design Map.html,
+  SKILL.md, chat transcripts, ui_kits/web/)
+- `README.md` — the migration plan, atom drift audit, six core rules,
+  and the upstream→vendored path translation table
+
+This brand reference covers the marketing site; the companion spec
+covers the companion. Both stay aligned on the brand-level tokens
+documented above.
+
 ## Other reference material
 
 - [`../database_erd.html`](../database_erd.html) — generated ERD for
