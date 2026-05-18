@@ -38,12 +38,17 @@ const RIDE_TYPE_LABELS: Record<RideType, string> = {
   trip: "Trip",
   tracked: "Tracked",
 };
+// Year-over-year line palette tuned for cream surfaces. Each hue lands
+// at ≥3:1 against bg-cream so the chart lines read as distinct strokes
+// (WCAG 3:1 graphic-element bar). Anchored by canonical accent for
+// year 1; the other four are dark variants of the original cyan/violet/
+// pink/yellow/emerald spread so the per-year colour cue stays usable.
 const YOY_COLORS = [
-  "#22d3ee",
-  "#a78bfa",
-  "#f472b6",
-  "#facc15",
-  "#34d399",
+  "#FF6A1A", // canonical accent (was cyan-400)
+  "#7C3AED", // violet-600 (was violet-400)
+  "#9D2C5C", // deep magenta (matches compare RouteBox B)
+  "#A16207", // amber-700 (was yellow-400)
+  "#047857", // emerald-700 (matches compare DeltaChip improved)
 ] as const;
 function formatDistanceTooltipValue(value: TooltipValueType | undefined) {
   const numeric =
@@ -116,7 +121,7 @@ export default function StatsPage() {
     return (
       <div className="p-6 max-w-6xl mx-auto">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
-        <div className="flex items-center gap-2 text-slate-400">
+        <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading rides\u2026 ")}
         </div>
@@ -127,7 +132,7 @@ export default function StatsPage() {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {loadError}
         </div>
       </div>
@@ -137,12 +142,12 @@ export default function StatsPage() {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center">
-          <BarChart3 size={48} className="mx-auto text-slate-600 mb-4" />
-          <p className="text-slate-400 text-lg mb-2">
+        <div className="rounded-2xl bg-cream border border-line p-16 text-center">
+          <BarChart3 size={48} className="mx-auto text-fg-mute mb-4" />
+          <p className="text-fg-dim text-lg mb-2">
             {t("No rides recorded yet")}
           </p>
-          <p className="text-slate-500 text-sm">
+          <p className="text-fg-dim text-sm">
             {t(
               "Start riding with the Tarmoto mobile app to see your stats here. ",
             )}
@@ -156,7 +161,7 @@ export default function StatsPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{t("Statistics")}</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-fg-dim mt-1">
             {totals.totalRides === 0
               ? "No rides match the current filters."
               : `${totals.totalRides} ride${totals.totalRides === 1 ? "" : "s"} in view.`}
@@ -167,7 +172,7 @@ export default function StatsPage() {
 
       <TotalsGrid totals={totals} />
 
-      <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+      <section className="rounded-2xl bg-cream border border-line p-5">
         <ChartHeader
           icon={<BarChart3 size={16} />}
           title={`Monthly distance — ${focusYear}`}
@@ -179,15 +184,18 @@ export default function StatsPage() {
               data={monthly}
               margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(14, 14, 16, 0.10)"
+              />
               <XAxis
                 dataKey="monthLabel"
-                stroke="#64748b"
+                stroke="rgba(14, 14, 16, 0.42)"
                 fontSize={12}
                 tickLine={false}
               />
               <YAxis
-                stroke="#64748b"
+                stroke="rgba(14, 14, 16, 0.42)"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
@@ -196,24 +204,24 @@ export default function StatsPage() {
               />
               <Tooltip
                 contentStyle={{
-                  background: "#0f172a",
-                  border: "1px solid #1e293b",
+                  background: "#F5EFE6",
+                  border: "1px solid rgba(14, 14, 16, 0.10)",
                   borderRadius: 8,
                   fontSize: 12,
                 }}
-                labelStyle={{ color: "#e2e8f0" }}
+                labelStyle={{ color: "#0E0E10" }}
                 formatter={(value) => [
                   formatDistanceTooltipValue(value),
                   "Distance",
                 ]}
               />
-              <Bar dataKey="distanceKm" fill="#22d3ee" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="distanceKm" fill="#FF6A1A" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </section>
 
-      <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+      <section className="rounded-2xl bg-cream border border-line p-5">
         <ChartHeader
           icon={<CalendarDays size={16} />}
           title={`Calendar heatmap — ${focusYear}`}
@@ -223,7 +231,7 @@ export default function StatsPage() {
       </section>
 
       {yoyYears.length >= 2 && (
-        <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <section className="rounded-2xl bg-cream border border-line p-5">
           <ChartHeader
             icon={<TrendingUp size={16} />}
             title={t("Year-over-year")}
@@ -235,15 +243,18 @@ export default function StatsPage() {
                 data={yoy}
                 margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="rgba(14, 14, 16, 0.10)"
+                />
                 <XAxis
                   dataKey="monthLabel"
-                  stroke="#64748b"
+                  stroke="rgba(14, 14, 16, 0.42)"
                   fontSize={12}
                   tickLine={false}
                 />
                 <YAxis
-                  stroke="#64748b"
+                  stroke="rgba(14, 14, 16, 0.42)"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
@@ -252,16 +263,19 @@ export default function StatsPage() {
                 />
                 <Tooltip
                   contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
+                    background: "#F5EFE6",
+                    border: "1px solid rgba(14, 14, 16, 0.10)",
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  labelStyle={{ color: "#e2e8f0" }}
+                  labelStyle={{ color: "#0E0E10" }}
                   formatter={formatDistanceTooltipValue}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: 12, color: "#94a3b8" }}
+                  wrapperStyle={{
+                    fontSize: 12,
+                    color: "rgba(14, 14, 16, 0.62)",
+                  }}
                   iconType="circle"
                 />
                 {yoyYears.map((year, index) => (
@@ -281,7 +295,7 @@ export default function StatsPage() {
       )}
 
       {yearlyTotals.length > 0 && (
-        <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <section className="rounded-2xl bg-cream border border-line p-5">
           <ChartHeader
             icon={<BarChart3 size={16} />}
             title={t("All years")}
@@ -290,7 +304,7 @@ export default function StatsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
                   <th className="py-2 pr-4 font-semibold">{t("Year")}</th>
                   <th className="py-2 pr-4 font-semibold text-right">
                     {t("Rides")}
@@ -303,12 +317,12 @@ export default function StatsPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-line">
                 {yearlyTotals
                   .slice()
                   .reverse()
                   .map((row) => (
-                    <tr key={row.year} className="text-slate-200">
+                    <tr key={row.year} className="text-ink">
                       <td className="py-2 pr-4 font-medium">{row.year}</td>
                       <td className="py-2 pr-4 text-right tabular-nums">
                         {row.rides}
@@ -317,7 +331,7 @@ export default function StatsPage() {
                         {row.distanceKm.toFixed(0)}
                         {t("km ")}
                       </td>
-                      <td className="py-2 text-right tabular-nums text-slate-400">
+                      <td className="py-2 text-right tabular-nums text-fg-dim">
                         {row.rides > 0
                           ? `${(row.distanceKm / row.rides).toFixed(0)} km`
                           : "—"}
@@ -385,12 +399,12 @@ interface FilterSelectProps {
 }
 function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
   return (
-    <label className="flex items-center gap-2 text-xs text-slate-400">
+    <label className="flex items-center gap-2 text-xs text-fg-dim">
       <span className="uppercase tracking-wider font-semibold">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-tarmoto-cyan"
+        className="bg-paper border border-line-strong rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-ink"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -434,13 +448,13 @@ function TotalsGrid({ totals }: TotalsGridProps) {
       {cards.map((stat) => (
         <div
           key={stat.label}
-          className="p-4 rounded-xl bg-slate-900 border border-slate-800"
+          className="p-4 rounded-xl bg-cream border border-line"
         >
-          <p className="text-xs text-slate-500 mb-1">{stat.label}</p>
-          <p className="text-2xl font-bold text-white tabular-nums">
+          <p className="text-xs text-fg-dim mb-1">{stat.label}</p>
+          <p className="text-2xl font-bold text-ink tabular-nums">
             {stat.value}
             {stat.unit && (
-              <span className="text-sm font-normal text-slate-400 ml-1">
+              <span className="text-sm font-normal text-fg-dim ml-1">
                 {stat.unit}
               </span>
             )}
@@ -458,11 +472,11 @@ interface ChartHeaderProps {
 function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 text-white">
-        <span className="text-tarmoto-cyan">{icon}</span>
+      <div className="flex items-center gap-2 text-ink">
+        <span className="text-accent">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -505,7 +519,7 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
           <CalendarCell key={index} cell={cell} maxDistance={maxDistance} />
         ))}
       </div>
-      <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
+      <div className="flex items-center justify-end gap-2 text-xs text-fg-dim">
         <span>{t("Less")}</span>
         {[0.05, 0.25, 0.5, 0.85].map((step) => (
           <span
@@ -544,17 +558,20 @@ function CalendarCell({ cell, maxDistance }: CalendarCellProps) {
   );
 }
 function heatColor(intensity: number): string {
-  if (intensity <= 0) return "#1e293b";
-  // Tarmoto cyan (#22d3ee) ramped from a near-empty grey via alpha-equivalent
-  // mixing with the slate-900 backdrop. Done in hex so SSR + CSS match.
+  // Empty cell: paper (visible as "no rides" against the surrounding
+  // cream card without needing a border).
+  if (intensity <= 0) return "#EDE6DA";
+  // Canonical accent (#FF6A1A) ramped from paper via opaque hex stops
+  // pre-blended against cream — hex keeps SSR + CSS identical and
+  // avoids alpha-on-cream contrast surprises across browsers.
   const stops: {
     stop: number;
     color: string;
   }[] = [
-    { stop: 0.15, color: "#0e3b4a" },
-    { stop: 0.4, color: "#155e75" },
-    { stop: 0.7, color: "#0891b2" },
-    { stop: 1, color: "#22d3ee" },
+    { stop: 0.15, color: "#F7D4BD" }, // ~20% accent over cream
+    { stop: 0.4, color: "#F9B38A" }, // ~45%
+    { stop: 0.7, color: "#FC8C4E" }, // ~75%
+    { stop: 1, color: "#FF6A1A" }, // full accent
   ];
   for (const s of stops) {
     if (intensity <= s.stop) return s.color;
