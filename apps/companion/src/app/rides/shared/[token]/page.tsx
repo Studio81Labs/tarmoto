@@ -56,7 +56,7 @@ export default async function SharedRidePage({
         </nav>
 
         <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
             {t("Public route share ")}
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">

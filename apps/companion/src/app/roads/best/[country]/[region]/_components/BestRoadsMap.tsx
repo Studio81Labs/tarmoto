@@ -120,7 +120,7 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
           <Marker key={m.id} latitude={m.lat} longitude={m.lng} anchor="center">
             <a
               href={`#road-${m.id}`}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white ring-2 ring-tarmoto-cyan"
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white ring-2 ring-accent"
             >
               {m.rank}
             </a>

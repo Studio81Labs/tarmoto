@@ -47,7 +47,7 @@ export default async function SharedRoadMapPage({
         </nav>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
               {t("Personal road map ")}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">
@@ -55,7 +55,7 @@ export default async function SharedRoadMapPage({
             </h1>
           </div>
           {snapshot && (
-            <div className="px-3 py-1.5 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm tabular-nums">
+            <div className="px-3 py-1.5 rounded-xl bg-accent/10 text-accent font-semibold text-sm tabular-nums">
               {t("{percent}% explored", {
                 percent: snapshot.stats.percent_explored,
               })}
@@ -116,7 +116,7 @@ function SnapshotLegend({ snapshot }: { snapshot: MapShareSnapshot }) {
   return (
     <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
-        <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
+        <span className="h-1 w-6 rounded-full bg-accent" />
         {t("Ridden ({count} segments)", {
           count: snapshot.segments.length.toLocaleString(),
         })}
