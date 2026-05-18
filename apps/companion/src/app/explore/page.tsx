@@ -260,24 +260,19 @@ function ExplorerPageInner() {
   }, [selectedSegmentId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   return (
-    // `tarmoto-no-cream` opts the entire map page out of the
-    // signed-in AppShell's cream theme. The whole experience was
-    // authored for a dark mapping surface (basemap tiles, semantic
-    // overlay colours, dark legend) and the cream remap turns
-    // `bg-slate-800 text-slate-300` toolbar buttons into ink-on-
-    // paper for authenticated users while leaving translucent
-    // `bg-quality-good/20 text-quality-good` washes unremapped —
-    // a mix that broke contrast on the toggle pills. Pinning the
-    // page to dark keeps signed-in and public renderings visually
-    // identical and lets the WCAG-AA contrast budget here apply to
-    // a single canvas.
-    <div className="tarmoto-no-cream flex flex-col h-full bg-slate-950">
+    // Canonical cream-themed explorer (matches RoadExplorerView in
+    // source/Web App v2.html). The earlier `tarmoto-no-cream` opt-out
+    // was a contrast workaround from before the canonical token set
+    // (text-fg-dim / border-line / canonical Pill spec) was finalised
+    // — those tokens now handle the toolbar + overlay-pill contrast
+    // without needing a dark canvas.
+    <div className="flex flex-col h-full bg-cream text-ink">
       {/* Search bar — only rendered for signed-in riders. The
           underlying `/api/v1/geocode` endpoint sits behind
           AuthGuard, so a public visitor would get 401 on every
           query. Hide rather than show-an-error-state, matching
           how the rest of the public explore degrades. */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
         {isAuthenticated ? (
           <ExploreSearch
             onPick={(place) => {
@@ -301,23 +296,18 @@ function ExplorerPageInner() {
         )}
 
         <div className="flex items-center gap-1.5">
-          {/* Active toggle: filled brand accent (high-contrast primary
-              affordance from the design system). Inactive: slate
-              surface with cream text. The old `bg-tarmoto-cyan/10
-              text-tarmoto-cyan` for the Filters button rendered as
-              ~4:1 orange-on-dark — failed WCAG AA and read as a
-              dim glow rather than an actionable state. Quality /
-              Hazards / Surface keep their semantic data colours
-              (the green / red / blue cues map to the layer the
-              button toggles) but the inactive text bumps from
-              slate-400 → slate-300 to clear the AA threshold on
-              the slate-800 backdrop. */}
+          {/* Active toggle: filled brand accent — primary affordance
+              from the canonical Pill spec. Inactive: paper surface
+              with line border and ink text. Quality / Hazards /
+              Surface / Closures / Passes overlay buttons each keep a
+              semantic data tint (q-scale, accent, blue) as their
+              "layer on" cue and revert to neutral paper when off. */}
           <button
             onClick={() => setFilterOpen(!filterOpen)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition ${
               filterOpen
                 ? "bg-accent text-ink"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             <Filter size={14} />
@@ -329,7 +319,7 @@ function ExplorerPageInner() {
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showQualityOverlay
                 ? "bg-quality-good/20 text-quality-good"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             {t("Quality ")}
@@ -340,7 +330,7 @@ function ExplorerPageInner() {
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showHazardOverlay
                 ? "bg-red-500/20 text-red-300"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             {t("Hazards ")}
@@ -351,7 +341,7 @@ function ExplorerPageInner() {
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showSurfaceOverlay
                 ? "bg-blue-500/20 text-blue-300"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             {t("Surface ")}
@@ -367,7 +357,7 @@ function ExplorerPageInner() {
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showClosuresLayer
                 ? "bg-amber-500/20 text-amber-300"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             {t("Closures ")}
@@ -378,7 +368,7 @@ function ExplorerPageInner() {
             className={`px-3 py-2 rounded-lg text-sm transition ${
               showPassesLayer
                 ? "bg-purple-500/20 text-purple-300"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                : "bg-paper text-ink border border-line hover:bg-paper-2"
             }`}
           >
             {t("Passes ")}
@@ -389,16 +379,14 @@ function ExplorerPageInner() {
       <div className="flex flex-1 overflow-hidden">
         {/* Filter panel */}
         {filterOpen && (
-          <div className="w-64 border-r border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-6 animate-slide-in-right">
+          <div className="w-64 border-r border-line bg-paper overflow-y-auto p-4 space-y-6 animate-slide-in-right">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">
-                {t("Filters")}
-              </h2>
+              <h2 className="text-sm font-semibold text-ink">{t("Filters")}</h2>
               <button
                 type="button"
                 onClick={resetFilters}
                 disabled={isDefault}
-                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="flex items-center gap-1 text-xs text-fg-dim hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 <RotateCcw size={12} />
                 {t("Reset ")}
@@ -406,20 +394,20 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
                 {t("Road quality ")}
               </h3>
               <div className="space-y-2">
                 {QUALITY_OPTIONS.map((opt) => (
                   <label
                     key={opt.key}
-                    className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer"
+                    className="flex items-center gap-2.5 text-sm text-ink cursor-pointer"
                   >
                     <input
                       type="checkbox"
                       checked={filters.quality.has(opt.key)}
                       onChange={() => toggleQualityTier(opt.key)}
-                      className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                     />
                     <span className={`w-2.5 h-2.5 rounded-full ${opt.color}`} />
                     {opt.label}
@@ -429,20 +417,20 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
                 {t("Surface type ")}
               </h3>
               <div className="space-y-2">
                 {SURFACE_OPTIONS.map((opt) => (
                   <label
                     key={opt.key}
-                    className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer"
+                    className="flex items-center gap-2.5 text-sm text-ink cursor-pointer"
                   >
                     <input
                       type="checkbox"
                       checked={filters.surface.has(opt.key)}
                       onChange={() => toggleSurfaceType(opt.key)}
-                      className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                     />
                     <span className={`w-2.5 h-2.5 rounded-full ${opt.color}`} />
                     {opt.label}
@@ -452,20 +440,20 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
                 {t("Hazard type ")}
               </h3>
               <div className="space-y-2">
                 {HAZARD_OPTIONS.map((opt) => (
                   <label
                     key={opt.key}
-                    className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer"
+                    className="flex items-center gap-2.5 text-sm text-ink cursor-pointer"
                   >
                     <input
                       type="checkbox"
                       checked={filters.hazardTypes.has(opt.key)}
                       onChange={() => toggleHazardType(opt.key)}
-                      className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
                     />
                     <span
                       aria-hidden="true"
@@ -483,7 +471,7 @@ function ExplorerPageInner() {
         )}
 
         {/* Map */}
-        <div className="flex-1 relative bg-slate-900">
+        <div className="flex-1 relative bg-cream">
           <QualityMap
             ref={mapRef}
             center={center}
@@ -516,11 +504,11 @@ function ExplorerPageInner() {
             date picker is scoped to Closures (Passes uses month
             selection inside `PassesPanel` itself). */}
         {(showClosuresLayer || showPassesLayer) && (
-          <div className="w-80 border-l border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-4 animate-slide-in-right">
+          <div className="w-80 border-l border-line bg-paper overflow-y-auto p-4 space-y-4 animate-slide-in-right">
             {showClosuresLayer && (
               <div className="space-y-3">
                 <label className="block space-y-1.5">
-                  <span className="text-xs uppercase tracking-wider text-slate-300">
+                  <span className="text-xs uppercase tracking-wider text-ink">
                     {t("Preview closures on")}
                   </span>
                   <input
@@ -531,7 +519,7 @@ function ExplorerPageInner() {
                       if (next) setConditionsDate(next);
                     }}
                     aria-label={t("Preview closures on")}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-accent transition"
+                    className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink focus:outline-none focus:border-accent transition"
                   />
                 </label>
                 {conditionBbox ? (
@@ -543,7 +531,7 @@ function ExplorerPageInner() {
                     showRouteWarnings={false}
                   />
                 ) : (
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-fg-dim">
                     {t("Pan the map to load closures for this area.")}
                   </p>
                 )}
@@ -559,7 +547,7 @@ function ExplorerPageInner() {
                   showRouteWarnings={false}
                 />
               ) : (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-fg-dim">
                   {t("Pan the map to load passes for this area.")}
                 </p>
               ))}
@@ -677,7 +665,7 @@ function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
     <div ref={containerRef} className="relative flex-1 max-w-md">
       <Search
         size={16}
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
       />
       <input
         type="text"
@@ -690,12 +678,12 @@ function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
         placeholder={t("Search for a place…")}
         aria-label={t("Search for a place")}
         autoComplete="off"
-        className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-accent transition"
+        className="w-full pl-9 pr-4 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
       />
       {showResults && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border border-line-strong bg-cream py-1 shadow-xl">
           {loading && matches.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">
+            <div className="px-3 py-2 text-xs text-fg-dim">
               {t("Searching…")}
             </div>
           ) : error ? (
@@ -703,7 +691,7 @@ function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
               {t("Couldn't search right now. Try again.")}
             </div>
           ) : matches.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">
+            <div className="px-3 py-2 text-xs text-fg-dim">
               {t("No places found.")}
             </div>
           ) : (
@@ -712,11 +700,11 @@ function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
                 key={`${m.lat},${m.lng},${i}`}
                 type="button"
                 onClick={() => handlePick(m)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-paper"
               >
                 <MapPin
                   size={12}
-                  className="shrink-0 text-slate-500"
+                  className="shrink-0 text-fg-dim"
                   aria-hidden="true"
                 />
                 <span className="truncate">{m.label}</span>
@@ -737,10 +725,10 @@ interface MapLegendProps {
 function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
   if (!showQuality && !showSurface && !showHazards) return null;
   return (
-    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-slate-950/90 border border-slate-700 backdrop-blur px-3 py-2.5 text-xs text-slate-200 space-y-2 pointer-events-none">
+    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-paper/90 border border-line-strong backdrop-blur px-3 py-2.5 text-xs text-ink space-y-2 pointer-events-none">
       {showQuality && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
             {t("Road quality ")}
           </p>
           <div className="flex items-center gap-2">
@@ -755,7 +743,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       )}
       {showSurface && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
             {t("Surface ")}
           </p>
           <div className="flex items-center gap-2">
@@ -770,7 +758,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       )}
       {showHazards && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-300 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
             {t("Hazards ")}
           </p>
           <div className="flex items-center gap-x-2 gap-y-1 flex-wrap max-w-[260px]">
@@ -787,7 +775,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
               </div>
             ))}
           </div>
-          <p className="text-[9px] text-slate-500 mt-1">
+          <p className="text-[9px] text-fg-dim mt-1">
             {t("Opacity fades as reports age ")}
           </p>
         </div>

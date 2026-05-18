@@ -12,21 +12,21 @@ interface Props {
 export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
   const encoded = encodeURIComponent(callbackUrl);
   return (
-    <header className="flex h-14 items-center justify-between border-b border-slate-800 px-4 md:px-6">
-      <Link href="/" className="text-lg font-bold tracking-tight">
-        <span className="text-tarmoto-cyan">{t("T")}</span>
+    <header className="flex h-14 items-center justify-between border-b border-line px-4 md:px-6">
+      <Link href="/" className="text-lg font-extrabold tracking-tight text-ink">
+        <span className="text-accent">{t("T")}</span>
         {t("armoto ")}
       </Link>
       <div className="flex items-center gap-2">
         <Link
           href={`/login?callbackUrl=${encoded}`}
-          className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition"
+          className="px-3 py-1.5 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition"
         >
           {t("Sign in ")}
         </Link>
         <Link
           href={`/register?callbackUrl=${encoded}`}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-tarmoto-cyan/10 text-tarmoto-cyan hover:bg-tarmoto-cyan/20 transition"
+          className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           {t("Create account ")}
         </Link>

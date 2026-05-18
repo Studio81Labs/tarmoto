@@ -44,7 +44,7 @@ export default async function ExploreLayout({
   }
 
   return (
-    <div className="tarmoto-no-cream flex flex-col h-screen overflow-hidden bg-slate-950">
+    <div className="flex flex-col h-screen overflow-hidden bg-cream text-ink">
       <PublicExploreHeader />
       <div className="flex-1 overflow-y-auto">{children}</div>
     </div>

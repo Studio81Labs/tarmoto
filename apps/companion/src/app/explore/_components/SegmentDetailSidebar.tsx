@@ -48,14 +48,14 @@ export function SegmentDetailSidebar({
     <aside
       role="dialog"
       aria-label={t("Road segment details")}
-      className="absolute inset-x-0 bottom-0 z-20 max-h-[78%] overflow-y-auto border-t border-slate-800 bg-slate-950/95 shadow-2xl backdrop-blur md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0"
+      className="absolute inset-x-0 bottom-0 z-20 max-h-[78%] overflow-y-auto border-t border-line bg-paper/95 shadow-2xl backdrop-blur md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0"
     >
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-paper/95 px-4 py-3 backdrop-blur">
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wider text-slate-500">
+          <p className="text-[11px] uppercase tracking-wider text-fg-dim">
             {t("Road segment ")}
           </p>
-          <h2 className="truncate text-base font-semibold text-white">
+          <h2 className="truncate text-base font-semibold text-ink">
             {state.status === "ready"
               ? segmentTitle(state.segment)
               : t("Segment details")}
@@ -65,7 +65,7 @@ export function SegmentDetailSidebar({
           type="button"
           onClick={onClose}
           aria-label={t("Close segment details")}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-800 text-slate-400 transition hover:border-slate-600 hover:text-white"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line text-fg-dim transition hover:border-line-strong hover:text-ink"
         >
           <X size={16} />
         </button>
@@ -122,21 +122,21 @@ function SegmentDetailContent({
   }, [hydratePreferences]);
 
   return (
-    <div className="space-y-5 px-4 py-4 text-sm text-slate-300">
-      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+    <div className="space-y-5 px-4 py-4 text-sm text-ink">
+      <section className="rounded-lg border border-line bg-cream p-4">
         <div className="flex items-start gap-3">
           <div
-            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-slate-950 ${
-              tier?.bg ?? "bg-slate-500"
+            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-lg text-lg font-extrabold text-ink ${
+              tier?.bg ?? "bg-paper"
             }`}
           >
             {segment.quality_score == null ? "N/A" : score.toFixed(1)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold text-white">
+            <p className="truncate text-lg font-semibold text-ink">
               {segmentTitle(segment)}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-dim">
               {segment.road_number ? `${segment.road_number} · ` : ""}
               {formatDistanceFromMeters(segment.length_m, unitSystem)}
             </p>
@@ -173,20 +173,20 @@ function SegmentDetailContent({
         />
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-        <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-500">
+      <section className="rounded-lg border border-line bg-cream p-4">
+        <p className="mb-3 text-[11px] uppercase tracking-wider text-fg-dim">
           {t("Quality mix ")}
         </p>
         <div className="space-y-2">
           {QUALITY_BREAKDOWN_ROWS.map((row) => (
             <div key={row.key}>
               <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="text-slate-400">{row.label}</span>
-                <span className="tabular-nums text-slate-300">
+                <span className="text-fg-dim">{row.label}</span>
+                <span className="tabular-nums text-ink">
                   {segment.quality_breakdown[row.key]}%
                 </span>
               </div>
-              <div className="h-1.5 rounded-full bg-slate-800">
+              <div className="h-1.5 rounded-full bg-paper">
                 <div
                   className={`h-1.5 rounded-full ${row.bg}`}
                   style={{ width: `${segment.quality_breakdown[row.key]}%` }}
@@ -198,8 +198,8 @@ function SegmentDetailContent({
       </section>
 
       {hasTrend && (
-        <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-          <p className="mb-3 text-[11px] uppercase tracking-wider text-slate-500">
+        <section className="rounded-lg border border-line bg-cream p-4">
+          <p className="mb-3 text-[11px] uppercase tracking-wider text-fg-dim">
             {t("Quality trend ")}
           </p>
           <SegmentTrendChart
@@ -210,17 +210,17 @@ function SegmentDetailContent({
         </section>
       )}
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+      <section className="rounded-lg border border-line bg-cream p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-[11px] uppercase tracking-wider text-slate-500">
+          <p className="text-[11px] uppercase tracking-wider text-fg-dim">
             {t("Active hazards ")}
           </p>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-fg-dim">
             {segment.active_hazard_count}
           </span>
         </div>
         {segment.active_hazards.length === 0 ? (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-fg-dim">
             {t("No active hazards on this segment. ")}
           </p>
         ) : (
@@ -239,18 +239,18 @@ function SegmentDetailContent({
                     {config.emoji}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-slate-100">
+                    <p className="font-semibold text-ink">
                       {config.label}
-                      <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500">
+                      <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
                         {hazard.severity}
                       </span>
                     </p>
                     {hazard.note && (
-                      <p className="mt-0.5 text-xs text-slate-400">
+                      <p className="mt-0.5 text-xs text-fg-dim">
                         {hazard.note}
                       </p>
                     )}
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-fg-dim">
                       {(hazard.reporter ?? "Unknown rider") +
                         " · " +
                         formatRelativeTime(hazard.created_at) +
@@ -266,13 +266,13 @@ function SegmentDetailContent({
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+      <section className="rounded-lg border border-line bg-cream p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-slate-500">
+            <p className="text-[11px] uppercase tracking-wider text-fg-dim">
               {t("Reviews and photos ")}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-dim">
               {segment.review_count === 1
                 ? "1 public review"
                 : `${segment.review_count} public reviews`}
@@ -313,11 +313,11 @@ function StatusBlock({
   body: string;
 }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-6 text-sm text-slate-300">
-      <div className="mt-0.5 text-tarmoto-cyan">{icon}</div>
+    <div className="flex items-start gap-3 px-4 py-6 text-sm text-ink">
+      <div className="mt-0.5 text-accent">{icon}</div>
       <div>
-        <p className="font-medium text-white">{title}</p>
-        <p className="mt-1 text-slate-500">{body}</p>
+        <p className="font-medium text-ink">{title}</p>
+        <p className="mt-1 text-fg-dim">{body}</p>
       </div>
     </div>
   );
@@ -333,19 +333,19 @@ function Metric({
   value: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-slate-500">
+    <div className="rounded-lg border border-line bg-cream p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-fg-dim">
         {icon}
         <p className="text-[10px] uppercase tracking-wider">{label}</p>
       </div>
-      <p className="text-sm font-medium text-white">{value}</p>
+      <p className="text-sm font-medium text-ink">{value}</p>
     </div>
   );
 }
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full border border-slate-700 px-2 py-1 text-slate-300">
+    <span className="rounded-full border border-line-strong px-2 py-1 text-ink">
       {children}
     </span>
   );
