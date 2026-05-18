@@ -494,11 +494,17 @@ function DeltaChip({
   direction: DeltaDirection;
   unit?: string;
 }) {
+  // Delta chips sit inside cream stat cards. text-quality-excellent
+  // (canonical q5 #6FD38A) and text-quality-very-poor (q1 #E05A3C) are
+  // surface hues — they fail WCAG AA as small text on cream
+  // (~1.6:1 / ~3.2:1). Route through darker, cream-safe tokens:
+  // text-emerald-700 (~7.5:1 native dark green) and text-red-400
+  // (auto-remapped to #b91c1c on cream surfaces, ~5.7:1).
   const color =
     direction === "improved"
-      ? "text-quality-excellent"
+      ? "text-emerald-700"
       : direction === "regressed"
-        ? "text-quality-very-poor"
+        ? "text-red-400"
         : "text-fg-dim";
   const Icon =
     direction === "improved"
