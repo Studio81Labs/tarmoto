@@ -50,7 +50,7 @@ export function SharedTripJoinCta({
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
             href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
           >
             <Route size={16} />
             Sign in to collaborate
@@ -95,7 +95,7 @@ export function SharedTripJoinCta({
         type="button"
         onClick={handleJoin}
         disabled={!authReady || joining}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {joining ? (
           <Loader2 size={16} className="animate-spin" />

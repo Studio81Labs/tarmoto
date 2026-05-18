@@ -62,7 +62,7 @@ export function RouteEmbedPanel({
     <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-tarmoto-cyan/20 bg-tarmoto-cyan/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-tarmoto-cyan">
+          <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-accent">
             <Code2 size={14} />
             {t("Embed route ")}
           </div>
@@ -78,7 +78,7 @@ export function RouteEmbedPanel({
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-tarmoto-cyan/90"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-accent/90"
         >
           {copyState === "copied" ? <Check size={16} /> : <Copy size={16} />}
           {t("Copy embed code ")}
@@ -87,11 +87,11 @@ export function RouteEmbedPanel({
 
       <div className="mt-4 flex flex-wrap gap-2">
         <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
-          <Eye size={14} className="text-tarmoto-cyan" />
+          <Eye size={14} className="text-accent" />
           {formatRideEmbedStat(views, "view")}
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
-          <MousePointerClick size={14} className="text-tarmoto-cyan" />
+          <MousePointerClick size={14} className="text-accent" />
           {formatRideEmbedStat(clicks, "click")}
         </div>
       </div>
@@ -107,7 +107,7 @@ export function RouteEmbedPanel({
               onClick={() => setVariant(option.value)}
               className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                 active
-                  ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
+                  ? "border-accent bg-accent/10 text-white"
                   : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
               }`}
             >

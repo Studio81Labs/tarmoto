@@ -27,7 +27,7 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
           </p>
         </div>
         {drawnBbox ? (
-          <span className="text-[10px] uppercase tracking-wider text-tarmoto-cyan bg-tarmoto-cyan/10 px-2 py-0.5 rounded">
+          <span className="text-[10px] uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded">
             {t("Drawn ")}
           </span>
         ) : (
@@ -43,7 +43,7 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
           <button
             type="button"
             onClick={onRetry}
-            className="text-tarmoto-cyan hover:underline"
+            className="text-accent hover:underline"
           >
             {t("Retry ")}
           </button>
@@ -74,11 +74,11 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                   onClick={() => setSelectedZoneId(zone.id)}
                   className={`w-full text-left px-4 py-3 transition flex gap-3 items-start ${
                     active
-                      ? "bg-slate-900 border-l-2 border-tarmoto-cyan"
+                      ? "bg-slate-900 border-l-2 border-accent"
                       : "hover:bg-slate-900/60 border-l-2 border-transparent"
                   }`}
                 >
-                  <span className="flex-shrink-0 mt-0.5 w-7 h-7 rounded-full bg-tarmoto-cyan/10 text-tarmoto-cyan text-xs font-semibold flex items-center justify-center tabular-nums">
+                  <span className="flex-shrink-0 mt-0.5 w-7 h-7 rounded-full bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center tabular-nums">
                     {i + 1}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -86,7 +86,7 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                       <h3 className="text-sm font-medium text-white truncate">
                         {zone.name ?? fallbackName(zone)}
                       </h3>
-                      <span className="text-xs tabular-nums text-tarmoto-cyan flex-shrink-0">
+                      <span className="text-xs tabular-nums text-accent flex-shrink-0">
                         {zone.composite_score.toFixed(1)}
                       </span>
                     </div>

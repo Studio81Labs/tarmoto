@@ -245,7 +245,7 @@ export function DiscoverMap({
           <button
             type="button"
             onClick={() => drawRef.current?.cancel()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan/20 border border-tarmoto-cyan text-tarmoto-cyan text-sm hover:bg-tarmoto-cyan/30 transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent/20 border border-accent text-accent text-sm hover:bg-accent/30 transition"
           >
             <X size={14} />
             {t("Cancel drawing ")}

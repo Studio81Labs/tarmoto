@@ -68,7 +68,7 @@ export default async function SharedCollectionPage({
 
         <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
           <div className="flex items-center gap-2 mb-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
               {t("Route collection ")}
             </p>
             <RouteCollectionVisibilityPill visibility={detail.visibility} />
@@ -137,7 +137,7 @@ export default async function SharedCollectionPage({
                         <KindIcon
                           size={14}
                           className={
-                            isRide ? "text-emerald-400" : "text-tarmoto-cyan"
+                            isRide ? "text-emerald-400" : "text-accent"
                           }
                           aria-hidden="true"
                         />

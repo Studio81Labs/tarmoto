@@ -39,7 +39,7 @@ export function BestRoadsList({ roads }: Props) {
             id={`road-${r.id}`}
             className="flex items-center gap-4 p-4"
           >
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-tarmoto-cyan">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-accent">
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">

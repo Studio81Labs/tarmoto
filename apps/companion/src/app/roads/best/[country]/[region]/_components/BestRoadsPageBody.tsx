@@ -144,7 +144,7 @@ export function BestRoadsPageBody({
             </p>
             <Link
               href={`/trip-planner?segments=${segmentIds}`}
-              className="mt-4 inline-flex items-center rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-tarmoto-cyan/90 transition"
+              className="mt-4 inline-flex items-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-accent/90 transition"
             >
               {t("Plan a trip with these roads ")}
             </Link>
