@@ -51,11 +51,15 @@ type BillingAction =
   | "portal-update"
   | "checkout-premium"
   | "checkout-pro";
+// Status pills render inside the `bg-ink` CurrentPlanCard panel, so the
+// text needs to read against dark. Use the pure q-scale / accent hues
+// for text (bright on ink) over translucent same-hue backgrounds rather
+// than the darkened `*-700` text utilities that pair with cream.
 const STATUS_STYLES: Record<SubscriptionStatus, string> = {
-  active: "bg-quality-q5/20 text-emerald-700 border-quality-q5/40",
-  trialing: "bg-accent/15 text-accent border-accent/40",
-  past_due: "bg-quality-q2/25 text-amber-700 border-quality-q2/50",
-  canceled: "bg-quality-q1/15 text-red-400 border-quality-q1/40",
+  active: "bg-quality-q5/25 text-quality-q5 border-quality-q5/50",
+  trialing: "bg-accent/20 text-accent border-accent/50",
+  past_due: "bg-quality-q2/30 text-quality-q2 border-quality-q2/55",
+  canceled: "bg-quality-q1/25 text-quality-q1 border-quality-q1/55",
 };
 const STATUS_LABELS: Record<SubscriptionStatus, string> = {
   active: "Active",
