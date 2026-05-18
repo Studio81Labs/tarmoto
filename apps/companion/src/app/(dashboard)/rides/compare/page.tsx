@@ -170,7 +170,7 @@ function CompareRidesPageInner() {
       )}
 
       {selectedA && selectedB && selectedA === selectedB && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
+        <div className="rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
           {t("Pick two different rides to compare. ")}
         </div>
       )}
