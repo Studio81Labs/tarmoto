@@ -15,6 +15,7 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
+import { Stamp } from "@/components/tarmoto/atoms";
 type ExportState =
   | {
       kind: "idle";
@@ -183,29 +184,32 @@ export default function DataPage() {
     <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
       >
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <h1 className="text-2xl font-bold mb-2">{t("Data & Account")}</h1>
-      <p className="text-sm text-slate-400 mb-6">
+      <Stamp className="block mb-2">{t("GDPR")}</Stamp>
+      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
+        {t("Data & Account")}
+      </h1>
+      <p className="text-sm text-fg-dim mb-6">
         {t(
           "Export a copy of everything Tarmoto has on you, or delete your account permanently. Both actions comply with GDPR Articles 15 and 17. ",
         )}
       </p>
 
       {/* Export */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="flex items-start gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-slate-800 text-tarmoto-cyan">
+          <div className="p-2 rounded-lg bg-paper text-accent">
             <Download size={18} />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-white">
+            <Stamp as="h2" className="block mb-1">
               {t("Download my data ")}
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            </Stamp>
+            <p className="text-xs text-fg-dim mt-0.5">
               {t(
                 "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
               )}
@@ -213,10 +217,10 @@ export default function DataPage() {
           </div>
         </div>
 
-        <ul className="text-xs text-slate-400 space-y-1 mb-5 ml-12">
+        <ul className="text-xs text-fg-dim space-y-1 mb-5 ml-12">
           {EXPORT_CONTENTS.map((item) => (
             <li key={item} className="flex items-center gap-2">
-              <Check size={12} className="text-tarmoto-cyan shrink-0" />
+              <Check size={12} className="text-accent shrink-0" />
               <span>{item}</span>
             </li>
           ))}
@@ -231,7 +235,7 @@ export default function DataPage() {
               exportState.kind === "requesting" ||
               exportState.kind === "polling"
             }
-            className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {exportState.kind === "requesting" ||
             exportState.kind === "polling" ? (
@@ -252,7 +256,7 @@ export default function DataPage() {
           {exportState.kind === "polling" && (
             <span
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-slate-400"
+              className="inline-flex items-center gap-1.5 text-sm text-fg-dim"
             >
               {t("Usually takes under a minute. ")}
             </span>
@@ -262,7 +266,7 @@ export default function DataPage() {
               href={exportState.downloadUrl}
               download
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-tarmoto-cyan underline hover:text-tarmoto-cyan-light"
+              className="inline-flex items-center gap-1.5 text-sm text-accent underline hover:brightness-95"
             >
               <Download size={14} />
               {t("Download your data (link expires in 7 days) ")}
@@ -277,16 +281,16 @@ export default function DataPage() {
       </section>
 
       {/* Delete account */}
-      <section className="rounded-xl border border-red-500/20 bg-red-500/5 p-5">
+      <section className="rounded-2xl border border-quality-q1/30 bg-quality-q1/10 p-[22px]">
         <div className="flex items-start gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-red-500/10 text-red-400">
+          <div className="p-2 rounded-lg bg-quality-q1/15 text-red-400">
             <Trash2 size={18} />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-red-300">
+            <Stamp as="h2" className="block mb-1 text-red-400">
               {t("Delete my account ")}
-            </h2>
-            <p className="text-xs text-red-200/70 mt-0.5">
+            </Stamp>
+            <p className="text-xs text-red-400/80 mt-0.5 leading-relaxed">
               {t(
                 "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
               )}
@@ -298,7 +302,7 @@ export default function DataPage() {
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-300 text-sm font-semibold hover:bg-red-500/20 transition border border-red-500/30"
+            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-transparent text-quality-q1 text-[11px] font-bold tracking-[0.2px] uppercase hover:bg-quality-q1/10 transition border border-quality-q1"
           >
             <Trash2 size={14} />
             {t("Delete my account\u2026 ")}
@@ -347,16 +351,19 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-account-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-red-500/30 shadow-xl">
-        <header className="flex items-start justify-between gap-4 p-5 border-b border-slate-800">
+      <div className="w-full max-w-md rounded-2xl bg-cream border border-quality-q1/40 shadow-[0_24px_60px_rgba(14,14,16,0.2)]">
+        <header className="flex items-start justify-between gap-4 p-5 border-b border-line">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-red-400" />
-            <h3 id="delete-account-title" className="text-sm font-semibold">
+            <h3
+              id="delete-account-title"
+              className="font-sans font-extrabold tracking-[-0.5px] text-[18px] text-ink"
+            >
               {t("Delete account permanently ")}
             </h3>
           </div>
@@ -365,27 +372,27 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             onClick={onClose}
             disabled={busy}
             aria-label={t("Close")}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+            className="p-1 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
           >
             <X size={16} />
           </button>
         </header>
 
         <div className="p-5 space-y-4">
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-ink">
             {t(
               "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
             )}
           </p>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-fg-dim">
             {t("To confirm, type your email address")}{" "}
-            <span className="font-mono text-white">{email}</span>
+            <span className="font-mono text-ink">{email}</span>
             {t("below. ")}
           </p>
           <div>
             <label
               htmlFor="delete-confirm-email"
-              className="block text-xs text-slate-500 mb-1.5"
+              className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
             >
               {t("Your email address ")}
             </label>
@@ -397,13 +404,13 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-red-400 transition disabled:opacity-50"
+              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-quality-q1 transition disabled:opacity-50"
             />
           </div>
           <div>
             <label
               htmlFor="delete-confirm-password"
-              className="block text-xs text-slate-500 mb-1.5"
+              className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
             >
               {t("Your password ")}
             </label>
@@ -414,7 +421,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-red-400 transition disabled:opacity-50"
+              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-quality-q1 transition disabled:opacity-50"
             />
           </div>
           {state.kind === "error" && (
@@ -424,12 +431,12 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 p-5 border-t border-slate-800">
+        <footer className="flex items-center justify-end gap-2 p-5 border-t border-line">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-50"
+            className="px-4 py-2 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
           >
             {t("Cancel ")}
           </button>
@@ -437,7 +444,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             type="button"
             onClick={confirmDelete}
             disabled={!canSubmit || busy}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-quality-q1 text-ink text-[11px] font-bold tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {busy ? (
               <>
