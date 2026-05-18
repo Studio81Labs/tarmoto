@@ -166,7 +166,7 @@ export default function RideDetailPage() {
   if (error || !ride) {
     return (
       <PageShell>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {error ?? "Could not load ride"}
         </div>
       </PageShell>
@@ -238,7 +238,7 @@ export default function RideDetailPage() {
       {exportError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300 flex items-center justify-between gap-3"
+          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3"
         >
           <span>
             {t("Export failed: ")}
@@ -247,7 +247,7 @@ export default function RideDetailPage() {
           <button
             type="button"
             onClick={() => setExportError(null)}
-            className="text-xs text-red-300/70 hover:text-red-200 transition"
+            className="text-xs text-red-400/70 hover:text-red-400 transition"
           >
             {t("Dismiss ")}
           </button>
