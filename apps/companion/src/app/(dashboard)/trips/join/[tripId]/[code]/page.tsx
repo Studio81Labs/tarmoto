@@ -115,11 +115,11 @@ export default function TripInviteJoinPage() {
     <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4 py-12 text-center">
       {state.kind === "joining" && (
         <>
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-tarmoto-cyan" />
-          <h1 className="text-xl font-semibold text-slate-100">
+          <Loader2 className="mb-4 h-10 w-10 animate-spin text-accent" />
+          <h1 className="text-xl font-semibold text-ink">
             Accepting your trip invite…
           </h1>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-fg-dim">
             Hang tight while we add you to the trip.
           </p>
         </>
@@ -128,24 +128,22 @@ export default function TripInviteJoinPage() {
       {state.kind === "success" && (
         <>
           <Check className="mb-4 h-10 w-10 text-quality-excellent" />
-          <h1 className="text-xl font-semibold text-slate-100">
-            You&apos;re in!
-          </h1>
-          <p className="mt-2 text-sm text-slate-400">Taking you to the trip…</p>
+          <h1 className="text-xl font-semibold text-ink">You&apos;re in!</h1>
+          <p className="mt-2 text-sm text-fg-dim">Taking you to the trip…</p>
         </>
       )}
 
       {state.kind === "error" && (
         <>
           <AlertTriangle className="mb-4 h-10 w-10 text-amber-400" />
-          <h1 className="text-xl font-semibold text-slate-100">
+          <h1 className="text-xl font-semibold text-ink">
             We couldn&apos;t accept this invite
           </h1>
-          <p className="mt-2 text-sm text-slate-400">{state.message}</p>
+          <p className="mt-2 text-sm text-fg-dim">{state.message}</p>
           <div className="mt-6 flex gap-3">
             <Link
               href="/trips"
-              className="rounded-md bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+              className="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink hover:brightness-95 transition"
             >
               Go to my trips
             </Link>
