@@ -150,7 +150,7 @@ export default function NotificationsPage() {
         <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
           {t("Notifications")}
         </h1>
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-quality-q1">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load preferences: ")}
           {loadError}
         </div>
@@ -303,7 +303,7 @@ export default function NotificationsPage() {
           </span>
         )}
         {saveState.kind === "error" && (
-          <span className="text-sm text-quality-q1">{saveState.message}</span>
+          <span className="text-sm text-red-400">{saveState.message}</span>
         )}
         {isDirty && saveState.kind !== "saving" && (
           <span className="text-sm text-fg-mute">{t("Unsaved changes")}</span>
