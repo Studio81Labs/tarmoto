@@ -49,7 +49,7 @@ export function BestRoadsEmbedWidget({
         <header className="border-b border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
                 {t("Tarmoto widget ")}
               </p>
               <h1 className="mt-2 text-xl font-semibold text-white">
@@ -66,7 +66,7 @@ export function BestRoadsEmbedWidget({
               href={pageUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center rounded-full border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15"
+              className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition hover:bg-accent/15"
             >
               {t("View full map ")}
             </Link>
@@ -168,7 +168,7 @@ export function BestRoadsEmbedWidget({
                     key={road.id}
                     className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2.5"
                   >
-                    <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-tarmoto-cyan">
+                    <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-accent">
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
