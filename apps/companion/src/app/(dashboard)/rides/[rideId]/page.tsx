@@ -627,7 +627,7 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
       <LineSeriesChart
         points={avgPoints}
         secondaryPoints={maxPoints}
-        color="#22d3ee"
+        color="#FF6A1A"
         secondaryColor="#f472b6"
         minY={0}
         maxY={peak}
