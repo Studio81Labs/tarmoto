@@ -141,7 +141,7 @@ export default function RideDetailPage() {
   if (loading) {
     return (
       <PageShell>
-        <div className="flex items-center gap-2 text-slate-400">
+        <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading ride\u2026 ")}
         </div>
@@ -151,12 +151,10 @@ export default function RideDetailPage() {
   if (notFound) {
     return (
       <PageShell>
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
-          <Route size={40} className="mx-auto text-slate-600 mb-3" />
-          <p className="text-slate-200 font-medium mb-1">
-            {t("Ride not found")}
-          </p>
-          <p className="text-sm text-slate-500">
+        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
+          <Route size={40} className="mx-auto text-fg-mute mb-3" />
+          <p className="text-ink font-medium mb-1">{t("Ride not found")}</p>
+          <p className="text-sm text-fg-dim">
             {t(
               "This ride may have been deleted or doesn't belong to your account. ",
             )}
@@ -168,7 +166,7 @@ export default function RideDetailPage() {
   if (error || !ride) {
     return (
       <PageShell>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {error ?? "Could not load ride"}
         </div>
       </PageShell>
@@ -187,14 +185,14 @@ export default function RideDetailPage() {
         <div className="flex items-center gap-4 mb-6">
           <Link
             href="/rides"
-            className="p-2 rounded-lg hover:bg-slate-800 transition"
+            className="p-2 rounded-lg hover:bg-paper transition"
             aria-label={t("Back to rides")}
           >
-            <ArrowLeft size={20} className="text-slate-400" />
+            <ArrowLeft size={20} className="text-fg-dim" />
           </Link>
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold truncate">{rideName}</h1>
-            <p className="text-sm text-slate-400 mt-0.5">
+            <p className="text-sm text-fg-dim mt-0.5">
               {new Date(ride.started_at).toLocaleString()} ·{" "}
               {t("{rideType} ride", { rideType: rideTypeLabel })}
             </p>
@@ -202,7 +200,7 @@ export default function RideDetailPage() {
           <button
             type="button"
             onClick={handleShare}
-            className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+            className="p-2 rounded-lg bg-paper text-ink hover:bg-paper-2 transition"
             aria-label={t("Copy share link")}
             title={shareCopied ? "Link copied" : "Copy share link"}
           >
@@ -212,7 +210,7 @@ export default function RideDetailPage() {
             type="button"
             onClick={() => handleExport("gpx")}
             disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {exporting === "gpx" ? (
               <Loader2 size={14} className="animate-spin" />
@@ -225,7 +223,7 @@ export default function RideDetailPage() {
             type="button"
             onClick={() => handleExport("csv")}
             disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {exporting === "csv" ? (
               <Loader2 size={14} className="animate-spin" />
@@ -240,7 +238,7 @@ export default function RideDetailPage() {
       {exportError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300 flex items-center justify-between gap-3"
+          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3"
         >
           <span>
             {t("Export failed: ")}
@@ -249,7 +247,7 @@ export default function RideDetailPage() {
           <button
             type="button"
             onClick={() => setExportError(null)}
-            className="text-xs text-red-300/70 hover:text-red-200 transition"
+            className="text-xs text-red-400/70 hover:text-red-400 transition"
           >
             {t("Dismiss ")}
           </button>
@@ -257,7 +255,7 @@ export default function RideDetailPage() {
       )}
 
       {/* Route map */}
-      <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-5 mb-6">
         <SectionHeader
           icon={<Route size={16} />}
           title={t("Route")}
@@ -268,14 +266,14 @@ export default function RideDetailPage() {
             <RideRouteMap geometry={ride.route_geometry} />
           </div>
         ) : (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-10 text-center text-sm text-slate-500">
+          <div className="mt-4 rounded-xl border border-dashed border-line p-10 text-center text-sm text-fg-dim">
             {t("No GPS track was recorded for this ride.")}
           </div>
         )}
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <div className="rounded-2xl bg-cream border border-line p-5">
           <SectionHeader
             icon={<Mountain size={16} />}
             title={t("Elevation profile")}
@@ -283,7 +281,7 @@ export default function RideDetailPage() {
           />
           <ElevationProfileChart />
         </div>
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <div className="rounded-2xl bg-cream border border-line p-5">
           <SectionHeader
             icon={<Gauge size={16} />}
             title={t("Speed graph")}
@@ -351,7 +349,7 @@ export default function RideDetailPage() {
 
       {/* Quality breakdown + fuel */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="md:col-span-2 rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <div className="md:col-span-2 rounded-2xl bg-cream border border-line p-5">
           <SectionHeader
             icon={<Gauge size={16} />}
             title={t("Road quality breakdown")}
@@ -366,25 +364,21 @@ export default function RideDetailPage() {
             {breakdown.map((row) => (
               <li
                 key={row.tier}
-                className="flex items-center gap-2 text-xs text-slate-300"
+                className="flex items-center gap-2 text-xs text-ink"
               >
                 <span
                   className="w-2.5 h-2.5 rounded-full"
                   style={{ backgroundColor: row.color }}
                 />
                 <span className="flex-1 truncate">{row.label}</span>
-                <span className="tabular-nums text-slate-400">
-                  {row.percent}%
-                </span>
+                <span className="tabular-nums text-fg-dim">{row.percent}%</span>
               </li>
             ))}
           </ul>
         </div>
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-5">
+        <div className="rounded-2xl bg-cream border border-line p-5 flex flex-col gap-5">
           <div>
-            <p className="text-xs text-slate-500 mb-1">
-              {t("Avg road quality")}
-            </p>
+            <p className="text-xs text-fg-dim mb-1">{t("Avg road quality")}</p>
             {avgTier ? (
               <span
                 className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold quality-${avgTier}`}
@@ -395,14 +389,14 @@ export default function RideDetailPage() {
                 </span>
               </span>
             ) : (
-              <span className="text-slate-500 text-sm">—</span>
+              <span className="text-fg-dim text-sm">—</span>
             )}
           </div>
           <div>
-            <p className="text-xs text-slate-500 mb-1">{t("Fuel estimate")}</p>
-            <p className="text-xl font-bold text-white tabular-nums">
+            <p className="text-xs text-fg-dim mb-1">{t("Fuel estimate")}</p>
+            <p className="text-xl font-bold text-ink tabular-nums">
               {formatNumber(ride.fuel_estimate_l, 2)}
-              <span className="text-sm font-normal text-slate-400 ml-1">
+              <span className="text-sm font-normal text-fg-dim ml-1">
                 {t("L")}
               </span>
             </p>
@@ -412,7 +406,7 @@ export default function RideDetailPage() {
 
       {/* Segments table */}
       {ride.segments.length > 0 && (
-        <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+        <section className="rounded-2xl bg-cream border border-line p-5">
           <SectionHeader
             icon={<Route size={16} />}
             title={t("Segments")}
@@ -421,7 +415,7 @@ export default function RideDetailPage() {
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
                   <th className="py-2 pr-4 font-semibold">{t("Road")}</th>
                   <th className="py-2 pr-4 font-semibold">{t("Quality")}</th>
                   <th className="py-2 pr-4 font-semibold text-right">
@@ -433,7 +427,7 @@ export default function RideDetailPage() {
                   <th className="py-2 pr-0 font-semibold">{t("Speed")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-line">
                 {ride.segments.map((seg, index) => {
                   const tier = readingToTier(seg.quality_reading);
                   const pct =
@@ -444,10 +438,10 @@ export default function RideDetailPage() {
                         )
                       : 0;
                   return (
-                    <tr key={index} className="text-slate-200">
+                    <tr key={index} className="text-ink">
                       <td className="py-2 pr-4">
                         {seg.road_name ?? (
-                          <span className="text-slate-500">{t("Unnamed")}</span>
+                          <span className="text-fg-dim">{t("Unnamed")}</span>
                         )}
                       </td>
                       <td className="py-2 pr-4">
@@ -458,12 +452,12 @@ export default function RideDetailPage() {
                             {QUALITY_CONFIG[tier].label}
                           </span>
                         ) : (
-                          <span className="text-slate-500">—</span>
+                          <span className="text-fg-dim">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
                         {formatNumber(seg.speed_avg, 0)}
-                        <span className="text-slate-500 ml-1">{t("km/h")}</span>
+                        <span className="text-fg-dim ml-1">{t("km/h")}</span>
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
                         {seg.lean_angle_max == null
@@ -472,11 +466,11 @@ export default function RideDetailPage() {
                       </td>
                       <td className="py-2 pr-0 w-40">
                         <div
-                          className="h-1.5 rounded-full bg-slate-800"
+                          className="h-1.5 rounded-full bg-paper"
                           aria-hidden
                         >
                           <div
-                            className="h-full rounded-full bg-tarmoto-cyan"
+                            className="h-full rounded-full bg-accent"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -505,10 +499,10 @@ function PageShell({
         <div className="flex items-center gap-4 mb-6">
           <Link
             href="/rides"
-            className="p-2 rounded-lg hover:bg-slate-800 transition"
+            className="p-2 rounded-lg hover:bg-paper transition"
             aria-label={t("Back to rides")}
           >
-            <ArrowLeft size={20} className="text-slate-400" />
+            <ArrowLeft size={20} className="text-fg-dim" />
           </Link>
           <h1 className="text-2xl font-bold flex-1">{t("Ride")}</h1>
         </div>
@@ -529,17 +523,15 @@ function StatCard({
   unit?: string;
 }) {
   return (
-    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-      <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-        <span className="text-tarmoto-cyan">{icon}</span>
+    <div className="p-4 rounded-xl bg-cream border border-line">
+      <div className="flex items-center gap-2 text-xs text-fg-dim mb-1">
+        <span className="text-accent">{icon}</span>
         {label}
       </div>
-      <p className="text-xl font-bold text-white tabular-nums">
+      <p className="text-xl font-bold text-ink tabular-nums">
         {value}
         {unit && (
-          <span className="text-sm font-normal text-slate-400 ml-1">
-            {unit}
-          </span>
+          <span className="text-sm font-normal text-fg-dim ml-1">{unit}</span>
         )}
       </p>
     </div>
@@ -556,11 +548,11 @@ function SectionHeader({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-2 text-white">
-        <span className="text-tarmoto-cyan">{icon}</span>
+      <div className="flex items-center gap-2 text-ink">
+        <span className="text-accent">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -575,11 +567,11 @@ function QualityBar({
 }) {
   const total = breakdown.reduce((acc, row) => acc + row.percent, 0);
   if (total === 0) {
-    return <div className="mt-4 h-3 rounded-full bg-slate-800" aria-hidden />;
+    return <div className="mt-4 h-3 rounded-full bg-paper" aria-hidden />;
   }
   return (
     <div
-      className="mt-4 flex h-3 rounded-full overflow-hidden bg-slate-800"
+      className="mt-4 flex h-3 rounded-full overflow-hidden bg-paper"
       role="img"
       aria-label={t("Road quality distribution")}
     >
@@ -622,9 +614,9 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
   const peak = values.length ? Math.max(...values) : 1;
   return (
     <div>
-      <div className="mt-4 flex items-center gap-4 text-[11px] text-slate-400">
+      <div className="mt-4 flex items-center gap-4 text-[11px] text-fg-dim">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-tarmoto-cyan" />
+          <span className="h-2 w-2 rounded-full bg-accent" />
           {t("Avg")}
         </span>
         <span className="inline-flex items-center gap-1.5">
@@ -635,7 +627,7 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
       <LineSeriesChart
         points={avgPoints}
         secondaryPoints={maxPoints}
-        color="#22d3ee"
+        color="#FF6A1A"
         secondaryColor="#f472b6"
         minY={0}
         maxY={peak}
@@ -649,7 +641,7 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
 
 function EmptyChartState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-4 flex h-56 items-center justify-center rounded-xl border border-dashed border-slate-800 px-4 text-center text-sm text-slate-500">
+    <div className="mt-4 flex h-56 items-center justify-center rounded-xl border border-dashed border-line px-4 text-center text-sm text-fg-dim">
       {children}
     </div>
   );
@@ -744,7 +736,7 @@ function LineSeriesChart({
         {secondaryColor &&
           renderSeries(secondaryPoints, secondaryColor, "2.5", "6 5")}
       </svg>
-      <div className="flex items-center justify-between text-[11px] text-slate-500">
+      <div className="flex items-center justify-between text-[11px] text-fg-dim">
         <span>
           {formatChartXAxisValue(minX)} {xSuffix}
         </span>
