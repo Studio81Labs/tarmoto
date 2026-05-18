@@ -368,7 +368,7 @@ export default function RoadMapPage() {
     return (
       <div className="flex flex-col h-full">
         <PageHeader percentExplored={null} />
-        <div className="flex-1 flex items-center justify-center text-slate-400 gap-2 text-sm">
+        <div className="flex-1 flex items-center justify-center text-fg-dim gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading road map\u2026 ")}
         </div>
@@ -380,7 +380,7 @@ export default function RoadMapPage() {
       <div className="flex flex-col h-full">
         <PageHeader percentExplored={null} />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-md rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+          <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
             {loadError ?? "Could not load exploration data"}
           </div>
         </div>
@@ -391,7 +391,7 @@ export default function RoadMapPage() {
     <div className="flex flex-col h-full">
       <PageHeader percentExplored={stats.percent_explored} />
 
-      <div className="px-6 pt-4 pb-2 flex flex-wrap items-center gap-2 border-b border-slate-800">
+      <div className="px-6 pt-4 pb-2 flex flex-wrap items-center gap-2 border-b border-line">
         <div
           className="flex items-center gap-1.5 mr-2"
           role="group"
@@ -405,8 +405,8 @@ export default function RoadMapPage() {
               aria-pressed={period === p}
               className={`px-3 py-1.5 rounded-lg text-sm transition ${
                 period === p
-                  ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  ? "bg-accent/10 text-accent"
+                  : "bg-paper text-ink hover:bg-paper-2"
               }`}
             >
               {TIME_PERIOD_LABELS[p]}
@@ -420,7 +420,7 @@ export default function RoadMapPage() {
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
-        <div className="relative bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 min-h-[320px]">
+        <div className="relative bg-cream border-b lg:border-b-0 lg:border-r border-line min-h-[320px]">
           <PersonalRoadMap
             ref={mapRef}
             initialCenter={{
@@ -434,7 +434,7 @@ export default function RoadMapPage() {
           <button
             type="button"
             onClick={handleCenterOnMe}
-            className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur text-xs text-slate-200 hover:bg-slate-900 transition"
+            className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-paper/85 border border-line backdrop-blur text-xs text-ink hover:bg-cream transition"
             title={t("Center on me")}
           >
             <Crosshair size={12} />
@@ -442,8 +442,8 @@ export default function RoadMapPage() {
           </button>
         </div>
 
-        <aside className="overflow-y-auto bg-slate-950/60">
-          <section className="p-5 border-b border-slate-800 space-y-4">
+        <aside className="overflow-y-auto bg-paper/60">
+          <section className="p-5 border-b border-line space-y-4">
             <SummaryCards
               stats={stats}
               periodStats={periodStats}
@@ -452,7 +452,7 @@ export default function RoadMapPage() {
             />
           </section>
 
-          <section className="p-5 border-b border-slate-800">
+          <section className="p-5 border-b border-line">
             <SectionHeader
               icon={<Crosshair size={14} />}
               title={t("Explore near")}
@@ -469,7 +469,7 @@ export default function RoadMapPage() {
             />
           </section>
 
-          <section className="p-5 border-b border-slate-800">
+          <section className="p-5 border-b border-line">
             <SectionHeader
               icon={<Sparkles size={14} />}
               title={t("Regional breakdown")}
@@ -478,7 +478,7 @@ export default function RoadMapPage() {
             {nearbyLoading ? (
               <LoaderRow label="Loading unridden roads…" />
             ) : nearbyError ? (
-              <p className="text-sm text-red-300">{nearbyError}</p>
+              <p className="text-sm text-red-400">{nearbyError}</p>
             ) : regionBuckets.length === 0 ? (
               <EmptyState label="No unridden roads found nearby. You've explored this area well!" />
             ) : (
@@ -486,13 +486,13 @@ export default function RoadMapPage() {
                 {regionBuckets.slice(0, 6).map((bucket) => (
                   <li
                     key={bucket.key}
-                    className="flex items-center justify-between rounded-lg bg-slate-900 border border-slate-800 px-3 py-2"
+                    className="flex items-center justify-between rounded-lg bg-cream border border-line px-3 py-2"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-white truncate">
+                      <p className="text-sm font-medium text-ink truncate">
                         {bucket.label}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-fg-dim">
                         {t(
                           bucket.segments.length === 1
                             ? "{count} segment to discover"
@@ -501,7 +501,7 @@ export default function RoadMapPage() {
                         )}
                       </p>
                     </div>
-                    <span className="text-xs text-slate-400 tabular-nums">
+                    <span className="text-xs text-fg-dim tabular-nums">
                       {formatDistance(bucket.totalLengthKm, unitSystem)}
                     </span>
                   </li>
@@ -519,7 +519,7 @@ export default function RoadMapPage() {
             {nearbyLoading ? (
               <LoaderRow label="Loading suggestions…" />
             ) : nearbyError ? (
-              <p className="text-sm text-red-300">{nearbyError}</p>
+              <p className="text-sm text-red-400">{nearbyError}</p>
             ) : nearby.length === 0 ? (
               <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
             ) : (
@@ -541,14 +541,14 @@ interface PageHeaderProps {
 }
 function PageHeader({ percentExplored }: PageHeaderProps) {
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+    <div className="flex items-center justify-between px-6 py-4 border-b border-line">
       <div>
         <h1 className="text-xl font-bold">{t("My Road Map")}</h1>
-        <p className="text-sm text-slate-400 mt-0.5">
+        <p className="text-sm text-fg-dim mt-0.5">
           {t("Every road you've ridden ")}
         </p>
       </div>
-      <div className="px-4 py-2 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm tabular-nums">
+      <div className="px-4 py-2 rounded-xl bg-accent/10 text-accent font-semibold text-sm tabular-nums">
         {percentExplored == null ? "…" : `${percentExplored}% explored`}
       </div>
     </div>
@@ -597,15 +597,15 @@ function SummaryCards({
       {cards.map((c) => (
         <div
           key={c.label}
-          className="rounded-xl bg-slate-900 border border-slate-800 p-3"
+          className="rounded-xl bg-cream border border-line p-3"
         >
-          <p className="text-xs uppercase tracking-wider text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-fg-dim">
             {c.label}
           </p>
-          <p className="text-xl font-bold text-white tabular-nums mt-0.5">
+          <p className="text-xl font-bold text-ink tabular-nums mt-0.5">
             {c.value}
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">{c.sub}</p>
+          <p className="text-xs text-fg-dim mt-0.5">{c.sub}</p>
         </div>
       ))}
     </div>
@@ -619,11 +619,11 @@ interface SectionHeaderProps {
 function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-2 text-white">
-        <span className="text-tarmoto-cyan">{icon}</span>
+      <div className="flex items-center gap-2 text-ink">
+        <span className="text-accent">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -674,7 +674,7 @@ function NearbyCenterControls({
         type="button"
         onClick={onUseMyLocation}
         disabled={locating}
-        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition disabled:opacity-60"
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition disabled:opacity-60"
       >
         {locating ? (
           <Loader2 size={14} className="animate-spin" />
@@ -684,31 +684,31 @@ function NearbyCenterControls({
         {locating ? "Locating…" : "Use my location"}
       </button>
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-fg-dim">
           <span className="block mb-1">{t("Latitude")}</span>
           <input
             type="number"
             step="0.0001"
             value={latInput}
             onChange={(e) => setLatInput(e.target.value)}
-            className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-tarmoto-cyan"
+            className="w-full px-2 py-1.5 rounded bg-paper border border-line-strong text-sm text-ink focus:outline-none focus:border-accent"
           />
         </label>
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-fg-dim">
           <span className="block mb-1">{t("Longitude")}</span>
           <input
             type="number"
             step="0.0001"
             value={lngInput}
             onChange={(e) => setLngInput(e.target.value)}
-            className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-tarmoto-cyan"
+            className="w-full px-2 py-1.5 rounded bg-paper border border-line-strong text-sm text-ink focus:outline-none focus:border-accent"
           />
         </label>
       </div>
       <button
         type="button"
         onClick={apply}
-        className="w-full px-3 py-1.5 rounded-lg bg-tarmoto-cyan/10 text-tarmoto-cyan text-sm hover:bg-tarmoto-cyan/20 transition"
+        className="w-full px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-sm hover:bg-accent/20 transition"
       >
         {t("Apply coordinates ")}
       </button>
@@ -724,22 +724,22 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
     segment.quality_score != null ? scoreToTier(segment.quality_score) : null;
   const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
   return (
-    <li className="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 px-3 py-2">
+    <li className="flex items-center gap-3 rounded-lg bg-cream border border-line px-3 py-2">
       <span
-        className={`w-2 h-2 rounded-full ${tierInfo?.bg ?? "bg-slate-600"}`}
+        className={`w-2 h-2 rounded-full ${tierInfo?.bg ?? "bg-fg-mute"}`}
         aria-hidden
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-white truncate">
+        <p className="text-sm text-ink truncate">
           {segment.road_name ?? "Unnamed road"}
         </p>
-        <p className="text-xs text-slate-500 capitalize">
+        <p className="text-xs text-fg-dim capitalize">
           {segment.surface_type}
           {tierInfo ? ` · ${tierInfo.label.toLowerCase()}` : ""} ·{" "}
           {formatDistanceFromMeters(segment.length_m, units)}
         </p>
       </div>
-      <span className="text-xs text-slate-400 tabular-nums">
+      <span className="text-xs text-fg-dim tabular-nums">
         {t("{distance} away", {
           distance: formatDistanceFromMeters(segment.distance_m, units),
         })}
@@ -778,7 +778,7 @@ function ShareButton({ state, onClick }: ShareButtonProps) {
       onClick={onClick}
       disabled={state.kind === "creating"}
       title={state.kind === "error" ? state.message : undefined}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-medium hover:bg-cyan-300 transition disabled:opacity-60"
+      className="inline-flex items-center gap-2 px-3 py-[5px] rounded-full bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60"
     >
       <Icon
         size={14}
@@ -793,7 +793,7 @@ interface LoaderRowProps {
 }
 function LoaderRow({ label }: LoaderRowProps) {
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-400">
+    <div className="flex items-center gap-2 text-sm text-fg-dim">
       <Loader2 size={14} className="animate-spin" /> {label}
     </div>
   );
@@ -802,25 +802,25 @@ interface EmptyStateProps {
   label: string;
 }
 function EmptyState({ label }: EmptyStateProps) {
-  return <p className="text-sm text-slate-500">{label}</p>;
+  return <p className="text-sm text-fg-dim">{label}</p>;
 }
 interface MapLegendProps {
   riddenCount: number;
 }
 function MapLegend({ riddenCount }: MapLegendProps) {
   return (
-    <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
+    <div className="absolute top-4 left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
-        <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
+        <span className="h-1 w-6 rounded-full bg-accent" />
         {t("Ridden ({count} segments)", {
           count: riddenCount.toLocaleString(),
         })}
       </div>
       <div className="flex items-center gap-2">
-        <span className="h-1 w-6 rounded-full bg-slate-600" />
+        <span className="h-1 w-6 rounded-full bg-fg-mute" />
         {t("Unridden ")}
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+      <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
         <MapPin size={10} />
         {t("Hover a highlighted road for ride details ")}
       </div>
