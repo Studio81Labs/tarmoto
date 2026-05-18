@@ -155,7 +155,7 @@ export default function RiderProfilePage() {
     <div className="p-6 max-w-5xl mx-auto animate-fade-in">
       <Link
         href="/community"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-6 transition"
       >
         <ArrowLeft size={16} />
         {t("Community")}
@@ -211,7 +211,7 @@ function Header({
 }: HeaderProps) {
   const initials = initialsFromName(profile.display_name);
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
+    <section className="rounded-2xl bg-cream border border-line p-6 mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-5">
         <div className="shrink-0">
           {profile.avatar_url ? (
@@ -219,20 +219,20 @@ function Header({
             <img
               src={profile.avatar_url}
               alt={profile.display_name}
-              className="w-20 h-20 rounded-full object-cover border-2 border-slate-800"
+              className="w-20 h-20 rounded-full object-cover border-2 border-line"
             />
           ) : (
-            <div className="w-20 h-20 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-2xl font-bold">
+            <div className="w-20 h-20 rounded-full bg-accent/20 flex items-center justify-center text-accent text-2xl font-bold">
               {initials}
             </div>
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-white truncate">
+          <h1 className="text-2xl font-bold text-ink truncate">
             {profile.display_name}
           </h1>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-fg-dim">
             {profile.home_region && (
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} /> {profile.home_region}
@@ -243,7 +243,7 @@ function Header({
             </span>
           </div>
           {profile.bio && (
-            <p className="text-sm text-slate-300 mt-3 leading-relaxed">
+            <p className="text-sm text-ink mt-3 leading-relaxed">
               {profile.bio}
             </p>
           )}
@@ -253,7 +253,7 @@ function Header({
           {profile.is_self ? (
             <Link
               href="/settings"
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
             >
               {t("Edit profile")}
             </Link>
@@ -265,8 +265,8 @@ function Header({
               aria-pressed={profile.is_following === true}
               className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-60 disabled:cursor-not-allowed ${
                 profile.is_following
-                  ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-                  : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan/90"
+                  ? "bg-paper text-ink hover:bg-paper-2"
+                  : "bg-accent text-ink hover:brightness-95"
               }`}
             >
               {followPending ? (
@@ -305,12 +305,12 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
       {tiles.map((tile) => (
         <div
           key={tile.key}
-          className="rounded-xl bg-slate-900 border border-slate-800 p-4"
+          className="rounded-xl bg-cream border border-line p-4"
         >
-          <p className="text-xs uppercase tracking-wider text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-fg-dim">
             {tile.label}
           </p>
-          <p className="text-xl font-bold text-white mt-1 tabular-nums">
+          <p className="text-xl font-bold text-ink mt-1 tabular-nums">
             {formatCount(tile.value)}
           </p>
         </div>
@@ -325,13 +325,13 @@ interface BadgesSectionProps {
 }
 function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
+    <section className="rounded-2xl bg-cream border border-line p-6 mb-6">
       <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-dim flex items-center gap-2">
           <Award size={14} />
           {t("Badges earned")}
         </h2>
-        <span className="text-xs text-slate-500 tabular-nums">
+        <span className="text-xs text-fg-dim tabular-nums">
           {t("{count} of {total}", {
             count: badges.length,
             total: totalBadges,
@@ -339,11 +339,9 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
         </span>
       </header>
       {totalBadges === 0 ? (
-        <p className="text-sm text-slate-500">
-          {t("No badges available yet.")}
-        </p>
+        <p className="text-sm text-fg-dim">{t("No badges available yet.")}</p>
       ) : badges.length === 0 ? (
-        <p className="text-sm text-slate-500 inline-flex items-center gap-2">
+        <p className="text-sm text-fg-dim inline-flex items-center gap-2">
           <Lock size={12} />
           {t("No badges earned yet.")}
         </p>
@@ -352,19 +350,17 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
           {badges.map((badge) => (
             <div
               key={badge.key}
-              className="rounded-xl border border-tarmoto-cyan/30 bg-tarmoto-cyan/5 p-3 flex flex-col items-center text-center"
+              className="rounded-xl border border-accent/30 bg-accent/5 p-3 flex flex-col items-center text-center"
             >
-              <div className="w-10 h-10 rounded-full bg-tarmoto-cyan/20 text-tarmoto-cyan flex items-center justify-center mb-2">
+              <div className="w-10 h-10 rounded-full bg-accent/20 text-accent flex items-center justify-center mb-2">
                 <Trophy size={20} />
               </div>
-              <p className="text-xs font-semibold text-slate-200">
-                {badge.name}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1 leading-tight">
+              <p className="text-xs font-semibold text-ink">{badge.name}</p>
+              <p className="text-[11px] text-fg-dim mt-1 leading-tight">
                 {badge.description}
               </p>
               {badge.tier && (
-                <p className="text-[10px] uppercase tracking-wider text-tarmoto-cyan mt-1">
+                <p className="text-[10px] uppercase tracking-wider text-accent mt-1">
                   {badge.tier}
                 </p>
               )}
@@ -379,24 +375,24 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
 function ProfileSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-40 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+      <div className="h-40 rounded-2xl bg-cream border border-line animate-pulse" />
       <div className="grid grid-cols-3 gap-3">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-20 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+            className="h-20 rounded-xl bg-cream border border-line animate-pulse"
           />
         ))}
       </div>
-      <div className="h-40 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+      <div className="h-40 rounded-2xl bg-cream border border-line animate-pulse" />
     </div>
   );
 }
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-12 text-center">
-      <p className="text-slate-300 font-medium mb-1">{title}</p>
-      <p className="text-sm text-slate-500">{message}</p>
+    <div className="rounded-2xl bg-cream border border-line p-12 text-center">
+      <p className="text-ink font-medium mb-1">{title}</p>
+      <p className="text-sm text-fg-dim">{message}</p>
     </div>
   );
 }
