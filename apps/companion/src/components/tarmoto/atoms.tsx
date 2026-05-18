@@ -21,14 +21,21 @@ export type QualityTier = 1 | 2 | 3 | 4 | 5;
 export function Stamp({
   children,
   tone = "dim",
+  as: Tag = "span",
   className,
 }: {
   children: ReactNode;
   tone?: "dim" | "ink" | "accent" | "on-dark" | "on-dark-dim";
+  /**
+   * Render as a semantic heading when the stamp is functioning as a
+   * section title (screen-reader heading nav). Defaults to `span` since
+   * most Stamps are decorative labels rather than headings.
+   */
+  as?: "span" | "h2" | "h3" | "h4";
   className?: string;
 }) {
   return (
-    <span
+    <Tag
       className={clsx(
         "font-mono text-[10px] font-bold uppercase tracking-[1.5px] leading-none",
         tone === "dim" && "text-fg-dim",
@@ -40,7 +47,7 @@ export function Stamp({
       )}
     >
       {children}
-    </span>
+    </Tag>
   );
 }
 
