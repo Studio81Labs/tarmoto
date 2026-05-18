@@ -18,6 +18,7 @@ import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
+import { Stamp } from "@/components/tarmoto/atoms";
 type ModalState =
   | {
       kind: "closed";
@@ -149,29 +150,34 @@ export default function BikesPage() {
     <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
       >
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
       <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold">{t("My Bikes")}</h1>
+        <div>
+          <Stamp className="block mb-1">{t("Garage")}</Stamp>
+          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
+            {t("My Bikes")}
+          </h1>
+        </div>
         <button
           type="button"
           onClick={() => setModal({ kind: "add" })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+          className="flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition"
         >
-          <Plus size={16} />
+          <Plus size={14} />
           {t("Add bike ")}
         </button>
       </div>
-      <p className="text-sm text-slate-400 mb-6 inline-flex items-center gap-1.5">
+      <p className="text-sm text-fg-dim mb-6 inline-flex items-center gap-1.5">
         <Smartphone size={14} />
         {t("Your garage is synced with the Tarmoto mobile app. ")}
       </p>
 
       {error?.kind === "action" && (
-        <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+        <div className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
           {error.message}
         </div>
       )}
@@ -181,12 +187,12 @@ export default function BikesPage() {
           {[1, 2].map((i) => (
             <div
               key={i}
-              className="h-24 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+              className="h-24 rounded-2xl bg-paper border border-line animate-pulse"
             />
           ))}
         </div>
       ) : error?.kind === "load" ? (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {error.message}
         </div>
       ) : sortedBikes.length === 0 ? (
@@ -235,8 +241,8 @@ function BikeCard({
       ? `${bike.totalRides.toLocaleString()} ride${bike.totalRides === 1 ? "" : "s"}`
       : null;
   return (
-    <li className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-900 border border-slate-800">
-      <div className="w-20 h-20 rounded-lg bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
+    <li className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-2xl bg-cream border border-line">
+      <div className="w-20 h-20 rounded-lg bg-paper flex items-center justify-center overflow-hidden flex-shrink-0">
         {bike.photoUrl ? (
           // Plain <img> is fine — these are small user uploads shown once per
           // card; next/image adds little value and would need remotePatterns
@@ -248,23 +254,23 @@ function BikeCard({
             className="w-full h-full object-cover"
           />
         ) : (
-          <BikeIcon size={28} className="text-slate-500" />
+          <BikeIcon size={28} className="text-fg-mute" />
         )}
       </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="font-medium text-white truncate">
+          <p className="font-semibold text-ink truncate">
             {formatBikeTitle(bike)}
           </p>
           {bike.isActive && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-tarmoto-cyan/10 text-tarmoto-cyan text-xs font-medium">
+            <span className="inline-flex items-center gap-1 px-2.5 py-[5px] rounded-full bg-accent text-ink text-[11px] font-bold tracking-[0.2px] whitespace-nowrap">
               <Check size={12} />
               {t("Active ")}
             </span>
           )}
         </div>
-        <p className="text-sm text-slate-400 mt-0.5">
+        <p className="text-sm text-fg-dim mt-0.5">
           {bike.year} • {bike.totalKm.toLocaleString()}
           {t("km ")}
           {ridesLabel ? ` • ${ridesLabel}` : ""}
@@ -277,7 +283,7 @@ function BikeCard({
             type="button"
             onClick={onSetActive}
             disabled={pending}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-tarmoto-cyan hover:bg-slate-800 transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold text-fg-dim hover:text-accent hover:bg-paper transition disabled:opacity-50"
             aria-label={`Set ${formatBikeTitle(bike)} as active`}
           >
             {pending ? (
@@ -292,7 +298,7 @@ function BikeCard({
           type="button"
           onClick={onEdit}
           disabled={pending}
-          className="p-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+          className="p-2 rounded-md text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
           aria-label={`Edit ${formatBikeTitle(bike)}`}
         >
           <Pencil size={16} />
@@ -301,7 +307,7 @@ function BikeCard({
           type="button"
           onClick={onDelete}
           disabled={pending}
-          className="p-2 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition disabled:opacity-50"
+          className="p-2 rounded-md text-fg-dim hover:text-red-400 hover:bg-paper transition disabled:opacity-50"
           aria-label={`Delete ${formatBikeTitle(bike)}`}
         >
           <Trash2 size={16} />
@@ -312,12 +318,12 @@ function BikeCard({
 }
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-12 text-center">
-      <BikeIcon size={48} className="mx-auto text-slate-600 mb-4" />
-      <p className="text-slate-300 mb-2 font-medium">
+    <div className="rounded-2xl bg-paper border border-line p-12 text-center">
+      <BikeIcon size={48} className="mx-auto text-fg-mute mb-4" />
+      <p className="text-ink mb-2 font-semibold">
         {t("No bikes in your garage yet ")}
       </p>
-      <p className="text-slate-500 text-sm mb-5">
+      <p className="text-fg-dim text-sm mb-5">
         {t(
           "Add your motorcycle to get bike-specific stats and recommendations. ",
         )}
@@ -325,9 +331,9 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <button
         type="button"
         onClick={onAdd}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+        className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition"
       >
-        <Plus size={16} />
+        <Plus size={14} />
         {t("Add your first bike ")}
       </button>
     </div>
