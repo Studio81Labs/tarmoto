@@ -407,7 +407,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
                 type="button"
                 onClick={openCreate}
                 disabled={submitting}
-                className="inline-flex items-center gap-1 rounded-full border border-tarmoto-cyan/40 bg-tarmoto-cyan/10 px-3 py-1.5 text-xs text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label={t("Write a review for this road")}
               >
                 <Pencil size={12} />
@@ -629,7 +629,7 @@ function ReviewEditor({
             type="button"
             onClick={onSubmit}
             disabled={disabled || uploading}
-            className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-tarmoto-cyan-light disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {disabled ? <Loader2 size={12} className="animate-spin" /> : null}
             {mode === "create" ? "Submit review" : "Save review"}
@@ -674,7 +674,7 @@ function ReviewEditor({
             rows={4}
             aria-label={t("Comment")}
             placeholder={t("What should other riders know about this road?")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
           <span className="mt-1 block text-right text-[11px] text-slate-500">
             {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
@@ -693,7 +693,7 @@ function ReviewEditor({
             maxLength={100}
             aria-label={t("Bike model")}
             placeholder={t("Optional")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
         </label>
 
@@ -848,7 +848,7 @@ function ReviewCard({
           {review.user_id && !review.is_mine ? (
             <Link
               href={`/community/${encodeURIComponent(review.user_id)}`}
-              className="text-sm font-medium text-white transition hover:text-tarmoto-cyan"
+              className="text-sm font-medium text-white transition hover:text-accent"
             >
               {review.user_display_name}
             </Link>
@@ -961,7 +961,7 @@ function VoteButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
         active
-          ? "border-tarmoto-cyan/60 bg-tarmoto-cyan/10 text-tarmoto-cyan"
+          ? "border-accent/60 bg-accent/10 text-accent"
           : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
       } disabled:cursor-not-allowed disabled:opacity-60`}
     >

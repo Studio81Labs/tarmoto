@@ -26,7 +26,7 @@ export function RouteCollectionVisibilityPill({
     visibility === "public"
       ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
       : visibility === "unlisted"
-        ? "border-tarmoto-cyan/30 text-tarmoto-cyan bg-tarmoto-cyan/5"
+        ? "border-accent/30 text-accent bg-accent/5"
         : "border-slate-700 text-slate-400 bg-slate-800/50";
   return (
     <span

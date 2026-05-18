@@ -119,7 +119,7 @@ export function RouteCollectionFollowCta({
         </p>
         <Link
           href={loginHref}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink text-sm font-semibold hover:brightness-95 transition"
         >
           {t("Sign in")}
         </Link>
@@ -136,7 +136,7 @@ export function RouteCollectionFollowCta({
           {t("Manage routes, visibility, and sharing from")}{" "}
           <Link
             href="/community/collections"
-            className="text-tarmoto-cyan hover:text-tarmoto-cyan-light underline"
+            className="text-accent hover:text-accent underline"
           >
             {t("your dashboard ")}
           </Link>
@@ -203,7 +203,7 @@ export function RouteCollectionFollowCta({
         className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-50 ${
           isFollowing
             ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-            : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan-light"
+            : "bg-accent text-ink hover:brightness-95"
         }`}
       >
         {pending ? (

@@ -204,7 +204,7 @@ export function TripCollaborateModal({
               className={
                 "px-4 py-2.5 text-sm font-medium border-b-2 transition " +
                 (tab === id
-                  ? "border-tarmoto-cyan text-white"
+                  ? "border-accent text-white"
                   : "border-transparent text-slate-400 hover:text-slate-200")
               }
             >
@@ -300,7 +300,7 @@ function InviteTab({
         type="button"
         onClick={onGenerate}
         disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-tarmoto-cyan/10 px-4 py-2.5 text-sm font-medium text-tarmoto-cyan hover:bg-tarmoto-cyan/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent hover:bg-accent/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
           <>
@@ -336,7 +336,7 @@ function InviteTab({
         >
           {copied ? (
             <>
-              <Check size={14} className="text-tarmoto-cyan" />
+              <Check size={14} className="text-accent" />
               {t("Copied ")}
             </>
           ) : (
@@ -504,7 +504,7 @@ function SuggestionsTab({
         // further down.
         <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <MessageSquarePlus size={14} className="text-tarmoto-cyan" />
+            <MessageSquarePlus size={14} className="text-accent" />
             {t("Propose an alternative ")}
           </h3>
           <p className="text-xs text-slate-400">
@@ -519,7 +519,7 @@ function SuggestionsTab({
             onChange={(e) => setTitle(e.target.value)}
             aria-label={t("Suggestion title")}
             maxLength={200}
-            className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
+            className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <textarea
             placeholder={t("Optional context \u2014 why this route?")}
@@ -528,13 +528,13 @@ function SuggestionsTab({
             aria-label={t("Suggestion description")}
             rows={2}
             maxLength={2000}
-            className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
+            className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <button
             type="button"
             onClick={handleCreate}
             disabled={creating || !title.trim()}
-            className="flex items-center gap-2 rounded-md bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan hover:bg-tarmoto-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 rounded-md bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {creating ? (
               <>
@@ -669,7 +669,7 @@ function SuggestionCard({
             className={
               "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
               (suggestion.caller_vote === "up"
-                ? "border-tarmoto-cyan/50 bg-tarmoto-cyan/10 text-tarmoto-cyan"
+                ? "border-accent/50 bg-accent/10 text-accent"
                 : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600")
             }
           >
@@ -901,7 +901,7 @@ function PromoteTripCTA({
         type="button"
         onClick={handleSave}
         disabled={loading}
-        className="flex items-center gap-2 rounded-md bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan hover:bg-tarmoto-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-2 rounded-md bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
           <>

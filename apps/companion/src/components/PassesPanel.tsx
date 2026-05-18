@@ -160,7 +160,7 @@ function PassesPanelBody({
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
           disabled={isReadOnlyControlled}
-          className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
+          className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-accent transition"
         >
           {MONTH_NAMES.map((name, idx) => (
             <option key={name} value={idx + 1}>

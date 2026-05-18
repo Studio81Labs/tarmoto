@@ -96,7 +96,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                 event.target.value ? Number(event.target.value) : undefined,
               )
             }
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-accent focus:outline-none"
           >
             <option value="">{t("Any")}</option>
             <option value="3">{t("3 stars or better")}</option>
@@ -124,7 +124,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                         : [...current, kind],
                     )
                   }
-                  className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                  className="rounded border-slate-600 bg-slate-800 text-accent focus:ring-accent"
                 />
                 {POI_LABELS[kind]}
               </label>
@@ -286,7 +286,7 @@ function StopRow({
         className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
           added
             ? "cursor-not-allowed bg-emerald-500/10 text-emerald-300"
-            : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan-light"
+            : "bg-accent text-ink hover:brightness-95"
         }`}
       >
         {added ? "Added" : "Add"}

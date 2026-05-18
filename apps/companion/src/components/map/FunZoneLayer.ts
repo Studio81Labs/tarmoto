@@ -34,8 +34,8 @@ export function installFunZoneLayer(map: MapLibreMap): void {
   });
 
   // Fill: opacity low so underlying quality heatmap stays visible. Color
-  // ramps from slate-800 (low score) to tarmoto-cyan (high) so the best
-  // zones pop visually.
+  // ramps from slate-800 (low score) to canonical accent (high) so the
+  // best zones pop visually.
   map.addLayer({
     id: FUN_ZONES_FILL,
     type: "fill",
@@ -154,6 +154,6 @@ function buildCompositeScoreColor(): ExpressionSpecification {
     0,
     "#1e293b", // slate-800 (low score)
     5,
-    "#0ED3CF", // tarmoto-cyan (high score)
+    "#FF6A1A", // canonical accent (high score)
   ];
 }

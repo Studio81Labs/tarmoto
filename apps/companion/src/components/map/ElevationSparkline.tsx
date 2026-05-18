@@ -11,14 +11,15 @@ interface Props {
  * Renders a minimal elevation sparkline. Returns null when the profile is
  * absent or too short to plot, so callers can use it unconditionally.
  *
- * `stroke` defaults to the tarmoto-cyan brand color; min/max labels render
- * at the right edge in muted slate so the line stays the dominant signal.
+ * `stroke` defaults to the canonical accent (#FF6A1A); min/max labels
+ * render at the right edge in muted slate so the line stays the dominant
+ * signal.
  */
 export function ElevationSparkline({
   profile,
   width = 180,
   height = 40,
-  stroke = "#0ED3CF",
+  stroke = "#FF6A1A",
   className,
 }: Props) {
   if (!profile || profile.length < 2) return null;

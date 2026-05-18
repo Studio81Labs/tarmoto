@@ -194,11 +194,12 @@ export const ROAD_MAP_DIM_LAYER_ID = "road-map-dim";
 export const ROAD_MAP_RIDDEN_LAYER_ID = "road-map-ridden";
 
 /**
- * Tarmoto Cyan — must stay in sync with `text-tarmoto-cyan` /
- * `bg-tarmoto-cyan` in the Tailwind config. Keeping the constant local
- * means the legend swatch and the line paint render identically.
+ * Canonical brand accent — must stay in sync with `text-accent` /
+ * `bg-accent` (--color-accent in globals.css). Keeping the constant
+ * local means the legend swatch and the MapLibre line paint render
+ * identically.
  */
-export const RIDDEN_LINE_COLOR = "#22D3EE";
+export const RIDDEN_LINE_COLOR = "#FF6A1A";
 
 /** Muted slate for unridden roads — desaturated against the basemap. */
 export const DIM_LINE_COLOR = "#475569";

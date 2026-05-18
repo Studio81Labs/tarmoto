@@ -60,7 +60,7 @@ export function RoadPreviewCard({
       onBlur={onHoverEnd}
       className={`group rounded-xl border transition ${
         isFocused
-          ? "border-tarmoto-cyan bg-tarmoto-cyan/5"
+          ? "border-accent bg-accent/5"
           : isHovered
             ? "border-slate-600 bg-slate-900"
             : "border-slate-800 bg-slate-900"
@@ -125,7 +125,7 @@ export function RoadPreviewCard({
           viewBox="0 0 240 40"
           preserveAspectRatio="none"
           aria-hidden="true"
-          className="mt-2 w-full h-10 text-tarmoto-cyan/70"
+          className="mt-2 w-full h-10 text-accent/70"
         >
           <path
             d={elevationPath}
