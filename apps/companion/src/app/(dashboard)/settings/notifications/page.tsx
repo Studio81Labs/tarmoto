@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { Stamp } from "@/components/tarmoto/atoms";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   EMAIL_DIGEST_OPTIONS,
@@ -128,7 +129,7 @@ export default function NotificationsPage() {
   if (loading) {
     return (
       <div className="p-6 max-w-page-narrow mx-auto">
-        <div className="flex items-center gap-2 text-slate-400">
+        <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading preferences\u2026 ")}
         </div>
@@ -140,13 +141,16 @@ export default function NotificationsPage() {
       <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
         <Link
           href="/settings"
-          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
         >
           <ArrowLeft size={16} />
           {t("Settings ")}
         </Link>
-        <h1 className="text-2xl font-bold mb-6">{t("Notifications")}</h1>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+        <Stamp className="block mb-2">{t("Notifications")}</Stamp>
+        <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
+          {t("Notifications")}
+        </h1>
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-quality-q1">
           {t("Could not load preferences: ")}
           {loadError}
         </div>
@@ -157,25 +161,26 @@ export default function NotificationsPage() {
     <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
       >
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <h1 className="text-2xl font-bold mb-2">{t("Notifications")}</h1>
-      <p className="text-sm text-slate-400 mb-6">
+      <Stamp className="block mb-2">{t("Notifications")}</Stamp>
+      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
+        {t("Notifications")}
+      </h1>
+      <p className="text-sm text-fg-dim mb-6">
         {t(
           "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app. ",
         )}
       </p>
 
       {/* Email digest */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-white">
-            {t("Email digest")}
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <Stamp className="block mb-1">{t("Email digest")}</Stamp>
+          <p className="text-xs text-fg-dim">
             {t("Summary of your riding stats and community activity. ")}
           </p>
         </div>
@@ -195,12 +200,14 @@ export default function NotificationsPage() {
                 onClick={() => setDigest(opt.value)}
                 className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
                   active
-                    ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600"
+                    ? "border-ink bg-ink text-cream"
+                    : "border-line bg-paper text-ink hover:border-line-strong"
                 }`}
               >
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm font-semibold">{opt.label}</span>
+                <span
+                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+                >
                   {opt.description}
                 </span>
               </button>
@@ -210,20 +217,18 @@ export default function NotificationsPage() {
       </section>
 
       {/* Per-category toggles */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 divide-y divide-slate-800 mb-6">
+      <section className="rounded-2xl bg-cream border border-line divide-y divide-line mb-6">
         <div className="px-5 py-3 flex items-center">
-          <div className="flex-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            {t("Notification ")}
-          </div>
-          <div className="flex items-center gap-6 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            <span className="flex items-center gap-1 w-10 justify-center">
+          <Stamp className="flex-1">{t("Notification ")}</Stamp>
+          <div className="flex items-center gap-6">
+            <Stamp className="flex items-center gap-1 w-10 justify-center">
               <Mail size={12} />
               {t("Email ")}
-            </span>
-            <span className="flex items-center gap-1 w-10 justify-center">
+            </Stamp>
+            <Stamp className="flex items-center gap-1 w-10 justify-center">
               <Smartphone size={12} />
               {t("Push ")}
-            </span>
+            </Stamp>
           </div>
         </div>
         {VISIBLE_NOTIFICATION_CATEGORIES.map((category) => {
@@ -232,10 +237,8 @@ export default function NotificationsPage() {
           return (
             <div key={category} className="px-5 py-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white">{meta.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {meta.description}
-                </p>
+                <p className="text-sm font-semibold text-ink">{meta.label}</p>
+                <p className="text-xs text-fg-dim mt-0.5">{meta.description}</p>
               </div>
               <div className="flex items-center gap-6">
                 <ChannelToggle
@@ -255,13 +258,13 @@ export default function NotificationsPage() {
       </section>
 
       {/* Marketing opt-in */}
-      <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
+      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-semibold text-ink">
               {t("Marketing emails")}
             </p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-fg-dim mt-0.5">
               {t(
                 "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ",
               )}
@@ -281,7 +284,7 @@ export default function NotificationsPage() {
           type="button"
           onClick={save}
           disabled={!isDirty || saveState.kind === "saving"}
-          className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          className="px-4 py-2 rounded-full bg-accent text-ink font-bold text-sm tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
           {saveState.kind === "saving" ? (
             <>
@@ -294,16 +297,16 @@ export default function NotificationsPage() {
         </button>
 
         {saveState.kind === "saved" && !isDirty && (
-          <span className="inline-flex items-center gap-1 text-sm text-tarmoto-cyan">
+          <span className="inline-flex items-center gap-1 text-sm text-accent">
             <Check size={14} />
             {t("Saved ")}
           </span>
         )}
         {saveState.kind === "error" && (
-          <span className="text-sm text-red-400">{saveState.message}</span>
+          <span className="text-sm text-quality-q1">{saveState.message}</span>
         )}
         {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-slate-500">{t("Unsaved changes")}</span>
+          <span className="text-sm text-fg-mute">{t("Unsaved changes")}</span>
         )}
       </div>
     </div>
@@ -321,10 +324,10 @@ function ChannelToggle({ enabled, onToggle, label }: ChannelToggleProps) {
       onClick={onToggle}
       aria-pressed={enabled}
       aria-label={label}
-      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 ${enabled ? "bg-tarmoto-cyan" : "bg-slate-700"}`}
+      className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${enabled ? "bg-ink" : "bg-ink/12"}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`}
+        className={`absolute top-0.5 w-4 h-4 rounded-full transform transition-transform ${enabled ? "bg-accent left-0.5 translate-x-4" : "bg-cream left-0.5"}`}
       />
     </button>
   );
