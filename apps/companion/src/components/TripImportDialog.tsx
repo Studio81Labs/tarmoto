@@ -109,7 +109,7 @@ export function TripImportDialog({
             id="trip-import-title"
             className="text-sm font-semibold text-slate-200 flex items-center gap-2"
           >
-            <FileUp size={14} className="text-tarmoto-cyan" />
+            <FileUp size={14} className="text-accent" />
             {t("Import GPX or KML ")}
           </h2>
           <button
@@ -181,7 +181,7 @@ export function TripImportDialog({
             <button
               type="button"
               onClick={handleAdopt}
-              className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+              className="px-3 py-1.5 rounded-lg bg-accent text-slate-950 text-sm font-semibold hover:bg-accent transition"
             >
               {t("Adopt as trip draft ")}
             </button>
@@ -196,11 +196,11 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
     <button
       type="button"
       onClick={onPick}
-      className="w-full rounded-xl border-2 border-dashed border-slate-700 hover:border-tarmoto-cyan transition p-8 text-center"
+      className="w-full rounded-xl border-2 border-dashed border-slate-700 hover:border-accent transition p-8 text-center"
     >
       <FileUp
         size={32}
-        className="mx-auto text-slate-500 group-hover:text-tarmoto-cyan mb-3"
+        className="mx-auto text-slate-500 group-hover:text-accent mb-3"
       />
       <p className="text-sm text-slate-200 font-medium">
         {t("Choose a GPX or KML file ")}

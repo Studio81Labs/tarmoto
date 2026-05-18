@@ -221,7 +221,7 @@ function RangeSelector({
             data-testid={`trend-range-${segmentId}-${option}`}
             className={`px-2 py-1 transition ${
               active
-                ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
+                ? "bg-accent/10 text-accent"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -283,7 +283,7 @@ function ChartLegend({
   return (
     <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
       <li className="flex items-center gap-1">
-        <span className="w-2 h-2 rounded-full bg-tarmoto-cyan" />
+        <span className="w-2 h-2 rounded-full bg-accent" />
         {t("This segment ")}
       </li>
       {hasRegional && (

@@ -124,7 +124,7 @@ function SharedRideCard({
   return (
     <Link
       href={href}
-      className="block rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-tarmoto-cyan/40 hover:bg-slate-950"
+      className="block rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-accent/40 hover:bg-slate-950"
     >
       <div className="flex items-center justify-between gap-3 mb-2">
         <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">

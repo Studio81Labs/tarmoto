@@ -255,7 +255,7 @@ export function TripExportMenu({
           aria-live="polite"
           className={`absolute left-0 top-full mt-12 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs whitespace-nowrap z-30 ${
             feedback.kind === "ok"
-              ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
+              ? "bg-accent/10 text-accent"
               : "bg-red-500/10 text-red-300"
           }`}
         >
@@ -287,7 +287,7 @@ function MenuItem({
       disabled={disabled}
       className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
     >
-      <span className="mt-0.5 text-tarmoto-cyan">{icon}</span>
+      <span className="mt-0.5 text-accent">{icon}</span>
       <span className="flex-1 min-w-0">
         <span className="block font-medium">{label}</span>
         <span className="block text-[11px] text-slate-500 truncate">
