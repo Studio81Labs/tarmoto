@@ -146,7 +146,7 @@ export default function RouteCollectionsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold">{t("Route Collections")}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-fg-dim mt-0.5">
             {collections.length === 1
               ? t("1 collection")
               : t("{count} collections", { count: collections.length })}
@@ -155,7 +155,7 @@ export default function RouteCollectionsPage() {
         <button
           type="button"
           onClick={() => setModal({ mode: "create" })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           <Plus size={16} />
           {t("New collection")}
@@ -167,7 +167,7 @@ export default function RouteCollectionsPage() {
       {actionError && (
         <div
           role="alert"
-          className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-200"
+          className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
         >
           {actionError}
         </div>
@@ -183,7 +183,7 @@ export default function RouteCollectionsPage() {
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-44 rounded-2xl border border-slate-800 bg-slate-900 animate-pulse"
+              className="h-44 rounded-2xl border border-line bg-cream animate-pulse"
             />
           ))}
         </div>
@@ -200,13 +200,13 @@ export default function RouteCollectionsPage() {
           <p className="text-amber-200 mb-1">
             {t("Couldn't load your collections")}
           </p>
-          <p className="text-sm text-slate-500 mb-4">
+          <p className="text-sm text-fg-dim mb-4">
             {errorMessage ?? "Try again in a moment."}
           </p>
           <button
             type="button"
             onClick={() => void refresh()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             {t("Retry")}
           </button>
@@ -241,18 +241,18 @@ export default function RouteCollectionsPage() {
       {visibleFollowed.length > 0 && (
         <section className="mt-10">
           <div className="flex items-center gap-2 mb-3">
-            <Bookmark size={14} className="text-tarmoto-cyan" />
-            <h2 className="text-sm font-semibold text-white">
+            <Bookmark size={14} className="text-accent" />
+            <h2 className="text-sm font-semibold text-ink">
               {t("Followed collections")}
             </h2>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-fg-dim">
               · {visibleFollowed.length}
               {needle && visibleFollowed.length !== followed.length
                 ? ` of ${followed.length}`
                 : ""}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mb-3">
+          <p className="text-xs text-fg-dim mb-3">
             {t(
               "Collections from other riders you've saved. They show up here until you unfollow. ",
             )}
@@ -321,8 +321,8 @@ function MigrationBanner({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className="mb-4 rounded-xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/5 p-4">
-      <p className="text-sm text-slate-200">
+    <div className="mb-4 rounded-xl border border-accent/20 bg-accent/5 p-4">
+      <p className="text-sm text-ink">
         {migration.count === 1
           ? t(
               "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
@@ -352,7 +352,7 @@ function MigrationBanner({
               setPending(false);
             }
           }}
-          className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-xs font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+          className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
         >
           {pending ? "Moving…" : "Move to my account"}
         </button>
@@ -360,7 +360,7 @@ function MigrationBanner({
           type="button"
           disabled={pending}
           onClick={migration.decline}
-          className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition disabled:opacity-50"
+          className="px-3 py-1.5 rounded-lg text-xs text-fg-dim hover:text-ink transition disabled:opacity-50"
         >
           {t("Not now")}
         </button>
@@ -383,14 +383,14 @@ function Toolbar({
       <div className="relative flex-1">
         <Search
           size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
         />
         <input
           type="text"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder={t("Search collections\u2026")}
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
+          className="w-full pl-9 pr-3 py-2 rounded-lg bg-cream border border-line text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
         />
       </div>
     </div>
@@ -417,14 +417,14 @@ function CollectionCard({
   return (
     <div
       data-menu-root
-      className="relative rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition"
+      className="relative rounded-2xl bg-cream border border-line hover:border-line-strong transition"
     >
       <Link
         href={`/community/collections/${collection.id}`}
         className="block p-5 pr-12 group"
       >
         <div className="flex items-start gap-2 mb-3">
-          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 flex-1">
+          <h3 className="font-semibold text-ink group-hover:text-accent transition line-clamp-2 flex-1">
             {collection.title}
           </h3>
           <RouteCollectionVisibilityPill
@@ -434,12 +434,12 @@ function CollectionCard({
         </div>
 
         {collection.description && (
-          <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+          <p className="text-xs text-fg-dim line-clamp-2 mb-3">
             {collection.description}
           </p>
         )}
 
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+        <div className="flex items-center gap-2 text-sm text-fg-dim">
           <RouteIcon size={13} />
           <span>
             {collection.itemCount === 1
@@ -448,7 +448,7 @@ function CollectionCard({
           </span>
         </div>
 
-        <p className="mt-3 text-[11px] text-slate-600">
+        <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
           {formatRelativeTime(collection.updatedAt)}
         </p>
@@ -463,7 +463,7 @@ function CollectionCard({
           e.stopPropagation();
           setMenuOpen((v) => !v);
         }}
-        className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
       >
         <MoreVertical size={16} />
       </button>
@@ -503,13 +503,13 @@ function FollowedCollectionCard({
   onUnfollow: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition relative">
+    <div className="rounded-2xl bg-cream border border-line hover:border-line-strong transition relative">
       <Link
         href={`/community/collections/shared/${encodeURIComponent(collection.slug)}`}
         className="block p-5 pr-12 group"
       >
         <div className="flex items-start gap-2 mb-3">
-          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 flex-1">
+          <h3 className="font-semibold text-ink group-hover:text-accent transition line-clamp-2 flex-1">
             {collection.title}
           </h3>
           <RouteCollectionVisibilityPill
@@ -519,12 +519,12 @@ function FollowedCollectionCard({
         </div>
 
         {collection.description && (
-          <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+          <p className="text-xs text-fg-dim line-clamp-2 mb-3">
             {collection.description}
           </p>
         )}
 
-        <div className="flex items-center gap-3 text-sm text-slate-400">
+        <div className="flex items-center gap-3 text-sm text-fg-dim">
           <span className="inline-flex items-center gap-1">
             <RouteIcon size={13} />
             <span>
@@ -534,14 +534,14 @@ function FollowedCollectionCard({
             </span>
           </span>
           {collection.ownerName && (
-            <span className="inline-flex items-center gap-1 text-slate-500">
+            <span className="inline-flex items-center gap-1 text-fg-dim">
               <User size={13} />
               <span className="truncate">{collection.ownerName}</span>
             </span>
           )}
         </div>
 
-        <p className="mt-3 text-[11px] text-slate-600">
+        <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
           {formatRelativeTime(collection.updatedAt)}
         </p>
@@ -555,7 +555,7 @@ function FollowedCollectionCard({
           onUnfollow();
         }}
         aria-label={`Unfollow ${collection.title}`}
-        className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition"
+        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-red-400 hover:bg-paper transition"
       >
         <Trash2 size={16} />
       </button>
@@ -627,17 +627,17 @@ function CollectionModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="collection-modal-title"
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-paper/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => void submit(e)}
-        className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl"
+        className="w-full max-w-md rounded-2xl border border-line bg-cream p-5 shadow-xl"
       >
         <h2
           id="collection-modal-title"
-          className="text-sm font-semibold text-white mb-4"
+          className="text-sm font-semibold text-ink mb-4"
         >
           {mode === "create" ? "New collection" : "Edit collection"}
         </h2>
@@ -646,7 +646,7 @@ function CollectionModal({
           <div>
             <label
               htmlFor="collection-name"
-              className="block text-xs text-slate-500 mb-1"
+              className="block text-xs text-fg-dim mb-1"
             >
               {t("Name")}
             </label>
@@ -661,16 +661,16 @@ function CollectionModal({
               }}
               maxLength={MAX_COLLECTION_NAME_LENGTH + 10}
               placeholder={t("e.g. My Favourite Beskydy Loops")}
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan"
+              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent"
             />
           </div>
           <div>
             <label
               htmlFor="collection-description"
-              className="block text-xs text-slate-500 mb-1"
+              className="block text-xs text-fg-dim mb-1"
             >
               {t("Description")}{" "}
-              <span className="text-slate-600">{t("(optional)")}</span>
+              <span className="text-fg-mute">{t("(optional)")}</span>
             </label>
             <textarea
               id="collection-description"
@@ -682,15 +682,15 @@ function CollectionModal({
               rows={3}
               maxLength={MAX_COLLECTION_DESCRIPTION_LENGTH + 10}
               placeholder={t("What makes this collection special?")}
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan resize-none"
+              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent resize-none"
             />
-            <p className="mt-1 text-[11px] text-slate-600">
+            <p className="mt-1 text-[11px] text-fg-mute">
               {description.length}/{MAX_COLLECTION_DESCRIPTION_LENGTH}
             </p>
           </div>
 
           <fieldset>
-            <legend className="block text-xs text-slate-500 mb-2">
+            <legend className="block text-xs text-fg-dim mb-2">
               {t("Visibility")}
             </legend>
             <div className="space-y-2">
@@ -717,8 +717,8 @@ function CollectionModal({
                   key={opt.value}
                   className={`flex gap-3 p-3 rounded-lg cursor-pointer border transition ${
                     visibility === opt.value
-                      ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
-                      : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                      ? "border-accent/40 bg-accent/5"
+                      : "border-line bg-paper hover:border-line-strong"
                   }`}
                 >
                   <input
@@ -727,11 +727,11 @@ function CollectionModal({
                     value={opt.value}
                     checked={visibility === opt.value}
                     onChange={() => setVisibility(opt.value)}
-                    className="mt-0.5 accent-tarmoto-cyan"
+                    className="mt-0.5 accent-accent"
                   />
                   <div>
-                    <p className="text-sm text-white">{opt.label}</p>
-                    <p className="text-[11px] text-slate-500">{opt.body}</p>
+                    <p className="text-sm text-ink">{opt.label}</p>
+                    <p className="text-[11px] text-fg-dim">{opt.body}</p>
                   </div>
                 </label>
               ))}
@@ -746,14 +746,14 @@ function CollectionModal({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition disabled:opacity-50"
+            className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition disabled:opacity-50"
           >
             {t("Cancel")}
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+            className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
           >
             {submitting
               ? t("Saving…")
@@ -781,14 +781,14 @@ function EmptyState({
   onAction: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center mt-5">
-      <FolderOpen size={48} className="mx-auto text-slate-600 mb-4" />
-      <p className="text-slate-400 text-lg mb-2">{title}</p>
-      <p className="text-slate-500 text-sm mb-6">{body}</p>
+    <div className="rounded-2xl bg-cream border border-line p-16 text-center mt-5">
+      <FolderOpen size={48} className="mx-auto text-fg-mute mb-4" />
+      <p className="text-fg-dim text-lg mb-2">{title}</p>
+      <p className="text-fg-dim text-sm mb-6">{body}</p>
       <button
         type="button"
         onClick={onAction}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
       >
         <Plus size={16} /> {actionLabel}
       </button>
@@ -830,7 +830,7 @@ function CardMenu({
     <div
       ref={menuRef}
       data-collection-menu
-      className="absolute top-10 right-2 z-20 w-44 rounded-lg border border-slate-800 bg-slate-950 shadow-xl py-1"
+      className="absolute top-10 right-2 z-20 w-44 rounded-lg border border-line bg-paper shadow-xl py-1"
     >
       {children}
     </div>
@@ -850,14 +850,14 @@ function CardMenuItem({
   const toneClass =
     tone === "danger"
       ? "text-red-400 hover:bg-red-500/10"
-      : "text-slate-200 hover:bg-slate-800";
+      : "text-ink hover:bg-paper";
   return (
     <button
       type="button"
       onClick={onClick}
       className={`flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 transition ${toneClass}`}
     >
-      <span className="text-slate-500">{icon}</span>
+      <span className="text-fg-dim">{icon}</span>
       <span className="flex-1">{label}</span>
     </button>
   );
@@ -908,14 +908,14 @@ function ConfirmDialog({
       aria-describedby="confirm-dialog-message"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
+      <div className="w-full max-w-sm rounded-2xl border border-line bg-paper p-6 shadow-xl">
         <h2
           id="confirm-dialog-title"
-          className="text-lg font-semibold text-white"
+          className="text-lg font-semibold text-ink"
         >
           {title}
         </h2>
-        <p id="confirm-dialog-message" className="mt-2 text-sm text-slate-400">
+        <p id="confirm-dialog-message" className="mt-2 text-sm text-fg-dim">
           {message}
         </p>
         <div className="mt-6 flex justify-end gap-3">
@@ -923,7 +923,7 @@ function ConfirmDialog({
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-ink hover:bg-paper transition"
           >
             {t("Cancel")}
           </button>
@@ -931,7 +931,7 @@ function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 transition"
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-ink hover:bg-red-500 transition"
           >
             {confirmLabel}
           </button>
