@@ -261,7 +261,7 @@ export default function CollectionDetailPage() {
   if (load.phase === "loading") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
+        <div className="flex items-center gap-2 text-fg-dim text-sm">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading collection\u2026")}
         </div>
@@ -273,17 +273,17 @@ export default function CollectionDetailPage() {
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <Link
           href="/community/collections"
-          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
         >
           <ArrowLeft size={16} />
           {t("Collections")}
         </Link>
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
-          <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
-          <p className="text-slate-200 font-medium mb-1">
+        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
+          <RouteIcon size={40} className="mx-auto text-fg-mute mb-3" />
+          <p className="text-ink font-medium mb-1">
             {t("Collection not found")}
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-fg-dim">
             {t(
               "This collection may have been deleted, or it's private and you don't own it. ",
             )}
@@ -297,7 +297,7 @@ export default function CollectionDetailPage() {
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <Link
           href="/community/collections"
-          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
         >
           <ArrowLeft size={16} />
           {t("Collections")}
@@ -306,11 +306,11 @@ export default function CollectionDetailPage() {
           <p className="text-amber-200 font-medium mb-1">
             {t("Couldn't load this collection")}
           </p>
-          <p className="text-sm text-slate-500 mb-4">{load.message}</p>
+          <p className="text-sm text-fg-dim mb-4">{load.message}</p>
           <button
             type="button"
             onClick={() => collectionId && void reload(collectionId)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             {t("Retry")}
           </button>
@@ -369,7 +369,7 @@ export default function CollectionDetailPage() {
     <div className="p-6 max-w-4xl mx-auto animate-fade-in">
       <Link
         href="/community/collections"
-        className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
       >
         <ArrowLeft size={16} />
         {t("Collections")}
@@ -385,7 +385,7 @@ export default function CollectionDetailPage() {
               visibility={collection!.visibility}
             />
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-fg-dim">
             {t("Updated")}
             {formatRelativeTime(collection!.updatedAt)}
           </p>
@@ -396,7 +396,7 @@ export default function CollectionDetailPage() {
             type="button"
             onClick={() => setShowPicker(true)}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
           >
             <Plus size={14} />
             {t("Add routes")}
@@ -411,13 +411,13 @@ export default function CollectionDetailPage() {
       />
 
       {collection!.description && (
-        <p className="text-sm text-slate-300 mt-3 max-w-2xl whitespace-pre-line">
+        <p className="text-sm text-ink mt-3 max-w-2xl whitespace-pre-line">
           {collection!.description}
         </p>
       )}
 
       {actionError && (
-        <p role="alert" className="mt-3 text-xs text-red-300">
+        <p role="alert" className="mt-3 text-xs text-red-400">
           {actionError}
         </p>
       )}
@@ -468,7 +468,7 @@ export default function CollectionDetailPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-fg-dim mb-3">
           {t("Routes")}
         </h2>
         {totalRefs === 0 ? (
@@ -595,7 +595,7 @@ function VisibilitySelector({
 }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-slate-500">{t("Visibility")}</span>
+      <span className="text-fg-dim">{t("Visibility")}</span>
       {(["private", "unlisted", "public"] as const).map((v) => (
         <button
           key={v}
@@ -604,8 +604,8 @@ function VisibilitySelector({
           onClick={() => onChange(v)}
           className={`px-2.5 py-1 rounded-full border transition disabled:opacity-50 ${
             v === value
-              ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/10 text-tarmoto-cyan"
-              : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+              ? "border-accent/40 bg-accent/10 text-accent"
+              : "border-line bg-cream text-fg-dim hover:text-ink"
           }`}
         >
           {v === "public"
@@ -653,10 +653,10 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       }
       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
         !sharable
-          ? "bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed"
+          ? "bg-cream border border-line text-fg-dim cursor-not-allowed"
           : copyState === "copied"
             ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-            : "bg-slate-900 border border-slate-800 text-slate-200 hover:border-slate-700"
+            : "bg-cream border border-line text-ink hover:border-line-strong"
       }`}
     >
       {copyState === "copied" ? (
@@ -688,11 +688,11 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-      <p className="text-[11px] uppercase tracking-widest text-slate-500">
+    <div className="rounded-xl border border-line bg-cream p-4">
+      <p className="text-[11px] uppercase tracking-widest text-fg-dim">
         {label}
       </p>
-      <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+      <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
       {hint && <p className="mt-0.5 text-[11px] text-amber-400">{hint}</p>}
     </div>
   );
@@ -796,7 +796,7 @@ function SortableRow({
         {...listeners}
         disabled={disabled}
         aria-label={t("Reorder")}
-        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-slate-800/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${disabled ? "" : "cursor-grab active:cursor-grabbing"}`}
+        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-fg-mute hover:text-ink hover:bg-paper/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${disabled ? "" : "cursor-grab active:cursor-grabbing"}`}
         style={{ touchAction: "none" }}
       >
         <GripVertical size={16} aria-hidden="true" />
@@ -807,18 +807,18 @@ function SortableRow({
 }
 function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-dashed border-slate-800 p-10 text-center">
-      <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
-      <p className="text-slate-400 mb-1">
+    <div className="rounded-2xl bg-cream border border-dashed border-line p-10 text-center">
+      <RouteIcon size={40} className="mx-auto text-fg-mute mb-3" />
+      <p className="text-fg-dim mb-1">
         {t("No routes in this collection yet")}
       </p>
-      <p className="text-sm text-slate-500 mb-5">
+      <p className="text-sm text-fg-dim mb-5">
         {t("Add routes from your planned or completed trips.")}
       </p>
       <button
         type="button"
         onClick={onAdd}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
       >
         <Plus size={16} />
         {t("Add routes")}
@@ -841,13 +841,13 @@ function TripRow({
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKmOrNull(trip);
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
+    <div className="rounded-2xl border border-line bg-cream hover:border-line-strong transition">
       <div className="flex items-stretch gap-0">
         <Link
           href={`/trips/${trip.id}`}
           className="flex-1 flex items-center gap-4 p-4 min-w-0 group"
         >
-          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-slate-950 border border-slate-800">
+          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-paper border border-line">
             {preview ? (
               <svg
                 viewBox={preview.viewBox}
@@ -865,14 +865,14 @@ function TripRow({
                 />
               </svg>
             ) : (
-              <RouteIcon size={20} className="text-slate-600" />
+              <RouteIcon size={20} className="text-fg-mute" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-white group-hover:text-tarmoto-cyan transition truncate">
+            <h3 className="font-medium text-ink group-hover:text-accent transition truncate">
               {trip.name}
             </h3>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={12} />
                 {dayCount === 1
@@ -885,7 +885,7 @@ function TripRow({
                   {formatDistance(distance)}
                 </span>
               )}
-              <span className="text-[11px] text-slate-600 uppercase tracking-widest">
+              <span className="text-[11px] text-fg-mute uppercase tracking-widest">
                 {trip.status}
               </span>
             </div>
@@ -895,7 +895,7 @@ function TripRow({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${trip.name} from collection`}
-          className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+          className="px-3 text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
         >
           <Trash2 size={16} />
         </button>
@@ -907,20 +907,20 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
   const displayName =
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
+    <div className="rounded-2xl border border-line bg-cream hover:border-line-strong transition">
       <div className="flex items-stretch gap-0">
         <Link
           href={`/rides/${ride.id}`}
           className="flex-1 flex items-center gap-4 p-4 min-w-0 group"
         >
-          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-slate-950 border border-slate-800">
-            <Gauge size={20} className="text-slate-600" />
+          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-paper border border-line">
+            <Gauge size={20} className="text-fg-mute" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-white group-hover:text-tarmoto-cyan transition truncate">
+            <h3 className="font-medium text-ink group-hover:text-accent transition truncate">
               {displayName}
             </h3>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={12} />
                 {new Date(ride.started_at).toLocaleDateString()}
@@ -932,13 +932,13 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
                 </span>
               )}
               {ride.avg_road_quality != null && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1 text-[11px] text-fg-dim">
                   {t("Quality {quality}", {
                     quality: ride.avg_road_quality.toFixed(1),
                   })}
                 </span>
               )}
-              <span className="text-[11px] text-slate-600 uppercase tracking-widest">
+              <span className="text-[11px] text-fg-mute uppercase tracking-widest">
                 {ride.ride_type}
               </span>
             </div>
@@ -948,7 +948,7 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${displayName} from collection`}
-          className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+          className="px-3 text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
         >
           <Trash2 size={16} />
         </button>
@@ -965,19 +965,19 @@ function MissingItemRow({
 }) {
   const label = kind === "trip" ? "Trip" : "Ride";
   return (
-    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
+    <div className="rounded-2xl border border-dashed border-line bg-cream/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-fg-dim">
           {t("{label} no longer available", { label })}
         </p>
-        <p className="text-[11px] text-slate-600">
+        <p className="text-[11px] text-fg-mute">
           {t("The route may have been deleted or belongs to another account.")}
         </p>
       </div>
       <button
         type="button"
         onClick={onRemove}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
       >
         <X size={12} />
         {t("Remove")}
@@ -987,11 +987,11 @@ function MissingItemRow({
 }
 function LoadingTripRow() {
   return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-4 animate-pulse">
-      <div className="hidden sm:block shrink-0 w-24 h-16 rounded-lg bg-slate-800" />
+    <li className="rounded-2xl border border-line bg-cream p-4 flex items-center gap-4 animate-pulse">
+      <div className="hidden sm:block shrink-0 w-24 h-16 rounded-lg bg-paper" />
       <div className="flex-1 min-w-0 space-y-2">
-        <div className="h-3.5 w-1/2 rounded bg-slate-800" />
-        <div className="h-2.5 w-1/3 rounded bg-slate-800" />
+        <div className="h-3.5 w-1/2 rounded bg-paper" />
+        <div className="h-2.5 w-1/3 rounded bg-paper" />
       </div>
     </li>
   );
@@ -1087,22 +1087,20 @@ function RoutePickerModal({
   const totalSelected = selectedTrips.size + selectedRides.size;
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-paper/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[80vh] rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl flex flex-col"
+        className="w-full max-w-lg max-h-[80vh] rounded-2xl border border-line bg-cream p-5 shadow-xl flex flex-col"
       >
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-white">
-            {t("Add routes")}
-          </h2>
+          <h2 className="text-sm font-semibold text-ink">{t("Add routes")}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label={t("Close")}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
           >
             <X size={14} />
           </button>
@@ -1111,7 +1109,7 @@ function RoutePickerModal({
         <div
           role="tablist"
           aria-label={t("Add routes from")}
-          className="mb-3 flex gap-1 rounded-lg bg-slate-950 border border-slate-800 p-1"
+          className="mb-3 flex gap-1 rounded-lg bg-paper border border-line p-1"
         >
           <PickerTabButton
             active={tab === "trips"}
@@ -1134,7 +1132,7 @@ function RoutePickerModal({
           }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan mb-3"
+          className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent mb-3"
         />
 
         <div className="flex-1 overflow-y-auto -mx-1 px-1">
@@ -1163,14 +1161,14 @@ function RoutePickerModal({
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-fg-dim">
             {t("{count} selected", { count: totalSelected })}
           </p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
+              className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition"
             >
               {t("Cancel")}
             </button>
@@ -1183,7 +1181,7 @@ function RoutePickerModal({
                   rideIds: Array.from(selectedRides),
                 })
               }
-              className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               {t("Add")}
               {totalSelected > 0 ? ` (${totalSelected})` : ""}
@@ -1213,17 +1211,15 @@ function PickerTabButton({
       onClick={onClick}
       className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
         active
-          ? "bg-slate-800 text-white"
-          : "text-slate-400 hover:text-white hover:bg-slate-900"
+          ? "bg-paper text-ink"
+          : "text-fg-dim hover:text-ink hover:bg-cream"
       }`}
     >
       {label}
       {count > 0 && (
         <span
           className={`ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] ${
-            active
-              ? "bg-tarmoto-cyan/20 text-tarmoto-cyan"
-              : "bg-slate-800 text-slate-300"
+            active ? "bg-accent/20 text-accent" : "bg-paper text-ink"
           }`}
         >
           {count}
@@ -1253,7 +1249,7 @@ function TripPickerList({
 }) {
   if (loading) {
     return (
-      <div className="py-10 text-center text-sm text-slate-500">
+      <div className="py-10 text-center text-sm text-fg-dim">
         <Loader2
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
@@ -1277,25 +1273,25 @@ function TripPickerList({
   if (trips.length === 0) {
     return hasAnyTrips ? (
       <div className="py-8 text-center">
-        <p className="text-sm text-slate-400 mb-1">
+        <p className="text-sm text-fg-dim mb-1">
           {t("All your trips are already in this collection")}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-dim">
           {t("Plan another trip to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
-        <p className="text-sm text-slate-400 mb-1">
+        <p className="text-sm text-fg-dim mb-1">
           {t("You don't have any trips yet")}
         </p>
-        <p className="text-xs text-slate-500 mb-4">
+        <p className="text-xs text-fg-dim mb-4">
           {t("Plan a trip first and it will show up here.")}
         </p>
         <button
           type="button"
           onClick={onPlanTrip}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs hover:bg-slate-700 transition"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-xs hover:bg-paper-2 transition"
         >
           <Plus size={14} />
           {t("New trip")}
@@ -1305,7 +1301,7 @@ function TripPickerList({
   }
   if (visibleTrips.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-slate-500">
+      <p className="py-8 text-center text-sm text-fg-dim">
         {t("No trips match your search.")}
       </p>
     );
@@ -1328,21 +1324,21 @@ function TripPickerList({
             <label
               className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
                 checked
-                  ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
-                  : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                  ? "border-accent/40 bg-accent/5"
+                  : "border-line bg-paper hover:border-line-strong"
               }`}
             >
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => onToggle(trip.id)}
-                className="accent-tarmoto-cyan"
+                className="accent-accent"
               />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-white truncate">
+                <p className="text-sm font-medium text-ink truncate">
                   {trip.name}
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-fg-dim">
                   {metaParts.join(" · ")}
                 </p>
               </div>
@@ -1372,7 +1368,7 @@ function RidePickerList({
 }) {
   if (loading) {
     return (
-      <div className="py-10 text-center text-sm text-slate-500">
+      <div className="py-10 text-center text-sm text-fg-dim">
         <Loader2
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
@@ -1396,19 +1392,19 @@ function RidePickerList({
   if (rides.length === 0) {
     return hasAnyRides ? (
       <div className="py-8 text-center">
-        <p className="text-sm text-slate-400 mb-1">
+        <p className="text-sm text-fg-dim mb-1">
           {t("All your rides are already in this collection")}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-dim">
           {t("Record another ride to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
-        <p className="text-sm text-slate-400 mb-1">
+        <p className="text-sm text-fg-dim mb-1">
           {t("You don't have any rides yet")}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-dim">
           {t("Record a ride from the mobile app and it will show up here.")}
         </p>
       </div>
@@ -1416,7 +1412,7 @@ function RidePickerList({
   }
   if (visibleRides.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-slate-500">
+      <p className="py-8 text-center text-sm text-fg-dim">
         {t("No rides match your search.")}
       </p>
     );
@@ -1433,21 +1429,21 @@ function RidePickerList({
             <label
               className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
                 checked
-                  ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
-                  : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                  ? "border-accent/40 bg-accent/5"
+                  : "border-line bg-paper hover:border-line-strong"
               }`}
             >
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => onToggle(ride.id)}
-                className="accent-tarmoto-cyan"
+                className="accent-accent"
               />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-white truncate">
+                <p className="text-sm font-medium text-ink truncate">
                   {displayName}
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-fg-dim">
                   {new Date(ride.started_at).toLocaleDateString()}
                   {ride.distance_km != null
                     ? ` · ${formatDistance(ride.distance_km)}`
