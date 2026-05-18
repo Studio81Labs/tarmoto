@@ -82,17 +82,17 @@ export function BikeFormModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="bike-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm"
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-xl"
+        className="w-full max-w-md rounded-2xl bg-cream border border-line shadow-[0_24px_60px_rgba(14,14,16,0.2)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between p-5 border-b border-slate-800">
+        <header className="flex items-center justify-between p-5 border-b border-line">
           <h2
             id="bike-modal-title"
-            className="text-lg font-semibold text-white"
+            className="font-sans font-extrabold tracking-[-0.5px] text-[22px] text-ink"
           >
             {title}
           </h2>
@@ -101,7 +101,7 @@ export function BikeFormModal({
             onClick={onClose}
             disabled={submitting}
             aria-label={t("Close")}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+            className="p-1 rounded-md text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
           >
             <X size={18} />
           </button>
@@ -146,7 +146,7 @@ export function BikeFormModal({
           />
 
           {submitError && (
-            <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">
+            <div className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400">
               {submitError}
             </div>
           )}
@@ -156,14 +156,14 @@ export function BikeFormModal({
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition disabled:opacity-50"
+              className="px-4 py-2 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
             >
               {t("Cancel ")}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 inline-flex items-center gap-2"
+              className="px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 inline-flex items-center gap-2"
             >
               {submitting ? (
                 <>
@@ -209,7 +209,10 @@ function Field({
   const errorId = `${id}-error`;
   return (
     <div>
-      <label htmlFor={id} className="block text-sm text-slate-400 mb-1.5">
+      <label
+        htmlFor={id}
+        className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
+      >
         {label}
       </label>
       <input
@@ -223,10 +226,10 @@ function Field({
         autoFocus={autoFocus}
         aria-invalid={!!error}
         aria-describedby={error ? errorId : undefined}
-        className={`w-full px-4 py-2.5 rounded-lg bg-slate-800 border text-white text-sm placeholder:text-slate-500 focus:outline-none transition ${
+        className={`w-full px-4 py-2.5 rounded-lg bg-paper border text-ink text-sm placeholder:text-fg-mute focus:outline-none transition ${
           error
-            ? "border-red-500/50 focus:border-red-500"
-            : "border-slate-700 focus:border-tarmoto-cyan"
+            ? "border-quality-q1/60 focus:border-quality-q1"
+            : "border-line focus:border-ink"
         }`}
       />
       {error ? (
@@ -234,7 +237,7 @@ function Field({
           {error}
         </p>
       ) : helpText ? (
-        <p className="mt-1 text-xs text-slate-500">{helpText}</p>
+        <p className="mt-1 text-xs text-fg-dim">{helpText}</p>
       ) : null}
     </div>
   );
