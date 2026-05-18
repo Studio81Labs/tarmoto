@@ -62,28 +62,32 @@ export function RidesFilters({ state, update, reset }: Props) {
       });
     }
   };
+  const labelClass =
+    "font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim";
+  const fieldClass =
+    "bg-paper border border-line rounded-lg px-2 py-1.5 text-sm text-ink focus:outline-none focus:border-ink transition";
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 mb-4">
+    <div className="rounded-2xl bg-cream border border-line p-[18px] mb-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <label className="text-xs text-slate-400 flex flex-col gap-1">
+        <label className={`${labelClass} flex flex-col gap-1.5`}>
           {t("From ")}
           <input
             type="date"
             value={state.from ?? ""}
             onChange={(e) => update({ from: e.target.value || undefined })}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+            className={fieldClass}
           />
         </label>
-        <label className="text-xs text-slate-400 flex flex-col gap-1">
+        <label className={`${labelClass} flex flex-col gap-1.5`}>
           {t("To ")}
           <input
             type="date"
             value={state.to ?? ""}
             onChange={(e) => update({ to: e.target.value || undefined })}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+            className={fieldClass}
           />
         </label>
-        <label className="text-xs text-slate-400 flex flex-col gap-1">
+        <label className={`${labelClass} flex flex-col gap-1.5`}>
           {t("Min km ")}
           <input
             type="number"
@@ -95,10 +99,10 @@ export function RidesFilters({ state, update, reset }: Props) {
                   e.target.value === "" ? undefined : Number(e.target.value),
               })
             }
-            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+            className={fieldClass}
           />
         </label>
-        <label className="text-xs text-slate-400 flex flex-col gap-1">
+        <label className={`${labelClass} flex flex-col gap-1.5`}>
           {t("Max km ")}
           <input
             type="number"
@@ -110,16 +114,14 @@ export function RidesFilters({ state, update, reset }: Props) {
                   e.target.value === "" ? undefined : Number(e.target.value),
               })
             }
-            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+            className={fieldClass}
           />
         </label>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mt-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-400">
-            {t("Quality (min \u2192 max)")}
-          </span>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("Quality (min \u2192 max)")}</span>
           <div className="flex items-center gap-2">
             <select
               value={state.minQuality ?? ""}
@@ -129,7 +131,7 @@ export function RidesFilters({ state, update, reset }: Props) {
                     e.target.value === "" ? undefined : Number(e.target.value),
                 })
               }
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+              className={fieldClass}
             >
               <option value="">{t("Any")}</option>
               {[1, 2, 3, 4, 5].map((n) => (
@@ -138,7 +140,7 @@ export function RidesFilters({ state, update, reset }: Props) {
                 </option>
               ))}
             </select>
-            <span className="text-slate-500">–</span>
+            <span className="text-fg-mute">–</span>
             <select
               value={state.maxQuality ?? ""}
               onChange={(e) =>
@@ -147,7 +149,7 @@ export function RidesFilters({ state, update, reset }: Props) {
                     e.target.value === "" ? undefined : Number(e.target.value),
                 })
               }
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
+              className={fieldClass}
             >
               <option value="">{t("Any")}</option>
               {[1, 2, 3, 4, 5].map((n) => (
@@ -159,8 +161,8 @@ export function RidesFilters({ state, update, reset }: Props) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-400">{t("Type")}</span>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("Type")}</span>
           <div className="flex flex-wrap gap-1">
             <TypeChip
               label="All"
@@ -178,19 +180,19 @@ export function RidesFilters({ state, update, reset }: Props) {
           </div>
         </div>
 
-        <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
-          <span className="text-xs text-slate-400">{t("Search name")}</span>
+        <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+          <span className={labelClass}>{t("Search name")}</span>
           <div className="relative">
             <Search
               size={14}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-mute"
             />
             <input
               type="search"
               value={searchLocal}
               onChange={(e) => setSearchLocal(e.target.value)}
               placeholder={t("Sunday\u2026")}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-7 pr-2 py-1.5 text-sm text-slate-100"
+              className="w-full bg-paper border border-line rounded-lg pl-7 pr-2 py-1.5 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:border-ink transition"
             />
           </div>
         </label>
@@ -201,7 +203,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           <button
             type="button"
             onClick={reset}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
           >
             <RotateCcw size={14} />
             {t("Reset ")}
@@ -224,10 +226,8 @@ function TypeChip({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2.5 py-1 rounded-full text-xs transition ${
-        active
-          ? "bg-tarmoto-cyan text-slate-900"
-          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+      className={`px-2.5 py-1 rounded-full text-xs font-semibold transition ${
+        active ? "bg-ink text-cream" : "bg-paper text-ink hover:bg-paper-2"
       }`}
     >
       {label}

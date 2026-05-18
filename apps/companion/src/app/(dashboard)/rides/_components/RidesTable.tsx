@@ -40,23 +40,23 @@ export function RidesTable({
 }: Props) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col min-h-0">
+    <div className="rounded-2xl bg-cream border border-line overflow-hidden flex flex-col min-h-0">
       <div className="overflow-auto flex-1">
         <table className="w-full text-sm">
-          <thead className="bg-slate-950/60 text-slate-400 text-xs uppercase tracking-wide sticky top-0">
-            <tr>
+          <thead className="bg-paper text-fg-mute font-mono text-[10px] uppercase tracking-[1px] sticky top-0">
+            <tr className="border-b border-line">
               {COLUMNS.map((col) => {
                 const active = col.key && state.sort === col.key;
                 return (
                   <th
                     key={col.label}
-                    className="px-3 py-2 text-left font-medium"
+                    className="px-3 py-2.5 text-left font-bold"
                   >
                     {col.key ? (
                       <button
                         type="button"
                         onClick={() => onSort(col.key as SortField)}
-                        className="inline-flex items-center gap-1 hover:text-slate-200"
+                        className="inline-flex items-center gap-1 hover:text-ink transition"
                       >
                         {col.label}
                         {active &&
@@ -74,21 +74,18 @@ export function RidesTable({
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {loading && rides.length === 0 ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
                   <td colSpan={6} className="px-3 py-3">
-                    <div className="h-5 bg-slate-800 rounded" />
+                    <div className="h-5 bg-paper-2 rounded" />
                   </td>
                 </tr>
               ))
             ) : rides.length === 0 ? (
               <tr>
-                <td
-                  colSpan={6}
-                  className="px-3 py-10 text-center text-slate-500"
-                >
+                <td colSpan={6} className="px-3 py-10 text-center text-fg-dim">
                   {t("No rides match these filters. ")}
                 </td>
               </tr>
@@ -107,8 +104,8 @@ export function RidesTable({
         </table>
       </div>
 
-      <div className="flex items-center justify-between px-3 py-2 border-t border-slate-800 text-sm text-slate-400">
-        <span>
+      <div className="flex items-center justify-between px-3 py-2 border-t border-line text-sm text-fg-dim">
+        <span className="font-mono tabular-nums">
           {total === 0 ? "0 rides" : `${total} ride${total === 1 ? "" : "s"}`}
         </span>
         <div className="flex items-center gap-2">
@@ -117,11 +114,11 @@ export function RidesTable({
             onClick={() => onPage(state.page - 1)}
             disabled={state.page <= 1}
             aria-label={t("Previous page")}
-            className="p-1 rounded hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1 rounded hover:bg-paper hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
             <ChevronLeft size={16} />
           </button>
-          <span>
+          <span className="font-mono tabular-nums">
             {t("Page {currentPage} of {pageCount}", {
               currentPage: state.page,
               pageCount: totalPages,
@@ -132,7 +129,7 @@ export function RidesTable({
             onClick={() => onPage(state.page + 1)}
             disabled={state.page >= totalPages}
             aria-label={t("Next page")}
-            className="p-1 rounded hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1 rounded hover:bg-paper hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
             <ChevronRight size={16} />
           </button>
