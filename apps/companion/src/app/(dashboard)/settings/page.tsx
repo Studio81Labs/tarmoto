@@ -279,7 +279,7 @@ export default function AccountPage() {
     };
   }, [mobileLinkHref]);
   return (
-    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Stamp className="block mb-2">{t("Account")}</Stamp>
       <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
         {t("Settings")}

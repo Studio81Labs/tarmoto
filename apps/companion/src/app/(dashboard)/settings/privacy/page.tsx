@@ -122,7 +122,7 @@ export default function PrivacyPage() {
   }
   if (loading) {
     return (
-      <div className="p-6 max-w-page-narrow mx-auto">
+      <div className="p-6 max-w-page mx-auto">
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading settings\u2026 ")}
@@ -132,7 +132,7 @@ export default function PrivacyPage() {
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
+      <div className="p-6 max-w-page mx-auto animate-fade-in">
         <Link
           href="/settings"
           className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -152,7 +152,7 @@ export default function PrivacyPage() {
     );
   }
   return (
-    <div className="p-6 max-w-page-narrow mx-auto animate-fade-in">
+    <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
