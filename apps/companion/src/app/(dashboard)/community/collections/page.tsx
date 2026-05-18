@@ -931,7 +931,7 @@ function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-ink hover:bg-red-500 transition"
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-red-500 transition"
           >
             {confirmLabel}
           </button>
