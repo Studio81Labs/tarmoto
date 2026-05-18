@@ -50,17 +50,23 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
+import { Stamp } from "@/components/tarmoto/atoms";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
   active: "Active",
   completed: "Completed",
 };
+// Trip status pills render against the trip card's cream surface. Each
+// status maps to a canonical-aligned hue: neutral paper for drafts,
+// accent-tint for "planned/upcoming", solid accent for "currently
+// riding", and quality-q5 for completed. ink text reads on each tint
+// at ≥4.5:1 contrast.
 const STATUS_PILL: Record<TripStatus, string> = {
-  draft: "bg-slate-600 text-white",
-  planned: "bg-blue-500 text-white",
-  active: "bg-tarmoto-cyan text-slate-950",
-  completed: "bg-quality-excellent text-slate-950",
+  draft: "bg-paper text-fg-dim border border-line",
+  planned: "bg-accent/15 text-accent border border-accent/30",
+  active: "bg-accent text-ink",
+  completed: "bg-quality-q5/40 text-ink",
 };
 const SORT_LABEL: Record<TripSortKey, string> = {
   updated: "Last updated",
@@ -460,8 +466,11 @@ export default function TripListPage() {
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-2xl font-bold">{t("My Trips")}</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <Stamp className="block mb-1">{t("Plan")}</Stamp>
+            <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
+              {t("My Trips")}
+            </h1>
+            <p className="font-mono text-sm text-fg-dim mt-2 tabular-nums">
               {t(trips.length === 1 ? "{count} trip" : "{count} trips", {
                 count: trips.length,
               })}{" "}
@@ -473,21 +482,21 @@ export default function TripListPage() {
           </div>
           <Link
             href="/trips/planner"
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
           >
-            <Plus size={16} />
+            <Plus size={14} />
             {t("New trip")}
           </Link>
         </div>
 
         {errorBanner && (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
             <span>{errorBanner}</span>
             <button
               type="button"
               aria-label={t("Dismiss error")}
               onClick={() => setErrorBanner(null)}
-              className="text-red-200 hover:text-white"
+              className="text-red-400 hover:text-ink"
             >
               <X size={14} />
             </button>
@@ -495,13 +504,13 @@ export default function TripListPage() {
         )}
 
         {migrationToast && (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-3 text-sm text-tarmoto-cyan">
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
             <span>{migrationToast}</span>
             <button
               type="button"
               aria-label={t("Dismiss notice")}
               onClick={() => setMigrationToast(null)}
-              className="text-tarmoto-cyan hover:text-white"
+              className="text-accent hover:text-ink"
             >
               <X size={14} />
             </button>
@@ -531,7 +540,7 @@ export default function TripListPage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-48 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse"
+                className="h-48 rounded-2xl bg-cream border border-line animate-pulse"
               />
             ))}
           </div>
@@ -652,7 +661,7 @@ function FolderChipRow({
       <button
         type="button"
         onClick={onNew}
-        className="flex items-center gap-1.5 rounded-full border border-dashed border-slate-700 px-3 py-1 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-slate-200"
+        className="flex items-center gap-1.5 rounded-full border border-dashed border-line-strong px-3 py-1 text-xs font-medium text-fg-dim transition hover:border-line-strong hover:text-ink"
         aria-label={t("New folder")}
         title={t("New folder")}
       >
@@ -737,13 +746,13 @@ function FolderChip({
         aria-pressed={active}
         className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
           active
-            ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/10 text-tarmoto-cyan"
-            : "border-slate-800 bg-transparent text-slate-300 hover:border-slate-700 hover:text-white"
+            ? "border-accent/40 bg-accent/10 text-accent"
+            : "border-line bg-transparent text-ink hover:border-line-strong hover:text-ink"
         } ${hasActions ? "pr-7" : ""}`}
       >
         {icon}
         <span className="max-w-[14ch] truncate">{label}</span>
-        <span className="tabular-nums text-slate-500">{count}</span>
+        <span className="tabular-nums text-fg-dim">{count}</span>
       </button>
       {hasActions && (
         <>
@@ -752,7 +761,7 @@ function FolderChip({
             data-menu-trigger
             onClick={handleToggleMenu}
             aria-label={`Folder actions for ${label}`}
-            className="absolute right-1 rounded p-0.5 text-slate-400 opacity-60 transition hover:bg-slate-800 hover:text-white hover:opacity-100 focus:opacity-100"
+            className="absolute right-1 rounded p-0.5 text-fg-dim opacity-60 transition hover:bg-paper hover:text-ink hover:opacity-100 focus:opacity-100"
           >
             <MoreVertical size={11} />
           </button>
@@ -808,14 +817,14 @@ function TripToolbar({
       <div className="relative flex-1 max-w-md">
         <Search
           size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
         />
         <input
           type="text"
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
           placeholder={t("Search by name, description, or rider\u2026")}
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
+          className="w-full pl-9 pr-3 py-2 rounded-lg bg-cream border border-line text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
         />
       </div>
 
@@ -830,19 +839,19 @@ function TripToolbar({
               aria-pressed={active}
               className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${
                 active
-                  ? "bg-slate-800 text-white border border-slate-700"
-                  : "bg-transparent text-slate-500 border border-slate-800 hover:text-slate-300"
+                  ? "bg-paper text-ink border border-line-strong"
+                  : "bg-transparent text-fg-dim border border-line hover:text-ink"
               }`}
             >
               {STATUS_LABEL[status]}{" "}
-              <span className="tabular-nums text-slate-500">
+              <span className="tabular-nums text-fg-dim">
                 {statusCounts[status]}
               </span>
             </button>
           );
         })}
 
-        <label className="flex items-center gap-2 text-xs text-slate-500 ml-2">
+        <label className="flex items-center gap-2 text-xs text-fg-dim ml-2">
           <span>{t("Sort")}</span>
           <select
             value={filters.sort}
@@ -852,7 +861,7 @@ function TripToolbar({
                 sort: e.target.value as TripSortKey,
               })
             }
-            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-tarmoto-cyan"
+            className="px-2 py-1 rounded bg-cream border border-line text-ink focus:outline-none focus:border-accent"
           >
             {TRIP_SORT_KEYS.map((key) => (
               <option key={key} value={key}>
@@ -897,11 +906,11 @@ function TripCard({
   return (
     <div
       data-menu-root
-      className={`relative rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition ${busy ? "opacity-60" : ""}`}
+      className={`relative rounded-2xl bg-cream border border-line hover:border-line-strong transition ${busy ? "opacity-60" : ""}`}
     >
       <Link href={`/trips/${trip.id}`} className="block p-5 pr-12 group">
         <div className="flex items-start justify-between gap-3 mb-3">
-          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2">
+          <h3 className="font-semibold text-ink group-hover:text-accent transition line-clamp-2">
             {trip.name}
           </h3>
           <span
@@ -917,7 +926,7 @@ function TripCard({
             wire actually returns. `num_days` and `member_count` are
             the summary equivalents. */}
 
-        <div className="space-y-1.5 text-sm text-slate-400">
+        <div className="space-y-1.5 text-sm text-fg-dim">
           <div className="flex items-center gap-2">
             <Calendar size={13} />
             <span>
@@ -945,14 +954,14 @@ function TripCard({
             </div>
           )}
           {currentFolder && (
-            <div className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-fg-dim">
               <Folder size={13} />
               <span className="truncate">{currentFolder.name}</span>
             </div>
           )}
         </div>
 
-        <p className="mt-3 text-[11px] text-slate-600">
+        <p className="mt-3 text-[11px] text-fg-mute">
           {t("Created ")}
           {formatRelativeTime(trip.createdAt)}
         </p>
@@ -969,7 +978,7 @@ function TripCard({
           setMoveOpen(false);
         }}
         disabled={busy}
-        className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
       >
         <MoreVertical size={16} />
       </button>
@@ -995,13 +1004,13 @@ function TripCard({
             label="Move to folder"
             onClick={() => setMoveOpen((v) => !v)}
             trailing={
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-fg-dim">
                 {currentFolder?.name ?? "Unfiled"}
               </span>
             }
           />
           {moveOpen && (
-            <div className="pl-3 pr-1 py-1 border-t border-slate-800 max-h-48 overflow-y-auto">
+            <div className="pl-3 pr-1 py-1 border-t border-line max-h-48 overflow-y-auto">
               <MoveItem
                 label="Unfiled"
                 active={!trip.folder_id}
@@ -1024,7 +1033,7 @@ function TripCard({
                 />
               ))}
               {folders.length === 0 && (
-                <p className="text-[11px] text-slate-500 py-1">
+                <p className="text-[11px] text-fg-dim py-1">
                   {t("No folders yet. Create one from the sidebar. ")}
                 </p>
               )}
@@ -1058,9 +1067,7 @@ function MoveItem({
       type="button"
       onClick={onClick}
       className={`block w-full text-left text-xs rounded px-2 py-1 transition truncate ${
-        active
-          ? "text-tarmoto-cyan"
-          : "text-slate-300 hover:bg-slate-800 hover:text-white"
+        active ? "text-accent" : "text-ink hover:bg-paper hover:text-ink"
       }`}
     >
       {label}
@@ -1110,21 +1117,18 @@ function FolderModal({
   };
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl"
+        className="w-full max-w-sm rounded-2xl border border-line bg-cream p-5 shadow-xl"
       >
-        <h2 className="text-sm font-semibold text-white mb-3">
+        <h2 className="text-sm font-semibold text-ink mb-3">
           {mode === "create" ? "New folder" : "Rename folder"}
         </h2>
-        <label
-          className="block text-xs text-slate-500 mb-1"
-          htmlFor="folder-name"
-        >
+        <label className="block text-xs text-fg-dim mb-1" htmlFor="folder-name">
           {t("Name ")}
         </label>
         <input
@@ -1137,20 +1141,20 @@ function FolderModal({
             setError(null);
           }}
           placeholder={t("e.g. Summer 2026 Alps")}
-          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan"
+          className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent"
         />
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
+            className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition"
           >
             {t("Cancel ")}
           </button>
           <button
             type="submit"
-            className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+            className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition"
           >
             {mode === "create" ? "Create" : "Save"}
           </button>
@@ -1180,15 +1184,15 @@ function EmptyState({
       };
 }) {
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center mt-5">
-      <Route size={48} className="mx-auto text-slate-600 mb-4" />
-      <p className="text-slate-400 text-lg mb-1">{title}</p>
-      <p className="text-slate-500 text-sm mb-6">{body}</p>
+    <div className="rounded-2xl bg-cream border border-line p-16 text-center mt-5">
+      <Route size={48} className="mx-auto text-fg-mute mb-4" />
+      <p className="text-fg-dim text-lg mb-1">{title}</p>
+      <p className="text-fg-dim text-sm mb-6">{body}</p>
       {action &&
         ("href" in action ? (
           <Link
             href={action.href}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
           >
             <Plus size={16} /> {action.label}
           </Link>
@@ -1196,7 +1200,7 @@ function EmptyState({
           <button
             type="button"
             onClick={action.onClick}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             {action.label}
           </button>
@@ -1240,7 +1244,7 @@ function Menu({
     <div
       ref={menuRef}
       data-trip-menu
-      className={`absolute top-10 z-20 w-56 rounded-lg border border-slate-800 bg-slate-950 shadow-xl py-1 ${align === "right" ? "right-2" : "left-2"}`}
+      className={`absolute top-10 z-20 w-56 rounded-lg border border-line bg-paper shadow-xl py-1 ${align === "right" ? "right-2" : "left-2"}`}
     >
       {children}
     </div>
@@ -1262,14 +1266,14 @@ function MenuItem({
   const toneClass =
     tone === "danger"
       ? "text-red-400 hover:bg-red-500/10"
-      : "text-slate-200 hover:bg-slate-800";
+      : "text-ink hover:bg-paper";
   return (
     <button
       type="button"
       onClick={onClick}
       className={`flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 transition ${toneClass}`}
     >
-      <span className="text-slate-500">{icon}</span>
+      <span className="text-fg-dim">{icon}</span>
       <span className="flex-1">{label}</span>
       {trailing}
     </button>
