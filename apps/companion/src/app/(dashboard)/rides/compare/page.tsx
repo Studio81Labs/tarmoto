@@ -328,6 +328,7 @@ function RouteCompareSection({
           meta={formatRideMeta(rideA)}
           geometry={rideA.route_geometry}
           color="#0ED3CF"
+          labelColor="#0E7A75"
           fitBounds={sharedBounds}
         />
         <RouteBox
@@ -335,23 +336,31 @@ function RouteCompareSection({
           meta={formatRideMeta(rideB)}
           geometry={rideB.route_geometry}
           color="#F472B6"
+          labelColor="#9D2C5C"
           fitBounds={sharedBounds}
         />
       </div>
     </section>
   );
 }
+// `color` paints the map route line (chosen for visibility on the cream
+// basemap). `labelColor` is the darker, cream-safe text colour for the
+// "Ride A/B" label — using the map hue directly on a paper-tinted card
+// drops to ~1.5:1 / ~2.1:1, well below AA. Callers pass a hue-matched
+// darker variant so the A/B colour-cue is preserved in both surfaces.
 function RouteBox({
   label,
   meta,
   geometry,
   color,
+  labelColor,
   fitBounds,
 }: {
   label: string;
   meta: string;
   geometry: FetchedRide["route_geometry"];
   color: string;
+  labelColor: string;
   fitBounds: RouteMapBounds | null;
 }) {
   const hasGeometry = geometry != null && geometry.length >= 2;
@@ -360,7 +369,7 @@ function RouteBox({
       <div className="flex items-center justify-between mb-3">
         <span
           className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color }}
+          style={{ color: labelColor }}
         >
           {label}
         </span>
