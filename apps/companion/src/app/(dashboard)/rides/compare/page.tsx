@@ -113,17 +113,17 @@ function CompareRidesPageInner() {
       <div className="flex items-center gap-4 mb-6">
         <Link
           href="/rides"
-          className="p-2 rounded-lg hover:bg-slate-800 transition"
+          className="p-2 rounded-lg hover:bg-paper transition"
           aria-label={t("Back to rides")}
         >
-          <ArrowLeft size={20} className="text-slate-400" />
+          <ArrowLeft size={20} className="text-fg-dim" />
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Scale size={22} className="text-tarmoto-cyan" />
+            <Scale size={22} className="text-accent" />
             {t("Compare rides ")}
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <p className="text-sm text-fg-dim mt-0.5">
             {t(
               "Pick two rides to see stats, route, and road quality side-by-side. ",
             )}
@@ -134,7 +134,7 @@ function CompareRidesPageInner() {
       {optionsError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300"
+          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
         >
           {optionsError}
         </div>
@@ -158,7 +158,7 @@ function CompareRidesPageInner() {
       </div>
 
       {options.length < 2 && !optionsLoading && !optionsError && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center text-sm text-slate-400">
+        <div className="rounded-2xl border border-line bg-cream p-10 text-center text-sm text-fg-dim">
           {t(
             "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",
           )}
@@ -170,7 +170,7 @@ function CompareRidesPageInner() {
       )}
 
       {selectedA && selectedB && selectedA === selectedB && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
+        <div className="rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
           {t("Pick two different rides to compare. ")}
         </div>
       )}
@@ -191,15 +191,15 @@ function RidePicker({
   onChange: (id: string) => void;
 }) {
   return (
-    <label className="block rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <span className="block text-xs uppercase tracking-wider text-slate-500 mb-2">
+    <label className="block rounded-2xl border border-line bg-cream p-4">
+      <span className="block text-xs uppercase tracking-wider text-fg-dim mb-2">
         {label}
       </span>
       <select
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         disabled={loading || options.length === 0}
-        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-tarmoto-cyan disabled:opacity-50"
+        className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-ink disabled:opacity-50"
       >
         <option value="" disabled>
           {loading ? "Loading rides…" : "Select a ride"}
@@ -273,7 +273,7 @@ function ComparisonView({
   }, [rideA, rideB]);
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-slate-400 mt-4">
+      <div className="flex items-center gap-2 text-fg-dim mt-4">
         <Loader2 size={16} className="animate-spin" />
         {t("Loading rides\u2026 ")}
       </div>
@@ -281,7 +281,7 @@ function ComparisonView({
   }
   if (error || !rideA || !rideB) {
     return (
-      <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+      <div className="mt-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
         {error ?? "Could not load rides"}
       </div>
     );
@@ -315,11 +315,9 @@ function RouteCompareSection({
   );
 
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">
-        {t("Route maps")}
-      </h2>
-      <p className="text-xs text-slate-500 mb-4">
+    <section className="rounded-2xl bg-cream border border-line p-5">
+      <h2 className="text-sm font-semibold text-ink mb-1">{t("Route maps")}</h2>
+      <p className="text-xs text-fg-dim mb-4">
         {t(
           "Side-by-side interactive maps show each ride route over the same road quality overlay used elsewhere in Tarmoto.",
         )}
@@ -330,6 +328,7 @@ function RouteCompareSection({
           meta={formatRideMeta(rideA)}
           geometry={rideA.route_geometry}
           color="#0ED3CF"
+          labelColor="#0E7A75"
           fitBounds={sharedBounds}
         />
         <RouteBox
@@ -337,36 +336,44 @@ function RouteCompareSection({
           meta={formatRideMeta(rideB)}
           geometry={rideB.route_geometry}
           color="#F472B6"
+          labelColor="#9D2C5C"
           fitBounds={sharedBounds}
         />
       </div>
     </section>
   );
 }
+// `color` paints the map route line (chosen for visibility on the cream
+// basemap). `labelColor` is the darker, cream-safe text colour for the
+// "Ride A/B" label — using the map hue directly on a paper-tinted card
+// drops to ~1.5:1 / ~2.1:1, well below AA. Callers pass a hue-matched
+// darker variant so the A/B colour-cue is preserved in both surfaces.
 function RouteBox({
   label,
   meta,
   geometry,
   color,
+  labelColor,
   fitBounds,
 }: {
   label: string;
   meta: string;
   geometry: FetchedRide["route_geometry"];
   color: string;
+  labelColor: string;
   fitBounds: RouteMapBounds | null;
 }) {
   const hasGeometry = geometry != null && geometry.length >= 2;
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+    <div className="rounded-xl border border-line bg-paper p-4">
       <div className="flex items-center justify-between mb-3">
         <span
           className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color }}
+          style={{ color: labelColor }}
         >
           {label}
         </span>
-        <span className="text-[11px] text-slate-500">{meta}</span>
+        <span className="text-[11px] text-fg-dim">{meta}</span>
       </div>
       {hasGeometry ? (
         <RideRouteMap
@@ -376,7 +383,7 @@ function RouteBox({
           fitBounds={fitBounds}
         />
       ) : (
-        <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
+        <div className="rounded-lg border border-dashed border-line p-8 text-center text-xs text-fg-dim">
           {t("{label} has no GPS track.", { label })}
         </div>
       )}
@@ -423,11 +430,9 @@ function validRoutePoints(
 
 function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">
-        {t("Stats diff")}
-      </h2>
-      <p className="text-xs text-slate-500 mb-4">
+    <section className="rounded-2xl bg-cream border border-line p-5">
+      <h2 className="text-sm font-semibold text-ink mb-1">{t("Stats diff")}</h2>
+      <p className="text-xs text-fg-dim mb-4">
         {t(
           "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ",
         )}
@@ -435,7 +440,7 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
               <th className="py-2 pr-4 font-semibold">{t("Metric")}</th>
               <th className="py-2 pr-4 font-semibold text-right">
                 {t("Ride A")}
@@ -448,7 +453,7 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-line">
             {rows.map((row) => {
               const dir = deltaDirection(
                 row.delta,
@@ -456,18 +461,18 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
                 row.digits,
               );
               return (
-                <tr key={row.key} className="text-slate-200">
+                <tr key={row.key} className="text-ink">
                   <td className="py-2 pr-4">{row.label}</td>
                   <td className="py-2 pr-4 text-right tabular-nums">
                     {formatNumber(row.a, row.digits)}
                     {row.unit && (
-                      <span className="text-slate-500 ml-1">{row.unit}</span>
+                      <span className="text-fg-dim ml-1">{row.unit}</span>
                     )}
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">
                     {formatNumber(row.b, row.digits)}
                     {row.unit && (
-                      <span className="text-slate-500 ml-1">{row.unit}</span>
+                      <span className="text-fg-dim ml-1">{row.unit}</span>
                     )}
                   </td>
                   <td className="py-2 pr-0 text-right tabular-nums">
@@ -498,12 +503,18 @@ function DeltaChip({
   direction: DeltaDirection;
   unit?: string;
 }) {
+  // Delta chips sit inside cream stat cards. text-quality-excellent
+  // (canonical q5 #6FD38A) and text-quality-very-poor (q1 #E05A3C) are
+  // surface hues — they fail WCAG AA as small text on cream
+  // (~1.6:1 / ~3.2:1). Route through darker, cream-safe tokens:
+  // text-emerald-700 (~7.5:1 native dark green) and text-red-400
+  // (auto-remapped to #b91c1c on cream surfaces, ~5.7:1).
   const color =
     direction === "improved"
-      ? "text-quality-excellent"
+      ? "text-emerald-700"
       : direction === "regressed"
-        ? "text-quality-very-poor"
-        : "text-slate-400";
+        ? "text-red-400"
+        : "text-fg-dim";
   const Icon =
     direction === "improved"
       ? TrendingUp
@@ -518,7 +529,7 @@ function DeltaChip({
       <span>
         {formatDelta(delta, digits)}
         {unit && delta != null && (
-          <span className="text-slate-500 ml-1 font-normal">{unit}</span>
+          <span className="text-fg-dim ml-1 font-normal">{unit}</span>
         )}
       </span>
     </span>
@@ -539,26 +550,29 @@ function ElevationCompareSection({
     1,
   );
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">
-        {t("Elevation")}
-      </h2>
-      <p className="text-xs text-slate-500 mb-4">
+    <section className="rounded-2xl bg-cream border border-line p-5">
+      <h2 className="text-sm font-semibold text-ink mb-1">{t("Elevation")}</h2>
+      <p className="text-xs text-fg-dim mb-4">
         {t(
           "Bars share a scale so gain/loss are visually comparable across both rides. ",
         )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/*
+          Same A/B hue convention as RouteBox above — but ElevationBars has
+          no map context, so we pass only the darker cream-safe variant
+          (≥5:1 on cream, ≥3:1 on paper for the bar-fill UI cue).
+        */}
         <ElevationBars
           label="Ride A"
-          color="#0ED3CF"
+          color="#0E7A75"
           gain={rideA.elevation_gain}
           loss={rideA.elevation_loss}
           max={max}
         />
         <ElevationBars
           label="Ride B"
-          color="#F472B6"
+          color="#9D2C5C"
           gain={rideB.elevation_gain}
           loss={rideB.elevation_loss}
           max={max}
@@ -610,7 +624,7 @@ function ElevationBar({
   const label = kind === "gain" ? "Gain" : "Loss";
   return (
     <div className="mb-3 last:mb-0">
-      <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+      <div className="flex items-center justify-between text-xs text-fg-dim mb-1">
         <span className="inline-flex items-center gap-1">
           {kind === "gain" ? (
             <ArrowRight size={10} className="rotate-[-45deg]" aria-hidden />
@@ -619,14 +633,11 @@ function ElevationBar({
           )}
           {label}
         </span>
-        <span className="tabular-nums text-slate-300">
+        <span className="tabular-nums text-ink">
           {value == null ? "—" : `${Math.round(value)} m`}
         </span>
       </div>
-      <div
-        className="h-2 rounded-full bg-slate-800 overflow-hidden"
-        aria-hidden
-      >
+      <div className="h-2 rounded-full bg-paper overflow-hidden" aria-hidden>
         <div
           className="h-full rounded-full"
           style={{ width: `${pct}%`, backgroundColor: color }}
@@ -642,17 +653,17 @@ function QualityDiffSection({
 }) {
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">
+    <section className="rounded-2xl bg-cream border border-line p-5">
+      <h2 className="text-sm font-semibold text-ink mb-1">
         {t("Road quality")}
       </h2>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-fg-dim mb-4">
         {t(
           "Share of segments by quality tier. Arrows indicate change on Ride B relative to Ride A \u2014 improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
         )}
       </p>
       {total === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
+        <div className="rounded-lg border border-dashed border-line p-6 text-center text-xs text-fg-dim">
           {t("Neither ride recorded per-segment quality readings. ")}
         </div>
       ) : (
@@ -665,15 +676,15 @@ function QualityDiffSection({
                 key={row.tier}
                 className="grid grid-cols-12 items-center gap-2 text-sm"
               >
-                <div className="col-span-3 flex items-center gap-2 text-slate-300">
+                <div className="col-span-3 flex items-center gap-2 text-ink">
                   <span
                     className="w-2.5 h-2.5 rounded-full"
                     style={{ backgroundColor: row.color }}
                   />
                   {QUALITY_CONFIG[row.tier].label}
                 </div>
-                <div className="col-span-4 flex items-center gap-2 text-xs text-slate-400">
-                  <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
+                  <div className="flex-1 h-1.5 rounded-full bg-paper overflow-hidden">
                     <div
                       className="h-full"
                       style={{
@@ -686,8 +697,8 @@ function QualityDiffSection({
                     {row.percent}%
                   </span>
                 </div>
-                <div className="col-span-4 flex items-center gap-2 text-xs text-slate-400">
-                  <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
+                  <div className="flex-1 h-1.5 rounded-full bg-paper overflow-hidden">
                     <div
                       className="h-full"
                       style={{
