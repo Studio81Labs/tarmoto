@@ -354,8 +354,9 @@ describe("AccountPage", () => {
         margin: 1,
         width: 176,
         color: {
-          dark: "#0f172a",
-          light: "#f8fafc",
+          // ink dots on cream — canonical design tokens.
+          dark: "#0E0E10",
+          light: "#F5EFE6",
         },
       },
     );
