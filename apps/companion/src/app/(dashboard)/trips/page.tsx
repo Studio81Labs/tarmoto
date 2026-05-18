@@ -58,13 +58,19 @@ const STATUS_LABEL: Record<TripStatus, string> = {
   completed: "Completed",
 };
 // Trip status pills render against the trip card's cream surface. Each
-// status maps to a canonical-aligned hue: neutral paper for drafts,
-// accent-tint for "planned/upcoming", solid accent for "currently
-// riding", and quality-q5 for completed. ink text reads on each tint
-// at ≥4.5:1 contrast.
+// status maps to a canonical-aligned hue with text-ink for the small
+// 10-11px label so contrast stays ≥4.5:1 on every tint:
+// - draft     → neutral paper / fg-dim
+// - planned   → q3 "scheduled" yellow tint (warmer than draft, distinct
+//               from the orange `active`)
+// - active    → solid accent (currently riding)
+// - completed → q5 green (done)
+//
+// The previous accent-on-accent-tint planned pill rendered as ~2.2:1
+// orange text on warm tint; switching to ink-on-q3 lands at ≥10:1.
 const STATUS_PILL: Record<TripStatus, string> = {
   draft: "bg-paper text-fg-dim border border-line",
-  planned: "bg-accent/15 text-accent border border-accent/30",
+  planned: "bg-quality-q3/50 text-ink",
   active: "bg-accent text-ink",
   completed: "bg-quality-q5/40 text-ink",
 };
