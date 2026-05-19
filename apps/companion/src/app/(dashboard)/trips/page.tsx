@@ -50,7 +50,7 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { Stamp } from "@/components/tarmoto/atoms";
+import { PageHeader } from "@/components/PageHeader";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -470,30 +470,22 @@ export default function TripListPage() {
   return (
     <div className="overflow-y-auto h-full">
       <div className="p-6 max-w-page mx-auto animate-fade-in">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <div>
-            <Stamp className="block mb-1">{t("Plan")}</Stamp>
-            <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
-              {t("My Trips")}
-            </h1>
-            <p className="font-mono text-sm text-fg-dim mt-2 tabular-nums">
-              {t(trips.length === 1 ? "{count} trip" : "{count} trips", {
-                count: trips.length,
-              })}{" "}
-              ·{" "}
-              {t(folders.length === 1 ? "{count} folder" : "{count} folders", {
-                count: folders.length,
-              })}
-            </p>
-          </div>
-          <Link
-            href="/trips/planner"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
-          >
-            <Plus size={16} />
-            {t("New trip")}
-          </Link>
-        </div>
+        <PageHeader
+          icon={Route}
+          title={t("My Trips")}
+          subtitle={t(
+            "Plan multi-day routes, organise them into folders, and ride them from the mobile app.",
+          )}
+          action={
+            <Link
+              href="/trips/planner"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+            >
+              <Plus size={16} />
+              {t("New trip")}
+            </Link>
+          }
+        />
 
         {errorBanner && (
           <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
@@ -1198,9 +1190,9 @@ function EmptyState({
         ("href" in action ? (
           <Link
             href={action.href}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-[13px] font-bold text-ink transition hover:brightness-95"
           >
-            <Plus size={16} /> {action.label}
+            <Plus size={14} /> {action.label}
           </Link>
         ) : (
           <button

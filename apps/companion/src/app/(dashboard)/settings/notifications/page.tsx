@@ -2,7 +2,15 @@
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2, Mail, Smartphone } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  Check,
+  Loader2,
+  Mail,
+  Smartphone,
+} from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { Stamp } from "@/components/tarmoto/atoms";
@@ -146,10 +154,7 @@ export default function NotificationsPage() {
           <ArrowLeft size={16} />
           {t("Settings ")}
         </Link>
-        <Stamp className="block mb-2">{t("Notifications")}</Stamp>
-        <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
-          {t("Notifications")}
-        </h1>
+        <PageHeader icon={Bell} title={t("Notifications")} />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load preferences: ")}
           {loadError}
@@ -166,15 +171,13 @@ export default function NotificationsPage() {
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <Stamp className="block mb-2">{t("Notifications")}</Stamp>
-      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
-        {t("Notifications")}
-      </h1>
-      <p className="text-sm text-fg-dim mb-6">
-        {t(
-          "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app. ",
+      <PageHeader
+        icon={Bell}
+        title={t("Notifications")}
+        subtitle={t(
+          "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app.",
         )}
-      </p>
+      />
 
       {/* Email digest */}
       <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">

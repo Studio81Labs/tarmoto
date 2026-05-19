@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
+import { PageHeader } from "@/components/PageHeader";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
@@ -143,24 +144,23 @@ export default function RouteCollectionsPage() {
   const showLoadError = status === "error" && collections.length === 0;
   return (
     <div className="p-6 max-w-page mx-auto animate-fade-in">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{t("Route Collections")}</h1>
-          <p className="text-sm text-fg-dim mt-0.5">
-            {collections.length === 1
-              ? t("1 collection")
-              : t("{count} collections", { count: collections.length })}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setModal({ mode: "create" })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
-        >
-          <Plus size={16} />
-          {t("New collection")}
-        </button>
-      </div>
+      <PageHeader
+        icon={FolderOpen}
+        title={t("Route Collections")}
+        subtitle={t(
+          "Curate your favourite roads into shareable lists and follow collections from other riders.",
+        )}
+        action={
+          <button
+            type="button"
+            onClick={() => setModal({ mode: "create" })}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+          >
+            <Plus size={16} />
+            {t("New collection")}
+          </button>
+        }
+      />
 
       {migration && <MigrationBanner migration={migration} />}
 

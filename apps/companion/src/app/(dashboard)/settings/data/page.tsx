@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Check,
+  Database,
   Download,
   Loader2,
   Trash2,
@@ -16,6 +17,7 @@ import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
 import { Stamp } from "@/components/tarmoto/atoms";
+import { PageHeader } from "@/components/PageHeader";
 type ExportState =
   | {
       kind: "idle";
@@ -189,15 +191,13 @@ export default function DataPage() {
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <Stamp className="block mb-2">{t("GDPR")}</Stamp>
-      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
-        {t("Data & Account")}
-      </h1>
-      <p className="text-sm text-fg-dim mb-6">
-        {t(
-          "Export a copy of everything Tarmoto has on you, or delete your account permanently. Both actions comply with GDPR Articles 15 and 17. ",
+      <PageHeader
+        icon={Database}
+        title={t("Data & Account")}
+        subtitle={t(
+          "Export a copy of everything Tarmoto has on you, or delete your account permanently. Both actions comply with GDPR Articles 15 and 17.",
         )}
-      </p>
+      />
 
       {/* Export */}
       <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">

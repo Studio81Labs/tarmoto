@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   Download,
   List as ListIcon,
   Loader2,
@@ -16,7 +17,7 @@ import {
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesMap } from "./_components/RidesMap";
 import { RidesTable } from "./_components/RidesTable";
-import { Stamp } from "@/components/tarmoto/atoms";
+import { PageHeader } from "@/components/PageHeader";
 import {
   useRidesQuery,
   type RideSummary,
@@ -64,26 +65,27 @@ function RidesPageInner() {
   }
   return (
     <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-page mx-auto w-full animate-fade-in">
-      <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <div>
-          <Stamp className="block mb-1">{t("Ride history")}</Stamp>
-          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
-            {t("Ride History")}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {list.rides.length > 0 && <BulkExportMenu />}
-          {list.total >= 2 && (
-            <Link
-              href="/rides/compare"
-              className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
-            >
-              <Scale size={14} />
-              {t("Compare rides ")}
-            </Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        icon={Activity}
+        title={t("Ride History")}
+        subtitle={t(
+          "Browse every recorded ride and review stats, conditions, and routes.",
+        )}
+        action={
+          <div className="flex items-center gap-2">
+            {list.rides.length > 0 && <BulkExportMenu />}
+            {list.total >= 2 && (
+              <Link
+                href="/rides/compare"
+                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
+              >
+                <Scale size={14} />
+                {t("Compare rides ")}
+              </Link>
+            )}
+          </div>
+        }
+      />
 
       <RidesFilters state={state} update={update} reset={reset} />
 

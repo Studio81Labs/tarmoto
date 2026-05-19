@@ -1,34 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { toMapColorScheme, type MapColorScheme } from "@/lib/map-style";
+import type { MapColorScheme } from "@/lib/map-style";
 
-const QUERY = "(prefers-color-scheme: dark)";
-
+// The companion currently ships a light-only theme, so the basemap must
+// stay on its light palette regardless of the OS preference. The hook
+// keeps its previous return-shape so consumers don't have to change.
 export function useMapColorScheme(): MapColorScheme {
-  const [colorScheme, setColorScheme] = useState<MapColorScheme>(() => {
-    if (typeof window === "undefined" || !("matchMedia" in window)) {
-      return "light";
-    }
-
-    return toMapColorScheme(window.matchMedia(QUERY).matches);
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !("matchMedia" in window)) return;
-
-    const mediaQuery = window.matchMedia(QUERY);
-    const update = (matchesDark: boolean) => {
-      setColorScheme(toMapColorScheme(matchesDark));
-    };
-    const handleChange = (event: MediaQueryListEvent) => {
-      update(event.matches);
-    };
-
-    update(mediaQuery.matches);
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, []);
-
-  return colorScheme;
+  return "light";
 }

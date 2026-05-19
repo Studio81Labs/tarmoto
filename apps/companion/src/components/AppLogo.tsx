@@ -12,21 +12,12 @@ export function AppLogo({ inverted = false }: { inverted?: boolean }) {
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
         <TarmotoMark size={18} />
       </span>
-      <span className="leading-none">
-        <span
-          className={`block text-[15px] font-bold tracking-tight ${
-            inverted ? "text-cream" : "text-ink"
-          }`}
-        >
-          TARMOTO
-        </span>
-        <span
-          className={`mt-0.5 block font-mono text-[9px] tracking-[1px] ${
-            inverted ? "text-cream/50" : "text-ink/45"
-          }`}
-        >
-          WEB · v1.4
-        </span>
+      <span
+        className={`text-[15px] font-bold tracking-tight leading-none ${
+          inverted ? "text-cream" : "text-ink"
+        }`}
+      >
+        TARMOTO
       </span>
     </Link>
   );
