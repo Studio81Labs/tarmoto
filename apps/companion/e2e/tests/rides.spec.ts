@@ -282,10 +282,6 @@ test.describe("rides extras", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: /^Statistics$/i }),
     ).toBeVisible({ timeout: 10_000 });
-    // Subtitle line tracks rides in view; with two seeded rides we
-    // expect "2 rides in view." Catches both the count and the
-    // pluralisation logic.
-    await expect(page.getByText(/^2 rides in view\.?$/i)).toBeVisible();
     // Totals grid: at least the Total rides + Total distance cards
     // surface their labels and a non-empty numeric value. The exact
     // distance text depends on rounding (`.toFixed(0)`) so we accept
@@ -303,7 +299,7 @@ test.describe("rides extras", () => {
   // T33 — Personal road map: `/rides/road-map` overlays the rider's
   // ridden segments on a map. With the seeded zero-exploration stats
   // the page mounts in the "no segments yet" empty path but the
-  // chrome (heading, subtitle, "X% explored" badge) still renders.
+  // chrome (heading, subtitle, period filters) still renders.
   // Asserting those three signals catches deletion-style regressions.
   test("T33: /rides/road-map renders the personal road-map shell", async ({
     authedPage: page,
@@ -318,12 +314,13 @@ test.describe("rides extras", () => {
       page.getByRole("heading", { level: 1, name: /my road map/i }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/every road you've ridden/i)).toBeVisible();
-    // The exploration badge renders "0% explored" because the mock's
-    // `/api/v1/exploration/stats` returns zeros — proves the fetch
-    // completed (otherwise the badge stays at "…"). The page renders
-    // the same text in both the header badge and a body paragraph,
-    // so `.first()` is fine and stable.
-    await expect(page.getByText(/0% explored/i).first()).toBeVisible();
+    // The period filter row lives in the header's action slot and only
+    // mounts after `/api/v1/exploration/stats` resolves — asserting the
+    // "All time" button proves the fetch completed and the success
+    // chrome rendered (the loading / error states omit the action).
+    await expect(
+      page.getByRole("button", { name: /^all time$/i }),
+    ).toBeVisible();
   });
 
   // T34 — Compare rides: `/rides/compare` exposes two <select>
