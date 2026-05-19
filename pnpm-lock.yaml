@@ -648,6 +648,22 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  packages/ui:
+    dependencies:
+      clsx:
+        specifier: ^2.1.0
+        version: 2.1.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
 packages:
 
   '@adobe/css-tools@4.4.4':
