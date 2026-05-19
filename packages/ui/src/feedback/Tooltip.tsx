@@ -1,10 +1,26 @@
-import { useId, useState, type ReactNode, type KeyboardEvent } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useId,
+  useState,
+  type HTMLAttributes,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { cn } from "../utils/cn";
 
 /**
  * Tooltip · explain / reveal / onboard. Spec: §19.
  * Three jobs, one chassis: ink fill, 8 px tail, 200 ms hover delay.
  * Use a popover/alert for content that needs an action.
+ *
+ * The trigger must be a single React element (button / anchor / input
+ * / span etc.) — the tooltip clones it to inject `aria-describedby`
+ * pointing at the bubble. That puts the AT relationship on the
+ * focusable node itself rather than on the positioning wrapper, so
+ * screen readers announce the content when the trigger receives focus.
  */
 export type TooltipPlacement = "above" | "below" | "left" | "right";
 export type TooltipKind = "label" | "data" | "coach";
@@ -31,7 +47,11 @@ const kindClass: Record<TooltipKind, string> = {
 };
 
 export interface TooltipProps {
-  /** The trigger — anchor / button / etc. */
+  /**
+   * The trigger — must be a single React element so the tooltip can
+   * attach `aria-describedby` to it. Wrap non-focusable nodes in a
+   * `<span tabIndex={0}>` if you need focus-triggered tooltips on text.
+   */
   children: ReactNode;
   /** Tooltip body. */
   content: ReactNode;
@@ -40,6 +60,22 @@ export interface TooltipProps {
   /** Open without hover/focus (for coach marks). */
   open?: boolean;
   className?: string;
+}
+
+/**
+ * Merge `aria-describedby` with whatever value the consumer already set
+ * on the trigger — space-separated per WAI-ARIA. Avoids clobbering
+ * tooltips bound to elements that already point at help text.
+ */
+function mergeDescribedBy(
+  existing: unknown,
+  next: string | undefined,
+): string | undefined {
+  if (!next) {
+    return typeof existing === "string" ? existing : undefined;
+  }
+  if (typeof existing !== "string" || existing.length === 0) return next;
+  return existing.includes(next) ? existing : `${existing} ${next}`;
 }
 
 export function Tooltip({
@@ -59,6 +95,23 @@ export function Tooltip({
     if (e.key === "Escape") setFocused(false);
   };
 
+  // Inject `aria-describedby` onto the actual trigger element rather
+  // than the positioning wrapper, so screen readers pick it up when
+  // focus lands on the trigger.
+  const childElement = (() => {
+    const only = Children.only(children) as unknown;
+    if (!isValidElement(only)) return null;
+    return only as ReactElement<HTMLAttributes<HTMLElement>>;
+  })();
+  const triggerWithAria = childElement
+    ? cloneElement(childElement, {
+        "aria-describedby": mergeDescribedBy(
+          childElement.props["aria-describedby"],
+          visible ? id : undefined,
+        ),
+      })
+    : children;
+
   return (
     <span
       className={cn("relative inline-flex", className)}
@@ -67,9 +120,8 @@ export function Tooltip({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onKeyDown={handleKeyDown}
-      aria-describedby={visible ? id : undefined}
     >
-      {children}
+      {triggerWithAria}
       <span
         id={id}
         role="tooltip"
