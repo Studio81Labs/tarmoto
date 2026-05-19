@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import "@tarmoto/ui/theme.css";
+
+/* Extra utilities used only by the preview chrome — not part of the
+ * component library. Custom slash opacity values for Web App v2 spec
+ * (8/12/15% etc.) are registered as Tailwind colour aliases below so
+ * `bg-cream/8`, `bg-quality-q5/12` etc. all resolve at build time. */
+
+@theme {
+  --color-accent-soft: rgba(255, 106, 26, 0.08);
+}
+
+html,
+body,
+#root {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Inset focus ring used by the section anchor list. */
+.section-anchor:target h2 {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 8px;
+  border-radius: 4px;
+}
