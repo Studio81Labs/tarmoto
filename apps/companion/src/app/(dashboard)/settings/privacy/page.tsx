@@ -379,7 +379,7 @@ export default function PrivacyPage() {
           type="button"
           onClick={save}
           disabled={!isDirty || saveState.kind === "saving"}
-          className="px-4 py-2 rounded-full bg-accent text-ink font-bold text-sm tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saveState.kind === "saving" ? (
             <>

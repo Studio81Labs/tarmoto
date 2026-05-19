@@ -273,9 +273,9 @@ export default function TripDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/trips/${loaded.detail.id}/edit`}
-            className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink hover:brightness-95 transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
           >
-            <Edit size={14} />
+            <Edit size={16} />
             {t("Edit ")}
           </Link>
           <button
@@ -713,7 +713,7 @@ function CollaborateTabSummary({
         <button
           type="button"
           onClick={onOpenModal}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink hover:brightness-95 transition"
+          className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           {t("Open collaboration panel ")}
         </button>

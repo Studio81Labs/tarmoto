@@ -163,7 +163,7 @@ export function BikeFormModal({
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 inline-flex items-center gap-2"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50"
             >
               {submitting ? (
                 <>
