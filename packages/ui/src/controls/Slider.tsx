@@ -30,7 +30,8 @@ export function Slider({
   unit,
 }: SliderProps) {
   const id = useId();
-  const pct = ((value - min) / Math.max(1, max - min)) * 100;
+  const rawPct = ((value - min) / Math.max(1, max - min)) * 100;
+  const pct = Math.max(0, Math.min(100, rawPct));
 
   return (
     <div className={cn("flex flex-col gap-1", className)}>

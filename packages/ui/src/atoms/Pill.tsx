@@ -42,6 +42,14 @@ export function Pill({
 }: PillProps) {
   const interactive = Tag === "button" || Tag === "a";
   const Component = Tag as "span" | "button" | "a";
+  const isDisabledAnchor = Tag === "a" && disabled;
+  const handleClick = (event: MouseEvent<HTMLElement>) => {
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
+    onClick?.(event);
+  };
   return (
     <Component
       className={cn(
@@ -54,9 +62,11 @@ export function Pill({
         disabled && "opacity-50 cursor-not-allowed",
         className,
       )}
-      onClick={onClick}
+      onClick={interactive ? handleClick : undefined}
       title={title}
-      href={Tag === "a" ? href : undefined}
+      href={Tag === "a" && !isDisabledAnchor ? href : undefined}
+      role={isDisabledAnchor ? "link" : undefined}
+      tabIndex={isDisabledAnchor ? -1 : undefined}
       type={Tag === "button" ? (type ?? "button") : undefined}
       disabled={Tag === "button" ? disabled : undefined}
       aria-disabled={Tag !== "button" && disabled ? true : undefined}
