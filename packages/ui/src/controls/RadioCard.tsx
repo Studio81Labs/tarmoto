@@ -37,6 +37,12 @@ export function RadioCardGroup<T extends string>({
               "block cursor-pointer rounded-lg border px-3 py-2.5",
               "font-sans text-ink",
               "transition-colors duration-100",
+              // The native input is sr-only, so the only way a keyboard
+              // user knows which card has focus is the focus ring on
+              // the wrapping label. `focus-within` picks it up from the
+              // hidden input; `focus-visible` keeps it suppressed for
+              // pointer interactions.
+              "focus-within:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-cream",
               selected
                 ? "border-ink bg-cream"
                 : "border-line bg-transparent hover:bg-paper",

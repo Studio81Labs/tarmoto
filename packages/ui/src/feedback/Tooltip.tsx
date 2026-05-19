@@ -1,5 +1,4 @@
 import {
-  Children,
   cloneElement,
   isValidElement,
   useId,
@@ -97,16 +96,16 @@ export function Tooltip({
 
   // Inject `aria-describedby` onto the actual trigger element rather
   // than the positioning wrapper, so screen readers pick it up when
-  // focus lands on the trigger.
-  const childElement = (() => {
-    const only = Children.only(children) as unknown;
-    if (!isValidElement(only)) return null;
-    return only as ReactElement<HTMLAttributes<HTMLElement>>;
-  })();
-  const triggerWithAria = childElement
-    ? cloneElement(childElement, {
+  // focus lands on the trigger. Falls back gracefully when children
+  // isn't a single React element (null, text, fragments, conditional
+  // expressions like `isReady && <button />`) — the wrapper still
+  // renders, just without the AT binding on the trigger.
+  const triggerWithAria = isValidElement(children)
+    ? cloneElement(children as ReactElement<HTMLAttributes<HTMLElement>>, {
         "aria-describedby": mergeDescribedBy(
-          childElement.props["aria-describedby"],
+          (children as ReactElement<HTMLAttributes<HTMLElement>>).props[
+            "aria-describedby"
+          ],
           visible ? id : undefined,
         ),
       })
