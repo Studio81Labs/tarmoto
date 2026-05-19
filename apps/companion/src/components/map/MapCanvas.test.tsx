@@ -24,8 +24,6 @@ const mapStub = {
 };
 
 const loadHandlers: Array<() => void> = [];
-let colorSchemeListener: ((event: MediaQueryListEvent) => void) | null = null;
-let matchMediaMatches = false;
 
 vi.mock("@/lib/map-style", async () => {
   const actual =
@@ -70,18 +68,14 @@ describe("MapCanvas", () => {
 
   beforeEach(() => {
     loadHandlers.length = 0;
-    colorSchemeListener = null;
-    matchMediaMatches = false;
+    // Companion ships a light-only theme; the matchMedia mock simulates a
+    // browser that prefers dark so the test confirms we ignore it.
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: vi.fn().mockImplementation(() => ({
-        matches: matchMediaMatches,
+        matches: true,
         media: "(prefers-color-scheme: dark)",
-        addEventListener: vi.fn(
-          (event: string, listener: (event: MediaQueryListEvent) => void) => {
-            if (event === "change") colorSchemeListener = listener;
-          },
-        ),
+        addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       })),
     });
@@ -102,7 +96,7 @@ describe("MapCanvas", () => {
     vi.mocked(applyTarmotoMapTheme).mockReset();
   });
 
-  it("applies the light theme on load and re-themes when the browser flips to dark mode", async () => {
+  it("always applies the light theme and ignores the OS dark-mode preference", async () => {
     render(
       <div className="h-[400px] w-[600px]">
         <MapCanvas
@@ -122,16 +116,6 @@ describe("MapCanvas", () => {
       expect(applyTarmotoMapTheme).toHaveBeenCalledWith(mapStub, "light");
     });
 
-    act(() => {
-      matchMediaMatches = true;
-      colorSchemeListener?.({
-        matches: true,
-        media: "(prefers-color-scheme: dark)",
-      } as MediaQueryListEvent);
-    });
-
-    await waitFor(() => {
-      expect(applyTarmotoMapTheme).toHaveBeenCalledWith(mapStub, "dark");
-    });
+    expect(applyTarmotoMapTheme).not.toHaveBeenCalledWith(mapStub, "dark");
   });
 });

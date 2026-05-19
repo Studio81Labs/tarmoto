@@ -154,7 +154,7 @@ export default function RiderProfilePage() {
   return (
     <div className="p-6 max-w-page mx-auto animate-fade-in">
       <Link
-        href="/community"
+        href="/community/feed"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-6 transition"
       >
         <ArrowLeft size={16} />

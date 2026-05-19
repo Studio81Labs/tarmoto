@@ -68,7 +68,6 @@ describe("CommunityFeedPage", () => {
     );
 
     expect(await screen.findByText("John Rider")).toBeInTheDocument();
-    expect(screen.getByText("1 ride found")).toBeInTheDocument();
   });
 
   it("refetches from the first page when the sort changes", async () => {

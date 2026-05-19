@@ -18,7 +18,7 @@ import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
-import { Stamp } from "@/components/tarmoto/atoms";
+import { PageHeader } from "@/components/PageHeader";
 type ModalState =
   | {
       kind: "closed";
@@ -155,27 +155,26 @@ export default function BikesPage() {
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <Stamp className="block mb-1">{t("Garage")}</Stamp>
-          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
-            {t("My Bikes")}
-          </h1>
-        </div>
-        <button
-          type="button"
-          onClick={() => setModal({ kind: "add" })}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
-        >
-          <Plus size={16} />
-          {t("Add bike ")}
-        </button>
-      </div>
-      <p className="text-sm text-fg-dim mb-6 inline-flex items-center gap-1.5">
-        <Smartphone size={14} />
-        {t("Your garage is synced with the Tarmoto mobile app. ")}
-      </p>
-
+      <PageHeader
+        icon={BikeIcon}
+        title={t("My Bikes")}
+        subtitle={
+          <span className="inline-flex items-center gap-1.5">
+            <Smartphone size={14} />
+            {t("Your garage is synced with the Tarmoto mobile app.")}
+          </span>
+        }
+        action={
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "add" })}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+          >
+            <Plus size={16} />
+            {t("Add bike ")}
+          </button>
+        }
+      />
       {error?.kind === "action" && (
         <div className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
           {error.message}

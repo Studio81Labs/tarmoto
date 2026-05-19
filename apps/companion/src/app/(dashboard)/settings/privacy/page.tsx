@@ -2,7 +2,8 @@
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Shield } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { Stamp } from "@/components/tarmoto/atoms";
@@ -140,10 +141,7 @@ export default function PrivacyPage() {
           <ArrowLeft size={16} />
           {t("Settings ")}
         </Link>
-        <Stamp className="block mb-2">{t("Privacy")}</Stamp>
-        <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-6">
-          {t("Privacy & Data")}
-        </h1>
+        <PageHeader icon={Shield} title={t("Privacy & Data")} />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load settings: ")}
           {loadError}
@@ -160,15 +158,13 @@ export default function PrivacyPage() {
         <ArrowLeft size={16} />
         {t("Settings ")}
       </Link>
-      <Stamp className="block mb-2">{t("Privacy")}</Stamp>
-      <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink mb-3">
-        {t("Privacy & Data")}
-      </h1>
-      <p className="text-sm text-fg-dim mb-6">
-        {t(
-          "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses. ",
+      <PageHeader
+        icon={Shield}
+        title={t("Privacy & Data")}
+        subtitle={t(
+          "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses.",
         )}
-      </p>
+      />
 
       {/* Profile visibility */}
       <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">

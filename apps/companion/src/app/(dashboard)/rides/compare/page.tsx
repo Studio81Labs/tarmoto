@@ -1,10 +1,8 @@
 "use client";
 import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   Loader2,
   Scale,
@@ -13,6 +11,7 @@ import {
   Minus,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/PageHeader";
 import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
@@ -110,26 +109,13 @@ function CompareRidesPageInner() {
   }
   return (
     <div className="p-6 max-w-page mx-auto animate-fade-in">
-      <div className="flex items-center gap-4 mb-6">
-        <Link
-          href="/rides"
-          className="p-2 rounded-lg hover:bg-paper transition"
-          aria-label={t("Back to rides")}
-        >
-          <ArrowLeft size={20} className="text-fg-dim" />
-        </Link>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Scale size={22} className="text-accent" />
-            {t("Compare rides ")}
-          </h1>
-          <p className="text-sm text-fg-dim mt-0.5">
-            {t(
-              "Pick two rides to see stats, route, and road quality side-by-side. ",
-            )}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Scale}
+        title={t("Compare rides")}
+        subtitle={t(
+          "Pick two rides to see stats, route, and road quality side-by-side.",
+        )}
+      />
 
       {optionsError && (
         <div

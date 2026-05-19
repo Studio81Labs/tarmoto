@@ -26,6 +26,7 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
+import { PageHeader as DashboardPageHeader } from "@/components/PageHeader";
 import {
   activeChallenges,
   challengeProgress,
@@ -421,14 +422,13 @@ function Dashboard({
 }
 function PageHeader() {
   return (
-    <header>
-      <h1 className="text-2xl font-bold">{t("Achievements")}</h1>
-      <p className="text-sm text-fg-dim mt-1">
-        {t(
-          "Badges, challenges, leaderboards, and milestones for your riding region. ",
-        )}
-      </p>
-    </header>
+    <DashboardPageHeader
+      icon={Trophy}
+      title={t("Achievements")}
+      subtitle={t(
+        "Badges, challenges, leaderboards, and milestones for your riding region.",
+      )}
+    />
   );
 }
 // ── Seasonal banner ──

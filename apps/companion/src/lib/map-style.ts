@@ -290,7 +290,3 @@ export function applyTarmotoMapTheme(
     }
   }
 }
-
-export function toMapColorScheme(matchesDark: boolean): MapColorScheme {
-  return matchesDark ? "dark" : "light";
-}

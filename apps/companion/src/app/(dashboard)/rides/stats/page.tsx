@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { fetchAllRides } from "@/lib/rides-fetch";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -122,7 +123,13 @@ export default function StatsPage() {
   if (loading) {
     return (
       <div className="p-6 max-w-page mx-auto">
-        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
+        <PageHeader
+          icon={BarChart3}
+          title={t("Statistics")}
+          subtitle={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+          )}
+        />
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading rides\u2026 ")}
@@ -133,7 +140,13 @@ export default function StatsPage() {
   if (loadError) {
     return (
       <div className="p-6 max-w-page mx-auto animate-fade-in">
-        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
+        <PageHeader
+          icon={BarChart3}
+          title={t("Statistics")}
+          subtitle={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+          )}
+        />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {loadError}
         </div>
@@ -143,7 +156,13 @@ export default function StatsPage() {
   if (rides.length === 0) {
     return (
       <div className="p-6 max-w-page mx-auto animate-fade-in">
-        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
+        <PageHeader
+          icon={BarChart3}
+          title={t("Statistics")}
+          subtitle={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+          )}
+        />
         <div className="rounded-2xl bg-cream border border-line p-16 text-center">
           <BarChart3 size={48} className="mx-auto text-fg-mute mb-4" />
           <p className="text-fg-dim text-lg mb-2">
@@ -160,17 +179,16 @@ export default function StatsPage() {
   }
   return (
     <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">{t("Statistics")}</h1>
-          <p className="text-sm text-fg-dim mt-1">
-            {totals.totalRides === 0
-              ? "No rides match the current filters."
-              : `${totals.totalRides} ride${totals.totalRides === 1 ? "" : "s"} in view.`}
-          </p>
-        </div>
-        <FilterBar filters={filters} years={years} onChange={setFilters} />
-      </div>
+      <PageHeader
+        icon={BarChart3}
+        title={t("Statistics")}
+        subtitle={t(
+          "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+        )}
+        action={
+          <FilterBar filters={filters} years={years} onChange={setFilters} />
+        }
+      />
 
       <TotalsGrid totals={totals} />
 

@@ -40,15 +40,21 @@ type NavSubItem = {
   label: string;
 };
 
+// `href` is optional. A NAV_ITEM without `href` is a section group
+// rather than a destination — clicking the parent does nothing and the
+// children render unconditionally. Used for `/community`, which has no
+// overview page of its own (the section IS its children).
 type NavItem = {
-  href: string;
+  href?: string;
   label: string;
   stamp: string;
-  // Sub-routes that render under the parent when the rider is
-  // somewhere inside the section. Replaces per-page top tab
-  // strips (e.g. the old `RidesSubNav`) — the same affordance
-  // lives inside the sidebar now, matching the rest of the
-  // navigation chrome.
+  // Sub-routes that render under the parent. Behaviour depends on whether
+  // the parent has its own `href`:
+  // - With href: children render only while the rider is in-section,
+  //   mirroring the legacy per-page top tab strips (e.g. the old
+  //   `RidesSubNav`).
+  // - Without href: children render unconditionally because the parent
+  //   is the only way into the section.
   children?: NavSubItem[];
 };
 
@@ -66,7 +72,14 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/rides/compare", label: "Compare rides" },
     ],
   },
-  { href: "/community", stamp: "04", label: "Community" },
+  {
+    stamp: "04",
+    label: "Community",
+    children: [
+      { href: "/community/feed", label: "Feed" },
+      { href: "/community/collections", label: "Collections" },
+    ],
+  },
   { href: "/gamification", stamp: "05", label: "Achievements" },
 ];
 
@@ -142,68 +155,95 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex flex-col gap-0.5">
         {NAV_ITEMS.map((item) => {
+          const parentHref = item.href;
           const inSection =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+            parentHref === undefined
+              ? // Section groups (linkless) — derive presence from the
+                // first child so the rider's current sub-route still
+                // counts as "in this section" for child highlighting.
+                (item.children?.some((child) =>
+                  pathname.startsWith(child.href),
+                ) ?? false)
+              : parentHref === "/"
+                ? pathname === "/"
+                : pathname.startsWith(parentHref);
           const isActive = (() => {
-            if (item.href === "/") return pathname === "/";
-            if (!pathname.startsWith(item.href)) return false;
+            if (parentHref === undefined) return false;
+            if (parentHref === "/") return pathname === "/";
+            if (!pathname.startsWith(parentHref)) return false;
             const hasMoreSpecific = NAV_ITEMS.some(
               (other) =>
-                other.href !== item.href &&
-                other.href.startsWith(item.href) &&
+                other.href !== undefined &&
+                other.href !== parentHref &&
+                other.href.startsWith(parentHref) &&
                 pathname.startsWith(other.href),
             );
             return !hasMoreSpecific;
           })();
+          // Section groups (no parent href) always reveal their
+          // children so the rider can reach them from anywhere; link
+          // parents follow the legacy in-section gating.
+          const showChildren =
+            !collapsed &&
+            item.children !== undefined &&
+            (parentHref === undefined || inSection);
+          const parentClassName = clsx(
+            "flex items-center rounded-lg py-2.5 transition-colors",
+            collapsed ? "justify-center px-0" : "gap-2.5 px-3",
+            parentHref === undefined
+              ? "text-cream/70"
+              : isActive
+                ? "bg-accent text-ink"
+                : "text-cream hover:bg-cream/5",
+          );
+          const stampClassName = clsx(
+            "font-mono text-[10px] font-bold tracking-[1px]",
+            collapsed ? "" : "w-6",
+            isActive ? "text-ink" : "text-cream/40",
+          );
+          const labelClassName = clsx(
+            "text-[13px]",
+            isActive ? "font-bold" : "font-semibold",
+          );
+          const parentInner = (
+            <>
+              <span aria-hidden="true" className={stampClassName}>
+                {item.stamp}
+              </span>
+              {!collapsed && (
+                <span className={labelClassName}>{item.label}</span>
+              )}
+            </>
+          );
           return (
-            <div key={item.href} className="flex flex-col gap-0.5">
-              <Link
-                href={item.href}
-                aria-current={isActive ? "page" : undefined}
-                title={collapsed ? item.label : undefined}
-                className={clsx(
-                  "flex items-center rounded-lg py-2.5 transition-colors",
-                  collapsed ? "justify-center px-0" : "gap-2.5 px-3",
-                  isActive
-                    ? "bg-accent text-ink"
-                    : "text-cream hover:bg-cream/5",
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={clsx(
-                    "font-mono text-[10px] font-bold tracking-[1px]",
-                    collapsed ? "" : "w-6",
-                    isActive ? "text-ink" : "text-cream/40",
-                  )}
+            <div
+              key={parentHref ?? item.label}
+              className="flex flex-col gap-0.5"
+            >
+              {parentHref !== undefined ? (
+                <Link
+                  href={parentHref}
+                  aria-current={isActive ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
+                  className={parentClassName}
                 >
-                  {item.stamp}
-                </span>
-                {!collapsed && (
-                  <span
-                    className={clsx(
-                      "text-[13px]",
-                      isActive ? "font-bold" : "font-semibold",
-                    )}
-                  >
-                    {item.label}
-                  </span>
-                )}
-              </Link>
+                  {parentInner}
+                </Link>
+              ) : (
+                // Section group: not a link. Render as a plain row so
+                // the rider sees the heading and goes straight to the
+                // children below.
+                <div
+                  title={collapsed ? item.label : undefined}
+                  className={parentClassName}
+                >
+                  {parentInner}
+                </div>
+              )}
 
-              {/* Sub-items only render when the rider is inside this
-                  section and the sidebar is expanded — replaces the
-                  per-section top tab strip with sidebar nesting,
-                  consistent with shell v2's "sidebar owns nav"
-                  principle. Collapsed mode hides them; the parent
-                  link's title tooltip carries the section label and
-                  the rider can always tap through to see the
-                  sub-routes inline. */}
-              {!collapsed && inSection && item.children && (
+              {showChildren && (
                 <div className="ml-9 flex flex-col gap-0.5 border-l border-cream/10 pl-2">
-                  {item.children.map((child) => {
+                  {item.children?.map((child) => {
                     const childActive = pathname.startsWith(child.href);
                     return (
                       <Link

@@ -2,15 +2,18 @@
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Check,
   Copy,
   Crosshair,
   Loader2,
+  Map as MapIcon,
   MapPin,
   Navigation,
   Share2,
   Sparkles,
 } from "lucide-react";
+import { PageHeader as DashboardPageHeader } from "@/components/PageHeader";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
 import type {
@@ -56,10 +59,15 @@ import {
 const NEARBY_DEFAULT_RADIUS_KM = 15;
 const NEARBY_LIMIT = 25;
 // Fallback coordinate used when the browser blocks or doesn't have geolocation.
-// Prague is a sensible neutral default for a motorcycle app whose spec targets
-// Central Europe; the user can override via the "Use my location" button or by
-// letting the coordinate inputs accept any lat/lng.
-const FALLBACK_CENTER = { lat: 50.0755, lng: 14.4378, label: "Prague" };
+// Prague (50.0755, 14.4378) is a neutral Central-European anchor for the
+// initial nearby-roads fetch; the rider replaces it via "Use my location" or
+// the lat/lng inputs. Label deliberately reads as a placeholder so it doesn't
+// look like a curated suggestion of "Prague" specifically.
+const FALLBACK_CENTER = {
+  lat: 50.0755,
+  lng: 14.4378,
+  label: "Default — pick yours below",
+};
 const INITIAL_MAP_ZOOM = 8;
 type ShareState =
   | {
@@ -295,7 +303,7 @@ export default function RoadMapPage() {
           zoom: INITIAL_MAP_ZOOM,
         },
       });
-      const title = `My Tarmoto road map — ${stats.percent_explored}% explored`;
+      const title = "My Tarmoto road map";
       const { data } = await mapSharesApi.create({
         title,
         // The DTO accepts an opaque JSON object — narrow the typed snapshot
@@ -310,7 +318,7 @@ export default function RoadMapPage() {
           : data.share_url;
       const shareData: ShareData = {
         title,
-        text: `Check out the roads I've ridden on Tarmoto — ${stats.percent_explored}% explored.`,
+        text: "Check out the roads I've ridden on Tarmoto.",
         url: fullUrl,
       };
       if (
@@ -367,7 +375,7 @@ export default function RoadMapPage() {
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        <PageHeader percentExplored={null} />
+        <PageHeader />
         <div className="flex-1 flex items-center justify-center text-fg-dim gap-2 text-sm">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading road map\u2026 ")}
@@ -378,7 +386,7 @@ export default function RoadMapPage() {
   if (loadError || !stats) {
     return (
       <div className="flex flex-col h-full">
-        <PageHeader percentExplored={null} />
+        <PageHeader />
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
             {loadError ?? "Could not load exploration data"}
@@ -389,35 +397,35 @@ export default function RoadMapPage() {
   }
   return (
     <div className="flex flex-col h-full">
-      <PageHeader percentExplored={stats.percent_explored} />
-
-      <div className="px-6 pt-4 pb-2 flex flex-wrap items-center gap-2 border-b border-line">
-        <div
-          className="flex items-center gap-1.5 mr-2"
-          role="group"
-          aria-label={t("Filter by period")}
-        >
-          {TIME_PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriod(p)}
-              aria-pressed={period === p}
-              className={`px-3 py-1.5 rounded-lg text-sm transition ${
-                period === p
-                  ? "bg-accent/10 text-accent"
-                  : "bg-paper text-ink hover:bg-paper-2"
-              }`}
+      <PageHeader
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="flex items-center gap-1.5"
+              role="group"
+              aria-label={t("Filter by period")}
             >
-              {TIME_PERIOD_LABELS[p]}
-            </button>
-          ))}
-        </div>
+              {TIME_PERIODS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriod(p)}
+                  aria-pressed={period === p}
+                  className={`px-3 py-1.5 rounded-lg text-sm transition ${
+                    period === p
+                      ? "bg-accent/10 text-accent"
+                      : "bg-paper text-ink hover:bg-paper-2"
+                  }`}
+                >
+                  {TIME_PERIOD_LABELS[p]}
+                </button>
+              ))}
+            </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <ShareButton state={shareState} onClick={handleShare} />
-        </div>
-      </div>
+            <ShareButton state={shareState} onClick={handleShare} />
+          </div>
+        }
+      />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
         <div className="relative bg-cream border-b lg:border-b-0 lg:border-r border-line min-h-[320px]">
@@ -478,7 +486,17 @@ export default function RoadMapPage() {
             {nearbyLoading ? (
               <LoaderRow label="Loading unridden roads…" />
             ) : nearbyError ? (
-              <p className="text-sm text-red-400">{nearbyError}</p>
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
+              >
+                <AlertTriangle
+                  size={14}
+                  className="mt-0.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{nearbyError}</span>
+              </div>
             ) : regionBuckets.length === 0 ? (
               <EmptyState label="No unridden roads found nearby. You've explored this area well!" />
             ) : (
@@ -519,7 +537,17 @@ export default function RoadMapPage() {
             {nearbyLoading ? (
               <LoaderRow label="Loading suggestions…" />
             ) : nearbyError ? (
-              <p className="text-sm text-red-400">{nearbyError}</p>
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
+              >
+                <AlertTriangle
+                  size={14}
+                  className="mt-0.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{nearbyError}</span>
+              </div>
             ) : nearby.length === 0 ? (
               <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
             ) : (
@@ -537,20 +565,19 @@ export default function RoadMapPage() {
 }
 // ── Sub-components ──
 interface PageHeaderProps {
-  percentExplored: number | null;
+  action?: React.ReactNode;
 }
-function PageHeader({ percentExplored }: PageHeaderProps) {
+function PageHeader({ action }: PageHeaderProps) {
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-      <div>
-        <h1 className="text-xl font-bold">{t("My Road Map")}</h1>
-        <p className="text-sm text-fg-dim mt-0.5">
-          {t("Every road you've ridden ")}
-        </p>
-      </div>
-      <div className="px-4 py-2 rounded-xl bg-accent/10 text-accent font-semibold text-sm tabular-nums">
-        {percentExplored == null ? "…" : `${percentExplored}% explored`}
-      </div>
+    <div className="px-6 pt-6">
+      <DashboardPageHeader
+        icon={MapIcon}
+        title={t("My Road Map")}
+        subtitle={t(
+          "Every road you've ridden, layered on the regional basemap.",
+        )}
+        action={action}
+      />
     </div>
   );
 }
@@ -574,14 +601,17 @@ function SummaryCards({
         ? stats.ridden_segments
         : riddenInPeriod
       ).toLocaleString(),
+      // All-time view doesn't expose `of X total` — `total_segments` is the
+      // entire road dataset (millions of segments in prod), which made the
+      // ratio a demoralising 0-ish % rather than progress feedback.
       sub: isAllTime
-        ? `of ${stats.total_segments.toLocaleString()} total`
+        ? undefined
         : `of ${stats.ridden_segments.toLocaleString()} all-time ridden`,
     },
     {
       label: "All-time distance",
       value: formatDistance(stats.total_distance_km, units),
-      sub: `${stats.percent_explored}% explored`,
+      sub: `${stats.ridden_segments.toLocaleString()} segments ridden`,
     },
     {
       label: `Rides — ${TIME_PERIOD_LABELS[periodStats.period]}`,
@@ -605,7 +635,7 @@ function SummaryCards({
           <p className="text-xl font-bold text-ink tabular-nums mt-0.5">
             {c.value}
           </p>
-          <p className="text-xs text-fg-dim mt-0.5">{c.sub}</p>
+          {c.sub && <p className="text-xs text-fg-dim mt-0.5">{c.sub}</p>}
         </div>
       ))}
     </div>

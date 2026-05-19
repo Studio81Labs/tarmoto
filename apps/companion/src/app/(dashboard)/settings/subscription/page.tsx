@@ -17,6 +17,7 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { Stamp } from "@/components/tarmoto/atoms";
+import { PageHeader } from "@/components/PageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
   describeRenewal,
@@ -192,39 +193,35 @@ export default function SubscriptionPage() {
         {t("Settings ")}
       </Link>
 
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Stamp className="block mb-2">{t("Billing")}</Stamp>
-          <h1 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[32px] text-ink">
-            {t("Subscription")}
-          </h1>
-          <p className="mt-2 text-sm text-fg-dim">
-            {t(
-              "Manage your plan, payment method, billing history, and renewal choices from one place. ",
-            )}
-          </p>
-        </div>
-        {snapshot?.portalAvailable ? (
-          <button
-            type="button"
-            onClick={() => void openPortal("manage")}
-            disabled={billingBusy}
-            className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-cream px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:opacity-50"
-          >
-            {actionState.kind === "portal-manage" ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                {t("Opening billing portal\u2026 ")}
-              </>
-            ) : (
-              <>
-                {t("Open billing portal ")}
-                <ExternalLink size={14} />
-              </>
-            )}
-          </button>
-        ) : null}
-      </div>
+      <PageHeader
+        icon={CreditCard}
+        title={t("Subscription")}
+        subtitle={t(
+          "Manage your plan, payment method, billing history, and renewal choices from one place.",
+        )}
+        action={
+          snapshot?.portalAvailable ? (
+            <button
+              type="button"
+              onClick={() => void openPortal("manage")}
+              disabled={billingBusy}
+              className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-cream px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:opacity-50"
+            >
+              {actionState.kind === "portal-manage" ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  {t("Opening billing portal\u2026 ")}
+                </>
+              ) : (
+                <>
+                  {t("Open billing portal ")}
+                  <ExternalLink size={14} />
+                </>
+              )}
+            </button>
+          ) : null
+        }
+      />
 
       {actionState.error ? (
         <div className="mb-6 rounded-2xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
