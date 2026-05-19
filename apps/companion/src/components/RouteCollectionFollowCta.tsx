@@ -119,7 +119,7 @@ export function RouteCollectionFollowCta({
         </p>
         <Link
           href={loginHref}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink text-sm font-semibold hover:brightness-95 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           {t("Sign in")}
         </Link>

@@ -778,7 +778,7 @@ function ShareButton({ state, onClick }: ShareButtonProps) {
       onClick={onClick}
       disabled={state.kind === "creating"}
       title={state.kind === "error" ? state.message : undefined}
-      className="inline-flex items-center gap-2 px-3 py-[5px] rounded-full bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60"
+      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60"
     >
       <Icon
         size={14}

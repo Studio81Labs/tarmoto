@@ -165,9 +165,9 @@ export default function BikesPage() {
         <button
           type="button"
           onClick={() => setModal({ kind: "add" })}
-          className="flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
-          <Plus size={14} />
+          <Plus size={16} />
           {t("Add bike ")}
         </button>
       </div>
@@ -331,9 +331,9 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <button
         type="button"
         onClick={onAdd}
-        className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
       >
-        <Plus size={14} />
+        <Plus size={16} />
         {t("Add your first bike ")}
       </button>
     </div>

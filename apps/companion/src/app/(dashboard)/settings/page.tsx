@@ -518,7 +518,7 @@ export default function AccountPage() {
             type="button"
             onClick={handleSave}
             disabled={saveState === "saving"}
-            className="px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {saveState === "saving" ? "Saving…" : "Save changes"}
           </button>

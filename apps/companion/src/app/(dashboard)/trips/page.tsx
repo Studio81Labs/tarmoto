@@ -488,9 +488,9 @@ export default function TripListPage() {
           </div>
           <Link
             href="/trips/planner"
-            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
           >
-            <Plus size={14} />
+            <Plus size={16} />
             {t("New trip")}
           </Link>
         </div>

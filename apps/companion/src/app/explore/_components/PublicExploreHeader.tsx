@@ -26,7 +26,7 @@ export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
         </Link>
         <Link
           href={`/register?callbackUrl=${encoded}`}
-          className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           {t("Create account ")}
         </Link>

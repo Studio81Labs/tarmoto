@@ -665,7 +665,7 @@ function RetentionDialog({
               type="button"
               onClick={onOpenPortal}
               disabled={busy}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50"
             >
               {busy ? (
                 <>
@@ -683,7 +683,7 @@ function RetentionDialog({
             <button
               type="button"
               disabled
-              className="rounded-full bg-accent/40 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-accent/40 text-ink font-bold text-[11px] uppercase tracking-[0.2px]"
             >
               {t("Billing portal unavailable ")}
             </button>
