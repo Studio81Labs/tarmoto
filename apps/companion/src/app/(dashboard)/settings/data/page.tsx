@@ -235,7 +235,7 @@ export default function DataPage() {
               exportState.kind === "requesting" ||
               exportState.kind === "polling"
             }
-            className="px-4 py-[5px] rounded-full bg-accent text-ink font-bold text-[11px] tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {exportState.kind === "requesting" ||
             exportState.kind === "polling" ? (
