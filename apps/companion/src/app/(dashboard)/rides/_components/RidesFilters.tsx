@@ -163,7 +163,7 @@ export function RidesFilters({ state, update, reset }: Props) {
 
         <div className="flex flex-col gap-1.5">
           <span className={labelClass}>{t("Type")}</span>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             <TypeChip
               label="All"
               active={!state.type}
@@ -226,8 +226,10 @@ function TypeChip({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2.5 py-1 rounded-full text-xs font-semibold transition ${
-        active ? "bg-ink text-cream" : "bg-paper text-ink hover:bg-paper-2"
+      className={`px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${
+        active
+          ? "bg-ink border-ink text-cream"
+          : "bg-paper border-line text-ink hover:bg-paper-2"
       }`}
     >
       {label}
