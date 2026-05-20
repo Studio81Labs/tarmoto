@@ -64,4 +64,13 @@ describe("i18n / isSupportedLocale", () => {
     expect(isSupportedLocale("en")).toBe(true);
     expect(isSupportedLocale("xx")).toBe(false);
   });
+
+  it("rejects Object prototype keys so /api/locale and translate() are safe", () => {
+    // `value in LOCALES` would let these through and crash translate() when
+    // it tried to read `.messages` off the inherited method.
+    expect(isSupportedLocale("toString")).toBe(false);
+    expect(isSupportedLocale("hasOwnProperty")).toBe(false);
+    expect(isSupportedLocale("__proto__")).toBe(false);
+    expect(isSupportedLocale("constructor")).toBe(false);
+  });
 });

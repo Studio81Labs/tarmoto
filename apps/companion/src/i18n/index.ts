@@ -20,7 +20,10 @@ export type TranslationValues = Record<string, string | number>;
 let activeLocale: SupportedLocale = DEFAULT_LOCALE;
 
 export function isSupportedLocale(value: string): value is SupportedLocale {
-  return value in LOCALES;
+  // Object.hasOwn (not `in`) so prototype keys like "toString" / "__proto__"
+  // can't slip through validation and crash translate() later when it tries
+  // to read `.messages` off the inherited method.
+  return Object.hasOwn(LOCALES, value);
 }
 
 /**
