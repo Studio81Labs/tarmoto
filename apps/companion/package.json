@@ -27,6 +27,7 @@
     "@tanstack/react-query": "^5.90.0",
     "@tarmoto/openapi-client": "workspace:*",
     "@tarmoto/shared": "workspace:*",
+    "@tarmoto/ui": "workspace:*",
     "clsx": "^2.1.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^1.9.0",

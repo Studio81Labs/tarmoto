@@ -95,7 +95,9 @@ test.describe("trip collaboration", () => {
       // suggestions fetch. Going via the list rather than page.reload()
       // keeps the next-auth/Zustand state hydrated and avoids the
       // hard-reload auth-store race.
-      await collaboratorPage.getByRole("link", { name: /^trips$/i }).click();
+      await collaboratorPage
+        .getByRole("link", { name: /^\d+\s*trips$/i })
+        .click();
       await collaboratorPage.waitForURL((u) => u.pathname === "/trips");
       await collaboratorPage
         .getByRole("link", { name: /dolomites weekend/i })
@@ -127,7 +129,7 @@ test.describe("trip collaboration", () => {
 
       // Owner does the same client-side round-trip to pick up the vote.
       await ownerPage.getByRole("button", { name: /close dialog/i }).click();
-      await ownerPage.getByRole("link", { name: /^trips$/i }).click();
+      await ownerPage.getByRole("link", { name: /^\d+\s*trips$/i }).click();
       await ownerPage.waitForURL((u) => u.pathname === "/trips");
       await ownerPage
         .getByRole("link", { name: /dolomites weekend/i })

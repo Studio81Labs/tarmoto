@@ -86,15 +86,19 @@ test.describe("cross-cutting", () => {
   // scenario no longer maps to a sidebar item. Re-aiming the test at
   // `/rides/road-map`, a deep child of the still-top-level "Ride
   // History" item, exercises the same parent-highlight contract.
+  //
+  // Web App v2 nav adds a numeric `00`–`06` stamp before each label,
+  // so the accessible name is `"03 Ride History"` etc. — matching on a
+  // regex keeps the assertion stable across stamp tweaks.
   test("T63: sub-route highlights the parent nav item only", async ({
     authedPage: page,
   }) => {
     await page.goto("/rides/road-map");
     await expect(
-      page.getByRole("link", { name: "Ride History", exact: true }),
+      page.getByRole("link", { name: /^\d+\s*Ride History$/ }),
     ).toHaveAttribute("aria-current", "page");
     await expect(
-      page.getByRole("link", { name: "Trips", exact: true }),
+      page.getByRole("link", { name: /^\d+\s*Trips$/ }),
     ).not.toHaveAttribute("aria-current", "page");
   });
 
