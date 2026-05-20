@@ -1,15 +1,20 @@
+import { RidesTabsBar } from "./_RidesTabsBar";
+
 /**
- * Shared layout for every `/rides/*` view. Shell v2 (#572) replaced
- * the in-page sub-nav strip with expandable nav items inside the
- * primary sidebar — Stats, Road map, and Compare rides now live as
- * children of "Ride History" and auto-render whenever the rider is
- * inside the section. Nothing to render here; the layout exists
- * only to keep a stable Next.js route boundary.
+ * Shared layout for `/rides/*` sibling views. The Web App v2 sidebar
+ * is flat (no expanded sub-children), so the in-page tab strip
+ * replaces the dropped sidebar children for Road map / Compare —
+ * `/rides/stats` is now a separate top-level nav item.
  */
 export default function RidesLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <RidesTabsBar />
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  );
 }

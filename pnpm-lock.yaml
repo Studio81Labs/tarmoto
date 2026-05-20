@@ -261,6 +261,9 @@ importers:
       '@tarmoto/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@tarmoto/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.0
         version: 2.1.1

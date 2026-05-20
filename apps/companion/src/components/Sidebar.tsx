@@ -5,17 +5,26 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useSession, signOut } from "next-auth/react";
 import {
+  BarChart3,
   Bell,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
+  History,
+  Home,
+  type LucideIcon,
   LogOut,
+  Map as MapIcon,
+  Route,
   Settings,
   Settings2,
+  Trophy,
+  Users,
   WifiOff,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
+import { Mono, Stamp } from "@tarmoto/ui";
 import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
@@ -24,66 +33,132 @@ import { TarmotoMark } from "./tarmoto/atoms";
 import { t } from "@/i18n";
 
 /**
- * Tarmoto sidebar — single source of navigation chrome (the top bar was
- * removed in shell v2). The rail flips between expanded (220px, label +
- * stamp) and collapsed (72px, stamp acting as an icon) modes; state is
- * persisted in localStorage so the rider's preference survives reloads.
- *
- * Bottom block: offline indicator, notification bell (rich dropdown,
- * unread badge), and user menu (avatar + dropdown with Settings / Log
- * out). Settings is no longer a top-level nav item — it lives only
- * inside the user menu now.
+ * Tarmoto sidebar — single source of navigation chrome. Mirrors the
+ * Web App v2 design map (§14 NavRail): flat nav with section splitters,
+ * stamp + icon + label per item, collapsible to a 72 px icon rail.
+ * Sub-routes (Road map, Compare, Collections) are reached via in-page
+ * tab strips on the parent rather than expanded nav children.
  */
 
-type NavSubItem = {
+type NavSection = "plan" | "activity" | "discover" | null;
+
+type NavItem = {
   href: string;
   label: string;
+  stamp: string;
+  icon: LucideIcon;
+  section: NavSection;
+  /**
+   * Optional list of related sub-routes. The nav item highlights as
+   * active when the rider is on the primary `href` or any of these.
+   */
+  match?: string[];
 };
 
-// `href` is optional. A NAV_ITEM without `href` is a section group
-// rather than a destination — clicking the parent does nothing and the
-// children render unconditionally. Used for `/community`, which has no
-// overview page of its own (the section IS its children).
-type NavItem = {
-  href?: string;
-  label: string;
-  stamp: string;
-  // Sub-routes that render under the parent. Behaviour depends on whether
-  // the parent has its own `href`:
-  // - With href: children render only while the rider is in-section,
-  //   mirroring the legacy per-page top tab strips (e.g. the old
-  //   `RidesSubNav`).
-  // - Without href: children render unconditionally because the parent
-  //   is the only way into the section.
-  children?: NavSubItem[];
+const SECTION_LABELS: Record<Exclude<NavSection, null>, string> = {
+  plan: "Plan",
+  activity: "Activity",
+  discover: "Discover",
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", stamp: "00", label: "Home" },
-  { href: "/trips", stamp: "01", label: "Trips" },
-  { href: "/explore", stamp: "02", label: "Road Explorer" },
+  {
+    href: "/",
+    stamp: "00",
+    label: "Home",
+    icon: Home,
+    section: null,
+  },
+  {
+    href: "/trips",
+    stamp: "01",
+    label: "Trips",
+    icon: Route,
+    section: "plan",
+  },
+  {
+    href: "/explore",
+    stamp: "02",
+    label: "Road Explorer",
+    icon: MapIcon,
+    section: "plan",
+  },
   {
     href: "/rides",
     stamp: "03",
     label: "Ride History",
-    children: [
-      { href: "/rides/stats", label: "Statistics" },
-      { href: "/rides/road-map", label: "Road map" },
-      { href: "/rides/compare", label: "Compare rides" },
-    ],
+    icon: History,
+    section: "activity",
+    match: ["/rides/road-map", "/rides/compare"],
   },
   {
+    href: "/rides/stats",
     stamp: "04",
-    label: "Community",
-    children: [
-      { href: "/community/feed", label: "Feed" },
-      { href: "/community/collections", label: "Collections" },
-    ],
+    label: "Statistics",
+    icon: BarChart3,
+    section: "activity",
   },
-  { href: "/gamification", stamp: "05", label: "Achievements" },
+  {
+    href: "/community/feed",
+    stamp: "05",
+    label: "Community",
+    icon: Users,
+    section: "discover",
+    match: ["/community"],
+  },
+  {
+    href: "/gamification",
+    stamp: "06",
+    label: "Achievements",
+    icon: Trophy,
+    section: "discover",
+  },
 ];
 
 const COLLAPSED_STORAGE_KEY = "tarmoto:sidebar-collapsed";
+
+type NavGroup =
+  | { type: "section"; label: string | null; key: string }
+  | { type: "item"; item: NavItem };
+
+function buildNavGroups(items: ReadonlyArray<NavItem>): NavGroup[] {
+  const groups: NavGroup[] = [];
+  let last: NavSection | undefined;
+  items.forEach((item, i) => {
+    if (item.section !== last) {
+      groups.push({
+        type: "section",
+        label: item.section ? SECTION_LABELS[item.section] : null,
+        key: `sec-${i}`,
+      });
+      last = item.section;
+    }
+    groups.push({ type: "item", item });
+  });
+  return groups;
+}
+
+function isItemActive(item: NavItem, pathname: string): boolean {
+  if (item.href === "/") return pathname === "/";
+  // Promote the more-specific match: when on /rides/stats the
+  // "Statistics" item wins, not "Ride History" — even though both
+  // technically share the /rides prefix.
+  const moreSpecific = NAV_ITEMS.find(
+    (other) =>
+      other !== item &&
+      other.href !== "/" &&
+      other.href.startsWith(item.href + "/") &&
+      pathname.startsWith(other.href),
+  );
+  if (moreSpecific) return false;
+  if (pathname === item.href || pathname.startsWith(item.href + "/")) {
+    return true;
+  }
+  return (
+    item.match?.some((m) => pathname === m || pathname.startsWith(m + "/")) ??
+    false
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -92,37 +167,39 @@ export function Sidebar() {
     false,
   );
 
+  const groups = buildNavGroups(NAV_ITEMS);
+
   return (
     <aside
       className={clsx(
-        "flex shrink-0 flex-col gap-5 border-r border-ink/10 bg-ink py-5 text-cream transition-[width] duration-200",
-        collapsed ? "w-[72px] px-2" : "w-[220px] px-3.5",
+        "flex shrink-0 flex-col gap-4 border-r border-ink/10 bg-ink py-5 text-cream transition-[width] duration-200",
+        collapsed ? "w-[72px] px-2.5" : "w-[232px] px-3.5",
       )}
       aria-label={t("Primary")}
     >
-      {/* Logo + collapse toggle */}
+      {/* Brand + collapse toggle */}
       <div
         className={clsx(
-          "flex items-center",
-          collapsed ? "justify-center" : "justify-between",
+          "flex items-center gap-2.5",
+          collapsed ? "justify-center" : "px-1.5",
         )}
       >
         <Link
           href="/"
-          className="flex items-center gap-2.5 px-1.5"
+          className="flex items-center gap-2.5"
           aria-label={t("Tarmoto")}
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-            <TarmotoMark size={18} />
+          <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-accent">
+            <TarmotoMark size={20} />
           </span>
           {!collapsed && (
             <span className="leading-none">
-              <span className="block text-[15px] font-bold tracking-tight text-cream">
+              <span className="block text-[15px] font-extrabold tracking-tight text-cream">
                 TARMOTO
               </span>
-              <span className="mt-0.5 block font-mono text-[9px] tracking-[1px] text-cream/50">
+              <Mono className="mt-0.5 block text-[9px] font-medium tracking-[1.2px] text-cream/50">
                 WEB · v1.4
-              </span>
+              </Mono>
             </span>
           )}
         </Link>
@@ -130,15 +207,14 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => setCollapsed(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-cream/60 transition hover:bg-cream/10 hover:text-cream"
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md bg-cream/5 text-cream/60 transition hover:bg-cream/10 hover:text-cream"
             aria-label={t("Collapse sidebar")}
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={14} />
           </button>
         )}
       </div>
 
-      {/* Expand toggle when collapsed — sits below the logo, full-width tap target */}
       {collapsed && (
         <button
           type="button"
@@ -146,133 +222,102 @@ export function Sidebar() {
           className="flex h-8 w-full items-center justify-center rounded-lg text-cream/60 transition hover:bg-cream/10 hover:text-cream"
           aria-label={t("Expand sidebar")}
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={14} />
         </button>
       )}
 
       <div className="h-px bg-cream/10" />
 
-      {/* Navigation */}
-      <nav className="flex flex-col gap-0.5">
-        {NAV_ITEMS.map((item) => {
-          const parentHref = item.href;
-          const inSection =
-            parentHref === undefined
-              ? // Section groups (linkless) — derive presence from the
-                // first child so the rider's current sub-route still
-                // counts as "in this section" for child highlighting.
-                (item.children?.some((child) =>
-                  pathname.startsWith(child.href),
-                ) ?? false)
-              : parentHref === "/"
-                ? pathname === "/"
-                : pathname.startsWith(parentHref);
-          const isActive = (() => {
-            if (parentHref === undefined) return false;
-            if (parentHref === "/") return pathname === "/";
-            if (!pathname.startsWith(parentHref)) return false;
-            const hasMoreSpecific = NAV_ITEMS.some(
-              (other) =>
-                other.href !== undefined &&
-                other.href !== parentHref &&
-                other.href.startsWith(parentHref) &&
-                pathname.startsWith(other.href),
-            );
-            return !hasMoreSpecific;
-          })();
-          // Section groups (no parent href) always reveal their
-          // children so the rider can reach them from anywhere; link
-          // parents follow the legacy in-section gating.
-          const showChildren =
-            !collapsed &&
-            item.children !== undefined &&
-            (parentHref === undefined || inSection);
-          const parentClassName = clsx(
-            "flex items-center rounded-lg py-2.5 transition-colors",
-            collapsed ? "justify-center px-0" : "gap-2.5 px-3",
-            parentHref === undefined
-              ? "text-cream/70"
-              : isActive
-                ? "bg-accent text-ink"
-                : "text-cream hover:bg-cream/5",
-          );
-          const stampClassName = clsx(
-            "font-mono text-[10px] font-bold tracking-[1px]",
-            collapsed ? "" : "w-6",
-            isActive ? "text-ink" : "text-cream/40",
-          );
-          const labelClassName = clsx(
-            "text-[13px]",
-            isActive ? "font-bold" : "font-semibold",
-          );
-          const parentLabel = t(item.label);
-          const parentInner = (
-            <>
-              <span aria-hidden="true" className={stampClassName}>
-                {item.stamp}
-              </span>
-              {!collapsed && (
-                <span className={labelClassName}>{parentLabel}</span>
-              )}
-            </>
-          );
-          return (
-            <div
-              key={parentHref ?? item.label}
-              className="flex flex-col gap-0.5"
-            >
-              {parentHref !== undefined ? (
-                <Link
-                  href={parentHref}
-                  aria-current={isActive ? "page" : undefined}
-                  title={collapsed ? parentLabel : undefined}
-                  className={parentClassName}
-                >
-                  {parentInner}
-                </Link>
-              ) : (
-                // Section group: not a link. Render as a plain row so
-                // the rider sees the heading and goes straight to the
-                // children below.
-                <div
-                  title={collapsed ? parentLabel : undefined}
-                  className={parentClassName}
-                >
-                  {parentInner}
-                </div>
-              )}
-
-              {showChildren && (
-                <div className="ml-9 flex flex-col gap-0.5 border-l border-cream/10 pl-2">
-                  {item.children?.map((child) => {
-                    const childActive = pathname.startsWith(child.href);
-                    return (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        aria-current={childActive ? "page" : undefined}
-                        className={clsx(
-                          "rounded-md px-2 py-1.5 text-[12px] transition-colors",
-                          childActive
-                            ? "bg-cream/10 font-semibold text-cream"
-                            : "text-cream/60 hover:bg-cream/5 hover:text-cream",
-                        )}
-                      >
-                        {t(child.label)}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      {/* Nav — flat list with section splitters */}
+      <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
+        {groups.map((g) =>
+          g.type === "section" ? (
+            <SectionSplitter
+              key={g.key}
+              label={g.label}
+              collapsed={collapsed}
+            />
+          ) : (
+            <SidebarItem
+              key={g.item.href}
+              item={g.item}
+              active={isItemActive(g.item, pathname)}
+              collapsed={collapsed}
+            />
+          ),
+        )}
       </nav>
-
-      <div className="flex-1" />
 
       <SidebarFooter collapsed={collapsed} />
     </aside>
+  );
+}
+
+function SectionSplitter({
+  label,
+  collapsed,
+}: {
+  label: string | null;
+  collapsed: boolean;
+}) {
+  if (label === null) return null;
+  if (collapsed) {
+    // Tightened divider — separates groups visually without a label.
+    return <div aria-hidden="true" className="my-1.5 h-px bg-cream/10" />;
+  }
+  return (
+    <div className="mt-3 mb-1 px-3">
+      <Stamp tone="on-dark-dim" className="text-cream/40">
+        {label}
+      </Stamp>
+    </div>
+  );
+}
+
+function SidebarItem({
+  item,
+  active,
+  collapsed,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+}) {
+  const label = t(item.label);
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      title={collapsed ? label : undefined}
+      aria-current={active ? "page" : undefined}
+      className={clsx(
+        "flex items-center rounded-lg transition-colors",
+        collapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-3 py-2.5",
+        active ? "bg-accent text-ink" : "text-cream hover:bg-cream/5",
+      )}
+    >
+      {!collapsed && (
+        <Mono
+          className={clsx(
+            "w-[18px] shrink-0 text-[10px] font-bold tracking-[1px]",
+            active ? "text-ink" : "text-cream/40",
+          )}
+        >
+          {item.stamp}
+        </Mono>
+      )}
+      <Icon size={18} strokeWidth={1.9} className="shrink-0" />
+      {!collapsed && (
+        <span
+          className={clsx(
+            "text-[13px]",
+            active ? "font-extrabold" : "font-semibold",
+          )}
+        >
+          {label}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -473,80 +518,110 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       </button>
 
       {open && (
-        // Anchored to the left of the sidebar so the panel doesn't clip on
-        // narrow viewports when the sidebar is collapsed. `bottom-full`
-        // mirrors the top-bar's `top-full` pattern — sidebar is bottom-up.
-        <div
-          className={clsx(
-            "absolute z-50 mb-2 w-80 overflow-hidden rounded-xl border border-ink/15 bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.14)]",
-            collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0",
+        <NotificationsDropdown
+          collapsed={collapsed}
+          items={items}
+          loading={loading}
+          error={error}
+          unreadCount={unreadCount}
+          onMarkRead={markRead}
+          onMarkAllRead={markAllRead}
+          onClose={close}
+        />
+      )}
+    </div>
+  );
+}
+
+function NotificationsDropdown({
+  collapsed,
+  items,
+  loading,
+  error,
+  unreadCount,
+  onMarkRead,
+  onMarkAllRead,
+  onClose,
+}: {
+  collapsed: boolean;
+  items: InAppNotification[];
+  loading: boolean;
+  error: string | null;
+  unreadCount: number;
+  onMarkRead: (note: InAppNotification) => void;
+  onMarkAllRead: () => void;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <div
+      className={clsx(
+        "absolute z-50 mb-2 w-80 overflow-hidden rounded-xl border border-ink/15 bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.14)]",
+        collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0",
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-ink/60">
+          {t("Notifications")}
+        </span>
+        <div className="flex items-center gap-1">
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={onMarkAllRead}
+              className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink disabled:opacity-40"
+              aria-label={t("Mark all read")}
+              disabled={unreadCount === 0}
+            >
+              <CheckCheck size={14} />
+            </button>
           )}
-        >
-          <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-ink/60">
-              {t("Notifications")}
-            </span>
-            <div className="flex items-center gap-1">
-              {items.length > 0 && (
-                <button
-                  type="button"
-                  onClick={markAllRead}
-                  className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink disabled:opacity-40"
-                  aria-label={t("Mark all read")}
-                  disabled={unreadCount === 0}
-                >
-                  <CheckCheck size={14} />
-                </button>
-              )}
-              <Link
-                href="/settings/notifications"
-                onClick={close}
-                className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink"
-                aria-label={t("Notification settings")}
-              >
-                <Settings2 size={14} />
-              </Link>
-            </div>
-          </div>
-          {loading && items.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-ink/55">
-              {t("Loading notifications")}
-            </div>
-          ) : error ? (
-            <div className="px-4 py-10 text-center text-sm text-ink/55">
-              {t("Could not load notifications")}
-            </div>
-          ) : items.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-ink/55">
-              {t("No new notifications")}
-            </div>
-          ) : (
-            <div className="max-h-96 overflow-y-auto py-1">
-              {items.map((note) => (
-                <Link
-                  key={note.id}
-                  href={hrefForNotification(note)}
-                  onClick={() => markRead(note)}
-                  className="block border-b border-ink/10 px-4 py-3 text-left transition last:border-b-0 hover:bg-paper"
-                  aria-label={note.title}
-                >
-                  <div className="flex items-start gap-2">
-                    {!note.read_at && (
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
-                    )}
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-ink">
-                        {note.title}
-                      </div>
-                      <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-ink/60">
-                        {note.body}
-                      </div>
-                    </div>
+          <Link
+            href="/settings/notifications"
+            onClick={onClose}
+            className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink"
+            aria-label={t("Notification settings")}
+          >
+            <Settings2 size={14} />
+          </Link>
+        </div>
+      </div>
+      {loading && items.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-ink/55">
+          {t("Loading notifications")}
+        </div>
+      ) : error ? (
+        <div className="px-4 py-10 text-center text-sm text-ink/55">
+          {t("Could not load notifications")}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-ink/55">
+          {t("No new notifications")}
+        </div>
+      ) : (
+        <div className="max-h-96 overflow-y-auto py-1">
+          {items.map((note) => (
+            <Link
+              key={note.id}
+              href={hrefForNotification(note)}
+              onClick={() => onMarkRead(note)}
+              className="block border-b border-ink/10 px-4 py-3 text-left transition last:border-b-0 hover:bg-paper"
+              aria-label={note.title}
+            >
+              <div className="flex items-start gap-2">
+                {!note.read_at && (
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                )}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-ink">
+                    {note.title}
                   </div>
-                </Link>
-              ))}
-            </div>
-          )}
+                  <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-ink/60">
+                    {note.body}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>
@@ -586,11 +661,6 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
     void signOut({ callbackUrl: "/login" });
   };
 
-  // Stable accessible name across collapsed / expanded states.
-  // Collapsed renders only the avatar initial, so without an
-  // explicit `aria-label` AT would expose this as a one-letter
-  // button ("R") — a rider on a screen reader would have no
-  // discoverable Settings / Log out entry behind it.
   const accountLabel = user?.displayName
     ? `${t("Account menu")} — ${user.displayName}`
     : t("Account menu");
@@ -605,11 +675,11 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
         aria-haspopup="menu"
         aria-expanded={open}
         className={clsx(
-          "flex w-full items-center rounded-lg transition hover:bg-cream/5",
-          collapsed ? "h-9 w-9 justify-center p-0" : "gap-2.5 px-1.5 py-1.5",
+          "flex w-full items-center rounded-lg border border-cream/8 transition hover:bg-cream/5",
+          collapsed ? "h-9 w-9 justify-center p-0" : "gap-2.5 px-2 py-1.5",
         )}
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-ink">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-ink">
           {initial}
         </span>
         {!collapsed && (
@@ -617,10 +687,13 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
             <span className="block truncate text-[12px] font-bold text-cream">
               {user?.displayName ?? t("Rider")}
             </span>
-            <span className="mt-1 block font-mono text-[9px] tracking-[1px] text-cream/50">
+            <Mono className="mt-1 block text-[9px] tracking-[1px] text-cream/50">
               {t("ACCOUNT")}
-            </span>
+            </Mono>
           </span>
+        )}
+        {!collapsed && (
+          <Settings size={14} className="ml-1 shrink-0 text-cream/45" />
         )}
       </button>
 

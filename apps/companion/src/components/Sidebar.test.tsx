@@ -52,11 +52,9 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("Sidebar — shell v2", () => {
-  it("does not render Settings as a top-level nav item (#568)", () => {
+describe("Sidebar — Web App v2 nav", () => {
+  it("does not render Settings as a top-level nav item", () => {
     render(<Sidebar />);
-    // Settings was item "06 Account" in the old sidebar; #568 dropped it
-    // — it now lives only inside the user menu.
     const navlinks = screen.getAllByRole("link");
     const labels = navlinks.map((el) => el.textContent ?? "");
     expect(labels.some((l) => /account/i.test(l) && /^06/.test(l.trim()))).toBe(
@@ -64,30 +62,88 @@ describe("Sidebar — shell v2", () => {
     );
   });
 
-  it("collapses + expands via the toggle buttons (#575)", () => {
+  it("renders the v2 flat nav with section splitters", () => {
+    render(<Sidebar />);
+    // Top-level items show with stamp + label.
+    expect(
+      screen.getByRole("link", { name: /^00\s*Home$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^03\s*Ride History$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^04\s*Statistics$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^05\s*Community$/ }),
+    ).toBeInTheDocument();
+    // Section splitters render their label as a stamp.
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText("Activity")).toBeInTheDocument();
+    expect(screen.getByText("Discover")).toBeInTheDocument();
+  });
+
+  it("does not render nested sub-items under any top-level entry", () => {
+    pathnameRef.current = "/rides";
+    render(<Sidebar />);
+    // Old shell-v2 children were nested under Ride History — flat nav drops
+    // them entirely (Statistics moves up to top-level, Road map / Compare
+    // live as in-page tabs on the parent).
+    expect(screen.queryByRole("link", { name: /^road map$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^compare rides$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^feed$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^collections$/i })).toBeNull();
+  });
+
+  it("marks the parent active on related sub-routes", () => {
+    pathnameRef.current = "/rides/road-map";
+    const { rerender } = render(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /^03\s*Ride History$/ }),
+    ).toHaveAttribute("aria-current", "page");
+
+    pathnameRef.current = "/community/collections";
+    rerender(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /^05\s*Community$/ }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("Statistics wins over Ride History on /rides/stats", () => {
+    pathnameRef.current = "/rides/stats";
+    render(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /^04\s*Statistics$/ }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("link", { name: /^03\s*Ride History$/ }),
+    ).not.toHaveAttribute("aria-current", "page");
+  });
+
+  it("collapses and expands via the toggle buttons", () => {
     render(<Sidebar />);
 
-    // Default: expanded — both toggle button + nav labels visible.
     expect(screen.getByLabelText(/collapse sidebar/i)).toBeInTheDocument();
     expect(screen.getByText("Home")).toBeInTheDocument();
 
-    // Collapse.
     fireEvent.click(screen.getByLabelText(/collapse sidebar/i));
     expect(screen.getByLabelText(/expand sidebar/i)).toBeInTheDocument();
     expect(screen.queryByText("Home")).not.toBeInTheDocument();
+    // Section labels also hide when collapsed; only icon rail remains.
+    expect(screen.queryByText("Plan")).not.toBeInTheDocument();
     expect(
       JSON.parse(localStorage.getItem("tarmoto:sidebar-collapsed") ?? ""),
     ).toBe(true);
 
-    // Expand again.
     fireEvent.click(screen.getByLabelText(/expand sidebar/i));
     expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Plan")).toBeInTheDocument();
     expect(
       JSON.parse(localStorage.getItem("tarmoto:sidebar-collapsed") ?? ""),
     ).toBe(false);
   });
 
-  it("opens a menu (Settings + Log out) when the user button is clicked (#566)", () => {
+  it("opens a menu (Settings + Log out) when the user button is clicked", () => {
     render(<Sidebar />);
 
     const userBtn = screen.getByRole("button", { name: /rider smith/i });
@@ -109,37 +165,6 @@ describe("Sidebar — shell v2", () => {
     fireEvent.click(screen.getByRole("button", { name: /rider smith/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /log out/i }));
     expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/login" });
-  });
-
-  it("renders Ride History sub-items only when the rider is inside the section (#572)", () => {
-    // Default route ("/") — sub-items hidden.
-    pathnameRef.current = "/";
-    const { rerender } = render(<Sidebar />);
-    expect(screen.queryByRole("link", { name: /^statistics$/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /^road map$/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /^compare rides$/i })).toBeNull();
-
-    // Navigate into /rides — sub-items appear.
-    pathnameRef.current = "/rides";
-    rerender(<Sidebar />);
-    expect(
-      screen.getByRole("link", { name: /^statistics$/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /^road map$/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /^compare rides$/i }),
-    ).toBeInTheDocument();
-
-    // Deep sub-route still keeps the section open AND marks the
-    // matching sub-item active via aria-current.
-    pathnameRef.current = "/rides/stats";
-    rerender(<Sidebar />);
-    expect(screen.getByRole("link", { name: /^statistics$/i })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
   });
 
   it("user menu closes on Escape", () => {
