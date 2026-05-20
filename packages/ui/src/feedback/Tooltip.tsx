@@ -57,7 +57,13 @@ export interface TooltipProps {
   content: ReactNode;
   placement?: TooltipPlacement;
   kind?: TooltipKind;
-  /** Open without hover/focus (for coach marks). */
+  /**
+   * Force the tooltip open regardless of hover/focus (for coach marks
+   * and controlled demos). This is a *force-open* flag — `false` does
+   * not force the tooltip closed; hover/focus still drives visibility
+   * when `open` is `false` or `undefined`. To actively suppress a
+   * tooltip, omit the component entirely.
+   */
   open?: boolean;
   className?: string;
 }
@@ -89,7 +95,12 @@ export function Tooltip({
   const id = useId();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const visible = open ?? (hovered || focused);
+  // `open` is a *force-open* flag, never a force-close. When `open` is
+  // truthy, the tooltip is visible regardless of hover/focus; when
+  // `false` or `undefined`, hover/focus still drives visibility. This
+  // matches the prop docs and avoids regressing common coach-mark
+  // flows that toggle `open` from `true` to `false`.
+  const visible = open === true || hovered || focused;
 
   const handleKeyDown = (e: KeyboardEvent<HTMLSpanElement>): void => {
     if (e.key === "Escape") setFocused(false);
