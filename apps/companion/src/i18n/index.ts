@@ -33,19 +33,36 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
  *   - or `null` / `undefined` (returns DEFAULT_LOCALE).
  *
  * Tags are lowercased and stripped to their primary subtag, then matched
- * against the registry. The first supported tag wins; if nothing matches we
- * fall back to DEFAULT_LOCALE.
+ * against the registry. We honour RFC 7231 quality weights: the highest-q
+ * supported tag wins, with header order acting as a tiebreaker for equal
+ * q-values. Tags without an explicit `q` default to 1.0. Anything that
+ * doesn't resolve falls back to DEFAULT_LOCALE.
  */
 export function resolveLocale(input?: string | null): SupportedLocale {
   if (!input) return DEFAULT_LOCALE;
 
   const candidates = input
     .split(",")
-    .map((entry) => entry.split(";")[0]?.trim() ?? "")
-    .filter(Boolean);
+    .map((entry, index) => {
+      const parts = entry.split(";").map((part) => part.trim());
+      const tag = parts[0] ?? "";
+      let q = 1;
+      for (const param of parts.slice(1)) {
+        const match = /^q=([0-9]*\.?[0-9]+)$/i.exec(param);
+        if (match) {
+          const parsed = Number.parseFloat(match[1] ?? "");
+          if (!Number.isNaN(parsed)) q = parsed;
+        }
+      }
+      return { tag, q, index };
+    })
+    .filter((candidate) => candidate.tag !== "")
+    // Sort by q descending; ties broken by header order so the
+    // first-listed tag wins, matching browser conventions.
+    .sort((a, b) => (b.q !== a.q ? b.q - a.q : a.index - b.index));
 
   for (const candidate of candidates) {
-    const primary = candidate.toLowerCase().split("-")[0] ?? "";
+    const primary = candidate.tag.toLowerCase().split("-")[0] ?? "";
     if (isSupportedLocale(primary)) return primary;
   }
 

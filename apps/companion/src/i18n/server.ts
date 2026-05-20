@@ -3,6 +3,7 @@ import { cache } from "react";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
+  isSupportedLocale,
   resolveLocale,
   setActiveLocale,
   type SupportedLocale,
@@ -26,7 +27,14 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
   try {
     const cookieStore = await cookies();
     const cookieLocale = cookieStore.get(LOCALE_COOKIE)?.value;
-    if (cookieLocale) return resolveLocale(cookieLocale);
+    if (cookieLocale) {
+      // Only honour the cookie if it actually resolves to a registered
+      // locale. A stale/tampered cookie — e.g. left over after a locale
+      // was removed from the registry — must not pin the user to English
+      // when a valid Accept-Language header would otherwise carry them.
+      const normalized = cookieLocale.toLowerCase().split("-")[0] ?? "";
+      if (isSupportedLocale(normalized)) return normalized;
+    }
   } catch {
     // `cookies()` is not available in some contexts (e.g. static prerender);
     // fall through to header / default.

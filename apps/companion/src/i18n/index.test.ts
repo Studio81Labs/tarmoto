@@ -57,6 +57,19 @@ describe("i18n / resolveLocale", () => {
     expect(resolveLocale("xx-YY,en;q=0.8")).toBe("en");
     expect(resolveLocale("zz-AA;q=1,xx-YY;q=0.9")).toBe(DEFAULT_LOCALE);
   });
+
+  it("parses q-values without crashing and still picks a supported tag", () => {
+    // Higher-q tag is unsupported; we should fall through to the
+    // lower-q supported tag rather than returning DEFAULT_LOCALE blindly.
+    expect(resolveLocale("xx;q=1.0,en;q=0.2")).toBe("en");
+    expect(resolveLocale("en;q=0.001")).toBe("en");
+    expect(resolveLocale("en;q=garbage")).toBe("en");
+  });
+
+  // Once a second locale (e.g. "et") is registered, add a test that
+  // verifies `resolveLocale("en;q=0.4,et;q=1.0")` resolves to "et" — the
+  // q-value sort is currently unobservable through behaviour because only
+  // one locale matches in any test input.
 });
 
 describe("i18n / isSupportedLocale", () => {
