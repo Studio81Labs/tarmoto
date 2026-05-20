@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  Fragment,
   isValidElement,
   useId,
   useState,
@@ -104,11 +105,16 @@ export function Tooltip({
   // the bubble's content is actually announced is gated by
   // `aria-hidden={!visible}` on the bubble itself.
   //
-  // Falls back gracefully when children isn't a single React element
-  // (null, text, fragments, conditional expressions like
-  // `isReady && <button />`) — the wrapper still renders, just
+  // Falls back gracefully when children isn't a single DOM-bearing
+  // element. Excludes fragments specifically because they pass
+  // `isValidElement` but can't carry `aria-describedby` (cloneElement
+  // would forward the prop to a synthetic node and React warns in
+  // development). Same for null, text, conditional expressions like
+  // `isReady && <button />` — the wrapper still renders, just
   // without the AT binding on the trigger.
-  const triggerWithAria = isValidElement(children)
+  const isCloneable =
+    isValidElement(children) && (children as ReactElement).type !== Fragment;
+  const triggerWithAria = isCloneable
     ? cloneElement(children as ReactElement<HTMLAttributes<HTMLElement>>, {
         "aria-describedby": mergeDescribedBy(
           (children as ReactElement<HTMLAttributes<HTMLElement>>).props[
