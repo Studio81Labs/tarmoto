@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
+import { readLocale } from "@/i18n/server";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -27,18 +28,19 @@ export const metadata: Metadata = {
   description: "Know the road before you ride it",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const locale = await readLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${spaceGrotesk.variable} ${jetbrains.variable} ${fraunces.variable}`}
     >
       <body className="bg-cream text-ink font-sans antialiased">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders locale={locale}>{children}</AppProviders>
       </body>
     </html>
   );

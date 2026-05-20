@@ -1,0 +1,67 @@
+import {
+  DEFAULT_LOCALE,
+  LOCALES,
+  SUPPORTED_LOCALES,
+  isSupportedLocale,
+  resolveLocale,
+  setActiveLocale,
+  translate,
+} from ".";
+
+describe("i18n / translate", () => {
+  beforeEach(() => {
+    setActiveLocale(DEFAULT_LOCALE);
+  });
+
+  it("returns the catalog entry for a known key", () => {
+    expect(translate("Home")).toBe("Home");
+  });
+
+  it("falls back to the raw key when the catalog has no entry for it", () => {
+    expect(translate("__definitely-not-in-the-catalog__")).toBe(
+      "__definitely-not-in-the-catalog__",
+    );
+  });
+
+  it("interpolates {placeholder} values", () => {
+    expect(translate("{name}'s profile photo", { name: "Riku" })).toBe(
+      "Riku's profile photo",
+    );
+  });
+
+  it("leaves untouched placeholders that have no matching value", () => {
+    expect(translate("{greeting}, {name}", { greeting: "Hi" })).toBe(
+      "Hi, {name}",
+    );
+  });
+
+  it("registers exactly the locales declared in the registry", () => {
+    expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
+    expect(SUPPORTED_LOCALES).toContain(DEFAULT_LOCALE);
+  });
+});
+
+describe("i18n / resolveLocale", () => {
+  it("returns DEFAULT_LOCALE for null / undefined / empty input", () => {
+    expect(resolveLocale(null)).toBe(DEFAULT_LOCALE);
+    expect(resolveLocale(undefined)).toBe(DEFAULT_LOCALE);
+    expect(resolveLocale("")).toBe(DEFAULT_LOCALE);
+  });
+
+  it("matches the primary subtag of a single tag", () => {
+    expect(resolveLocale("en-GB")).toBe("en");
+    expect(resolveLocale("EN")).toBe("en");
+  });
+
+  it("walks an Accept-Language header and picks the first supported tag", () => {
+    expect(resolveLocale("xx-YY,en;q=0.8")).toBe("en");
+    expect(resolveLocale("zz-AA;q=1,xx-YY;q=0.9")).toBe(DEFAULT_LOCALE);
+  });
+});
+
+describe("i18n / isSupportedLocale", () => {
+  it("narrows registered locales", () => {
+    expect(isSupportedLocale("en")).toBe(true);
+    expect(isSupportedLocale("xx")).toBe(false);
+  });
+});

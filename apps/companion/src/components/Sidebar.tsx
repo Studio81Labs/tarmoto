@@ -205,13 +205,14 @@ export function Sidebar() {
             "text-[13px]",
             isActive ? "font-bold" : "font-semibold",
           );
+          const parentLabel = t(item.label);
           const parentInner = (
             <>
               <span aria-hidden="true" className={stampClassName}>
                 {item.stamp}
               </span>
               {!collapsed && (
-                <span className={labelClassName}>{item.label}</span>
+                <span className={labelClassName}>{parentLabel}</span>
               )}
             </>
           );
@@ -224,7 +225,7 @@ export function Sidebar() {
                 <Link
                   href={parentHref}
                   aria-current={isActive ? "page" : undefined}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? parentLabel : undefined}
                   className={parentClassName}
                 >
                   {parentInner}
@@ -234,7 +235,7 @@ export function Sidebar() {
                 // the rider sees the heading and goes straight to the
                 // children below.
                 <div
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? parentLabel : undefined}
                   className={parentClassName}
                 >
                   {parentInner}
@@ -257,7 +258,7 @@ export function Sidebar() {
                             : "text-cream/60 hover:bg-cream/5 hover:text-cream",
                         )}
                       >
-                        {child.label}
+                        {t(child.label)}
                       </Link>
                     );
                   })}
@@ -329,18 +330,18 @@ function SidebarOfflineIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (!showOffline || (isOnline && status === "connected")) return null;
   const label = !isOnline
-    ? "Offline"
+    ? t("Offline")
     : status === "connecting"
-      ? "Reconnecting…"
-      : "Realtime paused";
+      ? t("Reconnecting…")
+      : t("Realtime paused");
   const title = !isOnline
-    ? "Browser is offline; cached map tiles and data may be shown"
-    : "Real-time updates are reconnecting";
+    ? t("Browser is offline; cached map tiles and data may be shown")
+    : t("Real-time updates are reconnecting");
   return (
     <div
       role="status"
       aria-live="polite"
-      title={t(title)}
+      title={title}
       className={clsx(
         "flex items-center rounded-lg border border-accent/40 bg-accent/15 text-[11px] font-bold text-cream",
         collapsed ? "h-9 w-9 justify-center" : "gap-1.5 px-2.5 py-1.5",
@@ -369,7 +370,7 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
         setError(null);
       })
       .catch((err: Error) => {
-        setError(err.message || "Failed to load notifications");
+        setError(err.message || t("Failed to load notifications"));
       });
   };
 
@@ -391,7 +392,7 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setError(err.message || "Failed to load notifications");
+        setError(err.message || t("Failed to load notifications"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
