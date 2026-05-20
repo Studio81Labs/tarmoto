@@ -1,0 +1,36 @@
+{
+  "name": "@tarmoto/ui",
+  "version": "0.0.1",
+  "description": "Tarmoto Web App v2 design-system component library (cream/ink palette, quality vocabulary).",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./theme.css": "./src/styles/theme.css",
+    "./tokens.css": "./src/styles/tokens.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "lint": "echo 'lint via consumer'",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2"
+  }
+}

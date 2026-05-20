@@ -1,0 +1,27 @@
+{
+  "name": "@tarmoto/ui-preview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Static preview app for @tarmoto/ui — 1:1 with design/Web App v2 Design Map.html but every example renders via the real component library.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tarmoto/ui": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.10"
+  }
+}

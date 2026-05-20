@@ -1,0 +1,81 @@
+/* =============================================================
+   Tarmoto · Design tokens (Web App v2 source-of-truth)
+   Mirrors `design/colors_and_type.css` from the design bundle.
+   Imported by any consumer of @tarmoto/ui.
+   ============================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;1,9..144,400;1,9..144,700&display=swap");
+
+:root {
+  /* ---------- core palette ---------- */
+  --tm-cream: #f5efe6;
+  --tm-paper: #ede6da;
+  --tm-paper-2: #e5dbcb;
+  --tm-ink: #0e0e10;
+  --tm-tarmac: #2b2c30;
+  --tm-accent: #ff6a1a;
+  --tm-accent-hot: #ff7a30;
+
+  /* ---------- semantic surfaces ---------- */
+  --tm-bg: var(--tm-cream);
+  --tm-bg-raised: var(--tm-paper);
+  --tm-bg-sunken: var(--tm-paper-2);
+  --tm-surface-inverse: var(--tm-ink);
+  --tm-surface-dark: var(--tm-tarmac);
+
+  /* ---------- foreground ---------- */
+  --tm-fg: var(--tm-ink);
+  --tm-fg-dim: rgba(14, 14, 16, 0.62);
+  --tm-fg-mute: rgba(14, 14, 16, 0.42);
+  --tm-fg-faint: rgba(14, 14, 16, 0.22);
+  --tm-fg-on-dark: var(--tm-cream);
+  --tm-fg-on-dark-dim: rgba(245, 239, 230, 0.65);
+  --tm-fg-on-dark-mute: rgba(245, 239, 230, 0.45);
+
+  /* ---------- lines ---------- */
+  --tm-line: rgba(14, 14, 16, 0.1);
+  --tm-line-strong: rgba(14, 14, 16, 0.22);
+  --tm-line-on-dark: rgba(245, 239, 230, 0.12);
+
+  /* ---------- quality scale (warm → green) ---------- */
+  --tm-q1: #e05a3c; /* avoid */
+  --tm-q2: #f0a03c; /* rough */
+  --tm-q3: #e8d66a; /* ok */
+  --tm-q4: #c7d36a; /* great */
+  --tm-q5: #6fd38a; /* hero */
+  --tm-q-empty: rgba(14, 14, 16, 0.08);
+  --tm-q-empty-on-dark: rgba(245, 239, 230, 0.12);
+
+  /* ---------- type families ---------- */
+  --tm-font-sans: "Space Grotesk", system-ui, -apple-system, Helvetica, sans-serif;
+  --tm-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  --tm-font-serif: "Fraunces", Georgia, serif;
+
+  /* ---------- spacing (4-pt grid) ---------- */
+  --tm-sp-1: 4px;
+  --tm-sp-2: 8px;
+  --tm-sp-3: 12px;
+  --tm-sp-4: 16px;
+  --tm-sp-5: 20px;
+  --tm-sp-6: 24px;
+  --tm-sp-8: 32px;
+  --tm-sp-10: 40px;
+  --tm-sp-12: 48px;
+  --tm-sp-16: 64px;
+  --tm-sp-20: 80px;
+  --tm-sp-30: 120px;
+
+  /* ---------- radii ---------- */
+  --tm-r-xs: 4px;
+  --tm-r-sm: 8px;
+  --tm-r-md: 12px;
+  --tm-r-lg: 14px;
+  --tm-r-xl: 20px;
+  --tm-r-device: 38px;
+  --tm-r-pill: 999px;
+
+  /* ---------- shadow (sparse) ---------- */
+  --tm-shadow-card: 0 8px 24px rgba(14, 14, 16, 0.08);
+  --tm-shadow-lift: 0 24px 60px rgba(14, 14, 16, 0.2);
+  --tm-shadow-toast: 0 12px 32px rgba(14, 14, 16, 0.12);
+}

@@ -1,0 +1,51 @@
+/* =============================================================
+   Tarmoto · Tailwind v4 theme bridge for @tarmoto/ui
+   Import this file alongside Tailwind so all `bg-cream`, `text-ink`,
+   `border-line`, `text-quality-q4`, `font-mono` utilities resolve to
+   the canonical Web App v2 tokens.
+
+   Usage (in a consumer's `globals.css`):
+     @import "tailwindcss";
+     @import "@tarmoto/ui/theme.css";
+
+   These tokens mirror `design/colors_and_type.css` exactly. The
+   companion app already defines an equivalent block inline — once it
+   migrates to importing this file, the duplicate definition can be
+   dropped.
+   ============================================================= */
+
+@theme {
+  /* ---------- core palette ---------- */
+  --color-cream: #f5efe6;
+  --color-paper: #ede6da;
+  --color-paper-2: #e5dbcb;
+  --color-ink: #0e0e10;
+  --color-tarmac: #2b2c30;
+  --color-accent: #ff6a1a;
+  --color-accent-hot: #ff7a30;
+
+  /* ---------- quality ramp ---------- */
+  --color-quality-q1: #e05a3c;
+  --color-quality-q2: #f0a03c;
+  --color-quality-q3: #e8d66a;
+  --color-quality-q4: #c7d36a;
+  --color-quality-q5: #6fd38a;
+
+  /* ---------- foreground steps ---------- */
+  --color-fg-dim: rgba(14, 14, 16, 0.62);
+  --color-fg-mute: rgba(14, 14, 16, 0.42);
+  --color-fg-faint: rgba(14, 14, 16, 0.22);
+  --color-fg-on-dark: #f5efe6;
+  --color-fg-on-dark-dim: rgba(245, 239, 230, 0.65);
+  --color-fg-on-dark-mute: rgba(245, 239, 230, 0.45);
+
+  /* ---------- hairline borders ---------- */
+  --color-line: rgba(14, 14, 16, 0.1);
+  --color-line-strong: rgba(14, 14, 16, 0.22);
+  --color-line-on-dark: rgba(245, 239, 230, 0.12);
+
+  /* ---------- typography ---------- */
+  --font-sans: "Space Grotesk", system-ui, -apple-system, Helvetica, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  --font-serif: "Fraunces", Georgia, serif;
+}
