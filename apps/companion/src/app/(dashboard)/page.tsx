@@ -92,9 +92,11 @@ export default function HomePage() {
               <action.icon size={26} className="text-ink" strokeWidth={1.8} />
               <div>
                 <div className="text-[15px] font-bold text-ink">
-                  {action.label}
+                  {t(action.label)}
                 </div>
-                <div className="mt-1 text-[12px] text-ink/55">{action.sub}</div>
+                <div className="mt-1 text-[12px] text-ink/55">
+                  {t(action.sub)}
+                </div>
               </div>
             </Link>
           ))}
