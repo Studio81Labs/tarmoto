@@ -75,12 +75,16 @@ test.describe("best roads", () => {
       await expect(page.getByText(/Mock Ridge Road/i)).toBeVisible();
 
       // No app chrome: the dashboard topbar and sidebar nav don't ship
-      // inside the embed layout, so the "Trips" / "Explore" top-nav
-      // links should be absent.
-      await expect(page.getByRole("link", { name: /^trips$/i })).toHaveCount(0);
-      await expect(page.getByRole("link", { name: /^explore$/i })).toHaveCount(
-        0,
-      );
+      // inside the embed layout, so the "Trips" / "Road Explorer"
+      // top-nav links should be absent. The Web App v2 sidebar prefixes
+      // labels with a numeric stamp ("01 Trips", "02 Road Explorer") so
+      // the absence regex tolerates either form.
+      await expect(
+        page.getByRole("link", { name: /^(\d+\s*)?trips$/i }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: /^(\d+\s*)?road explorer$/i }),
+      ).toHaveCount(0);
     } finally {
       await context.close();
     }
