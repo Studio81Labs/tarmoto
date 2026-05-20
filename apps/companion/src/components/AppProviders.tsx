@@ -11,15 +11,21 @@ const AuthenticatedAppProviders = dynamic(() =>
   ),
 );
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+export function AppProviders({
+  children,
+  locale,
+}: {
+  children: React.ReactNode;
+  locale?: string | null;
+}) {
   const pathname = usePathname();
 
   if (pathname === "/embed" || pathname.startsWith("/embed/")) {
-    return <I18nProvider>{children}</I18nProvider>;
+    return <I18nProvider locale={locale}>{children}</I18nProvider>;
   }
 
   return (
-    <I18nProvider>
+    <I18nProvider locale={locale}>
       <NetworkStatusProvider />
       <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
     </I18nProvider>

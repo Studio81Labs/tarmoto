@@ -9,6 +9,7 @@ import { usersApi } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import { Stamp } from "@/components/tarmoto/atoms";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { PageHeader } from "@/components/PageHeader";
 import {
   User,
@@ -145,12 +146,14 @@ export default function AccountPage() {
     const trimmedName = displayName.trim();
     if (!trimmedName) {
       setSaveState("error");
-      setSaveError("Display name is required.");
+      setSaveError(t("Display name is required."));
       return;
     }
     if (avatarDirtyRef.current && avatarUrl.trim() && !previewAvatarUrl) {
       setSaveState("error");
-      setSaveError("Avatar URL must be a valid http:// or https:// address.");
+      setSaveError(
+        t("Avatar URL must be a valid http:// or https:// address."),
+      );
       return;
     }
     setSaveState("saving");
@@ -194,7 +197,7 @@ export default function AccountPage() {
       }
       setSaveState("error");
       setSaveError(
-        err instanceof Error ? err.message : "Could not save your profile.",
+        err instanceof Error ? err.message : t("Could not save your profile."),
       );
     }
   }, [
@@ -244,7 +247,9 @@ export default function AccountPage() {
       } catch (err) {
         setAvatarUploadState("error");
         setAvatarUploadError(
-          err instanceof Error ? err.message : "Could not upload your photo.",
+          err instanceof Error
+            ? err.message
+            : t("Could not upload your photo."),
         );
       }
     },
@@ -302,8 +307,10 @@ export default function AccountPage() {
               <section.icon size={18} />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-ink">{section.label}</p>
-              <p className="text-xs text-fg-dim">{section.description}</p>
+              <p className="text-sm font-semibold text-ink">
+                {t(section.label)}
+              </p>
+              <p className="text-xs text-fg-dim">{t(section.description)}</p>
             </div>
             <ChevronRight size={16} className="text-fg-mute" />
           </Link>
@@ -326,8 +333,8 @@ export default function AccountPage() {
               src={previewAvatarUrl}
               alt={
                 displayName
-                  ? `${displayName}'s profile photo`
-                  : "Your profile photo"
+                  ? t("{name}'s profile photo", { name: displayName })
+                  : t("Your profile photo")
               }
               className="w-16 h-16 rounded-full object-cover"
             />
@@ -525,7 +532,7 @@ export default function AccountPage() {
             disabled={saveState === "saving"}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {saveState === "saving" ? "Saving…" : "Save changes"}
+            {saveState === "saving" ? t("Saving…") : t("Save changes")}
           </button>
           {saveState === "saved" && (
             <span
@@ -605,7 +612,7 @@ export default function AccountPage() {
 
           <Stamp className="block mt-4">{t("Sign-in email ")}</Stamp>
           <p className="mt-1 break-all font-mono text-sm text-ink">
-            {user?.email ?? "No account email available"}
+            {user?.email ?? t("No account email available")}
           </p>
           <div className="mt-4 flex items-center gap-3">
             <button
@@ -669,14 +676,24 @@ export default function AccountPage() {
                 className="sr-only"
                 aria-label={
                   value === "metric"
-                    ? "Use metric units (kilometres)"
-                    : "Use imperial units (miles)"
+                    ? t("Use metric units (kilometres)")
+                    : t("Use imperial units (miles)")
                 }
               />
-              {value === "metric" ? "Metric (km)" : "Imperial (mi)"}
+              {value === "metric" ? t("Metric (km)") : t("Imperial (mi)")}
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="rounded-2xl bg-cream border border-line p-[22px] mt-4">
+        <Stamp as="h2" className="block mb-2">
+          {t("Language")}
+        </Stamp>
+        <p className="text-sm text-fg-dim mb-4">
+          {t("Pick the language used across the dashboard. ")}
+        </p>
+        <LocaleSwitcher />
       </div>
     </div>
   );

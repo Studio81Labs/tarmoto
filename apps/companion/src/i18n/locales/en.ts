@@ -998,6 +998,57 @@ export const en = {
   "\u0394 (B \u2212 A)": "\u0394 (B \u2212 A)",
   "\u2014 tap through for ranked roads, quality scores and a map preview. ":
     "\u2014 tap through for ranked roads, quality scores and a map preview. ",
+  // ---- Sidebar navigation (NAV_ITEMS) ----
+  Home: "Home",
+  Trips: "Trips",
+  "Road Explorer": "Road Explorer",
+  "Road map": "Road map",
+  "Compare rides": "Compare rides",
+  Feed: "Feed",
+  // ---- Sidebar realtime indicator ----
+  Offline: "Offline",
+  "Reconnecting\u2026": "Reconnecting\u2026",
+  "Realtime paused": "Realtime paused",
+  "Browser is offline; cached map tiles and data may be shown":
+    "Browser is offline; cached map tiles and data may be shown",
+  "Real-time updates are reconnecting": "Real-time updates are reconnecting",
+  "Failed to load notifications": "Failed to load notifications",
+  // ---- Dashboard quick actions ----
+  "Plan a trip": "Plan a trip",
+  "Draft a multi-day loop": "Draft a multi-day loop",
+  "Explore roads": "Explore roads",
+  "Quality across regions": "Quality across regions",
+  "Ride history": "Ride history",
+  "Your tracks + stats": "Your tracks + stats",
+  "Distance, lean, quality": "Distance, lean, quality",
+  // ---- Settings sections ----
+  "Display name, bio, home region": "Display name, bio, home region",
+  "Plan, billing, payment methods": "Plan, billing, payment methods",
+  Privacy: "Privacy",
+  "Visibility, data sharing, consent": "Visibility, data sharing, consent",
+  "Manage your motorcycle garage": "Manage your motorcycle garage",
+  "Email, alerts, community updates": "Email, alerts, community updates",
+  "Export your data or delete your account":
+    "Export your data or delete your account",
+  // ---- Settings profile form ----
+  "Save changes": "Save changes",
+  "Display name is required.": "Display name is required.",
+  "Avatar URL must be a valid http:// or https:// address.":
+    "Avatar URL must be a valid http:// or https:// address.",
+  "Could not save your profile.": "Could not save your profile.",
+  "Could not upload your photo.": "Could not upload your photo.",
+  "{name}'s profile photo": "{name}'s profile photo",
+  "Your profile photo": "Your profile photo",
+  "No account email available": "No account email available",
+  "Metric (km)": "Metric (km)",
+  "Imperial (mi)": "Imperial (mi)",
+  "Use metric units (kilometres)": "Use metric units (kilometres)",
+  "Use imperial units (miles)": "Use imperial units (miles)",
+  // ---- Language switcher ----
+  Language: "Language",
+  "Pick the language used across the dashboard. ":
+    "Pick the language used across the dashboard. ",
+  "Could not save your language.": "Could not save your language.",
 } as const;
 
 export type EnglishMessageKey = keyof typeof en;
