@@ -96,17 +96,25 @@ export function Tooltip({
 
   // Inject `aria-describedby` onto the actual trigger element rather
   // than the positioning wrapper, so screen readers pick it up when
-  // focus lands on the trigger. Falls back gracefully when children
-  // isn't a single React element (null, text, fragments, conditional
-  // expressions like `isReady && <button />`) — the wrapper still
-  // renders, just without the AT binding on the trigger.
+  // focus lands on the trigger.
+  //
+  // The relationship is *permanent* — bound whether or not `visible`
+  // is true — so AT knows about the description at the moment the
+  // trigger receives focus, not only after a state toggle. Whether
+  // the bubble's content is actually announced is gated by
+  // `aria-hidden={!visible}` on the bubble itself.
+  //
+  // Falls back gracefully when children isn't a single React element
+  // (null, text, fragments, conditional expressions like
+  // `isReady && <button />`) — the wrapper still renders, just
+  // without the AT binding on the trigger.
   const triggerWithAria = isValidElement(children)
     ? cloneElement(children as ReactElement<HTMLAttributes<HTMLElement>>, {
         "aria-describedby": mergeDescribedBy(
           (children as ReactElement<HTMLAttributes<HTMLElement>>).props[
             "aria-describedby"
           ],
-          visible ? id : undefined,
+          id,
         ),
       })
     : children;
