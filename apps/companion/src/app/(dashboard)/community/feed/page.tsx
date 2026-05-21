@@ -14,7 +14,7 @@ import {
   type PlaceValue,
 } from "../../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader } from "@tarmoto/ui";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
@@ -94,16 +94,20 @@ export default function CommunityFeedPage() {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   return (
-    <div className="mx-auto max-w-page animate-fade-in p-6">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <PageHeader
-        icon={Users}
+        stamp={t("Community · Feed")}
+        icon={<Users size={22} strokeWidth={1.8} />}
         title={t("Community")}
-        subtitle={t(
+        sub={t(
           "Explore popular shared rides and discover routes worth repeating.",
         )}
       />
 
-      <div className="mb-6 grid gap-3 rounded-2xl border border-line bg-cream p-4 md:grid-cols-2 xl:grid-cols-3">
+      <Card
+        padded={false}
+        className="mb-6 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3"
+      >
         <FilterSelect
           id="sort-feed"
           label="Sort feed"
@@ -241,7 +245,7 @@ export default function CommunityFeedPage() {
           label="Region or place"
           placeholder={t("Brno, Tyrol, Tatra Mountains\u2026")}
         />
-      </div>
+      </Card>
 
       {location && (
         <p className="mb-6 text-sm text-fg-dim">
@@ -262,7 +266,7 @@ export default function CommunityFeedPage() {
           {t("Loading community rides\u2026 ")}
         </div>
       ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-line bg-cream p-16 text-center">
+        <Card padded={false} className="p-16 text-center">
           <Users size={48} className="mx-auto mb-4 text-fg-mute" />
           <p className="mb-2 text-lg font-semibold text-ink">
             {t("No rides match these filters ")}
@@ -272,7 +276,7 @@ export default function CommunityFeedPage() {
               "Try broadening the feed or switching back to the most popular rides. ",
             )}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -281,7 +285,10 @@ export default function CommunityFeedPage() {
             ))}
           </div>
 
-          <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-line bg-cream p-4">
+          <Card
+            padded={false}
+            className="mt-6 flex items-center justify-between gap-3 p-4"
+          >
             <p className="font-mono text-sm text-fg-dim tabular-nums">
               {t("Page {currentPage} of {pageCount}", {
                 currentPage,
@@ -315,7 +322,7 @@ export default function CommunityFeedPage() {
                 {t("Next ")}
               </button>
             </div>
-          </div>
+          </Card>
         </>
       )}
     </div>
