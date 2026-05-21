@@ -16,28 +16,13 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
-import { Stamp } from "@/components/tarmoto/atoms";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader, Stamp } from "@tarmoto/ui";
 type ExportState =
-  | {
-      kind: "idle";
-    }
-  | {
-      kind: "requesting";
-    }
-  | {
-      kind: "polling";
-      id: string;
-    }
-  | {
-      kind: "ready";
-      id: string;
-      downloadUrl: string;
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
+  | { kind: "idle" }
+  | { kind: "requesting" }
+  | { kind: "polling"; id: string }
+  | { kind: "ready"; id: string; downloadUrl: string }
+  | { kind: "error"; message: string };
 type ExportView = Awaited<
   ReturnType<typeof accountApi.requestDataExport>
 >["data"];
@@ -70,16 +55,9 @@ function nextExportState(view: ExportView): ExportState | null {
   return null;
 }
 type DeleteState =
-  | {
-      kind: "idle";
-    }
-  | {
-      kind: "deleting";
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
+  | { kind: "idle" }
+  | { kind: "deleting" }
+  | { kind: "error"; message: string };
 const EXPORT_CONTENTS = [
   "Rides (GPX tracks and stats)",
   "Saved routes and trip plans",
@@ -183,33 +161,34 @@ export default function DataPage() {
     };
   }, [pollingId]);
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
+        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft size={14} />
         {t("Settings ")}
       </Link>
       <PageHeader
-        icon={Database}
+        stamp={t("Settings · Data")}
+        icon={<Database size={22} strokeWidth={1.8} />}
         title={t("Data & Account")}
-        subtitle={t(
-          "Export a copy of everything Tarmoto has on you, or delete your account permanently. Both actions comply with GDPR Articles 15 and 17.",
+        sub={t(
+          "Export your data or delete your account. Tarmoto follows GDPR — your data is yours.",
         )}
       />
 
       {/* Export */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-paper text-accent">
+      <Card padded={false} className="mb-4 p-[22px]">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="rounded-lg bg-paper p-2 text-accent">
             <Download size={18} />
           </div>
           <div>
-            <Stamp as="h2" className="block mb-1">
+            <Stamp as="h2" className="mb-1 block">
               {t("Download my data ")}
             </Stamp>
-            <p className="text-xs text-fg-dim mt-0.5">
+            <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
                 "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
               )}
@@ -217,16 +196,16 @@ export default function DataPage() {
           </div>
         </div>
 
-        <ul className="text-xs text-fg-dim space-y-1 mb-5 ml-12">
+        <ul className="mb-5 ml-12 space-y-1 text-[12px] text-fg-dim">
           {EXPORT_CONTENTS.map((item) => (
             <li key={item} className="flex items-center gap-2">
-              <Check size={12} className="text-accent shrink-0" />
+              <Check size={12} className="shrink-0 text-accent" />
               <span>{item}</span>
             </li>
           ))}
         </ul>
 
-        <div className="ml-12 flex items-center gap-3 flex-wrap">
+        <div className="ml-12 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={requestExport}
@@ -235,15 +214,15 @@ export default function DataPage() {
               exportState.kind === "requesting" ||
               exportState.kind === "polling"
             }
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {exportState.kind === "requesting" ||
             exportState.kind === "polling" ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
                 {exportState.kind === "requesting"
-                  ? "Requesting…"
-                  : "Assembling your data…"}
+                  ? t("Requesting… ")
+                  : t("Assembling your data… ")}
               </>
             ) : (
               <>
@@ -256,7 +235,7 @@ export default function DataPage() {
           {exportState.kind === "polling" && (
             <span
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-fg-dim"
+              className="inline-flex items-center gap-1.5 text-[13px] text-fg-dim"
             >
               {t("Usually takes under a minute. ")}
             </span>
@@ -266,31 +245,34 @@ export default function DataPage() {
               href={exportState.downloadUrl}
               download
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-accent underline hover:brightness-95"
+              className="inline-flex items-center gap-1.5 text-[13px] text-accent underline hover:brightness-95"
             >
               <Download size={14} />
               {t("Download your data (link expires in 7 days) ")}
             </a>
           )}
           {exportState.kind === "error" && (
-            <span role="alert" className="text-sm text-red-400">
+            <span role="alert" className="text-[13px] text-red-400">
               {exportState.message}
             </span>
           )}
         </div>
-      </section>
+      </Card>
 
-      {/* Delete account */}
-      <section className="rounded-2xl border border-quality-q1/30 bg-quality-q1/10 p-[22px]">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-quality-q1/15 text-red-400">
+      {/* Danger zone */}
+      <Card
+        padded={false}
+        className="border-quality-q1/40 bg-quality-q1/10 p-[22px]"
+      >
+        <div className="mb-4 flex items-start gap-3">
+          <div className="rounded-lg bg-quality-q1/15 p-2 text-quality-q1">
             <Trash2 size={18} />
           </div>
           <div>
-            <Stamp as="h2" className="block mb-1 text-red-400">
-              {t("Delete my account ")}
+            <Stamp as="h2" className="mb-1 block text-quality-q1">
+              {t("Danger zone ")}
             </Stamp>
-            <p className="text-xs text-red-400/80 mt-0.5 leading-relaxed">
+            <p className="mt-0.5 max-w-[520px] text-[12px] leading-[1.5] text-quality-q1/80">
               {t(
                 "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
               )}
@@ -302,13 +284,13 @@ export default function DataPage() {
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-transparent text-quality-q1 text-[11px] font-bold tracking-[0.2px] uppercase hover:bg-quality-q1/10 transition border border-quality-q1"
+            className="inline-flex items-center gap-2 rounded-full border border-quality-q1 bg-transparent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-quality-q1 transition hover:bg-quality-q1/10"
           >
             <Trash2 size={14} />
-            {t("Delete my account\u2026 ")}
+            {t("Delete my account… ")}
           </button>
         </div>
-      </section>
+      </Card>
 
       {confirmOpen && user?.email && (
         <DeleteConfirmModal
@@ -351,18 +333,18 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-account-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-cream border border-quality-q1/40 shadow-[0_24px_60px_rgba(14,14,16,0.2)]">
-        <header className="flex items-start justify-between gap-4 p-5 border-b border-line">
+      <div className="w-full max-w-md rounded-2xl border border-quality-q1/40 bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.2)]">
+        <header className="flex items-start justify-between gap-4 border-b border-line p-5">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-red-400" />
             <h3
               id="delete-account-title"
-              className="font-sans font-extrabold tracking-[-0.5px] text-[18px] text-ink"
+              className="font-sans text-[18px] font-extrabold tracking-[-0.5px] text-ink"
             >
               {t("Delete account permanently ")}
             </h3>
@@ -372,19 +354,19 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             onClick={onClose}
             disabled={busy}
             aria-label={t("Close")}
-            className="p-1 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
+            className="rounded-lg p-1 text-fg-dim transition hover:bg-paper hover:text-ink disabled:opacity-50"
           >
             <X size={16} />
           </button>
         </header>
 
-        <div className="p-5 space-y-4">
-          <p className="text-sm text-ink">
+        <div className="space-y-4 p-5">
+          <p className="text-[14px] text-ink">
             {t(
               "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
             )}
           </p>
-          <p className="text-sm text-fg-dim">
+          <p className="text-[14px] text-fg-dim">
             {t("To confirm, type your email address")}{" "}
             <span className="font-mono text-ink">{email}</span>
             {t("below. ")}
@@ -392,7 +374,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
           <div>
             <label
               htmlFor="delete-confirm-email"
-              className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
+              className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
             >
               {t("Your email address ")}
             </label>
@@ -404,13 +386,13 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-quality-q1 transition disabled:opacity-50"
+              className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink transition focus:border-quality-q1 focus:outline-none disabled:opacity-50"
             />
           </div>
           <div>
             <label
               htmlFor="delete-confirm-password"
-              className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
+              className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
             >
               {t("Your password ")}
             </label>
@@ -421,22 +403,22 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-quality-q1 transition disabled:opacity-50"
+              className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink transition focus:border-quality-q1 focus:outline-none disabled:opacity-50"
             />
           </div>
           {state.kind === "error" && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-[14px] text-red-400">
               {state.message}
             </p>
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 p-5 border-t border-line">
+        <footer className="flex items-center justify-end gap-2 border-t border-line p-5">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
+            className="rounded-md px-4 py-2 text-[14px] font-semibold text-fg-dim transition hover:bg-paper hover:text-ink disabled:opacity-50"
           >
             {t("Cancel ")}
           </button>
@@ -444,12 +426,12 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             type="button"
             onClick={confirmDelete}
             disabled={!canSubmit || busy}
-            className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full bg-quality-q1 text-ink text-[11px] font-bold tracking-[0.2px] uppercase hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 rounded-full bg-quality-q1 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                {t("Deleting\u2026 ")}
+                {t("Deleting… ")}
               </>
             ) : (
               <>
