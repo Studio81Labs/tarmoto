@@ -896,6 +896,7 @@ export const en = {
   "curviness ": "curviness ",
   day: "day",
   "day ": "day ",
+  days: "days",
   deterioration: "deterioration",
   "e.g. My Favourite Beskydy Loops": "e.g. My Favourite Beskydy Loops",
   "e.g. Summer 2026 Alps": "e.g. Summer 2026 Alps",
