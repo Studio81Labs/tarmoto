@@ -1,16 +1,16 @@
 import { test, expect } from "../fixtures";
 
 test.describe("account & settings", () => {
-  // T50 — Profile edit: changing the display name on /settings
-  // PATCHes /api/v1/users/me. Assert the request body carries
-  // the new name, the page surfaces the "Saved" badge, and the
-  // form field retains the new value (proves the save round-
-  // tripped without React reverting the input).
+  // T50 — Profile edit: changing the display name on
+  // /settings/profile PATCHes /api/v1/users/me. Assert the request
+  // body carries the new name, the page surfaces the "Saved" badge,
+  // and the form field retains the new value (proves the save
+  // round-tripped without React reverting the input).
   test("T50: display-name update saves through the PATCH endpoint", async ({
     authedPage: page,
     user,
   }) => {
-    await page.goto("/settings");
+    await page.goto("/settings/profile");
 
     // The label copy is "Display name " (trailing space from
     // `t()`), so target by id rather than a brittle `^…$` regex.
@@ -157,14 +157,14 @@ test.describe("account & settings", () => {
     authedPage: page,
     user,
   }) => {
-    // Warm-up: navigate to /settings first so `AuthSync` hydrates
-    // `useAuthStore` from the NextAuth session before the data
-    // page mounts. `/settings/data` itself fires no GET on mount,
-    // so without this the Request-export click can race the
-    // bearer token into a `401` on CI (locally the AuthSync
-    // effect usually wins). The settings form pre-fills with
+    // Warm-up: navigate to /settings/profile first so `AuthSync`
+    // hydrates `useAuthStore` from the NextAuth session before the
+    // data page mounts. `/settings/data` itself fires no GET on
+    // mount, so without this the Request-export click can race the
+    // bearer token into a `401` on CI (locally the AuthSync effect
+    // usually wins). The profile form pre-fills with
     // `user.displayName` only once the auth-store is populated.
-    await page.goto("/settings");
+    await page.goto("/settings/profile");
     await expect(page.locator("#settings-display-name")).toHaveValue(
       user.displayName,
       { timeout: 10_000 },
