@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import AccountPage from "./page";
+import ProfilePage from "./page";
 import { usersApi } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 
@@ -57,7 +57,7 @@ vi.mock("@/stores/preferences", () => ({
   ) => selector(preferencesState),
 }));
 
-describe("AccountPage", () => {
+describe("ProfilePage", () => {
   const getMeMock = vi.mocked(usersApi.getMe);
   const uploadAvatarMock = vi.mocked(usersApi.uploadAvatar);
   const updateMeMock = vi.mocked(usersApi.updateMe);
@@ -121,7 +121,7 @@ describe("AccountPage", () => {
         }),
     );
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("Likes mountain passes"),
@@ -203,7 +203,7 @@ describe("AccountPage", () => {
       },
     });
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("Likes mountain passes"),
@@ -256,7 +256,7 @@ describe("AccountPage", () => {
       },
     });
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("Likes mountain passes"),
@@ -294,7 +294,7 @@ describe("AccountPage", () => {
     });
     clipboardWriteText.mockResolvedValueOnce(undefined);
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("rider@example.com"),
@@ -339,7 +339,7 @@ describe("AccountPage", () => {
       },
     });
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("rider@example.com"),
@@ -387,7 +387,7 @@ describe("AccountPage", () => {
     clipboardWriteText.mockResolvedValueOnce(undefined);
     clipboardWriteText.mockRejectedValueOnce(new Error("Clipboard denied"));
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("rider@example.com"),
@@ -444,7 +444,7 @@ describe("AccountPage", () => {
       },
     });
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("rider@example.com"),
@@ -489,7 +489,7 @@ describe("AccountPage", () => {
       },
     });
 
-    render(<AccountPage />);
+    render(<ProfilePage />);
 
     expect(
       await screen.findByDisplayValue("rider@example.com"),
