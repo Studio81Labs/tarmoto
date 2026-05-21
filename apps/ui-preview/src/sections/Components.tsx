@@ -16,6 +16,7 @@ import {
   type TweaksTokens,
 } from "@tarmoto/ui";
 import { SpecHead, SpecRow } from "./Atoms";
+import { CC, CK, CN, CodeBlock, CS } from "./_shared";
 
 /* -------- 11 · CARD -------- */
 
@@ -42,6 +43,14 @@ export function CardSection() {
             Last 12 months
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg bg-paper" />
+          <div className="mt-3.5">
+            <CodeBlock>
+              {`background: --cream\n`}
+              {`border: 1 px --line\n`}
+              {`radius: 14\n`}
+              {`padding: 18`}
+            </CodeBlock>
+          </div>
         </Card>
         <Card variant="paper-2">
           <Stamp>Tinted · sunken</Stamp>
@@ -52,6 +61,13 @@ export function CardSection() {
             Settings inner row
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg border border-line bg-cream" />
+          <div className="mt-3.5">
+            <CodeBlock>
+              {`background: --paper-2\n`}
+              {`border: 1 px --line\n`}
+              {`nested into another card`}
+            </CodeBlock>
+          </div>
         </Card>
         <Card variant="ink">
           <Stamp tone="accent">Inverse · hero</Stamp>
@@ -60,6 +76,13 @@ export function CardSection() {
             Once per view
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg bg-cream/6" />
+          <div className="mt-3.5">
+            <CodeBlock tone="tarmac">
+              {`background: --ink\n`}
+              {`fg: --cream\n`}
+              {`stamp color: --accent`}
+            </CodeBlock>
+          </div>
         </Card>
       </div>
     </Section>
@@ -82,7 +105,7 @@ export function MetricSection() {
         </>
       }
     >
-      <div className="grid grid-cols-4 gap-3.5">
+      <div className="mb-6 grid grid-cols-4 gap-3.5">
         <MetricTile
           variant="ink"
           accentNumber
@@ -112,13 +135,101 @@ export function MetricSection() {
           delta="Passo Gavia"
         />
       </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Anatomy callout — a labelled MetricTile with arrows.
+         * Source `.anatomy` has 40 px padding + the metric in normal flow
+         * with `margin: 60px auto;` (centred horizontally, 60 px gap from
+         * the inner padding edge). Callouts are absolute-positioned at
+         * fixed coords relative to the anatomy box. */}
+        <div className="relative aspect-[5/3] overflow-hidden rounded-[14px] border border-line bg-paper p-10">
+          <div className="mx-auto mt-[60px] w-[240px]">
+            <MetricTile
+              label="Distance"
+              value={<span className="text-accent">1,284</span>}
+              unit="km"
+              delta="+18% vs March"
+            />
+          </div>
+          <AnatomyCallout top={56} left={28}>
+            → Stamp · uppercase mono
+          </AnatomyCallout>
+          <AnatomyCallout top={100} left={28}>
+            → Hero number · 36 px sans 800
+          </AnatomyCallout>
+          <AnatomyCallout top={140} left={28}>
+            → Unit · 11 px mono · fg-dim
+          </AnatomyCallout>
+          <AnatomyCallout top={184} left={28}>
+            → Delta · 11 px · fg-mute
+          </AnatomyCallout>
+        </div>
+
+        <Card padded>
+          <SubStamp>Variants</SubStamp>
+          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.8] text-fg-dim">
+            <li>
+              <strong>Default</strong> — cream bg, ink type, dim delta
+            </li>
+            <li>
+              <strong>Ink</strong> — ink bg, cream type. Used for the "north
+              star" KPI of the screen
+            </li>
+            <li>
+              <strong>Paper</strong> — paper bg. Used for derived/secondary KPIs
+              (e.g. lean angle, peak)
+            </li>
+            <li>
+              <strong>Accent number</strong> — orange tinted hero number.{" "}
+              <em>One per row.</em>
+            </li>
+          </ul>
+          <div className="mt-4">
+            <CodeBlock>
+              <CK>grid</CK>: <CN>repeat(4, 1fr)</CN>
+              {"\n"}
+              <CK>gap</CK>: <CN>14 px</CN>
+              {"\n"}
+              <CK>padding</CK>: <CN>18 px</CN>
+              {"\n"}
+              <CK>radius</CK>: <CN>14</CN>
+            </CodeBlock>
+          </div>
+        </Card>
+      </div>
     </Section>
+  );
+}
+
+/** Mono callout used inside the anatomy box. Mirrors source `.callout`:
+ * `font-family: mono; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+ *  text-transform: uppercase; color: var(--fg-dim);` */
+function AnatomyCallout({
+  top,
+  left,
+  children,
+}: {
+  top: number;
+  left: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="absolute font-mono text-[10px] font-bold uppercase tracking-[1px] text-fg-dim"
+      style={{ top, left }}
+    >
+      {children}
+    </div>
   );
 }
 
 /* -------- 13 · ROAD PREVIEW CARD -------- */
 
-const SEG_ALL_GREEN = Array.from({ length: 10 }, () => ({ q: 5 as const }));
+// Card 1's q-strip mostly-q5 with 2 q4 interruptions (source's exact
+// sequence: q5, q5, q4, q5, q4, q5, q5, q5, q5, q4).
+const SEG_ALL_GREEN = [5, 5, 4, 5, 4, 5, 5, 5, 5, 4].map((q) => ({
+  q: q as 4 | 5,
+}));
 const SEG_MIXED_4 = [4, 4, 5, 3, 4, 4, 3, 4, 4, 4].map((q) => ({
   q: q as 3 | 4 | 5,
 }));
@@ -143,7 +254,7 @@ export function RoadPreviewSection() {
         <>
           Stacked vertically in the trip planner's left rail. The active card
           inverts to ink fill (selected state). Elevation profile is filled and
-          stroked with the segment's quality color; the strip of colour
+          stroked with the segment's quality color; the strip of color
           rectangles under it shows quality per sub-segment.
         </>
       }
@@ -204,11 +315,12 @@ export function RoadPreviewSection() {
               <strong>Q-bars</strong> — size 4, top-right
             </li>
             <li>
-              <strong>Elevation</strong> — 52 px paper inner card, q-colour SVG
+              <strong>Elevation</strong> — 52 px paper inner card, q-color SVG
               path
             </li>
             <li>
-              <strong>Q-strip</strong> — palette-aware rectangles at the bottom
+              <strong>Q-strip</strong> — 10 rectangles at the bottom of the
+              elevation, palette-aware
             </li>
             <li>
               <strong>Meta row</strong> — mono · uppercase · 11 px · justified
@@ -225,22 +337,36 @@ export function RoadPreviewSection() {
             <SpecHead cols="100px 1fr 1fr">
               <span>State</span>
               <span>Background</span>
-              <span>Foreground</span>
+              <span>Border</span>
             </SpecHead>
             <SpecRow cols="100px 1fr 1fr">
               <span className="font-mono font-semibold">default</span>
               <span className="text-fg-dim">--cream</span>
               <span className="font-mono text-[11px] text-fg-dim">
-                --ink + --fg-dim meta
+                1 px --line
+              </span>
+            </SpecRow>
+            <SpecRow cols="100px 1fr 1fr">
+              <span className="font-mono font-semibold">hover</span>
+              <span className="text-fg-dim">--cream</span>
+              <span className="font-mono text-[11px] text-fg-dim">
+                1 px --line-strong
               </span>
             </SpecRow>
             <SpecRow cols="100px 1fr 1fr" last>
               <span className="font-mono font-semibold">active</span>
-              <span className="text-fg-dim">--ink</span>
+              <span className="text-fg-dim">--ink · text cream</span>
               <span className="font-mono text-[11px] text-fg-dim">
-                --cream + onDark qbars
+                1 px ink
               </span>
             </SpecRow>
+          </div>
+          <div className="mt-4">
+            <SubStamp>Density</SubStamp>
+            <p className="text-[13px] leading-[1.55] text-fg-dim">
+              Comfortable: 14 / 10 / 52. Compact: 12 / 8 / 36. Density tweak
+              controls all three at once.
+            </p>
           </div>
         </Card>
       </div>
@@ -266,9 +392,13 @@ export function NavRailSection() {
       }
     >
       <div className="grid grid-cols-[280px_1fr] items-start gap-7">
+        {/* Source mock widens the rail to 280 px + rounds the corners
+         * + adds a 1 px hairline so the rail floats as a documentation
+         * card. Real product rails are 220 px wide and flush against
+         * the page edge — that's `<NavRail />` defaults. */}
         <NavRail
+          className="!w-[280px] rounded-[14px] border border-cream/10"
           brandTitle="TARMOTO"
-          brandSub="WEB · v1.4"
           items={[
             { key: "trip", num: "01", label: "Trip Planner", active: true },
             { key: "explore", num: "02", label: "Road Explorer" },
@@ -301,25 +431,62 @@ export function NavRailSection() {
         />
 
         <div>
-          <SubStamp onDark>Geometry</SubStamp>
-          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-on-dark-dim">
-            <li>
-              Rail width <Mono>220 px</Mono>
-            </li>
-            <li>
-              Rail padding <Mono>20 / 14</Mono>
-            </li>
-            <li>
-              Item padding <Mono>10 / 12</Mono>
-            </li>
-            <li>
-              Item radius <Mono>8</Mono>
-            </li>
-            <li>
-              Brand mark <Mono>32 sq · accent · 7 radius</Mono>
-            </li>
-            <li>Active item: accent fill, ink fg, 800 weight</li>
-          </ul>
+          <SubStamp onDark>Spec</SubStamp>
+          <div className="overflow-hidden rounded-[10px] border border-cream/12 bg-tarmac">
+            <div
+              className="grid items-center gap-3 border-b border-cream/8 bg-cream/6 px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-cream/60"
+              style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+            >
+              <span>Slot</span>
+              <span>Background</span>
+              <span>Foreground</span>
+            </div>
+            {[
+              ["rail", "--ink", "--cream"],
+              [
+                "item · inactive",
+                "transparent",
+                "cream · 600 · mono num @ 40%",
+              ],
+              ["item · active", "--accent", "ink · 800 · mono num ink"],
+              ["item · hover", "cream @ 6%", "no other changes"],
+              ["divider", "cream @ 8%", "1 px"],
+              ["contrib module", "cream @ 6%", "border cream @ 8%"],
+            ].map((row, i, arr) => (
+              <div
+                key={row[0]}
+                className={`grid items-center gap-3 px-4 py-2.5 text-[12.5px] ${i < arr.length - 1 ? "border-b border-cream/8" : ""}`}
+                style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+              >
+                <Mono className="font-semibold text-cream">{row[0]}</Mono>
+                <span className="text-cream/70">{row[1]}</span>
+                <span className="font-mono text-[11px] text-cream/55">
+                  {row[2]}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <SubStamp onDark>Geometry</SubStamp>
+            <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-on-dark-dim">
+              <li>
+                Rail width <Mono>220 px</Mono>
+              </li>
+              <li>
+                Rail padding <Mono>20 / 14</Mono>
+              </li>
+              <li>
+                Item padding <Mono>10 / 12</Mono>
+              </li>
+              <li>
+                Item radius <Mono>8</Mono>
+              </li>
+              <li>
+                Brand mark <Mono>32 sq · accent · 7 radius</Mono>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </Section>
@@ -338,6 +505,10 @@ interface Ride {
   q: 1 | 2 | 3 | 4 | 5;
 }
 
+// Source shows 3 sample rows ("18 Apr Stelvio Loop / 13 Apr Passo Gavia /
+// 05 Apr Mortirolo test") with a header saying "12 rides · click to
+// inspect" — the table is documented as a preview of a longer
+// scrollable list rather than the literal full set.
 const RIDES: Ride[] = [
   {
     date: "18 Apr",
@@ -367,6 +538,7 @@ const RIDES: Ride[] = [
     q: 2,
   },
 ];
+const RIDES_TOTAL = 12;
 
 export function TableSection() {
   return (
@@ -387,7 +559,7 @@ export function TableSection() {
           <div>
             <Stamp>Recent rides</Stamp>
             <div className="mt-1 text-[15px] font-bold">
-              {RIDES.length} rides · click to inspect
+              {RIDES_TOTAL} rides · click to inspect
             </div>
           </div>
           <div className="flex gap-1.5">
@@ -451,6 +623,33 @@ export function TableSection() {
           rows={RIDES}
         />
       </Card>
+
+      <div className="mt-6 grid grid-cols-3 gap-3.5">
+        <Card padded>
+          <SubStamp>Column rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Numeric columns are always mono. Identity columns (date, ride name)
+            use the working font. Quality is always last column before the
+            chevron.
+          </p>
+        </Card>
+        <Card padded>
+          <SubStamp>Header rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Header row is paper-tinted, 10 px mono, 1 px letter-spacing,
+            uppercase, fg-mute. Always sticky if the table can scroll
+            vertically.
+          </p>
+        </Card>
+        <Card padded>
+          <SubStamp>Row rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            14 / 20 padding · 13 px text · 1 px line divider · chevron in{" "}
+            <Mono className="text-ink">--fg-mute</Mono>. No row hover background
+            — just cursor pointer.
+          </p>
+        </Card>
+      </div>
     </Section>
   );
 }
@@ -476,22 +675,40 @@ export function TweaksSection() {
     >
       <div className="grid grid-cols-[320px_1fr] items-start gap-7">
         <TweaksPanel value={tokens} onChange={setTokens} onClose={() => {}} />
-        <Card padded>
+        <div>
           <SubStamp>Token shape (persisted)</SubStamp>
-          <pre className="m-0 overflow-x-auto rounded-[10px] bg-ink p-4 font-mono text-[11px] leading-[1.65] text-cream">
-            {`{
-  "accent": "${tokens.accent}",
-  "palette": "${tokens.palette}",   // traffic | muted | mono
-  "mapMode": "${tokens.mapMode}",     // paper | light | dark
-  "density": "${tokens.density}" // comfortable | compact
-}`}
-          </pre>
+          <CodeBlock>
+            {`{\n  `}
+            <CK>{`"accent"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.accent}"`}</CS>
+            {`,\n  `}
+            <CK>{`"palette"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.palette}"`}</CS>
+            {`,   `}
+            <CC>{`// traffic | muted | mono`}</CC>
+            {`\n  `}
+            <CK>{`"mapMode"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.mapMode}"`}</CS>
+            {`,     `}
+            <CC>{`// paper | light | dark`}</CC>
+            {`\n  `}
+            <CK>{`"density"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.density}"`}</CS>
+            {` `}
+            <CC>{`// comfortable | compact`}</CC>
+            {`\n}`}
+          </CodeBlock>
           <p className="mt-3.5 text-[13px] leading-[1.55] text-fg-dim">
-            The panel is fully controlled — the host owns the tokens state and
-            persists it (localStorage, user prefs, …). Every screen consumes the
-            same shape.
+            Wraps in <Mono>EDITMODE-BEGIN</Mono> / <Mono>EDITMODE-END</Mono>{" "}
+            markers — the host rewrites this JSON when the user changes a value.
+            Every view that responds to tweaks consumes the same{" "}
+            <Mono>tokens</Mono> prop.
           </p>
-        </Card>
+        </div>
       </div>
     </Section>
   );

@@ -1,3 +1,4 @@
+import { Stamp } from "@tarmoto/ui";
 import { Hero } from "./Hero";
 import { Sidebar } from "./Sidebar";
 import {
@@ -25,13 +26,23 @@ import {
 import {
   AlertsSection,
   ButtonsSection,
-  TooltipsSection,
   ToastsSection,
+  TooltipsSection,
 } from "./sections/Feedback";
+import {
+  MapModesSection,
+  MapOverlaysSection,
+  MapVocabSection,
+} from "./sections/Maps";
+import {
+  DensitySection,
+  DoDontSection,
+  LayoutsSection,
+} from "./sections/Patterns";
 
 export function App() {
   return (
-    <div className="grid grid-cols-[240px_1fr] min-h-screen">
+    <div className="grid min-h-screen grid-cols-[240px_1fr]">
       <Sidebar />
       <main className="min-w-0">
         <Hero />
@@ -44,7 +55,7 @@ export function App() {
         <SpaceSection />
         <ShadowSection />
 
-        {/* Atoms · 07, 08, 10 */}
+        {/* Atoms · 07–10 */}
         <AtomsSection />
         <PillSection />
         <ControlsSection />
@@ -64,23 +75,63 @@ export function App() {
         <TooltipsSection />
         <ToastsSection />
 
-        <footer className="grid grid-cols-2 gap-[60px] bg-ink px-[60px] pb-20 pt-10 text-cream">
-          <div>
-            <h3 className="font-serif text-[22px] font-bold tracking-[-0.4px]">
-              That's the library, rendered with itself.
-            </h3>
-            <p className="mt-3 text-[14px] text-cream/65 leading-[1.6]">
-              If any section above doesn't match the Web App v2 design map, the
-              library has drifted — file the diff against{" "}
-              <span className="font-mono text-cream">@tarmoto/ui</span>, not
-              this preview.
-            </p>
-          </div>
-          <div className="self-end text-right font-mono text-[10px] tracking-[1px] text-cream/40 uppercase">
-            Tarmoto · @tarmoto/ui · Preview
-          </div>
-        </footer>
+        {/* Maps · 21–23 */}
+        <MapVocabSection />
+        <MapModesSection />
+        <MapOverlaysSection />
+
+        {/* Patterns · 24–26 */}
+        <LayoutsSection />
+        <DensitySection />
+        <DoDontSection />
+
+        <DesignMapFooter />
       </main>
     </div>
+  );
+}
+
+/**
+ * Footer · mirrors the dark `.foot` block at the bottom of the source
+ * HTML: orange-eyebrow "Source of truth" + serif heading + lede on the
+ * left; orange-eyebrow "Hand-off checklist" + list on the right.
+ */
+function DesignMapFooter() {
+  return (
+    <footer className="grid grid-cols-2 gap-[60px] bg-ink px-[60px] pb-20 pt-10 text-cream">
+      <div>
+        <div className="mb-3">
+          <Stamp tone="accent">Source of truth</Stamp>
+        </div>
+        <h3 className="font-serif text-[22px] font-bold tracking-[-0.4px]">
+          Built against Web App v2.html · revision 2.
+        </h3>
+        <p className="mt-3.5 max-w-[60ch] text-[13px] leading-[1.6] text-cream/65">
+          Tokens are defined in{" "}
+          <span className="font-mono text-cream">colors_and_type.css</span>;
+          components live as React functions in{" "}
+          <span className="font-mono text-cream">Web App v2.html</span> and the
+          shared <span className="font-mono text-cream">atoms.jsx</span>. If you
+          change a token or component, update this map in the same PR.
+        </p>
+      </div>
+      <div>
+        <div className="mb-3">
+          <Stamp tone="accent">Hand-off checklist</Stamp>
+        </div>
+        <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.8] text-cream/75">
+          <li>
+            Pull tokens from{" "}
+            <span className="font-mono text-cream">colors_and_type.css</span>
+          </li>
+          <li>Compose with the six atoms before custom DOM</li>
+          <li>Match one of the four layout shells</li>
+          <li>Respect the accent budget — one per screen</li>
+          <li>Q-bars on every quality surface, never stars</li>
+          <li>Ink card once per view, never twice</li>
+          <li>Floating UI gets shadow-card; everything else flat</li>
+        </ul>
+      </div>
+    </footer>
   );
 }

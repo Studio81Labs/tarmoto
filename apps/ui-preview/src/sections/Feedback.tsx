@@ -1,7 +1,16 @@
-import { useState } from "react";
 import { Section, SubStamp } from "../Section";
-import { Alert, Button, Card, Mono, Toast, Tooltip } from "@tarmoto/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Mono,
+  Toast,
+  Tooltip,
+  palette,
+  qualityColors,
+} from "@tarmoto/ui";
 import { SpecHead, SpecRow } from "./Atoms";
+import { CodeBlock, ColorDot, CN, DoDontGrid, TokenTable } from "./_shared";
 
 /* -------- 17 · BUTTONS -------- */
 
@@ -23,7 +32,8 @@ export function ButtonsSection() {
           Pills (section 08) carry compact actions inside chrome. Buttons carry
           the commit — "Push to phone", "Re-generate itinerary", "Add bike".
           Three sizes (sm 32 · md 40 · lg 48), three weights (primary ·
-          secondary · ghost), plus accent / danger / on-dark.
+          secondary · ghost), plus a single destructive style. Full-width is the
+          default in panels; auto-width inline.
         </>
       }
     >
@@ -77,24 +87,31 @@ export function ButtonsSection() {
             <StateCol label="REST">
               <Button block>Default</Button>
             </StateCol>
-            <StateCol label="LOADING">
-              <Button block loading>
-                Pushing
+            {/* Hover state — source `.btn.btn-primary.hover` swaps the ink
+             * background for tarmac to simulate the hover-darkened state
+             * without actual pointer interaction. */}
+            <StateCol label="+ TARMAC TINT">
+              <Button block className="!bg-tarmac">
+                Hover
               </Button>
             </StateCol>
-            <StateCol label="WITH ICON">
-              <Button block rightIcon={<span>→</span>}>
-                Push to phone
+            {/* Focus state — 2 px accent ring around the resting button. */}
+            <StateCol label="2 PX ACCENT RING">
+              <Button
+                block
+                className="ring-2 ring-accent ring-offset-2 ring-offset-cream"
+              >
+                Focus
               </Button>
             </StateCol>
-            <StateCol label="DISABLED · 40 %">
+            <StateCol label="40% OPACITY">
               <Button block disabled>
                 Disabled
               </Button>
             </StateCol>
-            <StateCol label="ACCENT">
-              <Button variant="accent" block>
-                Re-generate
+            <StateCol label="+ SPINNER">
+              <Button block loading>
+                Loading
               </Button>
             </StateCol>
           </div>
@@ -202,6 +219,34 @@ export function ButtonsSection() {
           </SpecRow>
         </Card>
       </div>
+
+      <DoDontGrid
+        className="mt-7"
+        left={[
+          {
+            kind: "do",
+            title: "One primary action per surface.",
+            body: "A card, panel, or dialog gets exactly one ink (or accent) button. Companions are secondary or ghost.",
+          },
+          {
+            kind: "do",
+            title: "Match button color to the surface it's on.",
+            body: "Ink button on cream. Accent button on ink. Never accent on cream as a primary.",
+          },
+        ]}
+        right={[
+          {
+            kind: "dont",
+            title: "Don't use a button where a pill fits.",
+            body: "Filter chips, toolbar items, status indicators — those stay pills. Buttons are for verbs that change state.",
+          },
+          {
+            kind: "dont",
+            title: "Don't mix sizes in a row.",
+            body: "A row of buttons is one size end to end. If one needs to be bigger, the others were the wrong size.",
+          },
+        ]}
+      />
     </Section>
   );
 }
@@ -261,9 +306,9 @@ export function AlertsSection() {
       intro={
         <>
           For information that lives <em>inside</em> the layout — failed sync,
-          outdated data, GDPR confirmations, info call-outs in settings. Five
-          intents share one anatomy: stripe + glyph + title + body + optional
-          action.
+          outdated data, GDPR confirmations, info call-outs in settings. Banners
+          take a full column; inline alerts sit inside a card. Five intents
+          share one anatomy: stripe + glyph + title + body + optional action.
         </>
       }
     >
@@ -325,7 +370,7 @@ export function AlertsSection() {
 
       <div className="mt-7">
         <SubStamp>Inline alert · compact</SubStamp>
-        <Card padded>
+        <Card padded className="!p-[22px]">
           <div className="font-bold">Stelvio Loop · Day 3</div>
           <div className="mt-1 text-[13px] text-fg-dim">
             Forcola → Tirano · 164 km · 3 hazards
@@ -335,6 +380,102 @@ export function AlertsSection() {
               Trip starts Nov 3.
             </Alert>
           </div>
+        </Card>
+      </div>
+
+      <div className="mt-7">
+        <SubStamp>Intent → tokens</SubStamp>
+        <TokenTable
+          columns={[
+            { label: "Intent", size: "120px" },
+            { label: "Stripe" },
+            { label: "Glyph" },
+            { label: "Background" },
+            { label: "Title color" },
+          ]}
+          rows={[
+            [
+              <Mono key="0">info</Mono>,
+              <span key="1" className="inline-flex items-center gap-2">
+                <ColorDot color={palette.ink} size={18} shape="square" />
+                <Mono>--ink</Mono>
+              </span>,
+              <Mono key="2">--ink</Mono>,
+              <Mono key="3">--paper</Mono>,
+              <Mono key="4">--ink</Mono>,
+            ],
+            [
+              <Mono key="0">success</Mono>,
+              <span key="1" className="inline-flex items-center gap-2">
+                <ColorDot color={qualityColors[4]} size={18} shape="square" />
+                <Mono>--q5</Mono>
+              </span>,
+              <Mono key="2">--q5</Mono>,
+              <Mono key="3">Q5 @ 12%</Mono>,
+              <Mono key="4">--ink</Mono>,
+            ],
+            [
+              <Mono key="0">warning</Mono>,
+              <span key="1" className="inline-flex items-center gap-2">
+                <ColorDot color={palette.accent} size={18} shape="square" />
+                <Mono>--accent</Mono>
+              </span>,
+              <Mono key="2">--accent</Mono>,
+              <Mono key="3">accent @ 10%</Mono>,
+              <Mono key="4">--ink</Mono>,
+            ],
+            [
+              <Mono key="0">danger</Mono>,
+              <span key="1" className="inline-flex items-center gap-2">
+                <ColorDot color={qualityColors[0]} size={18} shape="square" />
+                <Mono>--q1</Mono>
+              </span>,
+              <Mono key="2">--q1</Mono>,
+              <Mono key="3">Q1 @ 10%</Mono>,
+              <Mono key="4">--q1</Mono>,
+            ],
+            [
+              <Mono key="0">neutral</Mono>,
+              <span key="1" className="inline-flex items-center gap-2">
+                <ColorDot color="rgba(14,14,16,0.4)" size={18} shape="square" />
+                <Mono>--fg-mute</Mono>
+              </span>,
+              <Mono key="2">--fg-dim</Mono>,
+              <Mono key="3">--paper-2</Mono>,
+              <Mono key="4">--ink</Mono>,
+            ],
+          ]}
+        />
+      </div>
+
+      <div className="mt-[22px] grid grid-cols-3 gap-[18px]">
+        <Card padded>
+          <SubStamp>Anatomy</SubStamp>
+          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-dim">
+            <li>4 px stripe left edge</li>
+            <li>14 px glyph · 24 px column</li>
+            <li>Title 13 / 700, text 12 / 1.55 / fg-dim</li>
+            <li>Optional action button (sm) at right</li>
+            <li>16 px vertical · 18 px horizontal padding</li>
+          </ul>
+        </Card>
+        <Card padded>
+          <SubStamp>Dismissibility</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Alerts{" "}
+            <strong className="font-bold">do not dismiss themselves</strong>.
+            They persist until the condition that caused them changes or the
+            user explicitly closes them (× in the top right). For transient
+            feedback, use a toast.
+          </p>
+        </Card>
+        <Card padded>
+          <SubStamp>Stacking</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Multiple alerts stack with a 14 px gap. Order by severity: danger →
+            warning → success → info → neutral. Cap at 3 visible; collapse the
+            rest behind a "+ N more" pill.
+          </p>
         </Card>
       </div>
     </Section>
@@ -431,99 +572,364 @@ export function TooltipsSection() {
               open
               content={
                 <>
-                  <div className="font-bold text-cream">
-                    Tap a road to inspect its quality
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <div className="font-mono text-[11px] font-bold uppercase tracking-[1.5px] text-accent">
+                      Tip · 3 of 5
+                    </div>
+                    <div className="font-mono text-[10px] text-cream/50">
+                      ●●●○○
+                    </div>
                   </div>
-                  <div className="mt-1 text-[11px] text-cream/65">
-                    The 5-bar glyph shows the average over the last 30 days of
-                    contributions.
+                  <div className="mb-1 font-bold text-cream">
+                    Heatmap of curves discovered
+                  </div>
+                  <div className="text-[11px] leading-[1.5] text-cream/65">
+                    Fun Zones rank road clusters by curviness. Tap one to see
+                    the segments behind it.
+                  </div>
+                  <div className="mt-2.5 flex gap-1.5">
+                    <Button variant="on-dark" size="sm">
+                      Skip
+                    </Button>
+                    <Button variant="accent" size="sm">
+                      Next
+                    </Button>
                   </div>
                 </>
               }
             >
-              <div className="grid size-10 place-items-center rounded-full bg-cream font-mono text-[14px] font-extrabold text-ink shadow-[0_2px_6px_rgba(14,14,16,0.08)]">
-                ?
+              <div className="grid h-9 w-20 place-items-center rounded-[10px] border border-line bg-cream text-[12px] font-bold shadow-[0_0_0_4px_rgba(255,106,26,0.18)]">
+                Fun Zones
               </div>
             </Tooltip>
           </div>
           <div className="border-t border-line bg-cream px-3.5 py-3">
             <div className="text-[12.5px] font-bold">Coach mark</div>
             <div className="mt-0.5 font-mono text-[10px] text-fg-dim">
-              Title + body · 280 max-width · lift shadow
+              Stamp + step counter + title + body + Skip / Next
             </div>
           </div>
+        </Card>
+      </div>
+
+      <div className="mt-7">
+        <SubStamp>Placement &amp; tail</SubStamp>
+        <Card padded className="!p-9">
+          <div className="grid grid-cols-4 place-items-center gap-9">
+            {(["above", "below", "left", "right"] as const).map((p) => (
+              <div key={p} className="text-center">
+                <Tooltip kind="label" placement={p} content={cap(p)} open>
+                  <span className="block h-8 w-20 rounded-md bg-paper" />
+                </Tooltip>
+                <div className="mt-8 font-mono text-[10px] uppercase tracking-[1px] text-fg-dim">
+                  {p === "above" ? "Above · default" : p.toUpperCase()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-7 grid grid-cols-2 gap-[22px]">
+        <Card padded className="!p-6">
+          <SubStamp>Geometry</SubStamp>
+          <CodeBlock>
+            <span className="text-cream">background: </span>
+            <CN>--ink</CN>
+            {"\n"}
+            <span className="text-cream">color: </span>
+            <CN>--cream</CN>
+            {"\n"}
+            <span className="text-cream">radius: </span>
+            <CN>6</CN> (label) · <CN>8</CN> (data) · <CN>10</CN> (coach)
+            {"\n"}
+            <span className="text-cream">padding: </span>
+            <CN>6/10</CN> · <CN>10/12</CN> · <CN>12/14</CN>
+            {"\n"}
+            <span className="text-cream">font: </span>
+            <CN>12 / 600</CN> (label) · sans 13/700 + meta (data)
+            {"\n"}
+            <span className="text-cream">tail: </span>
+            <CN>8 px</CN> square · <CN>45deg</CN> · -4 offset
+            {"\n"}
+            <span className="text-cream">shadow: </span>
+            <CN>0 8 24 ink @ 20%</CN>
+            {"\n"}
+            <span className="text-cream">delay: </span>
+            <CN>200 ms</CN> in · <CN>100 ms</CN> out
+            {"\n"}
+            <span className="text-cream">max-width: </span>
+            <CN>220 px</CN> (data) · <CN>280 px</CN> (coach)
+          </CodeBlock>
+        </Card>
+        <Card padded className="!p-6">
+          <SubStamp>Rules</SubStamp>
+          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-dim">
+            <li>
+              <strong className="font-bold text-ink">Never on touch.</strong>{" "}
+              Label tips are mouse-only — surface the label inline on mobile.
+            </li>
+            <li>
+              <strong className="font-bold text-ink">
+                Always above first.
+              </strong>{" "}
+              Flip below only if clipped by viewport top.
+            </li>
+            <li>
+              <strong className="font-bold text-ink">
+                One tooltip on screen.
+              </strong>{" "}
+              Opening a new one immediately closes the previous.
+            </li>
+            <li>
+              <strong className="font-bold text-ink">
+                No links inside label or data tips.
+              </strong>{" "}
+              Tap targets only in coach marks.
+            </li>
+            <li>
+              <strong className="font-bold text-ink">
+                Don't tip the obvious.
+              </strong>{" "}
+              Icons with adjacent text don't need a tooltip.
+            </li>
+          </ul>
         </Card>
       </div>
     </Section>
   );
 }
 
+function cap(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /* -------- 20 · TOASTS -------- */
 
-export function ToastsSection() {
-  const [count, setCount] = useState(0);
+// Neutral glyph (three horizontal lines) — the Toast component ships
+// info/success/warning/danger; "neutral" comes from passing a custom
+// glyph + relying on the default info chrome.
+function NeutralGlyph() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 16 16">
+      <path
+        d="M 2 4 L 14 4 M 2 8 L 14 8 M 2 12 L 14 12"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
+export function ToastsSection() {
   return (
     <Section
       id="toasts"
       num="20 · Component · Toasts"
-      title="Transient, dismissable."
+      title={
+        <>
+          Transient,
+          <br />
+          top-right.
+        </>
+      }
       intro={
         <>
-          Toasts confirm a transient outcome — saved, copied, sent. Pair with a
-          headless queue (sonner / custom) for stacking. Anything that needs to
-          persist until the user acts is an Alert, not a toast.
+          For ephemeral feedback after a user action: GPX exported, hazard
+          reported, ride synced, photo uploaded. Slides in from the right of the
+          viewport, auto-dismisses after 4 s, max 3 stacked. Toasts{" "}
+          <em>never</em> carry critical info — if the user must respond to it,
+          it's an alert.
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-3.5">
-        <Toast
-          intent="success"
-          title="Itinerary pushed"
-          actionLabel="UNDO"
-          onAction={() => {}}
-          onClose={() => {}}
-          showProgress
-        >
-          All 4 days are now on Luca's iPhone 16 Pro.
-        </Toast>
-        <Toast
-          intent="info"
-          title="Copied share link"
-          onClose={() => {}}
-          showProgress
-        >
-          tarmoto.app/r/alps-loop-04
-        </Toast>
-        <Toast
-          intent="warning"
-          title="GPS signal weak"
-          actionLabel="DETAILS"
-          onAction={() => {}}
-          onClose={() => {}}
-        >
-          Switching to estimated position for the next 200 m.
-        </Toast>
-        <Toast intent="danger" title="Sync failed" onClose={() => {}}>
-          We'll keep retrying in the background.
-        </Toast>
+      {/* Live region demo — paper-tinted card with toasts pinned top-right */}
+      <Card padded={false} className="relative min-h-[340px] bg-paper">
+        <div className="px-5 py-5 font-mono text-[10px] font-bold uppercase tracking-[1px] text-fg-mute">
+          TOAST REGION · top: 20 · right: 20 · width: 360
+        </div>
+        <div className="absolute right-5 top-[60px] flex w-[360px] flex-col gap-2.5">
+          <Toast
+            intent="success"
+            title="GPX exported"
+            actionLabel="Open"
+            onAction={() => {}}
+            onClose={() => {}}
+            showProgress
+          >
+            Alps_Loop_Day_1.gpx · 218 KB
+          </Toast>
+          <Toast
+            intent="info"
+            glyph={<NeutralGlyph />}
+            title="Ride synced from iPhone"
+            onClose={() => {}}
+            showProgress
+          >
+            Stelvio Loop · 186 km · 4h 12m
+          </Toast>
+          <Toast
+            intent="danger"
+            title="Couldn't push to phone"
+            actionLabel="Retry now"
+            onAction={() => {}}
+            onClose={() => {}}
+            showProgress
+          >
+            Phone unreachable for 6 minutes. We'll retry automatically.
+          </Toast>
+        </div>
+      </Card>
+
+      {/* Anatomy + Geometry */}
+      <div className="mt-7 grid grid-cols-2 gap-[22px]">
+        <Card padded={false}>
+          <div className="border-b border-line px-[18px] py-4">
+            <SubStamp>Anatomy</SubStamp>
+          </div>
+          <div className="bg-paper px-6 py-6">
+            <div className="mx-auto max-w-[360px]">
+              <Toast
+                intent="success"
+                title="GPX exported"
+                actionLabel="Open"
+                onAction={() => {}}
+                onClose={() => {}}
+                showProgress
+              >
+                Alps_Loop_Day_1.gpx · 218 KB
+              </Toast>
+            </div>
+          </div>
+          <div className="border-t border-line px-[18px] py-3.5 text-[12px] leading-[1.6] text-fg-dim">
+            <strong className="font-bold text-ink">Glyph</strong> 14 px · intent
+            color · <strong className="font-bold text-ink">Body</strong> title
+            13/700 ink + text 12/fg-dim ·{" "}
+            <strong className="font-bold text-ink">Action</strong> optional,
+            mono link-style ·{" "}
+            <strong className="font-bold text-ink">Close</strong> 16 px ×
+            fg-mute · <strong className="font-bold text-ink">Progress</strong> 2
+            px bar, draining 4 s linear
+          </div>
+        </Card>
+        <Card padded className="!p-6">
+          <SubStamp>Geometry</SubStamp>
+          <CodeBlock>
+            <span className="text-cream">background: </span>
+            <CN>--cream</CN>
+            {"\n"}
+            <span className="text-cream">border: </span>
+            <CN>1 px --line-strong</CN>
+            {"\n"}
+            <span className="text-cream">radius: </span>
+            <CN>10</CN>
+            {"\n"}
+            <span className="text-cream">padding: </span>
+            <CN>12 / 14</CN>
+            {"\n"}
+            <span className="text-cream">shadow: </span>
+            <CN>0 12 32 ink @ 12%</CN>
+            {"\n"}
+            <span className="text-cream">width: </span>
+            <CN>360 px</CN> (max <CN>420</CN>){"\n"}
+            <span className="text-cream">gap (stack): </span>
+            <CN>10 px</CN>
+            {"\n"}
+            <span className="text-cream">slide-in: </span>
+            <CN>translateX(20) → 0 · 180 ms</CN>
+            {"\n"}
+            <span className="text-cream">auto-dismiss: </span>
+            <CN>4 s</CN> default · <CN>6 s</CN> danger
+            {"\n"}
+            <span className="text-cream">on-hover: </span>
+            <CN>pause timer</CN>
+          </CodeBlock>
+        </Card>
       </div>
 
+      {/* Intents */}
       <div className="mt-7">
-        <SubStamp>Live trigger</SubStamp>
-        <div className="flex items-center gap-3">
-          <Button onClick={() => setCount((n) => n + 1)}>Fire a toast</Button>
-          <Mono className="text-[11px] text-fg-dim">
-            Fired {count} {count === 1 ? "time" : "times"}
-          </Mono>
-        </div>
-        <p className="mt-3 text-[13px] leading-[1.55] text-fg-dim">
-          The Toast component is presentational only — wire it into your own
-          queue + auto-dismiss timing. The 4-second progress bar is a built-in
-          animation; combine it with{" "}
-          <Mono className="text-ink">setTimeout</Mono> for actual removal.
-        </p>
+        <SubStamp>Intents</SubStamp>
+        <TokenTable
+          columns={[
+            { label: "Intent", size: "120px" },
+            { label: "Glyph" },
+            { label: "Progress" },
+            { label: "Lifetime" },
+            { label: "Use" },
+          ]}
+          rows={[
+            [
+              <Mono key="0">success</Mono>,
+              <Mono key="1">check · Q5</Mono>,
+              <Mono key="2">Q5</Mono>,
+              <Mono key="3">4 s</Mono>,
+              "Action completed",
+            ],
+            [
+              <Mono key="0">neutral</Mono>,
+              <Mono key="1">lines · fg-dim</Mono>,
+              <Mono key="2">--ink</Mono>,
+              <Mono key="3">4 s</Mono>,
+              "Sync, background update",
+            ],
+            [
+              <Mono key="0">warning</Mono>,
+              <Mono key="1">triangle · accent</Mono>,
+              <Mono key="2">--accent</Mono>,
+              <Mono key="3">5 s</Mono>,
+              "Recoverable problem",
+            ],
+            [
+              <Mono key="0">danger</Mono>,
+              <Mono key="1">x-circle · Q1</Mono>,
+              <Mono key="2">--q1</Mono>,
+              <Mono key="3">6 s</Mono>,
+              "Action failed, retryable",
+            ],
+          ]}
+        />
       </div>
+
+      {/* Do / Don't */}
+      <DoDontGrid
+        className="mt-7"
+        left={[
+          {
+            kind: "do",
+            title: "Confirm the verb.",
+            body: "“GPX exported.” “Ride synced.” “Bike added.” Past-tense, declarative, no period needed.",
+          },
+          {
+            kind: "do",
+            title: "Pause on hover.",
+            body: "If the user hovers a toast, freeze the progress bar. Resume on mouse-leave. They might want to read it twice.",
+          },
+          {
+            kind: "do",
+            title: "Cap at 3 stacked.",
+            body: "When a fourth arrives, oldest slides out left.",
+          },
+        ]}
+        right={[
+          {
+            kind: "dont",
+            title: "Don't put critical info in a toast.",
+            body: "A toast can disappear. “Stelvio closed Oct 31” is an alert; “Itinerary pushed” is a toast.",
+          },
+          {
+            kind: "dont",
+            title: "Don't use a toast for a long story.",
+            body: "Two lines max — title + sub. If you need more, link to it from the toast action.",
+          },
+          {
+            kind: "dont",
+            title: "Don't toast on every interaction.",
+            body: "Reserve for actions that left the page — a save the user can't see, a sync that happened elsewhere. Inline changes don't need a toast.",
+          },
+        ]}
+      />
     </Section>
   );
 }

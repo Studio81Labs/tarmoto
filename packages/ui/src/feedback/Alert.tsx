@@ -8,11 +8,18 @@ import { cn } from "../utils/cn";
  */
 export type AlertIntent = "info" | "success" | "warning" | "danger" | "neutral";
 
+// Container/stripe/glyph palettes match the source `.alert.alert-*`
+// intent rules — see the "Intent → tokens" table in §18:
+//   success: stripe --q5, glyph --q5, bg Q5 @ 12 %
+//   warning: stripe --accent, glyph --accent, bg accent @ 10 %
+//   danger:  stripe --q1, glyph --q1, bg Q1 @ 10 %, title --q1
+//   neutral: stripe --fg-mute, glyph --fg-dim, bg --paper-2
+//   info:    stripe --ink, glyph --ink, bg --paper
 const containerClass: Record<AlertIntent, string> = {
   info: "bg-paper border-line",
   success: "bg-quality-q5/12 border-quality-q5/40",
-  warning: "bg-accent/8 border-accent/35",
-  danger: "bg-quality-q1/8 border-quality-q1/40",
+  warning: "bg-accent/10 border-accent/35",
+  danger: "bg-quality-q1/10 border-quality-q1/40",
   neutral: "bg-paper-2 border-line",
 };
 
@@ -26,7 +33,7 @@ const stripeClass: Record<AlertIntent, string> = {
 
 const glyphClass: Record<AlertIntent, string> = {
   info: "text-ink",
-  success: "text-[#2E8B4F]",
+  success: "text-quality-q5",
   warning: "text-accent",
   danger: "text-quality-q1",
   neutral: "text-fg-dim",
@@ -40,11 +47,17 @@ const titleClass: Record<AlertIntent, string> = {
   neutral: "text-ink",
 };
 
-function defaultGlyph(intent: AlertIntent): ReactNode {
+// Glyph size: 14×14 inside the full alert's 24×24 slot, 12×12 inside the
+// compact alert's 18×18 slot. Compact glyphs drop the inner detail (no
+// exclamation mark inside the warning triangle, no `i` stroke inside the
+// info circle) so the smaller outline stays legible — this matches the
+// source `alert-compact` rendering.
+function defaultGlyph(intent: AlertIntent, compact = false): ReactNode {
+  const size = compact ? 12 : 14;
   switch (intent) {
     case "success":
       return (
-        <svg viewBox="0 0 16 16" width={14} height={14}>
+        <svg viewBox="0 0 16 16" width={size} height={size}>
           <path
             d="M 3 8.5 L 6.5 12 L 13 4.5"
             stroke="currentColor"
@@ -57,7 +70,7 @@ function defaultGlyph(intent: AlertIntent): ReactNode {
       );
     case "warning":
       return (
-        <svg viewBox="0 0 16 16" width={14} height={14}>
+        <svg viewBox="0 0 16 16" width={size} height={size}>
           <path
             d="M 8 1 L 15 14 L 1 14 Z"
             fill="none"
@@ -65,18 +78,22 @@ function defaultGlyph(intent: AlertIntent): ReactNode {
             strokeWidth={1.5}
             strokeLinejoin="round"
           />
-          <path
-            d="M 8 6 L 8 10"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-          />
-          <circle cx="8" cy="12" r="0.8" fill="currentColor" />
+          {!compact && (
+            <>
+              <path
+                d="M 8 6 L 8 10"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+              />
+              <circle cx="8" cy="12" r="0.8" fill="currentColor" />
+            </>
+          )}
         </svg>
       );
     case "danger":
       return (
-        <svg viewBox="0 0 16 16" width={14} height={14}>
+        <svg viewBox="0 0 16 16" width={size} height={size}>
           <circle
             cx="8"
             cy="8"
@@ -95,7 +112,7 @@ function defaultGlyph(intent: AlertIntent): ReactNode {
       );
     case "neutral":
       return (
-        <svg viewBox="0 0 16 16" width={14} height={14}>
+        <svg viewBox="0 0 16 16" width={size} height={size}>
           <rect
             x={2}
             y={3}
@@ -116,7 +133,7 @@ function defaultGlyph(intent: AlertIntent): ReactNode {
     case "info":
     default:
       return (
-        <svg viewBox="0 0 16 16" width={14} height={14}>
+        <svg viewBox="0 0 16 16" width={size} height={size}>
           <circle
             cx="8"
             cy="8"
@@ -125,13 +142,17 @@ function defaultGlyph(intent: AlertIntent): ReactNode {
             stroke="currentColor"
             strokeWidth={1.5}
           />
-          <circle cx="8" cy="4.5" r="1" fill="currentColor" />
-          <path
-            d="M 8 7 L 8 12"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-          />
+          {!compact && (
+            <>
+              <circle cx="8" cy="4.5" r="1" fill="currentColor" />
+              <path
+                d="M 8 7 L 8 12"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+              />
+            </>
+          )}
         </svg>
       );
   }
@@ -158,16 +179,45 @@ export function Alert({
   glyph,
   className,
 }: AlertProps) {
+  if (compact) {
+    // Compact alerts are an inline single-line variant: bold title runs
+    // INLINE with the body (no separate title/body blocks), 12 px font,
+    // 12 px glyph, no fg-dim treatment on body. Matches the source
+    // `alert.alert-compact` rendering used inside cards (§18 inline alert).
+    return (
+      <div
+        role="status"
+        className={cn(
+          // Compact mode has no left stripe — the source markup renders just
+          // glyph + inline text inside a tinted card. The stripe is reserved
+          // for the full-anatomy alert that stands on its own.
+          "flex items-center gap-2 rounded-lg border px-3 py-2.5",
+          containerClass[intent],
+          className,
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "grid size-3 shrink-0 place-items-center",
+            glyphClass[intent],
+          )}
+        >
+          {glyph ?? defaultGlyph(intent, true)}
+        </span>
+        <div className={cn("text-[12px] leading-[1.5]", titleClass[intent])}>
+          <strong className="font-bold">{title}</strong>
+          {children && <> {children}</>}
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       role="status"
       className={cn(
-        "relative grid items-center gap-3 border",
-        compact
-          ? "grid-cols-[18px_1fr] rounded-lg py-2.5 pl-[22px] pr-3.5"
-          : action
-            ? "grid-cols-[24px_1fr_auto] rounded-[12px] py-3.5 pl-[26px] pr-[18px]"
-            : "grid-cols-[24px_1fr] rounded-[12px] py-3.5 pl-[26px] pr-[18px]",
+        "relative grid items-center gap-3 border rounded-[12px] py-3.5 pl-[26px] pr-[18px]",
+        action ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[24px_1fr]",
         containerClass[intent],
         className,
       )}
@@ -175,20 +225,13 @@ export function Alert({
       <span
         aria-hidden="true"
         className={cn(
-          "absolute rounded-[2px]",
-          compact
-            ? "left-1.5 top-1.5 bottom-1.5 w-[3px]"
-            : "left-2 top-2 bottom-2 w-1",
+          "absolute left-2 top-2 bottom-2 w-1 rounded-[2px]",
           stripeClass[intent],
         )}
       />
       <span
         aria-hidden="true"
-        className={cn(
-          "grid place-items-center",
-          compact ? "size-[18px]" : "size-6",
-          glyphClass[intent],
-        )}
+        className={cn("grid size-6 place-items-center", glyphClass[intent])}
       >
         {glyph ?? defaultGlyph(intent)}
       </span>
@@ -207,7 +250,7 @@ export function Alert({
           </div>
         )}
       </div>
-      {action && !compact && <div className="justify-self-end">{action}</div>}
+      {action && <div className="justify-self-end">{action}</div>}
     </div>
   );
 }

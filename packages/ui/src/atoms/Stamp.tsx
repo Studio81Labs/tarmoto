@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import { cn } from "../utils/cn";
 
 /**
- * ALL-CAPS technical label. JetBrains Mono · 11px · 1.5 letter-spacing.
- * Spec: Web App v2 Design Map · §07 Atoms.
+ * ALL-CAPS technical label. JetBrains Mono · 11px · 1.6 letter-spacing.
+ * Spec: Web App v2 Design Map · §07 Atoms (source `.stamp` rule:
+ * `letter-spacing: 1.6px`).
  */
 export interface StampProps {
   children: ReactNode;
@@ -21,7 +22,7 @@ export function Stamp({
   return (
     <Tag
       className={cn(
-        "font-mono text-[11px] font-bold uppercase tracking-[1.5px] leading-none",
+        "font-mono text-[11px] font-bold uppercase tracking-[1.6px] leading-none",
         tone === "dim" && "text-fg-dim",
         tone === "ink" && "text-ink",
         tone === "accent" && "text-accent",
