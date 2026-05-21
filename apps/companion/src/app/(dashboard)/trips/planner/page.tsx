@@ -1036,7 +1036,7 @@ export default function TripPlannerPage() {
                     type="button"
                     onClick={() => handleSelectOption(option)}
                     disabled={isGenerating}
-                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                    className={`rounded-[14px] border px-4 py-3 text-left transition ${
                       option.id === selectedOptionId
                         ? "border-accent bg-accent/10"
                         : "border-line bg-cream/60 hover:border-line-strong"
