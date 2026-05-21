@@ -1,6 +1,6 @@
 import { Section, SubStamp } from "../Section";
 import { Card, Mono, Stamp, palette, qualityColors } from "@tarmoto/ui";
-import { CodeBlock, ColorDot, TokenTable } from "./_shared";
+import { ColorDot, TokenTable } from "./_shared";
 
 /* ============================================================
  * 01 · COLOR SURFACES

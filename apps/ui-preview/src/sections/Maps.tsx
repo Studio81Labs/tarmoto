@@ -18,7 +18,7 @@ import {
   WaypointGlyph,
   palette,
 } from "@tarmoto/ui";
-import { CodeBlock, ColorDot, TokenTable } from "./_shared";
+import { CodeBlock, TokenTable } from "./_shared";
 
 /* ============================================================
  * 21 · MAP VOCABULARY (source §17)

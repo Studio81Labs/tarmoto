@@ -345,11 +345,17 @@ export function CollaboratorCursor({
   size = 60,
   className,
 }: MapGlyphProps & { name?: string; color?: string }) {
+  // Tag pill width scales with the name; the viewBox must grow with it
+  // so longer collaborator names don't get clipped at the right edge.
+  // Base layout uses x=24 for the rect with 4 px right margin inside the
+  // viewport; reference geometry (size=60) yields width=84 for short names.
+  const tagWidth = Math.max(48, name.length * 8 + 14);
+  const viewportWidth = Math.max(84, 24 + tagWidth + 4);
   return (
     <svg
-      width={size * 1.4}
+      width={(size * viewportWidth) / 60}
       height={size * 0.8}
-      viewBox="0 0 84 48"
+      viewBox={`0 0 ${viewportWidth} 48`}
       aria-hidden="true"
       className={className}
     >
@@ -364,7 +370,7 @@ export function CollaboratorCursor({
         y="10"
         rx="4"
         ry="4"
-        width={Math.max(48, name.length * 8 + 14)}
+        width={tagWidth}
         height="18"
         fill={color}
       />
@@ -387,10 +393,23 @@ export function CollaboratorCursor({
 /**
  * North arrow + scale bar combo · drawn directly into the map SVG.
  * Renders both stacked for the overlay legend / compass corner.
+ *
+ * SVG strokes/fills use `currentColor`, so the overlay legibility is
+ * driven by CSS text color. Default is ink at ~62 % opacity (matches
+ * the cream/paper map surfaces in §22). Pass `onDark` for ink/satellite
+ * map modes where ink would disappear into the dark background.
  */
-export function CompassScale({ className }: { className?: string }): ReactNode {
+export function CompassScale({
+  className,
+  onDark = false,
+}: {
+  className?: string;
+  onDark?: boolean;
+}): ReactNode {
+  const rootTone = onDark ? "text-cream/[0.62]" : "text-ink/[0.62]";
+  const labelTone = onDark ? "text-cream/60" : "text-fg-dim";
   return (
-    <div className={`flex items-center gap-6 ${className ?? ""}`}>
+    <div className={`flex items-center gap-6 ${rootTone} ${className ?? ""}`}>
       <div className="relative size-[60px]">
         <svg viewBox="0 0 60 60" className="size-full">
           <circle
@@ -398,18 +417,15 @@ export function CompassScale({ className }: { className?: string }): ReactNode {
             cy="30"
             r="22"
             fill="none"
-            stroke="rgba(14,14,16,0.62)"
+            stroke="currentColor"
             strokeWidth="1"
           />
-          <path
-            d="M 30 14 L 24 36 L 30 30 L 36 36 Z"
-            fill="rgba(14,14,16,0.62)"
-          />
+          <path d="M 30 14 L 24 36 L 30 30 L 36 36 Z" fill="currentColor" />
           <text
             x="30"
             y="10"
             textAnchor="middle"
-            fill="rgba(14,14,16,0.62)"
+            fill="currentColor"
             style={{
               fontFamily: "JetBrains Mono, monospace",
               fontSize: 9,
@@ -427,7 +443,7 @@ export function CompassScale({ className }: { className?: string }): ReactNode {
             y1="6"
             x2="96"
             y2="6"
-            stroke="rgba(14,14,16,0.62)"
+            stroke="currentColor"
             strokeWidth="2"
           />
           <line
@@ -435,7 +451,7 @@ export function CompassScale({ className }: { className?: string }): ReactNode {
             y1="2"
             x2="4"
             y2="10"
-            stroke="rgba(14,14,16,0.62)"
+            stroke="currentColor"
             strokeWidth="2"
           />
           <line
@@ -443,7 +459,7 @@ export function CompassScale({ className }: { className?: string }): ReactNode {
             y1="3"
             x2="50"
             y2="9"
-            stroke="rgba(14,14,16,0.62)"
+            stroke="currentColor"
             strokeWidth="1.5"
           />
           <line
@@ -451,11 +467,11 @@ export function CompassScale({ className }: { className?: string }): ReactNode {
             y1="2"
             x2="96"
             y2="10"
-            stroke="rgba(14,14,16,0.62)"
+            stroke="currentColor"
             strokeWidth="2"
           />
         </svg>
-        <span className="font-mono text-[10px] tracking-[1px] text-fg-dim">
+        <span className={`font-mono text-[10px] tracking-[1px] ${labelTone}`}>
           10 KM
         </span>
       </div>
