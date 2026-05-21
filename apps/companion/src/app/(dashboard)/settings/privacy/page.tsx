@@ -3,10 +3,9 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2, Shield } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Stamp } from "@/components/tarmoto/atoms";
+import { Card, PageHeader, Stamp, Toggle } from "@tarmoto/ui";
 import type {
   LocationRetention,
   PrivacySettings,
@@ -23,19 +22,10 @@ import {
   type PartialPrivacySettings,
 } from "@/lib/privacy-settings";
 type SaveState =
-  | {
-      kind: "idle";
-    }
-  | {
-      kind: "saving";
-    }
-  | {
-      kind: "saved";
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved" }
+  | { kind: "error"; message: string };
 export default function PrivacyPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -123,25 +113,23 @@ export default function PrivacyPage() {
   }
   if (loading) {
     return (
-      <div className="p-6 max-w-page mx-auto">
+      <div className="mx-auto w-full max-w-page p-7">
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
-          {t("Loading settings\u2026 ")}
+          {t("Loading settings… ")}
         </div>
       </div>
     );
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
-        >
-          <ArrowLeft size={16} />
-          {t("Settings ")}
-        </Link>
-        <PageHeader icon={Shield} title={t("Privacy & Data")} />
+      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+        <SettingsBackLink />
+        <PageHeader
+          stamp={t("Settings · Privacy")}
+          icon={<Shield size={22} strokeWidth={1.8} />}
+          title={t("Privacy & Data")}
+        />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load settings: ")}
           {loadError}
@@ -150,71 +138,47 @@ export default function PrivacyPage() {
     );
   }
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
-      <Link
-        href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
-      >
-        <ArrowLeft size={16} />
-        {t("Settings ")}
-      </Link>
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <SettingsBackLink />
       <PageHeader
-        icon={Shield}
+        stamp={t("Settings · Privacy")}
+        icon={<Shield size={22} strokeWidth={1.8} />}
         title={t("Privacy & Data")}
-        subtitle={t(
+        sub={t(
           "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses.",
         )}
       />
 
       {/* Profile visibility */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp as="h2" className="block mb-1">
-            {t("Profile visibility ")}
-          </Stamp>
-          <p className="text-xs text-fg-dim">
+          <Stamp className="mb-1 block">{t("Profile visibility ")}</Stamp>
+          <p className="text-[12px] text-fg-dim">
             {t("Who can see your profile, stats, and shared rides. ")}
           </p>
         </div>
         <div
           role="radiogroup"
           aria-label={t("Profile visibility")}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
         >
-          {PROFILE_VISIBILITY_OPTIONS.map((opt) => {
-            const active = settings.profileVisibility === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setProfileVisibility(opt.value)}
-                className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
-                  active
-                    ? "border-ink bg-ink text-cream"
-                    : "border-line bg-paper text-ink hover:border-line-strong"
-                }`}
-              >
-                <span className="text-sm font-semibold">{opt.label}</span>
-                <span
-                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
-                >
-                  {opt.description}
-                </span>
-              </button>
-            );
-          })}
+          {PROFILE_VISIBILITY_OPTIONS.map((opt) => (
+            <RadioOption
+              key={opt.value}
+              active={settings.profileVisibility === opt.value}
+              label={opt.label}
+              description={opt.description}
+              onClick={() => setProfileVisibility(opt.value)}
+            />
+          ))}
         </div>
-      </section>
+      </Card>
 
       {/* Default ride sharing */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp as="h2" className="block mb-1">
-            {t("Default ride sharing ")}
-          </Stamp>
-          <p className="text-xs text-fg-dim">
+          <Stamp className="mb-1 block">{t("Default ride sharing ")}</Stamp>
+          <p className="text-[12px] text-fg-dim">
             {t(
               "How newly recorded rides are shared. You can always change visibility per ride. ",
             )}
@@ -223,63 +187,46 @@ export default function PrivacyPage() {
         <div
           role="radiogroup"
           aria-label={t("Default ride sharing")}
-          className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
         >
-          {RIDE_SHARING_OPTIONS.map((opt) => {
-            const active = settings.defaultRideSharing === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setRideSharing(opt.value)}
-                className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
-                  active
-                    ? "border-ink bg-ink text-cream"
-                    : "border-line bg-paper text-ink hover:border-line-strong"
-                }`}
-              >
-                <span className="text-sm font-semibold">{opt.label}</span>
-                <span
-                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
-                >
-                  {opt.description}
-                </span>
-              </button>
-            );
-          })}
+          {RIDE_SHARING_OPTIONS.map((opt) => (
+            <RadioOption
+              key={opt.value}
+              active={settings.defaultRideSharing === opt.value}
+              label={opt.label}
+              description={opt.description}
+              onClick={() => setRideSharing(opt.value)}
+            />
+          ))}
         </div>
-      </section>
+      </Card>
 
       {/* Road data contribution */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-4 p-[22px]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-ink">
+            <p className="text-[14px] font-semibold text-ink">
               {t("Contribute to road quality data ")}
             </p>
-            <p className="text-xs text-fg-dim mt-0.5">
+            <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
                 "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ",
               )}
             </p>
           </div>
           <Toggle
-            label="Road data contribution"
-            enabled={settings.roadDataContribution}
-            onToggle={toggleRoadData}
+            checked={settings.roadDataContribution}
+            onChange={toggleRoadData}
+            ariaLabel="Road data contribution"
           />
         </div>
-      </section>
+      </Card>
 
       {/* Location retention */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp as="h2" className="block mb-1">
-            {t("Location data retention ")}
-          </Stamp>
-          <p className="text-xs text-fg-dim">
+          <Stamp className="mb-1 block">{t("Location data retention ")}</Stamp>
+          <p className="text-[12px] text-fg-dim">
             {t(
               "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
             )}
@@ -288,138 +235,160 @@ export default function PrivacyPage() {
         <div
           role="radiogroup"
           aria-label={t("Location data retention")}
-          className="grid grid-cols-2 sm:grid-cols-5 gap-2"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-5"
         >
-          {LOCATION_RETENTION_OPTIONS.map((opt) => {
-            const active = settings.locationRetention === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setLocationRetention(opt.value)}
-                className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
-                  active
-                    ? "border-ink bg-ink text-cream"
-                    : "border-line bg-paper text-ink hover:border-line-strong"
-                }`}
-              >
-                <span className="text-sm font-semibold">{opt.label}</span>
-                {opt.description && (
-                  <span
-                    className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
-                  >
-                    {opt.description}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {LOCATION_RETENTION_OPTIONS.map((opt) => (
+            <RadioOption
+              key={opt.value}
+              active={settings.locationRetention === opt.value}
+              label={opt.label}
+              description={opt.description}
+              onClick={() => setLocationRetention(opt.value)}
+            />
+          ))}
         </div>
-      </section>
+      </Card>
 
       {/* Data processing consent */}
-      <section className="rounded-2xl bg-cream border border-line divide-y divide-line mb-6">
+      <Card padded={false} className="mb-6 divide-y divide-line">
         <header className="px-5 py-4">
-          <Stamp as="h2" className="block mb-1">
-            {t("Data processing consent ")}
-          </Stamp>
-          <p className="text-xs text-fg-dim">
+          <Stamp className="mb-1 block">{t("Data processing consent ")}</Stamp>
+          <p className="text-[12px] text-fg-dim">
             {t(
               "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
             )}
           </p>
         </header>
 
-        <div className="px-5 py-4 flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 px-5 py-4">
           <div>
-            <p className="text-sm font-semibold text-ink">
+            <p className="text-[14px] font-semibold text-ink">
               {t("Product analytics")}
             </p>
-            <p className="text-xs text-fg-dim mt-0.5">
+            <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
                 "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage). ",
               )}
             </p>
           </div>
           <Toggle
-            label="Product analytics consent"
-            enabled={settings.analyticsConsent}
-            onToggle={toggleAnalytics}
+            checked={settings.analyticsConsent}
+            onChange={toggleAnalytics}
+            ariaLabel="Product analytics consent"
           />
         </div>
 
-        <div className="px-5 py-4 flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 px-5 py-4">
           <div>
-            <p className="text-sm font-semibold text-ink">
+            <p className="text-[14px] font-semibold text-ink">
               {t("Personalized recommendations ")}
             </p>
-            <p className="text-xs text-fg-dim mt-0.5">
+            <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
                 "Use your riding history to suggest routes, roads, and riders you may enjoy. ",
               )}
             </p>
           </div>
           <Toggle
-            label="Personalized recommendations consent"
-            enabled={settings.personalizedRecommendationsConsent}
-            onToggle={togglePersonalized}
+            checked={settings.personalizedRecommendationsConsent}
+            onChange={togglePersonalized}
+            ariaLabel="Personalized recommendations consent"
           />
         </div>
-      </section>
+      </Card>
 
-      {/* Save bar */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={save}
-          disabled={!isDirty || saveState.kind === "saving"}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saveState.kind === "saving" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              {t("Saving\u2026 ")}
-            </>
-          ) : (
-            "Save preferences"
-          )}
-        </button>
-
-        {saveState.kind === "saved" && !isDirty && (
-          <span className="inline-flex items-center gap-1 text-sm text-accent">
-            <Check size={14} />
-            {t("Saved ")}
-          </span>
-        )}
-        {saveState.kind === "error" && (
-          <span className="text-sm text-red-400">{saveState.message}</span>
-        )}
-        {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-fg-mute">{t("Unsaved changes")}</span>
-        )}
-      </div>
+      <SaveBar isDirty={isDirty} saveState={saveState} onSave={save} />
     </div>
   );
 }
-interface ToggleProps {
-  enabled: boolean;
-  onToggle: () => void;
-  label: string;
+
+function SettingsBackLink() {
+  return (
+    <Link
+      href="/settings"
+      className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
+    >
+      <ArrowLeft size={14} />
+      {t("Settings ")}
+    </Link>
+  );
 }
-function Toggle({ enabled, onToggle, label }: ToggleProps) {
+
+interface RadioOptionProps {
+  active: boolean;
+  label: string;
+  description?: string;
+  onClick: () => void;
+}
+function RadioOption({
+  active,
+  label,
+  description,
+  onClick,
+}: RadioOptionProps) {
   return (
     <button
       type="button"
-      onClick={onToggle}
-      aria-pressed={enabled}
-      aria-label={label}
-      className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 flex-shrink-0 ${enabled ? "bg-ink" : "bg-ink/12"}`}
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className={
+        active
+          ? "flex flex-col items-start gap-0.5 rounded-lg border border-ink bg-ink px-3 py-2.5 text-left text-cream transition"
+          : "flex flex-col items-start gap-0.5 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-ink transition hover:border-line-strong"
+      }
     >
-      <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full transform transition-transform ${enabled ? "bg-accent left-0.5 translate-x-4" : "bg-cream left-0.5"}`}
-      />
+      <span className="text-[14px] font-semibold">{label}</span>
+      {description && (
+        <span
+          className={
+            active
+              ? "text-[12px] text-fg-on-dark-dim"
+              : "text-[12px] text-fg-dim"
+          }
+        >
+          {description}
+        </span>
+      )}
     </button>
+  );
+}
+
+interface SaveBarProps {
+  isDirty: boolean;
+  saveState: SaveState;
+  onSave: () => void;
+}
+function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={!isDirty || saveState.kind === "saving"}
+        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saveState.kind === "saving" ? (
+          <>
+            <Loader2 size={14} className="animate-spin" />
+            {t("Saving… ")}
+          </>
+        ) : (
+          t("Save preferences")
+        )}
+      </button>
+      {saveState.kind === "saved" && !isDirty && (
+        <span className="inline-flex items-center gap-1 text-[13px] text-accent">
+          <Check size={14} />
+          {t("Saved ")}
+        </span>
+      )}
+      {saveState.kind === "error" && (
+        <span className="text-[13px] text-red-400">{saveState.message}</span>
+      )}
+      {isDirty && saveState.kind !== "saving" && (
+        <span className="text-[13px] text-fg-mute">{t("Unsaved changes")}</span>
+      )}
+    </div>
   );
 }

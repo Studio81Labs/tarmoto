@@ -10,10 +10,9 @@ import {
   Mail,
   Smartphone,
 } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Stamp } from "@/components/tarmoto/atoms";
+import { Card, PageHeader, Stamp, Toggle } from "@tarmoto/ui";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   EMAIL_DIGEST_OPTIONS,
@@ -28,19 +27,10 @@ import {
   type VisibleNotificationCategory,
 } from "@/lib/notification-preferences";
 type SaveState =
-  | {
-      kind: "idle";
-    }
-  | {
-      kind: "saving";
-    }
-  | {
-      kind: "saved";
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved" }
+  | { kind: "error"; message: string };
 type CategoryChannel = Extract<
   keyof NotificationChannelToggles,
   "email" | "push"
@@ -56,8 +46,8 @@ export default function NotificationsPage() {
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   // Wait for the auth store to carry a token before fetching — same
-  // hard-navigation race fix as the privacy / subscription / trip
-  // detail pages.
+  // hard-navigation race fix as the privacy / subscription / trip detail
+  // pages.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!authReady) return;
@@ -136,25 +126,23 @@ export default function NotificationsPage() {
   }
   if (loading) {
     return (
-      <div className="p-6 max-w-page mx-auto">
+      <div className="mx-auto w-full max-w-page p-7">
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
-          {t("Loading preferences\u2026 ")}
+          {t("Loading preferences… ")}
         </div>
       </div>
     );
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
-        >
-          <ArrowLeft size={16} />
-          {t("Settings ")}
-        </Link>
-        <PageHeader icon={Bell} title={t("Notifications")} />
+      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+        <SettingsBackLink />
+        <PageHeader
+          stamp={t("Settings · Notifications")}
+          icon={<Bell size={22} strokeWidth={1.8} />}
+          title={t("Notifications")}
+        />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load preferences: ")}
           {loadError}
@@ -163,29 +151,22 @@ export default function NotificationsPage() {
     );
   }
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
-      <Link
-        href="/settings"
-        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
-      >
-        <ArrowLeft size={16} />
-        {t("Settings ")}
-      </Link>
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <SettingsBackLink />
       <PageHeader
-        icon={Bell}
+        stamp={t("Settings · Notifications")}
+        icon={<Bell size={22} strokeWidth={1.8} />}
         title={t("Notifications")}
-        subtitle={t(
+        sub={t(
           "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app.",
         )}
       />
 
       {/* Email digest */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp as="h2" className="block mb-1">
-            {t("Email digest")}
-          </Stamp>
-          <p className="text-xs text-fg-dim">
+          <Stamp className="mb-1 block">{t("Email digest")}</Stamp>
+          <p className="text-[12px] text-fg-dim">
             {t("Summary of your riding stats and community activity. ")}
           </p>
         </div>
@@ -203,15 +184,19 @@ export default function NotificationsPage() {
                 role="radio"
                 aria-checked={active}
                 onClick={() => setDigest(opt.value)}
-                className={`flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-lg border text-left transition ${
+                className={
                   active
-                    ? "border-ink bg-ink text-cream"
-                    : "border-line bg-paper text-ink hover:border-line-strong"
-                }`}
+                    ? "flex flex-col items-start gap-0.5 rounded-lg border border-ink bg-ink px-3 py-2.5 text-left text-cream transition"
+                    : "flex flex-col items-start gap-0.5 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-ink transition hover:border-line-strong"
+                }
               >
-                <span className="text-sm font-semibold">{opt.label}</span>
+                <span className="text-[14px] font-semibold">{opt.label}</span>
                 <span
-                  className={`text-xs ${active ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+                  className={
+                    active
+                      ? "text-[12px] text-fg-on-dark-dim"
+                      : "text-[12px] text-fg-dim"
+                  }
                 >
                   {opt.description}
                 </span>
@@ -219,18 +204,18 @@ export default function NotificationsPage() {
             );
           })}
         </div>
-      </section>
+      </Card>
 
       {/* Per-category toggles */}
-      <section className="rounded-2xl bg-cream border border-line divide-y divide-line mb-6">
-        <div className="px-5 py-3 flex items-center">
+      <Card padded={false} className="mb-4 divide-y divide-line">
+        <div className="flex items-center px-5 py-3">
           <Stamp className="flex-1">{t("Notification ")}</Stamp>
           <div className="flex items-center gap-6">
-            <Stamp className="flex items-center gap-1 w-10 justify-center">
+            <Stamp className="flex w-10 items-center justify-center gap-1">
               <Mail size={12} />
               {t("Email ")}
             </Stamp>
-            <Stamp className="flex items-center gap-1 w-10 justify-center">
+            <Stamp className="flex w-10 items-center justify-center gap-1">
               <Smartphone size={12} />
               {t("Push ")}
             </Stamp>
@@ -240,100 +225,105 @@ export default function NotificationsPage() {
           const meta = VISIBLE_CATEGORY_LABELS[category];
           const toggles = prefs.categories[category];
           return (
-            <div key={category} className="px-5 py-4 flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-ink">{meta.label}</p>
-                <p className="text-xs text-fg-dim mt-0.5">{meta.description}</p>
+            <div key={category} className="flex items-center gap-4 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-semibold text-ink">
+                  {meta.label}
+                </p>
+                <p className="mt-0.5 text-[12px] text-fg-dim">
+                  {meta.description}
+                </p>
               </div>
               <div className="flex items-center gap-6">
-                <ChannelToggle
-                  label={`${meta.label} email`}
-                  enabled={toggles.email}
-                  onToggle={() => toggleChannel(category, "email")}
+                <Toggle
+                  checked={toggles.email}
+                  onChange={() => toggleChannel(category, "email")}
+                  ariaLabel={`${meta.label} email`}
                 />
-                <ChannelToggle
-                  label={`${meta.label} push`}
-                  enabled={toggles.push}
-                  onToggle={() => toggleChannel(category, "push")}
+                <Toggle
+                  checked={toggles.push}
+                  onChange={() => toggleChannel(category, "push")}
+                  ariaLabel={`${meta.label} push`}
                 />
               </div>
             </div>
           );
         })}
-      </section>
+      </Card>
 
       {/* Marketing opt-in */}
-      <section className="rounded-2xl bg-cream border border-line p-[22px] mb-6">
+      <Card padded={false} className="mb-6 p-[22px]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-ink">
+            <p className="text-[14px] font-semibold text-ink">
               {t("Marketing emails")}
             </p>
-            <p className="text-xs text-fg-dim mt-0.5">
+            <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ",
+                "Product launches, deals with partners, seasonal riding guides. Opt-in only — off by default. ",
               )}
             </p>
           </div>
-          <ChannelToggle
-            label="Marketing emails"
-            enabled={prefs.marketing_emails}
-            onToggle={toggleMarketing}
+          <Toggle
+            checked={prefs.marketing_emails}
+            onChange={toggleMarketing}
+            ariaLabel="Marketing emails"
           />
         </div>
-      </section>
+      </Card>
 
-      {/* Save bar */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={save}
-          disabled={!isDirty || saveState.kind === "saving"}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saveState.kind === "saving" ? (
-            <>
-              <Loader2 size={14} className="animate-spin" />
-              {t("Saving\u2026 ")}
-            </>
-          ) : (
-            "Save preferences"
-          )}
-        </button>
-
-        {saveState.kind === "saved" && !isDirty && (
-          <span className="inline-flex items-center gap-1 text-sm text-accent">
-            <Check size={14} />
-            {t("Saved ")}
-          </span>
-        )}
-        {saveState.kind === "error" && (
-          <span className="text-sm text-red-400">{saveState.message}</span>
-        )}
-        {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-fg-mute">{t("Unsaved changes")}</span>
-        )}
-      </div>
+      <SaveBar isDirty={isDirty} saveState={saveState} onSave={save} />
     </div>
   );
 }
-interface ChannelToggleProps {
-  enabled: boolean;
-  onToggle: () => void;
-  label: string;
-}
-function ChannelToggle({ enabled, onToggle, label }: ChannelToggleProps) {
+
+function SettingsBackLink() {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={enabled}
-      aria-label={label}
-      className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${enabled ? "bg-ink" : "bg-ink/12"}`}
+    <Link
+      href="/settings"
+      className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
     >
-      <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full transform transition-transform ${enabled ? "bg-accent left-0.5 translate-x-4" : "bg-cream left-0.5"}`}
-      />
-    </button>
+      <ArrowLeft size={14} />
+      {t("Settings ")}
+    </Link>
+  );
+}
+
+interface SaveBarProps {
+  isDirty: boolean;
+  saveState: SaveState;
+  onSave: () => void;
+}
+function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={!isDirty || saveState.kind === "saving"}
+        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saveState.kind === "saving" ? (
+          <>
+            <Loader2 size={14} className="animate-spin" />
+            {t("Saving… ")}
+          </>
+        ) : (
+          t("Save preferences")
+        )}
+      </button>
+      {saveState.kind === "saved" && !isDirty && (
+        <span className="inline-flex items-center gap-1 text-[13px] text-accent">
+          <Check size={14} />
+          {t("Saved ")}
+        </span>
+      )}
+      {saveState.kind === "error" && (
+        <span className="text-[13px] text-red-400">{saveState.message}</span>
+      )}
+      {isDirty && saveState.kind !== "saving" && (
+        <span className="text-[13px] text-fg-mute">{t("Unsaved changes")}</span>
+      )}
+    </div>
   );
 }
