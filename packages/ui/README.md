@@ -32,6 +32,12 @@ That `@theme` import wires `cream`, `ink`, `accent`, `quality-q1…q5`,
 `fg-dim/mute/faint`, `line/line-strong`, plus the Space Grotesk /
 JetBrains Mono / Fraunces font stacks into Tailwind.
 
+`theme.css` also carries `@source` directives so Tailwind v4 scans the
+library's own `.ts`/`.tsx` files when it builds the consumer's CSS —
+without this, any arbitrary utility used only inside a `@tarmoto/ui`
+component (e.g. `py-[5px]` on `Pill`) would be silently dropped from
+the bundle. No further setup is needed in the consumer.
+
 **2) Non-Tailwind consumers:**
 
 ```css

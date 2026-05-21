@@ -14,6 +14,20 @@
    dropped.
    ============================================================= */
 
+/* Tailwind v4 scans the consuming app source by default but does not
+ * follow imports into workspace packages. Without these directives any
+ * arbitrary utility used only inside @tarmoto/ui components (e.g.
+ * py-[5px] on Pill, rounded-[12px] on MapMini, ...) would be missing
+ * from the consumer generated stylesheet.
+ *
+ * @source paths resolve relative to THIS file, so ../**\/*.tsx scans
+ * the package own src/ tree regardless of where node_modules hoists
+ * it -- consumers do not need to know the path. Two lines instead of
+ * a {ts,tsx} brace expansion: the brace form trips Tailwind v4 CSS
+ * parser when the directive lives inside an @import-ed file. */
+@source "../**/*.ts";
+@source "../**/*.tsx";
+
 @theme {
   /* ---------- core palette ---------- */
   --color-cream: #f5efe6;
