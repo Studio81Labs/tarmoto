@@ -16,8 +16,7 @@ import {
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Stamp } from "@/components/tarmoto/atoms";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, Heading, PageHeader, Stamp } from "@tarmoto/ui";
 import {
   buildFallbackSubscriptionSnapshot,
   describeRenewal,
@@ -34,17 +33,9 @@ import {
   type SubscriptionTier,
 } from "@/lib/subscription";
 type LoadState =
-  | {
-      kind: "loading";
-    }
-  | {
-      kind: "loaded";
-      snapshot: SubscriptionSnapshot;
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
+  | { kind: "loading" }
+  | { kind: "loaded"; snapshot: SubscriptionSnapshot }
+  | { kind: "error"; message: string };
 type BillingAction =
   | "portal-manage"
   | "portal-payment-method"
@@ -184,22 +175,23 @@ export default function SubscriptionPage() {
   }
   const billingBusy = actionState.kind !== null;
   return (
-    <div className="mx-auto max-w-page animate-fade-in p-6">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <Link
         href="/settings"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-fg-dim transition hover:text-ink"
+        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft size={14} />
         {t("Settings ")}
       </Link>
 
       <PageHeader
-        icon={CreditCard}
+        stamp={t("Settings · Subscription")}
+        icon={<CreditCard size={22} strokeWidth={1.8} />}
         title={t("Subscription")}
-        subtitle={t(
+        sub={t(
           "Manage your plan, payment method, billing history, and renewal choices from one place.",
         )}
-        action={
+        right={
           snapshot?.portalAvailable ? (
             <button
               type="button"
@@ -210,7 +202,7 @@ export default function SubscriptionPage() {
               {actionState.kind === "portal-manage" ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  {t("Opening billing portal\u2026 ")}
+                  {t("Opening billing portal… ")}
                 </>
               ) : (
                 <>
@@ -224,7 +216,7 @@ export default function SubscriptionPage() {
       />
 
       {actionState.error ? (
-        <div className="mb-6 rounded-2xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
           {actionState.error}
         </div>
       ) : null}
@@ -232,20 +224,20 @@ export default function SubscriptionPage() {
       {state.kind === "loading" ? (
         <LoadingState />
       ) : state.kind === "error" ? (
-        <div className="rounded-2xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {state.message}
         </div>
       ) : snapshot ? (
         <>
           {snapshot.preview ? (
-            <div className="mb-6 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-ink">
+            <div className="mb-6 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-ink">
               {t(
                 "Preview data shown while live billing management is still being wired up. ",
               )}
             </div>
           ) : null}
 
-          <section className="mb-6 grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
+          <section className="mb-4 grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
             <CurrentPlanCard snapshot={snapshot} renewalLabel={renewalLabel} />
             <PaymentMethodCard
               snapshot={snapshot}
@@ -258,8 +250,8 @@ export default function SubscriptionPage() {
             />
           </section>
 
-          <section className="mb-6">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <section className="mb-4">
+            <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
               <Sparkles size={16} className="text-accent" />
               {t("Plan comparison ")}
             </div>
@@ -283,7 +275,7 @@ export default function SubscriptionPage() {
             </div>
           </section>
 
-          <section className="mb-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <section className="mb-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
             <BillingHistoryCard snapshot={snapshot} />
             <CancelPlanCard
               currentTier={snapshot.currentPlan.tier}
@@ -315,17 +307,19 @@ function CurrentPlanCard({
   renewalLabel: string;
 }) {
   const { currentPlan } = snapshot;
+  // Ink hero card per spec — paired with the canonical Card variant so
+  // padding / radius track the design system instead of inline values.
   return (
-    <section className="rounded-3xl border border-ink bg-ink p-6 text-cream">
+    <Card variant="ink" padded={false} className="p-6">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Stamp tone="accent" className="block">
             {t("Current plan ")}
           </Stamp>
           <div className="mt-2 flex items-center gap-3">
-            <h2 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[28px] text-cream">
+            <Heading size="lg" as="h2" className="text-cream">
               {currentPlan.name}
-            </h2>
+            </Heading>
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] ${STATUS_STYLES[currentPlan.status]}`}
             >
@@ -333,7 +327,7 @@ function CurrentPlanCard({
             </span>
           </div>
         </div>
-        <div className="rounded-2xl border border-accent/30 bg-accent/15 px-4 py-3 text-right">
+        <div className="rounded-xl border border-accent/30 bg-accent/15 px-4 py-3 text-right">
           <Stamp tone="accent" className="block">
             {t("Billing ")}
           </Stamp>
@@ -344,20 +338,20 @@ function CurrentPlanCard({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-line-on-dark bg-tarmac/60 p-4">
-          <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-cream">
+        <div className="rounded-xl border border-line-on-dark bg-tarmac/60 p-4">
+          <div className="mb-2 inline-flex items-center gap-2 text-[14px] font-semibold text-cream">
             <CalendarClock size={15} className="text-fg-on-dark-dim" />
             {t("Renewal ")}
           </div>
-          <p className="text-sm text-fg-on-dark-dim">{renewalLabel}</p>
+          <p className="text-[14px] text-fg-on-dark-dim">{renewalLabel}</p>
         </div>
 
-        <div className="rounded-2xl border border-line-on-dark bg-tarmac/60 p-4">
-          <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-cream">
+        <div className="rounded-xl border border-line-on-dark bg-tarmac/60 p-4">
+          <div className="mb-2 inline-flex items-center gap-2 text-[14px] font-semibold text-cream">
             <BadgeCheck size={15} className="text-fg-on-dark-dim" />
             {t("Included right now ")}
           </div>
-          <ul className="space-y-2 text-sm text-fg-on-dark-dim">
+          <ul className="space-y-2 text-[14px] text-fg-on-dark-dim">
             {snapshot.plans
               .find((plan) => plan.tier === currentPlan.tier)
               ?.features.slice(0, 3)
@@ -370,7 +364,7 @@ function CurrentPlanCard({
           </ul>
         </div>
       </div>
-    </section>
+    </Card>
   );
 }
 function PaymentMethodCard({
@@ -386,30 +380,30 @@ function PaymentMethodCard({
 }) {
   const paymentMethod = snapshot.paymentMethod;
   return (
-    <section className="rounded-3xl border border-line bg-cream p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+    <Card padded={false} className="p-6">
+      <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <CreditCard size={16} className="text-fg-mute" />
         {t("Payment method ")}
       </div>
 
       {paymentMethod ? (
-        <div className="rounded-2xl border border-line bg-paper p-4">
-          <p className="text-lg font-semibold text-ink">
+        <div className="rounded-xl border border-line bg-paper p-4">
+          <p className="text-[18px] font-semibold text-ink">
             {formatPaymentMethodLabel(paymentMethod)}
           </p>
-          <p className="mt-1 text-sm text-fg-dim">
+          <p className="mt-1 text-[14px] text-fg-dim">
             {formatPaymentMethodExpiry(paymentMethod)}
           </p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-line-strong bg-paper p-4 text-sm text-fg-dim">
+        <div className="rounded-xl border border-dashed border-line-strong bg-paper p-4 text-[14px] text-fg-dim">
           {t(
             "No payment method on file yet. Upgrades and invoices will appear here once billing is connected. ",
           )}
         </div>
       )}
 
-      <div className="mt-4 space-y-2 text-sm text-fg-dim">
+      <div className="mt-4 space-y-2 text-[14px] text-fg-dim">
         <p>
           {t(
             "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ",
@@ -425,7 +419,7 @@ function PaymentMethodCard({
             {updateBusy ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                {t("Opening payment settings\u2026 ")}
+                {t("Opening payment settings… ")}
               </>
             ) : (
               <>
@@ -442,7 +436,7 @@ function PaymentMethodCard({
           </p>
         )}
       </div>
-    </section>
+    </Card>
   );
 }
 function PlanCard({
@@ -468,25 +462,27 @@ function PlanCard({
     (isCurrent && !portalAvailable);
   return (
     <article
-      className={`rounded-3xl border p-6 ${
+      className={
         isCurrent
-          ? "border-accent/40 bg-accent/10"
+          ? "rounded-[14px] border border-accent/40 bg-accent/10 p-6"
           : plan.highlighted
-            ? "border-accent/30 bg-cream"
-            : "border-line bg-cream"
-      }`}
+            ? "rounded-[14px] border border-accent/30 bg-cream p-6"
+            : "rounded-[14px] border border-line bg-cream p-6"
+      }
     >
       <div className="mb-4">
-        <h3 className="text-lg font-extrabold text-ink">{plan.name}</h3>
+        <Heading size="md" as="h3">
+          {plan.name}
+        </Heading>
         <p className="mt-1 text-2xl font-extrabold text-accent">
           {plan.priceLabel}
         </p>
         {plan.description ? (
-          <p className="mt-2 text-sm text-fg-dim">{plan.description}</p>
+          <p className="mt-2 text-[14px] text-fg-dim">{plan.description}</p>
         ) : null}
       </div>
 
-      <ul className="space-y-2 text-sm text-ink">
+      <ul className="space-y-2 text-[14px] text-ink">
         {plan.features.map((feature) => (
           <li key={feature} className="flex items-start gap-2">
             <Check size={14} className="mt-0.5 shrink-0 text-accent" />
@@ -509,7 +505,7 @@ function PlanCard({
         {actionBusy ? (
           <>
             <Loader2 size={14} className="animate-spin" />
-            {t("Opening\u2026 ")}
+            {t("Opening… ")}
           </>
         ) : (
           <>
@@ -523,14 +519,14 @@ function PlanCard({
 }
 function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
   return (
-    <section className="rounded-3xl border border-line bg-cream p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+    <Card padded={false} className="p-6">
+      <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <Receipt size={16} className="text-fg-mute" />
         {t("Billing history ")}
       </div>
 
       {snapshot.billingHistory.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line-strong bg-paper p-4 text-sm text-fg-dim">
+        <div className="rounded-xl border border-dashed border-line-strong bg-paper p-4 text-[14px] text-fg-dim">
           {t(
             "Your invoices will appear here once the first subscription charge is created. ",
           )}
@@ -540,13 +536,13 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
           {snapshot.billingHistory.map((invoice) => (
             <li
               key={invoice.id}
-              className="flex flex-col gap-3 rounded-2xl border border-line bg-paper p-4 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-xl border border-line bg-paper p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
-                <p className="font-mono text-sm font-semibold text-ink tabular-nums">
+                <p className="font-mono text-[14px] font-semibold text-ink tabular-nums">
                   {formatInvoiceDate(invoice.date)}
                 </p>
-                <p className="mt-1 text-sm text-fg-dim">
+                <p className="mt-1 text-[14px] text-fg-dim">
                   {invoice.amountLabel} · {invoiceStatusLabel(invoice.status)}
                 </p>
               </div>
@@ -556,13 +552,13 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
                   href={invoice.invoiceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-accent transition hover:brightness-95"
+                  className="inline-flex items-center gap-2 text-[14px] font-semibold text-accent transition hover:brightness-95"
                 >
                   {t("Download invoice ")}
                   <ExternalLink size={14} />
                 </Link>
               ) : (
-                <span className="text-sm text-fg-mute">
+                <span className="text-[14px] text-fg-mute">
                   {t("Invoice unavailable ")}
                 </span>
               )}
@@ -570,7 +566,7 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 function CancelPlanCard({
@@ -583,12 +579,12 @@ function CancelPlanCard({
   onCancel: () => void;
 }) {
   return (
-    <section className="rounded-3xl border border-quality-q2/40 bg-quality-q2/15 p-6">
-      <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-ink">
+    <Card padded={false} className="border-quality-q2/40 bg-quality-q2/15 p-6">
+      <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <ShieldAlert size={16} className="text-amber-700" />
         {t("Cancellation options ")}
       </div>
-      <p className="text-sm text-ink">
+      <p className="text-[14px] text-ink">
         {currentTier === "free"
           ? "You're currently on Free, so there is nothing to cancel."
           : `${renewalLabel}. If you need to scale back, we will show a lower-friction option before you leave.`}
@@ -601,7 +597,7 @@ function CancelPlanCard({
       >
         {t("Cancel subscription ")}
       </button>
-    </section>
+    </Card>
   );
 }
 function RetentionDialog({
@@ -625,22 +621,22 @@ function RetentionDialog({
         role="dialog"
         aria-modal="true"
         aria-label={t("Cancel subscription")}
-        className="w-full max-w-lg rounded-3xl border border-line bg-cream p-6 shadow-[0_24px_60px_rgba(14,14,16,0.2)]"
+        className="w-full max-w-lg rounded-[14px] border border-line bg-cream p-6 shadow-[0_24px_60px_rgba(14,14,16,0.2)]"
       >
-        <h2 className="font-sans font-extrabold tracking-[-0.5px] leading-[1.05] text-[22px] text-ink">
+        <Heading size="md" as="h2">
           {t("Cancel subscription")}
-        </h2>
-        <p className="mt-2 text-sm text-fg-dim">
+        </Heading>
+        <p className="mt-2 text-[14px] text-fg-dim">
           {t(
             "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ",
           )}
         </p>
 
-        <div className="mt-5 rounded-2xl border border-line bg-paper p-4">
-          <p className="text-sm font-semibold text-ink">
+        <div className="mt-5 rounded-xl border border-line bg-paper p-4">
+          <p className="text-[14px] font-semibold text-ink">
             {t("Downgrade to Free at the end of your current billing period. ")}
           </p>
-          <p className="mt-1 text-sm text-fg-dim">
+          <p className="mt-1 text-[14px] text-fg-dim">
             {renewalLabel}
             {t(". Your shared rides and account settings stay intact, while ")}
             {planName}
@@ -662,12 +658,12 @@ function RetentionDialog({
               type="button"
               onClick={onOpenPortal}
               disabled={busy}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-50"
             >
               {busy ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  {t("Opening billing portal\u2026 ")}
+                  {t("Opening billing portal… ")}
                 </>
               ) : (
                 <>
@@ -680,7 +676,7 @@ function RetentionDialog({
             <button
               type="button"
               disabled
-              className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-accent/40 text-ink font-bold text-[11px] uppercase tracking-[0.2px]"
+              className="inline-flex items-center justify-center rounded-lg bg-accent/40 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink"
             >
               {t("Billing portal unavailable ")}
             </button>
@@ -692,11 +688,11 @@ function RetentionDialog({
 }
 function LoadingState() {
   return (
-    <div className="rounded-3xl border border-line bg-cream p-8">
-      <div className="inline-flex items-center gap-2 text-sm text-fg-dim">
+    <Card padded={false} className="p-8">
+      <div className="inline-flex items-center gap-2 text-[14px] text-fg-dim">
         <Loader2 size={16} className="animate-spin" />
-        {t("Loading subscription settings\u2026 ")}
+        {t("Loading subscription settings… ")}
       </div>
-    </div>
+    </Card>
   );
 }
