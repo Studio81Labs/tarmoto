@@ -16,6 +16,7 @@ import {
   type TweaksTokens,
 } from "@tarmoto/ui";
 import { SpecHead, SpecRow } from "./Atoms";
+import { CC, CK, CN, CodeBlock } from "./_shared";
 
 /* -------- 11 · CARD -------- */
 
@@ -42,6 +43,17 @@ export function CardSection() {
             Last 12 months
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg bg-paper" />
+          <div className="mt-3.5">
+            <CodeBlock>
+              <CK>background</CK>: --cream
+              {"\n"}
+              <CK>border</CK>: 1 px --line
+              {"\n"}
+              <CK>radius</CK>: <CN>14</CN>
+              {"\n"}
+              <CK>padding</CK>: <CN>18</CN>
+            </CodeBlock>
+          </div>
         </Card>
         <Card variant="paper-2">
           <Stamp>Tinted · sunken</Stamp>
@@ -52,6 +64,15 @@ export function CardSection() {
             Settings inner row
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg border border-line bg-cream" />
+          <div className="mt-3.5">
+            <CodeBlock>
+              <CK>background</CK>: --paper-2
+              {"\n"}
+              <CK>border</CK>: 1 px --line
+              {"\n"}
+              <CC>{`// nested into another card`}</CC>
+            </CodeBlock>
+          </div>
         </Card>
         <Card variant="ink">
           <Stamp tone="accent">Inverse · hero</Stamp>
@@ -60,6 +81,15 @@ export function CardSection() {
             Once per view
           </Mono>
           <div className="mt-3.5 h-[60px] rounded-lg bg-cream/6" />
+          <div className="mt-3.5">
+            <CodeBlock tone="tarmac">
+              <CK>background</CK>: --ink
+              {"\n"}
+              <CK>fg</CK>: --cream
+              {"\n"}
+              <CK>stamp color</CK>: --accent
+            </CodeBlock>
+          </div>
         </Card>
       </div>
     </Section>
@@ -82,7 +112,7 @@ export function MetricSection() {
         </>
       }
     >
-      <div className="grid grid-cols-4 gap-3.5">
+      <div className="mb-6 grid grid-cols-4 gap-3.5">
         <MetricTile
           variant="ink"
           accentNumber
@@ -112,7 +142,85 @@ export function MetricSection() {
           delta="Passo Gavia"
         />
       </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Anatomy callout — a labelled MetricTile with arrows */}
+        <div className="relative aspect-[5/3] overflow-hidden rounded-[14px] border border-line bg-paper">
+          <div className="absolute left-1/2 top-12 w-[240px] -translate-x-1/2">
+            <MetricTile
+              label="Distance"
+              value={<span className="text-accent">1,284</span>}
+              unit="km"
+              delta="+18% vs March"
+            />
+          </div>
+          <AnatomyCallout top={56} left={28}>
+            → Stamp · uppercase mono
+          </AnatomyCallout>
+          <AnatomyCallout top={100} left={28}>
+            → Hero number · 36 px sans 800
+          </AnatomyCallout>
+          <AnatomyCallout top={140} left={28}>
+            → Unit · 11 px mono · fg-dim
+          </AnatomyCallout>
+          <AnatomyCallout top={184} left={28}>
+            → Delta · 11 px · fg-mute
+          </AnatomyCallout>
+        </div>
+
+        <Card padded>
+          <SubStamp>Variants</SubStamp>
+          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.8] text-fg-dim">
+            <li>
+              <strong>Default</strong> — cream bg, ink type, dim delta
+            </li>
+            <li>
+              <strong>Ink</strong> — ink bg, cream type. Used for the "north
+              star" KPI of the screen
+            </li>
+            <li>
+              <strong>Paper</strong> — paper bg. Used for derived/secondary KPIs
+              (e.g. lean angle, peak)
+            </li>
+            <li>
+              <strong>Accent number</strong> — orange tinted hero number.{" "}
+              <em>One per row.</em>
+            </li>
+          </ul>
+          <div className="mt-4">
+            <CodeBlock>
+              <CK>grid</CK>: <CN>repeat(4, 1fr)</CN>
+              {"\n"}
+              <CK>gap</CK>: <CN>14 px</CN>
+              {"\n"}
+              <CK>padding</CK>: <CN>18 px</CN>
+              {"\n"}
+              <CK>radius</CK>: <CN>14</CN>
+            </CodeBlock>
+          </div>
+        </Card>
+      </div>
     </Section>
+  );
+}
+
+/** Mono callout used inside the anatomy box (mirrors `.callout` from source). */
+function AnatomyCallout({
+  top,
+  left,
+  children,
+}: {
+  top: number;
+  left: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="absolute font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-accent"
+      style={{ top, left }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -301,25 +409,62 @@ export function NavRailSection() {
         />
 
         <div>
-          <SubStamp onDark>Geometry</SubStamp>
-          <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-on-dark-dim">
-            <li>
-              Rail width <Mono>220 px</Mono>
-            </li>
-            <li>
-              Rail padding <Mono>20 / 14</Mono>
-            </li>
-            <li>
-              Item padding <Mono>10 / 12</Mono>
-            </li>
-            <li>
-              Item radius <Mono>8</Mono>
-            </li>
-            <li>
-              Brand mark <Mono>32 sq · accent · 7 radius</Mono>
-            </li>
-            <li>Active item: accent fill, ink fg, 800 weight</li>
-          </ul>
+          <SubStamp onDark>Spec</SubStamp>
+          <div className="overflow-hidden rounded-[10px] border border-cream/12 bg-tarmac">
+            <div
+              className="grid items-center gap-3 border-b border-cream/8 bg-cream/6 px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-cream/60"
+              style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+            >
+              <span>Slot</span>
+              <span>Background</span>
+              <span>Foreground</span>
+            </div>
+            {[
+              ["rail", "--ink", "--cream"],
+              [
+                "item · inactive",
+                "transparent",
+                "cream · 600 · mono num @ 40%",
+              ],
+              ["item · active", "--accent", "ink · 800 · mono num ink"],
+              ["item · hover", "cream @ 6%", "no other changes"],
+              ["divider", "cream @ 8%", "1 px"],
+              ["contrib module", "cream @ 6%", "border cream @ 8%"],
+            ].map((row, i, arr) => (
+              <div
+                key={row[0]}
+                className={`grid items-center gap-3 px-4 py-2.5 text-[12.5px] ${i < arr.length - 1 ? "border-b border-cream/8" : ""}`}
+                style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+              >
+                <Mono className="font-semibold text-cream">{row[0]}</Mono>
+                <span className="text-cream/70">{row[1]}</span>
+                <span className="font-mono text-[11px] text-cream/55">
+                  {row[2]}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <SubStamp onDark>Geometry</SubStamp>
+            <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-on-dark-dim">
+              <li>
+                Rail width <Mono>220 px</Mono>
+              </li>
+              <li>
+                Rail padding <Mono>20 / 14</Mono>
+              </li>
+              <li>
+                Item padding <Mono>10 / 12</Mono>
+              </li>
+              <li>
+                Item radius <Mono>8</Mono>
+              </li>
+              <li>
+                Brand mark <Mono>32 sq · accent · 7 radius</Mono>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </Section>
@@ -365,6 +510,33 @@ const RIDES: Ride[] = [
     avg: 46,
     lean: "40°",
     q: 2,
+  },
+  {
+    date: "29 Mar",
+    ride: "Bernina round",
+    km: 162,
+    duration: "3h 48m",
+    avg: 60,
+    lean: "32°",
+    q: 4,
+  },
+  {
+    date: "22 Mar",
+    ride: "Como western shore",
+    km: 96,
+    duration: "2h 38m",
+    avg: 51,
+    lean: "26°",
+    q: 3,
+  },
+  {
+    date: "15 Mar",
+    ride: "Forcola scout",
+    km: 58,
+    duration: "1h 42m",
+    avg: 44,
+    lean: "30°",
+    q: 4,
   },
 ];
 
