@@ -28,6 +28,7 @@ import {
   type UserBadge,
 } from "@/lib/rider-profile";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
+import { Card, Heading, Stamp } from "@tarmoto/ui";
 export default function RiderProfilePage() {
   const { riderId } = useParams<{
     riderId: string;
@@ -152,12 +153,12 @@ export default function RiderProfilePage() {
     }
   }
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <Link
         href="/community/feed"
-        className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-6 transition"
+        className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft size={14} />
         {t("Community")}
       </Link>
 
@@ -211,28 +212,28 @@ function Header({
 }: HeaderProps) {
   const initials = initialsFromName(profile.display_name);
   return (
-    <section className="rounded-2xl bg-cream border border-line p-6 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+    <Card padded={false} className="mb-6 p-6">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
         <div className="shrink-0">
           {profile.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={profile.avatar_url}
               alt={profile.display_name}
-              className="w-20 h-20 rounded-full object-cover border-2 border-line"
+              className="h-20 w-20 rounded-full border-2 border-line object-cover"
             />
           ) : (
-            <div className="w-20 h-20 rounded-full bg-accent/20 flex items-center justify-center text-accent text-2xl font-bold">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/20 text-2xl font-bold text-accent">
               {initials}
             </div>
           )}
         </div>
 
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-ink truncate">
+        <div className="min-w-0 flex-1">
+          <Heading size="xl" as="h1" className="truncate">
             {profile.display_name}
-          </h1>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-fg-dim">
+          </Heading>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-dim">
             {profile.home_region && (
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} /> {profile.home_region}
@@ -243,7 +244,7 @@ function Header({
             </span>
           </div>
           {profile.bio && (
-            <p className="text-sm text-ink mt-3 leading-relaxed">
+            <p className="mt-3 text-sm leading-relaxed text-ink">
               {profile.bio}
             </p>
           )}
@@ -280,13 +281,13 @@ function Header({
             </button>
           )}
           {followError && (
-            <span className="text-xs text-red-400 max-w-[14rem] text-right">
+            <span className="max-w-[14rem] text-right text-xs text-red-400">
               {followError}
             </span>
           )}
         </div>
       </div>
-    </section>
+    </Card>
   );
 }
 // ── Stats ──
@@ -301,21 +302,16 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
     { key: "badges", label: "Badges earned", value: earnedBadgeCount },
   ];
   return (
-    <section className="grid grid-cols-3 gap-3 mb-6">
+    <div className="mb-6 grid grid-cols-3 gap-3">
       {tiles.map((tile) => (
-        <div
-          key={tile.key}
-          className="rounded-xl bg-cream border border-line p-4"
-        >
-          <p className="text-xs uppercase tracking-wider text-fg-dim">
-            {tile.label}
-          </p>
-          <p className="text-xl font-bold text-ink mt-1 tabular-nums">
+        <Card key={tile.key} padded={false} className="p-4">
+          <Stamp>{tile.label}</Stamp>
+          <p className="mt-1 text-xl font-bold tabular-nums text-ink">
             {formatCount(tile.value)}
           </p>
-        </div>
+        </Card>
       ))}
-    </section>
+    </div>
   );
 }
 // ── Badges ──
@@ -325,13 +321,13 @@ interface BadgesSectionProps {
 }
 function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
   return (
-    <section className="rounded-2xl bg-cream border border-line p-6 mb-6">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-dim flex items-center gap-2">
+    <Card padded={false} className="mb-6 p-6">
+      <header className="mb-4 flex items-center justify-between">
+        <Stamp as="h2" className="inline-flex items-center gap-2">
           <Award size={14} />
           {t("Badges earned")}
-        </h2>
-        <span className="text-xs text-fg-dim tabular-nums">
+        </Stamp>
+        <span className="text-xs tabular-nums text-fg-dim">
           {t("{count} of {total}", {
             count: badges.length,
             total: totalBadges,
@@ -350,17 +346,17 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
           {badges.map((badge) => (
             <div
               key={badge.key}
-              className="rounded-xl border border-accent/30 bg-accent/5 p-3 flex flex-col items-center text-center"
+              className="flex flex-col items-center rounded-xl border border-accent/30 bg-accent/5 p-3 text-center"
             >
-              <div className="w-10 h-10 rounded-full bg-accent/20 text-accent flex items-center justify-center mb-2">
+              <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-accent/20 text-accent">
                 <Trophy size={20} />
               </div>
               <p className="text-xs font-semibold text-ink">{badge.name}</p>
-              <p className="text-[11px] text-fg-dim mt-1 leading-tight">
+              <p className="mt-1 text-[11px] leading-tight text-fg-dim">
                 {badge.description}
               </p>
               {badge.tier && (
-                <p className="text-[10px] uppercase tracking-wider text-accent mt-1">
+                <p className="mt-1 text-[10px] uppercase tracking-wider text-accent">
                   {badge.tier}
                 </p>
               )}
@@ -368,31 +364,31 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
           ))}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 // ── Shared pieces ──
 function ProfileSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-40 rounded-2xl bg-cream border border-line animate-pulse" />
+      <div className="h-40 animate-pulse rounded-[14px] border border-line bg-cream" />
       <div className="grid grid-cols-3 gap-3">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-20 rounded-xl bg-cream border border-line animate-pulse"
+            className="h-20 animate-pulse rounded-[14px] border border-line bg-cream"
           />
         ))}
       </div>
-      <div className="h-40 rounded-2xl bg-cream border border-line animate-pulse" />
+      <div className="h-40 animate-pulse rounded-[14px] border border-line bg-cream" />
     </div>
   );
 }
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
-    <div className="rounded-2xl bg-cream border border-line p-12 text-center">
-      <p className="text-ink font-medium mb-1">{title}</p>
+    <Card padded={false} className="p-12 text-center">
+      <p className="mb-1 font-medium text-ink">{title}</p>
       <p className="text-sm text-fg-dim">{message}</p>
-    </div>
+    </Card>
   );
 }
