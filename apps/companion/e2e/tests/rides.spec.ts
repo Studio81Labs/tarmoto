@@ -367,9 +367,15 @@ test.describe("rides extras", () => {
     // most-recent ride, RIDE_RECENT = 220.0 km). Asserting both
     // distances catches a regression that loses either pick or only
     // re-fetches one side after the explicit override.
+    //
+    // Scope by the "Stats diff" heading rather than a `section`
+    // element selector — the surrounding container migrated from
+    // `<section>` to a `<Card>` (`<div>`) when /rides/compare adopted
+    // canonical @tarmoto/ui primitives, but the heading text and the
+    // visible stats payload are unchanged.
     const statsTable = page
-      .locator("section")
-      .filter({ hasText: "Stats diff" })
+      .locator("div")
+      .filter({ has: page.getByRole("heading", { name: /^stats diff/i }) })
       .first();
     await expect(statsTable).toBeVisible({ timeout: 10_000 });
     await expect(statsTable).toContainText("80.0");
