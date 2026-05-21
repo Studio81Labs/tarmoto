@@ -193,13 +193,8 @@ export function Sidebar() {
             <TarmotoMark size={20} />
           </span>
           {!collapsed && (
-            <span className="leading-none">
-              <span className="block text-[15px] font-extrabold tracking-tight text-cream">
-                TARMOTO
-              </span>
-              <Mono className="mt-0.5 block text-[9px] font-medium tracking-[1.2px] text-cream/50">
-                WEB · v1.4
-              </Mono>
+            <span className="text-[15px] font-extrabold tracking-tight text-cream">
+              TARMOTO
             </span>
           )}
         </Link>
