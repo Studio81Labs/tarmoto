@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader, Stamp } from "@tarmoto/ui";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
@@ -143,18 +143,19 @@ export default function RouteCollectionsPage() {
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <PageHeader
-        icon={FolderOpen}
+        stamp={t("Community · Collections")}
+        icon={<FolderOpen size={22} strokeWidth={1.8} />}
         title={t("Route Collections")}
-        subtitle={t(
+        sub={t(
           "Curate your favourite roads into shareable lists and follow collections from other riders.",
         )}
-        action={
+        right={
           <button
             type="button"
             onClick={() => setModal({ mode: "create" })}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
           >
             <Plus size={16} />
             {t("New collection")}
@@ -183,7 +184,7 @@ export default function RouteCollectionsPage() {
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-44 rounded-2xl border border-line bg-cream animate-pulse"
+              className="h-44 animate-pulse rounded-[14px] border border-line bg-cream"
             />
           ))}
         </div>
@@ -240,11 +241,9 @@ export default function RouteCollectionsPage() {
 
       {visibleFollowed.length > 0 && (
         <section className="mt-10">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-3 flex items-center gap-2">
             <Bookmark size={14} className="text-accent" />
-            <h2 className="text-sm font-semibold text-ink">
-              {t("Followed collections")}
-            </h2>
+            <Stamp as="h2">{t("Followed collections")}</Stamp>
             <span className="text-xs text-fg-dim">
               · {visibleFollowed.length}
               {needle && visibleFollowed.length !== followed.length
@@ -417,7 +416,7 @@ function CollectionCard({
   return (
     <div
       data-menu-root
-      className="relative rounded-2xl bg-cream border border-line hover:border-line-strong transition"
+      className="relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
     >
       <Link
         href={`/community/collections/${collection.id}`}
@@ -503,7 +502,7 @@ function FollowedCollectionCard({
   onUnfollow: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-cream border border-line hover:border-line-strong transition relative">
+    <div className="relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong">
       <Link
         href={`/community/collections/shared/${encodeURIComponent(collection.slug)}`}
         className="block p-5 pr-12 group"
@@ -633,7 +632,7 @@ function CollectionModal({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => void submit(e)}
-        className="w-full max-w-md rounded-2xl border border-line bg-cream p-5 shadow-xl"
+        className="w-full max-w-md rounded-[14px] border border-line bg-cream p-5 shadow-xl"
       >
         <h2
           id="collection-modal-title"
@@ -781,18 +780,18 @@ function EmptyState({
   onAction: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-cream border border-line p-16 text-center mt-5">
-      <FolderOpen size={48} className="mx-auto text-fg-mute mb-4" />
-      <p className="text-fg-dim text-lg mb-2">{title}</p>
-      <p className="text-fg-dim text-sm mb-6">{body}</p>
+    <Card padded={false} className="mt-5 p-16 text-center">
+      <FolderOpen size={48} className="mx-auto mb-4 text-fg-mute" />
+      <p className="mb-2 text-lg text-fg-dim">{title}</p>
+      <p className="mb-6 text-sm text-fg-dim">{body}</p>
       <button
         type="button"
         onClick={onAction}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
       >
         <Plus size={16} /> {actionLabel}
       </button>
-    </div>
+    </Card>
   );
 }
 function CardMenu({
@@ -908,7 +907,7 @@ function ConfirmDialog({
       aria-describedby="confirm-dialog-message"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-paper p-6 shadow-xl">
+      <div className="w-full max-w-sm rounded-[14px] border border-line bg-paper p-6 shadow-xl">
         <h2
           id="confirm-dialog-title"
           className="text-lg font-semibold text-ink"
