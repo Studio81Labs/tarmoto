@@ -28,6 +28,7 @@ import {
 } from "@/lib/ride-detail";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
 import { RideRouteMap } from "../_components/RideRouteMap";
+import { Card } from "@tarmoto/ui";
 interface RideDetail {
   id: string;
   status: string;
@@ -151,15 +152,15 @@ export default function RideDetailPage() {
   if (notFound) {
     return (
       <PageShell>
-        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
-          <Route size={40} className="mx-auto text-fg-mute mb-3" />
-          <p className="text-ink font-medium mb-1">{t("Ride not found")}</p>
+        <Card padded={false} className="p-10 text-center">
+          <Route size={40} className="mx-auto mb-3 text-fg-mute" />
+          <p className="mb-1 font-medium text-ink">{t("Ride not found")}</p>
           <p className="text-sm text-fg-dim">
             {t(
               "This ride may have been deleted or doesn't belong to your account. ",
             )}
           </p>
-        </div>
+        </Card>
       </PageShell>
     );
   }
@@ -255,7 +256,7 @@ export default function RideDetailPage() {
       )}
 
       {/* Route map */}
-      <section className="rounded-2xl bg-cream border border-line p-5 mb-6">
+      <Card padded={false} className="mb-6 p-5">
         <SectionHeader
           icon={<Route size={16} />}
           title={t("Route")}
@@ -270,18 +271,18 @@ export default function RideDetailPage() {
             {t("No GPS track was recorded for this ride.")}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <div className="rounded-2xl bg-cream border border-line p-5">
+      <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card padded={false} className="p-5">
           <SectionHeader
             icon={<Mountain size={16} />}
             title={t("Elevation profile")}
             subtitle="Elevation gain/loss is available in the stats below; per-sample ride elevation is not recorded yet."
           />
           <ElevationProfileChart />
-        </div>
-        <div className="rounded-2xl bg-cream border border-line p-5">
+        </Card>
+        <Card padded={false} className="p-5">
           <SectionHeader
             icon={<Gauge size={16} />}
             title={t("Speed graph")}
@@ -292,7 +293,7 @@ export default function RideDetailPage() {
             }
           />
           <SpeedProfileChart points={speedProfile} />
-        </div>
+        </Card>
       </section>
 
       {/* Stats */}
@@ -348,8 +349,8 @@ export default function RideDetailPage() {
       </section>
 
       {/* Quality breakdown + fuel */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="md:col-span-2 rounded-2xl bg-cream border border-line p-5">
+      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card padded={false} className="p-5 md:col-span-2">
           <SectionHeader
             icon={<Gauge size={16} />}
             title={t("Road quality breakdown")}
@@ -360,7 +361,7 @@ export default function RideDetailPage() {
             }
           />
           <QualityBar breakdown={breakdown} />
-          <ul className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+          <ul className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
             {breakdown.map((row) => (
               <li
                 key={row.tier}
@@ -375,10 +376,10 @@ export default function RideDetailPage() {
               </li>
             ))}
           </ul>
-        </div>
-        <div className="rounded-2xl bg-cream border border-line p-5 flex flex-col gap-5">
+        </Card>
+        <Card padded={false} className="flex flex-col gap-5 p-5">
           <div>
-            <p className="text-xs text-fg-dim mb-1">{t("Avg road quality")}</p>
+            <p className="mb-1 text-xs text-fg-dim">{t("Avg road quality")}</p>
             {avgTier ? (
               <span
                 className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold quality-${avgTier}`}
@@ -393,20 +394,20 @@ export default function RideDetailPage() {
             )}
           </div>
           <div>
-            <p className="text-xs text-fg-dim mb-1">{t("Fuel estimate")}</p>
-            <p className="text-xl font-bold text-ink tabular-nums">
+            <p className="mb-1 text-xs text-fg-dim">{t("Fuel estimate")}</p>
+            <p className="text-xl font-bold tabular-nums text-ink">
               {formatNumber(ride.fuel_estimate_l, 2)}
-              <span className="text-sm font-normal text-fg-dim ml-1">
+              <span className="ml-1 text-sm font-normal text-fg-dim">
                 {t("L")}
               </span>
             </p>
           </div>
-        </div>
+        </Card>
       </section>
 
       {/* Segments table */}
       {ride.segments.length > 0 && (
-        <section className="rounded-2xl bg-cream border border-line p-5">
+        <Card padded={false} className="p-5">
           <SectionHeader
             icon={<Route size={16} />}
             title={t("Segments")}
@@ -481,7 +482,7 @@ export default function RideDetailPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
       )}
     </PageShell>
   );
@@ -494,9 +495,9 @@ function PageShell({
   header?: React.ReactNode;
 }) {
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       {header ?? (
-        <div className="flex items-center gap-4 mb-6">
+        <div className="mb-6 flex items-center gap-4">
           <Link
             href="/rides"
             className="p-2 rounded-lg hover:bg-paper transition"
@@ -523,18 +524,18 @@ function StatCard({
   unit?: string;
 }) {
   return (
-    <div className="p-4 rounded-xl bg-cream border border-line">
-      <div className="flex items-center gap-2 text-xs text-fg-dim mb-1">
+    <Card padded={false} className="p-4">
+      <div className="mb-1 flex items-center gap-2 text-xs text-fg-dim">
         <span className="text-accent">{icon}</span>
         {label}
       </div>
-      <p className="text-xl font-bold text-ink tabular-nums">
+      <p className="text-xl font-bold tabular-nums text-ink">
         {value}
         {unit && (
-          <span className="text-sm font-normal text-fg-dim ml-1">{unit}</span>
+          <span className="ml-1 text-sm font-normal text-fg-dim">{unit}</span>
         )}
       </p>
-    </div>
+    </Card>
   );
 }
 function SectionHeader({
