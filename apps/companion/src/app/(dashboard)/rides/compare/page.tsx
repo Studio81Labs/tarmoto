@@ -11,7 +11,7 @@ import {
   Minus,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
@@ -108,11 +108,12 @@ function CompareRidesPageInner() {
     else router.push(url, { scroll: false });
   }
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <PageHeader
-        icon={Scale}
+        stamp={t("Activity · Compare")}
+        icon={<Scale size={22} strokeWidth={1.8} />}
         title={t("Compare rides")}
-        subtitle={t(
+        sub={t(
           "Pick two rides to see stats, route, and road quality side-by-side.",
         )}
       />
@@ -144,11 +145,11 @@ function CompareRidesPageInner() {
       </div>
 
       {options.length < 2 && !optionsLoading && !optionsError && (
-        <div className="rounded-2xl border border-line bg-cream p-10 text-center text-sm text-fg-dim">
+        <Card padded={false} className="p-10 text-center text-sm text-fg-dim">
           {t(
             "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",
           )}
-        </div>
+        </Card>
       )}
 
       {selectedA && selectedB && selectedA !== selectedB && (
@@ -177,8 +178,8 @@ function RidePicker({
   onChange: (id: string) => void;
 }) {
   return (
-    <label className="block rounded-2xl border border-line bg-cream p-4">
-      <span className="block text-xs uppercase tracking-wider text-fg-dim mb-2">
+    <label className="block rounded-[14px] border border-line bg-cream p-4">
+      <span className="mb-2 block text-xs uppercase tracking-wider text-fg-dim">
         {label}
       </span>
       <select
@@ -301,7 +302,7 @@ function RouteCompareSection({
   );
 
   return (
-    <section className="rounded-2xl bg-cream border border-line p-5">
+    <Card padded={false} className="p-5">
       <h2 className="text-sm font-semibold text-ink mb-1">{t("Route maps")}</h2>
       <p className="text-xs text-fg-dim mb-4">
         {t(
@@ -326,7 +327,7 @@ function RouteCompareSection({
           fitBounds={sharedBounds}
         />
       </div>
-    </section>
+    </Card>
   );
 }
 // `color` paints the map route line (chosen for visibility on the cream
@@ -416,7 +417,7 @@ function validRoutePoints(
 
 function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
-    <section className="rounded-2xl bg-cream border border-line p-5">
+    <Card padded={false} className="p-5">
       <h2 className="text-sm font-semibold text-ink mb-1">{t("Stats diff")}</h2>
       <p className="text-xs text-fg-dim mb-4">
         {t(
@@ -475,7 +476,7 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </Card>
   );
 }
 function DeltaChip({
@@ -536,7 +537,7 @@ function ElevationCompareSection({
     1,
   );
   return (
-    <section className="rounded-2xl bg-cream border border-line p-5">
+    <Card padded={false} className="p-5">
       <h2 className="text-sm font-semibold text-ink mb-1">{t("Elevation")}</h2>
       <p className="text-xs text-fg-dim mb-4">
         {t(
@@ -564,7 +565,7 @@ function ElevationCompareSection({
           max={max}
         />
       </div>
-    </section>
+    </Card>
   );
 }
 function ElevationBars({
@@ -639,7 +640,7 @@ function QualityDiffSection({
 }) {
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
   return (
-    <section className="rounded-2xl bg-cream border border-line p-5">
+    <Card padded={false} className="p-5">
       <h2 className="text-sm font-semibold text-ink mb-1">
         {t("Road quality")}
       </h2>
@@ -710,7 +711,7 @@ function QualityDiffSection({
           })}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }
 // More segments in the top tiers is better; more in the bottom tiers is worse.
