@@ -141,11 +141,22 @@ export function PeakGlyph({
   elev = "2757m",
   className,
 }: MapGlyphProps & { label?: string; elev?: string }) {
+  // Both label (9 px JB Mono w/ 0.5 letter-spacing) and elev (8 px JB Mono)
+  // are right-trailing from x=56. The reference viewport (80) only fits
+  // ~4 mono chars after that origin, so real pass names ("Grossglockner",
+  // "Klausenpass", …) would clip. Pick whichever string needs more space
+  // and grow the viewBox to fit.
+  const labelTextWidth = label.length * 6.5;
+  const elevTextWidth = elev.length * 5;
+  const viewportWidth = Math.max(
+    80,
+    56 + Math.ceil(Math.max(labelTextWidth, elevTextWidth)) + 4,
+  );
   return (
     <svg
-      width={size * 1.4}
+      width={(size * viewportWidth) / 60}
       height={size}
-      viewBox="0 0 80 60"
+      viewBox={`0 0 ${viewportWidth} 60`}
       aria-hidden="true"
       className={className}
     >
@@ -187,11 +198,16 @@ export function TownGlyph({
   name = "Bormio",
   className,
 }: MapGlyphProps & { name?: string }) {
+  // Label is 13 px Space Grotesk 700 starting at x=34. The reference
+  // viewport (80) only fits ~6 sans chars after that origin, so real
+  // town names ("Innsbruck", "Sankt Moritz", "Castelluccio") would clip.
+  // Grow the viewBox to follow the name length.
+  const viewportWidth = Math.max(80, 34 + name.length * 8 + 6);
   return (
     <svg
-      width={size * 1.4}
+      width={(size * viewportWidth) / 60}
       height={size}
-      viewBox="0 0 80 60"
+      viewBox={`0 0 ${viewportWidth} 60`}
       aria-hidden="true"
       className={className}
     >
