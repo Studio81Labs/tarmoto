@@ -62,9 +62,13 @@ export function MetricTile({
           {value}
         </div>
         {unit && (
+          // Source `.metric .u` carries no letter-spacing — adding any
+          // tracking pushes the uppercase unit out of alignment with
+          // the canonical 11 px mono rendering used on every KPI brick
+          // (§12) and inside the road-preview meta strip (§13).
           <div
             className={cn(
-              "font-mono text-[11px] uppercase tracking-[1px]",
+              "font-mono text-[11px] uppercase",
               inverted ? "text-fg-on-dark-dim" : "text-fg-dim",
             )}
           >

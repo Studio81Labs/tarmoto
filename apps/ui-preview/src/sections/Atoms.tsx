@@ -23,7 +23,7 @@ interface AtomSpec {
 const ATOMS: AtomSpec[] = [
   {
     name: "Stamp",
-    props: "JB Mono 700 · 11 px · 1.5 letter · upper",
+    props: "JB Mono 700 · 11 px · 1.6 letter · upper",
     preview: <Stamp>ROUTE · DAY 1 OF 4</Stamp>,
   },
   {
@@ -105,7 +105,7 @@ export function AtomsSection() {
 
       <div className="mt-7">
         <CodeBlock>
-          <CC>{`// atoms · the only six things you write by hand\n`}</CC>
+          <CC>{`// atoms.jsx · the only six things you write by hand\n`}</CC>
           {`<`}
           <CK>Stamp</CK>
           {`>Route · Day 1 of 4</`}
@@ -123,14 +123,16 @@ export function AtomsSection() {
           {`<`}
           <CK>Heading</CK>
           {` size={`}
-          <CS>"lg"</CS>
+          <CN>24</CN>
           {`}>Alps Loop</`}
           <CK>Heading</CK>
           {`>\n`}
           {`<`}
           <CK>Pill</CK>
-          {` variant={`}
-          <CS>"accent"</CS>
+          {` bg={`}
+          <CN>ACCENT</CN>
+          {`} color={`}
+          <CN>INK</CN>
           {`}>AI draft</`}
           <CK>Pill</CK>
           {`>\n`}
@@ -145,6 +147,8 @@ export function AtomsSection() {
           <CK>QualityBars</CK>
           {` q={`}
           <CN>4</CN>
+          {`} palette={`}
+          <CS>{`"traffic"`}</CS>
           {`} size={`}
           <CN>5</CN>
           {`} />\n`}
@@ -272,6 +276,39 @@ export function PillSection() {
   );
 }
 
+// Rainbow-fill QualityBars variant — only used by the §10 "Sizes" demo
+// row. The library's `QualityBars` always paints filled bars with the
+// same q-stop colour (per the documented rule); this hand-roll shows
+// q1 → q2 → q3 distinct stops for visual variety, matching the source
+// Design Map's size-3 row.
+function RainbowQbars({ size }: { size: number }) {
+  const w = size;
+  const h = Math.round(size * 2.2);
+  const stops = [qualityColors[0], qualityColors[1], qualityColors[2]];
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex items-end gap-[2px]"
+      role="presentation"
+    >
+      {stops.map((c, i) => (
+        <span
+          key={i}
+          className="rounded-[1.5px]"
+          style={{ width: w, height: h, background: c }}
+        />
+      ))}
+      {[0, 1].map((i) => (
+        <span
+          key={`empty-${i}`}
+          className="rounded-[1.5px]"
+          style={{ width: w, height: h, background: "rgba(14,14,16,0.08)" }}
+        />
+      ))}
+    </span>
+  );
+}
+
 /* Shared spec table helpers, used by §08, §17, §18, §22 etc. */
 export function SpecHead({
   cols,
@@ -327,21 +364,38 @@ export function QualityBarsSection() {
       }
     >
       <div className="grid grid-cols-3 gap-4">
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Sizes</SubStamp>
           <div className="flex flex-col gap-3.5">
-            {[3, 4, 5, 7].map((size, i) => (
-              <div key={size} className="flex items-center gap-3.5">
-                <QualityBars q={(i + 2) as 2 | 3 | 4 | 5} size={size} />
-                <Mono className="text-[11px] text-fg-dim">
-                  size {size} ·{" "}
-                  {["table rows", "card meta", "default", "feature card"][i]}
-                </Mono>
-              </div>
-            ))}
+            {/* size 3 · rainbow q1/q2/q3 fill — this row is the only one in
+             * the Sizes card that uses a "gradient" colouring (per source's
+             * documentation flourish); every other quality-bars surface
+             * follows the all-same-colour rule documented in the Rules card. */}
+            <div className="flex items-center gap-3.5">
+              <RainbowQbars size={3} />
+              <Mono className="text-[11px] text-fg-dim">
+                size 3 · table rows
+              </Mono>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <QualityBars q={4} size={4} />
+              <Mono className="text-[11px] text-fg-dim">
+                size 4 · card meta
+              </Mono>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <QualityBars q={5} size={5} />
+              <Mono className="text-[11px] text-fg-dim">size 5 · default</Mono>
+            </div>
+            <div className="flex items-center gap-3.5">
+              <QualityBars q={5} size={7} />
+              <Mono className="text-[11px] text-fg-dim">
+                size 7 · feature card
+              </Mono>
+            </div>
           </div>
         </Card>
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Quality fills</SubStamp>
           <div className="flex flex-col gap-2.5">
             {[1, 2, 3, 4, 5].map((q) => (
@@ -354,10 +408,10 @@ export function QualityBarsSection() {
             ))}
           </div>
         </Card>
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Rules</SubStamp>
           <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.7] text-fg-dim">
-            <li>Filled bars take the colour of q-stop (all same colour)</li>
+            <li>Filled bars take the color of q-stop (all same color)</li>
             <li>Unfilled bars are ink @ 8%</li>
             <li>
               Gap is always <Mono className="text-ink">2 px</Mono>
@@ -369,9 +423,8 @@ export function QualityBarsSection() {
               Height is <Mono className="text-ink">size × 2.2</Mono>
             </li>
             <li>
-              On dark surfaces, unfilled flip to{" "}
-              <Mono className="text-ink">cream @ 12%</Mono> via{" "}
-              <Mono className="text-ink">onDark</Mono>
+              Don't fade unfilled bars on dark surfaces — invert to{" "}
+              <Mono className="text-ink">cream @ 12%</Mono>
             </li>
           </ul>
         </Card>

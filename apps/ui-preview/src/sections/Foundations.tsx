@@ -165,89 +165,89 @@ export function ColorsSection() {
 
       <TokenTable
         columns={[
-          { label: "", size: "24px" },
-          { label: "Token", size: "140px" },
+          { label: "", size: "32px" },
+          { label: "Token", size: "1fr" },
           { label: "Use for", size: "1fr" },
-          { label: "Alpha", size: "80px" },
-          { label: "Value", size: "140px" },
+          { label: "Alpha", size: "100px" },
+          { label: "Value", size: "120px" },
         ]}
         rows={[
           [
-            <ColorDot color="#F5EFE6" />,
+            <ColorDot color="#F5EFE6" size={18} shape="square" />,
             <Mono className="font-semibold">--cream</Mono>,
             <span className="text-fg-dim">
               Default app canvas. Cards on dark surfaces.
             </span>,
-            <Mono className="text-fg-mute">1.00</Mono>,
-            <Mono className="text-fg-mute">#F5EFE6</Mono>,
+            <Mono className="text-[11px] text-fg-dim">1.00</Mono>,
+            <Mono className="text-[11px] text-fg-dim">#F5EFE6</Mono>,
           ],
           [
-            <ColorDot color="#EDE6DA" />,
+            <ColorDot color="#EDE6DA" size={18} shape="square" />,
             <Mono className="font-semibold">--paper</Mono>,
             <span className="text-fg-dim">
               Right rails, segmented backgrounds, inner cells.
             </span>,
-            <Mono className="text-fg-mute">1.00</Mono>,
-            <Mono className="text-fg-mute">#EDE6DA</Mono>,
+            <Mono className="text-[11px] text-fg-dim">1.00</Mono>,
+            <Mono className="text-[11px] text-fg-dim">#EDE6DA</Mono>,
           ],
           [
-            <ColorDot color="#E5DBCB" />,
+            <ColorDot color="#E5DBCB" size={18} shape="square" />,
             <Mono className="font-semibold">--paper-2</Mono>,
             <span className="text-fg-dim">Cards on cream, deep wells.</span>,
-            <Mono className="text-fg-mute">1.00</Mono>,
-            <Mono className="text-fg-mute">#E5DBCB</Mono>,
+            <Mono className="text-[11px] text-fg-dim">1.00</Mono>,
+            <Mono className="text-[11px] text-fg-dim">#E5DBCB</Mono>,
           ],
           [
-            <ColorDot color="#0E0E10" />,
+            <ColorDot color="#0E0E10" size={18} shape="square" />,
             <Mono className="font-semibold">--ink</Mono>,
             <span className="text-fg-dim">
               Text, nav rail, primary buttons, active state.
             </span>,
-            <Mono className="text-fg-mute">1.00</Mono>,
-            <Mono className="text-fg-mute">#0E0E10</Mono>,
+            <Mono className="text-[11px] text-fg-dim">1.00</Mono>,
+            <Mono className="text-[11px] text-fg-dim">#0E0E10</Mono>,
           ],
           [
-            <ColorDot color="rgba(14,14,16,0.62)" />,
+            <ColorDot color="rgba(14,14,16,0.62)" size={18} shape="square" />,
             <Mono className="font-semibold">--fg-dim</Mono>,
             <span className="text-fg-dim">
               Secondary text. Sub-labels under titles.
             </span>,
-            <Mono className="text-fg-mute">0.62</Mono>,
-            <Mono className="text-fg-mute">ink @ 62%</Mono>,
+            <Mono className="text-[11px] text-fg-dim">0.62</Mono>,
+            <Mono className="text-[11px] text-fg-dim">ink @ 62%</Mono>,
           ],
           [
-            <ColorDot color="rgba(14,14,16,0.40)" />,
+            <ColorDot color="rgba(14,14,16,0.40)" size={18} shape="square" />,
             <Mono className="font-semibold">--fg-mute</Mono>,
             <span className="text-fg-dim">Tertiary text. Mono metadata.</span>,
-            <Mono className="text-fg-mute">0.40</Mono>,
-            <Mono className="text-fg-mute">ink @ 40%</Mono>,
+            <Mono className="text-[11px] text-fg-dim">0.40</Mono>,
+            <Mono className="text-[11px] text-fg-dim">ink @ 40%</Mono>,
           ],
           [
-            <ColorDot color="rgba(14,14,16,0.10)" />,
+            <ColorDot color="rgba(14,14,16,0.10)" size={18} shape="square" />,
             <Mono className="font-semibold">--line</Mono>,
             <span className="text-fg-dim">
               Card &amp; section borders. Hairlines.
             </span>,
-            <Mono className="text-fg-mute">0.10</Mono>,
-            <Mono className="text-fg-mute">ink @ 10%</Mono>,
+            <Mono className="text-[11px] text-fg-dim">0.10</Mono>,
+            <Mono className="text-[11px] text-fg-dim">ink @ 10%</Mono>,
           ],
           [
-            <ColorDot color="rgba(14,14,16,0.22)" />,
+            <ColorDot color="rgba(14,14,16,0.22)" size={18} shape="square" />,
             <Mono className="font-semibold">--line-strong</Mono>,
             <span className="text-fg-dim">
               Floating toolbars. Ghost button borders.
             </span>,
-            <Mono className="text-fg-mute">0.22</Mono>,
-            <Mono className="text-fg-mute">ink @ 22%</Mono>,
+            <Mono className="text-[11px] text-fg-dim">0.22</Mono>,
+            <Mono className="text-[11px] text-fg-dim">ink @ 22%</Mono>,
           ],
           [
-            <ColorDot color="#FF6A1A" />,
+            <ColorDot color="#FF6A1A" size={18} shape="square" />,
             <Mono className="font-semibold">--accent</Mono>,
             <span className="text-fg-dim">
               One per screen. Highlight number, primary CTA on dark, hazard.
             </span>,
-            <Mono className="text-fg-mute">1.00</Mono>,
-            <Mono className="text-fg-mute">#FF6A1A</Mono>,
+            <Mono className="text-[11px] text-fg-dim">1.00</Mono>,
+            <Mono className="text-[11px] text-fg-dim">#FF6A1A</Mono>,
           ],
         ]}
       />
@@ -332,11 +332,11 @@ export function QualitySection() {
 
       <TokenTable
         columns={[
-          { label: "", size: "24px" },
-          { label: "Token", size: "100px" },
+          { label: "", size: "32px" },
+          { label: "Token", size: "1fr" },
           { label: "Semantic", size: "1fr" },
-          { label: "Stop", size: "60px" },
-          { label: "Value", size: "100px" },
+          { label: "Stop", size: "100px" },
+          { label: "Value", size: "120px" },
         ]}
         rows={qualityColors.map((color, i) => {
           const desc = [
@@ -347,11 +347,11 @@ export function QualitySection() {
             "Hero — Tarmoto-defining road. Star segment.",
           ][i];
           return [
-            <ColorDot color={color} />,
+            <ColorDot color={color} size={18} shape="square" />,
             <Mono className="font-semibold">--q{i + 1}</Mono>,
             <span className="text-fg-dim">{desc}</span>,
-            <Mono className="text-fg-mute">Q{i + 1}</Mono>,
-            <Mono className="text-fg-mute">{color}</Mono>,
+            <Mono className="text-[11px] text-fg-dim">Q{i + 1}</Mono>,
+            <Mono className="text-[11px] text-fg-dim">{color}</Mono>,
           ];
         })}
       />
@@ -484,9 +484,9 @@ function RuleRow({
     tip: { cls: "bg-ink text-cream", label: "Tip" },
   }[kind];
   return (
-    <div className="grid grid-cols-[64px_1fr] items-start gap-4 border-b border-line py-4 last:border-b-0">
+    <div className="grid grid-cols-[80px_1fr] items-start gap-[18px] border-b border-line py-[18px] last:border-b-0">
       <div
-        className={`rounded p-1.5 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${badge.cls}`}
+        className={`rounded px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${badge.cls}`}
       >
         {badge.label}
       </div>
@@ -516,7 +516,7 @@ const TYPE_ROWS: TypeRow[] = [
     sub: "Hero · marketing",
     sample: "Tarmoto Alps Loop",
     className:
-      "font-serif text-[88px] font-bold leading-[0.94] tracking-[-3px]",
+      "font-serif text-[76px] font-bold leading-[0.92] tracking-[-2px]",
     props: "Fraunces 700\n108 / 0.94\n-3 letter",
   },
   {
@@ -524,7 +524,7 @@ const TYPE_ROWS: TypeRow[] = [
     sub: "Page openers",
     sample: "Routes from riders you follow",
     className:
-      "font-serif text-[56px] font-bold leading-none tracking-[-1.6px]",
+      "font-serif text-[48px] font-bold leading-none tracking-[-1.4px]",
     props: "Fraunces 700\n64 / 1.0\n-1.8 letter",
   },
   {
@@ -532,7 +532,7 @@ const TYPE_ROWS: TypeRow[] = [
     sub: "View titles",
     sample: "April 2026 · 12 rides",
     className:
-      "font-sans text-[32px] font-extrabold leading-[1.1] tracking-[-0.6px]",
+      "font-sans text-[30px] font-extrabold leading-[1.1] tracking-[-0.6px]",
     props: "Space Grotesk 800\n32 / 1.1\n-0.6 letter",
   },
   {
@@ -570,7 +570,7 @@ const TYPE_ROWS: TypeRow[] = [
     sub: "Section labels",
     sample: "ROUTE · DAY 1 OF 4",
     className:
-      "font-mono text-[11px] font-bold uppercase tracking-[1.5px] text-fg-dim",
+      "font-mono text-[11px] font-bold uppercase tracking-[1.6px] text-fg-dim",
     props: "JB Mono 700\n11 / 1.0\n1.5 letter · upper",
   },
   {
@@ -604,21 +604,21 @@ export function TypeSection() {
       <div className="mb-9 grid grid-cols-3 gap-3.5">
         <FamilyCard
           stamp="Editorial"
-          aa="font-serif font-bold"
+          aa="font-serif font-bold text-[88px] tracking-[-2px]"
           name="Fraunces"
           axes="9..144 · 400 · 700 · italic"
           body="Hero titles, marketing surfaces, italic emphasis inside the app. Optical size shines at 60+ px."
         />
         <FamilyCard
           stamp="Working"
-          aa="font-sans font-extrabold"
+          aa="font-sans font-extrabold text-[92px] tracking-[-2px]"
           name="Space Grotesk"
           axes="400 · 500 · 600 · 700 · 800"
           body="UI labels, body copy, in-app headings. 14–32 px is the sweet spot. Goes to 800 weight without breaking."
         />
         <FamilyCard
           stamp="Instrument"
-          aa="font-mono font-bold"
+          aa="font-mono font-bold text-[84px] tracking-[-1px]"
           name="JetBrains Mono"
           axes="400 · 500 · 700"
           body="Numbers, distances, stamps, table cells. Anything that should feel measured."
@@ -712,9 +712,7 @@ function FamilyCard({
   return (
     <Card>
       <Stamp>{stamp}</Stamp>
-      <div className={`mt-1.5 text-[88px] leading-[0.9] tracking-[-2px] ${aa}`}>
-        Aa
-      </div>
+      <div className={`mt-1.5 leading-[0.9] ${aa}`}>Aa</div>
       <div className="mt-3 text-[14px] font-bold">{name}</div>
       <Mono className="block text-[11px] text-fg-dim">{axes}</Mono>
       <p className="mt-2.5 text-[12px] leading-[1.5] text-fg-dim">{body}</p>
@@ -773,7 +771,7 @@ export function SpaceSection() {
           {SPACING.map((s) => (
             <div
               key={s.name}
-              className="grid grid-cols-[80px_1fr_180px] items-center gap-3 border-t border-line px-4 py-2 font-mono text-[12px]"
+              className="grid grid-cols-[100px_1fr_200px] items-center gap-[18px] border-t border-line px-4 py-2.5 font-mono text-[12px]"
             >
               <span className="font-bold">{s.name}</span>
               <div
@@ -794,7 +792,7 @@ export function SpaceSection() {
             {RADII.map((r) => (
               <div
                 key={r.name}
-                className="relative flex aspect-square flex-col items-center justify-center gap-2 bg-cream"
+                className="relative grid aspect-square place-items-center bg-paper-2"
               >
                 <div
                   className="bg-ink"
@@ -804,7 +802,7 @@ export function SpaceSection() {
                     borderRadius: r.circle ? "50%" : r.val,
                   }}
                 />
-                <span className="absolute bottom-2 font-mono text-[10px] tracking-[0.5px] text-fg-dim">
+                <span className="absolute bottom-2 left-2.5 font-mono text-[10px] font-bold tracking-[1px] text-fg-dim">
                   {r.name}
                 </span>
               </div>
@@ -938,8 +936,11 @@ function ShadowTile({
 }) {
   return (
     <div>
+      {/* Source `.shadow-tile` always carries the base 1px line border; the
+       * variant adds its shadow ON TOP. Without this, the Card / Lift tiles
+       * render without any outline against the section background. */}
       <div
-        className={`grid aspect-[4/3] place-items-center rounded-xl bg-cream ${className ?? "border border-line"}`}
+        className={`grid aspect-[4/3] place-items-center rounded-xl border border-line bg-cream ${className ?? ""}`}
       />
       <div className="mt-2.5">
         <Stamp>{label}</Stamp>

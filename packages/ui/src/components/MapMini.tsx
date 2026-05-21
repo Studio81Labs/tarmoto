@@ -47,7 +47,7 @@ export function MapMini({
   return (
     <div
       className={cn(
-        "relative aspect-[16/10] overflow-hidden rounded-[14px] border border-line",
+        "relative aspect-[16/10] overflow-hidden rounded-[12px] border border-line",
         className,
       )}
       style={{ background: bgFor[mode] }}

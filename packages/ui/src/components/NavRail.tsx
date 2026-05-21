@@ -73,7 +73,11 @@ function defaultRenderItem(item: NavRailItem): ReactNode {
 export function NavRail({
   items,
   brandTitle = "TARMOTO",
-  brandSub = "WEB",
+  // Brand sub-text (e.g. "WEB · v1.4") is intentionally undefined by
+  // default. The companion + preview both render just the mark + name,
+  // matching the canonical brand mark in `docs/design/brand/`. Consumers
+  // can still pass `brandSub` for one-off documentation demos.
+  brandSub,
   topSlot,
   footer,
   renderItem = defaultRenderItem,
@@ -82,7 +86,10 @@ export function NavRail({
   return (
     <aside
       className={cn(
-        "flex w-[220px] shrink-0 flex-col gap-4 bg-ink p-5 text-cream",
+        // Source rail spec: 220 px wide, padding 20 / 14 (vertical /
+        // horizontal). The previous `p-5` gave us 20 / 20 — slightly too
+        // wide horizontally; this matches the canonical Geometry list.
+        "flex w-[220px] shrink-0 flex-col gap-4 bg-ink px-3.5 py-5 text-cream",
         className,
       )}
     >
@@ -94,9 +101,11 @@ export function NavRail({
           <span className="block text-[15px] font-extrabold tracking-tight">
             {brandTitle}
           </span>
-          <span className="mt-0.5 block font-mono text-[9px] tracking-[1.4px] text-cream/50 uppercase">
-            {brandSub}
-          </span>
+          {brandSub && (
+            <span className="mt-0.5 block font-mono text-[9px] tracking-[1px] text-cream/50 uppercase">
+              {brandSub}
+            </span>
+          )}
         </span>
       </div>
 

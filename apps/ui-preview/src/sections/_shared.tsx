@@ -29,7 +29,7 @@ export function TokenTable({ columns, rows, className }: TokenTableProps) {
   const cols = columns.map((c) => c.size ?? "1fr").join(" ");
   return (
     <div
-      className={`overflow-hidden rounded-[10px] border border-line bg-cream ${className ?? ""}`}
+      className={`overflow-hidden rounded-[12px] border border-line bg-cream ${className ?? ""}`}
     >
       <div
         className="grid items-center gap-3 border-b border-line bg-paper px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-fg-dim"
@@ -113,9 +113,9 @@ const badgeLabel: Record<RuleKind, string> = {
 
 export function Rule({ kind, title, body }: RuleRow) {
   return (
-    <div className="grid grid-cols-[64px_1fr] items-start gap-4 border-b border-line py-4 last:border-b-0">
+    <div className="grid grid-cols-[80px_1fr] items-start gap-[18px] border-b border-line py-[18px] last:border-b-0">
       <div
-        className={`rounded p-1.5 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${badgeClass[kind]}`}
+        className={`rounded px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${badgeClass[kind]}`}
       >
         {badgeLabel[kind]}
       </div>
@@ -163,19 +163,29 @@ export function CC({ children }: { children: ReactNode }) {
   return <span className="text-cream/55">{children}</span>;
 }
 
-/* ---------- Coloured dot inline (used in tables) ---------- */
+/* ---------- Coloured swatch inline (used in tables) ----------
+ * `shape="circle"` is the default — used for intent / palette dots inside
+ * Alert / Toast intent tables. `shape="square"` mirrors the source
+ * `.tokens .row .dot` rule (18 px rounded square with a 1 px line border)
+ * used in the §01 Color token table. */
 
 export function ColorDot({
   color,
   size = 14,
+  shape = "circle",
 }: {
   color: string;
   size?: number;
+  shape?: "circle" | "square";
 }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-block rounded-full"
+      className={
+        shape === "square"
+          ? "inline-block rounded border border-line"
+          : "inline-block rounded-full"
+      }
       style={{ width: size, height: size, background: color }}
     />
   );

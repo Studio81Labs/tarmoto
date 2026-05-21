@@ -16,7 +16,7 @@ import {
   type TweaksTokens,
 } from "@tarmoto/ui";
 import { SpecHead, SpecRow } from "./Atoms";
-import { CC, CK, CN, CodeBlock } from "./_shared";
+import { CC, CK, CN, CodeBlock, CS } from "./_shared";
 
 /* -------- 11 · CARD -------- */
 
@@ -45,13 +45,10 @@ export function CardSection() {
           <div className="mt-3.5 h-[60px] rounded-lg bg-paper" />
           <div className="mt-3.5">
             <CodeBlock>
-              <CK>background</CK>: --cream
-              {"\n"}
-              <CK>border</CK>: 1 px --line
-              {"\n"}
-              <CK>radius</CK>: <CN>14</CN>
-              {"\n"}
-              <CK>padding</CK>: <CN>18</CN>
+              {`background: --cream\n`}
+              {`border: 1 px --line\n`}
+              {`radius: 14\n`}
+              {`padding: 18`}
             </CodeBlock>
           </div>
         </Card>
@@ -66,11 +63,9 @@ export function CardSection() {
           <div className="mt-3.5 h-[60px] rounded-lg border border-line bg-cream" />
           <div className="mt-3.5">
             <CodeBlock>
-              <CK>background</CK>: --paper-2
-              {"\n"}
-              <CK>border</CK>: 1 px --line
-              {"\n"}
-              <CC>{`// nested into another card`}</CC>
+              {`background: --paper-2\n`}
+              {`border: 1 px --line\n`}
+              {`nested into another card`}
             </CodeBlock>
           </div>
         </Card>
@@ -83,11 +78,9 @@ export function CardSection() {
           <div className="mt-3.5 h-[60px] rounded-lg bg-cream/6" />
           <div className="mt-3.5">
             <CodeBlock tone="tarmac">
-              <CK>background</CK>: --ink
-              {"\n"}
-              <CK>fg</CK>: --cream
-              {"\n"}
-              <CK>stamp color</CK>: --accent
+              {`background: --ink\n`}
+              {`fg: --cream\n`}
+              {`stamp color: --accent`}
             </CodeBlock>
           </div>
         </Card>
@@ -144,9 +137,13 @@ export function MetricSection() {
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Anatomy callout — a labelled MetricTile with arrows */}
-        <div className="relative aspect-[5/3] overflow-hidden rounded-[14px] border border-line bg-paper">
-          <div className="absolute left-1/2 top-12 w-[240px] -translate-x-1/2">
+        {/* Anatomy callout — a labelled MetricTile with arrows.
+         * Source `.anatomy` has 40 px padding + the metric in normal flow
+         * with `margin: 60px auto;` (centred horizontally, 60 px gap from
+         * the inner padding edge). Callouts are absolute-positioned at
+         * fixed coords relative to the anatomy box. */}
+        <div className="relative aspect-[5/3] overflow-hidden rounded-[14px] border border-line bg-paper p-10">
+          <div className="mx-auto mt-[60px] w-[240px]">
             <MetricTile
               label="Distance"
               value={<span className="text-accent">1,284</span>}
@@ -204,7 +201,9 @@ export function MetricSection() {
   );
 }
 
-/** Mono callout used inside the anatomy box (mirrors `.callout` from source). */
+/** Mono callout used inside the anatomy box. Mirrors source `.callout`:
+ * `font-family: mono; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+ *  text-transform: uppercase; color: var(--fg-dim);` */
 function AnatomyCallout({
   top,
   left,
@@ -216,7 +215,7 @@ function AnatomyCallout({
 }) {
   return (
     <div
-      className="absolute font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-accent"
+      className="absolute font-mono text-[10px] font-bold uppercase tracking-[1px] text-fg-dim"
       style={{ top, left }}
     >
       {children}
@@ -226,7 +225,11 @@ function AnatomyCallout({
 
 /* -------- 13 · ROAD PREVIEW CARD -------- */
 
-const SEG_ALL_GREEN = Array.from({ length: 10 }, () => ({ q: 5 as const }));
+// Card 1's q-strip mostly-q5 with 2 q4 interruptions (source's exact
+// sequence: q5, q5, q4, q5, q4, q5, q5, q5, q5, q4).
+const SEG_ALL_GREEN = [5, 5, 4, 5, 4, 5, 5, 5, 5, 4].map((q) => ({
+  q: q as 4 | 5,
+}));
 const SEG_MIXED_4 = [4, 4, 5, 3, 4, 4, 3, 4, 4, 4].map((q) => ({
   q: q as 3 | 4 | 5,
 }));
@@ -251,7 +254,7 @@ export function RoadPreviewSection() {
         <>
           Stacked vertically in the trip planner's left rail. The active card
           inverts to ink fill (selected state). Elevation profile is filled and
-          stroked with the segment's quality color; the strip of colour
+          stroked with the segment's quality color; the strip of color
           rectangles under it shows quality per sub-segment.
         </>
       }
@@ -312,11 +315,12 @@ export function RoadPreviewSection() {
               <strong>Q-bars</strong> — size 4, top-right
             </li>
             <li>
-              <strong>Elevation</strong> — 52 px paper inner card, q-colour SVG
+              <strong>Elevation</strong> — 52 px paper inner card, q-color SVG
               path
             </li>
             <li>
-              <strong>Q-strip</strong> — palette-aware rectangles at the bottom
+              <strong>Q-strip</strong> — 10 rectangles at the bottom of the
+              elevation, palette-aware
             </li>
             <li>
               <strong>Meta row</strong> — mono · uppercase · 11 px · justified
@@ -333,22 +337,36 @@ export function RoadPreviewSection() {
             <SpecHead cols="100px 1fr 1fr">
               <span>State</span>
               <span>Background</span>
-              <span>Foreground</span>
+              <span>Border</span>
             </SpecHead>
             <SpecRow cols="100px 1fr 1fr">
               <span className="font-mono font-semibold">default</span>
               <span className="text-fg-dim">--cream</span>
               <span className="font-mono text-[11px] text-fg-dim">
-                --ink + --fg-dim meta
+                1 px --line
+              </span>
+            </SpecRow>
+            <SpecRow cols="100px 1fr 1fr">
+              <span className="font-mono font-semibold">hover</span>
+              <span className="text-fg-dim">--cream</span>
+              <span className="font-mono text-[11px] text-fg-dim">
+                1 px --line-strong
               </span>
             </SpecRow>
             <SpecRow cols="100px 1fr 1fr" last>
               <span className="font-mono font-semibold">active</span>
-              <span className="text-fg-dim">--ink</span>
+              <span className="text-fg-dim">--ink · text cream</span>
               <span className="font-mono text-[11px] text-fg-dim">
-                --cream + onDark qbars
+                1 px ink
               </span>
             </SpecRow>
+          </div>
+          <div className="mt-4">
+            <SubStamp>Density</SubStamp>
+            <p className="text-[13px] leading-[1.55] text-fg-dim">
+              Comfortable: 14 / 10 / 52. Compact: 12 / 8 / 36. Density tweak
+              controls all three at once.
+            </p>
           </div>
         </Card>
       </div>
@@ -374,9 +392,13 @@ export function NavRailSection() {
       }
     >
       <div className="grid grid-cols-[280px_1fr] items-start gap-7">
+        {/* Source mock widens the rail to 280 px + rounds the corners
+         * + adds a 1 px hairline so the rail floats as a documentation
+         * card. Real product rails are 220 px wide and flush against
+         * the page edge — that's `<NavRail />` defaults. */}
         <NavRail
+          className="!w-[280px] rounded-[14px] border border-cream/10"
           brandTitle="TARMOTO"
-          brandSub="WEB · v1.4"
           items={[
             { key: "trip", num: "01", label: "Trip Planner", active: true },
             { key: "explore", num: "02", label: "Road Explorer" },
@@ -483,6 +505,10 @@ interface Ride {
   q: 1 | 2 | 3 | 4 | 5;
 }
 
+// Source shows 3 sample rows ("18 Apr Stelvio Loop / 13 Apr Passo Gavia /
+// 05 Apr Mortirolo test") with a header saying "12 rides · click to
+// inspect" — the table is documented as a preview of a longer
+// scrollable list rather than the literal full set.
 const RIDES: Ride[] = [
   {
     date: "18 Apr",
@@ -511,34 +537,8 @@ const RIDES: Ride[] = [
     lean: "40°",
     q: 2,
   },
-  {
-    date: "29 Mar",
-    ride: "Bernina round",
-    km: 162,
-    duration: "3h 48m",
-    avg: 60,
-    lean: "32°",
-    q: 4,
-  },
-  {
-    date: "22 Mar",
-    ride: "Como western shore",
-    km: 96,
-    duration: "2h 38m",
-    avg: 51,
-    lean: "26°",
-    q: 3,
-  },
-  {
-    date: "15 Mar",
-    ride: "Forcola scout",
-    km: 58,
-    duration: "1h 42m",
-    avg: 44,
-    lean: "30°",
-    q: 4,
-  },
 ];
+const RIDES_TOTAL = 12;
 
 export function TableSection() {
   return (
@@ -559,7 +559,7 @@ export function TableSection() {
           <div>
             <Stamp>Recent rides</Stamp>
             <div className="mt-1 text-[15px] font-bold">
-              {RIDES.length} rides · click to inspect
+              {RIDES_TOTAL} rides · click to inspect
             </div>
           </div>
           <div className="flex gap-1.5">
@@ -623,6 +623,33 @@ export function TableSection() {
           rows={RIDES}
         />
       </Card>
+
+      <div className="mt-6 grid grid-cols-3 gap-3.5">
+        <Card padded>
+          <SubStamp>Column rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Numeric columns are always mono. Identity columns (date, ride name)
+            use the working font. Quality is always last column before the
+            chevron.
+          </p>
+        </Card>
+        <Card padded>
+          <SubStamp>Header rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            Header row is paper-tinted, 10 px mono, 1 px letter-spacing,
+            uppercase, fg-mute. Always sticky if the table can scroll
+            vertically.
+          </p>
+        </Card>
+        <Card padded>
+          <SubStamp>Row rule</SubStamp>
+          <p className="text-[13px] leading-[1.55] text-fg-dim">
+            14 / 20 padding · 13 px text · 1 px line divider · chevron in{" "}
+            <Mono className="text-ink">--fg-mute</Mono>. No row hover background
+            — just cursor pointer.
+          </p>
+        </Card>
+      </div>
     </Section>
   );
 }
@@ -648,22 +675,40 @@ export function TweaksSection() {
     >
       <div className="grid grid-cols-[320px_1fr] items-start gap-7">
         <TweaksPanel value={tokens} onChange={setTokens} onClose={() => {}} />
-        <Card padded>
+        <div>
           <SubStamp>Token shape (persisted)</SubStamp>
-          <pre className="m-0 overflow-x-auto rounded-[10px] bg-ink p-4 font-mono text-[11px] leading-[1.65] text-cream">
-            {`{
-  "accent": "${tokens.accent}",
-  "palette": "${tokens.palette}",   // traffic | muted | mono
-  "mapMode": "${tokens.mapMode}",     // paper | light | dark
-  "density": "${tokens.density}" // comfortable | compact
-}`}
-          </pre>
+          <CodeBlock>
+            {`{\n  `}
+            <CK>{`"accent"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.accent}"`}</CS>
+            {`,\n  `}
+            <CK>{`"palette"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.palette}"`}</CS>
+            {`,   `}
+            <CC>{`// traffic | muted | mono`}</CC>
+            {`\n  `}
+            <CK>{`"mapMode"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.mapMode}"`}</CS>
+            {`,     `}
+            <CC>{`// paper | light | dark`}</CC>
+            {`\n  `}
+            <CK>{`"density"`}</CK>
+            {`: `}
+            <CS>{`"${tokens.density}"`}</CS>
+            {` `}
+            <CC>{`// comfortable | compact`}</CC>
+            {`\n}`}
+          </CodeBlock>
           <p className="mt-3.5 text-[13px] leading-[1.55] text-fg-dim">
-            The panel is fully controlled — the host owns the tokens state and
-            persists it (localStorage, user prefs, …). Every screen consumes the
-            same shape.
+            Wraps in <Mono>EDITMODE-BEGIN</Mono> / <Mono>EDITMODE-END</Mono>{" "}
+            markers — the host rewrites this JSON when the user changes a value.
+            Every view that responds to tweaks consumes the same{" "}
+            <Mono>tokens</Mono> prop.
           </p>
-        </Card>
+        </div>
       </div>
     </Section>
   );

@@ -68,7 +68,7 @@ export function SubStamp({
 }) {
   return (
     <div
-      className={`mb-3 font-mono text-[11px] font-bold uppercase tracking-[1.5px] ${onDark ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
+      className={`mb-3 font-mono text-[11px] font-bold uppercase tracking-[1.6px] ${onDark ? "text-fg-on-dark-dim" : "text-fg-dim"}`}
     >
       {children}
     </div>

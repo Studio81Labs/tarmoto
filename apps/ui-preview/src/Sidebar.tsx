@@ -86,14 +86,7 @@ export function Sidebar() {
         <span className="grid size-[30px] place-items-center rounded-[7px] bg-accent">
           <TarmotoMark size={16} color="#0E0E10" />
         </span>
-        <div>
-          <div className="text-[14px] font-extrabold tracking-tight">
-            TARMOTO
-          </div>
-          <div className="font-mono text-[9px] tracking-[1.4px] text-cream/50 uppercase">
-            WEB V2 · MAP
-          </div>
-        </div>
+        <div className="text-[14px] font-extrabold tracking-tight">TARMOTO</div>
       </div>
 
       <nav className="flex flex-col gap-px">

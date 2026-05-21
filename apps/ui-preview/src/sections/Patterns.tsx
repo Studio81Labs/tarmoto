@@ -7,7 +7,7 @@ import {
   RoadPreviewCard,
   Stamp,
 } from "@tarmoto/ui";
-import { CC, CK, CN, CodeBlock, TokenTable } from "./_shared";
+import { CK, CN, CodeBlock, TokenTable } from "./_shared";
 
 /* ============================================================
  * 24 · LAYOUTS (source §20)
@@ -134,7 +134,7 @@ export function DensitySection() {
       }
     >
       <div className="grid grid-cols-2 gap-5">
-        <Card padded>
+        <Card padded className="!p-6">
           <Stamp>Comfortable</Stamp>
           <div className="mt-3">
             <RoadPreviewCard
@@ -153,13 +153,11 @@ export function DensitySection() {
               <CK>card-pad</CK>: <CN>14</CN> · <CK>gap</CK>: <CN>10</CN>
               {"\n"}
               <CK>elev-h</CK>: <CN>52</CN> · <CK>name</CK>: <CN>14 px</CN>
-              {"\n"}
-              <CC>{`// default; honoured everywhere unless --density=compact`}</CC>
             </CodeBlock>
           </div>
         </Card>
 
-        <Card padded>
+        <Card padded className="!p-6">
           <Stamp>Compact</Stamp>
           <div className="mt-3">
             <CompactRpc />
@@ -169,8 +167,6 @@ export function DensitySection() {
               <CK>card-pad</CK>: <CN>12</CN> · <CK>gap</CK>: <CN>8</CN>
               {"\n"}
               <CK>elev-h</CK>: <CN>36</CN> · <CK>name</CK>: <CN>13 px</CN>
-              {"\n"}
-              <CC>{`// power-user surfaces only`}</CC>
             </CodeBlock>
           </div>
         </Card>
@@ -280,7 +276,7 @@ export function DoDontSection() {
           />
           <BigRule
             kind="do"
-            title='Use Q-bars wherever you would otherwise type "5/5".'
+            title={`Use Q-bars wherever you'd otherwise type "5/5".`}
             body="Stars don't exist in Tarmoto. The bar glyph is the only quality indicator."
           />
           <BigRule
@@ -337,9 +333,9 @@ function BigRule({
   body: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[64px_1fr] items-start gap-4 border-b border-line py-4 last:border-b-0">
+    <div className="grid grid-cols-[80px_1fr] items-start gap-[18px] border-b border-line py-[18px] last:border-b-0">
       <div
-        className={`rounded p-1.5 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${
+        className={`rounded px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${
           kind === "do" ? "bg-quality-q5 text-ink" : "bg-quality-q1 text-cream"
         }`}
       >

@@ -21,12 +21,17 @@ export interface PillProps {
   type?: "button" | "submit" | "reset";
 }
 
+// Source spec (§08, Design Map CSS): primary + accent have NO border;
+// ghost + danger carry a 1px border in their tint. Without per-variant
+// border control the pill picks up 2px of extra height/width vs the
+// canonical 5/10 padding box, which reads as "wrong padding" against
+// the design source.
 const variantClass: Record<PillVariant, string> = {
-  primary: "bg-ink text-cream border-ink",
-  accent: "bg-accent text-ink border-accent",
-  ghost: "bg-transparent text-ink border-line-strong",
-  danger: "bg-transparent text-quality-q1 border-quality-q1",
-  "on-dark": "bg-cream/10 text-cream border-cream/15",
+  primary: "bg-ink text-cream border-0",
+  accent: "bg-accent text-ink border-0",
+  ghost: "bg-transparent text-ink border border-line-strong",
+  danger: "bg-transparent text-quality-q1 border border-quality-q1",
+  "on-dark": "bg-cream/10 text-cream border border-cream/15",
 };
 
 export function Pill({
@@ -53,8 +58,11 @@ export function Pill({
   return (
     <Component
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[5px]",
-        "font-sans text-[11px] font-bold tracking-[0.2px] whitespace-nowrap leading-none",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-[5px]",
+        // Source pill inherits body line-height 1.5, NOT leading-none — without
+        // this the line-box collapses and the pill looks ~5px shorter than the
+        // canonical 5/10 padding box.
+        "font-sans text-[11px] font-bold tracking-[0.2px] whitespace-nowrap leading-[1.5]",
         variantClass[variant],
         interactive &&
           !disabled &&

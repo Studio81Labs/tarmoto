@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Section, SubStamp } from "../Section";
 import {
   Card,
-  Mono,
   NumberGrid,
   RadioCardGroup,
   SegmentedControl,
@@ -10,6 +9,7 @@ import {
   SwatchPicker,
   Toggle,
 } from "@tarmoto/ui";
+import { CodeBlock, CN, CS } from "./_shared";
 
 /* -------- 09 · FORM CONTROLS -------- */
 
@@ -19,7 +19,7 @@ export function ControlsSection() {
   const [mapMode, setMapMode] = useState<"paper" | "light" | "dark">("paper");
   const [palette, setPalette] = useState<"traffic" | "muted" | "mono">("muted");
   const [distance, setDistance] = useState(186);
-  const [ride, setRide] = useState<"twisty" | "scenic" | "relaxed">("twisty");
+  const [ride, setRide] = useState<"twisty" | "scenic">("twisty");
   const [days, setDays] = useState(4);
   const [accent, setAccent] = useState("#FF6A1A");
 
@@ -39,7 +39,7 @@ export function ControlsSection() {
     >
       <div className="grid grid-cols-2 gap-6">
         {/* Toggle */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Toggle</SubStamp>
           <div className="flex flex-col gap-3.5">
             <div className="flex items-center justify-between border-b border-line py-2.5 text-[13px]">
@@ -59,12 +59,31 @@ export function ControlsSection() {
               />
             </div>
           </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`track: `}
+              <CN>34 × 20</CN>
+              {` · ink / 0.12 ink\n`}
+              {`thumb: `}
+              <CN>16</CN>
+              {` circle · cream / accent\n`}
+              {`gap to track edge: `}
+              <CN>2 px</CN>
+              {`\n`}
+              {`ease: `}
+              <CS>{`"left 0.15s"`}</CS>
+            </CodeBlock>
+          </div>
         </Card>
 
         {/* Segmented */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Segmented control</SubStamp>
-          <div className="flex flex-col gap-3.5">
+          {/* `items-start` is critical — without it the parent flex-column's
+           * default `align-items: stretch` expands the inline-flex Segmented
+           * track to the full column width, so the active item's `--ink` pill
+           * floats inside an oversized paper-tinted track. */}
+          <div className="flex flex-col items-start gap-3.5">
             <SegmentedControl<"paper" | "light" | "dark">
               ariaLabel="Map mode"
               value={mapMode}
@@ -86,10 +105,24 @@ export function ControlsSection() {
               ]}
             />
           </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`track: `}
+              <CN>--paper</CN>
+              {` · 3 px padding · 7 radius\n`}
+              {`item: `}
+              <CN>6 / 8</CN>
+              {` padding · 11 px / 700\n`}
+              {`active: `}
+              <CN>--ink</CN>
+              {` bg · cream fg · 5 radius\n`}
+              {`inactive: transparent · fg-dim`}
+            </CodeBlock>
+          </div>
         </Card>
 
         {/* Slider */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Slider</SubStamp>
           <div className="max-w-[320px]">
             <Slider
@@ -100,16 +133,31 @@ export function ControlsSection() {
               step={1}
               ariaLabel="Distance"
             />
+            <div className="mt-1 flex max-w-[320px] justify-between font-mono text-[10px] text-fg-mute">
+              <span>80</span>
+              <span>300</span>
+            </div>
           </div>
-          <Mono className="mt-2 block text-[11px] text-fg-dim">
-            {distance} km
-          </Mono>
+          <div className="mt-4">
+            <CodeBlock>
+              {`rail: `}
+              <CN>2</CN>
+              {` px line-strong / fg\n`}
+              {`thumb: `}
+              <CN>16</CN>
+              {` circle · --accent\n`}
+              {`thumb border: `}
+              <CN>2 px</CN>
+              {` ink (ringed)\n`}
+              {`endcaps: mono / fg-mute · always visible`}
+            </CodeBlock>
+          </div>
         </Card>
 
         {/* Radio · stacked */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Radio · stacked cards</SubStamp>
-          <RadioCardGroup<"twisty" | "scenic" | "relaxed">
+          <RadioCardGroup<"twisty" | "scenic">
             name="ride-style"
             value={ride}
             onChange={setRide}
@@ -124,17 +172,12 @@ export function ControlsSection() {
                 label: "Scenic balance",
                 help: "Views + curves mixed",
               },
-              {
-                value: "relaxed",
-                label: "Relaxed loop",
-                help: "Smooth roads, longer breaks",
-              },
             ]}
           />
         </Card>
 
         {/* Day picker grid */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Number grid</SubStamp>
           <NumberGrid
             value={days}
@@ -149,7 +192,7 @@ export function ControlsSection() {
         </Card>
 
         {/* Swatch picker */}
-        <Card padded>
+        <Card padded className="!p-6">
           <SubStamp>Swatch picker</SubStamp>
           <SwatchPicker
             value={accent}

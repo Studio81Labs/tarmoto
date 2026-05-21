@@ -11,6 +11,7 @@ import {
   Mono,
   PeakGlyph,
   Pill,
+  QualityBars,
   QualityRibbonGlyph,
   Stamp,
   TownGlyph,
@@ -300,6 +301,121 @@ export function MapVocabSection() {
         </div>
       </div>
 
+      {/* Label placement */}
+      <div className="mt-9">
+        <SubStamp>Label placement</SubStamp>
+        <div className="grid grid-cols-2 gap-5">
+          <div className="relative aspect-[5/3] overflow-hidden rounded-[14px] border border-line bg-paper">
+            <svg
+              viewBox="0 0 400 200"
+              preserveAspectRatio="xMidYMid meet"
+              className="absolute inset-0 h-full w-full"
+              aria-hidden="true"
+            >
+              {/* crosshair guides */}
+              <line
+                x1="200"
+                y1="40"
+                x2="200"
+                y2="160"
+                stroke="rgba(14,14,16,0.18)"
+                strokeDasharray="2 3"
+              />
+              <line
+                x1="100"
+                y1="100"
+                x2="300"
+                y2="100"
+                stroke="rgba(14,14,16,0.18)"
+                strokeDasharray="2 3"
+              />
+              {/* town glyph (dot + halo) */}
+              <circle cx="200" cy="100" r="4.5" fill="#0E0E10" />
+              <circle
+                cx="200"
+                cy="100"
+                r="9"
+                fill="none"
+                stroke="#0E0E10"
+                strokeOpacity="0.3"
+              />
+              {/* label */}
+              <text
+                x="214"
+                y="104"
+                fill="#0E0E10"
+                fontFamily="Space Grotesk, system-ui"
+                fontSize="13"
+                fontWeight="700"
+              >
+                Bormio
+              </text>
+              {/* offset connector + value */}
+              <line
+                x1="200"
+                y1="100"
+                x2="214"
+                y2="104"
+                stroke="#FF6A1A"
+                strokeWidth="1"
+                strokeDasharray="1 2"
+              />
+              <text
+                x="220"
+                y="124"
+                fill="#FF6A1A"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="9"
+                fontWeight="700"
+                letterSpacing="1"
+              >
+                +14 / +4
+              </text>
+            </svg>
+          </div>
+          <div>
+            <SubStamp>Rules</SubStamp>
+            <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.8] text-fg-dim">
+              <li>
+                <strong className="font-bold text-ink">Default offset</strong>{" "}
+                is right of the point, vertically centred:{" "}
+                <Mono className="text-ink">+14 / +4</Mono>
+              </li>
+              <li>
+                <strong className="font-bold text-ink">Edge clamping:</strong>{" "}
+                within 50 px of the right edge, flip to left (
+                <Mono className="text-ink">-14 / +4</Mono> with text-anchor end)
+              </li>
+              <li>
+                <strong className="font-bold text-ink">Stacked labels</strong>{" "}
+                (name + elevation, like peaks) gap 12 px vertically
+              </li>
+              <li>
+                <strong className="font-bold text-ink">Font:</strong> sans-serif
+                for places (towns, regions), mono for measured things (peak
+                elev, scale)
+              </li>
+              <li>
+                <strong className="font-bold text-ink">Color:</strong> ink for
+                cities, ink @ 62 % for peaks &amp; landscape, cream @ 60 % on
+                dark mode
+              </li>
+              <li>
+                <strong className="font-bold text-ink">Anti-collision:</strong>{" "}
+                when two labels overlap, the lower-priority one hides (town &gt;
+                peak &gt; trail name)
+              </li>
+              <li>
+                <strong className="font-bold text-ink">
+                  No backgrounds, no halos, no strokes
+                </strong>{" "}
+                — labels live directly on the map
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       {/* Lines & areas */}
       <div className="mt-9">
         <SubStamp>Lines &amp; areas</SubStamp>
@@ -553,23 +669,33 @@ function FunZoneSample() {
   );
 }
 
+const RULE_BADGE_CLASS = {
+  do: "bg-quality-q5 text-ink",
+  dont: "bg-quality-q1 text-cream",
+  tip: "bg-ink text-cream",
+} as const;
+
+const RULE_BADGE_LABEL = {
+  do: "Do",
+  dont: "Don't",
+  tip: "Tip",
+} as const;
+
 function SimpleRule({
   kind,
   title,
   body,
 }: {
-  kind: "do" | "dont";
+  kind: "do" | "dont" | "tip";
   title: React.ReactNode;
   body: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[64px_1fr] items-start gap-4 border-b border-line py-4 last:border-b-0">
+    <div className="grid grid-cols-[80px_1fr] items-start gap-[18px] border-b border-line py-[18px] last:border-b-0">
       <div
-        className={`rounded p-1.5 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${
-          kind === "do" ? "bg-quality-q5 text-ink" : "bg-quality-q1 text-cream"
-        }`}
+        className={`rounded px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${RULE_BADGE_CLASS[kind]}`}
       >
-        {kind === "do" ? "Do" : "Don't"}
+        {RULE_BADGE_LABEL[kind]}
       </div>
       <div>
         <div className="mb-1 text-[14px] font-bold">{title}</div>
@@ -1046,6 +1172,17 @@ export function MapOverlaysSection() {
             title="Fade to 30 % on active drag / pan."
             body="Overlays must never block the map's hit area while the user is drawing a region or panning. Return to 100 % on idle."
           />
+          <SimpleRule
+            kind="tip"
+            title="Pointer-events: auto only on the card."
+            body={
+              <>
+                The wrapping flex container should be{" "}
+                <Mono className="text-ink">pointer-events: none</Mono> so map
+                drags pass through the gutter between overlays.
+              </>
+            }
+          />
         </div>
         <div>
           <SimpleRule
@@ -1200,38 +1337,13 @@ function DayCard({
   meta: string;
   overnight: string;
 }) {
-  const filled = quality;
   return (
     <div
       className={`rounded-[10px] p-2.5 ${accent ? "bg-ink text-cream" : "border border-line bg-paper"}`}
     >
       <div className="mb-1.5 flex items-center justify-between">
-        <span
-          className={`font-mono text-[10px] font-bold uppercase tracking-[1.4px] ${accent ? "text-accent" : "text-fg-dim"}`}
-        >
-          Day {day}
-        </span>
-        <span className="inline-flex gap-[2px]">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <span
-              key={n}
-              className="inline-block"
-              style={{
-                width: 3,
-                height: 7,
-                borderRadius: 1.5,
-                background:
-                  n <= filled
-                    ? ["#E05A3C", "#F0A03C", "#E8D66A", "#C7D36A", "#6FD38A"][
-                        filled - 1
-                      ]
-                    : accent
-                      ? "rgba(245,239,230,0.12)"
-                      : "rgba(14,14,16,0.08)",
-              }}
-            />
-          ))}
-        </span>
+        <Stamp tone={accent ? "accent" : "dim"}>Day {day}</Stamp>
+        <QualityBars q={quality} size={3} onDark={accent} />
       </div>
       <div className="text-[13px] font-bold">{title}</div>
       <div

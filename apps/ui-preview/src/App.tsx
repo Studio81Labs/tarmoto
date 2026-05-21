@@ -1,3 +1,4 @@
+import { Stamp } from "@tarmoto/ui";
 import { Hero } from "./Hero";
 import { Sidebar } from "./Sidebar";
 import {
@@ -97,26 +98,26 @@ export function App() {
  */
 function DesignMapFooter() {
   return (
-    <footer className="grid grid-cols-2 gap-[60px] bg-ink px-[60px] pb-20 pt-12 text-cream">
+    <footer className="grid grid-cols-2 gap-[60px] bg-ink px-[60px] pb-20 pt-10 text-cream">
       <div>
-        <div className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[1.6px] text-accent">
-          Source of truth
+        <div className="mb-3">
+          <Stamp tone="accent">Source of truth</Stamp>
         </div>
-        <h3 className="font-serif text-[26px] font-bold leading-[1.15] tracking-[-0.6px]">
+        <h3 className="font-serif text-[22px] font-bold tracking-[-0.4px]">
           Built against Web App v2.html · revision 2.
         </h3>
         <p className="mt-3.5 max-w-[60ch] text-[13px] leading-[1.6] text-cream/65">
           Tokens are defined in{" "}
           <span className="font-mono text-cream">colors_and_type.css</span>;
           components live as React functions in{" "}
-          <span className="font-mono text-cream">@tarmoto/ui</span> and the
+          <span className="font-mono text-cream">Web App v2.html</span> and the
           shared <span className="font-mono text-cream">atoms.jsx</span>. If you
           change a token or component, update this map in the same PR.
         </p>
       </div>
       <div>
-        <div className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[1.6px] text-accent">
-          Hand-off checklist
+        <div className="mb-3">
+          <Stamp tone="accent">Hand-off checklist</Stamp>
         </div>
         <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.8] text-cream/75">
           <li>
