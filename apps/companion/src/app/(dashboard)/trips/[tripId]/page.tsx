@@ -40,6 +40,7 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
+import { Card, Heading, Stamp } from "@tarmoto/ui";
 type RightTab = "days" | "members" | "collaborate";
 interface LoadedTrip {
   detail: TripDetailResponse;
@@ -171,37 +172,37 @@ export default function TripDetailPage() {
   }
   if (notFound) {
     return (
-      <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+      <div className="mx-auto max-w-2xl animate-fade-in p-7">
         <Link
           href="/trips"
-          className="inline-flex items-center gap-1.5 text-sm text-fg-dim hover:text-ink transition mb-6"
+          className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
           {t("Back to trips ")}
         </Link>
-        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
+        <Card padded={false} className="p-10 text-center">
           <Route size={36} className="mx-auto mb-3 text-fg-mute" />
-          <h2 className="text-lg font-semibold text-ink">
+          <Heading size="md" as="h2">
             {t("Trip not found")}
-          </h2>
-          <p className="mt-1 text-sm text-fg-dim">
+          </Heading>
+          <p className="mt-2 text-sm text-fg-dim">
             {t("The trip may have been deleted, or the link may be wrong. ")}
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
   if (error || !loaded || !trip) {
     return (
-      <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+      <div className="mx-auto max-w-2xl animate-fade-in p-7">
         <Link
           href="/trips"
-          className="inline-flex items-center gap-1.5 text-sm text-fg-dim hover:text-ink transition mb-6"
+          className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
           {t("Back to trips ")}
         </Link>
-        <div className="rounded-2xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-400">
           {error ?? "Unknown error loading trip."}
         </div>
       </div>
@@ -503,9 +504,7 @@ function DaysList({
   }
   return (
     <section className="space-y-2">
-      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
-        {t("Day-by-day ")}
-      </h2>
+      <Stamp as="h2">{t("Day-by-day ")}</Stamp>
       <ul className="space-y-2">
         {trip.days.map((day) => (
           <li
@@ -606,11 +605,9 @@ function MembersList({
     }
   };
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4 p-4">
       <section>
-        <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
-          {t("Members ")}
-        </h2>
+        <Stamp as="h2">{t("Members ")}</Stamp>
         <ul className="mt-2 space-y-2">
           {members.length === 0 ? (
             <li className="text-xs text-fg-dim">{t("No members yet.")}</li>
