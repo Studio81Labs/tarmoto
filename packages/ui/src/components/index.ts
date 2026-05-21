@@ -1,4 +1,5 @@
 export { Card, type CardProps, type CardVariant } from "./Card";
+export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export {
   MetricTile,
   type MetricTileProps,
