@@ -24,6 +24,7 @@ import { ApiError, api, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { currentUtcMonth } from "@/lib/passes-summary";
+import { Stamp } from "@tarmoto/ui";
 
 declare global {
   interface Window {
@@ -394,9 +395,9 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
+              <Stamp as="h3" className="mb-3 block">
                 {t("Road quality ")}
-              </h3>
+              </Stamp>
               <div className="space-y-2">
                 {QUALITY_OPTIONS.map((opt) => (
                   <label
@@ -417,9 +418,9 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
+              <Stamp as="h3" className="mb-3 block">
                 {t("Surface type ")}
-              </h3>
+              </Stamp>
               <div className="space-y-2">
                 {SURFACE_OPTIONS.map((opt) => (
                   <label
@@ -440,9 +441,9 @@ function ExplorerPageInner() {
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-dim mb-3">
+              <Stamp as="h3" className="mb-3 block">
                 {t("Hazard type ")}
-              </h3>
+              </Stamp>
               <div className="space-y-2">
                 {HAZARD_OPTIONS.map((opt) => (
                   <label
