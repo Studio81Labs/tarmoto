@@ -15,7 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader, Stamp } from "@tarmoto/ui";
 import { fetchAllRides } from "@/lib/rides-fetch";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -122,11 +122,12 @@ export default function StatsPage() {
   );
   if (loading) {
     return (
-      <div className="p-6 max-w-page mx-auto">
+      <div className="mx-auto w-full max-w-page p-7">
         <PageHeader
-          icon={BarChart3}
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
           title={t("Statistics")}
-          subtitle={t(
+          sub={t(
             "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
           )}
         />
@@ -139,11 +140,12 @@ export default function StatsPage() {
   }
   if (loadError) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
         <PageHeader
-          icon={BarChart3}
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
           title={t("Statistics")}
-          subtitle={t(
+          sub={t(
             "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
           )}
         />
@@ -155,44 +157,46 @@ export default function StatsPage() {
   }
   if (rides.length === 0) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
         <PageHeader
-          icon={BarChart3}
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
           title={t("Statistics")}
-          subtitle={t(
+          sub={t(
             "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
           )}
         />
-        <div className="rounded-2xl bg-cream border border-line p-16 text-center">
-          <BarChart3 size={48} className="mx-auto text-fg-mute mb-4" />
-          <p className="text-fg-dim text-lg mb-2">
+        <Card padded={false} className="p-16 text-center">
+          <BarChart3 size={48} className="mx-auto mb-4 text-fg-mute" />
+          <p className="mb-2 text-lg text-fg-dim">
             {t("No rides recorded yet")}
           </p>
-          <p className="text-fg-dim text-sm">
+          <p className="text-sm text-fg-dim">
             {t(
               "Start riding with the Tarmoto mobile app to see your stats here. ",
             )}
           </p>
-        </div>
+        </Card>
       </div>
     );
   }
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
+    <div className="mx-auto w-full max-w-page animate-fade-in space-y-8 p-7">
       <PageHeader
-        icon={BarChart3}
+        stamp={t("Activity · Statistics")}
+        icon={<BarChart3 size={22} strokeWidth={1.8} />}
         title={t("Statistics")}
-        subtitle={t(
+        sub={t(
           "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
         )}
-        action={
+        right={
           <FilterBar filters={filters} years={years} onChange={setFilters} />
         }
       />
 
       <TotalsGrid totals={totals} />
 
-      <section className="rounded-2xl bg-cream border border-line p-5">
+      <Card padded={false} className="p-5">
         <ChartHeader
           icon={<BarChart3 size={16} />}
           title={`Monthly distance — ${focusYear}`}
@@ -242,19 +246,19 @@ export default function StatsPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </section>
+      </Card>
 
-      <section className="rounded-2xl bg-cream border border-line p-5">
+      <Card padded={false} className="p-5">
         <ChartHeader
           icon={<CalendarDays size={16} />}
           title={`Calendar heatmap — ${focusYear}`}
           subtitle="Each cell is one day. Brighter = longer ride."
         />
         <CalendarHeatmap days={calendar} year={focusYear} />
-      </section>
+      </Card>
 
       {yoyYears.length >= 2 && (
-        <section className="rounded-2xl bg-cream border border-line p-5">
+        <Card padded={false} className="p-5">
           <ChartHeader
             icon={<TrendingUp size={16} />}
             title={t("Year-over-year")}
@@ -314,11 +318,11 @@ export default function StatsPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </section>
+        </Card>
       )}
 
       {yearlyTotals.length > 0 && (
-        <section className="rounded-2xl bg-cream border border-line p-5">
+        <Card padded={false} className="p-5">
           <ChartHeader
             icon={<BarChart3 size={16} />}
             title={t("All years")}
@@ -364,7 +368,7 @@ export default function StatsPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </Card>
       )}
     </div>
   );
@@ -467,22 +471,19 @@ function TotalsGrid({ totals }: TotalsGridProps) {
     },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
       {cards.map((stat) => (
-        <div
-          key={stat.label}
-          className="p-4 rounded-xl bg-cream border border-line"
-        >
-          <p className="text-xs text-fg-dim mb-1">{stat.label}</p>
-          <p className="text-2xl font-bold text-ink tabular-nums">
+        <Card key={stat.label} padded={false} className="p-4">
+          <Stamp>{stat.label}</Stamp>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
             {stat.value}
             {stat.unit && (
-              <span className="text-sm font-normal text-fg-dim ml-1">
+              <span className="ml-1 text-sm font-normal text-fg-dim">
                 {stat.unit}
               </span>
             )}
           </p>
-        </div>
+        </Card>
       ))}
     </div>
   );
@@ -499,7 +500,7 @@ function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
         <span className="text-accent">{icon}</span>
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="mt-0.5 text-xs text-fg-dim">{subtitle}</p>}
     </div>
   );
 }
