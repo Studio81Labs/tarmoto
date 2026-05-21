@@ -165,7 +165,9 @@ export default function NotificationsPage() {
       {/* Email digest */}
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp className="mb-1 block">{t("Email digest")}</Stamp>
+          <Stamp as="h2" className="mb-1 block">
+            {t("Email digest")}
+          </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t("Summary of your riding stats and community activity. ")}
           </p>

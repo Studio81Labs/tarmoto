@@ -152,7 +152,9 @@ export default function PrivacyPage() {
       {/* Profile visibility */}
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp className="mb-1 block">{t("Profile visibility ")}</Stamp>
+          <Stamp as="h2" className="mb-1 block">
+            {t("Profile visibility ")}
+          </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t("Who can see your profile, stats, and shared rides. ")}
           </p>
@@ -177,7 +179,9 @@ export default function PrivacyPage() {
       {/* Default ride sharing */}
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp className="mb-1 block">{t("Default ride sharing ")}</Stamp>
+          <Stamp as="h2" className="mb-1 block">
+            {t("Default ride sharing ")}
+          </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
               "How newly recorded rides are shared. You can always change visibility per ride. ",
@@ -225,7 +229,9 @@ export default function PrivacyPage() {
       {/* Location retention */}
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
-          <Stamp className="mb-1 block">{t("Location data retention ")}</Stamp>
+          <Stamp as="h2" className="mb-1 block">
+            {t("Location data retention ")}
+          </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
               "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
@@ -252,7 +258,9 @@ export default function PrivacyPage() {
       {/* Data processing consent */}
       <Card padded={false} className="mb-6 divide-y divide-line">
         <header className="px-5 py-4">
-          <Stamp className="mb-1 block">{t("Data processing consent ")}</Stamp>
+          <Stamp as="h2" className="mb-1 block">
+            {t("Data processing consent ")}
+          </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
               "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",

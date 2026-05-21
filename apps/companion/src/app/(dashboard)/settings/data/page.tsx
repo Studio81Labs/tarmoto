@@ -185,7 +185,9 @@ export default function DataPage() {
             <Download size={18} />
           </div>
           <div>
-            <Stamp className="mb-1 block">{t("Download my data ")}</Stamp>
+            <Stamp as="h2" className="mb-1 block">
+              {t("Download my data ")}
+            </Stamp>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
                 "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
@@ -267,7 +269,7 @@ export default function DataPage() {
             <Trash2 size={18} />
           </div>
           <div>
-            <Stamp className="mb-1 block text-quality-q1">
+            <Stamp as="h2" className="mb-1 block text-quality-q1">
               {t("Danger zone ")}
             </Stamp>
             <p className="mt-0.5 max-w-[520px] text-[12px] leading-[1.5] text-quality-q1/80">
