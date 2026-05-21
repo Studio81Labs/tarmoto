@@ -13,7 +13,7 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
-import { PageHeader as DashboardPageHeader } from "@/components/PageHeader";
+import { Card, PageHeader as DashboardPageHeader } from "@tarmoto/ui";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
 import type {
@@ -569,14 +569,13 @@ interface PageHeaderProps {
 }
 function PageHeader({ action }: PageHeaderProps) {
   return (
-    <div className="px-6 pt-6">
+    <div className="px-7 pt-7">
       <DashboardPageHeader
-        icon={MapIcon}
+        stamp={t("Activity · Road Map")}
+        icon={<MapIcon size={22} strokeWidth={1.8} />}
         title={t("My Road Map")}
-        subtitle={t(
-          "Every road you've ridden, layered on the regional basemap.",
-        )}
-        action={action}
+        sub={t("Every road you've ridden, layered on the regional basemap.")}
+        right={action}
       />
     </div>
   );
@@ -625,18 +624,15 @@ function SummaryCards({
   return (
     <div className="grid grid-cols-1 gap-2">
       {cards.map((c) => (
-        <div
-          key={c.label}
-          className="rounded-xl bg-cream border border-line p-3"
-        >
+        <Card key={c.label} padded={false} className="p-3">
           <p className="text-xs uppercase tracking-wider text-fg-dim">
             {c.label}
           </p>
-          <p className="text-xl font-bold text-ink tabular-nums mt-0.5">
+          <p className="mt-0.5 text-xl font-bold tabular-nums text-ink">
             {c.value}
           </p>
-          {c.sub && <p className="text-xs text-fg-dim mt-0.5">{c.sub}</p>}
-        </div>
+          {c.sub && <p className="mt-0.5 text-xs text-fg-dim">{c.sub}</p>}
+        </Card>
       ))}
     </div>
   );
