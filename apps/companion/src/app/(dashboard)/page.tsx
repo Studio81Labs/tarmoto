@@ -235,9 +235,9 @@ export default function HomePage() {
                     </div>
                     {days > 0 && (
                       <div className="mt-3 flex items-center gap-3 text-[11px] text-fg-dim">
-                        <Mono>
+                        <Mono className="uppercase">
                           <span className="font-bold text-ink">{days}</span>{" "}
-                          {days > 1 ? t("DAYS") : t("DAY")}
+                          {days > 1 ? t("days") : t("day")}
                         </Mono>
                       </div>
                     )}
