@@ -50,7 +50,7 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { PageHeader } from "@/components/PageHeader";
+import { Card, PageHeader } from "@tarmoto/ui";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -468,18 +468,19 @@ export default function TripListPage() {
     }
   };
   return (
-    <div className="overflow-y-auto h-full">
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
         <PageHeader
-          icon={Route}
+          stamp={t("Plan · Trips")}
+          icon={<Route size={22} strokeWidth={1.8} />}
           title={t("My Trips")}
-          subtitle={t(
+          sub={t(
             "Plan multi-day routes, organise them into folders, and ride them from the mobile app.",
           )}
-          action={
+          right={
             <Link
               href="/trips/planner"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
             >
               <Plus size={16} />
               {t("New trip")}
@@ -538,7 +539,7 @@ export default function TripListPage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-48 rounded-2xl bg-cream border border-line animate-pulse"
+                className="h-48 animate-pulse rounded-[14px] border border-line bg-cream"
               />
             ))}
           </div>
@@ -904,7 +905,7 @@ function TripCard({
   return (
     <div
       data-menu-root
-      className={`relative rounded-2xl bg-cream border border-line hover:border-line-strong transition ${busy ? "opacity-60" : ""}`}
+      className={`relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
     >
       <Link href={`/trips/${trip.id}`} className="block p-5 pr-12 group">
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -1121,7 +1122,7 @@ function FolderModal({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-line bg-cream p-5 shadow-xl"
+        className="w-full max-w-sm rounded-[14px] border border-line bg-cream p-5 shadow-xl"
       >
         <h2 className="text-sm font-semibold text-ink mb-3">
           {mode === "create" ? "New folder" : "Rename folder"}
@@ -1182,10 +1183,10 @@ function EmptyState({
       };
 }) {
   return (
-    <div className="rounded-2xl bg-cream border border-line p-16 text-center mt-5">
-      <Route size={48} className="mx-auto text-fg-mute mb-4" />
-      <p className="text-fg-dim text-lg mb-1">{title}</p>
-      <p className="text-fg-dim text-sm mb-6">{body}</p>
+    <Card padded={false} className="mt-5 p-16 text-center">
+      <Route size={48} className="mx-auto mb-4 text-fg-mute" />
+      <p className="mb-1 text-lg text-fg-dim">{title}</p>
+      <p className="mb-6 text-sm text-fg-dim">{body}</p>
       {action &&
         ("href" in action ? (
           <Link
@@ -1198,12 +1199,12 @@ function EmptyState({
           <button
             type="button"
             onClick={action.onClick}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
+            className="inline-flex items-center gap-2 rounded-lg bg-paper px-4 py-2 text-sm text-ink transition hover:bg-paper-2"
           >
             {action.label}
           </button>
         ))}
-    </div>
+    </Card>
   );
 }
 function Menu({
