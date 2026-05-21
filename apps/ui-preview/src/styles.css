@@ -1,13 +1,6 @@
 @import "tailwindcss";
 @import "@tarmoto/ui/theme.css";
 
-/* Tailwind v4 auto-scans this app's source by default but doesn't follow
- * imports into workspace packages — without this `@source` line any
- * arbitrary utility used only inside `@tarmoto/ui` components (e.g.
- * `py-[5px]` on `Pill`) is missing from the generated stylesheet and
- * the affected element renders with zero vertical padding. */
-@source "../../../packages/ui/src/**/*.{ts,tsx}";
-
 /* Extra utilities used only by the preview chrome — not part of the
  * component library. Custom slash opacity values for Web App v2 spec
  * (8/12/15% etc.) are registered as Tailwind colour aliases below so
