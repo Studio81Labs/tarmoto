@@ -252,7 +252,7 @@ function Header({
         <div className="shrink-0 flex flex-col items-stretch sm:items-end gap-2">
           {profile.is_self ? (
             <Link
-              href="/settings"
+              href="/settings/profile"
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
             >
               {t("Edit profile")}

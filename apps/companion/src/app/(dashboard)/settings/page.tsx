@@ -1,31 +1,29 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import QRCode from "qrcode";
-import { useAuthStore } from "@/stores/auth";
-import { usePreferencesStore } from "@/stores/preferences";
-import { usersApi } from "@/lib/api";
-import { buildLinkAccountDeepLink } from "@/lib/account-link";
-import type { UnitSystem } from "@tarmoto/shared";
-import { Stamp } from "@/components/tarmoto/atoms";
-import { LocaleSwitcher } from "@/components/LocaleSwitcher";
-import { PageHeader } from "@/components/PageHeader";
 import {
-  User,
-  CreditCard,
-  Shield,
   Bell,
   Bike,
   ChevronRight,
+  CreditCard,
   Database,
-  Copy,
   Settings as SettingsIcon,
-  Smartphone,
+  Shield,
+  User,
+  type LucideIcon,
 } from "lucide-react";
-const SETTINGS_SECTIONS = [
+import { Card, PageHeader } from "@tarmoto/ui";
+
+interface SettingsSection {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  description: string;
+}
+
+const SETTINGS_SECTIONS: SettingsSection[] = [
   {
-    href: "/settings",
+    href: "/settings/profile",
     icon: User,
     label: "Profile",
     description: "Display name, bio, home region",
@@ -61,653 +59,43 @@ const SETTINGS_SECTIONS = [
     description: "Export your data or delete your account",
   },
 ];
-type SaveState = "idle" | "saving" | "saved" | "error";
-type CopyState = "idle" | "copied" | "error";
-type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
-export default function AccountPage() {
-  const user = useAuthStore((s) => s.user);
-  const setAuthUser = useAuthStore((s) => s.setUser);
-  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
-  const [avatarUrl, setAvatarUrl] = useState("");
-  const [homeRegion, setHomeRegion] = useState("");
-  const [bio, setBio] = useState("");
-  const [didHydrateProfile, setDidHydrateProfile] = useState(false);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const [mobileLinkQrSrc, setMobileLinkQrSrc] = useState<string | null>(null);
-  const [avatarUploadState, setAvatarUploadState] =
-    useState<AvatarUploadState>("idle");
-  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(
-    null,
-  );
-  // Per-field dirty flags — set on first keystroke so a late GET response
-  // can't clobber what the user just typed, and so an unhydrated save
-  // doesn't blindly send empty values that would blank the server row.
-  const avatarDirtyRef = useRef(false);
-  const bioDirtyRef = useRef(false);
-  const homeRegionDirtyRef = useRef(false);
-  const saveResetTimerRef = useRef<number | null>(null);
-  const copyResetTimerRef = useRef<number | null>(null);
-  // `useState(user?.displayName ?? "")` only captures the value at first
-  // render. When Auth.js finishes hydrating the session after mount, the
-  // local field would otherwise stay blank and a later "Save" could wipe the
-  // real display name. Syncing from the store keeps the editable field aligned.
-  useEffect(() => {
-    if (user?.displayName) setDisplayName(user.displayName);
-  }, [user?.displayName]);
-  // Pull bio / home_region from the backend — they don't live on the
-  // NextAuth session (which intentionally keeps only ID-shaped fields).
-  useEffect(() => {
-    let cancelled = false;
-    usersApi
-      .getMe()
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (!avatarDirtyRef.current) setAvatarUrl(data.avatar_url ?? "");
-        // Don't overwrite a field the user has already started editing
-        // if the GET races with early typing.
-        if (!bioDirtyRef.current) setBio(data.bio ?? "");
-        if (!homeRegionDirtyRef.current) setHomeRegion(data.home_region ?? "");
-        setDidHydrateProfile(true);
-      })
-      .catch(() => {
-        // Silent on load — the form is still usable. But crucially keep
-        // didHydrateProfile=false so handleSave below won't blank server
-        // fields we never successfully read.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  // Clean up any pending transient status timers on unmount.
-  useEffect(() => {
-    return () => {
-      if (saveResetTimerRef.current !== null) {
-        window.clearTimeout(saveResetTimerRef.current);
-      }
-      if (copyResetTimerRef.current !== null) {
-        window.clearTimeout(copyResetTimerRef.current);
-      }
-    };
-  }, []);
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
-  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
-  useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
-  const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
-  const handleSave = useCallback(async () => {
-    if (saveResetTimerRef.current !== null) {
-      window.clearTimeout(saveResetTimerRef.current);
-      saveResetTimerRef.current = null;
-    }
-    const trimmedName = displayName.trim();
-    if (!trimmedName) {
-      setSaveState("error");
-      setSaveError(t("Display name is required."));
-      return;
-    }
-    if (avatarDirtyRef.current && avatarUrl.trim() && !previewAvatarUrl) {
-      setSaveState("error");
-      setSaveError(
-        t("Avatar URL must be a valid http:// or https:// address."),
-      );
-      return;
-    }
-    setSaveState("saving");
-    setSaveError(null);
-    // Build a partial payload — only include fields we either confirmed
-    // (hydrated from the server) or the user has touched. This keeps a
-    // failed GET from turning into an accidental "save null over the top
-    // of the existing bio/home_region".
-    const payload: {
-      display_name: string;
-      avatar_url?: string | null;
-      bio?: string | null;
-      home_region?: string | null;
-    } = { display_name: trimmedName };
-    if (avatarDirtyRef.current) {
-      payload.avatar_url = previewAvatarUrl;
-    }
-    if (didHydrateProfile || bioDirtyRef.current) {
-      payload.bio = bio.trim() || null;
-    }
-    if (didHydrateProfile || homeRegionDirtyRef.current) {
-      payload.home_region = homeRegion.trim() || null;
-    }
-    try {
-      const { data } = await usersApi.updateMe(payload);
-      if (user) {
-        setAuthUser({ ...user, displayName: data.display_name });
-      }
-      setSaveState("saved");
-      if (saveResetTimerRef.current !== null) {
-        window.clearTimeout(saveResetTimerRef.current);
-      }
-      saveResetTimerRef.current = window.setTimeout(() => {
-        setSaveState("idle");
-        saveResetTimerRef.current = null;
-      }, 2000);
-    } catch (err) {
-      if (saveResetTimerRef.current !== null) {
-        window.clearTimeout(saveResetTimerRef.current);
-        saveResetTimerRef.current = null;
-      }
-      setSaveState("error");
-      setSaveError(
-        err instanceof Error ? err.message : t("Could not save your profile."),
-      );
-    }
-  }, [
-    displayName,
-    avatarUrl,
-    previewAvatarUrl,
-    bio,
-    homeRegion,
-    user,
-    setAuthUser,
-    didHydrateProfile,
-  ]);
-  const handleCopySignInEmail = useCallback(async () => {
-    if (!user?.email) return;
-    if (copyResetTimerRef.current !== null) {
-      window.clearTimeout(copyResetTimerRef.current);
-      copyResetTimerRef.current = null;
-    }
-    try {
-      await navigator.clipboard.writeText(user.email);
-      setCopyState("copied");
-      copyResetTimerRef.current = window.setTimeout(() => {
-        setCopyState("idle");
-        copyResetTimerRef.current = null;
-      }, 2000);
-    } catch {
-      if (copyResetTimerRef.current !== null) {
-        window.clearTimeout(copyResetTimerRef.current);
-        copyResetTimerRef.current = null;
-      }
-      setCopyState("error");
-    }
-  }, [user?.email]);
-  const handleAvatarFileChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file) return;
-      setAvatarUploadState("uploading");
-      setAvatarUploadError(null);
-      try {
-        const { data } = await usersApi.uploadAvatar(file);
-        avatarDirtyRef.current = false;
-        setAvatarUrl(data.avatar_url ?? "");
-        setDidHydrateProfile(true);
-        setAvatarUploadState("uploaded");
-      } catch (err) {
-        setAvatarUploadState("error");
-        setAvatarUploadError(
-          err instanceof Error
-            ? err.message
-            : t("Could not upload your photo."),
-        );
-      }
-    },
-    [],
-  );
-  const mobileLinkHref = user?.email
-    ? buildLinkAccountDeepLink(user.email)
-    : null;
-  useEffect(() => {
-    let cancelled = false;
-    if (!mobileLinkHref) {
-      setMobileLinkQrSrc(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-    QRCode.toDataURL(mobileLinkHref, {
-      margin: 1,
-      width: 176,
-      color: {
-        // ink dots on cream background — matches the canonical cream theme.
-        dark: "#0E0E10",
-        light: "#F5EFE6",
-      },
-    })
-      .then((src) => {
-        if (!cancelled) setMobileLinkQrSrc(src);
-      })
-      .catch(() => {
-        if (!cancelled) setMobileLinkQrSrc(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mobileLinkHref]);
+
+// Hub is now a pure 2-col section grid per spec. Profile-editing UI
+// previously bundled into this page lives at /settings/profile.
+export default function SettingsHubPage() {
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <PageHeader
-        icon={SettingsIcon}
+        stamp={t("Settings")}
+        icon={<SettingsIcon size={22} strokeWidth={1.8} />}
         title={t("Settings")}
-        subtitle={t(
+        sub={t(
           "Account, billing, privacy, notifications, and the rest of your preferences.",
         )}
       />
-
-      {/* Settings navigation */}
-      <div className="space-y-1 mb-8">
+      <div className="grid gap-3 sm:grid-cols-2">
         {SETTINGS_SECTIONS.map((section) => (
-          <Link
-            key={section.href}
-            href={section.href}
-            className="flex items-center gap-4 p-4 rounded-xl hover:bg-paper transition group"
-          >
-            <div className="p-2 rounded-lg bg-paper text-fg-dim group-hover:text-accent transition">
-              <section.icon size={18} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-ink">
-                {t(section.label)}
-              </p>
-              <p className="text-xs text-fg-dim">{t(section.description)}</p>
-            </div>
-            <ChevronRight size={16} className="text-fg-mute" />
+          <Link key={section.href} href={section.href} className="group">
+            <Card className="flex items-center gap-4 transition group-hover:border-line-strong">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-paper text-ink">
+                <section.icon size={18} strokeWidth={1.8} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-extrabold text-ink">
+                  {t(section.label)}
+                </p>
+                <p className="mt-0.5 text-[12px] text-fg-dim">
+                  {t(section.description)}
+                </p>
+              </div>
+              <ChevronRight
+                size={16}
+                className="shrink-0 text-fg-mute transition group-hover:text-ink"
+              />
+            </Card>
           </Link>
         ))}
       </div>
-
-      {/* Profile form */}
-      <div className="rounded-2xl bg-cream border border-line p-[22px] space-y-4">
-        <Stamp as="h2" className="block mb-4">
-          {t("Profile")}
-        </Stamp>
-
-        <div className="flex items-center gap-4 mb-6">
-          {previewAvatarUrl ? (
-            // Browser-native <img>: avatar URLs come from arbitrary providers
-            // (social login, etc.), so we'd need to enumerate every domain in
-            // next.config.ts to use next/image — not practical here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewAvatarUrl}
-              alt={
-                displayName
-                  ? t("{name}'s profile photo", { name: displayName })
-                  : t("Your profile photo")
-              }
-              className="w-16 h-16 rounded-full object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="w-16 h-16 rounded-full bg-accent flex items-center justify-center text-ink text-xl font-extrabold"
-            >
-              {displayName[0]?.toUpperCase() ?? "T"}
-            </div>
-          )}
-          <div className="flex flex-col">
-            <p className="text-xs text-fg-dim mt-1">
-              {t(
-                "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ",
-              )}
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-avatar-file"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Upload avatar ")}
-          </label>
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              id="settings-avatar-file"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleAvatarFileChange}
-              className="block text-sm text-ink file:mr-4 file:rounded-lg file:border-0 file:bg-paper file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-ink hover:file:bg-paper-2"
-              aria-label={t("Upload avatar")}
-            />
-            {avatarUploadState === "uploading" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-fg-dim"
-              >
-                {t("Uploading\u2026 ")}
-              </span>
-            )}
-            {avatarUploadState === "uploaded" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-accent"
-              >
-                {t("Photo uploaded. ")}
-              </span>
-            )}
-            {avatarUploadState === "error" && avatarUploadError && (
-              <span
-                role="alert"
-                aria-live="assertive"
-                className="text-sm text-red-400"
-              >
-                {avatarUploadError}
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-fg-dim mt-1">
-            {t("PNG, JPEG, or WebP up to 5 MB. ")}
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-avatar-url"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Avatar URL ")}
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="settings-avatar-url"
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl(e.target.value);
-              }}
-              placeholder={t("https://cdn.example.com/rider.jpg")}
-              className="w-full px-4 py-2.5 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-ink transition"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl("");
-              }}
-              className="px-3 py-2.5 rounded-lg bg-paper text-fg-dim text-sm font-semibold hover:bg-paper-2 hover:text-ink transition"
-            >
-              {t("Remove ")}
-            </button>
-          </div>
-          <p className="text-xs text-fg-dim mt-1">
-            {t("Use an ")}
-            <code className="font-mono text-ink">{t("https://")}</code>
-            {t(" image URL from your CDN, photo host, or social profile. ")}
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-display-name"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Display name ")}
-          </label>
-          <input
-            id="settings-display-name"
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            maxLength={100}
-            className="w-full px-4 py-2.5 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-ink transition"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-email"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Email ")}
-          </label>
-          <input
-            id="settings-email"
-            type="email"
-            value={user?.email ?? ""}
-            disabled
-            className="w-full px-4 py-2.5 rounded-lg bg-paper/60 border border-line text-fg-mute text-sm"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-bio"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Bio ")}
-          </label>
-          <textarea
-            id="settings-bio"
-            value={bio}
-            onChange={(e) => {
-              bioDirtyRef.current = true;
-              setBio(e.target.value);
-            }}
-            maxLength={500}
-            rows={3}
-            placeholder={t(
-              "A short blurb about your riding \u2014 shown on your public profile.",
-            )}
-            className="w-full px-4 py-2.5 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-ink transition resize-none"
-          />
-          <p className="font-mono text-xs text-fg-mute mt-1 tabular-nums">
-            {bio.length}/500
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-home-region"
-            className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-          >
-            {t("Home region ")}
-          </label>
-          <input
-            id="settings-home-region"
-            type="text"
-            value={homeRegion}
-            onChange={(e) => {
-              homeRegionDirtyRef.current = true;
-              setHomeRegion(e.target.value);
-            }}
-            maxLength={120}
-            placeholder={t("e.g., Beskydy, Czech Republic")}
-            className="w-full px-4 py-2.5 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-ink transition"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saveState === "saving"}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {saveState === "saving" ? t("Saving…") : t("Save changes")}
-          </button>
-          {saveState === "saved" && (
-            <span
-              role="status"
-              aria-live="polite"
-              className="text-sm text-accent"
-            >
-              {t("Saved ")}
-            </span>
-          )}
-          {saveState === "error" && saveError && (
-            <span
-              role="alert"
-              aria-live="assertive"
-              className="text-sm text-red-400"
-            >
-              {saveError}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-cream border border-line p-[22px] mt-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Stamp as="h2" className="block mb-2">
-              {t("Link mobile app")}
-            </Stamp>
-            <p className="text-sm text-fg-dim">
-              {t(
-                "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices. ",
-              )}
-            </p>
-          </div>
-          <div className="rounded-xl bg-paper p-3 text-accent">
-            <Smartphone size={20} />
-          </div>
-        </div>
-        <div className="mt-4 rounded-xl border border-line bg-paper p-4">
-          <p className="text-sm text-ink">
-            {t(
-              "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ",
-            )}
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-4">
-            <div className="rounded-2xl border border-line bg-cream p-3">
-              {mobileLinkQrSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={mobileLinkQrSrc}
-                  alt={t("QR code to link the Tarmoto mobile app")}
-                  className="h-36 w-36 rounded-lg"
-                />
-              ) : (
-                <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-paper-2 text-xs text-fg-dim">
-                  {t("QR unavailable ")}
-                </div>
-              )}
-            </div>
-            <div className="max-w-sm space-y-3">
-              <p className="text-xs text-fg-dim">
-                {t(
-                  "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ",
-                )}
-              </p>
-              {mobileLinkHref ? (
-                <a
-                  href={mobileLinkHref}
-                  className="inline-flex items-center gap-2 rounded-full border border-accent bg-accent/10 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-accent transition hover:bg-accent/20"
-                >
-                  <Smartphone size={14} />
-                  {t("Open in Tarmoto mobile ")}
-                </a>
-              ) : null}
-            </div>
-          </div>
-
-          <Stamp className="block mt-4">{t("Sign-in email ")}</Stamp>
-          <p className="mt-1 break-all font-mono text-sm text-ink">
-            {user?.email ?? t("No account email available")}
-          </p>
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleCopySignInEmail}
-              disabled={!user?.email}
-              className="inline-flex items-center gap-2 px-4 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Copy size={14} />
-              {t("Copy sign-in email ")}
-            </button>
-            {copyState === "copied" && (
-              <span role="status" className="text-sm text-accent">
-                {t("Email copied. Use it to sign in on mobile. ")}
-              </span>
-            )}
-            {copyState === "error" && (
-              <span role="alert" className="text-sm text-red-400">
-                {t("Could not copy your email. Please copy it manually. ")}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-cream border border-line p-[22px] mt-4">
-        <Stamp as="h2" className="block mb-2">
-          {t("Display units")}
-        </Stamp>
-        <p className="text-sm text-fg-dim mb-4">
-          {t(
-            "Choose how distances and speeds are shown across the dashboard. ",
-          )}
-        </p>
-        {/*
-          Native radio inputs (visually hidden) carry browser-native keyboard
-          semantics — arrow keys move selection, only the checked input is in
-          the tab order — which a custom button-based radiogroup would need to
-          re-implement manually. The visible labels provide the styling.
-        */}
-        <div
-          role="radiogroup"
-          aria-label={t("Display units")}
-          className="inline-flex rounded-lg bg-paper p-1"
-        >
-          {(["metric", "imperial"] as UnitSystem[]).map((value) => (
-            <label
-              key={value}
-              className={`relative px-4 py-1.5 rounded-md text-sm transition cursor-pointer ${
-                unitSystem === value
-                  ? "bg-ink text-cream font-semibold"
-                  : "text-fg-dim hover:text-ink"
-              }`}
-            >
-              <input
-                type="radio"
-                name="unit-system"
-                value={value}
-                checked={unitSystem === value}
-                onChange={() => setUnitSystem(value)}
-                className="sr-only"
-                aria-label={
-                  value === "metric"
-                    ? t("Use metric units (kilometres)")
-                    : t("Use imperial units (miles)")
-                }
-              />
-              {value === "metric" ? t("Metric (km)") : t("Imperial (mi)")}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-cream border border-line p-[22px] mt-4">
-        <Stamp as="h2" className="block mb-2">
-          {t("Language")}
-        </Stamp>
-        <p className="text-sm text-fg-dim mb-4">
-          {t("Pick the language used across the dashboard. ")}
-        </p>
-        <LocaleSwitcher />
-      </div>
     </div>
   );
-}
-function normalizeAvatarUrl(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
 }
