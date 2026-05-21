@@ -11,6 +11,15 @@ interface NavGroup {
   items: NavItem[];
 }
 
+/**
+ * Sidebar · mirrors the `.nav` block in the Web App v2 Design Map.
+ * Brand mark + groups (Foundations / Atoms / Components / Feedback /
+ * Maps / Patterns) — numbered anchors `#colors`, `#quality`, …
+ *
+ * The preview adds Buttons/Alerts/Tooltips/Toasts (§17–§20) to the
+ * library coverage. The source HTML's `#map-vocab` etc. become §21–§26
+ * here so the numbering stays linear in the rail.
+ */
 const GROUPS: NavGroup[] = [
   {
     label: "Foundations",
@@ -52,6 +61,22 @@ const GROUPS: NavGroup[] = [
       { id: "toasts", num: "20", label: "Toasts" },
     ],
   },
+  {
+    label: "Maps",
+    items: [
+      { id: "map-vocab", num: "21", label: "Map vocabulary" },
+      { id: "map-modes", num: "22", label: "Map modes" },
+      { id: "map-overlays", num: "23", label: "Map overlays" },
+    ],
+  },
+  {
+    label: "Patterns",
+    items: [
+      { id: "layouts", num: "24", label: "Layouts" },
+      { id: "density", num: "25", label: "Density" },
+      { id: "do-dont", num: "26", label: "Do & don't" },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -66,7 +91,7 @@ export function Sidebar() {
             TARMOTO
           </div>
           <div className="font-mono text-[9px] tracking-[1.4px] text-cream/50 uppercase">
-            UI · PREVIEW
+            WEB V2 · MAP
           </div>
         </div>
       </div>
@@ -94,9 +119,14 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-6 border-t border-cream/10 pt-5 font-mono text-[10px] leading-[1.7] tracking-[0.6px] text-cream/50">
-        Rendered with the live <span className="text-cream">@tarmoto/ui</span>
+        Rev 02 · May 2026
         <br />
-        package — every example below is a real component, not a mock.
+        Owner · Design
+        <br />
+        Rendered with the live <span className="text-cream">
+          @tarmoto/ui
+        </span>{" "}
+        package.
       </div>
     </aside>
   );

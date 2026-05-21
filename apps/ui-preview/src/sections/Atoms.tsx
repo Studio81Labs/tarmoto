@@ -10,6 +10,7 @@ import {
   palette,
   qualityColors,
 } from "@tarmoto/ui";
+import { CC, CK, CN, CodeBlock, CS } from "./_shared";
 
 /* -------- 07 · ATOMS -------- */
 
@@ -100,6 +101,59 @@ export function AtomsSection() {
             </div>
           </Card>
         ))}
+      </div>
+
+      <div className="mt-7">
+        <CodeBlock>
+          <CC>{`// atoms · the only six things you write by hand\n`}</CC>
+          {`<`}
+          <CK>Stamp</CK>
+          {`>Route · Day 1 of 4</`}
+          <CK>Stamp</CK>
+          {`>\n`}
+          {`<`}
+          <CK>Mono</CK>
+          {` style={{ color: `}
+          <CN>INK</CN>
+          {`, fontWeight: `}
+          <CN>700</CN>
+          {` }}>186 KM</`}
+          <CK>Mono</CK>
+          {`>\n`}
+          {`<`}
+          <CK>Heading</CK>
+          {` size={`}
+          <CS>"lg"</CS>
+          {`}>Alps Loop</`}
+          <CK>Heading</CK>
+          {`>\n`}
+          {`<`}
+          <CK>Pill</CK>
+          {` variant={`}
+          <CS>"accent"</CS>
+          {`}>AI draft</`}
+          <CK>Pill</CK>
+          {`>\n`}
+          {`<`}
+          <CK>Dot</CK>
+          {` color={`}
+          <CN>ACCENT</CN>
+          {`} size={`}
+          <CN>8</CN>
+          {`} />\n`}
+          {`<`}
+          <CK>QualityBars</CK>
+          {` q={`}
+          <CN>4</CN>
+          {`} size={`}
+          <CN>5</CN>
+          {`} />\n`}
+          {`<`}
+          <CK>Card</CK>
+          {`>{children}</`}
+          <CK>Card</CK>
+          {`>`}
+        </CodeBlock>
       </div>
     </Section>
   );
