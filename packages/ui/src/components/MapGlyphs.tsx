@@ -6,7 +6,7 @@
  * SVG that's stateless and accepts a `size` so callers can drop them
  * into legends, hover cards, or layer pickers without rewrapping them.
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { palette, qualityColors } from "../tokens";
 
 export interface MapGlyphProps {
@@ -227,6 +227,10 @@ export function FunZoneGlyph({
   className,
 }: MapGlyphProps & { tier?: 4 | 5 }) {
   const c = qualityColors[tier - 1];
+  // Per-instance ID so multiple FunZoneGlyphs with the same tier don't
+  // collide on `#fz-<tier>` in the document. Without this, a stale or
+  // unmounted instance can break the `url(#…)` reference on the others.
+  const gradientId = `${useId()}-fz-${tier}`;
   return (
     <svg
       width={size * 1.6}
@@ -236,12 +240,12 @@ export function FunZoneGlyph({
       className={className}
     >
       <defs>
-        <radialGradient id={`fz-${tier}`} cx="50%" cy="50%" r="50%">
+        <radialGradient id={gradientId} cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor={c} stopOpacity="0.55" />
           <stop offset="100%" stopColor={c} stopOpacity="0" />
         </radialGradient>
       </defs>
-      <ellipse cx="50" cy="30" rx="40" ry="22" fill={`url(#fz-${tier})`} />
+      <ellipse cx="50" cy="30" rx="40" ry="22" fill={`url(#${gradientId})`} />
     </svg>
   );
 }
