@@ -17,7 +17,7 @@ import {
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesMap } from "./_components/RidesMap";
 import { RidesTable } from "./_components/RidesTable";
-import { PageHeader } from "@/components/PageHeader";
+import { PageHeader } from "@tarmoto/ui";
 import {
   useRidesQuery,
   type RideSummary,
@@ -64,20 +64,21 @@ function RidesPageInner() {
     }
   }
   return (
-    <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-page mx-auto w-full animate-fade-in">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-page animate-fade-in flex-col p-4 md:p-7">
       <PageHeader
-        icon={Activity}
+        stamp={t("Activity · Rides")}
+        icon={<Activity size={22} strokeWidth={1.8} />}
         title={t("Ride History")}
-        subtitle={t(
+        sub={t(
           "Browse every recorded ride and review stats, conditions, and routes.",
         )}
-        action={
+        right={
           <div className="flex items-center gap-2">
             {list.rides.length > 0 && <BulkExportMenu />}
             {list.total >= 2 && (
               <Link
                 href="/rides/compare"
-                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
+                className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper"
               >
                 <Scale size={14} />
                 {t("Compare rides ")}
