@@ -8,16 +8,20 @@ import { cn } from "../utils/cn";
  */
 export interface HeadingProps {
   children: ReactNode;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl";
   as?: "h1" | "h2" | "h3" | "h4" | "div";
   className?: string;
 }
 
+// 2xl (48 px) is the v2 dashboard-hero size used by HomePage. Larger
+// than the Design Map h1 because the companion landing wants a visible
+// greeting that competes with the rail brand mark.
 const sizeClass: Record<NonNullable<HeadingProps["size"]>, string> = {
   sm: "text-[18px]",
   md: "text-[22px]",
   lg: "text-[28px]",
   xl: "text-[32px]",
+  "2xl": "text-[48px]",
 };
 
 export function Heading({
