@@ -4,14 +4,21 @@ import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import {
-  Map,
-  Route,
-  History,
-  BarChart3,
   ArrowUpRight,
-  ChevronRight,
+  BarChart3,
+  History,
+  Map,
+  Plus,
+  Route,
 } from "lucide-react";
-import { Card, Heading, Mono, Stamp } from "@tarmoto/ui";
+import {
+  Card,
+  Heading,
+  MiniRouteSvg,
+  Mono,
+  QualityBars,
+  Stamp,
+} from "@tarmoto/ui";
 
 const QUICK_ACTIONS = [
   {
@@ -44,10 +51,20 @@ const QUICK_ACTIONS = [
   },
 ] as const;
 
-// Trip list rows come from the trips list endpoint which carries only
-// id / name / status / num_days. Per-trip total km, quality average and
-// pass count are not yet exposed there, so the meta strip below stays
-// minimal until the API returns those fields. See `useUserTrips`.
+// Fields not yet on the trips list endpoint (need backend follow-up
+// before the populated state can show real values):
+//   - distance_km (total across days)
+//   - quality_avg / quality_tier (average road quality)
+//   - passes_count (mountain passes touched)
+// When those land, populate them on TripSummary in @/lib/types + the
+// list endpoint, and the trip-draft cards below will light them up
+// automatically. Until then `km` / `passes` slots stay hidden and the
+// QualityBars unit only renders when quality data is present.
+//
+// Similarly, monthly KPI tiles (this month KM / ride time / new roads /
+// max lean) need a stats endpoint, and the "Mobile synced …" pill
+// needs a sync-status hook — both render their honest "empty" variants
+// per spec until the data lands.
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
@@ -57,124 +74,102 @@ export default function HomePage() {
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
     .slice(0, 3);
 
+  // Surfaces stats data when wired. Until the stats endpoint exists,
+  // this is null and the KPI tile row stays hidden — spec's empty-
+  // state HTML has no tiles either, so honest empty matches the spec.
+  const monthlyStats: MonthlyStats | null = null;
+
+  // Same for the live sync-status hook. Spec's empty pill copy is
+  // "No mobile sync yet", which is exactly what we want to show now.
+  const mobileSync: MobileSyncStatus | null = null;
+
+  const hasAnyContent = draftTrips.length > 0;
+  // `tripsError` only matters in the empty / loading branches — when
+  // we have drafts to show, swallow the error rather than nudging a
+  // rider with real saved trips toward starting a new one.
+  const showTripsError = tripsError && draftTrips.length === 0 && !loading;
+
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in space-y-10 p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in px-10 py-8 pb-12">
       {/* Hero */}
-      <header>
-        <Stamp>{t("Welcome back")}</Stamp>
-        <Heading size="2xl" as="h1" className="mt-1">
-          {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
-        </Heading>
-        <p className="mt-2 max-w-lg text-[15px] text-fg-dim">
-          {t("Know the road before you ride it.")}
-        </p>
+      <header className="mb-7 flex items-end justify-between gap-6">
+        <div>
+          <Stamp>
+            {hasAnyContent ? t("Welcome back") : t("Welcome to Tarmoto")}
+          </Stamp>
+          <Heading size="2xl" as="h1" className="mt-1">
+            {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
+          </Heading>
+          <p className="mt-2 max-w-lg text-[15px] text-fg-dim">
+            {t("Know the road before you ride it.")}
+          </p>
+        </div>
+        <SyncPill status={mobileSync} />
       </header>
 
-      {/* Quick actions */}
-      <section>
-        <Stamp className="mb-3 block">{t("Jump in")}</Stamp>
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          {QUICK_ACTIONS.map((action) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className="group flex min-h-[160px] flex-col gap-3.5 rounded-[14px] border border-line bg-cream p-5 transition hover:bg-paper"
-            >
-              <div className="flex items-start justify-between">
-                <Mono className="text-[11px] font-bold uppercase tracking-[1.5px] text-fg-mute">
-                  {action.stamp}
-                </Mono>
-                <ArrowUpRight
-                  size={14}
-                  className="text-fg-mute transition group-hover:text-ink"
-                />
-              </div>
-              <action.icon
-                size={26}
-                strokeWidth={1.8}
-                className="mt-auto text-accent"
+      {/* 4-KPI tile row (only when stats endpoint is wired) */}
+      {monthlyStats && <KpiTileRow stats={monthlyStats} />}
+
+      {/* Jump in */}
+      <Stamp className="block">{t("Jump in")}</Stamp>
+      <div className="mb-9 mt-3 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        {QUICK_ACTIONS.map((action) => (
+          <Link
+            key={action.href}
+            href={action.href}
+            className="group flex min-h-[160px] flex-col gap-3.5 rounded-[14px] border border-line bg-cream p-5 transition hover:border-line-strong"
+          >
+            <div className="flex items-start justify-between">
+              <Mono className="text-[11px] font-bold uppercase tracking-[1.5px] text-fg-mute">
+                {action.stamp}
+              </Mono>
+              <ArrowUpRight
+                size={14}
+                className="text-fg-mute transition group-hover:text-ink"
               />
-              <div>
-                <div className="text-[18px] font-extrabold tracking-[-0.3px] text-ink">
-                  {t(action.label)}
-                </div>
-                <div className="mt-1 text-[12px] text-fg-dim">
-                  {t(action.sub)}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Recent rides */}
-      <section>
-        <SectionHeader
-          stamp={t("Recent rides")}
-          title={t("Last 30 days")}
-          actionHref="/rides"
-          actionLabel={t("View all")}
-        />
-        <Card padded={false} className="overflow-hidden">
-          <div className="grid grid-cols-[80px_1fr_60px_70px_70px] gap-3 border-b border-line bg-paper px-5 py-2.5">
-            <Mono className="text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {t("Date")}
-            </Mono>
-            <Mono className="text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {t("Ride")}
-            </Mono>
-            <Mono className="text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {t("KM")}
-            </Mono>
-            <Mono className="text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {t("Avg")}
-            </Mono>
-            <Mono className="text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {t("Quality")}
-            </Mono>
-          </div>
-          <div className="px-5 py-10 text-center">
-            <History
-              size={36}
-              className="mx-auto mb-3 text-ink/30"
-              strokeWidth={1.5}
-            />
-            <p className="text-[14px] font-semibold text-ink">
-              {t("No rides recorded yet.")}
-            </p>
-            <p className="mt-1 text-[12px] text-fg-dim">
-              {t("Your rides from the mobile app will appear here.")}
-            </p>
-          </div>
-        </Card>
-      </section>
-
-      {/* Trip drafts */}
-      <section>
-        <SectionHeader
-          stamp={t("Trip drafts")}
-          title={t("Your route ideas")}
-          actionHref="/trips/planner"
-          actionLabel={t("Plan new trip")}
-        />
-        {loading ? (
-          <Card>
-            <div className="px-5 py-10 text-center text-[13px] text-fg-dim">
-              {t("Loading your trips…")}
             </div>
-          </Card>
-        ) : tripsError && draftTrips.length === 0 ? (
-          // Distinguish "we don't know" from "rider has none" — a transient
-          // API outage or expired token must not nudge a rider with real
-          // saved drafts to start a brand new trip.
-          <Card>
-            <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+            <action.icon
+              size={18}
+              strokeWidth={2}
+              className="mt-auto text-accent"
+            />
+            <div>
+              <div className="text-[18px] font-extrabold tracking-[-0.3px] text-ink">
+                {t(action.label)}
+              </div>
+              <div className="mt-1 text-[12px] text-fg-dim">
+                {t(action.sub)}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {loading ? (
+        <DualEmptyState
+          ridesEmpty={<RidesEmptyCard />}
+          tripsEmpty={
+            <Card padded={false} className="px-6 py-10 text-center">
+              <p className="text-[13px] text-fg-dim">
+                {t("Loading your trips… ")}
+              </p>
+            </Card>
+          }
+        />
+      ) : showTripsError ? (
+        // Network outage on a fresh visit: don't push them toward a
+        // "Plan a trip" CTA — they may already have drafts on the
+        // server that we just couldn't reach.
+        <DualEmptyState
+          ridesEmpty={<RidesEmptyCard />}
+          tripsEmpty={
+            <Card padded={false} className="px-6 py-10 text-center">
               <Stamp className="text-quality-q1">
                 {t("Couldn't load your trips")}
               </Stamp>
-              <p className="max-w-sm text-[12px] text-fg-dim">
+              <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
                 {t(
-                  "We hit a network hiccup while loading your drafts. Refresh the page to try again — your trips are safe.",
+                  "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.",
                 )}
               </p>
               <button
@@ -182,77 +177,256 @@ export default function HomePage() {
                 onClick={() => {
                   if (typeof window !== "undefined") window.location.reload();
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
               >
                 {t("Retry")}
               </button>
-            </div>
+            </Card>
+          }
+        />
+      ) : !hasAnyContent ? (
+        // Per spec: both empty → simple 2-col centered cards.
+        <DualEmptyState
+          ridesEmpty={<RidesEmptyCard />}
+          tripsEmpty={<TripsEmptyCard />}
+        />
+      ) : (
+        // Has drafts → render the populated layout: Recent rides
+        // section (centered empty card since no rides endpoint) +
+        // Trip drafts 3-up grid.
+        <>
+          <SectionHeader
+            stamp={t("Recent rides")}
+            title={t("Last 30 days")}
+            actionHref="/rides"
+            actionLabel={t("View all")}
+          />
+          <Card padded={false} className="px-6 py-10 text-center">
+            <History
+              size={18}
+              strokeWidth={2}
+              className="mx-auto text-fg-mute"
+            />
+            <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
+            <p className="mt-1 text-[16px] font-bold text-ink">
+              {t("No rides recorded yet")}
+            </p>
+            <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+              {t(
+                "Your rides from the mobile app will appear here once you start tracking.",
+              )}
+            </p>
           </Card>
-        ) : draftTrips.length === 0 ? (
-          <Card>
-            <div className="px-5 py-12 text-center">
-              <Route
-                size={36}
-                className="mx-auto mb-3 text-ink/30"
-                strokeWidth={1.5}
-              />
-              <p className="text-[14px] font-semibold text-ink">
-                {t("No trips planned yet.")}
-              </p>
-              <p className="mx-auto mt-1 max-w-sm text-[12px] text-fg-dim">
-                {t(
-                  "Create your first trip to discover the best roads. Pick a region, tune the curves and asphalt, push it to your phone.",
-                )}
-              </p>
-              <Link
-                href="/trips/planner"
-                className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2.5 text-[13px] font-bold text-cream transition hover:bg-tarmac"
-              >
-                {t("Plan a trip")}
-                <ArrowUpRight size={14} />
-              </Link>
+
+          <div className="mt-10">
+            <SectionHeader
+              stamp={t("Trip drafts")}
+              title={t("Your route ideas")}
+              actionHref="/trips/planner"
+              actionLabel={t("Plan new trip")}
+            />
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+              {draftTrips.map((trip, i) => (
+                <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
+              ))}
             </div>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-            {draftTrips.map((trip) => {
-              const days = trip.num_days;
-              return (
-                <Link
-                  key={trip.id}
-                  href={`/trips/${trip.id}`}
-                  className="group block overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
-                >
-                  <TripDraftThumb />
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <Stamp>{trip.status}</Stamp>
-                        <div className="mt-1 line-clamp-2 text-[16px] font-extrabold leading-tight text-ink">
-                          {trip.name}
-                        </div>
-                      </div>
-                    </div>
-                    {days > 0 && (
-                      <div className="mt-3 flex items-center gap-3 text-[11px] text-fg-dim">
-                        <Mono className="uppercase">
-                          <span className="font-bold text-ink">{days}</span>{" "}
-                          {days > 1 ? t("days") : t("day")}
-                        </Mono>
-                      </div>
-                    )}
-                    <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-[11px] font-semibold text-fg-dim group-hover:text-ink">
-                      <span>{t("Open draft")}</span>
-                      <ChevronRight size={14} />
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
           </div>
-        )}
-      </section>
+        </>
+      )}
     </div>
+  );
+}
+
+interface MonthlyStats {
+  thisMonthKm: number;
+  rideHours: number;
+  newRoads: number;
+  maxLeanDeg: number;
+  vsLastMonthKm: string;
+  vsLastMonthHours: string;
+  newRoadsThisMonth: number;
+  maxLeanLocation: string;
+}
+
+interface MobileSyncStatus {
+  syncedAt: Date;
+}
+
+function SyncPill({ status }: { status: MobileSyncStatus | null }) {
+  if (!status) {
+    // Spec's empty-state pill — ghost / line-strong border / fg-mute
+    // dot + text. Truthful while the mobile-sync hook is unwired.
+    return (
+      <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-fg-dim">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-mute" />
+        {t("No mobile sync yet")}
+      </div>
+    );
+  }
+  return (
+    <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
+      {t("Mobile synced {ago}", {
+        ago: formatRelativeMinutes(status.syncedAt),
+      })}
+    </div>
+  );
+}
+
+function formatRelativeMinutes(d: Date): string {
+  const diffMin = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const hours = Math.floor(diffMin / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function KpiTileRow({ stats }: { stats: MonthlyStats }) {
+  return (
+    <div className="mb-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+      <KpiTile
+        label={t("This month")}
+        value={stats.thisMonthKm.toLocaleString()}
+        unit="KM"
+        delta={`+${stats.vsLastMonthKm} vs last month`}
+        ink
+        accentValue
+      />
+      <KpiTile
+        label={t("Ride time")}
+        value={String(stats.rideHours)}
+        unit="HRS"
+        delta={`+${stats.vsLastMonthHours} vs last month`}
+      />
+      <KpiTile
+        label={t("New roads")}
+        value={String(stats.newRoads)}
+        unit="DISCOVERED"
+        delta={`+${stats.newRoadsThisMonth} this month`}
+      />
+      <KpiTile
+        label={t("Lean angle")}
+        value={`${stats.maxLeanDeg}°`}
+        unit="MAX"
+        delta={stats.maxLeanLocation}
+        accentValue
+      />
+    </div>
+  );
+}
+
+interface KpiTileProps {
+  label: string;
+  value: string;
+  unit: string;
+  delta?: string;
+  ink?: boolean;
+  accentValue?: boolean;
+}
+function KpiTile({
+  label,
+  value,
+  unit,
+  delta,
+  ink,
+  accentValue,
+}: KpiTileProps) {
+  return (
+    <div
+      className={
+        ink
+          ? "rounded-[14px] border border-ink bg-ink p-[18px] text-cream"
+          : "rounded-[14px] border border-line bg-cream p-[18px] text-ink"
+      }
+    >
+      <Stamp tone={ink ? "on-dark" : "dim"}>{label}</Stamp>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <div
+          className={
+            accentValue
+              ? "text-[36px] font-extrabold leading-none tracking-[-1px] text-accent"
+              : ink
+                ? "text-[36px] font-extrabold leading-none tracking-[-1px] text-cream"
+                : "text-[36px] font-extrabold leading-none tracking-[-1px] text-ink"
+          }
+        >
+          {value}
+        </div>
+        <Mono
+          className={
+            ink ? "text-[11px] text-fg-on-dark-dim" : "text-[11px] text-fg-dim"
+          }
+        >
+          {unit}
+        </Mono>
+      </div>
+      {delta && (
+        <div
+          className={
+            ink
+              ? "mt-1.5 text-[11px] text-fg-on-dark-mute"
+              : "mt-1.5 text-[11px] text-fg-mute"
+          }
+        >
+          {delta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DualEmptyState({
+  ridesEmpty,
+  tripsEmpty,
+}: {
+  ridesEmpty: React.ReactNode;
+  tripsEmpty: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+      {ridesEmpty}
+      {tripsEmpty}
+    </div>
+  );
+}
+
+function RidesEmptyCard() {
+  return (
+    <Card padded={false} className="px-6 py-10 text-center">
+      <History size={18} strokeWidth={2} className="mx-auto text-fg-mute" />
+      <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
+      <p className="mt-1 text-[16px] font-bold text-ink">
+        {t("No rides recorded yet")}
+      </p>
+      <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+        {t(
+          "Your rides from the mobile app will appear here once you start tracking.",
+        )}
+      </p>
+    </Card>
+  );
+}
+
+function TripsEmptyCard() {
+  return (
+    <Card padded={false} className="px-6 py-10 text-center">
+      <Route size={18} strokeWidth={2} className="mx-auto text-fg-mute" />
+      <Stamp className="mt-2.5 block">{t("Trip drafts")}</Stamp>
+      <p className="mt-1 text-[16px] font-bold text-ink">
+        {t("No trips planned yet")}
+      </p>
+      <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+        {t("Create your first trip to discover the best roads in your region.")}
+      </p>
+      <Link
+        href="/trips/planner"
+        className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+      >
+        <Plus size={14} />
+        {t("Plan a trip")}
+      </Link>
+    </Card>
   );
 }
 
@@ -268,16 +442,20 @@ function SectionHeader({
   actionLabel: string;
 }) {
   return (
-    <div className="mb-3.5 flex items-end justify-between gap-3">
+    <div className="mb-3 flex items-end justify-between gap-3">
       <div>
         <Stamp>{stamp}</Stamp>
-        <Heading size="lg" as="h2" className="mt-1">
+        <Heading
+          size="lg"
+          as="h2"
+          className="mt-1 text-[26px] leading-[1.05] tracking-[-0.5px]"
+        >
           {title}
         </Heading>
       </div>
       <Link
         href={actionHref}
-        className="flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
+        className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
       >
         {actionLabel}
         <ArrowUpRight size={14} className="text-accent" />
@@ -286,45 +464,61 @@ function SectionHeader({
   );
 }
 
-// Trip-card thumb · paper noise + topo + abstract route line.
-// Spec uses MiniRouteSvg from v2-pages.jsx — we keep the same visual
-// language (paper noise + topo contours + single quality-coloured
-// ribbon) but inline here since `RouteMini` in @tarmoto/ui carries
-// fixed multi-segment geometry that's overkill for an unloaded draft
-// (no quality data yet). When trip list payloads gain a quality field,
-// swap this for `RouteMini` with the real segment ribbon.
-function TripDraftThumb() {
+// Trip status pill tones inside a draft card — picks the spec's
+// 5-stop palette per status. Active (currently riding) uses the
+// canonical solid-accent treatment used elsewhere in the app, while
+// the other statuses ride on q-scale tints.
+const STATUS_TONE: Record<
+  "draft" | "planned" | "active" | "completed",
+  "dim" | "accent"
+> = {
+  draft: "dim",
+  planned: "dim",
+  active: "accent",
+  completed: "dim",
+};
+
+function TripDraftCard({
+  trip,
+  seed,
+}: {
+  trip: { id: string; name: string; status: string; num_days: number };
+  seed: number;
+}) {
+  const status =
+    (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
+  // No quality / km / passes on summary payloads yet — wire those
+  // through when the trips list endpoint exposes them (see TODO at
+  // file top). For now the thumbnail uses q=3 (yellow-ish neutral)
+  // and we hide the QualityBars + km + passes meta slots.
+  const q: 1 | 2 | 3 | 4 | 5 = 3;
   return (
-    <div className="h-[120px] w-full bg-paper">
-      <svg
-        viewBox="0 0 200 120"
-        preserveAspectRatio="xMidYMid slice"
-        className="size-full"
-        aria-hidden="true"
-      >
-        <g stroke="rgba(14,14,16,0.10)" strokeWidth="1" fill="none">
-          <path d="M -10 30 C 50 22, 110 38, 210 26" />
-          <path d="M -10 50 C 50 44, 110 58, 210 48" />
-          <path d="M -10 70 C 50 62, 110 78, 210 68" />
-          <path d="M -10 90 C 50 84, 110 98, 210 88" />
-        </g>
-        <path
-          d="M 10 100 C 50 80, 90 70, 120 50 S 170 30, 195 20"
-          stroke="#C4BBA8"
-          strokeWidth="2.5"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <circle cx="10" cy="100" r="4" fill="#0E0E10" />
-        <circle
-          cx="195"
-          cy="20"
-          r="4"
-          fill="#FF6A1A"
-          stroke="#0E0E10"
-          strokeWidth="1"
-        />
-      </svg>
-    </div>
+    <Link
+      href={`/trips/${trip.id}`}
+      className="block overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
+    >
+      <div className="h-[120px]">
+        <MiniRouteSvg q={q} seed={seed} />
+      </div>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <Stamp tone={STATUS_TONE[status]}>{status}</Stamp>
+            <div className="mt-1 line-clamp-2 text-[16px] font-extrabold leading-tight text-ink">
+              {trip.name}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2.5 flex items-center gap-3 text-[11px] text-fg-dim">
+          {trip.num_days > 0 && (
+            <Mono className="uppercase">
+              <span className="font-bold text-ink">{trip.num_days}</span>{" "}
+              {trip.num_days === 1 ? t("day") : t("days")}
+            </Mono>
+          )}
+          {/* km + passes hidden until the trips list endpoint exposes them */}
+        </div>
+      </div>
+    </Link>
   );
 }
