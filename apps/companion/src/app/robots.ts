@@ -20,7 +20,7 @@ export default function robots(): MetadataRoute.Robots {
           "/rides",
           "/trips",
           "/community",
-          "/gamification",
+          "/achievements",
           "/settings",
         ],
       },

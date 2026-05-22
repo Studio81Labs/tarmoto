@@ -26,7 +26,7 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
-import { PageHeader as DashboardPageHeader } from "@/components/PageHeader";
+import { PageHeader as DashboardPageHeader } from "@tarmoto/ui";
 import {
   activeChallenges,
   challengeProgress,
@@ -103,7 +103,7 @@ type LoadState =
       userId: string;
       message: string;
     };
-export default function GamificationPage() {
+export default function AchievementsPage() {
   const userId = useAuthStore((s) => s.user?.id);
   const [state, setState] = useState<LoadState>({ status: "idle" });
   // Tracks every join currently in flight. Using a set instead of a single
@@ -250,7 +250,7 @@ export default function GamificationPage() {
   );
   if (!userId) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page p-7 animate-fade-in">
         <PageHeader />
         <EmptyCard
           icon={<Lock size={32} className="text-fg-mute" />}
@@ -272,7 +272,7 @@ export default function GamificationPage() {
         : null;
   if (!stateForUser) {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
+      <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
         <PageHeader />
         <SkeletonGrid />
       </div>
@@ -280,7 +280,7 @@ export default function GamificationPage() {
   }
   if (stateForUser.status === "error") {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page p-7 animate-fade-in">
         <PageHeader />
         <ErrorCard
           message={stateForUser.message}
@@ -344,7 +344,7 @@ function Dashboard({
   );
   const earnedBadgeCount = snapshot.badges.filter((b) => b.earnedAt).length;
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in space-y-8">
+    <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
       <PageHeader />
 
       {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
@@ -423,9 +423,10 @@ function Dashboard({
 function PageHeader() {
   return (
     <DashboardPageHeader
-      icon={Trophy}
+      stamp={t("Discover · Achievements")}
+      icon={<Trophy size={22} strokeWidth={1.8} />}
       title={t("Achievements")}
-      subtitle={t(
+      sub={t(
         "Badges, challenges, leaderboards, and milestones for your riding region.",
       )}
     />
@@ -439,7 +440,7 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
   return (
     <section
       aria-label={t("Seasonal challenge")}
-      className="relative overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-r from-accent/10 via-paper to-violet-500/10 p-6"
+      className="relative overflow-hidden rounded-[14px] border border-accent/30 bg-gradient-to-r from-accent/10 via-paper to-violet-500/10 p-6"
     >
       <div
         aria-hidden="true"
@@ -746,7 +747,7 @@ function RegionalLeaderboardsSection() {
       {load.status === "error" ? (
         <div
           role="alert"
-          className="rounded-2xl border border-red-900/60 bg-red-950/30 p-6 text-center"
+          className="rounded-[14px] border border-red-900/60 bg-red-950/30 p-6 text-center"
         >
           <AlertTriangle className="mx-auto text-red-300 mb-2" size={24} />
           <p className="text-red-200 font-medium">
@@ -755,7 +756,7 @@ function RegionalLeaderboardsSection() {
           <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
         </div>
       ) : load.status === "loading" || dim === null ? (
-        <div className="h-48 rounded-2xl bg-cream border border-line animate-pulse" />
+        <div className="h-48 rounded-[14px] bg-cream border border-line animate-pulse" />
       ) : (
         <RegionalLeaderboardTable dim={dim} />
       )}
@@ -864,7 +865,7 @@ function RegionalLeaderboardTable({
   const showOutsideTop =
     dim.me !== null && !dim.entries.some((e) => e.userId === dim.me?.userId);
   return (
-    <div className="rounded-2xl border border-line bg-cream overflow-hidden">
+    <div className="rounded-[14px] border border-line bg-cream overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -1002,7 +1003,7 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
   const percent = Math.round(progress.fraction * 100);
   const label = formatMilestoneLabel(progress);
   return (
-    <div className="rounded-2xl border border-line bg-cream p-5">
+    <div className="rounded-[14px] border border-line bg-cream p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-ink">
@@ -1125,7 +1126,7 @@ function EmptyCard({
   body: string;
 }) {
   return (
-    <div className="rounded-2xl border border-line bg-cream p-10 text-center">
+    <div className="rounded-[14px] border border-line bg-cream p-10 text-center">
       <div className="mx-auto w-10 h-10 flex items-center justify-center mb-3">
         {icon}
       </div>
@@ -1144,7 +1145,7 @@ function ErrorCard({
   return (
     <div
       role="alert"
-      className="rounded-2xl border border-red-900/60 bg-red-950/30 p-6 text-center"
+      className="rounded-[14px] border border-red-900/60 bg-red-950/30 p-6 text-center"
     >
       <AlertTriangle className="mx-auto text-red-300 mb-2" size={28} />
       <p className="text-red-200 font-medium">
@@ -1164,7 +1165,7 @@ function ErrorCard({
 function SkeletonGrid() {
   return (
     <div className="space-y-8" aria-busy="true" aria-live="polite">
-      <div className="h-32 rounded-2xl bg-cream border border-line animate-pulse" />
+      <div className="h-32 rounded-[14px] bg-cream border border-line animate-pulse" />
       <div>
         <div className="mb-3 h-4 w-24 bg-paper rounded animate-pulse" />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">

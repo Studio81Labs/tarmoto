@@ -107,7 +107,7 @@ const NAV_ITEMS: NavItem[] = [
     match: ["/community"],
   },
   {
-    href: "/gamification",
+    href: "/achievements",
     stamp: "06",
     label: "Achievements",
     icon: Trophy,
