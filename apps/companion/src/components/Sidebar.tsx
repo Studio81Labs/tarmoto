@@ -550,14 +550,12 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        "absolute z-50 mb-2 w-80 overflow-hidden rounded-xl border border-ink/15 bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.14)]",
+        "absolute z-50 mb-2 w-80 overflow-hidden rounded-[14px] border border-line-strong bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
         collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0",
       )}
     >
-      <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
-        <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-ink/60">
-          {t("Notifications")}
-        </span>
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <Stamp>{t("Notifications")}</Stamp>
         <div className="flex items-center gap-1">
           {items.length > 0 && (
             <button
