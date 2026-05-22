@@ -20,7 +20,7 @@ const PROTECTED_PATHS = [
   "/trips",
   "/rides",
   "/community",
-  "/gamification",
+  "/achievements",
   "/settings",
 ];
 

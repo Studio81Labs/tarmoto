@@ -85,17 +85,21 @@ test.describe("community read path", () => {
     }
   });
 
-  // T44 — Gamification: /gamification renders the achievements
+  // T44 — Achievements: /achievements renders the achievements
   // shell. Full snapshot rendering would require mocking five extra
   // endpoints (`/users/:id/badges`, `/challenges`, `/users/me/profile`,
   // `/challenges/:id`, `/leaderboards/regional`). For this read-path
   // pass we just assert the page mounts under the "Achievements"
   // heading — the per-section assertions (Badges / Active challenges
   // / Leaderboards) land alongside the snapshot mock in a follow-up.
-  test("T44: /gamification renders the achievements heading", async ({
+  //
+  // The route renamed from `/gamification` to `/achievements` in the
+  // v2-Full migration (the lib stays `@/lib/gamification` since that
+  // is the domain model name; only the URL path changed).
+  test("T44: /achievements renders the achievements heading", async ({
     authedPage: page,
   }) => {
-    await page.goto("/gamification");
+    await page.goto("/achievements");
     await expect(
       page.getByRole("heading", { level: 1, name: /achievements/i }),
     ).toBeVisible({ timeout: 10_000 });
