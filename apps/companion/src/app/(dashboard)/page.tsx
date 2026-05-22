@@ -76,11 +76,16 @@ export default function HomePage() {
   // "No mobile sync yet", which is exactly what we want to show now.
   const mobileSync: MobileSyncStatus | null = null;
 
-  const hasAnyContent = draftTrips.length > 0;
+  // Returning rider check uses ALL trips (any status), not just
+  // active drafts — an account with only active/completed trips IS a
+  // returning rider, not a first-time user. When a rides signal lands
+  // (we don't have a rides endpoint today), include it here too.
+  const hasAnyContent = trips.length > 0;
+  const hasDrafts = draftTrips.length > 0;
   // `tripsError` only matters in the empty / loading branches — when
   // we have drafts to show, swallow the error rather than nudging a
   // rider with real saved trips toward starting a new one.
-  const showTripsError = tripsError && draftTrips.length === 0 && !loading;
+  const showTripsError = tripsError && !hasAnyContent && !loading;
 
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in px-10 py-8 pb-12">
@@ -184,9 +189,11 @@ export default function HomePage() {
           tripsEmpty={<TripsEmptyCard />}
         />
       ) : (
-        // Has drafts → render the populated layout: Recent rides
-        // section (centered empty card since no rides endpoint) +
-        // Trip drafts 3-up grid.
+        // Returning rider → render the populated layout: Recent rides
+        // section (centered empty card since no rides endpoint) + Trip
+        // drafts section (3-up grid when there are drafts, otherwise
+        // a centered empty Card so the section affordance stays
+        // visible to riders with only active/completed trips).
         <>
           <SectionHeader
             stamp={t("Recent rides")}
@@ -218,11 +225,37 @@ export default function HomePage() {
               actionHref="/trips/planner"
               actionLabel={t("Plan new trip")}
             />
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-              {draftTrips.map((trip, i) => (
-                <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
-              ))}
-            </div>
+            {hasDrafts ? (
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+                {draftTrips.map((trip, i) => (
+                  <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
+                ))}
+              </div>
+            ) : (
+              <Card padded={false} className="px-6 py-10 text-center">
+                <Route
+                  size={18}
+                  strokeWidth={2}
+                  className="mx-auto text-fg-mute"
+                />
+                <Stamp className="mt-2.5 block">{t("Trip drafts")}</Stamp>
+                <p className="mt-1 text-[16px] font-bold text-ink">
+                  {t("No trips planned yet")}
+                </p>
+                <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+                  {t(
+                    "Create your first trip to discover the best roads in your region.",
+                  )}
+                </p>
+                <Link
+                  href="/trips/planner"
+                  className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                >
+                  <Plus size={14} />
+                  {t("Plan a trip")}
+                </Link>
+              </Card>
+            )}
           </div>
         </>
       )}
@@ -259,20 +292,26 @@ function SyncPill({ status }: { status: MobileSyncStatus | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {t("Mobile synced {ago}", {
-        ago: formatRelativeMinutes(status.syncedAt),
-      })}
+      {formatSyncedLabel(status.syncedAt)}
     </div>
   );
 }
 
-function formatRelativeMinutes(d: Date): string {
-  const diffMin = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
+// Returns a fully-translated sync label like "Mobile synced 4m ago".
+// Each bucket is its own catalog key so translators can place the
+// number naturally in any locale ("Synchronisé il y a 4 min", etc.)
+// rather than splicing English fragments through interpolation.
+//
+// `Math.floor` (not `Math.round`) so a 31-second gap reads as
+// "just now" and 59m31s reads as "59m ago" — rounding up would
+// roll buckets early.
+function formatSyncedLabel(d: Date): string {
+  const diffMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+  if (diffMin < 1) return t("Mobile synced just now");
+  if (diffMin < 60) return t("Mobile synced {n}m ago", { n: diffMin });
   const hours = Math.floor(diffMin / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return t("Mobile synced {n}h ago", { n: hours });
+  return t("Mobile synced {n}d ago", { n: Math.floor(hours / 24) });
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
