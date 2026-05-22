@@ -11,14 +11,7 @@ import {
   Plus,
   Route,
 } from "lucide-react";
-import {
-  Card,
-  Heading,
-  MiniRouteSvg,
-  Mono,
-  QualityBars,
-  Stamp,
-} from "@tarmoto/ui";
+import { Card, Heading, MiniRouteSvg, Mono, Stamp } from "@tarmoto/ui";
 
 const QUICK_ACTIONS = [
   {
