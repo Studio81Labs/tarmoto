@@ -31,6 +31,7 @@ export {
   type Density,
 } from "./TweaksPanel";
 export { RouteMini, type RouteMiniProps } from "./RouteMini";
+export { MiniRouteSvg, type MiniRouteSvgProps } from "./MiniRouteSvg";
 export {
   WaypointGlyph,
   HazardGlyph,
