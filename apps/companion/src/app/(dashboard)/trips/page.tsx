@@ -902,34 +902,47 @@ function TripCard({
     ? folders.find((f) => f.id === trip.folder_id)
     : null;
   const seed = stableSeed(trip.id);
-  const quality = trip.quality_avg
-    ? Math.max(1, Math.min(5, Math.round(trip.quality_avg)))
-    : null;
+  // Quality fallback (q=3) drives both MiniRouteSvg's overlay and the
+  // QualityBars indicator so the card visual stays on-spec until
+  // backend ships #647's `quality_avg` field — picking one to render
+  // and hiding the other would leave the card visibly mismatched
+  // against the design.
+  const quality: 1 | 2 | 3 | 4 | 5 = trip.quality_avg
+    ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
+        | 1
+        | 2
+        | 3
+        | 4
+        | 5)
+    : 3;
   const updatedIso = trip.updatedAt ?? trip.createdAt;
+  // T7 e2e (`getByRole("link", { name: /^${title}\s+${status}/ })`)
+  // needs the trip name to lead the accessible name; without the
+  // explicit aria-label the visual status badge (rendered above the
+  // title in DOM order) wins, breaking the selector.
+  const cardAriaLabel = `${trip.name} ${trip.status}`;
   return (
     <div
       data-menu-root
       className={`group relative overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
     >
-      <Link href={`/trips/${trip.id}`} className="block">
+      <Link
+        href={`/trips/${trip.id}`}
+        aria-label={cardAriaLabel}
+        className="block"
+      >
         <div className="relative h-[140px]">
-          <MiniRouteSvg
-            q={(quality ?? 3) as 1 | 2 | 3 | 4 | 5}
-            seed={seed}
-            className="absolute inset-0"
-          />
-          <div className="absolute left-[10px] top-[10px]">
+          <MiniRouteSvg q={quality} seed={seed} className="absolute inset-0" />
+          <div className="absolute left-[10px] top-[10px]" aria-hidden="true">
             <span
               className={`inline-flex items-center rounded-full px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] ${STATUS_PILL[trip.status]}`}
             >
               {trip.status}
             </span>
           </div>
-          {quality !== null && (
-            <div className="absolute right-[10px] top-[10px]">
-              <QualityBars q={quality as 1 | 2 | 3 | 4 | 5} />
-            </div>
-          )}
+          <div className="absolute right-[10px] top-[10px]" aria-hidden="true">
+            <QualityBars q={quality} />
+          </div>
         </div>
 
         <div className="p-4">
