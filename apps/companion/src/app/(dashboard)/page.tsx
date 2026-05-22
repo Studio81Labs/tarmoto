@@ -82,6 +82,13 @@ export default function HomePage() {
   // (we don't have a rides endpoint today), include it here too.
   const hasAnyContent = trips.length > 0;
   const hasDrafts = draftTrips.length > 0;
+  // First-time hero copy ("Welcome to Tarmoto") only when we've
+  // finished loading AND confirmed an empty trip list — during the
+  // initial `useUserTrips()` fetch and on a network error, default to
+  // "Welcome back" so returning riders don't see first-time messaging
+  // flash on every cold load (statistically the dominant case under
+  // normal network latency).
+  const isFirstTimeUser = !loading && !tripsError && !hasAnyContent;
   // `tripsError` only matters in the empty / loading branches — when
   // we have drafts to show, swallow the error rather than nudging a
   // rider with real saved trips toward starting a new one.
@@ -93,7 +100,7 @@ export default function HomePage() {
       <header className="mb-7 flex items-end justify-between gap-6">
         <div>
           <Stamp>
-            {hasAnyContent ? t("Welcome back") : t("Welcome to Tarmoto")}
+            {isFirstTimeUser ? t("Welcome to Tarmoto") : t("Welcome back")}
           </Stamp>
           <Heading size="2xl" as="h1" className="mt-1">
             {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
