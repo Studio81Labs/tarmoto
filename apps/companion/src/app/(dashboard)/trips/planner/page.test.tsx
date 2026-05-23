@@ -1288,17 +1288,15 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
   });
 
-  it("toggles aria-pressed on the parameters button when the panel is shown or hidden", () => {
+  it("renders the parameters panel always-visible in the spec 3-col layout", () => {
+    // v2 Trip Planner spec drops the toggle UX — Parameters live in
+    // the fixed 340 px right column. Asserting one of the labeled
+    // controls is reachable on mount proves the panel is present
+    // without re-introducing the obsolete toggle button.
     render(<TripPlannerPage />);
 
-    const button = screen.getByRole("button", { name: /Parameters/i });
-    expect(button).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "false");
-
-    fireEvent.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Number of days")).toBeInTheDocument();
+    expect(screen.getByLabelText("Road preference")).toBeInTheDocument();
   });
 
   it("hydrates planner controls from the URL on mount", () => {
