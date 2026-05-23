@@ -138,6 +138,18 @@ export interface TripSummary {
    */
   folder_id?: string | null;
   createdAt: string;
+  /**
+   * Issue #647 — summary meta surfaced on the list endpoint so trip
+   * cards can render their KM / DAYS / PASSES strip + quality bars +
+   * updated-time footer without hydrating per-trip detail. All
+   * optional: backend ships them incrementally; cards hide
+   * whichever fields are missing on a given response.
+   */
+  distance_km?: number;
+  passes_count?: number;
+  quality_avg?: number;
+  warnings_count?: number;
+  updatedAt?: string;
 }
 
 /** Hydrated detail — extends summary with day-level + planner data. */

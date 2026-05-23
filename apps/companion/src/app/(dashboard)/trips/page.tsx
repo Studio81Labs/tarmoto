@@ -5,12 +5,9 @@ import Link from "next/link";
 import {
   Plus,
   Route,
-  Calendar,
   MapPin,
-  Users,
   Search,
   Folder,
-  FolderPlus,
   MoreVertical,
   Copy,
   Trash2,
@@ -18,6 +15,7 @@ import {
   Pencil,
   Inbox,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { tripsApi, tripFoldersApi } from "@/lib/api";
 import {
@@ -50,29 +48,25 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { Card, PageHeader } from "@tarmoto/ui";
+import { MiniRouteSvg, PageHeader } from "@tarmoto/ui";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
   active: "Active",
   completed: "Completed",
 };
-// Trip status pills render against the trip card's cream surface. Each
-// status maps to a canonical-aligned hue with text-ink for the small
-// 10-11px label so contrast stays ≥4.5:1 on every tint:
-// - draft     → neutral paper / fg-dim
-// - planned   → q3 "scheduled" yellow tint (warmer than draft, distinct
-//               from the orange `active`)
+// Spec card status badge palette (v2-pages.jsx · trip cards). Each
+// badge sits absolute over the MiniRouteSvg image area; all share
+// padding/font/letter-spacing, only the surface + border vary:
+// - planned   → solid ink with cream text (high-contrast "scheduled")
 // - active    → solid accent (currently riding)
-// - completed → q5 green (done)
-//
-// The previous accent-on-accent-tint planned pill rendered as ~2.2:1
-// orange text on warm tint; switching to ink-on-q3 lands at ≥10:1.
+// - draft     → paper-2 surface with hairline border
+// - completed → cream surface with hairline border
 const STATUS_PILL: Record<TripStatus, string> = {
-  draft: "bg-paper text-fg-dim border border-line",
-  planned: "bg-quality-q3/50 text-ink",
+  draft: "bg-paper-2 text-ink border border-line-strong",
+  planned: "bg-ink text-cream",
   active: "bg-accent text-ink",
-  completed: "bg-quality-q5/40 text-ink",
+  completed: "bg-cream text-ink border border-line-strong",
 };
 const SORT_LABEL: Record<TripSortKey, string> = {
   updated: "Last updated",
@@ -471,8 +465,8 @@ export default function TripListPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-page animate-fade-in p-7">
         <PageHeader
-          stamp={t("Plan · Trips")}
-          icon={<Route size={22} strokeWidth={1.8} />}
+          stamp={t("Trips")}
+          icon={<Route size={18} strokeWidth={2} />}
           title={t("My Trips")}
           sub={t(
             "Plan multi-day routes, organise them into folders, and ride them from the mobile app.",
@@ -480,9 +474,9 @@ export default function TripListPage() {
           right={
             <Link
               href="/trips/planner"
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               {t("New trip")}
             </Link>
           }
@@ -535,26 +529,28 @@ export default function TripListPage() {
         />
 
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
+          <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-48 animate-pulse rounded-[14px] border border-line bg-cream"
+                className="h-[290px] animate-pulse rounded-[14px] border border-line bg-cream"
               />
             ))}
           </div>
         ) : trips.length === 0 ? (
           <EmptyState
             title={t("No trips yet")}
-            body="Plan your first ride with the trip planner."
-            action={{ label: "Create trip", href: "/trips/planner" }}
+            body={t(
+              "Plan your first ride with the trip planner. Pick a region, tune the curves and asphalt, push it to your phone.",
+            )}
+            action={{ label: t("Create trip"), href: "/trips/planner" }}
           />
         ) : visibleTrips.length === 0 ? (
           <EmptyState
             title={t("No trips match your filters")}
-            body="Try clearing the search or selecting a different folder."
+            body={t("Try clearing the search or selecting a different folder.")}
             action={{
-              label: "Clear filters",
+              label: t("Clear filters"),
               onClick: () =>
                 setFilters({
                   ...DEFAULT_TRIP_FILTERS,
@@ -564,7 +560,7 @@ export default function TripListPage() {
             }}
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
+          <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
             {visibleTrips.map((trip) => (
               <TripCard
                 key={trip.id}
@@ -622,33 +618,25 @@ function FolderChipRow({
   onRename,
   onDelete,
 }: FolderChipRowProps) {
-  // Chips wrap to a second line on narrow viewports rather than
-  // scrolling horizontally. An `overflow-x-auto` ancestor would
-  // clip the per-chip rename/delete dropdown — CSS forces the
-  // other axis to `auto` too whenever one is scrollable — so we
-  // pay the cost of a slightly taller header in exchange for
-  // never trapping the kebab menu behind the scroller. With the
-  // typical handful of folders this rarely matters.
+  // Spec uses pill-shaped folder filters above the toolbar: `All trips`
+  // first, then user folders (rename / delete via the kebab), then
+  // `Unfiled` and a dashed `+ New folder` affordance. Chips wrap to a
+  // second line on narrow viewports rather than scrolling
+  // horizontally — an `overflow-x-auto` ancestor would clip the per-
+  // chip rename/delete dropdown.
   return (
-    <div className="-mx-1 mb-4 flex flex-wrap items-center gap-2 px-1">
+    <div className="mb-[18px] flex flex-wrap items-center gap-2">
       <FolderChip
-        icon={<Route size={12} />}
+        icon={<Folder size={16} />}
         label={t("All trips")}
         count={totalCount}
         active={scope.kind === "all"}
         onSelect={() => onSelect({ kind: "all" })}
       />
-      <FolderChip
-        icon={<Inbox size={12} />}
-        label={t("Unfiled")}
-        count={unfiledCount}
-        active={scope.kind === "unfiled"}
-        onSelect={() => onSelect({ kind: "unfiled" })}
-      />
       {folders.map((folder) => (
         <FolderChip
           key={folder.id}
-          icon={<Folder size={12} />}
+          icon={<Folder size={16} />}
           label={folder.name}
           count={tripsPerFolder.get(folder.id) ?? 0}
           active={scope.kind === "folder" && scope.id === folder.id}
@@ -657,14 +645,21 @@ function FolderChipRow({
           onDelete={() => onDelete(folder)}
         />
       ))}
+      <FolderChip
+        icon={<Inbox size={16} />}
+        label={t("Unfiled")}
+        count={unfiledCount}
+        active={scope.kind === "unfiled"}
+        onSelect={() => onSelect({ kind: "unfiled" })}
+      />
       <button
         type="button"
         onClick={onNew}
-        className="flex items-center gap-1.5 rounded-full border border-dashed border-line-strong px-3 py-1 text-xs font-medium text-fg-dim transition hover:border-line-strong hover:text-ink"
+        className="inline-flex items-center gap-2 rounded-full border border-dashed border-line-strong px-[14px] py-2 text-[12px] font-bold text-fg-dim transition hover:border-ink hover:text-ink"
         aria-label={t("New folder")}
         title={t("New folder")}
       >
-        <FolderPlus size={12} />
+        <Plus size={14} />
         {t("New folder")}
       </button>
     </div>
@@ -743,15 +738,19 @@ function FolderChip({
         type="button"
         onClick={onSelect}
         aria-pressed={active}
-        className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+        className={`inline-flex items-center gap-2 rounded-full border px-[14px] py-2 text-[12px] font-bold transition ${
           active
-            ? "border-accent/40 bg-accent/10 text-accent"
-            : "border-line bg-transparent text-ink hover:border-line-strong hover:text-ink"
-        } ${hasActions ? "pr-7" : ""}`}
+            ? "border-accent bg-accent/20 text-ink"
+            : "border-line-strong bg-transparent text-fg-dim hover:text-ink"
+        } ${hasActions ? "pr-9" : ""}`}
       >
         {icon}
         <span className="max-w-[14ch] truncate">{label}</span>
-        <span className="tabular-nums text-fg-dim">{count}</span>
+        <span
+          className={`font-mono text-[11px] tabular-nums ${active ? "text-ink" : "text-fg-mute"}`}
+        >
+          {count}
+        </span>
       </button>
       {hasActions && (
         <>
@@ -760,7 +759,7 @@ function FolderChip({
             data-menu-trigger
             onClick={handleToggleMenu}
             aria-label={`Folder actions for ${label}`}
-            className="absolute right-1 rounded p-0.5 text-fg-dim opacity-60 transition hover:bg-paper hover:text-ink hover:opacity-100 focus:opacity-100"
+            className="absolute right-2 rounded p-0.5 text-fg-dim opacity-60 transition hover:bg-paper hover:text-ink hover:opacity-100 focus:opacity-100"
           >
             <MoreVertical size={11} />
           </button>
@@ -812,64 +811,64 @@ function TripToolbar({
     onChange({ ...filters, statuses: next });
   };
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="relative flex-1 max-w-md">
+    <div className="mb-[18px] flex flex-wrap items-center gap-3">
+      <div className="relative min-w-[280px] flex-1">
         <Search
           size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
         />
         <input
           type="text"
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
           placeholder={t("Search by name, description, or rider\u2026")}
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-cream border border-line text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
+          className="w-full rounded-lg border border-line-strong bg-cream py-[10px] pl-9 pr-3 text-[13px] font-semibold text-ink outline-none placeholder:font-normal placeholder:text-fg-mute focus:border-accent"
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {TRIP_STATUSES.map((status) => {
-          const active = filters.statuses.has(status);
-          return (
-            <button
-              key={status}
-              type="button"
-              onClick={() => toggleStatus(status)}
-              aria-pressed={active}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                active
-                  ? "bg-paper text-ink border border-line-strong"
-                  : "bg-transparent text-fg-dim border border-line hover:text-ink"
-              }`}
-            >
-              {STATUS_LABEL[status]}{" "}
-              <span className="tabular-nums text-fg-dim">
-                {statusCounts[status]}
-              </span>
-            </button>
-          );
-        })}
-
-        <label className="flex items-center gap-2 text-xs text-fg-dim ml-2">
-          <span>{t("Sort")}</span>
-          <select
-            value={filters.sort}
-            onChange={(e) =>
-              onChange({
-                ...filters,
-                sort: e.target.value as TripSortKey,
-              })
-            }
-            className="px-2 py-1 rounded bg-cream border border-line text-ink focus:outline-none focus:border-accent"
+      {TRIP_STATUSES.map((status) => {
+        const active = filters.statuses.has(status);
+        return (
+          <button
+            key={status}
+            type="button"
+            onClick={() => toggleStatus(status)}
+            aria-pressed={active}
+            className={`inline-flex items-center gap-2 rounded-lg border px-[14px] py-2 text-[12px] font-bold transition ${
+              active
+                ? "border-accent bg-accent/20 text-ink"
+                : "border-line-strong bg-cream text-ink hover:border-ink"
+            }`}
           >
-            {TRIP_SORT_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {SORT_LABEL[key]}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+            {STATUS_LABEL[status]}
+            <span className="font-mono text-[11px] tabular-nums opacity-70">
+              {statusCounts[status]}
+            </span>
+          </button>
+        );
+      })}
+
+      <label className="flex items-center gap-2">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+          {t("Sort")}
+        </span>
+        <select
+          value={filters.sort}
+          onChange={(e) =>
+            onChange({
+              ...filters,
+              sort: e.target.value as TripSortKey,
+            })
+          }
+          className="min-w-[150px] rounded-lg border border-line-strong bg-cream py-[10px] pl-3 pr-8 text-[13px] font-semibold text-ink outline-none focus:border-accent"
+        >
+          {TRIP_SORT_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {SORT_LABEL[key]}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }
@@ -894,163 +893,244 @@ function TripCard({
 }: TripCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  // `null` when the trip arrived as a TripSummaryDto (list endpoint) and we
-  // don't have per-day distances. Display is suppressed in that case rather
-  // than confidently rendering "0 km total". Pending #541 (TripSummary type
-  // split) which will make this distinction enforced by the compiler.
-  const distance = tripDistanceKmOrNull(trip);
+  // Summary endpoint only carries totals when backend ships #647; until
+  // then per-day distance lives on the detail row and this card has
+  // none. Render only what the wire actually returned — never a
+  // confidently-wrong "0 km".
+  const distance = trip.distance_km ?? tripDistanceKmOrNull(trip);
   const currentFolder = trip.folder_id
     ? folders.find((f) => f.id === trip.folder_id)
     : null;
+  const seed = stableSeed(trip.id);
+  // Quality fallback (q=3) drives both MiniRouteSvg's overlay and the
+  // QualityBars indicator so the card visual stays on-spec until
+  // backend ships #647's `quality_avg` field — picking one to render
+  // and hiding the other would leave the card visibly mismatched
+  // against the design.
+  //
+  // Explicit null/undefined check so a real backend `quality_avg`
+  // of `0` (lowest-quality trip — a valid output path of the backend
+  // DTO mapping where day quality defaults to 0) gets clamped to
+  // q=1, not silently remapped to the neutral q=3 placeholder.
+  const quality: 1 | 2 | 3 | 4 | 5 =
+    trip.quality_avg != null
+      ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
+          | 1
+          | 2
+          | 3
+          | 4
+          | 5)
+      : 3;
+  const updatedIso = trip.updatedAt ?? trip.createdAt;
+  // T7 e2e (`getByRole("link", { name: /^${title}\s+${status}/ })`)
+  // needs the trip name to lead the accessible name; without the
+  // explicit aria-label the visual status badge (rendered above the
+  // title in DOM order) wins, breaking the selector.
+  const cardAriaLabel = `${trip.name} ${trip.status}`;
   return (
     <div
-      data-menu-root
-      className={`relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
+      className={`group relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
     >
-      <Link href={`/trips/${trip.id}`} className="block p-5 pr-12 group">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <h3 className="font-semibold text-ink group-hover:text-accent transition line-clamp-2">
-            {trip.name}
-          </h3>
-          <span
-            className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${STATUS_PILL[trip.status]}`}
-          >
-            {trip.status}
-          </span>
-        </div>
-
-        {/* `description` / per-day distance / collaborator names /
-            `updatedAt` aren't on `TripSummaryDto`; the list endpoint
-            doesn't surface them so the card now reads only what the
-            wire actually returns. `num_days` and `member_count` are
-            the summary equivalents. */}
-
-        <div className="space-y-1.5 text-sm text-fg-dim">
-          <div className="flex items-center gap-2">
-            <Calendar size={13} />
-            <span>
-              {t(trip.num_days === 1 ? "{count} day" : "{count} days", {
-                count: trip.num_days,
-              })}
+      <Link
+        href={`/trips/${trip.id}`}
+        aria-label={cardAriaLabel}
+        className="block"
+      >
+        <div className="relative h-[140px] overflow-hidden rounded-t-[14px]">
+          <MiniRouteSvg q={quality} seed={seed} className="absolute inset-0" />
+          <div className="absolute left-[10px] top-[10px]" aria-hidden="true">
+            <span
+              className={`inline-flex items-center rounded-full px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] ${STATUS_PILL[trip.status]}`}
+            >
+              {trip.status}
             </span>
           </div>
-          {distance !== null && (
-            <div className="flex items-center gap-2">
-              <MapPin size={13} />
-              <span>
-                {t("{distance} km total", { distance: Math.round(distance) })}
-              </span>
-            </div>
-          )}
-          {(trip.member_count ?? 0) > 1 && (
-            <div className="flex items-center gap-2">
-              <Users size={13} />
-              <span>
-                {t("{count} riders", {
-                  count: trip.member_count ?? 0,
-                })}
-              </span>
-            </div>
-          )}
-          {currentFolder && (
-            <div className="flex items-center gap-2 text-fg-dim">
-              <Folder size={13} />
-              <span className="truncate">{currentFolder.name}</span>
-            </div>
-          )}
+          <div className="absolute right-[10px] top-[10px]" aria-hidden="true">
+            <QualityBars q={quality} />
+          </div>
         </div>
 
-        <p className="mt-3 text-[11px] text-fg-mute">
-          {t("Created ")}
-          {formatRelativeTime(trip.createdAt)}
-        </p>
+        <div className="p-4">
+          <h3 className="text-[17px] font-extrabold tracking-[-0.3px] text-ink group-hover:text-accent transition line-clamp-1">
+            {trip.name}
+          </h3>
+          {trip.region && (
+            <div className="mt-1 flex items-center gap-1.5 text-[12px] text-fg-dim">
+              <MapPin size={14} className="text-fg-mute" strokeWidth={2} />
+              <span className="truncate">{trip.region}</span>
+            </div>
+          )}
+
+          <div className="mt-[14px] flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono text-[11px] text-fg-dim">
+            {distance !== null && (
+              <span>
+                <span className="font-bold text-ink">
+                  {Math.round(distance)}
+                </span>{" "}
+                KM
+              </span>
+            )}
+            <span>
+              <span className="font-bold text-ink">{trip.num_days}</span> DAYS
+            </span>
+            {typeof trip.passes_count === "number" && (
+              <span>
+                <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
+                PASSES
+              </span>
+            )}
+            {typeof trip.warnings_count === "number" &&
+              trip.warnings_count > 0 && (
+                <span className="inline-flex items-center gap-1 text-accent">
+                  <AlertTriangle size={11} strokeWidth={2.4} />
+                  {trip.warnings_count}
+                </span>
+              )}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
+            <span>
+              {trip.updatedAt ? "UPDATED " : "CREATED "}
+              {formatRelativeTime(updatedIso).toUpperCase()}
+            </span>
+            {currentFolder && (
+              <span className="uppercase truncate max-w-[12ch]">
+                {currentFolder.name}
+              </span>
+            )}
+          </div>
+        </div>
       </Link>
 
-      <button
-        type="button"
-        data-menu-trigger
-        aria-label={`Trip actions for ${trip.name}`}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenuOpen((v) => !v);
-          setMoveOpen(false);
-        }}
-        disabled={busy}
-        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
-      >
-        <MoreVertical size={16} />
-      </button>
-
-      {menuOpen && (
-        <Menu
-          align="right"
-          onClose={() => {
-            setMenuOpen(false);
+      <div data-menu-root className="absolute bottom-3 right-3">
+        <button
+          type="button"
+          data-menu-trigger
+          aria-label={`Trip actions for ${trip.name}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuOpen((v) => !v);
             setMoveOpen(false);
           }}
+          disabled={busy}
+          className="rounded-lg bg-cream/80 p-1.5 text-fg-dim opacity-0 backdrop-blur-sm transition focus-visible:opacity-100 group-hover:opacity-100 hover:bg-paper hover:text-ink [@media(hover:none)]:opacity-100"
         >
-          <MenuItem
-            icon={<Copy size={13} />}
-            label="Duplicate"
-            onClick={() => {
+          <MoreVertical size={16} />
+        </button>
+
+        {menuOpen && (
+          <Menu
+            align="right"
+            verticalAlign="bottom"
+            onClose={() => {
               setMenuOpen(false);
-              onDuplicate();
+              setMoveOpen(false);
             }}
-          />
-          <MenuItem
-            icon={<FolderInput size={13} />}
-            label="Move to folder"
-            onClick={() => setMoveOpen((v) => !v)}
-            trailing={
-              <span className="text-[10px] text-fg-dim">
-                {currentFolder?.name ?? "Unfiled"}
-              </span>
-            }
-          />
-          {moveOpen && (
-            <div className="pl-3 pr-1 py-1 border-t border-line max-h-48 overflow-y-auto">
-              <MoveItem
-                label="Unfiled"
-                active={!trip.folder_id}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMoveOpen(false);
-                  onMove(null);
-                }}
-              />
-              {folders.map((folder) => (
+          >
+            <MenuItem
+              icon={<Copy size={13} />}
+              label="Duplicate"
+              onClick={() => {
+                setMenuOpen(false);
+                onDuplicate();
+              }}
+            />
+            <MenuItem
+              icon={<FolderInput size={13} />}
+              label="Move to folder"
+              onClick={() => setMoveOpen((v) => !v)}
+              trailing={
+                <span className="text-[10px] text-fg-dim">
+                  {currentFolder?.name ?? "Unfiled"}
+                </span>
+              }
+            />
+            {moveOpen && (
+              <div className="max-h-48 overflow-y-auto border-t border-line py-1 pl-3 pr-1">
                 <MoveItem
-                  key={folder.id}
-                  label={folder.name}
-                  active={trip.folder_id === folder.id}
+                  label="Unfiled"
+                  active={!trip.folder_id}
                   onClick={() => {
                     setMenuOpen(false);
                     setMoveOpen(false);
-                    onMove(folder.id);
+                    onMove(null);
                   }}
                 />
-              ))}
-              {folders.length === 0 && (
-                <p className="text-[11px] text-fg-dim py-1">
-                  {t("No folders yet. Create one from the sidebar. ")}
-                </p>
-              )}
-            </div>
-          )}
-          <MenuItem
-            icon={<Trash2 size={13} />}
-            label="Delete"
-            tone="danger"
-            onClick={() => {
-              setMenuOpen(false);
-              onDelete();
-            }}
-          />
-        </Menu>
-      )}
+                {folders.map((folder) => (
+                  <MoveItem
+                    key={folder.id}
+                    label={folder.name}
+                    active={trip.folder_id === folder.id}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMoveOpen(false);
+                      onMove(folder.id);
+                    }}
+                  />
+                ))}
+                {folders.length === 0 && (
+                  <p className="py-1 text-[11px] text-fg-dim">
+                    {t("No folders yet. Create one from the sidebar. ")}
+                  </p>
+                )}
+              </div>
+            )}
+            <MenuItem
+              icon={<Trash2 size={13} />}
+              label="Delete"
+              tone="danger"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete();
+              }}
+            />
+          </Menu>
+        )}
+      </div>
     </div>
   );
+}
+
+function QualityBars({ q }: { q: 1 | 2 | 3 | 4 | 5 }) {
+  // Spec quality bar palette — same hex ramp as `qualityColors`
+  // mirrored locally so the indicator renders identically when CSS
+  // tokens aren't reachable (e.g. printed cards). Empty bars use
+  // ink/0.08 to stay readable on every cream tint.
+  const QUALITY_HEX = [
+    "#E05A3C",
+    "#F0A03C",
+    "#E8D66A",
+    "#C7D36A",
+    "#6FD38A",
+  ] as const;
+  const fillColor = QUALITY_HEX[q - 1];
+  return (
+    <div className="inline-flex gap-[2px]">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          className="h-[11px] w-[5px] rounded-[1.5px]"
+          style={{
+            background: i <= q ? fillColor : "rgba(14,14,16,0.08)",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function stableSeed(id: string): number {
+  // FNV-1a 32-bit hash trimmed to a positive 16-bit seed. The
+  // MiniRouteSvg seed only needs to be stable per-trip so two
+  // adjacent cards look visually distinct; collision quality
+  // doesn't matter beyond that.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 16) & 0xffff;
 }
 function MoveItem({
   label,
@@ -1183,37 +1263,51 @@ function EmptyState({
       };
 }) {
   return (
-    <Card padded={false} className="mt-5 p-16 text-center">
-      <Route size={48} className="mx-auto mb-4 text-fg-mute" />
-      <p className="mb-1 text-lg text-fg-dim">{title}</p>
-      <p className="mb-6 text-sm text-fg-dim">{body}</p>
-      {action &&
-        ("href" in action ? (
-          <Link
-            href={action.href}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-[13px] font-bold text-ink transition hover:brightness-95"
-          >
-            <Plus size={14} /> {action.label}
-          </Link>
-        ) : (
-          <button
-            type="button"
-            onClick={action.onClick}
-            className="inline-flex items-center gap-2 rounded-lg bg-paper px-4 py-2 text-sm text-ink transition hover:bg-paper-2"
-          >
-            {action.label}
-          </button>
-        ))}
-    </Card>
+    <div className="flex flex-col items-center gap-3 rounded-[14px] border border-line bg-cream px-6 py-20 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-paper text-fg-mute">
+        <Route size={18} strokeWidth={2} />
+      </div>
+      <div className="text-[18px] font-extrabold text-ink">{title}</div>
+      <div className="max-w-[480px] text-[13px] leading-[1.55] text-fg-dim">
+        {body}
+      </div>
+      {action && (
+        <div className="mt-[14px]">
+          {"href" in action ? (
+            <Link
+              href={action.href}
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+            >
+              <Plus size={14} /> {action.label}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={action.onClick}
+              className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong bg-cream px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+            >
+              {action.label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 function Menu({
   onClose,
   align,
+  verticalAlign = "top",
   children,
 }: {
   onClose: () => void;
   align: "left" | "right";
+  // `top` (default) opens 40 px below the trigger — folder chips
+  // and any trigger at the top of a card. `bottom` flips the menu
+  // upward, used by the trip-card kebab which sits at the
+  // bottom-right of the card; with `top` it would render below the
+  // card edge (and the card's `overflow-hidden` would clip it).
+  verticalAlign?: "top" | "bottom";
   children: React.ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -1239,11 +1333,13 @@ function Menu({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [onClose]);
+  const verticalClass = verticalAlign === "top" ? "top-10" : "bottom-10";
+  const horizontalClass = align === "right" ? "right-2" : "left-2";
   return (
     <div
       ref={menuRef}
       data-trip-menu
-      className={`absolute top-10 z-20 w-56 rounded-lg border border-line bg-paper shadow-xl py-1 ${align === "right" ? "right-2" : "left-2"}`}
+      className={`absolute z-20 w-56 rounded-lg border border-line bg-paper shadow-xl py-1 ${verticalClass} ${horizontalClass}`}
     >
       {children}
     </div>

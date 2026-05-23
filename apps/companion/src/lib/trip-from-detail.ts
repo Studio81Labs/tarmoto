@@ -126,6 +126,17 @@ export interface TripSummaryWire {
   member_count: number;
   folder_id: string | null;
   created_at: string;
+  /**
+   * Issue #647 — backend ships these incrementally on
+   * `TripSummaryDto`. All optional so older responses keep parsing
+   * cleanly; once the fields land they flow straight through to
+   * `TripSummary` via the adapter below.
+   */
+  updated_at?: string;
+  distance_km?: number;
+  passes_count?: number;
+  quality_avg?: number;
+  warnings_count?: number;
 }
 
 /**
@@ -149,6 +160,15 @@ export function tripSummaryFromWire(
     owner_id: wire.owner_id,
     folder_id: wire.folder_id,
     createdAt: wire.created_at,
+    // #647 follow-up fields — pass through so the trip-list card meta
+    // strip lights up as soon as backend starts surfacing them on
+    // `TripSummaryDto`. Skipping these here is what would silently
+    // strip the new metadata before it reached the card.
+    updatedAt: wire.updated_at,
+    distance_km: wire.distance_km,
+    passes_count: wire.passes_count,
+    quality_avg: wire.quality_avg,
+    warnings_count: wire.warnings_count,
   };
 }
 
