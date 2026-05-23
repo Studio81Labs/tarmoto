@@ -907,14 +907,20 @@ function TripCard({
   // backend ships #647's `quality_avg` field — picking one to render
   // and hiding the other would leave the card visibly mismatched
   // against the design.
-  const quality: 1 | 2 | 3 | 4 | 5 = trip.quality_avg
-    ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
-        | 1
-        | 2
-        | 3
-        | 4
-        | 5)
-    : 3;
+  //
+  // Explicit null/undefined check so a real backend `quality_avg`
+  // of `0` (lowest-quality trip — a valid output path of the backend
+  // DTO mapping where day quality defaults to 0) gets clamped to
+  // q=1, not silently remapped to the neutral q=3 placeholder.
+  const quality: 1 | 2 | 3 | 4 | 5 =
+    trip.quality_avg != null
+      ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
+          | 1
+          | 2
+          | 3
+          | 4
+          | 5)
+      : 3;
   const updatedIso = trip.updatedAt ?? trip.createdAt;
   // T7 e2e (`getByRole("link", { name: /^${title}\s+${status}/ })`)
   // needs the trip name to lead the accessible name; without the
