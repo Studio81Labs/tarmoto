@@ -1464,7 +1464,14 @@ export default function TripPlannerPage() {
                 still has access to surfaces, daily km, min quality,
                 avoid flags, route builder, and passes / closures
                 without cluttering the spec's two-control simplicity. */}
-            <details className="border-t border-line pt-[14px]">
+            {/* Phase A keeps the Advanced disclosure open by default —
+                closures / passes / route-builder warnings are content
+                the rider relies on, and existing Playwright e2es
+                assert `toBeVisible()` on text rendered inside this
+                group. A follow-up phase B can collapse the disclosure
+                once those surfaces are reshaped for the spec's
+                minimal idle visual. */}
+            <details className="border-t border-line pt-[14px]" open>
               <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
                 {t("Advanced")}
               </summary>
