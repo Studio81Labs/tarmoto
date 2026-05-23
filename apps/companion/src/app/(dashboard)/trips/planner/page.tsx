@@ -975,6 +975,98 @@ export default function TripPlannerPage() {
         </div>
       </div>
 
+      {/* Generation results — rendered in document flow between the
+          toolbar and the 3-col grid. Only appears after Generate, so
+          the spec idle visual stays clean. Existing Playwright e2es
+          assert `toBeVisible()` on text inside these cards, which a
+          floating absolute overlay made unreliable under the grid
+          layout. */}
+      {(generatedOptions.length > 0 || generationError) && (
+        <div className="border-b border-line bg-paper/80 px-4 py-3">
+          {generationError ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
+            >
+              {generationError}
+            </p>
+          ) : null}
+          {generatedOptions.length > 0 && (
+            <div
+              className={`grid gap-3 lg:grid-cols-3 ${generationError ? "mt-3" : ""}`}
+            >
+              {generatedOptions.map((option) => {
+                const totalDistance = option.trip.days.reduce(
+                  (sum, day) => sum + day.distanceKm,
+                  0,
+                );
+                const totalDuration = option.trip.days.reduce(
+                  (sum, day) => sum + day.durationMinutes,
+                  0,
+                );
+                const averageQuality =
+                  option.trip.days.length > 0
+                    ? option.trip.days.reduce(
+                        (sum, day) => sum + day.avgQuality,
+                        0,
+                      ) / option.trip.days.length
+                    : 0;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => handleSelectOption(option)}
+                    disabled={isGenerating}
+                    className={`rounded-[14px] border px-4 py-3 text-left transition ${
+                      option.id === selectedOptionId
+                        ? "border-accent bg-accent/10"
+                        : "border-line bg-cream/60 hover:border-line-strong"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-ink">
+                          {option.label}
+                        </p>
+                        <p className="mt-1 text-xs text-fg-dim">
+                          {option.summary}
+                        </p>
+                      </div>
+                      {option.id === selectedOptionId && (
+                        <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
+                          {t("Active")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Distance")}</p>
+                        <p className="mt-1 font-medium text-ink">
+                          {Math.round(totalDistance)}
+                          {t("km ")}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Ride time")}</p>
+                        <p className="mt-1 font-medium text-ink">
+                          {formatDuration(totalDuration)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-paper/70 px-2 py-2">
+                        <p className="text-fg-dim">{t("Avg quality")}</p>
+                        <p className="mt-1 font-medium text-ink">
+                          {averageQuality.toFixed(1)}/5
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 3-column grid — left legs, center map (+ floating footer card),
           right parameters. Spec: v2-pages.jsx Trip Planner. */}
       <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr_340px]">
@@ -1141,96 +1233,6 @@ export default function TripPlannerPage() {
                   {t("Finding the best roads for you")}
                 </p>
               </div>
-            </div>
-          )}
-
-          {/* Generation results — when present, render as a translucent
-              overlay strip at the top so the spec footer card stays
-              visible at the bottom. Keeps test selectors
-              (`getByText("Scenic backend")`) reachable. */}
-          {(generatedOptions.length > 0 || generationError) && (
-            <div className="absolute left-4 right-4 top-4 z-10 rounded-[12px] border border-line bg-cream/95 px-4 py-3 shadow-[0_8px_24px_rgba(14,14,16,0.10)] backdrop-blur-sm">
-              {generationError ? (
-                <p
-                  role="alert"
-                  className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
-                >
-                  {generationError}
-                </p>
-              ) : null}
-              {generatedOptions.length > 0 && (
-                <div
-                  className={`grid gap-3 lg:grid-cols-3 ${generationError ? "mt-3" : ""}`}
-                >
-                  {generatedOptions.map((option) => {
-                    const totalDistance = option.trip.days.reduce(
-                      (sum, day) => sum + day.distanceKm,
-                      0,
-                    );
-                    const totalDuration = option.trip.days.reduce(
-                      (sum, day) => sum + day.durationMinutes,
-                      0,
-                    );
-                    const averageQuality =
-                      option.trip.days.length > 0
-                        ? option.trip.days.reduce(
-                            (sum, day) => sum + day.avgQuality,
-                            0,
-                          ) / option.trip.days.length
-                        : 0;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => handleSelectOption(option)}
-                        disabled={isGenerating}
-                        className={`rounded-[14px] border px-4 py-3 text-left transition ${
-                          option.id === selectedOptionId
-                            ? "border-accent bg-accent/10"
-                            : "border-line bg-cream/60 hover:border-line-strong"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-ink">
-                              {option.label}
-                            </p>
-                            <p className="mt-1 text-xs text-fg-dim">
-                              {option.summary}
-                            </p>
-                          </div>
-                          {option.id === selectedOptionId && (
-                            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
-                              {t("Active")}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
-                          <div className="rounded-lg bg-paper/70 px-2 py-2">
-                            <p className="text-fg-dim">{t("Distance")}</p>
-                            <p className="mt-1 font-medium text-ink">
-                              {Math.round(totalDistance)}
-                              {t("km ")}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-paper/70 px-2 py-2">
-                            <p className="text-fg-dim">{t("Ride time")}</p>
-                            <p className="mt-1 font-medium text-ink">
-                              {formatDuration(totalDuration)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-paper/70 px-2 py-2">
-                            <p className="text-fg-dim">{t("Avg quality")}</p>
-                            <p className="mt-1 font-medium text-ink">
-                              {averageQuality.toFixed(1)}/5
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 
