@@ -929,15 +929,14 @@ function TripCard({
   const cardAriaLabel = `${trip.name} ${trip.status}`;
   return (
     <div
-      data-menu-root
-      className={`group relative overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
+      className={`group relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
     >
       <Link
         href={`/trips/${trip.id}`}
         aria-label={cardAriaLabel}
         className="block"
       >
-        <div className="relative h-[140px]">
+        <div className="relative h-[140px] overflow-hidden rounded-t-[14px]">
           <MiniRouteSvg q={quality} seed={seed} className="absolute inset-0" />
           <div className="absolute left-[10px] top-[10px]" aria-hidden="true">
             <span
@@ -1003,89 +1002,92 @@ function TripCard({
         </div>
       </Link>
 
-      <button
-        type="button"
-        data-menu-trigger
-        aria-label={`Trip actions for ${trip.name}`}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenuOpen((v) => !v);
-          setMoveOpen(false);
-        }}
-        disabled={busy}
-        className="absolute bottom-3 right-3 rounded-lg bg-cream/80 p-1.5 text-fg-dim opacity-0 backdrop-blur-sm transition hover:bg-paper hover:text-ink focus:opacity-100 group-hover:opacity-100"
-      >
-        <MoreVertical size={16} />
-      </button>
-
-      {menuOpen && (
-        <Menu
-          align="right"
-          onClose={() => {
-            setMenuOpen(false);
+      <div data-menu-root className="absolute bottom-3 right-3">
+        <button
+          type="button"
+          data-menu-trigger
+          aria-label={`Trip actions for ${trip.name}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenuOpen((v) => !v);
             setMoveOpen(false);
           }}
+          disabled={busy}
+          className="rounded-lg bg-cream/80 p-1.5 text-fg-dim opacity-0 backdrop-blur-sm transition focus-visible:opacity-100 group-hover:opacity-100 hover:bg-paper hover:text-ink [@media(hover:none)]:opacity-100"
         >
-          <MenuItem
-            icon={<Copy size={13} />}
-            label="Duplicate"
-            onClick={() => {
+          <MoreVertical size={16} />
+        </button>
+
+        {menuOpen && (
+          <Menu
+            align="right"
+            verticalAlign="bottom"
+            onClose={() => {
               setMenuOpen(false);
-              onDuplicate();
+              setMoveOpen(false);
             }}
-          />
-          <MenuItem
-            icon={<FolderInput size={13} />}
-            label="Move to folder"
-            onClick={() => setMoveOpen((v) => !v)}
-            trailing={
-              <span className="text-[10px] text-fg-dim">
-                {currentFolder?.name ?? "Unfiled"}
-              </span>
-            }
-          />
-          {moveOpen && (
-            <div className="max-h-48 overflow-y-auto border-t border-line py-1 pl-3 pr-1">
-              <MoveItem
-                label="Unfiled"
-                active={!trip.folder_id}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMoveOpen(false);
-                  onMove(null);
-                }}
-              />
-              {folders.map((folder) => (
+          >
+            <MenuItem
+              icon={<Copy size={13} />}
+              label="Duplicate"
+              onClick={() => {
+                setMenuOpen(false);
+                onDuplicate();
+              }}
+            />
+            <MenuItem
+              icon={<FolderInput size={13} />}
+              label="Move to folder"
+              onClick={() => setMoveOpen((v) => !v)}
+              trailing={
+                <span className="text-[10px] text-fg-dim">
+                  {currentFolder?.name ?? "Unfiled"}
+                </span>
+              }
+            />
+            {moveOpen && (
+              <div className="max-h-48 overflow-y-auto border-t border-line py-1 pl-3 pr-1">
                 <MoveItem
-                  key={folder.id}
-                  label={folder.name}
-                  active={trip.folder_id === folder.id}
+                  label="Unfiled"
+                  active={!trip.folder_id}
                   onClick={() => {
                     setMenuOpen(false);
                     setMoveOpen(false);
-                    onMove(folder.id);
+                    onMove(null);
                   }}
                 />
-              ))}
-              {folders.length === 0 && (
-                <p className="py-1 text-[11px] text-fg-dim">
-                  {t("No folders yet. Create one from the sidebar. ")}
-                </p>
-              )}
-            </div>
-          )}
-          <MenuItem
-            icon={<Trash2 size={13} />}
-            label="Delete"
-            tone="danger"
-            onClick={() => {
-              setMenuOpen(false);
-              onDelete();
-            }}
-          />
-        </Menu>
-      )}
+                {folders.map((folder) => (
+                  <MoveItem
+                    key={folder.id}
+                    label={folder.name}
+                    active={trip.folder_id === folder.id}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMoveOpen(false);
+                      onMove(folder.id);
+                    }}
+                  />
+                ))}
+                {folders.length === 0 && (
+                  <p className="py-1 text-[11px] text-fg-dim">
+                    {t("No folders yet. Create one from the sidebar. ")}
+                  </p>
+                )}
+              </div>
+            )}
+            <MenuItem
+              icon={<Trash2 size={13} />}
+              label="Delete"
+              tone="danger"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete();
+              }}
+            />
+          </Menu>
+        )}
+      </div>
     </div>
   );
 }
@@ -1295,10 +1297,17 @@ function EmptyState({
 function Menu({
   onClose,
   align,
+  verticalAlign = "top",
   children,
 }: {
   onClose: () => void;
   align: "left" | "right";
+  // `top` (default) opens 40 px below the trigger — folder chips
+  // and any trigger at the top of a card. `bottom` flips the menu
+  // upward, used by the trip-card kebab which sits at the
+  // bottom-right of the card; with `top` it would render below the
+  // card edge (and the card's `overflow-hidden` would clip it).
+  verticalAlign?: "top" | "bottom";
   children: React.ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -1324,11 +1333,13 @@ function Menu({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [onClose]);
+  const verticalClass = verticalAlign === "top" ? "top-10" : "bottom-10";
+  const horizontalClass = align === "right" ? "right-2" : "left-2";
   return (
     <div
       ref={menuRef}
       data-trip-menu
-      className={`absolute top-10 z-20 w-56 rounded-lg border border-line bg-paper shadow-xl py-1 ${align === "right" ? "right-2" : "left-2"}`}
+      className={`absolute z-20 w-56 rounded-lg border border-line bg-paper shadow-xl py-1 ${verticalClass} ${horizontalClass}`}
     >
       {children}
     </div>
