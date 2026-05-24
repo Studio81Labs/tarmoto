@@ -111,6 +111,13 @@ const URL_PARAM_KEYS = {
 export default function TripPlannerPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
+  // Controlled Advanced disclosure — starts open (Playwright e2es +
+  // closures / route-builder warnings the rider relies on need the
+  // children visible on first render) and respects subsequent user
+  // toggles via the native `<details>` onToggle event. A hardcoded
+  // `open` attribute would re-open the section on every parent
+  // re-render, clobbering user collapses.
+  const [advancedOpen, setAdvancedOpen] = useState(true);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [travelMonth, setTravelMonth] = useState<number>(() =>
@@ -1493,8 +1500,16 @@ export default function TripPlannerPage() {
                 assert `toBeVisible()` on text rendered inside this
                 group. A follow-up phase B can collapse the disclosure
                 once those surfaces are reshaped for the spec's
-                minimal idle visual. */}
-            <details className="border-t border-line pt-[14px]" open>
+                minimal idle visual. The state is controlled
+                explicitly so user collapses survive subsequent
+                parent re-renders. */}
+            <details
+              className="border-t border-line pt-[14px]"
+              open={advancedOpen}
+              onToggle={(event) =>
+                setAdvancedOpen((event.target as HTMLDetailsElement).open)
+              }
+            >
               <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
                 {t("Advanced")}
               </summary>
