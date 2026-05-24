@@ -1328,7 +1328,12 @@ export default function TripPlannerPage() {
           </p>
 
           <div className="flex flex-col gap-[18px]">
-            {/* Days segmented control */}
+            {/* Days segmented control — full 1..14 supported range so a
+                persisted `days=1` or `days=10` trip lands on a visible
+                selected segment instead of leaving the control with no
+                highlighted option. Spec shows 2..8; we cover the full
+                state range to keep the visible control and submitted
+                value consistent. */}
             <div>
               <div className="mb-2 flex justify-between">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
@@ -1338,14 +1343,14 @@ export default function TripPlannerPage() {
                   {days}
                 </span>
               </div>
-              <div className="flex gap-1">
-                {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
                   <button
                     key={n}
                     type="button"
                     onClick={() => setDays(n)}
                     aria-label={`Set days to ${n}`}
-                    className={`flex-1 rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                    className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
                       days === n
                         ? "border-ink bg-ink text-cream"
                         : "border-line bg-cream text-fg-dim hover:text-ink"
@@ -1357,7 +1362,9 @@ export default function TripPlannerPage() {
               </div>
               {/* sr-only semantic input keeps `getByLabelText("Number of
                   days")` resolvable for the existing tests; changes
-                  fire through the same setDays handler. */}
+                  fire through the same setDays handler. `tabIndex={-1}`
+                  removes it from sequential focus so keyboard users
+                  don't land on an invisible control. */}
               <label htmlFor="trip-planner-days" className="sr-only">
                 {t("Number of days")}
               </label>
@@ -1367,6 +1374,7 @@ export default function TripPlannerPage() {
                 min={1}
                 max={14}
                 value={days}
+                tabIndex={-1}
                 onChange={(event) =>
                   setDays(clampNumberInput(event.target.value, 1, 14, 3))
                 }
@@ -1374,7 +1382,12 @@ export default function TripPlannerPage() {
               />
             </div>
 
-            {/* Road preference radio cards */}
+            {/* Road preference radio cards — includes a "Balanced" card
+                for the `mixed` planner default so the visible UI and
+                submitted payload stay in sync. Spec's 3-card design
+                doesn't surface `mixed`, but it's the default planner
+                state and a persisted trip can carry it; hiding it
+                would leave the control with nothing selected. */}
             <div>
               <label
                 htmlFor="trip-planner-road-preference"
@@ -1394,6 +1407,11 @@ export default function TripPlannerPage() {
                       value: "scenic",
                       label: t("Scenic balance"),
                       sub: t("Views + curves mixed"),
+                    },
+                    {
+                      value: "mixed",
+                      label: t("Balanced"),
+                      sub: t("All-rounder default"),
                     },
                     {
                       value: "direct",
@@ -1444,10 +1462,13 @@ export default function TripPlannerPage() {
               {/* sr-only select keeps `getByLabelText("Road preference")`
                   + `fireEvent.change` resolvable; carries the full
                   4-option enum so tests that select `mixed` still
-                  reach a real value. */}
+                  reach a real value. `tabIndex={-1}` removes it from
+                  sequential focus so keyboard users don't land on an
+                  invisible control. */}
               <select
                 id="trip-planner-road-preference"
                 value={roadPreference}
+                tabIndex={-1}
                 onChange={(event) =>
                   setRoadPreference(
                     event.target.value as TripParameters["roadPreference"],
