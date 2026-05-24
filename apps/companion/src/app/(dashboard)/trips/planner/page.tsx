@@ -918,7 +918,6 @@ export default function TripPlannerPage() {
             type="button"
             onClick={undo}
             disabled={!canUndo}
-            aria-label="Undo"
             className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RotateCcw size={14} />
@@ -928,7 +927,6 @@ export default function TripPlannerPage() {
             type="button"
             onClick={redo}
             disabled={!canRedo}
-            aria-label="Redo"
             className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <RotateCw size={14} />
@@ -955,7 +953,6 @@ export default function TripPlannerPage() {
             type="button"
             onClick={handleSave}
             disabled={saving || isGenerating || !displayedTrip}
-            aria-label="Save"
             className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-60"
           >
             {saving ? (
@@ -1258,7 +1255,12 @@ export default function TripPlannerPage() {
                   disabled={saving || isGenerating}
                   className="inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-cream transition hover:opacity-90 disabled:opacity-60"
                 >
-                  {saving ? t("Saving…") : t("Push to phone →")}
+                  {/* Visible text stays static so the toolbar Save
+                      button ("Saving…" in flight) keeps a unique
+                      accessible name for selectors like
+                      `getByRole({ name: "Saving…" })`. The disabled
+                      state here conveys the in-flight feedback. */}
+                  {t("Push to phone →")}
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
