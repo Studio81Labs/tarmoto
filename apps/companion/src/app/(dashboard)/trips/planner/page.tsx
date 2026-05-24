@@ -1662,18 +1662,21 @@ export default function TripPlannerPage() {
             </details>
           </div>
 
-          {/* Re-generate CTA — primary action per spec; replaces the
-              former top-bar Generate button. aria-label kept as
-              "Generate itinerary" so the existing test selectors
-              continue to resolve. */}
+          {/* Generate CTA — primary action per spec. Visible label
+              drives the accessible name directly (no aria-label
+              override) so WCAG 2.5.3 "Label in Name" + voice-control
+              users get the same phrase a sighted user reads. Spec
+              wording ("Re-generate itinerary ↺") simplified to just
+              "Generate itinerary" so the visible label stays exact-
+              matchable for existing test selectors AND covers both
+              first-time and re-run flows without conditional text. */}
           <button
             type="button"
             onClick={handleGenerate}
             disabled={isGenerating}
-            aria-label={t("Generate itinerary")}
             className="mt-[18px] inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-wait disabled:opacity-60"
           >
-            {isGenerating ? t("Generating…") : t("Re-generate itinerary ↺")}
+            {isGenerating ? t("Generating…") : t("Generate itinerary")}
           </button>
         </aside>
       </div>
