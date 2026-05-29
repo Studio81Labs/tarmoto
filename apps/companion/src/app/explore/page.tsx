@@ -142,29 +142,45 @@ function todayAsPreviewDate(): Date {
 // holds quality-shaped 0–5 values, not the 0–100 the slider implied,
 // so the filter was effectively a no-op for every realistic value.
 function ExplorerPageInner() {
-  // Filters sidebar visibility. Defaults open on `lg` and up so the
-  // spec idle visual matches the design; defaults closed on smaller
-  // viewports so the map keeps usable width (a fixed 300 px sidebar
-  // + optional 320 px info panel would eat most of a narrow screen
-  // and leave the rider with no recovery affordance). The floating
-  // "Filters" pill in the map overlay is always available as the
-  // toggle, matching the spec's primary-accent "Filters" pill in
-  // the layer row.
-  const [filterOpen, setFilterOpen] = useState<boolean>(() => {
-    // `matchMedia` is absent in SSR and in jsdom (existing
-    // page.test.tsx render path); default to open in both cases so
-    // the spec idle visual + every test assertion already pinned to
-    // the sidebar's contents keep working. The wide-vs-narrow
-    // narrowing happens only in real browsers via the second
-    // condition.
+  // SSR-stable initial value (true) avoids a hydration mismatch on
+  // narrow viewports where a `matchMedia`-driven initializer would
+  // return a different value than the server-rendered HTML. The
+  // post-mount effect below narrows the default for real browsers.
+  const [filterOpen, setFilterOpen] = useState<boolean>(true);
+  // Wide-viewport detection. Drives both the post-mount sidebar
+  // default and the info-panel layout swap (grid third column vs.
+  // absolute overlay) so a phone toggling Closures/Passes still
+  // sees a usable map rather than a 70 px sliver.
+  const [isWideViewport, setIsWideViewport] = useState(true);
+  useEffect(() => {
     if (
       typeof window === "undefined" ||
       typeof window.matchMedia !== "function"
     ) {
-      return true;
+      return;
     }
-    return window.matchMedia("(min-width: 1024px)").matches;
-  });
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsWideViewport(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  // Post-mount narrow-screen default: close the sidebar so the map
+  // gets full width on phones. Runs once on mount; subsequent user
+  // toggles of the Filters pill are respected (the effect is keyed
+  // to `[]`, not to the viewport state, so a resize doesn't yank
+  // the sidebar open or closed against the rider's wishes).
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      setFilterOpen(false);
+    }
+  }, []);
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -300,8 +316,14 @@ function ExplorerPageInner() {
       style={
         {
           "--explore-left": filterOpen ? "300px" : "0px",
+          // Info panel only takes a real grid column on wide
+          // viewports. On narrow viewports it overlays the map
+          // (see the absolute-positioned aside below) so a phone
+          // doesn't lose its entire map area to a fixed rail.
           "--explore-right":
-            showClosuresLayer || showPassesLayer ? "320px" : "0px",
+            isWideViewport && (showClosuresLayer || showPassesLayer)
+              ? "320px"
+              : "0px",
         } as React.CSSProperties
       }
     >
@@ -309,9 +331,15 @@ function ExplorerPageInner() {
           map column stays in the middle track — `display: none`
           would drop the aside from layout and the map would land
           in the 0-width first column instead. Closed state =
-          `overflow-hidden` on a 0-width column clips the children
-          cleanly, no visible chrome. */}
-      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper">
+          `overflow-hidden` on a 0-width column clips the children,
+          and `inert` + `aria-hidden` drop the (still-mounted)
+          form controls out of focus order and the AT tree so
+          keyboard users don't tab through invisible inputs. */}
+      <aside
+        className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper"
+        inert={!filterOpen}
+        aria-hidden={!filterOpen}
+      >
         <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
           <h2 className="font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
             {t("Filters")}
@@ -537,62 +565,58 @@ function ExplorerPageInner() {
           state={segmentDetailState}
           onClose={() => setSelectedSegmentId(null)}
         />
+
+        {/* Narrow-viewport info panel — overlays the map instead of
+            taking a grid column so a phone keeps useful map area
+            underneath. Close button toggles off whichever info
+            layer is active (mirrors how toggling the pill in the
+            top overlay dismisses the panel). */}
+        {(showClosuresLayer || showPassesLayer) && !isWideViewport && (
+          <aside
+            className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
+            aria-label={t("Info layers")}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                if (showClosuresLayer) toggleClosuresLayer();
+                if (showPassesLayer) togglePassesLayer();
+              }}
+              className="absolute right-3 top-3 rounded-md border border-line-strong bg-cream px-2 py-1 text-[11px] font-bold uppercase tracking-[1px] text-ink transition hover:bg-paper-2"
+              aria-label={t("Close info panel")}
+            >
+              {t("Close")}
+            </button>
+            <InfoPanelContent
+              showClosures={showClosuresLayer}
+              showPasses={showPassesLayer}
+              conditionsMonth={conditionsMonth}
+              setConditionsMonth={setConditionsMonth}
+              conditionsDate={conditionsDate}
+              setConditionsDate={setConditionsDate}
+              conditionBbox={conditionBbox}
+            />
+          </aside>
+        )}
       </div>
 
-      {/* RIGHT — Closures / Passes info panel. Docks in as a third
-          column when either layer is toggled; the grid's
-          `data-panel` attribute swaps the column template above so
-          the map area shrinks rather than overlapping. Closures
-          carries its own date picker; Passes uses the month
-          selector inside `PassesPanel` itself. */}
-      {(showClosuresLayer || showPassesLayer) && (
+      {/* RIGHT — Closures / Passes info panel. On wide viewports
+          docks in as a real third grid column (the `--explore-right`
+          CSS variable allocates 320 px); on narrow viewports the
+          grid column collapses to 0 and the same content renders
+          as a top-anchored overlay over the map (with a close
+          affordance) so a phone keeps a usable map underneath. */}
+      {(showClosuresLayer || showPassesLayer) && isWideViewport && (
         <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4">
-          {showClosuresLayer && (
-            <div className="space-y-3">
-              <label className="block space-y-1.5">
-                <span className="text-xs uppercase tracking-wider text-ink">
-                  {t("Preview closures on")}
-                </span>
-                <input
-                  type="date"
-                  value={toDateInputValue(conditionsDate)}
-                  onChange={(e) => {
-                    const next = parseDateInputValue(e.target.value);
-                    if (next) setConditionsDate(next);
-                  }}
-                  aria-label={t("Preview closures on")}
-                  className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
-                />
-              </label>
-              {conditionBbox ? (
-                <ClosuresPanel
-                  month={conditionsMonth}
-                  previewDate={conditionsDate}
-                  routes={[]}
-                  bbox={conditionBbox}
-                  showRouteWarnings={false}
-                />
-              ) : (
-                <p className="text-xs text-fg-dim">
-                  {t("Pan the map to load closures for this area.")}
-                </p>
-              )}
-            </div>
-          )}
-          {showPassesLayer &&
-            (conditionBbox ? (
-              <PassesPanel
-                month={conditionsMonth}
-                onMonthChange={setConditionsMonth}
-                routes={[]}
-                bbox={conditionBbox}
-                showRouteWarnings={false}
-              />
-            ) : (
-              <p className="text-xs text-fg-dim">
-                {t("Pan the map to load passes for this area.")}
-              </p>
-            ))}
+          <InfoPanelContent
+            showClosures={showClosuresLayer}
+            showPasses={showPassesLayer}
+            conditionsMonth={conditionsMonth}
+            setConditionsMonth={setConditionsMonth}
+            conditionsDate={conditionsDate}
+            setConditionsDate={setConditionsDate}
+            conditionBbox={conditionBbox}
+          />
         </aside>
       )}
     </div>
@@ -609,6 +633,79 @@ function ExplorerPageInner() {
 const EXPLORE_SEARCH_DEBOUNCE_MS = 350;
 const EXPLORE_SEARCH_MIN_CHARS = 2;
 const EXPLORE_SEARCH_RESULT_ZOOM = 12;
+
+// Closures + Passes info-panel content. Shared between the wide-
+// viewport third-grid-column aside and the narrow-viewport
+// overlay aside so the closures date picker, ClosuresPanel, and
+// PassesPanel only get described once.
+function InfoPanelContent({
+  showClosures,
+  showPasses,
+  conditionsMonth,
+  setConditionsMonth,
+  conditionsDate,
+  setConditionsDate,
+  conditionBbox,
+}: {
+  showClosures: boolean;
+  showPasses: boolean;
+  conditionsMonth: number;
+  setConditionsMonth: (month: number) => void;
+  conditionsDate: Date;
+  setConditionsDate: (date: Date) => void;
+  conditionBbox: string | null;
+}) {
+  return (
+    <>
+      {showClosures && (
+        <div className="space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-xs uppercase tracking-wider text-ink">
+              {t("Preview closures on")}
+            </span>
+            <input
+              type="date"
+              value={toDateInputValue(conditionsDate)}
+              onChange={(e) => {
+                const next = parseDateInputValue(e.target.value);
+                if (next) setConditionsDate(next);
+              }}
+              aria-label={t("Preview closures on")}
+              className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
+            />
+          </label>
+          {conditionBbox ? (
+            <ClosuresPanel
+              month={conditionsMonth}
+              previewDate={conditionsDate}
+              routes={[]}
+              bbox={conditionBbox}
+              showRouteWarnings={false}
+            />
+          ) : (
+            <p className="text-xs text-fg-dim">
+              {t("Pan the map to load closures for this area.")}
+            </p>
+          )}
+        </div>
+      )}
+      {showPasses &&
+        (conditionBbox ? (
+          <PassesPanel
+            month={conditionsMonth}
+            onMonthChange={setConditionsMonth}
+            routes={[]}
+            bbox={conditionBbox}
+            showRouteWarnings={false}
+          />
+        ) : (
+          <p className="text-xs text-fg-dim">
+            {t("Pan the map to load passes for this area.")}
+          </p>
+        ))}
+    </>
+  );
+}
 
 // Spec-styled filter checkbox: 16 × 16 rounded-4 ink-bordered
 // square that fills with solid ink + cream checkmark when on.
