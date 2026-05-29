@@ -1,7 +1,8 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Route, Users } from "lucide-react";
+import Link from "next/link";
+import { Loader2, Plus, Route, Share2, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
@@ -14,7 +15,9 @@ import {
   type PlaceValue,
 } from "../../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
-import { Card, PageHeader } from "@tarmoto/ui";
+import { Card, Mono } from "@tarmoto/ui";
+import { CommunityScaffold } from "../_CommunityScaffold";
+import { CommunityEmptyState } from "../_CommunityEmptyState";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
@@ -93,17 +96,45 @@ export default function CommunityFeedPage() {
   }, [query]);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
+  // Distinguish "pristine empty feed" (no filters, nothing in the
+  // global community pool yet) from "filtered to zero" — the former
+  // gets the spec's `Quiet on the feed` card, the latter keeps the
+  // existing inline "no matching rides" copy + active filter Card so
+  // the rider can clear or broaden the search.
+  const hasActiveFilter =
+    sort !== "most_popular" ||
+    rideType !== "all" ||
+    minQuality !== "all" ||
+    minPopularity !== "all" ||
+    minCurviness !== "all" ||
+    minDistanceKm !== "" ||
+    maxDistanceKm !== "" ||
+    location !== null ||
+    offset > 0;
+  const isPristineEmpty =
+    !loading && !error && items.length === 0 && !hasActiveFilter;
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <PageHeader
-        stamp={t("Community · Feed")}
-        icon={<Users size={22} strokeWidth={1.8} />}
-        title={t("Community")}
-        sub={t(
-          "Explore popular shared rides and discover routes worth repeating.",
-        )}
-      />
-
+    <CommunityScaffold
+      feedBadge={loading ? null : <Mono className="text-[11px]">{total}</Mono>}
+      headerRight={
+        <div className="flex items-center gap-2">
+          <Link
+            href="/community/collections"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+          >
+            <Plus size={14} />
+            {t("New collection")}
+          </Link>
+          <Link
+            href="/rides"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+          >
+            <Share2 size={14} />
+            {t("Share a route")}
+          </Link>
+        </div>
+      }
+    >
       <Card
         padded={false}
         className="mb-6 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3"
@@ -265,6 +296,14 @@ export default function CommunityFeedPage() {
           <Loader2 size={16} className="animate-spin" />
           {t("Loading community rides\u2026 ")}
         </div>
+      ) : isPristineEmpty ? (
+        <CommunityEmptyState
+          icon={<Users size={18} strokeWidth={2} />}
+          title={t("Quiet on the feed")}
+          body={t(
+            "Once you follow other riders or land in a busy region, their shared routes will appear here.",
+          )}
+        />
       ) : items.length === 0 ? (
         <Card padded={false} className="p-16 text-center">
           <Users size={48} className="mx-auto mb-4 text-fg-mute" />
@@ -325,7 +364,7 @@ export default function CommunityFeedPage() {
           </Card>
         </>
       )}
-    </div>
+    </CommunityScaffold>
   );
 }
 function FilterSelect({

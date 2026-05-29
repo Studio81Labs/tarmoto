@@ -39,14 +39,12 @@ test.describe("community follow-up flows", () => {
     await page.goto("/community/collections");
 
     await expect(
-      page.getByRole("heading", { level: 1, name: /route collections/i }),
+      page.getByRole("heading", { level: 1, name: /^community$/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // The list is empty, so the "Create collection" empty-state
-    // button (rather than the toolbar "New collection") is what
-    // the rider would actually click first. Both target the same
-    // modal; use the toolbar button by exact name to avoid
-    // double-matching the empty-state action.
+    // Pristine empty state. The v2 spec-aligned empty card has no
+    // inline CTA, so the toolbar "New collection" button in the
+    // shared header is the only path into the modal.
     await page.getByRole("button", { name: /^new collection$/i }).click();
 
     // The dialog has `role="dialog"` + `aria-labelledby` referencing
