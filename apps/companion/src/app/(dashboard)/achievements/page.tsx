@@ -26,7 +26,8 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
-import { PageHeader as DashboardPageHeader } from "@tarmoto/ui";
+import { PageHeader as DashboardPageHeader, Mono } from "@tarmoto/ui";
+import { initialsFromName } from "@/lib/rider-profile";
 import {
   activeChallenges,
   challengeProgress,
@@ -352,15 +353,21 @@ function Dashboard({
       <section aria-labelledby="badges-heading">
         <SectionHeader
           id="badges-heading"
-          icon={<Award size={16} />}
+          icon={<Trophy size={18} strokeWidth={2} />}
           title={t("Badges")}
-          subtitle={`${earnedBadgeCount} of ${snapshot.badges.length} earned`}
+          counter={
+            snapshot.badges.length > 0
+              ? `${earnedBadgeCount} of ${snapshot.badges.length} earned`
+              : undefined
+          }
         />
         {snapshot.badges.length === 0 ? (
           <EmptyCard
-            icon={<Award size={32} className="text-fg-mute" />}
+            icon={<Award size={32} />}
             title={t("No badges yet")}
-            body="Ride, discover roads, or report hazards to start earning badges."
+            body={t(
+              "Ride, discover roads, or report hazards to start earning badges.",
+            )}
           />
         ) : (
           <BadgeGrid badges={snapshot.badges} />
@@ -370,27 +377,32 @@ function Dashboard({
       <section aria-labelledby="challenges-heading">
         <SectionHeader
           id="challenges-heading"
-          icon={<Target size={16} />}
+          icon={<Target size={18} strokeWidth={2} />}
           title={t("Active challenges")}
-          subtitle={
-            visibleChallenges.length === 0
-              ? "No active challenges right now."
-              : `${visibleChallenges.length} in progress`
+          counter={
+            visibleChallenges.length > 0
+              ? `${visibleChallenges.length}`
+              : undefined
           }
         />
         {joinError && (
-          <p className="mb-3 text-xs text-red-300" role="alert">
+          <p
+            className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-xs text-red-400"
+            role="alert"
+          >
             {joinError}
           </p>
         )}
         {visibleChallenges.length === 0 ? (
           <EmptyCard
-            icon={<Target size={32} className="text-fg-mute" />}
+            icon={<Target size={32} />}
             title={t("No challenges to join yet")}
-            body="Check back on Monday — new weekly challenges drop every week."
+            body={t(
+              "New weekly challenges drop every Monday. Check back soon.",
+            )}
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
             {visibleChallenges.map((challenge) => (
               <ChallengeCard
                 key={challenge.id}
@@ -423,8 +435,8 @@ function Dashboard({
 function PageHeader() {
   return (
     <DashboardPageHeader
-      stamp={t("Discover · Achievements")}
-      icon={<Trophy size={22} strokeWidth={1.8} />}
+      stamp={t("Achievements")}
+      icon={<Trophy size={18} strokeWidth={2} />}
       title={t("Achievements")}
       sub={t(
         "Badges, challenges, leaderboards, and milestones for your riding region.",
@@ -476,7 +488,7 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
 // ── Badges ──
 function BadgeGrid({ badges }: { badges: BadgeType[] }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {badges.map((badge) => (
         <BadgeCard key={badge.id} badge={badge} />
       ))}
@@ -486,13 +498,19 @@ function BadgeGrid({ badges }: { badges: BadgeType[] }) {
 function BadgeCard({ badge }: { badge: BadgeType }) {
   const Icon = BADGE_ICONS[badge.icon] ?? Medal;
   const earned = Boolean(badge.earnedAt);
+  const earnedLabel =
+    earned && badge.earnedAt
+      ? new Date(badge.earnedAt)
+          .toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+          .toUpperCase()
+      : null;
   return (
     <div
       className={clsx(
-        "relative rounded-xl border p-4 flex flex-col items-center text-center transition",
+        "flex flex-col items-center gap-2.5 rounded-[14px] border p-[18px] text-center transition",
         earned
-          ? "border-accent/40 bg-accent/5"
-          : "border-line bg-cream/60 opacity-60",
+          ? "border-accent bg-cream opacity-100"
+          : "border-line bg-paper opacity-55",
       )}
       title={
         earned && badge.earnedAt
@@ -502,23 +520,26 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
     >
       <span
         className={clsx(
-          "w-12 h-12 rounded-full flex items-center justify-center",
-          earned ? "bg-accent/15 text-accent" : "bg-paper text-fg-dim",
+          "flex h-[60px] w-[60px] items-center justify-center rounded-full",
+          earned
+            ? "border-2 border-ink bg-accent text-ink"
+            : "bg-paper-2 text-fg-mute",
         )}
+        aria-hidden="true"
       >
-        {earned ? <Icon size={24} /> : <Lock size={20} />}
+        {earned ? <Icon size={22} strokeWidth={2} /> : <Lock size={22} />}
       </span>
-      <p
-        className={clsx(
-          "mt-3 text-sm font-semibold",
-          earned ? "text-ink" : "text-fg-dim",
-        )}
-      >
+      <p className="text-[14px] font-extrabold leading-tight text-ink">
         {badge.name}
       </p>
-      <p className="mt-1 text-[11px] text-fg-dim line-clamp-2">
+      <p className="text-[11px] leading-[1.4] text-fg-dim">
         {badge.description}
       </p>
+      {earnedLabel && (
+        <Mono className="text-[9px] tracking-[0.4px] text-fg-mute">
+          EARNED {earnedLabel}
+        </Mono>
+      )}
     </div>
   );
 }
@@ -537,91 +558,98 @@ function ChallengeCard({
   const style = CATEGORY_STYLE[challenge.category];
   const fraction = challengeProgress(challenge);
   const percent = Math.round(fraction * 100);
-  const Icon = style.icon;
-  const complete = fraction >= 1;
   const joined = meta?.joined ?? false;
+  // Spec footer collapses the long "5 days left" / "Ends today" into a
+  // tight mono `5 D LEFT`. Re-using `formatDaysRemaining` keeps the
+  // expired / today branching in one place.
+  const daysFooter = formatDaysShort(challenge.endsAt);
+  const safePercent = Math.max(0, Math.min(100, percent));
   return (
-    <div className="rounded-xl border border-line bg-cream p-4">
+    <div className="rounded-[14px] border border-line bg-cream p-[18px]">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div
-            className={clsx(
-              "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest",
-              style.accent,
-            )}
-          >
-            <Icon size={12} />
-            {style.label}
-          </div>
-          <p className="mt-1.5 text-sm font-semibold text-ink">
-            {challenge.name}
-          </p>
-          <p className="mt-0.5 text-xs text-fg-dim">{challenge.description}</p>
-        </div>
-        <span className="shrink-0 text-[11px] text-fg-dim">
-          {formatDaysRemaining(challenge.endsAt)}
-        </span>
+        <Mono className="text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
+          {style.label}
+        </Mono>
+        <Mono className="text-[10px] text-fg-mute">{daysFooter}</Mono>
       </div>
 
-      <div className="mt-4 space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-ink tabular-nums">
-            {Math.round(challenge.current).toLocaleString()} /{" "}
-            {challenge.target.toLocaleString()} {challenge.unit}
-          </span>
-          <span
-            className={clsx(
-              "tabular-nums",
-              complete ? "text-accent" : "text-fg-dim",
-            )}
-          >
-            {percent}%
-          </span>
-        </div>
-        <ProgressBar
-          fraction={fraction}
-          ariaLabel={`${challenge.name}: ${percent}% complete`}
+      <p className="mt-2 text-[15px] font-extrabold leading-snug text-ink">
+        {challenge.name}
+      </p>
+
+      <div
+        role="progressbar"
+        aria-label={`${challenge.name}: ${percent}% complete`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(safePercent)}
+        className="mt-3.5 h-2 w-full overflow-hidden rounded-full bg-paper-2"
+      >
+        <div
+          className="h-full bg-accent transition-[width]"
+          style={{ width: `${safePercent}%` }}
         />
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <div className="text-[11px] text-fg-dim flex items-center gap-3">
+      <div className="mt-2 flex items-center justify-between text-[11px] text-fg-dim">
+        <Mono>
+          {Math.round(challenge.current).toLocaleString()} /{" "}
+          {challenge.target.toLocaleString()}
+        </Mono>
+        <Mono>{percent}%</Mono>
+      </div>
+
+      <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-line pt-3 text-[11px] text-fg-mute">
+        <span>
           {challenge.reward && (
-            <span className="flex items-center gap-1">
-              <Medal size={12} />
-              {t("Reward: {reward}", { reward: challenge.reward })}
-            </span>
+            <>
+              {t("Reward \u00b7 ")}
+              <span className="font-bold text-ink">{challenge.reward}</span>
+            </>
           )}
-          {meta && (
-            <span className="flex items-center gap-1">
-              <Users size={12} /> {meta.participantCount.toLocaleString()}
-            </span>
-          )}
-        </div>
-        {joined ? (
-          <span className="text-[11px] uppercase tracking-widest text-accent">
-            {t("Joined")}
+        </span>
+        {meta && (
+          <span className="inline-flex shrink-0 items-center gap-1 text-fg-dim">
+            <Users size={11} aria-hidden="true" />
+            {meta.participantCount.toLocaleString()}
           </span>
-        ) : (
+        )}
+      </div>
+
+      {!joined && (
+        <div className="mt-3">
           <button
             type="button"
             onClick={() => onJoin(challenge.id)}
             disabled={joining}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent/15 text-accent text-xs font-semibold hover:bg-accent/25 disabled:opacity-60 disabled:cursor-not-allowed transition"
+            className="inline-flex items-center gap-1.5 rounded-full border border-accent bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {joining ? (
               <>
-                <Loader2 size={12} className="animate-spin" />
+                <Loader2
+                  size={11}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
                 {t("Joining\u2026")}
               </>
             ) : (
-              "Join challenge"
+              t("Join challenge")
             )}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
+}
+// Mono variant of `formatDaysRemaining` for the spec's right-aligned 10 px
+// footer slot \u2014 collapses "5 days left" / "Ends today" / "Ended" into
+// "5 D LEFT" / "TODAY" / "ENDED".
+function formatDaysShort(endsAt: string): string {
+  const long = formatDaysRemaining(endsAt);
+  const m = long.match(/(\d+)/);
+  if (m) return `${m[1]} D LEFT`;
+  return long.toUpperCase();
 }
 // ── Regional leaderboards ──
 type RegionScope = "region" | "global";
@@ -726,44 +754,57 @@ function RegionalLeaderboardsSection() {
     <section aria-labelledby="leaderboard-heading">
       <SectionHeader
         id="leaderboard-heading"
-        icon={<Trophy size={16} />}
+        icon={<Trophy size={18} strokeWidth={2} />}
         title={t("Regional leaderboards")}
         subtitle={
           scope === "region" && homeRegion
-            ? `Top riders in ${homeRegion}, ranked by ${labelForDimension(dimension).toLowerCase()}.`
-            : `Top riders worldwide, ranked by ${labelForDimension(dimension).toLowerCase()}.`
+            ? t("Top riders in {region}, ranked by {dimension}.", {
+                region: homeRegion,
+                dimension: labelForDimension(dimension).toLowerCase(),
+              })
+            : t("Top riders worldwide, ranked by {dimension}.", {
+                dimension: labelForDimension(dimension).toLowerCase(),
+              })
         }
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <RegionToggle
-          scope={scope}
-          homeRegion={homeRegion}
-          onChange={setScope}
-        />
-        <DimensionTabs current={dimension} onChange={setDimension} />
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <RegionPill scope={scope} homeRegion={homeRegion} onChange={setScope} />
+        <DimensionPills current={dimension} onChange={setDimension} />
       </div>
 
       {load.status === "error" ? (
         <div
           role="alert"
-          className="rounded-[14px] border border-red-900/60 bg-red-950/30 p-6 text-center"
+          className="rounded-[14px] border border-quality-q1/30 bg-quality-q1/10 p-6 text-center"
         >
-          <AlertTriangle className="mx-auto text-red-300 mb-2" size={24} />
-          <p className="text-red-200 font-medium">
+          <AlertTriangle
+            className="mx-auto mb-2 text-red-400"
+            size={24}
+            aria-hidden="true"
+          />
+          <p className="font-medium text-ink">
             {t("Could not load leaderboards")}
           </p>
-          <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
+          <p className="mt-1 text-sm text-fg-dim">{load.message}</p>
         </div>
       ) : load.status === "loading" || dim === null ? (
-        <div className="h-48 rounded-[14px] bg-cream border border-line animate-pulse" />
+        <div className="h-48 animate-pulse rounded-[14px] border border-line bg-cream" />
+      ) : dim.entries.length === 0 ? (
+        <EmptyCard
+          icon={<Users size={32} />}
+          title={t("No riders ranked yet")}
+          body={t(
+            "Once you record your first ride, you'll be placed on the regional and global boards.",
+          )}
+        />
       ) : (
         <RegionalLeaderboardTable dim={dim} />
       )}
     </section>
   );
 }
-function RegionToggle({
+function RegionPill({
   scope,
   homeRegion,
   onChange,
@@ -772,35 +813,33 @@ function RegionToggle({
   homeRegion: string | null;
   onChange: (scope: RegionScope) => void;
 }) {
-  // Hide the My-region option when no home_region is set — toggling to it
-  // would just show the global ranking again with extra steps.
   return (
     <div
       role="radiogroup"
       aria-label={t("Region scope")}
-      className="inline-flex rounded-lg border border-line bg-cream p-0.5 text-xs"
+      className="inline-flex gap-1.5"
     >
-      <ToggleButton
+      <FilterPill
         active={scope === "global"}
         onClick={() => onChange("global")}
-        ariaLabel="Global ranking"
+        ariaLabel={t("Global ranking")}
       >
         {t("Global")}
-      </ToggleButton>
+      </FilterPill>
       {homeRegion && (
-        <ToggleButton
+        <FilterPill
           active={scope === "region"}
           onClick={() => onChange("region")}
-          ariaLabel={`Riders from ${homeRegion}`}
+          ariaLabel={t("Riders from {region}", { region: homeRegion })}
         >
-          <MapIcon size={12} className="mr-1 inline" />
+          <MapIcon size={11} className="-mt-0.5 inline" aria-hidden="true" />{" "}
           {homeRegion}
-        </ToggleButton>
+        </FilterPill>
       )}
     </div>
   );
 }
-function DimensionTabs({
+function DimensionPills({
   current,
   onChange,
 }: {
@@ -811,22 +850,28 @@ function DimensionTabs({
     <div
       role="tablist"
       aria-label={t("Leaderboard dimension")}
-      className="inline-flex rounded-lg border border-line bg-cream p-0.5 text-xs"
+      className="inline-flex flex-wrap gap-1.5"
     >
       {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
-        <ToggleButton
+        <FilterPill
           key={dim}
           active={current === dim}
           onClick={() => onChange(dim)}
           ariaLabel={labelForDimension(dim)}
         >
           {labelForDimension(dim)}
-        </ToggleButton>
+        </FilterPill>
       ))}
     </div>
   );
 }
-function ToggleButton({
+/**
+ * Spec leaderboard filter pill — rounded-full, mono-style 11/700/uppercase,
+ * orange-tinted bg + accent border when active, transparent + line border
+ * otherwise. Shared by region scope + dimension rows so the two filter
+ * groups read as one visual treatment.
+ */
+function FilterPill({
   active,
   onClick,
   ariaLabel,
@@ -845,8 +890,10 @@ function ToggleButton({
       aria-label={ariaLabel}
       onClick={onClick}
       className={clsx(
-        "px-3 py-1.5 rounded-md transition",
-        active ? "bg-accent/15 text-accent" : "text-fg-dim hover:text-ink",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] transition",
+        active
+          ? "border-accent bg-accent/30 text-ink"
+          : "border-line bg-transparent text-ink hover:bg-paper",
       )}
     >
       {children}
@@ -865,46 +912,39 @@ function RegionalLeaderboardTable({
   const showOutsideTop =
     dim.me !== null && !dim.entries.some((e) => e.userId === dim.me?.userId);
   return (
-    <div className="rounded-[14px] border border-line bg-cream overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-fg-dim bg-cream/80">
-              <th className="py-3 px-4 font-semibold w-12">#</th>
-              <th className="py-3 px-4 font-semibold">{t("Rider")}</th>
-              <th className="py-3 px-4 font-semibold text-right">{dim.unit}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {dim.entries.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="py-8 px-4 text-center text-sm text-fg-dim"
-                >
-                  {t("No riders ranked in this region yet. ")}
-                </td>
-              </tr>
-            ) : (
-              dim.entries.map((entry) => (
-                <RegionalLeaderboardRow
-                  key={entry.userId}
-                  entry={entry}
-                  unit={dim.unit}
-                />
-              ))
-            )}
-            {showOutsideTop && dim.me && (
-              <RegionalLeaderboardRow
-                entry={dim.me}
-                unit={dim.unit}
-                outsideTop
-              />
-            )}
-          </tbody>
-        </table>
+    <div
+      role="table"
+      aria-label={t("Regional leaderboard")}
+      className="overflow-hidden rounded-[14px] border border-line bg-cream"
+    >
+      <div
+        role="row"
+        className="grid grid-cols-[60px_1fr_120px] border-b border-line bg-paper-2 px-5 py-3 font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute"
+      >
+        <span role="columnheader">#</span>
+        <span role="columnheader">{t("Rider")}</span>
+        <span role="columnheader" className="text-right">
+          {dim.unit}
+        </span>
       </div>
-      {dim.me && <RegionalLeaderboardSummary me={dim.me} unit={dim.unit} />}
+      <div>
+        {dim.entries.map((entry, i) => (
+          <RegionalLeaderboardRow
+            key={entry.userId}
+            entry={entry}
+            unit={dim.unit}
+            zebra={i % 2 === 1}
+          />
+        ))}
+        {showOutsideTop && dim.me && (
+          <RegionalLeaderboardRow
+            entry={dim.me}
+            unit={dim.unit}
+            outsideTop
+            zebra={dim.entries.length % 2 === 1}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -912,91 +952,93 @@ function RegionalLeaderboardRow({
   entry,
   unit,
   outsideTop = false,
+  zebra = false,
 }: {
   entry: RegionalLeaderboardEntry;
   unit: string;
   outsideTop?: boolean;
+  zebra?: boolean;
 }) {
+  const isMe = entry.isMe;
+  const topThree = entry.rank >= 1 && entry.rank <= 3;
+  const initials = initialsFromName(entry.displayName);
+  const avatarColor = avatarColorFor(entry.displayName);
   return (
-    <tr
+    <div
+      role="row"
       className={clsx(
-        "text-ink",
-        entry.isMe && "bg-accent/5",
-        outsideTop && "border-t-2 border-line-strong/60",
+        "grid grid-cols-[60px_1fr_120px] items-center px-5 py-3 text-[13px]",
+        isMe
+          ? "bg-ink text-cream"
+          : zebra
+            ? "bg-ink/[0.02] text-ink"
+            : "bg-transparent text-ink",
+        outsideTop && "border-t border-line-strong/60",
       )}
     >
-      <td className="py-3 px-4">
-        <RankBadge rank={entry.rank} />
-      </td>
-      <td className="py-3 px-4">
-        <div className="font-medium">
-          {entry.displayName}
-          {entry.isMe && (
-            <span className="ml-2 text-[10px] uppercase tracking-widest text-accent">
-              {t("You")}
-            </span>
-          )}
-          {entry.homeRegion && (
-            <span className="ml-2 text-[11px] text-fg-dim">
-              · {entry.homeRegion}
-            </span>
-          )}
-        </div>
-      </td>
-      <td className="py-3 px-4 text-right tabular-nums">
-        {Math.round(entry.value).toLocaleString()} {unit}
-      </td>
-    </tr>
-  );
-}
-function RegionalLeaderboardSummary({
-  me,
-  unit,
-}: {
-  me: RegionalLeaderboardEntry;
-  unit: string;
-}) {
-  return (
-    <div className="border-t border-line px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-dim">
-      <span className="text-fg-dim uppercase tracking-widest font-semibold">
-        {t("Your rank")}
+      <span
+        role="cell"
+        className={clsx(
+          "font-mono font-extrabold tabular-nums",
+          isMe ? "text-accent" : topThree ? "text-ink" : "text-fg-mute",
+        )}
+      >
+        #{entry.rank}
       </span>
-      <span className="tabular-nums">
-        #{me.rank}{" "}
-        <span className="text-fg-dim">
-          · {Math.round(me.value).toLocaleString()} {unit}
+      <div role="cell" className="flex items-center gap-2.5 min-w-0">
+        <span
+          aria-hidden="true"
+          className={clsx(
+            "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold text-ink",
+            isMe ? "bg-accent" : avatarColor,
+          )}
+        >
+          {initials}
         </span>
+        <span
+          className={clsx(
+            "truncate",
+            isMe ? "font-extrabold" : "font-semibold",
+          )}
+        >
+          {isMe ? t("You") : entry.displayName}
+        </span>
+        {entry.homeRegion && !isMe && (
+          <span className="hidden text-[11px] text-fg-dim sm:inline">
+            · {entry.homeRegion}
+          </span>
+        )}
+      </div>
+      <span
+        role="cell"
+        className={clsx(
+          "text-right font-mono font-bold tabular-nums",
+          isMe ? "text-accent" : "text-ink",
+        )}
+      >
+        {Math.round(entry.value).toLocaleString()} {unit}
       </span>
     </div>
   );
 }
-function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) {
-    return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-amber-400/30 text-amber-700">
-        <Trophy size={14} />
-      </span>
-    );
-  }
-  if (rank === 2) {
-    return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-paper text-ink border border-line">
-        <Medal size={14} />
-      </span>
-    );
-  }
-  if (rank === 3) {
-    return (
-      <span className="inline-flex w-7 h-7 items-center justify-center rounded-full bg-orange-500/20 text-orange-700">
-        <Medal size={14} />
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex w-7 h-7 items-center justify-center text-sm text-fg-dim tabular-nums">
-      {rank}
-    </span>
-  );
+/**
+ * Deterministic palette pick from rider display name. The spec leaderboard
+ * avatars cycle through a small warm/cool palette so back-to-back rows feel
+ * distinct without relying on real avatar uploads. The hash is intentionally
+ * trivial — collisions are fine, the goal is visual variety not identity.
+ */
+function avatarColorFor(name: string): string {
+  const palette = [
+    "bg-[#E05A3C]",
+    "bg-[#F0A03C]",
+    "bg-[#E8D66A]",
+    "bg-[#C7D36A]",
+    "bg-[#6FD38A]",
+  ];
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1)
+    h = (h * 31 + name.charCodeAt(i)) | 0;
+  return palette[Math.abs(h) % palette.length] ?? palette[0]!;
 }
 // ── Milestone ──
 function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
@@ -1097,22 +1139,30 @@ function SectionHeader({
   id,
   icon,
   title,
+  counter,
   subtitle,
 }: {
   id?: string;
   icon: React.ReactNode;
   title: string;
+  counter?: React.ReactNode;
   subtitle?: string;
 }) {
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-accent">{icon}</span>
-        <h2 id={id} className="text-sm font-semibold">
+      <div className="flex items-center gap-2.5 text-ink">
+        <span className="text-accent inline-flex">{icon}</span>
+        <h2
+          id={id}
+          className="font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink"
+        >
           {title}
         </h2>
+        {counter !== undefined && (
+          <Mono className="text-[12px] text-fg-dim">{counter}</Mono>
+        )}
       </div>
-      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="mt-1.5 text-[12px] text-fg-dim">{subtitle}</p>}
     </div>
   );
 }
@@ -1126,12 +1176,14 @@ function EmptyCard({
   body: string;
 }) {
   return (
-    <div className="rounded-[14px] border border-line bg-cream p-10 text-center">
-      <div className="mx-auto w-10 h-10 flex items-center justify-center mb-3">
+    <div className="flex flex-col items-center gap-2 rounded-[14px] border border-line bg-cream px-6 py-14 text-center">
+      <div className="mb-1 text-fg-mute" aria-hidden="true">
         {icon}
       </div>
-      <p className="text-ink font-medium">{title}</p>
-      <p className="text-fg-dim text-sm mt-1">{body}</p>
+      <p className="text-[16px] font-bold text-ink">{title}</p>
+      <p className="max-w-[420px] text-[12px] leading-[1.55] text-fg-dim">
+        {body}
+      </p>
     </div>
   );
 }
