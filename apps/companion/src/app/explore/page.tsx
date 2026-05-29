@@ -334,22 +334,18 @@ function ExplorerPageInner() {
             </Stamp>
             <div className="flex flex-col gap-2">
               {QUALITY_OPTIONS.map((opt) => (
-                <label
+                <FilterCheckbox
                   key={opt.key}
-                  className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink"
-                >
-                  <input
-                    type="checkbox"
-                    checked={filters.quality.has(opt.key)}
-                    onChange={() => toggleQualityTier(opt.key)}
-                    className="h-4 w-4 rounded border-[1.5px] border-ink bg-ink text-cream focus:ring-2 focus:ring-accent focus:ring-offset-1"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                  />
-                  {opt.label}
-                </label>
+                  checked={filters.quality.has(opt.key)}
+                  onChange={() => toggleQualityTier(opt.key)}
+                  swatch={
+                    <span
+                      aria-hidden="true"
+                      className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                    />
+                  }
+                  label={opt.label}
+                />
               ))}
             </div>
           </div>
@@ -360,22 +356,18 @@ function ExplorerPageInner() {
             </Stamp>
             <div className="flex flex-col gap-2">
               {SURFACE_OPTIONS.map((opt) => (
-                <label
+                <FilterCheckbox
                   key={opt.key}
-                  className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink"
-                >
-                  <input
-                    type="checkbox"
-                    checked={filters.surface.has(opt.key)}
-                    onChange={() => toggleSurfaceType(opt.key)}
-                    className="h-4 w-4 rounded border-[1.5px] border-ink bg-ink text-cream focus:ring-2 focus:ring-accent focus:ring-offset-1"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                  />
-                  {opt.label}
-                </label>
+                  checked={filters.surface.has(opt.key)}
+                  onChange={() => toggleSurfaceType(opt.key)}
+                  swatch={
+                    <span
+                      aria-hidden="true"
+                      className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                    />
+                  }
+                  label={opt.label}
+                />
               ))}
             </div>
           </div>
@@ -386,23 +378,19 @@ function ExplorerPageInner() {
             </Stamp>
             <div className="flex flex-col gap-2">
               {HAZARD_OPTIONS.map((opt) => (
-                <label
+                <FilterCheckbox
                   key={opt.key}
-                  className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink"
-                >
-                  <input
-                    type="checkbox"
-                    checked={filters.hazardTypes.has(opt.key)}
-                    onChange={() => toggleHazardType(opt.key)}
-                    className="h-4 w-4 rounded border-[1.5px] border-ink bg-ink text-cream focus:ring-2 focus:ring-accent focus:ring-offset-1"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: opt.hex }}
-                  />
-                  {opt.label}
-                </label>
+                  checked={filters.hazardTypes.has(opt.key)}
+                  onChange={() => toggleHazardType(opt.key)}
+                  swatch={
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: opt.hex }}
+                    />
+                  }
+                  label={opt.label}
+                />
               ))}
             </div>
           </div>
@@ -621,6 +609,62 @@ function ExplorerPageInner() {
 const EXPLORE_SEARCH_DEBOUNCE_MS = 350;
 const EXPLORE_SEARCH_MIN_CHARS = 2;
 const EXPLORE_SEARCH_RESULT_ZOOM = 12;
+
+// Spec-styled filter checkbox: 16 × 16 rounded-4 ink-bordered
+// square that fills with solid ink + cream checkmark when on.
+// The native `<input>` stays in the DOM (visually hidden via
+// `sr-only`) for keyboard + screen-reader semantics; the visual
+// square renders in a sibling span styled with the `peer-…`
+// modifier chain so focus rings and checked-state styling stay
+// linked to the underlying input state.
+function FilterCheckbox({
+  checked,
+  onChange,
+  swatch,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  swatch: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={`flex h-4 w-4 items-center justify-center rounded-[4px] border-[1.5px] border-ink transition peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-1 ${
+          checked ? "bg-ink" : "bg-cream"
+        }`}
+      >
+        {checked && (
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            className="text-cream"
+          >
+            <path
+              d="M2 6l3 3 5-6"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </span>
+      {swatch}
+      <span>{label}</span>
+    </label>
+  );
+}
 
 interface GeocodeMatch {
   label: string;
