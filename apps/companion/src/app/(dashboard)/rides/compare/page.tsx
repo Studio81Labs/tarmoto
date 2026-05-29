@@ -11,7 +11,9 @@ import {
   Minus,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { Card, PageHeader } from "@tarmoto/ui";
+import { Card } from "@tarmoto/ui";
+import { RidesScaffold } from "../_RidesScaffold";
+import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
@@ -107,17 +109,10 @@ function CompareRidesPageInner() {
     if (replace) router.replace(url, { scroll: false });
     else router.push(url, { scroll: false });
   }
+  const insufficientRides =
+    !optionsLoading && !optionsError && options.length < 2;
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <PageHeader
-        stamp={t("Activity · Compare")}
-        icon={<Scale size={22} strokeWidth={1.8} />}
-        title={t("Compare rides")}
-        sub={t(
-          "Pick two rides to see stats, route, and road quality side-by-side.",
-        )}
-      />
-
+    <RidesScaffold>
       {optionsError && (
         <div
           role="alert"
@@ -127,41 +122,45 @@ function CompareRidesPageInner() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <RidePicker
-          label="Ride A"
-          value={selectedA}
-          options={options}
-          loading={optionsLoading}
-          onChange={(id) => updateParams(id, selectedB)}
-        />
-        <RidePicker
-          label="Ride B"
-          value={selectedB}
-          options={options}
-          loading={optionsLoading}
-          onChange={(id) => updateParams(selectedA, id)}
-        />
-      </div>
-
-      {options.length < 2 && !optionsLoading && !optionsError && (
-        <Card padded={false} className="p-10 text-center text-sm text-fg-dim">
-          {t(
-            "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",
+      {insufficientRides ? (
+        <RidesEmptyState
+          icon={<Scale size={18} strokeWidth={2} />}
+          title={t("Need two rides to compare")}
+          body={t(
+            "Track at least two rides on mobile, then pick any pair to see them side by side.",
           )}
-        </Card>
-      )}
+        />
+      ) : (
+        <>
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <RidePicker
+              label="Ride A"
+              value={selectedA}
+              options={options}
+              loading={optionsLoading}
+              onChange={(id) => updateParams(id, selectedB)}
+            />
+            <RidePicker
+              label="Ride B"
+              value={selectedB}
+              options={options}
+              loading={optionsLoading}
+              onChange={(id) => updateParams(selectedA, id)}
+            />
+          </div>
 
-      {selectedA && selectedB && selectedA !== selectedB && (
-        <ComparisonView rideAId={selectedA} rideBId={selectedB} />
-      )}
+          {selectedA && selectedB && selectedA !== selectedB && (
+            <ComparisonView rideAId={selectedA} rideBId={selectedB} />
+          )}
 
-      {selectedA && selectedB && selectedA === selectedB && (
-        <div className="rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
-          {t("Pick two different rides to compare. ")}
-        </div>
+          {selectedA && selectedB && selectedA === selectedB && (
+            <div className="rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
+              {t("Pick two different rides to compare.")}
+            </div>
+          )}
+        </>
       )}
-    </div>
+    </RidesScaffold>
   );
 }
 function RidePicker({
