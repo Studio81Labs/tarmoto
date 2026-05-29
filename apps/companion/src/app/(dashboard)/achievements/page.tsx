@@ -595,6 +595,9 @@ function ChallengeCard({
         <Mono>
           {Math.round(challenge.current).toLocaleString()} /{" "}
           {challenge.target.toLocaleString()}
+          {challenge.unit && (
+            <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+          )}
         </Mono>
         <Mono>{percent}%</Mono>
       </div>
