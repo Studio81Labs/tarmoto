@@ -25,7 +25,16 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
     <SubRouteTabs
       ariaLabel="Ride history sections"
       tabs={[
-        { href: "/rides", label: "All rides", badge: allRidesBadge },
+        {
+          href: "/rides",
+          label: "All rides",
+          badge: allRidesBadge,
+          // `/rides/road-map` and `/rides/compare` share the
+          // `/rides` prefix; without `exact`, the default
+          // `startsWith` rule would keep this tab active on those
+          // sibling routes alongside the real one.
+          exact: true,
+        },
         { href: "/rides/road-map", label: "Road map" },
         { href: "/rides/compare", label: "Compare rides" },
       ]}
