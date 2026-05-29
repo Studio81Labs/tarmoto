@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
 import { Card, PageHeader, Stamp } from "@tarmoto/ui";
-import { RidesEmptyState } from "../_RidesEmptyState";
 import { fetchAllRides } from "@/lib/rides-fetch";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -124,7 +123,14 @@ export default function StatsPage() {
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-page p-7">
-        <StatsPageHeader />
+        <PageHeader
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
+          title={t("Statistics")}
+          sub={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+          )}
+        />
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading rides\u2026 ")}
@@ -135,7 +141,14 @@ export default function StatsPage() {
   if (loadError) {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-        <StatsPageHeader />
+        <PageHeader
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
+          title={t("Statistics")}
+          sub={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+          )}
+        />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {loadError}
         </div>
@@ -145,20 +158,37 @@ export default function StatsPage() {
   if (rides.length === 0) {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-        <StatsPageHeader />
-        <RidesEmptyState
-          icon={<BarChart3 size={18} strokeWidth={2} />}
-          title={t("No rides recorded yet")}
-          body={t(
-            "Stats need at least a few rides to draw any conclusions. Start riding with the Tarmoto mobile app to see your numbers here.",
+        <PageHeader
+          stamp={t("Activity · Statistics")}
+          icon={<BarChart3 size={22} strokeWidth={1.8} />}
+          title={t("Statistics")}
+          sub={t(
+            "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
           )}
         />
+        <Card padded={false} className="p-16 text-center">
+          <BarChart3 size={48} className="mx-auto mb-4 text-fg-mute" />
+          <p className="mb-2 text-lg text-fg-dim">
+            {t("No rides recorded yet")}
+          </p>
+          <p className="text-sm text-fg-dim">
+            {t(
+              "Start riding with the Tarmoto mobile app to see your stats here. ",
+            )}
+          </p>
+        </Card>
       </div>
     );
   }
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in space-y-8 p-7">
-      <StatsPageHeader
+      <PageHeader
+        stamp={t("Activity · Statistics")}
+        icon={<BarChart3 size={22} strokeWidth={1.8} />}
+        title={t("Statistics")}
+        sub={t(
+          "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+        )}
         right={
           <FilterBar filters={filters} years={years} onChange={setFilters} />
         }
@@ -343,28 +373,6 @@ export default function StatsPage() {
     </div>
   );
 }
-// Spec-aligned page header shared across every render branch
-// (loading / error / empty / populated). Stamp + 18 px BarChart3
-// glyph + 32 px `Statistics` title + sub copy match the v2
-// design's `Statistics` chrome. Kept as a tiny local helper rather
-// than going through `RidesScaffold` because the rides tab strip
-// is intentionally hidden on the stats route (the wider `RIDES`
-// sidebar item ships `Statistics` as a sibling top-level page,
-// not a sub-section).
-function StatsPageHeader({ right }: { right?: React.ReactNode }) {
-  return (
-    <PageHeader
-      stamp={t("Statistics")}
-      icon={<BarChart3 size={18} strokeWidth={2} />}
-      title={t("Statistics")}
-      sub={t(
-        "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
-      )}
-      right={right}
-    />
-  );
-}
-
 interface FilterBarProps {
   filters: RideFilters;
   years: number[];
