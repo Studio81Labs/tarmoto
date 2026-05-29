@@ -142,6 +142,29 @@ function todayAsPreviewDate(): Date {
 // holds quality-shaped 0–5 values, not the 0–100 the slider implied,
 // so the filter was effectively a no-op for every realistic value.
 function ExplorerPageInner() {
+  // Filters sidebar visibility. Defaults open on `lg` and up so the
+  // spec idle visual matches the design; defaults closed on smaller
+  // viewports so the map keeps usable width (a fixed 300 px sidebar
+  // + optional 320 px info panel would eat most of a narrow screen
+  // and leave the rider with no recovery affordance). The floating
+  // "Filters" pill in the map overlay is always available as the
+  // toggle, matching the spec's primary-accent "Filters" pill in
+  // the layer row.
+  const [filterOpen, setFilterOpen] = useState<boolean>(() => {
+    // `matchMedia` is absent in SSR and in jsdom (existing
+    // page.test.tsx render path); default to open in both cases so
+    // the spec idle visual + every test assertion already pinned to
+    // the sidebar's contents keep working. The wide-vs-narrow
+    // narrowing happens only in real browsers via the second
+    // condition.
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return true;
+    }
+    return window.matchMedia("(min-width: 1024px)").matches;
+  });
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -261,16 +284,32 @@ function ExplorerPageInner() {
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   return (
     // Spec-aligned Route Explorer (v2-pages.jsx RoadExplorerView): a
-    // 300|1fr grid with an always-visible Filters sidebar on the
-    // left, full-bleed map on the right carrying floating search +
-    // layer pills + legend overlays. Closures / Passes info panel
-    // docks in via a third column when those layers are toggled.
+    // 300|1fr grid with the Filters sidebar on the left, full-bleed
+    // map on the right carrying floating search + layer pills +
+    // legend overlays. Closures / Passes info panel docks in via a
+    // third column when those layers are toggled.
+    //
+    // Responsive grid template via CSS variables so each side column
+    // collapses to 0 when its content is hidden — handles the
+    // narrow-viewport case where the fixed 300 px + 320 px chrome
+    // would crowd out the map and leave the rider with no recovery
+    // affordance (the floating "Filters" pill in the layer overlay
+    // is the toggle, matching the spec's primary-accent pill).
     <div
-      className="grid h-full min-h-0 grid-cols-[300px_1fr] bg-cream text-ink data-[panel=true]:grid-cols-[300px_1fr_320px]"
-      data-panel={showClosuresLayer || showPassesLayer}
+      className="grid h-full min-h-0 grid-cols-[var(--explore-left)_1fr_var(--explore-right)] bg-cream text-ink"
+      style={
+        {
+          "--explore-left": filterOpen ? "300px" : "0px",
+          "--explore-right":
+            showClosuresLayer || showPassesLayer ? "320px" : "0px",
+        } as React.CSSProperties
+      }
     >
-      {/* LEFT — Filters sidebar */}
-      <aside className="flex min-h-0 flex-col border-r border-line bg-paper">
+      {/* LEFT — Filters sidebar (hidden when collapsed so its content
+          doesn't render under a 0-width column) */}
+      <aside
+        className={`min-h-0 flex-col border-r border-line bg-paper ${filterOpen ? "flex" : "hidden"}`}
+      >
         <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
           <h2 className="font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
             {t("Filters")}
@@ -416,10 +455,25 @@ function ExplorerPageInner() {
           ) : null}
 
           {/* Layer pills per spec: rounded-10, 12 700, soft shadow.
-              Each layer paint toggle (Quality / Hazards / Surface)
-              flips to a tinted background when on; data-info layers
-              (Closures / Passes) keep the same accent/20 active tint
-              as the rest. */}
+              The leading "Filters" pill toggles the left sidebar
+              (filled brand accent when the sidebar is visible —
+              spec's primary affordance). The data-paint toggles
+              (Quality / Hazards / Surface) and data-info toggles
+              (Closures / Passes) all flip to a uniform `accent/20`
+              tint when on, matching the spec's swatch. */}
+          <button
+            type="button"
+            onClick={() => setFilterOpen((value) => !value)}
+            aria-pressed={filterOpen}
+            aria-label={t("Toggle filters")}
+            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+              filterOpen
+                ? "bg-accent text-ink"
+                : "bg-cream text-ink hover:bg-paper"
+            }`}
+          >
+            {t("Filters")}
+          </button>
           <button
             type="button"
             onClick={toggleQuality}
