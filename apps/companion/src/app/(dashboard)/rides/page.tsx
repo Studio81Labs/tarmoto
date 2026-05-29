@@ -65,14 +65,38 @@ function RidesPageInner() {
       update({ sort, order: "desc" });
     }
   }
-  const hasAnyRides = list.total > 0;
+  // Distinguish a truly pristine account (no rides ever) from a
+  // filtered / errored zero result. `list.total` reflects the
+  // currently-filtered count, so we'd otherwise hide
+  // `RidesFilters` (+ Reset button), the table's own filtered-
+  // empty messaging, and any `list.error` whenever a filter returns
+  // 0 matches or the API call failed — leaving riders stuck with no
+  // way to clear filters or retry.
+  const hasActiveFilter =
+    Boolean(
+      state.q ||
+      state.type ||
+      state.from ||
+      state.to ||
+      state.minDistance !== undefined ||
+      state.maxDistance !== undefined ||
+      state.minQuality !== undefined ||
+      state.maxQuality !== undefined ||
+      state.nearLat !== undefined,
+    ) || state.page > 1;
+  const isPristineEmpty =
+    !list.loading && !list.error && !hasActiveFilter && list.total === 0;
   return (
     <RidesScaffold
       allRidesBadge={
         list.loading ? null : <Mono className="text-[11px]">{list.total}</Mono>
       }
       headerRight={
-        hasAnyRides ? (
+        // CTAs hide only on the truly-empty account state. With
+        // filters active and 0 results, the rider's unfiltered
+        // ride set may still be non-empty — they should keep
+        // access to Export CSV / Share map.
+        isPristineEmpty ? null : (
           <div className="flex items-center gap-2">
             <Link
               href="/rides/road-map"
@@ -83,10 +107,10 @@ function RidesPageInner() {
             </Link>
             <BulkExportMenu />
           </div>
-        ) : null
+        )
       }
     >
-      {!list.loading && !hasAnyRides ? (
+      {isPristineEmpty ? (
         <RidesEmptyState
           icon={<Activity size={18} strokeWidth={2} />}
           title={t("No rides recorded yet")}
