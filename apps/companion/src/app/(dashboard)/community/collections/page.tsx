@@ -23,7 +23,10 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import { Card, Mono, Stamp } from "@tarmoto/ui";
+import { Share2 } from "lucide-react";
+import { CommunityScaffold } from "../_CommunityScaffold";
+import { CommunityEmptyState } from "../_CommunityEmptyState";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
@@ -143,26 +146,32 @@ export default function RouteCollectionsPage() {
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <PageHeader
-        stamp={t("Community · Collections")}
-        icon={<FolderOpen size={22} strokeWidth={1.8} />}
-        title={t("Route Collections")}
-        sub={t(
-          "Curate your favourite roads into shareable lists and follow collections from other riders.",
-        )}
-        right={
+    <CommunityScaffold
+      collectionsBadge={
+        status === "loading" && collections.length === 0 ? null : (
+          <Mono className="text-[11px]">{collections.length}</Mono>
+        )
+      }
+      headerRight={
+        <div className="flex items-center gap-2">
+          <Link
+            href="/rides"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+          >
+            <Share2 size={14} />
+            {t("Share a route")}
+          </Link>
           <button
             type="button"
             onClick={() => setModal({ mode: "create" })}
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            <Plus size={16} />
+            <Plus size={14} />
             {t("New collection")}
           </button>
-        }
-      />
-
+        </div>
+      }
+    >
       {migration && <MigrationBanner migration={migration} />}
 
       {actionError && (
@@ -213,11 +222,12 @@ export default function RouteCollectionsPage() {
           </button>
         </div>
       ) : collections.length === 0 ? (
-        <EmptyState
+        <CommunityEmptyState
+          icon={<FolderOpen size={18} strokeWidth={2} />}
           title={t("No collections yet")}
-          body="Curate your favourite roads into shareable collections."
-          actionLabel="Create collection"
-          onAction={() => setModal({ mode: "create" })}
+          body={t(
+            "Curate your favourite roads into shareable lists. Follow collections from other riders to discover new regions.",
+          )}
         />
       ) : visible.length === 0 ? (
         <EmptyState
@@ -306,7 +316,7 @@ export default function RouteCollectionsPage() {
           onCancel={() => setUnfollowTarget(null)}
         />
       )}
-    </div>
+    </CommunityScaffold>
   );
 }
 // ─────────────────────────────────────────────────────────

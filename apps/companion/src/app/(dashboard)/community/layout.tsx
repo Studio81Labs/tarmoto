@@ -1,20 +1,15 @@
-import { CommunityTabsBar } from "./_CommunityTabsBar";
-
 /**
- * Shared layout for `/community/*`. The Web App v2 sidebar is flat —
- * Community appears once and points at Feed; the tab strip surfaces
- * Collections as a sibling tab on the section roots, while
- * rider-profile deep links render without the strip.
+ * Shared layout for `/community/*` sibling views. The v2 Community
+ * spec (`v2-pages.jsx` CommunityView) gives every sub-page a unified
+ * `CommunityScaffold` (stamp + Users icon + 32 px `Community` title
+ * + sub + `New collection` / `Share a route` CTAs + SubRouteTabs),
+ * so the layout itself is a thin passthrough — each page mounts the
+ * scaffold so it can pass its own header CTAs and tab badges.
  */
 export default function CommunityLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <CommunityTabsBar />
-      <div className="min-h-0 flex-1">{children}</div>
-    </div>
-  );
+  return <div className="flex h-full min-h-0 flex-col">{children}</div>;
 }
