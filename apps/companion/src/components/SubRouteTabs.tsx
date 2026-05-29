@@ -23,6 +23,14 @@ export interface SubRouteTab {
   badge?: ReactNode;
   /** Optional explicit match — defaults to the tab's `href`. */
   matchPrefixes?: string[];
+  /**
+   * Restrict the active check to an exact pathname match (drops the
+   * default `startsWith(href + "/")` prefix rule). Use when the tab
+   * sits at the section root (e.g. `/rides`) and would otherwise
+   * stay highlighted on every sibling sub-route (`/rides/road-map`,
+   * `/rides/compare`) because they share the same prefix.
+   */
+  exact?: boolean;
 }
 
 export function SubRouteTabs({
@@ -45,8 +53,10 @@ export function SubRouteTabs({
     >
       {tabs.map((tab) => {
         const matchers = tab.matchPrefixes ?? [tab.href];
-        const active = matchers.some(
-          (m) => pathname === m || pathname.startsWith(m + "/"),
+        const active = matchers.some((m) =>
+          tab.exact
+            ? pathname === m
+            : pathname === m || pathname.startsWith(m + "/"),
         );
         return (
           <Link

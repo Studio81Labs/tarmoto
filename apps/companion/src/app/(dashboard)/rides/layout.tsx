@@ -1,20 +1,15 @@
-import { RidesTabsBar } from "./_RidesTabsBar";
-
 /**
- * Shared layout for `/rides/*` sibling views. The Web App v2 sidebar
- * is flat (no expanded sub-children), so the in-page tab strip
- * replaces the dropped sidebar children for Road map / Compare —
- * `/rides/stats` is now a separate top-level nav item.
+ * Shared layout for `/rides/*` sibling views. v2 Ride History spec
+ * (`v2-pages.jsx` RideHistoryView) gives every sub-page a unified
+ * `RidesScaffold` (stamp + Activity icon + 32 px `Ride History`
+ * title + sub + SubRouteTabs), so the layout itself is a thin
+ * passthrough — the page mounts the scaffold so it can pass its
+ * own header CTAs and tab badge count.
  */
 export default function RidesLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <RidesTabsBar />
-      <div className="min-h-0 flex-1">{children}</div>
-    </div>
-  );
+  return <div className="flex h-full min-h-0 flex-col">{children}</div>;
 }

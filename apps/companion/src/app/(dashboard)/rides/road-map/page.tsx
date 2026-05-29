@@ -10,10 +10,12 @@ import {
   Map as MapIcon,
   MapPin,
   Navigation,
-  Share2,
   Sparkles,
 } from "lucide-react";
-import { Card, PageHeader as DashboardPageHeader } from "@tarmoto/ui";
+import { Card } from "@tarmoto/ui";
+import { RidesScaffold } from "../_RidesScaffold";
+import { RidesEmptyState } from "../_RidesEmptyState";
+import { Link2 } from "lucide-react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
 import type {
@@ -374,58 +376,104 @@ export default function RoadMapPage() {
   ]);
   if (loading) {
     return (
-      <div className="flex flex-col h-full">
-        <PageHeader />
-        <div className="flex-1 flex items-center justify-center text-fg-dim gap-2 text-sm">
+      <RidesScaffold>
+        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
-          {t("Loading road map\u2026 ")}
+          {t("Loading road map\u2026")}
         </div>
-      </div>
+      </RidesScaffold>
     );
   }
   if (loadError || !stats) {
     return (
-      <div className="flex flex-col h-full">
-        <PageHeader />
-        <div className="flex-1 flex items-center justify-center p-6">
+      <RidesScaffold>
+        <div className="flex flex-1 items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
             {loadError ?? "Could not load exploration data"}
           </div>
         </div>
-      </div>
+      </RidesScaffold>
     );
   }
+  const hasAnyRiddenSegments = stats.ridden_segments > 0;
+  if (!hasAnyRiddenSegments) {
+    return (
+      <RidesScaffold>
+        <RidesEmptyState
+          icon={<MapIcon size={18} strokeWidth={2} />}
+          title={t("Your road map is empty")}
+          body={t(
+            "Every road you ride gets layered onto the regional basemap. Take your first ride to start filling it in.",
+          )}
+        />
+      </RidesScaffold>
+    );
+  }
+  // Share-button copy mirrors the post-action state so a click still
+  // surfaces the same "Creating link…" / "Link copied!" / "Shared" /
+  // "Share failed" feedback the previous chrome carried — visual is
+  // spec-styled outline pill matching the design's `Share map` CTA.
+  const shareLabel =
+    shareState.kind === "creating"
+      ? t("Creating link…")
+      : shareState.kind === "copied"
+        ? t("Link copied!")
+        : shareState.kind === "shared"
+          ? t("Shared")
+          : shareState.kind === "error"
+            ? t("Share failed")
+            : t("Share map");
+  const ShareIcon =
+    shareState.kind === "creating"
+      ? Loader2
+      : shareState.kind === "copied" || shareState.kind === "shared"
+        ? Check
+        : shareState.kind === "error"
+          ? Copy
+          : Link2;
   return (
-    <div className="flex flex-col h-full">
-      <PageHeader
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              className="flex items-center gap-1.5"
-              role="group"
-              aria-label={t("Filter by period")}
-            >
-              {TIME_PERIODS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPeriod(p)}
-                  aria-pressed={period === p}
-                  className={`px-3 py-1.5 rounded-lg text-sm transition ${
-                    period === p
-                      ? "bg-accent/10 text-accent"
-                      : "bg-paper text-ink hover:bg-paper-2"
-                  }`}
-                >
-                  {TIME_PERIOD_LABELS[p]}
-                </button>
-              ))}
-            </div>
-
-            <ShareButton state={shareState} onClick={handleShare} />
-          </div>
-        }
-      />
+    <RidesScaffold
+      headerRight={
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={shareState.kind === "creating"}
+            title={shareState.kind === "error" ? shareState.message : undefined}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:opacity-60"
+          >
+            <ShareIcon
+              size={14}
+              className={
+                shareState.kind === "creating" ? "animate-spin" : undefined
+              }
+            />
+            {shareLabel}
+          </button>
+        </div>
+      }
+    >
+      <div
+        className="mb-3 flex items-center gap-1.5"
+        role="group"
+        aria-label={t("Filter by period")}
+      >
+        {TIME_PERIODS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPeriod(p)}
+            aria-pressed={period === p}
+            className={`rounded-lg px-3 py-1.5 text-sm transition ${
+              period === p
+                ? "bg-ink text-cream"
+                : "bg-paper text-ink hover:bg-paper-2"
+            }`}
+          >
+            {TIME_PERIOD_LABELS[p]}
+          </button>
+        ))}
+      </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
         <div className="relative bg-cream border-b lg:border-b-0 lg:border-r border-line min-h-[320px]">
@@ -560,26 +608,10 @@ export default function RoadMapPage() {
           </section>
         </aside>
       </div>
-    </div>
+    </RidesScaffold>
   );
 }
 // ── Sub-components ──
-interface PageHeaderProps {
-  action?: React.ReactNode;
-}
-function PageHeader({ action }: PageHeaderProps) {
-  return (
-    <div className="px-7 pt-7">
-      <DashboardPageHeader
-        stamp={t("Activity · Road Map")}
-        icon={<MapIcon size={22} strokeWidth={1.8} />}
-        title={t("My Road Map")}
-        sub={t("Every road you've ridden, layered on the regional basemap.")}
-        right={action}
-      />
-    </div>
-  );
-}
 interface SummaryCardsProps {
   stats: ExplorationStats;
   periodStats: ReturnType<typeof computePeriodStats>;
@@ -771,47 +803,6 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
         })}
       </span>
     </li>
-  );
-}
-interface ShareButtonProps {
-  state: ShareState;
-  onClick: () => void;
-}
-function ShareButton({ state, onClick }: ShareButtonProps) {
-  const label =
-    state.kind === "creating"
-      ? "Creating link…"
-      : state.kind === "copied"
-        ? "Link copied!"
-        : state.kind === "shared"
-          ? "Shared"
-          : state.kind === "error"
-            ? "Share failed"
-            : "Share my map";
-  const Icon =
-    state.kind === "creating"
-      ? Loader2
-      : state.kind === "copied"
-        ? Check
-        : state.kind === "shared"
-          ? Check
-          : state.kind === "error"
-            ? Copy
-            : Share2;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={state.kind === "creating"}
-      title={state.kind === "error" ? state.message : undefined}
-      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-60"
-    >
-      <Icon
-        size={14}
-        className={state.kind === "creating" ? "animate-spin" : undefined}
-      />
-      {label}
-    </button>
   );
 }
 interface LoaderRowProps {

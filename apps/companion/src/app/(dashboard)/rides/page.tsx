@@ -5,10 +5,10 @@ import Link from "next/link";
 import {
   Activity,
   Download,
+  Link2,
   List as ListIcon,
   Loader2,
   Map as MapIcon,
-  Scale,
 } from "lucide-react";
 import {
   downloadAllRidesExport,
@@ -17,7 +17,9 @@ import {
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesMap } from "./_components/RidesMap";
 import { RidesTable } from "./_components/RidesTable";
-import { PageHeader } from "@tarmoto/ui";
+import { RidesScaffold } from "./_RidesScaffold";
+import { RidesEmptyState } from "./_RidesEmptyState";
+import { Mono } from "@tarmoto/ui";
 import {
   useRidesQuery,
   type RideSummary,
@@ -63,96 +65,128 @@ function RidesPageInner() {
       update({ sort, order: "desc" });
     }
   }
+  // Distinguish a truly pristine account (no rides ever) from a
+  // filtered / errored zero result. `list.total` reflects the
+  // currently-filtered count, so we'd otherwise hide
+  // `RidesFilters` (+ Reset button), the table's own filtered-
+  // empty messaging, and any `list.error` whenever a filter returns
+  // 0 matches or the API call failed — leaving riders stuck with no
+  // way to clear filters or retry.
+  const hasActiveFilter =
+    Boolean(
+      state.q ||
+      state.type ||
+      state.from ||
+      state.to ||
+      state.minDistance !== undefined ||
+      state.maxDistance !== undefined ||
+      state.minQuality !== undefined ||
+      state.maxQuality !== undefined ||
+      state.nearLat !== undefined,
+    ) || state.page > 1;
+  const isPristineEmpty =
+    !list.loading && !list.error && !hasActiveFilter && list.total === 0;
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-page animate-fade-in flex-col p-4 md:p-7">
-      <PageHeader
-        stamp={t("Activity · Rides")}
-        icon={<Activity size={22} strokeWidth={1.8} />}
-        title={t("Ride History")}
-        sub={t(
-          "Browse every recorded ride and review stats, conditions, and routes.",
-        )}
-        right={
+    <RidesScaffold
+      allRidesBadge={
+        list.loading ? null : <Mono className="text-[11px]">{list.total}</Mono>
+      }
+      headerRight={
+        // CTAs hide only on the truly-empty account state. With
+        // filters active and 0 results, the rider's unfiltered
+        // ride set may still be non-empty — they should keep
+        // access to Export CSV / Share map.
+        isPristineEmpty ? null : (
           <div className="flex items-center gap-2">
-            {list.rides.length > 0 && <BulkExportMenu />}
-            {list.total >= 2 && (
-              <Link
-                href="/rides/compare"
-                className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper"
-              >
-                <Scale size={14} />
-                {t("Compare rides ")}
-              </Link>
-            )}
+            <Link
+              href="/rides/road-map"
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+            >
+              <Link2 size={14} />
+              {t("Share map")}
+            </Link>
+            <BulkExportMenu />
           </div>
-        }
-      />
-
-      <RidesFilters state={state} update={update} reset={reset} />
-
-      {/* Mobile tab toggle */}
-      <div className="flex md:hidden items-center rounded-lg bg-paper border border-line p-0.5 mb-3 w-fit">
-        <button
-          type="button"
-          onClick={() => setMobileTab("map")}
-          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
-            mobileTab === "map"
-              ? "bg-ink text-cream"
-              : "text-fg-dim hover:text-ink"
-          }`}
-        >
-          <MapIcon size={14} />
-          {t("Map ")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobileTab("list")}
-          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
-            mobileTab === "list"
-              ? "bg-ink text-cream"
-              : "text-fg-dim hover:text-ink"
-          }`}
-        >
-          <ListIcon size={14} />
-          {t("List ")}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
-        <div
-          className={`md:col-span-3 min-h-[360px] md:min-h-0 ${mobileTab === "map" ? "" : "hidden md:block"}`}
-        >
-          <RidesMap
-            tracks={tracks.tracks}
-            truncated={tracks.truncated}
-            loading={tracks.loading}
-            selectedId={selectedId}
-            onSelect={(id) => setSelectedId(id)}
-          />
-        </div>
-        <div
-          className={`md:col-span-2 min-h-0 flex flex-col ${mobileTab === "list" ? "" : "hidden md:flex"}`}
-        >
-          <RidesTable
-            state={state}
-            rides={mergedRides}
-            total={adjustedTotal}
-            pageSize={pageSize}
-            loading={list.loading}
-            selectedId={selectedId}
-            onSelect={(id) => setSelectedId(id)}
-            onSort={onSort}
-            onPage={(page) => update({ page })}
-            onRenamed={(next) =>
-              setPatched((prev) => ({ ...prev, [next.id]: next }))
-            }
-          />
-          {list.error && (
-            <p className="text-xs text-red-400 mt-2">{list.error}</p>
+        )
+      }
+    >
+      {isPristineEmpty ? (
+        <RidesEmptyState
+          icon={<Activity size={18} strokeWidth={2} />}
+          title={t("No rides recorded yet")}
+          body={t(
+            "Start a ride from the Tarmoto mobile app — it will appear here within seconds of finishing.",
           )}
-        </div>
-      </div>
-    </div>
+        />
+      ) : (
+        <>
+          <RidesFilters state={state} update={update} reset={reset} />
+
+          {/* Mobile tab toggle */}
+          <div className="flex md:hidden items-center rounded-lg bg-paper border border-line p-0.5 mb-3 w-fit">
+            <button
+              type="button"
+              onClick={() => setMobileTab("map")}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
+                mobileTab === "map"
+                  ? "bg-ink text-cream"
+                  : "text-fg-dim hover:text-ink"
+              }`}
+            >
+              <MapIcon size={14} />
+              {t("Map ")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTab("list")}
+              className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-semibold transition ${
+                mobileTab === "list"
+                  ? "bg-ink text-cream"
+                  : "text-fg-dim hover:text-ink"
+              }`}
+            >
+              <ListIcon size={14} />
+              {t("List ")}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
+            <div
+              className={`md:col-span-3 min-h-[360px] md:min-h-0 ${mobileTab === "map" ? "" : "hidden md:block"}`}
+            >
+              <RidesMap
+                tracks={tracks.tracks}
+                truncated={tracks.truncated}
+                loading={tracks.loading}
+                selectedId={selectedId}
+                onSelect={(id) => setSelectedId(id)}
+              />
+            </div>
+            <div
+              className={`md:col-span-2 min-h-0 flex flex-col ${mobileTab === "list" ? "" : "hidden md:flex"}`}
+            >
+              <RidesTable
+                state={state}
+                rides={mergedRides}
+                total={adjustedTotal}
+                pageSize={pageSize}
+                loading={list.loading}
+                selectedId={selectedId}
+                onSelect={(id) => setSelectedId(id)}
+                onSort={onSort}
+                onPage={(page) => update({ page })}
+                onRenamed={(next) =>
+                  setPatched((prev) => ({ ...prev, [next.id]: next }))
+                }
+              />
+              {list.error && (
+                <p className="text-xs text-red-400 mt-2">{list.error}</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </RidesScaffold>
   );
 }
 function BulkExportMenu() {
@@ -189,14 +223,14 @@ function BulkExportMenu() {
         disabled={busy !== null}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper disabled:opacity-50 disabled:cursor-not-allowed transition"
+        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-ink bg-ink px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-cream transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? (
           <Loader2 size={14} className="animate-spin" />
         ) : (
           <Download size={14} />
         )}
-        {t("Export all ")}
+        {t("Export CSV")}
       </button>
 
       {open && (
