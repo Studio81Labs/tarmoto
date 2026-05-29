@@ -2,10 +2,11 @@ import { test, expect } from "../fixtures";
 
 test.describe("community read path", () => {
   // T37 — Community feed: /community renders a paginated feed of
-  // shared rides. The mock returns an empty feed by default, so the
-  // page shows the "No rides match these filters" empty state under
-  // the "Community" heading. Asserting the heading + empty-state
-  // copy proves the feed page mounted and consumed the wire shape.
+  // shared rides. The mock returns an empty feed by default and the
+  // page has no active filters, so the v2 spec's pristine empty
+  // state ("Quiet on the feed") surfaces under the shared
+  // "Community" heading. Asserting both proves the feed page
+  // mounted and consumed the wire shape.
   test("T37: /community renders the feed shell + empty state", async ({
     authedPage: page,
   }) => {
@@ -14,20 +15,21 @@ test.describe("community read path", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: /^community$/i }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/no rides match these filters/i)).toBeVisible();
+    await expect(page.getByText(/quiet on the feed/i)).toBeVisible();
   });
 
   // T39 — Collections list: /community/collections shows the rider's
   // collections. The mock returns an empty `/collections/me` list, so
   // the page surfaces the "No collections yet" empty state below the
-  // "Route Collections" heading.
+  // shared "Community" heading (both Community section roots now
+  // unify under the same h1 per the v2 spec).
   test("T39: /community/collections renders the list shell + empty state", async ({
     authedPage: page,
   }) => {
     await page.goto("/community/collections");
 
     await expect(
-      page.getByRole("heading", { level: 1, name: /route collections/i }),
+      page.getByRole("heading", { level: 1, name: /^community$/i }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/no collections yet/i)).toBeVisible();
   });
