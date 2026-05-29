@@ -305,11 +305,13 @@ function ExplorerPageInner() {
         } as React.CSSProperties
       }
     >
-      {/* LEFT — Filters sidebar (hidden when collapsed so its content
-          doesn't render under a 0-width column) */}
-      <aside
-        className={`min-h-0 flex-col border-r border-line bg-paper ${filterOpen ? "flex" : "hidden"}`}
-      >
+      {/* LEFT — Filters sidebar. Always present in the grid so the
+          map column stays in the middle track — `display: none`
+          would drop the aside from layout and the map would land
+          in the 0-width first column instead. Closed state =
+          `overflow-hidden` on a 0-width column clips the children
+          cleanly, no visible chrome. */}
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper">
         <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
           <h2 className="font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
             {t("Filters")}
@@ -430,10 +432,13 @@ function ExplorerPageInner() {
         {/* Floating top overlay — search + layer toggle pills. Search
             renders only for signed-in riders (the underlying
             `/api/v1/geocode` endpoint sits behind AuthGuard), so a
-            public visitor sees only the pills. */}
+            public visitor sees only the pills. The search container
+            is a fixed 380 px (clamped to the viewport width) so
+            toggling the Filters sidebar doesn't reflow the input or
+            the pill row alongside it. */}
         <div className="absolute left-4 right-4 top-4 z-10 flex flex-wrap items-center gap-2.5">
           {isAuthenticated ? (
-            <div className="min-w-[240px] max-w-[380px] flex-1">
+            <div className="w-[380px] max-w-full">
               <ExploreSearch
                 onPick={(place) => {
                   // Fly the actual MapLibre camera. Updating the
@@ -455,12 +460,11 @@ function ExplorerPageInner() {
           ) : null}
 
           {/* Layer pills per spec: rounded-10, 12 700, soft shadow.
-              The leading "Filters" pill toggles the left sidebar
-              (filled brand accent when the sidebar is visible —
-              spec's primary affordance). The data-paint toggles
-              (Quality / Hazards / Surface) and data-info toggles
-              (Closures / Passes) all flip to a uniform `accent/20`
-              tint when on, matching the spec's swatch. */}
+              The leading "Filters" pill toggles the left sidebar.
+              All active states use the solid brand-accent fill so
+              the active pill stays legible over a busy map — the
+              spec's `accent/20` swatch reads as low-contrast
+              transparency once real map content sits underneath. */}
           <button
             type="button"
             onClick={() => setFilterOpen((value) => !value)}
@@ -477,9 +481,10 @@ function ExplorerPageInner() {
           <button
             type="button"
             onClick={toggleQuality}
+            aria-pressed={showQualityOverlay}
             className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
               showQualityOverlay
-                ? "bg-accent/20 text-ink"
+                ? "bg-accent text-ink"
                 : "bg-cream text-ink hover:bg-paper"
             }`}
           >
@@ -488,9 +493,10 @@ function ExplorerPageInner() {
           <button
             type="button"
             onClick={toggleHazards}
+            aria-pressed={showHazardOverlay}
             className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
               showHazardOverlay
-                ? "bg-accent/20 text-ink"
+                ? "bg-accent text-ink"
                 : "bg-cream text-ink hover:bg-paper"
             }`}
           >
@@ -499,9 +505,10 @@ function ExplorerPageInner() {
           <button
             type="button"
             onClick={toggleSurface}
+            aria-pressed={showSurfaceOverlay}
             className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
               showSurfaceOverlay
-                ? "bg-accent/20 text-ink"
+                ? "bg-accent text-ink"
                 : "bg-cream text-ink hover:bg-paper"
             }`}
           >
@@ -510,9 +517,10 @@ function ExplorerPageInner() {
           <button
             type="button"
             onClick={toggleClosuresLayer}
+            aria-pressed={showClosuresLayer}
             className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
               showClosuresLayer
-                ? "bg-accent/20 text-ink"
+                ? "bg-accent text-ink"
                 : "bg-cream text-ink hover:bg-paper"
             }`}
           >
@@ -521,9 +529,10 @@ function ExplorerPageInner() {
           <button
             type="button"
             onClick={togglePassesLayer}
+            aria-pressed={showPassesLayer}
             className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
               showPassesLayer
-                ? "bg-accent/20 text-ink"
+                ? "bg-accent text-ink"
                 : "bg-cream text-ink hover:bg-paper"
             }`}
           >
