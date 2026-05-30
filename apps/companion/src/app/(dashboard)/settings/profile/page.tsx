@@ -41,7 +41,6 @@ export default function ProfilePage() {
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
   // doesn't blindly send empty values that would blank the server row.
-  const avatarDirtyRef = useRef(false);
   const bioDirtyRef = useRef(false);
   const homeRegionDirtyRef = useRef(false);
   const saveResetTimerRef = useRef<number | null>(null);
@@ -61,7 +60,10 @@ export default function ProfilePage() {
       .getMe()
       .then(({ data }) => {
         if (cancelled) return;
-        if (!avatarDirtyRef.current) setAvatarUrl(data.avatar_url ?? "");
+        // The avatar URL is server-owned end-to-end now (upload mutates
+        // it directly via `/users/me/avatar`), so the GET is always the
+        // source of truth.
+        setAvatarUrl(data.avatar_url ?? "");
         // Don't overwrite a field the user has already started editing
         // if the GET races with early typing.
         if (!bioDirtyRef.current) setBio(data.bio ?? "");
@@ -119,7 +121,6 @@ export default function ProfilePage() {
       setAvatarUrl(data.avatar_url ?? "");
       setBio(data.bio ?? "");
       setHomeRegion(data.home_region ?? "");
-      avatarDirtyRef.current = false;
       bioDirtyRef.current = false;
       homeRegionDirtyRef.current = false;
     });
@@ -135,28 +136,20 @@ export default function ProfilePage() {
       setSaveError(t("Display name is required."));
       return;
     }
-    if (avatarDirtyRef.current && avatarUrl.trim() && !previewAvatarUrl) {
-      setSaveState("error");
-      setSaveError(
-        t("Avatar URL must be a valid http:// or https:// address."),
-      );
-      return;
-    }
     setSaveState("saving");
     setSaveError(null);
     // Build a partial payload — only include fields we either confirmed
     // (hydrated from the server) or the user has touched. This keeps a
     // failed GET from turning into an accidental "save null over the top
-    // of the existing bio/home_region".
+    // of the existing bio/home_region". `avatar_url` is intentionally
+    // omitted: the dedicated `/users/me/avatar` upload endpoint is the
+    // only path that mutates it, so the form's PATCH has no business
+    // shipping a value that could only have come from a stale local copy.
     const payload: {
       display_name: string;
-      avatar_url?: string | null;
       bio?: string | null;
       home_region?: string | null;
     } = { display_name: trimmedName };
-    if (avatarDirtyRef.current) {
-      payload.avatar_url = previewAvatarUrl;
-    }
     if (didHydrateProfile || bioDirtyRef.current) {
       payload.bio = bio.trim() || null;
     }
@@ -186,16 +179,7 @@ export default function ProfilePage() {
         err instanceof Error ? err.message : t("Could not save your profile."),
       );
     }
-  }, [
-    displayName,
-    avatarUrl,
-    previewAvatarUrl,
-    bio,
-    homeRegion,
-    user,
-    setAuthUser,
-    didHydrateProfile,
-  ]);
+  }, [displayName, bio, homeRegion, user, setAuthUser, didHydrateProfile]);
   const handleCopySignInEmail = useCallback(async () => {
     if (!user?.email) return;
     if (copyResetTimerRef.current !== null) {
@@ -226,7 +210,6 @@ export default function ProfilePage() {
       setAvatarUploadError(null);
       try {
         const { data } = await usersApi.uploadAvatar(file);
-        avatarDirtyRef.current = false;
         setAvatarUrl(data.avatar_url ?? "");
         setDidHydrateProfile(true);
         setAvatarUploadState("uploaded");
@@ -357,47 +340,6 @@ export default function ProfilePage() {
             {avatarUploadError}
           </p>
         )}
-
-        <div>
-          <label
-            htmlFor="settings-avatar-url"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Avatar URL ")}
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="settings-avatar-url"
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl(e.target.value);
-              }}
-              placeholder={t("https://cdn.example.com/rider.jpg")}
-              className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl("");
-              }}
-              className="rounded-lg bg-paper px-3 py-2.5 text-sm font-semibold text-fg-dim transition hover:bg-paper-2 hover:text-ink"
-            >
-              {t("Remove ")}
-            </button>
-          </div>
-          <p className="mt-1 text-[12px] text-fg-dim">
-            {t("Use an ")}
-            <code className="font-mono text-ink">{t("https://")}</code>
-            {t(" image URL from your CDN, photo host, or social profile. ")}
-          </p>
-        </div>
 
         <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
           <div className="flex flex-col gap-1.5">

@@ -171,59 +171,6 @@ describe("ProfilePage", () => {
     expect(screen.getByText("Saved")).toBeInTheDocument();
   });
 
-  it("saves the normalized avatar URL with the rest of the profile payload", async () => {
-    getMeMock.mockResolvedValueOnce({
-      data: {
-        id: "user-1",
-        email: "rider@example.com",
-        display_name: "Rider One",
-        phone: null,
-        avatar_url: null,
-        bio: "Likes mountain passes",
-        home_region: "Beskydy",
-        home_location: null,
-        work_location: null,
-        preferences: {},
-        created_at: "2026-04-22T09:00:00.000Z",
-      },
-    });
-    updateMeMock.mockResolvedValueOnce({
-      data: {
-        id: "user-1",
-        email: "rider@example.com",
-        display_name: "Rider One",
-        phone: null,
-        avatar_url: "https://cdn.example.com/avatar.png",
-        bio: "Likes mountain passes",
-        home_region: "Beskydy",
-        home_location: null,
-        work_location: null,
-        preferences: {},
-        created_at: "2026-04-22T09:00:00.000Z",
-      },
-    });
-
-    render(<ProfilePage />);
-
-    expect(
-      await screen.findByDisplayValue("Likes mountain passes"),
-    ).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Avatar URL"), {
-      target: { value: " https://CDN.Example.com/avatar.png " },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() =>
-      expect(updateMeMock).toHaveBeenCalledWith({
-        display_name: "Rider One",
-        avatar_url: "https://cdn.example.com/avatar.png",
-        bio: "Likes mountain passes",
-        home_region: "Beskydy",
-      }),
-    );
-  });
-
   it("does not block unrelated profile saves when the untouched avatar is legacy invalid data", async () => {
     getMeMock.mockResolvedValueOnce({
       data: {
