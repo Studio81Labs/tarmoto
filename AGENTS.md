@@ -122,6 +122,7 @@ pnpm poc:dev              # PoC sensor app dev server
 pnpm db:up                # Start PostgreSQL + Redis via Docker
 pnpm db:down              # Stop Docker services
 pnpm db:migrate           # Build backend + run TypeORM migrations
+pnpm db:seed              # Seed the dev database with demo accounts + activity
 pnpm backend:build        # Build backend
 pnpm companion:build      # Build companion
 pnpm poc:build            # Build PoC sensor
