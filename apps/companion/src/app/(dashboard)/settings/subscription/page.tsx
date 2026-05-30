@@ -3,7 +3,6 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
   BadgeCheck,
   CalendarClock,
   Check,
@@ -16,7 +15,8 @@ import {
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Card, Heading, PageHeader, Stamp } from "@tarmoto/ui";
+import { Card, Heading, Stamp } from "@tarmoto/ui";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
   describeRenewal,
@@ -176,17 +176,9 @@ export default function SubscriptionPage() {
   const billingBusy = actionState.kind !== null;
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <Link
-        href="/settings"
-        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-      >
-        <ArrowLeft size={14} />
-        {t("Settings ")}
-      </Link>
-
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Subscription")}
-        icon={<CreditCard size={22} strokeWidth={1.8} />}
+        icon={<CreditCard size={18} strokeWidth={2} />}
         title={t("Subscription")}
         sub={t(
           "Manage your plan, payment method, billing history, and renewal choices from one place.",

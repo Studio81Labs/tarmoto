@@ -1,11 +1,11 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Check, Loader2, Shield } from "lucide-react";
+import { Check, Loader2, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Card, PageHeader, Stamp, Toggle } from "@tarmoto/ui";
+import { Card, Stamp, Toggle } from "@tarmoto/ui";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import type {
   LocationRetention,
   PrivacySettings,
@@ -124,11 +124,13 @@ export default function PrivacyPage() {
   if (loadError) {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-        <SettingsBackLink />
-        <PageHeader
+        <SettingsSubpageHeader
           stamp={t("Settings · Privacy")}
-          icon={<Shield size={22} strokeWidth={1.8} />}
-          title={t("Privacy & Data")}
+          icon={<Shield size={18} strokeWidth={2} />}
+          title={t("Privacy")}
+          sub={t(
+            "Visibility, data sharing, consent — control what's public and what stays with you.",
+          )}
         />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load settings: ")}
@@ -139,13 +141,12 @@ export default function PrivacyPage() {
   }
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <SettingsBackLink />
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Privacy")}
-        icon={<Shield size={22} strokeWidth={1.8} />}
-        title={t("Privacy & Data")}
+        icon={<Shield size={18} strokeWidth={2} />}
+        title={t("Privacy")}
         sub={t(
-          "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses.",
+          "Visibility, data sharing, consent — control what's public and what stays with you.",
         )}
       />
 
@@ -307,18 +308,6 @@ export default function PrivacyPage() {
 
       <SaveBar isDirty={isDirty} saveState={saveState} onSave={save} />
     </div>
-  );
-}
-
-function SettingsBackLink() {
-  return (
-    <Link
-      href="/settings"
-      className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-    >
-      <ArrowLeft size={14} />
-      {t("Settings ")}
-    </Link>
   );
 }
 

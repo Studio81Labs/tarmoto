@@ -1,16 +1,16 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import { Card, Stamp } from "@tarmoto/ui";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
-import { ArrowLeft, Copy, Smartphone, User } from "lucide-react";
+import { Copy, Smartphone, User } from "lucide-react";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
 type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
@@ -31,10 +31,16 @@ export default function ProfilePage() {
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(
     null,
   );
+  // Surface the rider's join date in the spec's avatar hero row. Hydrated
+  // from `/users/me`; the auth-store user shape doesn't carry `created_at`.
+  const [joinedAt, setJoinedAt] = useState<string | null>(null);
+  // Triggered by the spec's `Change avatar` pill so the visible CTA drives
+  // the hidden file input — keeps the avatar row spec-clean without
+  // dropping the file-upload functionality.
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
   // doesn't blindly send empty values that would blank the server row.
-  const avatarDirtyRef = useRef(false);
   const bioDirtyRef = useRef(false);
   const homeRegionDirtyRef = useRef(false);
   const saveResetTimerRef = useRef<number | null>(null);
@@ -54,11 +60,15 @@ export default function ProfilePage() {
       .getMe()
       .then(({ data }) => {
         if (cancelled) return;
-        if (!avatarDirtyRef.current) setAvatarUrl(data.avatar_url ?? "");
+        // The avatar URL is server-owned end-to-end now (upload mutates
+        // it directly via `/users/me/avatar`), so the GET is always the
+        // source of truth.
+        setAvatarUrl(data.avatar_url ?? "");
         // Don't overwrite a field the user has already started editing
         // if the GET races with early typing.
         if (!bioDirtyRef.current) setBio(data.bio ?? "");
         if (!homeRegionDirtyRef.current) setHomeRegion(data.home_region ?? "");
+        setJoinedAt(data.created_at ?? null);
         setDidHydrateProfile(true);
       })
       .catch(() => {
@@ -88,6 +98,46 @@ export default function ProfilePage() {
     hydratePreferences();
   }, [hydratePreferences]);
   const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
+  const joinedLabel = joinedAt
+    ? new Date(joinedAt).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+  // Spec pairs `Save changes` with `Cancel`. Cancel rolls every edited
+  // field back to the last server-confirmed value, drops any save
+  // errors, and clears the per-field dirty markers so a subsequent
+  // hydration tick can't overwrite the wrong field.
+  //
+  // Source of truth is the fresh `/users/me` response — the auth-store
+  // displayName can lag behind a change made in another tab / session,
+  // so reading display_name from the same refetch keeps every field
+  // consistent (and rescues the case where the auth user is missing).
+  //
+  // A failed refetch leaves the edited fields on screen (we can't roll
+  // back without server state) and surfaces the error via the same
+  // `saveState`/`saveError` channel the form already uses — silently
+  // doing nothing would look like Cancel was a no-op.
+  const handleCancel = useCallback(async () => {
+    setSaveState("idle");
+    setSaveError(null);
+    try {
+      const { data } = await usersApi.getMe();
+      setDisplayName(data.display_name ?? "");
+      setAvatarUrl(data.avatar_url ?? "");
+      setBio(data.bio ?? "");
+      setHomeRegion(data.home_region ?? "");
+      bioDirtyRef.current = false;
+      homeRegionDirtyRef.current = false;
+    } catch (err) {
+      setSaveState("error");
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t("Could not reset your profile. Please try again."),
+      );
+    }
+  }, []);
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
       window.clearTimeout(saveResetTimerRef.current);
@@ -99,28 +149,20 @@ export default function ProfilePage() {
       setSaveError(t("Display name is required."));
       return;
     }
-    if (avatarDirtyRef.current && avatarUrl.trim() && !previewAvatarUrl) {
-      setSaveState("error");
-      setSaveError(
-        t("Avatar URL must be a valid http:// or https:// address."),
-      );
-      return;
-    }
     setSaveState("saving");
     setSaveError(null);
     // Build a partial payload — only include fields we either confirmed
     // (hydrated from the server) or the user has touched. This keeps a
     // failed GET from turning into an accidental "save null over the top
-    // of the existing bio/home_region".
+    // of the existing bio/home_region". `avatar_url` is intentionally
+    // omitted: the dedicated `/users/me/avatar` upload endpoint is the
+    // only path that mutates it, so the form's PATCH has no business
+    // shipping a value that could only have come from a stale local copy.
     const payload: {
       display_name: string;
-      avatar_url?: string | null;
       bio?: string | null;
       home_region?: string | null;
     } = { display_name: trimmedName };
-    if (avatarDirtyRef.current) {
-      payload.avatar_url = previewAvatarUrl;
-    }
     if (didHydrateProfile || bioDirtyRef.current) {
       payload.bio = bio.trim() || null;
     }
@@ -150,16 +192,7 @@ export default function ProfilePage() {
         err instanceof Error ? err.message : t("Could not save your profile."),
       );
     }
-  }, [
-    displayName,
-    avatarUrl,
-    previewAvatarUrl,
-    bio,
-    homeRegion,
-    user,
-    setAuthUser,
-    didHydrateProfile,
-  ]);
+  }, [displayName, bio, homeRegion, user, setAuthUser, didHydrateProfile]);
   const handleCopySignInEmail = useCallback(async () => {
     if (!user?.email) return;
     if (copyResetTimerRef.current !== null) {
@@ -190,7 +223,6 @@ export default function ProfilePage() {
       setAvatarUploadError(null);
       try {
         const { data } = await usersApi.uploadAvatar(file);
-        avatarDirtyRef.current = false;
         setAvatarUrl(data.avatar_url ?? "");
         setDidHydrateProfile(true);
         setAvatarUploadState("uploaded");
@@ -237,16 +269,9 @@ export default function ProfilePage() {
   }, [mobileLinkHref]);
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <Link
-        href="/settings"
-        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-      >
-        <ArrowLeft size={14} />
-        {t("Settings ")}
-      </Link>
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Profile")}
-        icon={<User size={22} strokeWidth={1.8} />}
+        icon={<User size={18} strokeWidth={2} />}
         title={t("Profile")}
         sub={t(
           "Display name, bio, home region, units. Synced to the mobile app.",
@@ -254,12 +279,9 @@ export default function ProfilePage() {
       />
 
       {/* Profile form */}
-      <Card padded={false} className="space-y-4 p-[22px]">
-        <Stamp as="h2" className="mb-4 block">
-          {t("Profile")}
-        </Stamp>
-
-        <div className="mb-6 flex items-center gap-4">
+      <Card padded={false} className="space-y-4 p-6">
+        {/* Spec avatar hero row: 72 px circle + name/email/joined + `Change avatar` pill */}
+        <div className="mb-2 flex items-center gap-[18px]">
           {previewAvatarUrl ? (
             // Browser-native <img>: avatar URLs come from arbitrary providers
             // (social login, etc.), so we'd need to enumerate every domain in
@@ -272,146 +294,104 @@ export default function ProfilePage() {
                   ? t("{name}'s profile photo", { name: displayName })
                   : t("Your profile photo")
               }
-              className="h-16 w-16 rounded-full object-cover"
+              className="h-[72px] w-[72px] rounded-full object-cover"
             />
           ) : (
             <div
               aria-hidden="true"
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-xl font-extrabold text-ink"
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-accent text-[28px] font-extrabold text-ink"
             >
               {displayName[0]?.toUpperCase() ?? "T"}
             </div>
           )}
-          <div className="flex flex-col">
-            <p className="mt-1 text-[12px] text-fg-dim">
-              {t(
-                "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ",
-              )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[18px] font-extrabold text-ink">
+              {displayName || t("Your profile")}
+            </p>
+            <p className="mt-0.5 truncate text-[12px] text-fg-dim">
+              {user?.email}
+              {joinedLabel ? ` · ${t("Joined")} ${joinedLabel}` : ""}
             </p>
           </div>
+          <input
+            ref={avatarFileInputRef}
+            id="settings-avatar-file"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handleAvatarFileChange}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <button
+            type="button"
+            onClick={() => avatarFileInputRef.current?.click()}
+            disabled={avatarUploadState === "uploading"}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {avatarUploadState === "uploading"
+              ? t("Uploading…")
+              : t("Change avatar")}
+          </button>
         </div>
 
-        <div>
-          <label
-            htmlFor="settings-avatar-file"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+        {avatarUploadState === "uploaded" && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-[12px] text-accent"
           >
-            {t("Upload avatar ")}
-          </label>
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              id="settings-avatar-file"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleAvatarFileChange}
-              className="block text-sm text-ink file:mr-4 file:rounded-lg file:border-0 file:bg-paper file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-ink hover:file:bg-paper-2"
-              aria-label={t("Upload avatar")}
-            />
-            {avatarUploadState === "uploading" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-fg-dim"
-              >
-                {t("Uploading… ")}
-              </span>
-            )}
-            {avatarUploadState === "uploaded" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-accent"
-              >
-                {t("Photo uploaded. ")}
-              </span>
-            )}
-            {avatarUploadState === "error" && avatarUploadError && (
-              <span
-                role="alert"
-                aria-live="assertive"
-                className="text-sm text-red-400"
-              >
-                {avatarUploadError}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-[12px] text-fg-dim">
-            {t("PNG, JPEG, or WebP up to 5 MB. ")}
+            {t("Photo uploaded.")}
           </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-avatar-url"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+        )}
+        {avatarUploadState === "error" && avatarUploadError && (
+          <p
+            role="alert"
+            aria-live="assertive"
+            className="text-[12px] text-red-400"
           >
-            {t("Avatar URL ")}
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="settings-avatar-url"
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl(e.target.value);
-              }}
-              placeholder={t("https://cdn.example.com/rider.jpg")}
-              className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                avatarDirtyRef.current = true;
-                setAvatarUploadState("idle");
-                setAvatarUploadError(null);
-                setAvatarUrl("");
-              }}
-              className="rounded-lg bg-paper px-3 py-2.5 text-sm font-semibold text-fg-dim transition hover:bg-paper-2 hover:text-ink"
+            {avatarUploadError}
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="settings-display-name"
+              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
             >
-              {t("Remove ")}
-            </button>
+              {t("Display name")}
+            </label>
+            <input
+              id="settings-display-name"
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={100}
+              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink transition focus:border-ink focus:outline-none"
+            />
           </div>
-          <p className="mt-1 text-[12px] text-fg-dim">
-            {t("Use an ")}
-            <code className="font-mono text-ink">{t("https://")}</code>
-            {t(" image URL from your CDN, photo host, or social profile. ")}
-          </p>
-        </div>
 
-        <div>
-          <label
-            htmlFor="settings-display-name"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Display name ")}
-          </label>
-          <input
-            id="settings-display-name"
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            maxLength={100}
-            className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink transition focus:border-ink focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="settings-email"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Email ")}
-          </label>
-          <input
-            id="settings-email"
-            type="email"
-            value={user?.email ?? ""}
-            disabled
-            className="w-full rounded-lg border border-line bg-paper/60 px-4 py-2.5 text-sm text-fg-mute"
-          />
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="settings-home-region"
+              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+            >
+              {t("Home region")}
+            </label>
+            <input
+              id="settings-home-region"
+              type="text"
+              value={homeRegion}
+              onChange={(e) => {
+                homeRegionDirtyRef.current = true;
+                setHomeRegion(e.target.value);
+              }}
+              maxLength={120}
+              placeholder={t("e.g., Beskydy, Czech Republic")}
+              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
+            />
+          </div>
         </div>
 
         <div>
@@ -419,7 +399,7 @@ export default function ProfilePage() {
             htmlFor="settings-bio"
             className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
           >
-            {t("Bio ")}
+            {t("Bio")}
           </label>
           <textarea
             id="settings-bio"
@@ -433,57 +413,44 @@ export default function ProfilePage() {
             placeholder={t(
               "A short blurb about your riding — shown on your public profile.",
             )}
-            className="w-full resize-none rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
+            className="w-full resize-none rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
           />
           <p className="mt-1 font-mono text-xs text-fg-mute tabular-nums">
             {bio.length}/500
           </p>
         </div>
 
-        <div>
-          <label
-            htmlFor="settings-home-region"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Home region ")}
-          </label>
-          <input
-            id="settings-home-region"
-            type="text"
-            value={homeRegion}
-            onChange={(e) => {
-              homeRegionDirtyRef.current = true;
-              setHomeRegion(e.target.value);
-            }}
-            maxLength={120}
-            placeholder={t("e.g., Beskydy, Czech Republic")}
-            className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex flex-wrap items-center gap-2 pt-2">
           <button
             type="button"
             onClick={handleSave}
             disabled={saveState === "saving"}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saveState === "saving" ? t("Saving…") : t("Save changes")}
+          </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={saveState === "saving"}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {t("Cancel")}
           </button>
           {saveState === "saved" && (
             <span
               role="status"
               aria-live="polite"
-              className="text-sm text-accent"
+              className="text-[13px] text-accent"
             >
-              {t("Saved ")}
+              {t("Saved")}
             </span>
           )}
           {saveState === "error" && saveError && (
             <span
               role="alert"
               aria-live="assertive"
-              className="text-sm text-red-400"
+              className="text-[13px] text-red-400"
             >
               {saveError}
             </span>
