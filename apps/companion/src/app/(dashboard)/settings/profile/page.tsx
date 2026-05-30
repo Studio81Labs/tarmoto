@@ -31,6 +31,13 @@ export default function ProfilePage() {
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(
     null,
   );
+  // Surface the rider's join date in the spec's avatar hero row. Hydrated
+  // from `/users/me`; the auth-store user shape doesn't carry `created_at`.
+  const [joinedAt, setJoinedAt] = useState<string | null>(null);
+  // Triggered by the spec's `Change avatar` pill so the visible CTA drives
+  // the hidden file input — keeps the avatar row spec-clean without
+  // dropping the file-upload functionality.
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
   // doesn't blindly send empty values that would blank the server row.
@@ -59,6 +66,7 @@ export default function ProfilePage() {
         // if the GET races with early typing.
         if (!bioDirtyRef.current) setBio(data.bio ?? "");
         if (!homeRegionDirtyRef.current) setHomeRegion(data.home_region ?? "");
+        setJoinedAt(data.created_at ?? null);
         setDidHydrateProfile(true);
       })
       .catch(() => {
@@ -88,6 +96,30 @@ export default function ProfilePage() {
     hydratePreferences();
   }, [hydratePreferences]);
   const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
+  const joinedLabel = joinedAt
+    ? new Date(joinedAt).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+  // Spec pairs `Save changes` with `Cancel`. Cancel rolls every edited
+  // field back to the last server-confirmed value, drops any save
+  // errors, and clears the per-field dirty markers so a subsequent
+  // hydration tick can't overwrite the wrong field.
+  const handleCancel = useCallback(() => {
+    if (user?.displayName) setDisplayName(user.displayName);
+    // Re-fetch to reset bio / home_region / avatar to server state.
+    void usersApi.getMe().then(({ data }) => {
+      setAvatarUrl(data.avatar_url ?? "");
+      setBio(data.bio ?? "");
+      setHomeRegion(data.home_region ?? "");
+      avatarDirtyRef.current = false;
+      bioDirtyRef.current = false;
+      homeRegionDirtyRef.current = false;
+    });
+    setSaveState("idle");
+    setSaveError(null);
+  }, [user?.displayName]);
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
       window.clearTimeout(saveResetTimerRef.current);
@@ -247,12 +279,9 @@ export default function ProfilePage() {
       />
 
       {/* Profile form */}
-      <Card padded={false} className="space-y-4 p-[22px]">
-        <Stamp as="h2" className="mb-4 block">
-          {t("Profile")}
-        </Stamp>
-
-        <div className="mb-6 flex items-center gap-4">
+      <Card padded={false} className="space-y-4 p-6">
+        {/* Spec avatar hero row: 72 px circle + name/email/joined + `Change avatar` pill */}
+        <div className="mb-2 flex items-center gap-[18px]">
           {previewAvatarUrl ? (
             // Browser-native <img>: avatar URLs come from arbitrary providers
             // (social login, etc.), so we'd need to enumerate every domain in
@@ -265,73 +294,65 @@ export default function ProfilePage() {
                   ? t("{name}'s profile photo", { name: displayName })
                   : t("Your profile photo")
               }
-              className="h-16 w-16 rounded-full object-cover"
+              className="h-[72px] w-[72px] rounded-full object-cover"
             />
           ) : (
             <div
               aria-hidden="true"
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-xl font-extrabold text-ink"
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-accent text-[28px] font-extrabold text-ink"
             >
               {displayName[0]?.toUpperCase() ?? "T"}
             </div>
           )}
-          <div className="flex flex-col">
-            <p className="mt-1 text-[12px] text-fg-dim">
-              {t(
-                "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ",
-              )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[18px] font-extrabold text-ink">
+              {displayName || t("Your profile")}
+            </p>
+            <p className="mt-0.5 truncate text-[12px] text-fg-dim">
+              {user?.email}
+              {joinedLabel ? ` · ${t("Joined")} ${joinedLabel}` : ""}
             </p>
           </div>
+          <input
+            ref={avatarFileInputRef}
+            id="settings-avatar-file"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handleAvatarFileChange}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <button
+            type="button"
+            onClick={() => avatarFileInputRef.current?.click()}
+            disabled={avatarUploadState === "uploading"}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {avatarUploadState === "uploading"
+              ? t("Uploading…")
+              : t("Change avatar")}
+          </button>
         </div>
 
-        <div>
-          <label
-            htmlFor="settings-avatar-file"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+        {avatarUploadState === "uploaded" && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-[12px] text-accent"
           >
-            {t("Upload avatar ")}
-          </label>
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              id="settings-avatar-file"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleAvatarFileChange}
-              className="block text-sm text-ink file:mr-4 file:rounded-lg file:border-0 file:bg-paper file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-ink hover:file:bg-paper-2"
-              aria-label={t("Upload avatar")}
-            />
-            {avatarUploadState === "uploading" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-fg-dim"
-              >
-                {t("Uploading… ")}
-              </span>
-            )}
-            {avatarUploadState === "uploaded" && (
-              <span
-                role="status"
-                aria-live="polite"
-                className="text-sm text-accent"
-              >
-                {t("Photo uploaded. ")}
-              </span>
-            )}
-            {avatarUploadState === "error" && avatarUploadError && (
-              <span
-                role="alert"
-                aria-live="assertive"
-                className="text-sm text-red-400"
-              >
-                {avatarUploadError}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-[12px] text-fg-dim">
-            {t("PNG, JPEG, or WebP up to 5 MB. ")}
+            {t("Photo uploaded.")}
           </p>
-        </div>
+        )}
+        {avatarUploadState === "error" && avatarUploadError && (
+          <p
+            role="alert"
+            aria-live="assertive"
+            className="text-[12px] text-red-400"
+          >
+            {avatarUploadError}
+          </p>
+        )}
 
         <div>
           <label
@@ -374,37 +395,44 @@ export default function ProfilePage() {
           </p>
         </div>
 
-        <div>
-          <label
-            htmlFor="settings-display-name"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Display name ")}
-          </label>
-          <input
-            id="settings-display-name"
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            maxLength={100}
-            className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink transition focus:border-ink focus:outline-none"
-          />
-        </div>
+        <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="settings-display-name"
+              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+            >
+              {t("Display name")}
+            </label>
+            <input
+              id="settings-display-name"
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={100}
+              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink transition focus:border-ink focus:outline-none"
+            />
+          </div>
 
-        <div>
-          <label
-            htmlFor="settings-email"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Email ")}
-          </label>
-          <input
-            id="settings-email"
-            type="email"
-            value={user?.email ?? ""}
-            disabled
-            className="w-full rounded-lg border border-line bg-paper/60 px-4 py-2.5 text-sm text-fg-mute"
-          />
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="settings-home-region"
+              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
+            >
+              {t("Home region")}
+            </label>
+            <input
+              id="settings-home-region"
+              type="text"
+              value={homeRegion}
+              onChange={(e) => {
+                homeRegionDirtyRef.current = true;
+                setHomeRegion(e.target.value);
+              }}
+              maxLength={120}
+              placeholder={t("e.g., Beskydy, Czech Republic")}
+              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
+            />
+          </div>
         </div>
 
         <div>
@@ -412,7 +440,7 @@ export default function ProfilePage() {
             htmlFor="settings-bio"
             className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
           >
-            {t("Bio ")}
+            {t("Bio")}
           </label>
           <textarea
             id="settings-bio"
@@ -426,57 +454,44 @@ export default function ProfilePage() {
             placeholder={t(
               "A short blurb about your riding — shown on your public profile.",
             )}
-            className="w-full resize-none rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
+            className="w-full resize-none rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
           />
           <p className="mt-1 font-mono text-xs text-fg-mute tabular-nums">
             {bio.length}/500
           </p>
         </div>
 
-        <div>
-          <label
-            htmlFor="settings-home-region"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Home region ")}
-          </label>
-          <input
-            id="settings-home-region"
-            type="text"
-            value={homeRegion}
-            onChange={(e) => {
-              homeRegionDirtyRef.current = true;
-              setHomeRegion(e.target.value);
-            }}
-            maxLength={120}
-            placeholder={t("e.g., Beskydy, Czech Republic")}
-            className="w-full rounded-lg border border-line bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex flex-wrap items-center gap-2 pt-2">
           <button
             type="button"
             onClick={handleSave}
             disabled={saveState === "saving"}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saveState === "saving" ? t("Saving…") : t("Save changes")}
+          </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={saveState === "saving"}
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {t("Cancel")}
           </button>
           {saveState === "saved" && (
             <span
               role="status"
               aria-live="polite"
-              className="text-sm text-accent"
+              className="text-[13px] text-accent"
             >
-              {t("Saved ")}
+              {t("Saved")}
             </span>
           )}
           {saveState === "error" && saveError && (
             <span
               role="alert"
               aria-live="assertive"
-              className="text-sm text-red-400"
+              className="text-[13px] text-red-400"
             >
               {saveError}
             </span>

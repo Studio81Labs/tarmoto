@@ -296,8 +296,11 @@ describe("ProfilePage", () => {
 
     render(<ProfilePage />);
 
+    // Wait for the mobile-linking card to mount (its sign-in email row
+    // renders only once the rider's account email is in scope), which
+    // also signals the page has hydrated past first paint.
     expect(
-      await screen.findByDisplayValue("rider@example.com"),
+      await screen.findByRole("button", { name: "Copy sign-in email" }),
     ).toBeInTheDocument();
 
     vi.useFakeTimers();
@@ -342,11 +345,7 @@ describe("ProfilePage", () => {
     render(<ProfilePage />);
 
     expect(
-      await screen.findByDisplayValue("rider@example.com"),
-    ).toBeInTheDocument();
-
-    expect(
-      screen.getByRole("link", { name: "Open in Tarmoto mobile" }),
+      await screen.findByRole("link", { name: "Open in Tarmoto mobile" }),
     ).toHaveAttribute("href", buildLinkAccountDeepLink("rider@example.com"));
     expect(qrToDataURLMock).toHaveBeenCalledWith(
       buildLinkAccountDeepLink("rider@example.com"),
@@ -390,7 +389,7 @@ describe("ProfilePage", () => {
     render(<ProfilePage />);
 
     expect(
-      await screen.findByDisplayValue("rider@example.com"),
+      await screen.findByRole("button", { name: "Copy sign-in email" }),
     ).toBeInTheDocument();
 
     vi.useFakeTimers();
@@ -427,36 +426,6 @@ describe("ProfilePage", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the avatar helper text without literal markdown backticks", async () => {
-    getMeMock.mockResolvedValueOnce({
-      data: {
-        id: "user-1",
-        email: "rider@example.com",
-        display_name: "Rider One",
-        phone: null,
-        avatar_url: null,
-        bio: null,
-        home_region: null,
-        home_location: null,
-        work_location: null,
-        preferences: {},
-        created_at: "2026-04-22T09:00:00.000Z",
-      },
-    });
-
-    render(<ProfilePage />);
-
-    expect(
-      await screen.findByDisplayValue("rider@example.com"),
-    ).toBeInTheDocument();
-
-    const helperText = screen.getByText(/image URL from your CDN/i);
-    expect(helperText).toHaveTextContent(
-      "Use an https:// image URL from your CDN, photo host, or social profile.",
-    );
-    expect(helperText).not.toHaveTextContent("`https://`");
-  });
-
   it("uploads an avatar file and swaps the profile preview", async () => {
     getMeMock.mockResolvedValueOnce({
       data: {
@@ -491,14 +460,18 @@ describe("ProfilePage", () => {
 
     render(<ProfilePage />);
 
-    expect(
-      await screen.findByDisplayValue("rider@example.com"),
-    ).toBeInTheDocument();
+    // The file input is driven by the spec's `Change avatar` pill and
+    // intentionally hidden from view (the pill is the visible CTA), so
+    // target it directly by id rather than role / label.
+    const fileInput = (await waitFor(() =>
+      document.getElementById("settings-avatar-file"),
+    )) as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
 
     const file = new File(["avatar"], "rider.png", { type: "image/png" });
 
     await act(async () => {
-      fireEvent.change(screen.getByLabelText("Upload avatar"), {
+      fireEvent.change(fileInput!, {
         target: { files: [file] },
       });
       await Promise.resolve();
