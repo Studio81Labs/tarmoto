@@ -113,17 +113,30 @@ export default function ProfilePage() {
   // displayName can lag behind a change made in another tab / session,
   // so reading display_name from the same refetch keeps every field
   // consistent (and rescues the case where the auth user is missing).
-  const handleCancel = useCallback(() => {
+  //
+  // A failed refetch leaves the edited fields on screen (we can't roll
+  // back without server state) and surfaces the error via the same
+  // `saveState`/`saveError` channel the form already uses — silently
+  // doing nothing would look like Cancel was a no-op.
+  const handleCancel = useCallback(async () => {
     setSaveState("idle");
     setSaveError(null);
-    void usersApi.getMe().then(({ data }) => {
+    try {
+      const { data } = await usersApi.getMe();
       setDisplayName(data.display_name ?? "");
       setAvatarUrl(data.avatar_url ?? "");
       setBio(data.bio ?? "");
       setHomeRegion(data.home_region ?? "");
       bioDirtyRef.current = false;
       homeRegionDirtyRef.current = false;
-    });
+    } catch (err) {
+      setSaveState("error");
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t("Could not reset your profile. Please try again."),
+      );
+    }
   }, []);
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
