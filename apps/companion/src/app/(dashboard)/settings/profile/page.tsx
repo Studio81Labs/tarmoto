@@ -106,10 +106,16 @@ export default function ProfilePage() {
   // field back to the last server-confirmed value, drops any save
   // errors, and clears the per-field dirty markers so a subsequent
   // hydration tick can't overwrite the wrong field.
+  //
+  // Source of truth is the fresh `/users/me` response — the auth-store
+  // displayName can lag behind a change made in another tab / session,
+  // so reading display_name from the same refetch keeps every field
+  // consistent (and rescues the case where the auth user is missing).
   const handleCancel = useCallback(() => {
-    if (user?.displayName) setDisplayName(user.displayName);
-    // Re-fetch to reset bio / home_region / avatar to server state.
+    setSaveState("idle");
+    setSaveError(null);
     void usersApi.getMe().then(({ data }) => {
+      setDisplayName(data.display_name ?? "");
       setAvatarUrl(data.avatar_url ?? "");
       setBio(data.bio ?? "");
       setHomeRegion(data.home_region ?? "");
@@ -117,9 +123,7 @@ export default function ProfilePage() {
       bioDirtyRef.current = false;
       homeRegionDirtyRef.current = false;
     });
-    setSaveState("idle");
-    setSaveError(null);
-  }, [user?.displayName]);
+  }, []);
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
       window.clearTimeout(saveResetTimerRef.current);
