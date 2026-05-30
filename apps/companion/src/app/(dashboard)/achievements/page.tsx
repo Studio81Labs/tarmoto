@@ -646,13 +646,20 @@ function ChallengeCard({
   );
 }
 // Mono variant of `formatDaysRemaining` for the spec's right-aligned 10 px
-// footer slot \u2014 collapses "5 days left" / "Ends today" / "Ended" into
-// "5 D LEFT" / "TODAY" / "ENDED".
-function formatDaysShort(endsAt: string): string {
-  const long = formatDaysRemaining(endsAt);
-  const m = long.match(/(\d+)/);
-  if (m) return `${m[1]} D LEFT`;
-  return long.toUpperCase();
+// footer slot. Computed directly from `endsAt` rather than parsing the
+// long form \u2014 the prose strings ("3 weeks left", "2w 3d left", "1 month
+// left") would be mislabelled "D LEFT" by a naive leading-digit regex,
+// understating the time remaining on multi-week / multi-month challenges.
+function formatDaysShort(endsAt: string, now: Date = new Date()): string {
+  const end = new Date(endsAt).getTime();
+  if (!Number.isFinite(end)) return "ONGOING";
+  const diffMs = end - now.getTime();
+  if (diffMs <= 0) return "ENDED";
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (days === 0) return "TODAY";
+  if (days < 14) return `${days}D LEFT`;
+  if (days < 90) return `${Math.floor(days / 7)}W LEFT`;
+  return `${Math.floor(days / 30)}MO LEFT`;
 }
 // ── Regional leaderboards ──
 type RegionScope = "region" | "global";
