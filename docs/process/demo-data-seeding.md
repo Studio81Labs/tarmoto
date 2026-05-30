@@ -59,9 +59,9 @@ node dist/scripts/seed-demo-data.js --help
   It only ever touches its own demo personas and demo roads — other
   accounts in the dev database are left untouched.
 - `--only` refreshes a single persona and reuses the existing shared demo
-  road pool. Because it does not re-seed the other personas, follow edges
-  _into_ the refreshed persona from accounts that were not reseeded are
-  not restored; run a full seed to rebuild the complete follow graph.
+  road pool. The follow graph is rebuilt from all demo accounts currently
+  in the database, so the refreshed persona's outgoing follows **and** the
+  incoming follows from other demo users are restored.
 - The script refuses to run when `NODE_ENV=production` unless `--force` is
   passed. **Do not run this against production data.**
 

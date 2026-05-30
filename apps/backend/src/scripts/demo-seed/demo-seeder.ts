@@ -129,11 +129,8 @@ export class DemoSeeder {
       badgesAwarded: 0,
     };
 
-    const emailToId = new Map<string, string>();
-
     for (const persona of personas) {
       const seeded = await this.seedPersona(persona, roads, now);
-      emailToId.set(persona.email, seeded.userId);
       result.usersCreated += 1;
       result.ridesCreated += seeded.rides;
       result.hazardsCreated += seeded.hazards;
@@ -143,7 +140,7 @@ export class DemoSeeder {
       result.badgesAwarded += await this.awardBadges(seeded.userId);
     }
 
-    result.followsCreated = await this.seedFollows(personas, emailToId, now);
+    result.followsCreated = await this.seedFollows(now);
     return result;
   }
 
@@ -505,11 +502,22 @@ export class DemoSeeder {
     return newly_earned.length;
   }
 
-  private async seedFollows(
-    personas: DemoPersona[],
-    emailToId: Map<string, string>,
-    now: Date,
-  ): Promise<number> {
+  /**
+   * Rebuild the full demo follow graph from whatever demo accounts are
+   * currently in the database — NOT just the ones reseeded this run. A
+   * `--only` reseed deletes the selected user, which cascade-removes every
+   * follow edge touching it (both directions); reading the live id map and
+   * replaying the whole catalog restores that account's outgoing follows
+   * AND the incoming follows from other demo users. `orIgnore` makes the
+   * edges already present on a full re-run no-ops.
+   */
+  private async seedFollows(now: Date): Promise<number> {
+    const existing = await this.repo(User).find({
+      where: { email: In(DEMO_PERSONAS.map((p) => p.email)) },
+      select: { id: true, email: true },
+    });
+    const emailToId = new Map(existing.map((u) => [u.email, u.id]));
+
     const repo = this.repo(UserFollow);
     const rows: {
       follower_id: string;
@@ -517,12 +525,12 @@ export class DemoSeeder {
       created_at: Date;
     }[] = [];
     const seen = new Set<string>();
-    for (const persona of personas) {
+    for (const persona of DEMO_PERSONAS) {
       const followerId = emailToId.get(persona.email);
       if (!followerId) continue;
       for (const target of persona.follows) {
         const followingId = emailToId.get(target);
-        // In `--only` mode the target may not have been (re)seeded; skip it.
+        // Target account isn't in this database — skip the dangling edge.
         if (!followingId) continue;
         const key = `${followerId}:${followingId}`;
         if (seen.has(key)) continue;
@@ -535,7 +543,6 @@ export class DemoSeeder {
       }
     }
     if (rows.length === 0) return 0;
-    // `orIgnore` keeps `--only` re-runs from colliding on the unique edge.
     await repo.createQueryBuilder().insert().values(rows).orIgnore().execute();
     return rows.length;
   }

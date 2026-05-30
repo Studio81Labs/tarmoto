@@ -138,6 +138,28 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
     expect(edge).not.toBeNull();
   });
 
+  it('rebuilds the follow graph (both directions) after an --only reseed', async () => {
+    // Reseeding one persona deletes + recreates it (new id), cascading away
+    // every follow edge touching it. The graph must come back intact.
+    await seeder.run({ only: 'road.hunter@tarmoto.app' });
+    const hunter = await userByEmail('road.hunter@tarmoto.app');
+    const scout = await userByEmail('community.scout@tarmoto.app');
+    const weekend = await userByEmail('weekend.warrior@tarmoto.app');
+    const followRepo = ds.getRepository(UserFollow);
+    // Incoming: community.scout follows road.hunter.
+    expect(
+      await followRepo.findOne({
+        where: { follower_id: scout.id, following_id: hunter.id },
+      }),
+    ).not.toBeNull();
+    // Outgoing: road.hunter follows weekend.warrior.
+    expect(
+      await followRepo.findOne({
+        where: { follower_id: hunter.id, following_id: weekend.id },
+      }),
+    ).not.toBeNull();
+  }, 120_000);
+
   it('is idempotent — a second run does not duplicate accounts', async () => {
     await seeder.run({ only: null });
     expect(await demoUserCount()).toBe(DEMO_PERSONAS.length);
