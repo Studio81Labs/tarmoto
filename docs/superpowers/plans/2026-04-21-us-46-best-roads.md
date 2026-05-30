@@ -1791,16 +1791,16 @@ Verify:
    → 200 with `{ region, roads: [...] }`.
 2. `curl 'http://localhost:3000/api/v1/roads/best?country=cz&region=does-not-exist'`
    → 404.
-3. Browse `http://localhost:3001/roads/best` — country hub renders.
-4. Browse `http://localhost:3001/roads/best/cz` — Czech regions render.
-5. Browse `http://localhost:3001/roads/best/cz/beskydy` — hero + map with
+3. Browse `http://localhost:3002/roads/best` — country hub renders.
+4. Browse `http://localhost:3002/roads/best/cz` — Czech regions render.
+5. Browse `http://localhost:3002/roads/best/cz/beskydy` — hero + map with
    rank markers + ranked list + CTA. `view-source:` contains two
    `<script type="application/ld+json">` blocks (ItemList + BreadcrumbList).
-6. Browse `http://localhost:3001/roads/best/at/tyrol/alpine-passes` —
+6. Browse `http://localhost:3002/roads/best/at/tyrol/alpine-passes` —
    sub-region page with correct breadcrumb.
-7. Browse `http://localhost:3001/sitemap.xml` — contains `/roads/best`,
+7. Browse `http://localhost:3002/sitemap.xml` — contains `/roads/best`,
    `/roads/best/cz`, `/roads/best/cz/beskydy`, plus sub-region URLs.
-8. Browse `http://localhost:3001/roads/best/xx/invalid` while signed out —
+8. Browse `http://localhost:3002/roads/best/xx/invalid` while signed out —
    renders the Next.js 404 page, not a login redirect.
 
 - [ ] **Step 12.4: Open the PR**

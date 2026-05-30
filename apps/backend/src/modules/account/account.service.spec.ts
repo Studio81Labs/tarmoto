@@ -271,7 +271,7 @@ describe('AccountService', () => {
       expect(stripe.createPortalSession).toHaveBeenCalledWith(
         expect.objectContaining({
           customerId: 'cus_123',
-          returnUrl: 'http://localhost:3000/settings/subscription',
+          returnUrl: 'http://localhost:3002/settings/subscription',
           flow: expect.objectContaining({
             type: 'subscription_cancel',
             subscriptionId: 'sub_123',

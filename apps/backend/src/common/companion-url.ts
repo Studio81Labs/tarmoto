@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-const DEFAULT_COMPANION_URL = 'http://localhost:3000';
+const DEFAULT_COMPANION_URL = 'http://localhost:3002';
 
 /**
  * The Next.js companion's public origin — used to build links the
