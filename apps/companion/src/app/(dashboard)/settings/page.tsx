@@ -2,9 +2,9 @@
 import { t } from "@/i18n";
 import Link from "next/link";
 import {
+  ArrowRight,
   Bell,
   Bike,
-  ChevronRight,
   CreditCard,
   Database,
   Settings as SettingsIcon,
@@ -67,7 +67,7 @@ export default function SettingsHubPage() {
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
       <PageHeader
         stamp={t("Settings")}
-        icon={<SettingsIcon size={22} strokeWidth={1.8} />}
+        icon={<SettingsIcon size={18} strokeWidth={2} />}
         title={t("Settings")}
         sub={t(
           "Account, billing, privacy, notifications, and the rest of your preferences.",
@@ -77,8 +77,8 @@ export default function SettingsHubPage() {
         {SETTINGS_SECTIONS.map((section) => (
           <Link key={section.href} href={section.href} className="group">
             <Card className="flex items-center gap-4 transition group-hover:border-line-strong">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-paper text-ink">
-                <section.icon size={18} strokeWidth={1.8} />
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-paper-2 text-ink">
+                <section.icon size={18} strokeWidth={2} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[15px] font-extrabold text-ink">
@@ -88,9 +88,10 @@ export default function SettingsHubPage() {
                   {t(section.description)}
                 </p>
               </div>
-              <ChevronRight
-                size={16}
+              <ArrowRight
+                size={14}
                 className="shrink-0 text-fg-mute transition group-hover:text-ink"
+                aria-hidden="true"
               />
             </Card>
           </Link>

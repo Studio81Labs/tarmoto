@@ -1,11 +1,9 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { signOut } from "next-auth/react";
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   Database,
   Download,
@@ -16,7 +14,8 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import { Card, Stamp } from "@tarmoto/ui";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ExportState =
   | { kind: "idle" }
   | { kind: "requesting" }
@@ -162,16 +161,9 @@ export default function DataPage() {
   }, [pollingId]);
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <Link
-        href="/settings"
-        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-      >
-        <ArrowLeft size={14} />
-        {t("Settings ")}
-      </Link>
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Data")}
-        icon={<Database size={22} strokeWidth={1.8} />}
+        icon={<Database size={18} strokeWidth={2} />}
         title={t("Data & Account")}
         sub={t(
           "Export your data or delete your account. Tarmoto follows GDPR — your data is yours.",
