@@ -88,18 +88,24 @@ export class DemoSeeder {
   async clean(
     emails: string[] = DEMO_PERSONAS.map((p) => p.email),
   ): Promise<CleanResult> {
-    // Users first: the FK cascade clears their rides, ride_segments,
-    // road_reviews, trip_waypoints, hazards, etc. so the demo roads are
-    // unreferenced by the time we delete them (road_segment_id FKs are
-    // RESTRICT, not CASCADE).
-    const userResult = await this.repo(User).delete({ email: In(emails) });
-    const roadResult = await this.repo(RoadSegment).delete({
-      road_number: Like(`${DEMO_ROAD_MARKER}%`),
+    // Atomic so a re-run never half-cleans. Users go first: the FK cascade
+    // clears their rides, ride_segments, road_reviews, trip_waypoints,
+    // hazards, etc., leaving the demo roads unreferenced before we delete
+    // them (road_segment_id FKs are RESTRICT, not CASCADE). If a *non-demo*
+    // row still references a demo road, the road delete raises an FK error;
+    // wrapping both deletes in one transaction rolls the user delete back
+    // too, so the demo data stays intact and the seed can be retried after
+    // the stray reference is resolved instead of being stuck half-removed.
+    return this.ds.transaction(async (manager) => {
+      const userResult = await manager.delete(User, { email: In(emails) });
+      const roadResult = await manager.delete(RoadSegment, {
+        road_number: Like(`${DEMO_ROAD_MARKER}%`),
+      });
+      return {
+        usersDeleted: userResult.affected ?? 0,
+        roadsDeleted: roadResult.affected ?? 0,
+      };
     });
-    return {
-      usersDeleted: userResult.affected ?? 0,
-      roadsDeleted: roadResult.affected ?? 0,
-    };
   }
 
   async run(options: { only: string | null }): Promise<SeedResult> {

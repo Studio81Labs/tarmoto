@@ -1,5 +1,5 @@
 import * as bcrypt from 'bcrypt';
-import { DataSource, type DataSourceOptions, In } from 'typeorm';
+import { DataSource, type DataSourceOptions, In, Like } from 'typeorm';
 import * as AllEntities from '../src/entities/index.js';
 import { AppDataSource } from '../src/data-source.js';
 import { BadgesService } from '../src/modules/badges/badges.service.js';
@@ -163,6 +163,40 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
   it('is idempotent — a second run does not duplicate accounts', async () => {
     await seeder.run({ only: null });
     expect(await demoUserCount()).toBe(DEMO_PERSONAS.length);
+  }, 120_000);
+
+  it('rolls back cleanup atomically when a non-demo row references a demo road', async () => {
+    // A non-demo account reviews a shared demo road. The road delete then
+    // fails on the RESTRICT FK; cleanup must roll back so the demo accounts
+    // are NOT left orphaned (a non-re-runnable half-clean).
+    const roadRepo = ds.getRepository(RoadSegment);
+    const userRepo = ds.getRepository(User);
+    const reviewRepo = ds.getRepository(RoadReview);
+    const demoRoad = await roadRepo.findOneOrFail({
+      where: { road_number: Like('DEMO%') },
+    });
+    const outsider = await userRepo.save(
+      userRepo.create({
+        email: 'outsider-not-demo@example.com',
+        password_hash: 'x',
+        display_name: 'Outsider',
+      }),
+    );
+    const review = await reviewRepo.save(
+      reviewRepo.create({
+        user_id: outsider.id,
+        road_segment_id: demoRoad.id,
+        rating: 4,
+      }),
+    );
+    try {
+      await expect(seeder.clean()).rejects.toThrow();
+      // Demo accounts survived the rolled-back transaction.
+      expect(await demoUserCount()).toBe(DEMO_PERSONAS.length);
+    } finally {
+      await reviewRepo.delete(review.id);
+      await userRepo.delete(outsider.id);
+    }
   }, 120_000);
 
   it('clean() removes all demo accounts and demo roads', async () => {
