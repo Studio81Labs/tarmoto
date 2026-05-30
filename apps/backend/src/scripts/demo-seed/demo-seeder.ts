@@ -40,7 +40,7 @@ import {
   type DemoPersona,
 } from './demo-personas.js';
 import {
-  DEMO_ROAD_MARKER,
+  DEMO_ROAD_LIKE,
   buildDemoRoadSpecs,
   buildLineString,
   lineLengthKm,
@@ -99,7 +99,7 @@ export class DemoSeeder {
     return this.ds.transaction(async (manager) => {
       const userResult = await manager.delete(User, { email: In(emails) });
       const roadResult = await manager.delete(RoadSegment, {
-        road_number: Like(`${DEMO_ROAD_MARKER}%`),
+        road_number: Like(DEMO_ROAD_LIKE),
       });
       return {
         usersDeleted: userResult.affected ?? 0,
@@ -184,7 +184,7 @@ export class DemoSeeder {
   private async ensureRoads(): Promise<RoadSegment[]> {
     const repo = this.repo(RoadSegment);
     const existing = await repo.find({
-      where: { road_number: Like(`${DEMO_ROAD_MARKER}%`) },
+      where: { road_number: Like(DEMO_ROAD_LIKE) },
       order: { road_number: 'ASC' },
     });
     return existing.length > 0 ? existing : this.createRoads();

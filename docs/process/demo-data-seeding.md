@@ -55,7 +55,7 @@ node dist/scripts/seed-demo-data.js --help
 
 - The command is **re-runnable**: a full run deletes the demo accounts
   (which cascades to all of their data) and the marker-tagged demo roads
-  (`road_segments.road_number LIKE 'DEMO%'`), then recreates everything.
+  (`road_segments.road_number LIKE 'DEMO-%'`), then recreates everything.
   It only ever touches its own demo personas and demo roads — other
   accounts in the dev database are left untouched.
 - `--only` refreshes a single persona and reuses the existing shared demo

@@ -8,6 +8,14 @@ import { ROAD_QUALITY, haversineKm } from '@tarmoto/shared';
 /** Prefix on `road_segments.road_number` that marks a row as demo data. */
 export const DEMO_ROAD_MARKER = 'DEMO';
 
+/**
+ * SQL `LIKE` pattern matching exactly the demo road pool — roads are
+ * numbered `DEMO-0001`, `DEMO-0002`, … so the trailing hyphen keeps
+ * cleanup from touching an unrelated road whose number merely begins with
+ * the string `DEMO` (e.g. an imported `DEMOLITION RD`).
+ */
+export const DEMO_ROAD_LIKE = `${DEMO_ROAD_MARKER}-%`;
+
 /** A LineString whose coordinates are concrete `[lng, lat]` pairs. */
 export interface LineString {
   type: 'LineString';

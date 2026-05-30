@@ -16,6 +16,7 @@ import { RideSegment } from '../src/entities/ride-segment.entity.js';
 import { HazardReport } from '../src/entities/hazard-report.entity.js';
 import { RoadReview } from '../src/entities/road-review.entity.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
+import { DEMO_ROAD_LIKE } from '../src/scripts/demo-seed/demo-data-builders.js';
 import { SharedRide } from '../src/entities/shared-ride.entity.js';
 import { User } from '../src/entities/user.entity.js';
 
@@ -173,7 +174,7 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
     const userRepo = ds.getRepository(User);
     const reviewRepo = ds.getRepository(RoadReview);
     const demoRoad = await roadRepo.findOneOrFail({
-      where: { road_number: Like('DEMO%') },
+      where: { road_number: Like(DEMO_ROAD_LIKE) },
     });
     const outsider = await userRepo.save(
       userRepo.create({
@@ -206,7 +207,7 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
     const roads = await ds
       .getRepository(RoadSegment)
       .createQueryBuilder('r')
-      .where("r.road_number LIKE 'DEMO%'")
+      .where('r.road_number LIKE :pattern', { pattern: DEMO_ROAD_LIKE })
       .getCount();
     expect(roads).toBe(0);
     // Re-seed so afterAll's clean() tears down a consistent state.
