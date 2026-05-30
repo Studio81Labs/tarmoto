@@ -29,6 +29,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -448,12 +449,30 @@ export class DemoSeeder {
     const dayRepo = this.repo(TripDay);
     const wpRepo = this.repo(TripWaypoint);
     const memberRepo = this.repo(TripMember);
+    const folderRepo = this.repo(TripFolder);
+
+    // Folders for the US-37 flow: even-indexed trips are filed (round-robin
+    // across folders), odd-indexed ones stay unfiled so the "Unfiled"
+    // pseudo-bucket is exercised too.
+    const folders = await folderRepo.save(
+      ['Favourites', 'Bucket list'].map((name, i) =>
+        folderRepo.create({
+          user_id: userId,
+          name,
+          color: ['#2563eb', '#16a34a'][i],
+          position: i,
+        }),
+      ),
+    );
 
     for (let t = 0; t < persona.tripCount; t++) {
       const numDays = 2 + Math.floor(rng() * 4);
+      const folderId =
+        t % 2 === 0 ? folders[Math.floor(t / 2) % folders.length].id : null;
       const trip = await tripRepo.save(
         tripRepo.create({
           owner_id: userId,
+          folder_id: folderId,
           title: `${persona.home_region} ${numDays}-day tour #${t + 1}`,
           region: persona.home_region,
           num_days: numDays,

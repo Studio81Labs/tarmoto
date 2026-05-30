@@ -1,5 +1,12 @@
 import * as bcrypt from 'bcrypt';
-import { DataSource, type DataSourceOptions, In, Like } from 'typeorm';
+import {
+  DataSource,
+  type DataSourceOptions,
+  In,
+  IsNull,
+  Like,
+  Not,
+} from 'typeorm';
 import * as AllEntities from '../src/entities/index.js';
 import { AppDataSource } from '../src/data-source.js';
 import { BadgesService } from '../src/modules/badges/badges.service.js';
@@ -18,6 +25,8 @@ import { RoadReview } from '../src/entities/road-review.entity.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 import { DEMO_ROAD_LIKE } from '../src/scripts/demo-seed/demo-data-builders.js';
 import { SharedRide } from '../src/entities/shared-ride.entity.js';
+import { Trip } from '../src/entities/trip.entity.js';
+import { TripFolder } from '../src/entities/trip-folder.entity.js';
 import { User } from '../src/entities/user.entity.js';
 
 /**
@@ -128,6 +137,23 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
       .getRepository(SharedRide)
       .count({ where: { user_id: hunter.id } });
     expect(shared).toBe(persona.sharedRideCount);
+  });
+
+  it('files some trip-planner trips into folders and leaves some unfiled (US-37)', async () => {
+    const planner = await userByEmail('trip.planner@tarmoto.app');
+    const folders = await ds
+      .getRepository(TripFolder)
+      .count({ where: { user_id: planner.id } });
+    expect(folders).toBeGreaterThan(0);
+    const tripRepo = ds.getRepository(Trip);
+    const filed = await tripRepo.count({
+      where: { owner_id: planner.id, folder_id: Not(IsNull()) },
+    });
+    const unfiled = await tripRepo.count({
+      where: { owner_id: planner.id, folder_id: IsNull() },
+    });
+    expect(filed).toBeGreaterThan(0);
+    expect(unfiled).toBeGreaterThan(0);
   });
 
   it('records the configured follow edges', async () => {
