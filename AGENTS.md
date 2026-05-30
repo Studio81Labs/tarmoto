@@ -113,6 +113,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 
 ```bash
 pnpm install              # Install all workspace deps
+pnpm dev                  # Backend (3000) + marketing (3001) + companion (3002) in parallel
 pnpm backend:dev          # NestJS dev server (watch mode)
 pnpm mobile:dev           # Metro bundler
 pnpm ios                  # Run on iOS simulator
