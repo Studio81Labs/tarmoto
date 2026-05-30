@@ -1,16 +1,16 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import { Card, Stamp } from "@tarmoto/ui";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
-import { ArrowLeft, Copy, Smartphone, User } from "lucide-react";
+import { Copy, Smartphone, User } from "lucide-react";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
 type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
@@ -237,16 +237,9 @@ export default function ProfilePage() {
   }, [mobileLinkHref]);
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <Link
-        href="/settings"
-        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-      >
-        <ArrowLeft size={14} />
-        {t("Settings ")}
-      </Link>
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Profile")}
-        icon={<User size={22} strokeWidth={1.8} />}
+        icon={<User size={18} strokeWidth={2} />}
         title={t("Profile")}
         sub={t(
           "Display name, bio, home region, units. Synced to the mobile app.",

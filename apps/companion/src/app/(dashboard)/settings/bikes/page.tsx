@@ -1,9 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Bike as BikeIcon,
   Loader2,
   Pencil,
@@ -16,7 +14,8 @@ import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
-import { Card, PageHeader, Pill } from "@tarmoto/ui";
+import { Card, Pill } from "@tarmoto/ui";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ModalState =
   | {
       kind: "closed";
@@ -146,26 +145,19 @@ export default function BikesPage() {
   }
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <Link
-        href="/settings"
-        className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-      >
-        <ArrowLeft size={14} />
-        {t("Settings ")}
-      </Link>
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Garage")}
-        icon={<BikeIcon size={22} strokeWidth={1.8} />}
+        icon={<BikeIcon size={18} strokeWidth={2} />}
         title={t("My Bikes")}
         sub={t("Each ride attaches to whichever bike is active at the time.")}
         right={
           <button
             type="button"
             onClick={() => setModal({ kind: "add" })}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
+            className="inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            <Plus size={16} />
-            {t("Add bike ")}
+            <Plus size={14} />
+            {t("Add bike")}
           </button>
         }
       />

@@ -1,18 +1,11 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  ArrowLeft,
-  Bell,
-  Check,
-  Loader2,
-  Mail,
-  Smartphone,
-} from "lucide-react";
+import { Bell, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Card, PageHeader, Stamp, Toggle } from "@tarmoto/ui";
+import { Card, Stamp, Toggle } from "@tarmoto/ui";
+import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   EMAIL_DIGEST_OPTIONS,
@@ -137,11 +130,13 @@ export default function NotificationsPage() {
   if (loadError) {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-        <SettingsBackLink />
-        <PageHeader
+        <SettingsSubpageHeader
           stamp={t("Settings · Notifications")}
-          icon={<Bell size={22} strokeWidth={1.8} />}
+          icon={<Bell size={18} strokeWidth={2} />}
           title={t("Notifications")}
+          sub={t(
+            "Email, alerts, community updates — choose which signals reach you and where.",
+          )}
         />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {t("Could not load preferences: ")}
@@ -152,13 +147,12 @@ export default function NotificationsPage() {
   }
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-7">
-      <SettingsBackLink />
-      <PageHeader
+      <SettingsSubpageHeader
         stamp={t("Settings · Notifications")}
-        icon={<Bell size={22} strokeWidth={1.8} />}
+        icon={<Bell size={18} strokeWidth={2} />}
         title={t("Notifications")}
         sub={t(
-          "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app.",
+          "Email, alerts, community updates — choose which signals reach you and where.",
         )}
       />
 
@@ -276,18 +270,6 @@ export default function NotificationsPage() {
 
       <SaveBar isDirty={isDirty} saveState={saveState} onSave={save} />
     </div>
-  );
-}
-
-function SettingsBackLink() {
-  return (
-    <Link
-      href="/settings"
-      className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-    >
-      <ArrowLeft size={14} />
-      {t("Settings ")}
-    </Link>
   );
 }
 
