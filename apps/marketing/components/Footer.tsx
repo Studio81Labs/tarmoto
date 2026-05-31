@@ -1,5 +1,3 @@
-"use client";
-
 import { BrandMark } from "@/components/BrandMark";
 
 interface FooterLink {
@@ -34,10 +32,6 @@ const cols: Array<{ h: string; links: FooterLink[] }> = [
 export function Footer() {
   const year = new Date().getFullYear();
 
-  const openCookiePreferences = () => {
-    window.dispatchEvent(new CustomEvent("tarmoto:reset-consent"));
-  };
-
   return (
     <footer>
       <div className="container">
@@ -69,19 +63,7 @@ export function Footer() {
         </div>
         <div className="footer-bottom mono">
           <span>© {year} TARMOTO · STUDIO81 LABS, S.R.O.</span>
-          <span className="footer-bottom-right">
-            EARLY BETA · PRELAUNCH
-            <span className="footer-bottom-sep" aria-hidden="true">
-              ·
-            </span>
-            <button
-              type="button"
-              onClick={openCookiePreferences}
-              className="footer-bottom-link"
-            >
-              COOKIE PREFERENCES
-            </button>
-          </span>
+          <span className="footer-bottom-right">EARLY BETA · PRELAUNCH</span>
         </div>
       </div>
     </footer>

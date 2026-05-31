@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { Analytics } from "@/components/Analytics";
-import { CookieBanner } from "@/components/CookieBanner";
 import { WaitlistProvider } from "@/components/WaitlistProvider";
 import "./globals.css";
 
@@ -76,7 +75,6 @@ export default function RootLayout({
     >
       <body>
         <WaitlistProvider>{children}</WaitlistProvider>
-        <CookieBanner />
         <Analytics />
       </body>
     </html>

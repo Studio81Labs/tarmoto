@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
-import { CookiePreferencesLink } from "@/components/CookiePreferencesLink";
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -50,11 +49,11 @@ export default function PrivacyPage() {
                 the beta invite mix; nothing else is derived from them.
               </li>
               <li>
-                <strong>Analytics (opt-in).</strong> If you accept analytics in
-                the cookie banner, we load Umami — a privacy-friendly,
-                cookieless analytics tool — which counts page views and basic
-                referrer information. No cross-site tracking, no personal
-                profiles. If you decline, no analytics script is loaded.
+                <strong>Analytics.</strong> We load Umami — a privacy-friendly,
+                cookieless analytics tool we self-host — which counts page views
+                and basic referrer information. No cookies, no cross-site
+                tracking, no personal profiles, and the data stays on
+                infrastructure we operate.
               </li>
             </ul>
 
@@ -73,9 +72,16 @@ export default function PrivacyPage() {
 
             <h2>Legal basis (GDPR)</h2>
             <p>
-              Consent. You give it by submitting the waitlist form (for email)
-              and by clicking Accept on the cookie banner (for analytics). You
-              can withdraw at any time — see &ldquo;Your rights&rdquo; below.
+              For email, consent — you give it by submitting the waitlist form,
+              and you can withdraw at any time (see &ldquo;Your rights&rdquo;
+              below). For analytics, legitimate interest: we use{" "}
+              <a href="https://umami.is/" rel="noreferrer">
+                Umami
+              </a>{" "}
+              in a cookieless, privacy-friendly configuration that doesn&apos;t
+              store cookies, doesn&apos;t track you across sites, and
+              doesn&apos;t collect personal data, so no consent banner is
+              required.
             </p>
 
             <h2>Retention</h2>
@@ -110,10 +116,7 @@ export default function PrivacyPage() {
               Under GDPR you can access, correct, or delete the data we hold
               about you, and you can withdraw consent at any time. To exercise
               any of these rights, email{" "}
-              <a href="mailto:privacy@tarmoto.app">privacy@tarmoto.app</a>. You
-              can also change your analytics decision any time from{" "}
-              <CookiePreferencesLink>cookie preferences</CookiePreferencesLink>{" "}
-              in the footer.
+              <a href="mailto:privacy@tarmoto.app">privacy@tarmoto.app</a>.
             </p>
 
             <p className="subpage-meta">
