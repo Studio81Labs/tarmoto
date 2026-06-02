@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { type NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule } from '@nestjs/swagger';
@@ -16,6 +16,7 @@ import { RedisIoAdapter } from './modules/events/redis-io.adapter.js';
 import { redisConfig } from './config/redis.config.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
+import { guardClientSocketErrors } from './config/socket-error-guard.js';
 import { IMPORT_TRIP_BODY_LIMIT_PATHS } from './config/body-limits.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
 import { MAX_MAP_SNAPSHOT_BYTES } from './modules/map-shares/dto/map-share.dto.js';
@@ -174,6 +175,11 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, createSwaggerConfig());
     SwaggerModule.setup('api/docs', app, document);
   }
+
+  // A client-side connection reset must never crash the API: attach a
+  // socket `error` listener at accept time, before the HTTP/WebSocket layer
+  // races to attach its own. See `guardClientSocketErrors`.
+  guardClientSocketErrors(app.getHttpServer(), new Logger('Bootstrap'));
 
   await app.listen(process.env.PORT ?? 3000);
 
