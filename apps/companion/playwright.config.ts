@@ -13,10 +13,12 @@ const isCI = !!process.env.CI;
 // postgres, no redis, no full backend boot. The backend's own e2e suite
 // covers contract-level integration separately.
 //
-// `next dev` is used as the web server because it's robust to incremental
-// route changes during local development and avoids forcing a `next build`
-// before each run. CI accepts the slower first-paint in exchange for the
-// same simplicity.
+// Web server: locally `next dev` is used so route changes are picked up
+// without a rebuild. On CI we build once and serve with `next start`
+// instead — `next dev` compiles each route on first request (Turbopack
+// JIT), and across 71 tests visiting many routes those cold compiles
+// stacked up past the 20-minute job timeout. A production build pays the
+// compile cost once, up front, so every navigation is served instantly.
 export default defineConfig({
   testDir: "./e2e/tests",
   fullyParallel: false,
@@ -62,14 +64,26 @@ export default defineConfig({
       },
     },
     {
-      command: `pnpm next dev --port ${PORT}`,
+      // CI: build once, then serve the production output (fast, no per-route
+      // JIT compile). Local: `next dev` for instant route edits.
+      // `NEXT_PUBLIC_API_URL` is inlined at build time, so it must be set for
+      // the `next build` half of the CI command — not just `next start`.
+      command: isCI
+        ? `pnpm next build && pnpm next start --port ${PORT}`
+        : `pnpm next dev --port ${PORT}`,
       url: `${BASE_URL}/login`,
       reuseExistingServer: !isCI,
       stdout: "ignore",
       stderr: "pipe",
-      timeout: 180_000,
+      // CI bundles the build (~1–3 min) into this window; dev only waits for
+      // first paint.
+      timeout: isCI ? 300_000 : 180_000,
       env: {
         NEXT_PUBLIC_API_URL: `http://127.0.0.1:${MOCK_BACKEND_PORT}`,
+        // Re-enable the page-level e2e hooks that are otherwise stripped from
+        // production builds (see `__tarmotoSelectExploreSegment`). Inlined at
+        // build time, so it must be present for the `next build` step.
+        NEXT_PUBLIC_E2E: "1",
         AUTH_SECRET: "playwright-test-secret-do-not-use-in-prod",
         AUTH_TRUST_HOST: "true",
         NEXTAUTH_URL: BASE_URL,

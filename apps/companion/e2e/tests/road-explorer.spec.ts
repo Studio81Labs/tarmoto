@@ -1,5 +1,15 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "../fixtures";
+
+// The quality / surface / hazard filters are real `<input type="checkbox">`
+// elements that are visually hidden with `sr-only` and toggled via their
+// wrapping `<label>` (the styled square is a sibling span). Playwright's
+// `.check()` / `.uncheck()` require the control itself to be visible, so they
+// time out on the hidden input — toggle the way a rider does, by clicking the
+// label. State assertions (`toBeChecked()`) still read the input directly.
+async function toggleFilter(checkbox: Locator) {
+  await checkbox.locator("xpath=ancestor::label[1]").click();
+}
 
 const MOCK_ROAD_SEGMENT_ID = "11111111-2222-4333-8444-555555555111";
 
@@ -66,7 +76,7 @@ test.describe("road quality explorer", () => {
       expect(new URL(page.url()).searchParams.has("q")).toBe(false);
 
       // Untick "Very poor" — the URL gains `q=excellent,good,fair,poor`.
-      await veryPoor.uncheck();
+      await toggleFilter(veryPoor);
       await expect
         .poll(() => new URL(page.url()).searchParams.get("q"))
         .toBe("excellent,good,fair,poor");
@@ -253,7 +263,7 @@ test.describe("road quality explorer", () => {
       await expect(gravel).toBeChecked();
       expect(new URL(page.url()).searchParams.has("s")).toBe(false);
 
-      await gravel.uncheck();
+      await toggleFilter(gravel);
       await expect
         .poll(() => new URL(page.url()).searchParams.get("s"))
         .toBe("asphalt,concrete,cobblestone,dirt");
@@ -278,7 +288,7 @@ test.describe("road quality explorer", () => {
 
       // Untick "Very poor" — should write q=excellent,good,fair,poor.
       const veryPoor = page.getByRole("checkbox", { name: /^very poor$/i });
-      await veryPoor.uncheck();
+      await toggleFilter(veryPoor);
       await expect
         .poll(() => new URL(page.url()).searchParams.get("q"))
         .toBe("excellent,good,fair,poor");
@@ -321,7 +331,7 @@ test.describe("road quality explorer", () => {
         name: /^pothole$/i,
       });
       await expect(pothole).toBeChecked();
-      await pothole.uncheck();
+      await toggleFilter(pothole);
       await expect
         .poll(() => new URL(page.url()).searchParams.get("h"))
         .toBe("gravel,oil_spill,roadworks,animals,police,flooding,ice,other");
