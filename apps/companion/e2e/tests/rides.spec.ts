@@ -297,10 +297,12 @@ test.describe("rides extras", () => {
   });
 
   // T33 — Personal road map: `/rides/road-map` overlays the rider's
-  // ridden segments on a map. With the seeded zero-exploration stats
-  // the page mounts in the "no segments yet" empty path but the
-  // chrome (heading, subtitle, period filters) still renders.
-  // Asserting those three signals catches deletion-style regressions.
+  // ridden *segments* on a map. The mock's exploration endpoints report
+  // zero ridden segments (seeded rides don't synthesise exploration
+  // coverage), so the page correctly settles into its empty state. The
+  // assertions prove the route mounts inside the Rides chrome and the
+  // exploration fetch resolved into the empty view rather than the error
+  // branch or a white screen — catching deletion-style regressions.
   test("T33: /rides/road-map renders the personal road-map shell", async ({
     authedPage: page,
     mockApi,
@@ -310,16 +312,14 @@ test.describe("rides extras", () => {
 
     await page.goto("/rides/road-map");
 
+    // Shared Rides scaffold header (`RidesScaffold` → `PageHeader`).
     await expect(
-      page.getByRole("heading", { level: 1, name: /my road map/i }),
+      page.getByRole("heading", { level: 1, name: /^ride history$/i }),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/every road you've ridden/i)).toBeVisible();
-    // The period filter row lives in the header's action slot and only
-    // mounts after `/api/v1/exploration/stats` resolves — asserting the
-    // "All time" button proves the fetch completed and the success
-    // chrome rendered (the loading / error states omit the action).
+    // Road-map empty state proves the exploration fetch resolved.
+    await expect(page.getByText(/your road map is empty/i)).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^all time$/i }),
+      page.getByText(/every road you ride gets layered/i),
     ).toBeVisible();
   });
 
@@ -341,8 +341,11 @@ test.describe("rides extras", () => {
 
     await page.goto("/rides/compare");
 
+    // Compare lives under the shared Rides scaffold; its page-level h1 is
+    // the section header ("Ride History"), not a per-tab title. The
+    // compare-specific coverage is the stats-diff assertions below.
     await expect(
-      page.getByRole("heading", { level: 1, name: /compare rides/i }),
+      page.getByRole("heading", { level: 1, name: /^ride history$/i }),
     ).toBeVisible({ timeout: 10_000 });
 
     // Wait for the auto-default to settle (both params in URL) before

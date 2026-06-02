@@ -245,7 +245,17 @@ function ExplorerPageInner() {
     });
   }, [filters, hydrated, pathname, router, searchParams]);
   useEffect(() => {
-    if (process.env.NODE_ENV === "production") return;
+    // Test-only hook letting Playwright drive segment selection without a
+    // real map click. Kept out of real production builds, but the e2e build
+    // opts in via `NEXT_PUBLIC_E2E` (set only by playwright.config) so the
+    // suite can run against a production build — `next dev`'s per-route JIT
+    // compile is what made the CI run exceed its timeout.
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.NEXT_PUBLIC_E2E !== "1"
+    ) {
+      return;
+    }
     window.__tarmotoSelectExploreSegment = (segmentId: string) => {
       if (segmentId) setSelectedSegmentId(segmentId);
     };
