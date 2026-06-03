@@ -3,6 +3,8 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useRecentRides } from "@/hooks/useRecentRides";
+import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
   ArrowUpRight,
   BarChart3,
@@ -62,6 +64,7 @@ const QUICK_ACTIONS = [
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
+  const { rides: recentRides, loading: ridesLoading } = useRecentRides(5);
   const firstName = user?.displayName?.split(" ")[0];
   const draftTrips = trips
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
@@ -76,11 +79,10 @@ export default function HomePage() {
   // "No mobile sync yet", which is exactly what we want to show now.
   const mobileSync: MobileSyncStatus | null = null;
 
-  // Returning rider check uses ALL trips (any status), not just
-  // active drafts — an account with only active/completed trips IS a
-  // returning rider, not a first-time user. When a rides signal lands
-  // (we don't have a rides endpoint today), include it here too.
-  const hasAnyContent = trips.length > 0;
+  // Returning rider check uses ALL trips (any status) + recent rides —
+  // an account with only active/completed trips, or one that has rides
+  // but no saved trips, IS a returning rider, not a first-time user.
+  const hasAnyContent = trips.length > 0 || recentRides.length > 0;
   const hasDrafts = draftTrips.length > 0;
   // First-time hero copy ("Welcome to Tarmoto") only when we've
   // finished loading AND confirmed an empty trip list — during the
@@ -88,7 +90,8 @@ export default function HomePage() {
   // "Welcome back" so returning riders don't see first-time messaging
   // flash on every cold load (statistically the dominant case under
   // normal network latency).
-  const isFirstTimeUser = !loading && !tripsError && !hasAnyContent;
+  const isFirstTimeUser =
+    !loading && !ridesLoading && !tripsError && !hasAnyContent;
   // `tripsError` only matters in the empty / loading branches — when
   // we have drafts to show, swallow the error rather than nudging a
   // rider with real saved trips toward starting a new one.
@@ -197,8 +200,8 @@ export default function HomePage() {
         />
       ) : (
         // Returning rider → render the populated layout: Recent rides
-        // section (centered empty card since no rides endpoint) + Trip
-        // drafts section (3-up grid when there are drafts, otherwise
+        // section (RecentRidesTable when rides exist, empty card otherwise) +
+        // Trip drafts section (3-up grid when there are drafts, otherwise
         // a centered empty Card so the section affordance stays
         // visible to riders with only active/completed trips).
         <>
@@ -208,22 +211,26 @@ export default function HomePage() {
             actionHref="/rides"
             actionLabel={t("View all")}
           />
-          <Card padded={false} className="px-6 py-10 text-center">
-            <History
-              size={18}
-              strokeWidth={2}
-              className="mx-auto text-fg-mute"
-            />
-            <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
-            <p className="mt-1 text-[16px] font-bold text-ink">
-              {t("No rides recorded yet")}
-            </p>
-            <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
-              {t(
-                "Your rides from the mobile app will appear here once you start tracking.",
-              )}
-            </p>
-          </Card>
+          {recentRides.length > 0 ? (
+            <RecentRidesTable rides={recentRides} />
+          ) : (
+            <Card padded={false} className="px-6 py-10 text-center">
+              <History
+                size={18}
+                strokeWidth={2}
+                className="mx-auto text-fg-mute"
+              />
+              <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
+              <p className="mt-1 text-[16px] font-bold text-ink">
+                {t("No rides recorded yet")}
+              </p>
+              <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+                {t(
+                  "Your rides from the mobile app will appear here once you start tracking.",
+                )}
+              </p>
+            </Card>
+          )}
 
           <div className="mt-10">
             <SectionHeader
