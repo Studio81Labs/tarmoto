@@ -3909,6 +3909,12 @@ export interface components {
       /** @description US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips. */
       folder_id: string | null;
       created_at: string;
+      /** @description Total planned distance (km) = SUM of the trip days’ `distance_km`. `null` when no day has a recorded distance. */
+      distance_km: number | null;
+      /** @description Distance-weighted average road quality (0–5) across the trip days. `null` when no day has a recorded quality. */
+      quality_avg: number | null;
+      /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
+      passes_count: number | null;
     };
     CreateTripDto: {
       title: string;
@@ -3979,6 +3985,12 @@ export interface components {
       /** @description US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips. */
       folder_id: string | null;
       created_at: string;
+      /** @description Total planned distance (km) = SUM of the trip days’ `distance_km`. `null` when no day has a recorded distance. */
+      distance_km: number | null;
+      /** @description Distance-weighted average road quality (0–5) across the trip days. `null` when no day has a recorded quality. */
+      quality_avg: number | null;
+      /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
+      passes_count: number | null;
       daily_km_min: number;
       daily_km_max: number;
       min_quality: number;
