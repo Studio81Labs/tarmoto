@@ -206,6 +206,38 @@ export function formatDate(iso: string): string {
   });
 }
 
+/**
+ * Compact ride-duration label for dense dashboard tables: "4h 12m" / "52m".
+ * Intentionally distinct from `formatDuration` ("52 min") — the home and
+ * recent-rides tables use the tight no-space form per the v2 design.
+ */
+export function formatDurationCompact(min: number | null | undefined): string {
+  if (min == null) return "—";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** Compact day label without year for dashboard tables: "18 Apr" (en-GB). */
+export function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+/**
+ * Round a backend road-quality score (0–5 scale) to a 1–5 QualityBars tier,
+ * or null when there's no score. Canonical home for this clamp — new code
+ * should import this rather than re-deriving it.
+ */
+export function scoreToQualityTier(
+  q: number | null | undefined,
+): 1 | 2 | 3 | 4 | 5 | null {
+  if (q == null) return null;
+  return Math.min(5, Math.max(1, Math.round(q))) as 1 | 2 | 3 | 4 | 5;
+}
+
 export function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
