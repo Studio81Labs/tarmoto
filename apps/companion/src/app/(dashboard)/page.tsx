@@ -153,7 +153,7 @@ export default function HomePage() {
         ))}
       </div>
 
-      {loading ? (
+      {loading || ridesLoading ? (
         <DualEmptyState
           ridesEmpty={<RidesEmptyCard />}
           tripsEmpty={
