@@ -49,5 +49,6 @@ describe("useMonthlyStats", () => {
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.stats).toBeNull();
+    expect(result.current.error).toBe(true);
   });
 });

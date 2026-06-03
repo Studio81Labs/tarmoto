@@ -12,6 +12,7 @@ import { useAuthStore } from "@/stores/auth";
 export function useMonthlyStats(): {
   stats: MonthlyStats | null;
   loading: boolean;
+  error: boolean;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
@@ -27,5 +28,9 @@ export function useMonthlyStats(): {
     },
   });
 
-  return { stats: query.data ?? null, loading: query.isLoading };
+  return {
+    stats: query.data ?? null,
+    loading: query.isLoading,
+    error: query.isError,
+  };
 }

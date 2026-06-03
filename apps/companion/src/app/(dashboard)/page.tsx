@@ -311,20 +311,23 @@ function formatSyncedLabel(d: Date): string {
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
-  const kmDelta =
+  const kmPct =
     stats.prev_month_km > 0
-      ? `${stats.this_month_km >= stats.prev_month_km ? "+" : ""}${Math.round(
+      ? Math.round(
           ((stats.this_month_km - stats.prev_month_km) / stats.prev_month_km) *
             100,
-        )}% ${t("vs last month")}`
-      : t("first tracked month");
+        )
+      : null;
+  const kmDelta =
+    kmPct == null
+      ? t("first tracked month")
+      : `${kmPct > 0 ? "+" : ""}${kmPct}% ${t("vs last month")}`;
   // Hours arrive with one decimal of precision; the design shows whole
-  // hours ("32 HRS"), so round for both the value and the delta.
+  // hours ("32 HRS"), so round the display value but compute the delta
+  // from the raw values to avoid rounding-induced misleading deltas.
   const hoursNow = Math.round(stats.ride_hours);
-  const hoursPrev = Math.round(stats.prev_ride_hours);
-  const hoursDelta = `${hoursNow >= hoursPrev ? "+" : ""}${
-    hoursNow - hoursPrev
-  }h ${t("vs last month")}`;
+  const rawHoursDelta = Math.round(stats.ride_hours - stats.prev_ride_hours);
+  const hoursDelta = `${rawHoursDelta > 0 ? "+" : ""}${rawHoursDelta}h ${t("vs last month")}`;
   const leanSub =
     stats.max_lean_ride_name && stats.max_lean_at
       ? `${stats.max_lean_ride_name} · ${formatShortDate(stats.max_lean_at)}`
