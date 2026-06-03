@@ -825,6 +825,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/users/me/stats/monthly": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Current month's KPI snapshot for the home dashboard
+     * @description Distance, ride time, distinct roads, and max lean for the current calendar month (with the previous month for deltas), plus the last mobile-sync timestamp. Drives the companion home KPI tiles + pill.
+     */
+    get: operations["UsersController_getMonthlyStats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/{userId}/profile": {
     parameters: {
       query?: never;
@@ -3335,6 +3355,26 @@ export interface components {
       /** @description Badges earned at any tier. */
       badges_earned: number;
     };
+    MonthlyStatsDto: {
+      /** @description Distance (km) over completed rides this month. */
+      this_month_km: number;
+      /** @description Distance (km) the previous calendar month. */
+      prev_month_km: number;
+      /** @description Ride time (hours) this month. */
+      ride_hours: number;
+      /** @description Ride time (hours) the previous calendar month. */
+      prev_ride_hours: number;
+      /** @description Distinct road segments ridden this month. */
+      new_roads: number;
+      /** @description Max lean angle (deg) this month. */
+      max_lean_deg: number | null;
+      /** @description Ride that set the max lean. */
+      max_lean_ride_name: string | null;
+      /** @description ISO start of that ride. */
+      max_lean_at: string | null;
+      /** @description Latest mobile upload, or null. */
+      last_synced_at: string | null;
+    };
     PublicProfileDto: {
       id: string;
       display_name: string;
@@ -4796,6 +4836,7 @@ export type SchemaUserPreferencesDto =
   components["schemas"]["UserPreferencesDto"];
 export type SchemaUpdateProfileDto = components["schemas"]["UpdateProfileDto"];
 export type SchemaMeProfileDto = components["schemas"]["MeProfileDto"];
+export type SchemaMonthlyStatsDto = components["schemas"]["MonthlyStatsDto"];
 export type SchemaPublicProfileDto = components["schemas"]["PublicProfileDto"];
 export type SchemaRouteGeometryPointDto =
   components["schemas"]["RouteGeometryPointDto"];
@@ -6297,6 +6338,25 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MeProfileDto"];
+        };
+      };
+    };
+  };
+  UsersController_getMonthlyStats: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MonthlyStatsDto"];
         };
       };
     };
