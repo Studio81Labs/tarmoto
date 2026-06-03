@@ -891,12 +891,17 @@ export class TripsService {
       .select('d.trip_id', 'trip_id')
       .addSelect('SUM(d.distance_km)', 'distance_km')
       // Distance-weighted so a long high-quality day outweighs a short
-      // detour. Days with a NULL distance_km drop out of the weighted
-      // numerator/denominator (NULL * x = NULL); the ELSE AVG fallback
-      // covers trips whose days have quality but no recorded distance.
+      // detour. The denominator is FILTERed to scored days only: a day
+      // with a distance but NULL avg_quality drops out of the numerator
+      // (NULL * x = NULL) and must drop out of the denominator too, or it
+      // would dilute the average toward zero for partially-scored trips.
+      // Days with quality but no distance can't be weighted, so they fall
+      // out of both sums; the ELSE AVG fallback covers trips whose days
+      // have quality but no recorded distance at all.
       .addSelect(
-        'CASE WHEN SUM(d.distance_km) > 0 ' +
-          'THEN SUM(d.avg_quality * d.distance_km) / SUM(d.distance_km) ' +
+        'CASE WHEN SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) > 0 ' +
+          'THEN SUM(d.avg_quality * d.distance_km) ' +
+          '/ SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) ' +
           'ELSE AVG(d.avg_quality) END',
         'quality_avg',
       )
