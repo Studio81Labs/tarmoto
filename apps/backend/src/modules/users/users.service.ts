@@ -131,7 +131,7 @@ export class UsersService {
     const [months, leanRow, roadsRow, syncRow] = await Promise.all([
       this.rideRepo
         .createQueryBuilder('r')
-        .select("date_trunc('month', r.started_at)", 'month')
+        .select("date_trunc('month', r.started_at AT TIME ZONE 'UTC')", 'month')
         .addSelect('COALESCE(SUM(r.distance_km), 0)', 'km')
         .addSelect(
           'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
@@ -141,9 +141,9 @@ export class UsersService {
         .andWhere("r.status = 'completed'")
         .andWhere('r.ended_at IS NOT NULL')
         .andWhere(
-          "r.started_at >= date_trunc('month', now()) - interval '1 month'",
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month'",
         )
-        .groupBy("date_trunc('month', r.started_at)")
+        .groupBy("date_trunc('month', r.started_at AT TIME ZONE 'UTC')")
         .getRawMany<{ month: string; km: string; hours: string }>(),
       this.rideRepo
         .createQueryBuilder('r')
@@ -153,7 +153,9 @@ export class UsersService {
         .addSelect('r.started_at', 'started_at')
         .where('r.user_id = :userId', { userId })
         .andWhere("r.status = 'completed'")
-        .andWhere("r.started_at >= date_trunc('month', now())")
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
+        )
         .andWhere('s.max_lean_angle IS NOT NULL')
         .orderBy('s.max_lean_angle', 'DESC')
         .limit(1)
@@ -164,7 +166,9 @@ export class UsersService {
         .select('COUNT(DISTINCT seg.road_segment_id)', 'roads')
         .where('r.user_id = :userId', { userId })
         .andWhere("r.status = 'completed'")
-        .andWhere("r.started_at >= date_trunc('month', now())")
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
+        )
         .andWhere('seg.road_segment_id IS NOT NULL')
         .getRawOne<{ roads: string }>(),
       this.rideRepo
@@ -189,8 +193,8 @@ export class UsersService {
     return {
       this_month_km: Math.round(parseFloat(cur?.km ?? '0')),
       prev_month_km: Math.round(parseFloat(prev?.km ?? '0')),
-      ride_hours: Math.round(parseFloat(cur?.hours ?? '0')),
-      prev_ride_hours: Math.round(parseFloat(prev?.hours ?? '0')),
+      ride_hours: Math.round(parseFloat(cur?.hours ?? '0') * 10) / 10,
+      prev_ride_hours: Math.round(parseFloat(prev?.hours ?? '0') * 10) / 10,
       new_roads: parseInt(roadsRow?.roads ?? '0', 10),
       max_lean_deg: leanRow ? Math.round(leanRow.lean) : null,
       max_lean_ride_name: leanRow?.name ?? null,

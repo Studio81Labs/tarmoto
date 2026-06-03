@@ -408,8 +408,8 @@ describe('UsersService', () => {
       const builders = [
         // 1) months getRawMany
         buildQb('getRawMany', [
-          { month: firstOfUtcMonth(0), km: '1284', hours: '32' },
-          { month: firstOfUtcMonth(-1), km: '1088', hours: '28' },
+          { month: firstOfUtcMonth(0), km: '1284', hours: '32.4' },
+          { month: firstOfUtcMonth(-1), km: '1088', hours: '28.6' },
         ]),
         // 2) lean getRawOne
         buildQb('getRawOne', {
@@ -429,8 +429,8 @@ describe('UsersService', () => {
 
       expect(result.this_month_km).toBe(1284);
       expect(result.prev_month_km).toBe(1088);
-      expect(result.ride_hours).toBe(32);
-      expect(result.prev_ride_hours).toBe(28);
+      expect(result.ride_hours).toBe(32.4);
+      expect(result.prev_ride_hours).toBe(28.6);
       expect(result.new_roads).toBe(47);
       expect(result.max_lean_deg).toBe(41);
       expect(result.max_lean_ride_name).toBe('Passo Gavia');
