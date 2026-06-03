@@ -890,12 +890,26 @@ export class TripsService {
       .createQueryBuilder('d')
       .select('d.trip_id', 'trip_id')
       .addSelect('SUM(d.distance_km)', 'distance_km')
+      // Distance-weighted so a long high-quality day outweighs a short
+      // detour. Days with a NULL distance_km drop out of the weighted
+      // numerator/denominator (NULL * x = NULL); the ELSE AVG fallback
+      // covers trips whose days have quality but no recorded distance.
       .addSelect(
         'CASE WHEN SUM(d.distance_km) > 0 ' +
           'THEN SUM(d.avg_quality * d.distance_km) / SUM(d.distance_km) ' +
           'ELSE AVG(d.avg_quality) END',
         'quality_avg',
       )
+      // Pass count is an isolated scalar subquery on purpose: joining
+      // `mountain_passes` into this grouped query would fan out the
+      // `trip_days` rows and inflate the SUM(distance_km) / weighted
+      // quality aggregates. Keep it as a correlated EXISTS so the
+      // distance/quality rollups stay one-row-per-day. `mountain_passes`
+      // is a small curated table; the per-trip scan is acceptable at the
+      // own-trips scale this endpoint serves (a handful of trips/days).
+      // Note: the ::geography cast means a plain GiST index on
+      // trip_days.route_geom wouldn't serve this operator — revisit with a
+      // geography expression index only if mountain_passes grows large.
       .addSelect(
         '(SELECT COUNT(DISTINCT mp.id) FROM mountain_passes mp ' +
           'WHERE EXISTS (SELECT 1 FROM trip_days td WHERE td.trip_id = d.trip_id ' +

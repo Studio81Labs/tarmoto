@@ -87,8 +87,8 @@ export class TripSummaryDto {
     nullable: true,
     description:
       'Count of mountain passes within 2 km of any of the trip’s day ' +
-      'geometries. `0` for trips with no nearby passes; `null` when the ' +
-      'trip has no day geometry to test against.',
+      'geometries. `0` when the trip has days but no nearby passes (or no day ' +
+      'geometry); `null` only when the trip has no trip-days at all.',
   })
   passes_count!: number | null;
 }
