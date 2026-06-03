@@ -542,8 +542,13 @@ function TripDraftCard({
 }) {
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
-  // Route sketch + bars share the trip's rolled-up quality; default to the
-  // neutral mid-tier when a trip has no quality yet (e.g. an empty draft).
+  // MiniRouteSvg and QualityBars are visually coupled — both take this one
+  // tier. MiniRouteSvg has no "no data" state (it always draws a route in a
+  // q-colour), so when a trip has no rolled-up quality yet (e.g. an empty
+  // draft) we default both to the neutral mid-tier rather than hiding the
+  // bars alone, which would leave the card's sketch and glyph mismatched.
+  // (The KM/PASSES slots below DO hide when absent — they aren't coupled to
+  // the sketch.) Matches the trip-card treatment on the /trips page.
   const tier = scoreToQualityTier(trip.quality_avg) ?? 3;
   return (
     <Link
