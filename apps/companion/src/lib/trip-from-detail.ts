@@ -133,9 +133,9 @@ export interface TripSummaryWire {
    * `TripSummary` via the adapter below.
    */
   updated_at?: string;
-  distance_km?: number;
-  passes_count?: number;
-  quality_avg?: number;
+  distance_km?: number | null;
+  passes_count?: number | null;
+  quality_avg?: number | null;
   warnings_count?: number;
 }
 
@@ -165,9 +165,9 @@ export function tripSummaryFromWire(
     // `TripSummaryDto`. Skipping these here is what would silently
     // strip the new metadata before it reached the card.
     updatedAt: wire.updated_at,
-    distance_km: wire.distance_km,
-    passes_count: wire.passes_count,
-    quality_avg: wire.quality_avg,
+    distance_km: wire.distance_km ?? null,
+    quality_avg: wire.quality_avg ?? null,
+    passes_count: wire.passes_count ?? null,
     warnings_count: wire.warnings_count,
   };
 }

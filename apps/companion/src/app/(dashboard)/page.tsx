@@ -5,7 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
-import { formatShortDate } from "@/lib/utils";
+import { formatShortDate, scoreToQualityTier } from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
@@ -16,7 +16,14 @@ import {
   Plus,
   Route,
 } from "lucide-react";
-import { Card, Heading, MiniRouteSvg, Mono, Stamp } from "@tarmoto/ui";
+import {
+  Card,
+  Heading,
+  MiniRouteSvg,
+  Mono,
+  QualityBars,
+  Stamp,
+} from "@tarmoto/ui";
 
 const QUICK_ACTIONS = [
   {
@@ -48,16 +55,6 @@ const QUICK_ACTIONS = [
     stamp: "04",
   },
 ] as const;
-
-// Fields not yet on the trips list endpoint (need backend follow-up
-// before the populated state can show real values):
-//   - distance_km (total across days)
-//   - quality_avg / quality_tier (average road quality)
-//   - passes_count (mountain passes touched)
-// When those land, populate them on TripSummary in @/lib/types + the
-// list endpoint, and the trip-draft cards below will light them up
-// automatically. Until then `km` / `passes` slots stay hidden and the
-// QualityBars unit only renders when quality data is present.
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
@@ -532,23 +529,29 @@ function TripDraftCard({
   trip,
   seed,
 }: {
-  trip: { id: string; name: string; status: string; num_days: number };
+  trip: {
+    id: string;
+    name: string;
+    status: string;
+    num_days: number;
+    distance_km?: number | null;
+    quality_avg?: number | null;
+    passes_count?: number | null;
+  };
   seed: number;
 }) {
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
-  // No quality / km / passes on summary payloads yet — wire those
-  // through when the trips list endpoint exposes them (see TODO at
-  // file top). For now the thumbnail uses q=3 (yellow-ish neutral)
-  // and we hide the QualityBars + km + passes meta slots.
-  const q: 1 | 2 | 3 | 4 | 5 = 3;
+  // Route sketch + bars share the trip's rolled-up quality; default to the
+  // neutral mid-tier when a trip has no quality yet (e.g. an empty draft).
+  const tier = scoreToQualityTier(trip.quality_avg) ?? 3;
   return (
     <Link
       href={`/trips/${trip.id}`}
       className="block overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
     >
       <div className="h-[120px]">
-        <MiniRouteSvg q={q} seed={seed} />
+        <MiniRouteSvg q={tier} seed={seed} />
       </div>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
@@ -558,15 +561,29 @@ function TripDraftCard({
               {trip.name}
             </div>
           </div>
+          <QualityBars q={tier} size={4} />
         </div>
         <div className="mt-2.5 flex items-center gap-3 text-[11px] text-fg-dim">
+          {trip.distance_km != null && trip.distance_km > 0 && (
+            <Mono className="uppercase">
+              <span className="font-bold text-ink">
+                {Math.round(trip.distance_km)}
+              </span>{" "}
+              {t("KM")}
+            </Mono>
+          )}
           {trip.num_days > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.num_days}</span>{" "}
-              {trip.num_days === 1 ? t("day") : t("days")}
+              {trip.num_days === 1 ? t("DAY") : t("DAYS")}
             </Mono>
           )}
-          {/* km + passes hidden until the trips list endpoint exposes them */}
+          {trip.passes_count != null && trip.passes_count > 0 && (
+            <Mono className="uppercase">
+              <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
+              {trip.passes_count === 1 ? t("PASS") : t("PASSES")}
+            </Mono>
+          )}
         </div>
       </div>
     </Link>
