@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
+import { useMonthlyStats } from "@/hooks/useMonthlyStats";
+import { formatShortDate } from "@/lib/utils";
+import type { MonthlyStats } from "@tarmoto/shared";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
   ArrowUpRight,
@@ -55,11 +58,6 @@ const QUICK_ACTIONS = [
 // list endpoint, and the trip-draft cards below will light them up
 // automatically. Until then `km` / `passes` slots stay hidden and the
 // QualityBars unit only renders when quality data is present.
-//
-// Similarly, monthly KPI tiles (this month KM / ride time / new roads /
-// max lean) need a stats endpoint, and the "Mobile synced …" pill
-// needs a sync-status hook — both render their honest "empty" variants
-// per spec until the data lands.
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
@@ -70,14 +68,10 @@ export default function HomePage() {
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
     .slice(0, 3);
 
-  // Surfaces stats data when wired. Until the stats endpoint exists,
-  // this is null and the KPI tile row stays hidden — spec's empty-
-  // state HTML has no tiles either, so honest empty matches the spec.
-  const monthlyStats: MonthlyStats | null = null;
-
-  // Same for the live sync-status hook. Spec's empty pill copy is
-  // "No mobile sync yet", which is exactly what we want to show now.
-  const mobileSync: MobileSyncStatus | null = null;
+  // Current-month KPI snapshot. Null while loading / before first fetch;
+  // the tile row stays hidden until a non-empty month resolves, and the
+  // sync pill reads `last_synced_at` off this same payload.
+  const { stats: monthlyStats } = useMonthlyStats();
 
   // Returning rider check uses ALL trips (any status) + recent rides —
   // an account with only active/completed trips, or one that has rides
@@ -112,11 +106,14 @@ export default function HomePage() {
             {t("Know the road before you ride it.")}
           </p>
         </div>
-        <SyncPill status={mobileSync} />
+        <SyncPill syncedAt={monthlyStats?.last_synced_at ?? null} />
       </header>
 
-      {/* 4-KPI tile row (only when stats endpoint is wired) */}
-      {monthlyStats && <KpiTileRow stats={monthlyStats} />}
+      {/* 4-KPI tile row — only for a non-empty current month so a
+          rider who hasn't ridden this month doesn't see a wall of zeros. */}
+      {monthlyStats && monthlyStats.this_month_km > 0 && (
+        <KpiTileRow stats={monthlyStats} />
+      )}
 
       {/* Jump in */}
       <Stamp className="block">{t("Jump in")}</Stamp>
@@ -277,25 +274,10 @@ export default function HomePage() {
   );
 }
 
-interface MonthlyStats {
-  thisMonthKm: number;
-  rideHours: number;
-  newRoads: number;
-  maxLeanDeg: number;
-  vsLastMonthKm: string;
-  vsLastMonthHours: string;
-  newRoadsThisMonth: number;
-  maxLeanLocation: string;
-}
-
-interface MobileSyncStatus {
-  syncedAt: Date;
-}
-
-function SyncPill({ status }: { status: MobileSyncStatus | null }) {
-  if (!status) {
+function SyncPill({ syncedAt }: { syncedAt: string | null }) {
+  if (!syncedAt) {
     // Spec's empty-state pill — ghost / line-strong border / fg-mute
-    // dot + text. Truthful while the mobile-sync hook is unwired.
+    // dot + text. Shown until the rider's first mobile upload lands.
     return (
       <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-fg-dim">
         <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-mute" />
@@ -306,7 +288,7 @@ function SyncPill({ status }: { status: MobileSyncStatus | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(status.syncedAt)}
+      {formatSyncedLabel(new Date(syncedAt))}
     </div>
   );
 }
@@ -329,33 +311,52 @@ function formatSyncedLabel(d: Date): string {
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
+  const kmDelta =
+    stats.prev_month_km > 0
+      ? `${stats.this_month_km >= stats.prev_month_km ? "+" : ""}${Math.round(
+          ((stats.this_month_km - stats.prev_month_km) / stats.prev_month_km) *
+            100,
+        )}% ${t("vs last month")}`
+      : t("first tracked month");
+  // Hours arrive with one decimal of precision; the design shows whole
+  // hours ("32 HRS"), so round for both the value and the delta.
+  const hoursNow = Math.round(stats.ride_hours);
+  const hoursPrev = Math.round(stats.prev_ride_hours);
+  const hoursDelta = `${hoursNow >= hoursPrev ? "+" : ""}${
+    hoursNow - hoursPrev
+  }h ${t("vs last month")}`;
+  const leanSub =
+    stats.max_lean_ride_name && stats.max_lean_at
+      ? `${stats.max_lean_ride_name} · ${formatShortDate(stats.max_lean_at)}`
+      : t("No lean recorded");
+
   return (
     <div className="mb-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
       <KpiTile
         label={t("This month")}
-        value={stats.thisMonthKm.toLocaleString()}
+        value={stats.this_month_km.toLocaleString()}
         unit="KM"
-        delta={`+${stats.vsLastMonthKm} vs last month`}
+        delta={kmDelta}
         ink
         accentValue
       />
       <KpiTile
         label={t("Ride time")}
-        value={String(stats.rideHours)}
+        value={String(hoursNow)}
         unit="HRS"
-        delta={`+${stats.vsLastMonthHours} vs last month`}
+        delta={hoursDelta}
       />
       <KpiTile
         label={t("New roads")}
-        value={String(stats.newRoads)}
+        value={String(stats.new_roads)}
         unit="DISCOVERED"
-        delta={`+${stats.newRoadsThisMonth} this month`}
+        delta={t("this month")}
       />
       <KpiTile
         label={t("Lean angle")}
-        value={`${stats.maxLeanDeg}°`}
+        value={stats.max_lean_deg != null ? `${stats.max_lean_deg}°` : "—"}
         unit="MAX"
-        delta={stats.maxLeanLocation}
+        delta={leanSub}
         accentValue
       />
     </div>
