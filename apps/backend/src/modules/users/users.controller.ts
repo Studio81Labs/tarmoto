@@ -44,6 +44,7 @@ import {
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
 import { MeProfileDto } from './dto/me-profile.dto.js';
+import { MonthlyStatsDto } from './dto/monthly-stats.dto.js';
 
 @ApiTags('users')
 @Controller('users')
@@ -89,6 +90,22 @@ export class UsersController {
   @ApiResponse({ status: 200, type: MeProfileDto })
   async getMeProfile(@Req() req: express.Request): Promise<MeProfileDto> {
     return this.usersService.getMeProfile(req.user!.userId);
+  }
+
+  // Declared among the `me/...` literal routes (before `:userId/profile`)
+  // for the same reason `me/profile` is — otherwise `:userId` would
+  // capture `me` and never reach this handler.
+  @Get('me/stats/monthly')
+  @ApiOperation({
+    summary: "Current month's KPI snapshot for the home dashboard",
+    description:
+      'Distance, ride time, distinct roads, and max lean for the current ' +
+      'calendar month (with the previous month for deltas), plus the last ' +
+      'mobile-sync timestamp. Drives the companion home KPI tiles + pill.',
+  })
+  @ApiResponse({ status: 200, type: MonthlyStatsDto })
+  async getMonthlyStats(@Req() req: express.Request): Promise<MonthlyStatsDto> {
+    return this.usersService.getMonthlyStats(req.user!.userId);
   }
 
   @Get(':userId/profile')
