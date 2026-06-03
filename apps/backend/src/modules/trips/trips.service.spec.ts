@@ -113,9 +113,36 @@ function makeQbMock(
   return qb;
 }
 
+// Shape of one aggregate row returned by the trip_days rollup query that
+// `list` runs to derive distance_km / quality_avg / passes_count.
+type AggRow = {
+  trip_id: string;
+  distance_km: string | null;
+  quality_avg: string | null;
+  passes_count: string | null;
+};
+
+type AggQbMock = {
+  select: jest.Mock;
+  addSelect: jest.Mock;
+  where: jest.Mock;
+  groupBy: jest.Mock;
+  getRawMany: jest.Mock;
+};
+
+function makeAggQbMock(rows: AggRow[]): AggQbMock {
+  const qb = {} as AggQbMock;
+  for (const m of ['select', 'addSelect', 'where', 'groupBy'] as const) {
+    (qb as Record<string, jest.Mock>)[m] = jest.fn().mockReturnValue(qb);
+  }
+  qb.getRawMany = jest.fn().mockResolvedValue(rows);
+  return qb;
+}
+
 describe('TripsService', () => {
   let service: TripsService;
   let tripRepo: jest.Mocked<Repository<Trip>>;
+  let tripDayRepo: jest.Mocked<Repository<TripDay>>;
   let memberRepo: jest.Mocked<Repository<TripMember>>;
   let manager: {
     create: jest.Mock;
@@ -185,6 +212,13 @@ describe('TripsService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
     } as unknown as jest.Mocked<Repository<Trip>>;
 
+    // The trip-summary rollup query in `list` runs on `tripDayRepo`. Default
+    // to an empty aggregate so existing list tests (which don't care about
+    // the derived fields) keep passing; specific tests override the rows.
+    tripDayRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(makeAggQbMock([])),
+    } as unknown as jest.Mocked<Repository<TripDay>>;
+
     memberRepo = {
       create: jest.fn().mockImplementation((data: Partial<TripMember>) => ({
         ...data,
@@ -221,6 +255,7 @@ describe('TripsService', () => {
       providers: [
         TripsService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
+        { provide: getRepositoryToken(TripDay), useValue: tripDayRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: getRepositoryToken(TripFolder), useValue: folderRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
@@ -246,6 +281,13 @@ describe('TripsService', () => {
   function mockListReturns(trips: Trip[]): QbMock {
     const qb = makeQbMock({ getMany: trips });
     tripRepo.createQueryBuilder.mockReturnValue(qb as never);
+    return qb;
+  }
+
+  /** Wire the trip_days rollup query (run on tripDayRepo) to return `rows`. */
+  function mockListAggReturns(rows: AggRow[]): AggQbMock {
+    const qb = makeAggQbMock(rows);
+    tripDayRepo.createQueryBuilder.mockReturnValue(qb as never);
     return qb;
   }
 
@@ -1265,6 +1307,52 @@ describe('TripsService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith('trip.status = :status', {
         status: 'planned',
       });
+    });
+
+    it('enriches the summary with the derived distance/quality/passes rollup', async () => {
+      // C1: the trip-draft cards on the companion home read distance_km,
+      // quality_avg, and passes_count off the list summary. They are
+      // derived live from the trip_days rollup query — the aggregate row's
+      // numeric strings (pg returns SUM/AVG/COUNT as text) are coerced to
+      // numbers. The second trip has NO matching aggregate row (no days
+      // with usable data) and must surface null for all three.
+      const enriched = makeOwnedTrip({ id: 't-1', title: 'A' });
+      const empty = makeOwnedTrip({ id: 't-2', title: 'B' });
+      [enriched, empty].forEach((t) => {
+        t.member_count = 1;
+      });
+      mockListReturns([enriched, empty]);
+      mockListAggReturns([
+        {
+          trip_id: 't-1',
+          distance_km: '610',
+          quality_avg: '4.4',
+          passes_count: '6',
+        },
+      ]);
+
+      const trips = await service.list(OWNER_ID, {});
+
+      expect(trips[0].distance_km).toBe(610);
+      expect(trips[0].quality_avg).toBeCloseTo(4.4);
+      expect(trips[0].passes_count).toBe(6);
+      // No aggregate row → all three derived fields are null (not 0), so
+      // the card can distinguish "nothing planned yet" from "0 passes".
+      expect(trips[1].distance_km).toBeNull();
+      expect(trips[1].quality_avg).toBeNull();
+      expect(trips[1].passes_count).toBeNull();
+    });
+
+    it('short-circuits the rollup query when no trips are visible', async () => {
+      mockListReturns([]);
+      const agg = mockListAggReturns([]);
+
+      const result = await service.list(OWNER_ID, {});
+
+      expect(result).toEqual([]);
+      // Empty page must not pay for the (potentially expensive) spatial
+      // rollup — the IN (:...ids) clause would also be malformed on [].
+      expect(agg.getRawMany).not.toHaveBeenCalled();
     });
   });
 

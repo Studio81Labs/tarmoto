@@ -67,6 +67,8 @@ export class TripsService {
   constructor(
     @InjectRepository(Trip)
     private readonly tripRepo: Repository<Trip>,
+    @InjectRepository(TripDay)
+    private readonly tripDayRepo: Repository<TripDay>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
     @InjectRepository(TripFolder)
@@ -877,7 +879,52 @@ export class TripsService {
     }
 
     const trips = await qb.getMany();
-    return trips.map((t) => this.toSummary(t));
+    if (trips.length === 0) return [];
+
+    const ids = trips.map((t) => t.id);
+
+    // One pass over trip_days for distance + distance-weighted quality, plus a
+    // spatial count of nearby passes, grouped by trip. Single round trip over
+    // the page of trips the caller can see (their own) — no N+1.
+    const aggRows = await this.tripDayRepo
+      .createQueryBuilder('d')
+      .select('d.trip_id', 'trip_id')
+      .addSelect('SUM(d.distance_km)', 'distance_km')
+      .addSelect(
+        'CASE WHEN SUM(d.distance_km) > 0 ' +
+          'THEN SUM(d.avg_quality * d.distance_km) / SUM(d.distance_km) ' +
+          'ELSE AVG(d.avg_quality) END',
+        'quality_avg',
+      )
+      .addSelect(
+        '(SELECT COUNT(DISTINCT mp.id) FROM mountain_passes mp ' +
+          'WHERE EXISTS (SELECT 1 FROM trip_days td WHERE td.trip_id = d.trip_id ' +
+          'AND td.route_geom IS NOT NULL ' +
+          'AND ST_DWithin(mp.location::geography, td.route_geom::geography, 2000)))',
+        'passes_count',
+      )
+      .where('d.trip_id IN (:...ids)', { ids })
+      .groupBy('d.trip_id')
+      .getRawMany<{
+        trip_id: string;
+        distance_km: string | null;
+        quality_avg: string | null;
+        passes_count: string | null;
+      }>();
+
+    const aggById = new Map(
+      aggRows.map((r) => [
+        r.trip_id,
+        {
+          distance_km: r.distance_km != null ? parseFloat(r.distance_km) : null,
+          quality_avg: r.quality_avg != null ? parseFloat(r.quality_avg) : null,
+          passes_count:
+            r.passes_count != null ? parseInt(r.passes_count, 10) : null,
+        },
+      ]),
+    );
+
+    return trips.map((t) => this.toSummary(t, aggById.get(t.id)));
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {
@@ -967,7 +1014,14 @@ export class TripsService {
     return this.getDetail(userId, tripId);
   }
 
-  private toSummary(trip: Trip): TripSummaryDto {
+  private toSummary(
+    trip: Trip,
+    agg?: {
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+    },
+  ): TripSummaryDto {
     return {
       id: trip.id,
       owner_id: trip.owner_id,
@@ -982,6 +1036,12 @@ export class TripsService {
       member_count: trip.member_count ?? trip.members?.length ?? 0,
       folder_id: trip.folder_id ?? null,
       created_at: trip.created_at.toISOString(),
+      // Derived live in `list`; `toDetail` (which doesn't pass `agg`) leaves
+      // these null because the detail response already carries full `days[]`
+      // with per-day distance/quality and doesn't need the rollup.
+      distance_km: agg?.distance_km ?? null,
+      quality_avg: agg?.quality_avg ?? null,
+      passes_count: agg?.passes_count ?? null,
     };
   }
 
