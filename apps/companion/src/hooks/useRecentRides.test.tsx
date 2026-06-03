@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { withQueryClient } from "./test-utils";
 
 const getMock = vi.fn();
 vi.mock("@/lib/api", () => ({
@@ -13,11 +12,6 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 import { useRecentRides } from "./useRecentRides";
-
-function wrapper({ children }: { children: ReactNode }) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-}
 
 describe("useRecentRides", () => {
   beforeEach(() => getMock.mockReset());
@@ -43,7 +37,9 @@ describe("useRecentRides", () => {
       },
       error: undefined,
     });
-    const { result } = renderHook(() => useRecentRides(5), { wrapper });
+    const { result } = renderHook(() => useRecentRides(5), {
+      wrapper: withQueryClient(),
+    });
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getMock).toHaveBeenCalledWith("/api/v1/rides", {
       params: { query: { limit: 5, sort: "started_at", order: "desc" } },
@@ -51,5 +47,14 @@ describe("useRecentRides", () => {
     });
     expect(result.current.rides).toHaveLength(1);
     expect(result.current.rides[0].name).toBe("Stelvio");
+  });
+
+  it("exposes error=true when the API returns an error", async () => {
+    getMock.mockResolvedValue({ data: undefined, error: { message: "boom" } });
+    const { result } = renderHook(() => useRecentRides(5), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.error).toBe(true));
+    expect(result.current.rides).toHaveLength(0);
   });
 });

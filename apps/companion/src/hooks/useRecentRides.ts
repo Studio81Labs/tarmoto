@@ -1,12 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import type { UserRide } from "./useUserRides";
-
-interface RideListResponse {
-  rides: UserRide[];
-  total: number;
-}
+import type { RideListResponse, UserRide } from "./useUserRides";
 
 /**
  * The signed-in user's most recent rides (newest first), capped at `limit`.
