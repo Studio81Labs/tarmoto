@@ -442,6 +442,34 @@ describe('UsersService', () => {
       expect(rideRepo.createQueryBuilder).toHaveBeenCalledTimes(4);
     });
 
+    it('caps the month-scoped queries at the current instant, not the month end', async () => {
+      const builders = [
+        buildQb('getRawMany', []),
+        buildQb('getRawOne', undefined),
+        buildQb('getRawOne', { roads: '0' }),
+        buildQb('getRawOne', { synced: null }),
+      ];
+      let call = 0;
+      rideRepo.createQueryBuilder.mockImplementation(() => builders[call++]);
+
+      await service.getMonthlyStats('user-1');
+
+      // The months, lean and roads builders must each bound at `<= now()`
+      // so a completed ride dated later this month can't inflate the KPIs,
+      // and must NOT fall back to the looser next-month boundary.
+      for (const idx of [0, 1, 2]) {
+        const predicates = builders[idx].andWhere.mock.calls.map(
+          (c: unknown[]) => c[0] as string,
+        );
+        expect(predicates).toContainEqual(
+          expect.stringContaining("<= (now() AT TIME ZONE 'UTC')"),
+        );
+        expect(predicates).not.toContainEqual(
+          expect.stringContaining("+ interval '1 month'"),
+        );
+      }
+    });
+
     it('coerces empty aggregations to numeric/null defaults', async () => {
       const builders = [
         buildQb('getRawMany', []),

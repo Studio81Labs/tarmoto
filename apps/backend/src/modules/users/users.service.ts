@@ -150,11 +150,13 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month'",
         )
-        // Upper bound at the next month boundary so a future-dated ride
-        // (GPX import, clock skew) can't leak into this/last month or make
-        // `prev` below match a future bucket instead of last month.
+        // Upper-bound at the current instant, not the month end, so a
+        // completed ride dated later this month (GPX import / clock skew)
+        // doesn't inflate this-month KPIs before it has happened. `<= now()`
+        // includes all of last month (which is < now) and excludes any
+        // future bucket, so `prev` can't match a month that hasn't started.
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
+          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .groupBy(
           "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
@@ -171,8 +173,9 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
         )
+        // Exclude rides dated later this month (not yet ridden).
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
+          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .andWhere('s.max_lean_angle IS NOT NULL')
         .orderBy('s.max_lean_angle', 'DESC')
@@ -187,8 +190,9 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
         )
+        // Exclude rides dated later this month (not yet ridden).
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
+          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .andWhere('seg.road_segment_id IS NOT NULL')
         .getRawOne<{ roads: string }>(),
