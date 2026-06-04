@@ -44,7 +44,9 @@ export function useTimeWindow(): TimeWindow {
  * Segmented time-window pill group, rendered on the Ride History tab row
  * (All rides + Road map; hidden on Compare). Persists the selection in the
  * URL as `?window=30d|90d|year|all` via a shallow `router.replace`, keeping
- * any other search params (filters, sort, page) intact.
+ * other filter/sort params intact but resetting pagination (the window is
+ * itself a filter, so a stale `page` offset may have no rows under the new
+ * bound).
  */
 export function TimeWindowPills() {
   const router = useRouter();
@@ -57,6 +59,9 @@ export function TimeWindowPills() {
       const next = new URLSearchParams(params.toString());
       if (w === "all") next.delete("window");
       else next.set("window", w);
+      // The window is a filter; a stale page offset can land on an empty
+      // page even when matching rides exist on page 1. Reset to page 1.
+      next.delete("page");
       const qs = next.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
