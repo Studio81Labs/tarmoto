@@ -20,6 +20,8 @@ export {
   DataTable,
   type DataTableProps,
   type DataTableColumn,
+  type DataTableSort,
+  type RenderLinkProps,
 } from "./DataTable";
 export {
   TweaksPanel,

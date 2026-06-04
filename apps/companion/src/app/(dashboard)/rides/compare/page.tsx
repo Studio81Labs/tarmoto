@@ -2,42 +2,48 @@
 import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowRight,
-  Loader2,
-  Scale,
-  TrendingDown,
-  TrendingUp,
-  Minus,
-} from "lucide-react";
+import { ArrowRight, Loader2, Scale } from "lucide-react";
 import { api } from "@/lib/api";
-import { Card } from "@tarmoto/ui";
+import { Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
-import { QUALITY_CONFIG } from "@/lib/utils";
+import {
+  QUALITY_CONFIG,
+  formatDurationCompact,
+  formatKmValue,
+  formatShortDate,
+  scoreToQualityTier,
+} from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
 import {
   computeStatRows,
   deltaDirection,
   diffQualityBreakdown,
-  formatDelta,
   type ComparableRide,
-  type DeltaDirection,
   type StatRow,
 } from "@/lib/ride-compare";
-import { RideRouteMap, type RouteMapBounds } from "../_components/RideRouteMap";
+import { RideRouteMap } from "../_components/RideRouteMap";
+
 /** Subset of `RideSummaryDto` fields we use in the picker. */
 interface RideOption {
   id: string;
+  name: string | null;
   started_at: string;
   distance_km: number | null;
   duration_min: number | null;
 }
 interface FetchedRide extends ComparableRide {
+  name: string | null;
   ride_type: string;
 }
+
+/** Which slot a card represents — drives the stamp + accent hue. */
+type Slot = "a" | "b";
+const SLOT_LABEL: Record<Slot, string> = { a: "Ride A", b: "Ride B" };
+const SLOT_STAMP: Record<Slot, string> = { a: "RIDE A", b: "RIDE B" };
+
 function CompareRidesPageInner() {
   const router = useRouter();
   const pathname = usePathname();
@@ -131,99 +137,184 @@ function CompareRidesPageInner() {
           )}
         />
       ) : (
-        <>
-          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <RidePicker
-              label="Ride A"
-              value={selectedA}
-              options={options}
-              loading={optionsLoading}
-              onChange={(id) => updateParams(id, selectedB)}
-            />
-            <RidePicker
-              label="Ride B"
-              value={selectedB}
-              options={options}
-              loading={optionsLoading}
-              onChange={(id) => updateParams(selectedA, id)}
-            />
-          </div>
-
-          {selectedA && selectedB && selectedA !== selectedB && (
-            <ComparisonView rideAId={selectedA} rideBId={selectedB} />
-          )}
-
-          {selectedA && selectedB && selectedA === selectedB && (
-            <div className="rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
-              {t("Pick two different rides to compare.")}
-            </div>
-          )}
-        </>
+        <CompareBody
+          selectedA={selectedA}
+          selectedB={selectedB}
+          options={options}
+          optionsLoading={optionsLoading}
+          onChangeA={(id) => updateParams(id, selectedB)}
+          onChangeB={(id) => updateParams(selectedA, id)}
+        />
       )}
     </RidesScaffold>
   );
 }
-function RidePicker({
-  label,
+
+function CompareBody({
+  selectedA,
+  selectedB,
+  options,
+  optionsLoading,
+  onChangeA,
+  onChangeB,
+}: {
+  selectedA: string | null;
+  selectedB: string | null;
+  options: RideOption[];
+  optionsLoading: boolean;
+  onChangeA: (id: string) => void;
+  onChangeB: (id: string) => void;
+}) {
+  const ready = selectedA && selectedB && selectedA !== selectedB;
+  const sameRide =
+    selectedA != null && selectedB != null && selectedA === selectedB;
+  return (
+    <>
+      <ComparisonView
+        rideAId={ready ? selectedA : null}
+        rideBId={ready ? selectedB : null}
+        selectedA={selectedA}
+        selectedB={selectedB}
+        options={options}
+        optionsLoading={optionsLoading}
+        onChangeA={onChangeA}
+        onChangeB={onChangeB}
+      />
+      {sameRide && (
+        <div className="mt-4 rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
+          {t("Pick two different rides to compare.")}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The A/B selector card: stamp + quality glyph, a ride picker, a real-route
+ * thumbnail (~120px), and a mono footer (distance · duration · region). Region
+ * has no per-ride backing data yet, so it degrades to an em-dash rather than
+ * being fabricated.
+ */
+function ABCard({
+  slot,
   value,
   options,
-  loading,
+  optionsLoading,
+  ride,
   onChange,
 }: {
-  label: string;
+  slot: Slot;
   value: string | null;
   options: RideOption[];
-  loading: boolean;
+  optionsLoading: boolean;
+  ride: FetchedRide | null;
   onChange: (id: string) => void;
 }) {
+  const selected = options.find((o) => o.id === value) ?? null;
+  const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
+  const geometry = ride?.route_geometry ?? null;
+  const hasGeometry = geometry != null && geometry.length >= 2;
+  const distance = ride?.distance_km ?? selected?.distance_km ?? null;
+  const duration = ride?.duration_min ?? selected?.duration_min ?? null;
   return (
-    <label className="block rounded-[14px] border border-line bg-cream p-4">
-      <span className="mb-2 block text-xs uppercase tracking-wider text-fg-dim">
-        {label}
-      </span>
+    <div className="rounded-[14px] border border-line bg-cream p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <Stamp>{SLOT_STAMP[slot]}</Stamp>
+        {quality != null ? (
+          <QualityBars q={quality} size={4} />
+        ) : (
+          <span className="text-fg-mute">—</span>
+        )}
+      </div>
       <select
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
-        disabled={loading || options.length === 0}
-        className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-ink disabled:opacity-50"
+        disabled={optionsLoading || options.length === 0}
+        aria-label={`${SLOT_LABEL[slot]} selector`}
+        className="mb-3 w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink focus:border-ink focus:outline-none disabled:opacity-50"
       >
         <option value="" disabled>
-          {loading ? "Loading rides…" : "Select a ride"}
+          {optionsLoading ? "Loading rides…" : "Select a ride"}
         </option>
-        {options.map((ride) => (
-          <option key={ride.id} value={ride.id}>
-            {formatRideMeta(ride)}
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {formatPickerOption(opt)}
           </option>
         ))}
       </select>
-    </label>
+      {hasGeometry ? (
+        <RideRouteMap
+          geometry={geometry}
+          color={slot === "a" ? "#0ED3CF" : "#F472B6"}
+          label={`${SLOT_LABEL[slot]} route map`}
+          containerClassName="h-[120px]"
+        />
+      ) : (
+        <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-line bg-paper text-center text-[11px] text-fg-dim">
+          {ride
+            ? t("{label} has no GPS track.", { label: SLOT_LABEL[slot] })
+            : t("Select a ride to preview its route.")}
+        </div>
+      )}
+      <div className="mt-3 flex items-center gap-3">
+        <Mono className="text-[11px] text-fg-dim">
+          {`${formatKmValue(distance)} KM`}
+        </Mono>
+        <span className="text-fg-mute">·</span>
+        <Mono className="text-[11px] text-fg-dim">
+          {formatDurationCompact(duration)}
+        </Mono>
+        <span className="text-fg-mute">·</span>
+        <Mono className="text-[11px] text-fg-dim">{"—"}</Mono>
+      </div>
+    </div>
   );
 }
-function formatRideMeta(ride: {
-  started_at: string;
-  distance_km: number | null;
-}): string {
-  const date = new Date(ride.started_at).toLocaleDateString();
-  const distance =
-    ride.distance_km != null ? ` · ${ride.distance_km.toFixed(1)} km` : "";
-  return `${date}${distance}`;
+
+/** `DD Mon · Name (NN km)` per the design's picker option format. */
+function formatPickerOption(ride: RideOption): string {
+  const date = formatShortDate(ride.started_at);
+  const name = ride.name ?? t("Untitled ride");
+  const km =
+    ride.distance_km != null ? ` (${formatKmValue(ride.distance_km)} km)` : "";
+  return `${date} · ${name}${km}`;
 }
+
 function ComparisonView({
   rideAId,
   rideBId,
+  selectedA,
+  selectedB,
+  options,
+  optionsLoading,
+  onChangeA,
+  onChangeB,
 }: {
-  rideAId: string;
-  rideBId: string;
+  rideAId: string | null;
+  rideBId: string | null;
+  selectedA: string | null;
+  selectedB: string | null;
+  options: RideOption[];
+  optionsLoading: boolean;
+  onChangeA: (id: string) => void;
+  onChangeB: (id: string) => void;
 }) {
   const [rideA, setRideA] = useState<FetchedRide | null>(null);
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Both `fetchRide` calls hit the authed detail endpoint — gate the
   // effect on auth so a comparison opened cold doesn't race AuthSync.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!authReady) return;
+    if (!rideAId || !rideBId) {
+      setRideA(null);
+      setRideB(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -249,6 +340,7 @@ function ComparisonView({
       cancelled = true;
     };
   }, [rideAId, rideBId, authReady]);
+
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
     return computeStatRows(rideA, rideB);
@@ -257,30 +349,52 @@ function ComparisonView({
     if (!rideA || !rideB) return [];
     return diffQualityBreakdown(rideA, rideB);
   }, [rideA, rideB]);
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-fg-dim mt-4">
-        <Loader2 size={16} className="animate-spin" />
-        {t("Loading rides\u2026 ")}
-      </div>
-    );
-  }
-  if (error || !rideA || !rideB) {
-    return (
-      <div className="mt-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
-        {error ?? "Could not load rides"}
-      </div>
-    );
-  }
+
   return (
     <div className="space-y-6 animate-slide-up">
-      <RouteCompareSection rideA={rideA} rideB={rideB} />
-      <StatsTable rows={statRows} />
-      <ElevationCompareSection rideA={rideA} rideB={rideB} />
-      <QualityDiffSection rows={qualityDiff} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ABCard
+          slot="a"
+          value={selectedA}
+          options={options}
+          optionsLoading={optionsLoading}
+          ride={rideA}
+          onChange={onChangeA}
+        />
+        <ABCard
+          slot="b"
+          value={selectedB}
+          options={options}
+          optionsLoading={optionsLoading}
+          ride={rideB}
+          onChange={onChangeB}
+        />
+      </div>
+
+      {loading && (
+        <div className="mt-2 flex items-center gap-2 text-fg-dim">
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading rides… ")}
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && rideA && rideB && (
+        <>
+          <MetricTable rideA={rideA} rideB={rideB} rows={statRows} />
+          <ElevationCompareSection rideA={rideA} rideB={rideB} />
+          <QualityDiffSection rideA={rideA} rideB={rideB} rows={qualityDiff} />
+        </>
+      )}
     </div>
   );
 }
+
 async function fetchRide(rideId: string): Promise<FetchedRide | null> {
   const { data, error } = await api.GET("/api/v1/rides/{rideId}", {
     params: { path: { rideId } },
@@ -288,239 +402,118 @@ async function fetchRide(rideId: string): Promise<FetchedRide | null> {
   if (error || !data) return null;
   return data as unknown as FetchedRide;
 }
-function RouteCompareSection({
+
+/**
+ * Single A | B metric comparison table (design layout: `180px 1fr 1fr`, no
+ * delta column — the v2 design is a clean two-column read). The design's
+ * canonical rows come first (Distance, Duration, Avg speed, Max lean,
+ * Hazards, Region, Ride type); the existing richer metrics (max speed,
+ * elevation, avg quality, curve count) are preserved as additional rows so we
+ * keep the "amount of data" the user asked us to retain. Hazards + Region have
+ * no per-ride backing data, so they render an em-dash rather than fabricating.
+ */
+function MetricTable({
   rideA,
   rideB,
+  rows,
 }: {
   rideA: FetchedRide;
   rideB: FetchedRide;
+  rows: StatRow[];
 }) {
-  const sharedBounds = useMemo(
-    () => buildSharedRouteBounds(rideA.route_geometry, rideB.route_geometry),
-    [rideA.route_geometry, rideB.route_geometry],
-  );
-
-  return (
-    <Card padded={false} className="p-5">
-      <h2 className="text-sm font-semibold text-ink mb-1">{t("Route maps")}</h2>
-      <p className="text-xs text-fg-dim mb-4">
-        {t(
-          "Side-by-side interactive maps show each ride route over the same road quality overlay used elsewhere in Tarmoto.",
-        )}
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <RouteBox
-          label="Ride A"
-          meta={formatRideMeta(rideA)}
-          geometry={rideA.route_geometry}
-          color="#0ED3CF"
-          labelColor="#0E7A75"
-          fitBounds={sharedBounds}
-        />
-        <RouteBox
-          label="Ride B"
-          meta={formatRideMeta(rideB)}
-          geometry={rideB.route_geometry}
-          color="#F472B6"
-          labelColor="#9D2C5C"
-          fitBounds={sharedBounds}
-        />
-      </div>
-    </Card>
-  );
-}
-// `color` paints the map route line (chosen for visibility on the cream
-// basemap). `labelColor` is the darker, cream-safe text colour for the
-// "Ride A/B" label — using the map hue directly on a paper-tinted card
-// drops to ~1.5:1 / ~2.1:1, well below AA. Callers pass a hue-matched
-// darker variant so the A/B colour-cue is preserved in both surfaces.
-function RouteBox({
-  label,
-  meta,
-  geometry,
-  color,
-  labelColor,
-  fitBounds,
-}: {
-  label: string;
-  meta: string;
-  geometry: FetchedRide["route_geometry"];
-  color: string;
-  labelColor: string;
-  fitBounds: RouteMapBounds | null;
-}) {
-  const hasGeometry = geometry != null && geometry.length >= 2;
-  return (
-    <div className="rounded-xl border border-line bg-paper p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span
-          className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color: labelColor }}
-        >
-          {label}
-        </span>
-        <span className="text-[11px] text-fg-dim">{meta}</span>
-      </div>
-      {hasGeometry ? (
-        <RideRouteMap
-          geometry={geometry}
-          color={color}
-          label={`${label} interactive route map`}
-          fitBounds={fitBounds}
-        />
-      ) : (
-        <div className="rounded-lg border border-dashed border-line p-8 text-center text-xs text-fg-dim">
-          {t("{label} has no GPS track.", { label })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function buildSharedRouteBounds(
-  a: FetchedRide["route_geometry"],
-  b: FetchedRide["route_geometry"],
-): RouteMapBounds | null {
-  const aValid = validRoutePoints(a);
-  const bValid = validRoutePoints(b);
-  if (aValid.length < 2 || bValid.length < 2) return null;
-
-  const all = [...aValid, ...bValid];
-  return all.reduce<RouteMapBounds>(
-    (bounds, point) => ({
-      minLng: Math.min(bounds.minLng, point.lng),
-      minLat: Math.min(bounds.minLat, point.lat),
-      maxLng: Math.max(bounds.maxLng, point.lng),
-      maxLat: Math.max(bounds.maxLat, point.lat),
-    }),
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  // Design rows first, in the design's order.
+  const cell = (row: StatRow | undefined, side: "a" | "b"): string => {
+    if (!row) return "—";
+    const v = side === "a" ? row.a : row.b;
+    if (v == null) return "—";
+    return `${formatNumber(v, row.digits)}${row.unit ? ` ${row.unit}` : ""}`;
+  };
+  const designRows: Array<{ label: string; a: string; b: string }> = [
     {
-      minLng: Infinity,
-      minLat: Infinity,
-      maxLng: -Infinity,
-      maxLat: -Infinity,
+      label: t("Distance"),
+      a: cell(byKey.get("distance_km"), "a"),
+      b: cell(byKey.get("distance_km"), "b"),
     },
-  );
-}
+    {
+      label: t("Duration"),
+      a: formatDurationCompact(rideA.duration_min),
+      b: formatDurationCompact(rideB.duration_min),
+    },
+    {
+      label: t("Avg speed"),
+      a: cell(byKey.get("avg_speed"), "a"),
+      b: cell(byKey.get("avg_speed"), "b"),
+    },
+    {
+      label: t("Max lean"),
+      a: cell(byKey.get("max_lean_angle"), "a"),
+      b: cell(byKey.get("max_lean_angle"), "b"),
+    },
+    // No per-ride hazard count nor region in the ride payload — degrade
+    // gracefully rather than inventing numbers (plan decision #5).
+    { label: t("Hazards"), a: "—", b: "—" },
+    { label: t("Region"), a: "—", b: "—" },
+    { label: t("Ride type"), a: rideA.ride_type, b: rideB.ride_type },
+    // Preserved richer metrics (kept from the previous compare table).
+    {
+      label: t("Max speed"),
+      a: cell(byKey.get("max_speed"), "a"),
+      b: cell(byKey.get("max_speed"), "b"),
+    },
+    {
+      label: t("Elevation gain"),
+      a: cell(byKey.get("elevation_gain"), "a"),
+      b: cell(byKey.get("elevation_gain"), "b"),
+    },
+    {
+      label: t("Elevation loss"),
+      a: cell(byKey.get("elevation_loss"), "a"),
+      b: cell(byKey.get("elevation_loss"), "b"),
+    },
+    {
+      label: t("Avg road quality"),
+      a: cell(byKey.get("avg_road_quality"), "a"),
+      b: cell(byKey.get("avg_road_quality"), "b"),
+    },
+    {
+      label: t("Curve count"),
+      a: cell(byKey.get("curve_count"), "a"),
+      b: cell(byKey.get("curve_count"), "b"),
+    },
+  ];
 
-function validRoutePoints(
-  geometry: FetchedRide["route_geometry"],
-): Array<{ lat: number; lng: number }> {
-  return (geometry ?? []).filter(
-    (point): point is { lat: number; lng: number } =>
-      Number.isFinite(point.lat) &&
-      Number.isFinite(point.lng) &&
-      Math.abs(point.lat) <= 90 &&
-      Math.abs(point.lng) <= 180,
-  );
-}
+  const nameA = rideA.name ?? formatShortDate(rideA.started_at);
+  const nameB = rideB.name ?? formatShortDate(rideB.started_at);
 
-function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
-    <Card padded={false} className="p-5">
-      <h2 className="text-sm font-semibold text-ink mb-1">{t("Stats diff")}</h2>
-      <p className="text-xs text-fg-dim mb-4">
-        {t(
-          "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ",
-        )}
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
-              <th className="py-2 pr-4 font-semibold">{t("Metric")}</th>
-              <th className="py-2 pr-4 font-semibold text-right">
-                {t("Ride A")}
-              </th>
-              <th className="py-2 pr-4 font-semibold text-right">
-                {t("Ride B")}
-              </th>
-              <th className="py-2 pr-0 font-semibold text-right">
-                {t("\u0394 (B \u2212 A)")}
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {rows.map((row) => {
-              const dir = deltaDirection(
-                row.delta,
-                row.higherIsBetter,
-                row.digits,
-              );
-              return (
-                <tr key={row.key} className="text-ink">
-                  <td className="py-2 pr-4">{row.label}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">
-                    {formatNumber(row.a, row.digits)}
-                    {row.unit && (
-                      <span className="text-fg-dim ml-1">{row.unit}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-right tabular-nums">
-                    {formatNumber(row.b, row.digits)}
-                    {row.unit && (
-                      <span className="text-fg-dim ml-1">{row.unit}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-0 text-right tabular-nums">
-                    <DeltaChip
-                      delta={row.delta}
-                      digits={row.digits}
-                      direction={dir}
-                      unit={row.unit}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <Card padded={false} className="overflow-hidden">
+      <div className="grid grid-cols-[180px_1fr_1fr] border-b border-line bg-paper px-5 py-3 font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
+        <span>{t("Metric")}</span>
+        <span className="truncate">
+          {t("Ride A")} · {nameA}
+        </span>
+        <span className="truncate">
+          {t("Ride B")} · {nameB}
+        </span>
       </div>
+      {designRows.map((row, i) => (
+        <div
+          key={row.label}
+          className="grid grid-cols-[180px_1fr_1fr] items-center px-5 py-2.5 text-sm text-ink"
+          style={
+            i % 2 === 1 ? { backgroundColor: "rgba(14,14,16,0.02)" } : undefined
+          }
+        >
+          <span className="text-fg-dim">{row.label}</span>
+          <Mono className="text-ink">{row.a}</Mono>
+          <Mono className="text-ink">{row.b}</Mono>
+        </div>
+      ))}
     </Card>
   );
 }
-function DeltaChip({
-  delta,
-  digits,
-  direction,
-  unit,
-}: {
-  delta: number | null;
-  digits: number;
-  direction: DeltaDirection;
-  unit?: string;
-}) {
-  // Delta chips sit inside cream stat cards. text-quality-excellent
-  // (canonical q5 #6FD38A) and text-quality-very-poor (q1 #E05A3C) are
-  // surface hues — they fail WCAG AA as small text on cream
-  // (~1.6:1 / ~3.2:1). Route through darker, cream-safe tokens:
-  // text-emerald-700 (~7.5:1 native dark green) and text-red-400
-  // (auto-remapped to #b91c1c on cream surfaces, ~5.7:1).
-  const color =
-    direction === "improved"
-      ? "text-emerald-700"
-      : direction === "regressed"
-        ? "text-red-400"
-        : "text-fg-dim";
-  const Icon =
-    direction === "improved"
-      ? TrendingUp
-      : direction === "regressed"
-        ? TrendingDown
-        : Minus;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-xs font-semibold ${color}`}
-    >
-      <Icon size={12} aria-hidden />
-      <span>
-        {formatDelta(delta, digits)}
-        {unit && delta != null && (
-          <span className="text-fg-dim ml-1 font-normal">{unit}</span>
-        )}
-      </span>
-    </span>
-  );
-}
+
 function ElevationCompareSection({
   rideA,
   rideB,
@@ -537,17 +530,16 @@ function ElevationCompareSection({
   );
   return (
     <Card padded={false} className="p-5">
-      <h2 className="text-sm font-semibold text-ink mb-1">{t("Elevation")}</h2>
-      <p className="text-xs text-fg-dim mb-4">
+      <Stamp as="h2">{t("Elevation")}</Stamp>
+      <p className="mb-4 mt-1 text-xs text-fg-dim">
         {t(
           "Bars share a scale so gain/loss are visually comparable across both rides. ",
         )}
       </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/*
-          Same A/B hue convention as RouteBox above — but ElevationBars has
-          no map context, so we pass only the darker cream-safe variant
-          (≥5:1 on cream, ≥3:1 on paper for the bar-fill UI cue).
+          A/B hue convention mirrors the route thumbnails — darker cream-safe
+          variants for the bar fill (≥3:1 on paper for the UI cue).
         */}
         <ElevationBars
           label="Ride A"
@@ -582,7 +574,7 @@ function ElevationBars({
 }) {
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-2">
+      <div className="mb-2 flex items-baseline justify-between">
         <span
           className="text-xs font-semibold uppercase tracking-wider"
           style={{ color }}
@@ -610,7 +602,7 @@ function ElevationBar({
   const label = kind === "gain" ? "Gain" : "Loss";
   return (
     <div className="mb-3 last:mb-0">
-      <div className="flex items-center justify-between text-xs text-fg-dim mb-1">
+      <div className="mb-1 flex items-center justify-between text-xs text-fg-dim">
         <span className="inline-flex items-center gap-1">
           {kind === "gain" ? (
             <ArrowRight size={10} className="rotate-[-45deg]" aria-hidden />
@@ -623,7 +615,7 @@ function ElevationBar({
           {value == null ? "—" : `${Math.round(value)} m`}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-paper overflow-hidden" aria-hidden>
+      <div className="h-2 overflow-hidden rounded-full bg-paper" aria-hidden>
         <div
           className="h-full rounded-full"
           style={{ width: `${pct}%`, backgroundColor: color }}
@@ -633,19 +625,23 @@ function ElevationBar({
   );
 }
 function QualityDiffSection({
+  rideA,
+  rideB,
   rows,
 }: {
+  rideA: FetchedRide;
+  rideB: FetchedRide;
   rows: ReturnType<typeof diffQualityBreakdown>;
 }) {
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
+  const nameA = rideA.name ?? formatShortDate(rideA.started_at);
+  const nameB = rideB.name ?? formatShortDate(rideB.started_at);
   return (
     <Card padded={false} className="p-5">
-      <h2 className="text-sm font-semibold text-ink mb-1">
-        {t("Road quality")}
-      </h2>
-      <p className="text-xs text-fg-dim mb-4">
+      <Stamp as="h2">{t("Road quality")}</Stamp>
+      <p className="mb-4 mt-1 text-xs text-fg-dim">
         {t(
-          "Share of segments by quality tier. Arrows indicate change on Ride B relative to Ride A \u2014 improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
+          "Share of segments by quality tier for each ride. Arrows indicate change on Ride B relative to Ride A — improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
         )}
       </p>
       {total === 0 ? (
@@ -657,6 +653,14 @@ function QualityDiffSection({
           {rows.map((row) => {
             const higherIsBetter = isBetterTier(row.tier);
             const dir = deltaDirection(row.deltaPercent, higherIsBetter, 0);
+            const arrow =
+              dir === "improved" ? "↑" : dir === "regressed" ? "↓" : "→";
+            const arrowColor =
+              dir === "improved"
+                ? "text-emerald-700"
+                : dir === "regressed"
+                  ? "text-red-400"
+                  : "text-fg-mute";
             return (
               <li
                 key={row.tier}
@@ -664,13 +668,14 @@ function QualityDiffSection({
               >
                 <div className="col-span-3 flex items-center gap-2 text-ink">
                   <span
-                    className="w-2.5 h-2.5 rounded-full"
+                    className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: row.color }}
                   />
                   {QUALITY_CONFIG[row.tier].label}
                 </div>
                 <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
-                  <div className="flex-1 h-1.5 rounded-full bg-paper overflow-hidden">
+                  <span className="sr-only">{nameA}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper">
                     <div
                       className="h-full"
                       style={{
@@ -679,12 +684,13 @@ function QualityDiffSection({
                       }}
                     />
                   </div>
-                  <span className="tabular-nums w-10 text-right">
+                  <span className="w-10 text-right tabular-nums">
                     {row.percent}%
                   </span>
                 </div>
                 <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
-                  <div className="flex-1 h-1.5 rounded-full bg-paper overflow-hidden">
+                  <span className="sr-only">{nameB}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper">
                     <div
                       className="h-full"
                       style={{
@@ -693,17 +699,17 @@ function QualityDiffSection({
                       }}
                     />
                   </div>
-                  <span className="tabular-nums w-10 text-right">
+                  <span className="w-10 text-right tabular-nums">
                     {row.bPercent}%
                   </span>
                 </div>
-                <div className="col-span-1 text-right tabular-nums">
-                  <DeltaChip
-                    delta={row.deltaPercent}
-                    digits={0}
-                    direction={dir}
-                    unit="pp"
-                  />
+                <div
+                  className={`col-span-1 text-right text-xs font-semibold tabular-nums ${arrowColor}`}
+                >
+                  {arrow}
+                  {row.deltaPercent === 0
+                    ? ""
+                    : ` ${Math.abs(Math.round(row.deltaPercent))}`}
                 </div>
               </li>
             );

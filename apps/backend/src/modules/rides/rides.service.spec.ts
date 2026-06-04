@@ -18,6 +18,7 @@ function makeQbSpy() {
   const andWhere = jest.fn().mockReturnThis();
   const orderBy = jest.fn().mockReturnThis();
   const qb = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere,
     orderBy,
@@ -65,6 +66,7 @@ describe('RidesService', () => {
       query: jest.fn().mockResolvedValue([{ weighted_avg: null }]),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -369,6 +371,7 @@ describe('RidesService', () => {
   describe('list', () => {
     it('should return paginated rides', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -390,8 +393,51 @@ describe('RidesService', () => {
       expect(result.rides[0].duration_min).toBe(60);
     });
 
+    it('surfaces max_lean_angle from the joined stats relation', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([
+            [{ ...mockRide, stats: { max_lean_angle: 38 } }],
+            1,
+          ]),
+      };
+      rideRepo.createQueryBuilder!.mockReturnValueOnce(qb as never);
+
+      const result = await service.list('user-1', {});
+
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('ride.stats', 'stats');
+      expect(result.rides[0].max_lean_angle).toBe(38);
+    });
+
+    it('returns null max_lean_angle when the ride has no stats', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([[{ ...mockRide, stats: null }], 1]),
+      };
+      rideRepo.createQueryBuilder!.mockReturnValueOnce(qb as never);
+
+      const result = await service.list('user-1', {});
+
+      expect(result.rides[0].max_lean_angle).toBeNull();
+    });
+
     it('should filter by ride type', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -410,6 +456,7 @@ describe('RidesService', () => {
 
     it('should use custom limit and offset', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -683,11 +730,30 @@ describe('RidesService', () => {
 
       expect(rideRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'ride-1', user_id: 'user-1' },
+        relations: { stats: true },
       });
       expect(rideRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Sunday loop' }),
       );
       expect(result.name).toBe('Sunday loop');
+    });
+
+    it('returns hydrated max_lean_angle even when save drops the relation', async () => {
+      const existing = {
+        ...mockRide,
+        name: null,
+        stats: { max_lean_angle: 38 },
+      } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      // Simulate TypeORM returning a fresh instance without the eager
+      // relation — the service must carry `stats` over from the loaded ride.
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r: Ride) =>
+        Promise.resolve({ ...r, stats: undefined }),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(result.max_lean_angle).toBe(38);
     });
 
     it('trims whitespace and coerces empty to null', async () => {
@@ -931,6 +997,117 @@ describe('RidesService', () => {
       const gpx = await service.exportAllGpx('user-1');
 
       expect(gpx.match(/<trk>/g)).toHaveLength(2);
+    });
+  });
+
+  describe('stats', () => {
+    // The aggregate builder (#1) carries select/addSelect + getRawOne; the
+    // distinct-roads builder (#2) carries innerJoin + getRawOne. Each is
+    // first run through applyRidesFilters, so andWhere must be chainable.
+    function makeAggQbSpy(raw: {
+      km: string;
+      hours: string;
+      quality: string | null;
+      count: string;
+    }) {
+      const andWhere = jest.fn().mockReturnThis();
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        getRawOne: jest.fn().mockResolvedValue(raw),
+      };
+      return { qb, andWhere };
+    }
+
+    function makeRoadsQbSpy(raw: { roads: string }) {
+      const andWhere = jest.fn().mockReturnThis();
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        getRawOne: jest.fn().mockResolvedValue(raw),
+      };
+      return { qb, andWhere };
+    }
+
+    it('aggregates distance/hours/quality/count + distinct roads for the filter', async () => {
+      const agg = makeAggQbSpy({
+        km: '1284',
+        hours: '32',
+        quality: '4.1',
+        count: '8',
+      });
+      const roads = makeRoadsQbSpy({ roads: '47' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', { type: 'trip' });
+
+      expect(res.total_distance_km).toBe(1284);
+      expect(res.total_hours).toBe(32);
+      expect(res.new_roads).toBe(47);
+      expect(res.avg_quality).toBeCloseTo(4.1);
+      expect(res.ride_count).toBe(8);
+
+      // The same filter predicate is applied to BOTH builders.
+      expect(
+        agg.andWhere.mock.calls.some(
+          (c: unknown[]) =>
+            typeof c[0] === 'string' && c[0].includes('ride_type ='),
+        ),
+      ).toBe(true);
+      expect(
+        roads.andWhere.mock.calls.some(
+          (c: unknown[]) =>
+            typeof c[0] === 'string' && c[0].includes('ride_type ='),
+        ),
+      ).toBe(true);
+    });
+
+    it('returns unrounded totals so short-ride windows do not floor to zero', async () => {
+      // A filter window of short rides: 0.4 km / ~20 min. Rounding these in
+      // the service would report 0 km / 0 hrs even though rides exist.
+      const agg = makeAggQbSpy({
+        km: '0.4',
+        hours: '0.3333',
+        quality: '4.137',
+        count: '1',
+      });
+      const roads = makeRoadsQbSpy({ roads: '1' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', {});
+
+      expect(res.total_distance_km).toBeCloseTo(0.4);
+      expect(res.total_hours).toBeCloseTo(0.3333);
+      // avg_quality is served unrounded; the client formats it.
+      expect(res.avg_quality).toBeCloseTo(4.137);
+    });
+
+    it('maps a null quality aggregate (no scored rides) to null', async () => {
+      const agg = makeAggQbSpy({
+        km: '0',
+        hours: '0',
+        quality: null,
+        count: '0',
+      });
+      const roads = makeRoadsQbSpy({ roads: '0' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', {});
+
+      expect(res.avg_quality).toBeNull();
+      expect(res.ride_count).toBe(0);
+      expect(res.new_roads).toBe(0);
     });
   });
 });

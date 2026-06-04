@@ -25,6 +25,7 @@ import {
   RideTracksResponseDto,
   type RideStatus,
 } from './dto/ride-response.dto.js';
+import { RideStatsDto } from './dto/ride-stats.dto.js';
 import { CsvService } from './csv.service.js';
 import { normalizeLeanDistribution } from '@tarmoto/shared';
 
@@ -210,6 +211,11 @@ export class RidesService {
 
     const qb = this.rideRepo
       .createQueryBuilder('ride')
+      // OneToOne — surfaces `ride.stats.max_lean_angle` on the summary so the
+      // Ride History table can show a LEAN column without a per-ride detail
+      // fetch. A LEFT JOIN keeps rides without stats in the result, and being
+      // OneToOne it can't multiply rows or inflate the getManyAndCount total.
+      .leftJoinAndSelect('ride.stats', 'stats')
       .where('ride.user_id = :userId', { userId })
       .skip(offset)
       .take(limit);
@@ -239,6 +245,74 @@ export class RidesService {
     return {
       rides: rides.map((r) => this.toSummary(r)),
       total,
+    };
+  }
+
+  /**
+   * Aggregate KPIs for the SAME filtered set as `list()` — drives the Ride
+   * History "All rides" cards so they track the active filter window. Runs
+   * two raw aggregates in parallel, both routed through `applyRidesFilters`
+   * so the WHERE clause matches the list exactly: a single-row scalar
+   * aggregate (distance / hours / weighted quality / count) on `rides`, plus
+   * a distinct-road-segment count that needs the `ride_segments` join.
+   * Splitting the distinct-roads count out keeps the scalar aggregate from
+   * fanning out across the one-to-many join (which would inflate SUM/COUNT).
+   */
+  async stats(userId: string, query: ListRidesDto): Promise<RideStatsDto> {
+    const base = (): SelectQueryBuilder<Ride> =>
+      this.applyRidesFilters(
+        this.rideRepo
+          .createQueryBuilder('ride')
+          .where('ride.user_id = :userId', { userId }),
+        query,
+      );
+
+    const [agg, roadsRow] = await Promise.all([
+      base()
+        .select('COALESCE(SUM(ride.distance_km), 0)', 'km')
+        .addSelect(
+          'COALESCE(SUM(EXTRACT(EPOCH FROM (ride.ended_at - ride.started_at)) / 3600.0), 0)',
+          'hours',
+        )
+        .addSelect(
+          'CASE WHEN SUM(ride.distance_km) FILTER (WHERE ride.avg_road_quality IS NOT NULL) > 0 ' +
+            'THEN SUM(ride.avg_road_quality * ride.distance_km) ' +
+            '/ SUM(ride.distance_km) FILTER (WHERE ride.avg_road_quality IS NOT NULL) ' +
+            'ELSE AVG(ride.avg_road_quality) END',
+          'quality',
+        )
+        .addSelect('COUNT(*)', 'count')
+        .getRawOne<{
+          km: string;
+          hours: string;
+          quality: string | null;
+          count: string;
+        }>(),
+      // Distinct road segments ridden by rides matching the filter. For a
+      // windowed filter this is "roads ridden in the window", NOT first-time
+      // discoveries — a road first ridden last year and repeated this month
+      // still counts. The companion labels this KPI "Roads / RIDDEN" rather
+      // than "discovered" so it doesn't overstate exploration. (A true
+      // first-discovery count would need MIN(started_at) per segment across
+      // all the user's rides, gated on the window — left as a follow-up.)
+      base()
+        .innerJoin('ride_segments', 'seg', 'seg.ride_id = ride.id')
+        .select('COUNT(DISTINCT seg.road_segment_id)', 'roads')
+        .andWhere('seg.road_segment_id IS NOT NULL')
+        .getRawOne<{ roads: string }>(),
+    ]);
+
+    // Return the raw numeric aggregates — rounding here would report
+    // materially wrong totals for filter windows of short rides (a 20-minute
+    // ride floors to 0 hours; a 0.4 km commute floors to 0 km) even though
+    // matching rides exist. The client (RideKpiCards) rounds/formats for
+    // display. new_roads and ride_count are genuine integer counts.
+    return {
+      total_distance_km: parseFloat(agg?.km ?? '0'),
+      total_hours: parseFloat(agg?.hours ?? '0'),
+      new_roads: parseInt(roadsRow?.roads ?? '0', 10),
+      avg_quality: agg?.quality != null ? parseFloat(agg.quality) : null,
+      ride_count: parseInt(agg?.count ?? '0', 10),
     };
   }
 
@@ -320,8 +394,13 @@ export class RidesService {
     rideId: string,
     name: string | null | undefined,
   ): Promise<RideSummaryDto> {
+    // Hydrate `stats` so the returned summary carries the real
+    // `max_lean_angle` — `RideSummaryDto` documents it, and clients that
+    // refresh their row from the PATCH response would otherwise drop the
+    // LEAN value to null until a full list/detail refetch.
     const ride = await this.rideRepo.findOne({
       where: { id: rideId, user_id: userId },
+      relations: { stats: true },
     });
     if (!ride) {
       throw new NotFoundException('Ride not found');
@@ -330,6 +409,9 @@ export class RidesService {
     const trimmed = typeof name === 'string' ? name.trim() : '';
     ride.name = trimmed.length > 0 ? trimmed : null;
     const saved = await this.rideRepo.save(ride);
+    // `save` may return a fresh instance without the eager-loaded relation;
+    // carry it over so `toSummary` reads the hydrated stats.
+    saved.stats = ride.stats;
     return this.toSummary(saved);
   }
 
@@ -506,6 +588,9 @@ ${tracks.join('\n')}
       ...this.toRideResponse(ride),
       name: ride.name ?? null,
       duration_min: this.calcDurationMin(ride),
+      // Optional-chains so callers that don't hydrate `stats` (e.g. importGpx)
+      // safely yield null rather than crashing.
+      max_lean_angle: ride.stats?.max_lean_angle ?? null,
     };
   }
 

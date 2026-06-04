@@ -3,8 +3,9 @@ import { cn } from "../utils/cn";
 
 /**
  * Button · the "commit" surface. Spec: §17.
- * Three sizes (sm 32 · md 40 · lg 48) × six variants
+ * Three sizes (sm 34 · md 40 · lg 48) × six variants
  * (primary · accent · secondary · ghost · danger · on-dark).
+ * `sm` is 34 px so it lines up with the 34 px form inputs/selects.
  *
  * Use a Pill (§08) for filter chips, toolbar items, status indicators
  * — Button is for verbs that change state.
@@ -30,13 +31,33 @@ export interface ButtonProps extends Omit<
   loading?: boolean;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
+  /**
+   * Square icon-only button: drops the text label and horizontal padding so
+   * the icon (passed as `children`) sits centred. Always pair with an
+   * `aria-label` so the control stays announced.
+   */
+  iconOnly?: boolean;
+  /** Uppercase the label with the CTA letter-spacing (header action style). */
+  uppercase?: boolean;
+  /**
+   * Render as a link instead of a `<button>` — pass your router's link
+   * component (e.g. Next's `<Link>`) wrapping the supplied class + content.
+   * Keeps `@tarmoto/ui` framework-agnostic, mirroring `DataTable.renderLink`.
+   */
+  renderLink?: (props: { className: string; children: ReactNode }) => ReactNode;
   type?: "button" | "submit" | "reset";
 }
 
 const sizeClass: Record<ButtonSize, string> = {
-  sm: "h-8 px-3.5 text-xs rounded-lg",
+  sm: "h-[34px] px-3.5 text-xs rounded-lg",
   md: "h-10 px-[18px] text-[13px] rounded-[10px]",
   lg: "h-12 px-[22px] text-sm rounded-xl",
+};
+
+const iconSizeClass: Record<ButtonSize, string> = {
+  sm: "h-[34px] w-[34px] text-xs rounded-lg",
+  md: "h-10 w-10 text-[13px] rounded-[10px]",
+  lg: "h-12 w-12 text-sm rounded-xl",
 };
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -61,6 +82,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       loading = false,
       leftIcon,
       rightIcon,
+      iconOnly = false,
+      uppercase = false,
+      renderLink,
       type = "button",
       className,
       disabled,
@@ -69,34 +93,51 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) {
+    const spinner = (
+      <span
+        aria-hidden="true"
+        className="inline-block size-3 animate-spin rounded-full border-2 border-current/30 border-t-current"
+      />
+    );
+    const classes = cn(
+      "inline-flex items-center justify-center gap-2 border whitespace-nowrap",
+      "font-sans font-bold select-none cursor-pointer",
+      "transition-colors duration-100",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
+      "disabled:opacity-40 disabled:cursor-not-allowed",
+      iconOnly ? iconSizeClass[size] : sizeClass[size],
+      variantClass[variant],
+      uppercase && "uppercase tracking-[0.4px]",
+      block && "flex w-full",
+      className,
+    );
+    const body = iconOnly ? (
+      loading ? (
+        spinner
+      ) : (
+        children
+      )
+    ) : (
+      <>
+        {loading ? spinner : leftIcon}
+        <span>{children}</span>
+        {!loading && rightIcon}
+      </>
+    );
+
+    if (renderLink) {
+      return <>{renderLink({ className: classes, children: body })}</>;
+    }
+
     return (
       <button
         ref={ref}
         type={type}
         disabled={disabled || loading}
-        className={cn(
-          "inline-flex items-center justify-center gap-2 border whitespace-nowrap",
-          "font-sans font-bold select-none",
-          "transition-colors duration-100",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
-          "disabled:opacity-40 disabled:cursor-not-allowed",
-          sizeClass[size],
-          variantClass[variant],
-          block && "flex w-full",
-          className,
-        )}
+        className={classes}
         {...rest}
       >
-        {loading ? (
-          <span
-            aria-hidden="true"
-            className="inline-block size-3 animate-spin rounded-full border-2 border-current/30 border-t-current"
-          />
-        ) : (
-          leftIcon
-        )}
-        <span>{children}</span>
-        {!loading && rightIcon}
+        {body}
       </button>
     );
   },

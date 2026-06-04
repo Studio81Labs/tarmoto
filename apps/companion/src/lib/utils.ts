@@ -142,6 +142,17 @@ const IMPERIAL_FEET_CUTOFF_M = 160.934;
  * distances consistently. The shared version is meant for contexts (e.g.
  * mobile) that don't need the imperial branch.
  */
+/**
+ * Distance for a whole-number "KM"-headed cell (rides table, compare cards):
+ * round to whole km, but keep one decimal for sub-km rides so a real 0.4 km
+ * ride doesn't read as `0`. Null/undefined → em dash.
+ */
+export function formatKmValue(km: number | null | undefined): string {
+  if (km == null) return "—";
+  if (km > 0 && km < 1) return km.toFixed(1);
+  return String(Math.round(km));
+}
+
 export function formatDistance(
   km: number,
   units: UnitSystem = "metric",
@@ -159,6 +170,24 @@ export function formatDistance(
   if (!Number.isFinite(km) || km < 0) return "0 m";
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
+}
+
+/**
+ * `formatDistance` split into a numeric value + uppercased unit, for KPI tiles
+ * that format the number themselves (locale grouping) and render the unit in a
+ * separate slot. Honours the rider's unit preference (km/m vs mi/ft) so the
+ * tile converts at display time instead of leaking metric totals.
+ */
+export function splitFormattedDistance(
+  km: number,
+  units: UnitSystem = "metric",
+): { value: number; unit: string } {
+  const formatted = formatDistance(km, units);
+  const i = formatted.lastIndexOf(" ");
+  return {
+    value: Number(i > 0 ? formatted.slice(0, i) : formatted),
+    unit: (i > 0 ? formatted.slice(i + 1) : "").toUpperCase(),
+  };
 }
 
 /**

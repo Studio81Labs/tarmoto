@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { parseTimeWindow, windowStartISO } from "./_components/TimeWindowPills";
 
 /**
  * Lightweight rides-count hook for the shared `RidesScaffold` tab
@@ -10,18 +12,28 @@ import { useAuthStore } from "@/stores/auth";
  * uses the heavier `useRidesQuery` and overrides this via the
  * scaffold's `allRidesBadge` prop).
  *
+ * Honours the shared `?window=` pill so the `All rides · N` badge
+ * matches the windowed list the tab links to — otherwise a rider on
+ * `/rides/road-map?window=30d` would see an all-time count and then
+ * land on a smaller 30-day list.
+ *
  * Gated on auth-store hydration so the request doesn't race
  * `AuthSync` — same pattern as `useRidesQuery` and `useUserTrips`.
  */
 export function useRidesTotal(): number | null {
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  const params = useSearchParams();
+  const window = parseTimeWindow(params.get("window"));
   const [total, setTotal] = useState<number | null>(null);
   useEffect(() => {
     if (!authReady) return;
     const ctrl = new AbortController();
+    const startedFrom = windowStartISO(window);
+    const query: Record<string, string | number> = { limit: 1 };
+    if (startedFrom) query.started_from = startedFrom;
     api
       .GET("/api/v1/rides", {
-        params: { query: { limit: 1 } as never },
+        params: { query: query as never },
         signal: ctrl.signal,
       })
       .then(({ data, error }) => {
@@ -33,6 +45,6 @@ export function useRidesTotal(): number | null {
         // Silent: tab badge is decorative; leaving as null hides it.
       });
     return () => ctrl.abort();
-  }, [authReady]);
+  }, [authReady, window]);
   return total;
 }

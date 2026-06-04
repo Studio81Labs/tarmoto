@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import CompareRidesPage from "./page";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -31,13 +31,14 @@ vi.mock("@/lib/api", async () => {
 });
 
 vi.mock("../_components/RideRouteMap", () => ({
-  RideRouteMap: (props: { label?: string; fitBounds?: unknown }) =>
+  RideRouteMap: (props: { label?: string; containerClassName?: string }) =>
     mockedRideRouteMap(props),
 }));
 
 function comparableRide(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
+    name: id === "ride-a" ? "Morning loop" : "Sunset ridge",
     status: "completed",
     ride_type: "solo",
     started_at:
@@ -51,7 +52,7 @@ function comparableRide(id: string, overrides: Record<string, unknown> = {}) {
     elevation_gain: id === "ride-a" ? 500 : 640,
     elevation_loss: 470,
     curve_count: 100,
-    max_lean_angle: 30,
+    max_lean_angle: id === "ride-a" ? 32 : 41,
     fuel_estimate_l: 4.2,
     route_geometry: [
       { lat: 49.1, lng: 16.6 },
@@ -109,56 +110,46 @@ describe("CompareRidesPage analytics", () => {
     });
   });
 
-  it("renders T34 side-by-side maps and stats diff for the selected rides", async () => {
-    mockCompareApi(
-      comparableRide("ride-a", {
-        route_geometry: [
-          { lat: 49.1, lng: 16.6 },
-          { lat: 49.2, lng: 16.8 },
-        ],
-      }),
-      comparableRide("ride-b", {
-        route_geometry: [
-          { lat: 48.9, lng: 16.2 },
-          { lat: 49.6, lng: 17.1 },
-        ],
-      }),
-    );
+  it("renders the two A/B route thumbnails and the metric comparison table", async () => {
+    mockCompareApi();
 
     render(<CompareRidesPage />);
 
     await waitFor(() => {
       expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2);
     });
-    expect(screen.getAllByText("Ride A").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Ride B").length).toBeGreaterThan(0);
-    expect(screen.getByText("Stats diff")).toBeInTheDocument();
-    expect(screen.getByText("+18.0")).toBeInTheDocument();
+    // A/B card stamps.
+    expect(screen.getByText("RIDE A")).toBeInTheDocument();
+    expect(screen.getByText("RIDE B")).toBeInTheDocument();
+    // Thumbnails use the compact label + a 120px container.
     expect(mockedRideRouteMap).toHaveBeenCalledWith(
       expect.objectContaining({
-        label: "Ride A interactive route map",
-        fitBounds: {
-          minLng: 16.2,
-          minLat: 48.9,
-          maxLng: 17.1,
-          maxLat: 49.6,
-        },
+        label: "Ride A route map",
+        containerClassName: "h-[120px]",
       }),
     );
-    expect(mockedRideRouteMap).toHaveBeenCalledWith(
-      expect.objectContaining({
-        label: "Ride B interactive route map",
-        fitBounds: {
-          minLng: 16.2,
-          minLat: 48.9,
-          maxLng: 17.1,
-          maxLat: 49.6,
-        },
-      }),
-    );
+
+    // The single metric table: header carries each ride's name, and the
+    // design rows render (Max lean values prove the per-ride mapping).
+    const table = screen.getByText("Metric").closest("div")!.parentElement!;
+    expect(
+      within(table).getByText(/Ride A · Morning loop/),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByText(/Ride B · Sunset ridge/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Max lean")).toBeInTheDocument();
+    expect(screen.getByText("32 °")).toBeInTheDocument();
+    expect(screen.getByText("41 °")).toBeInTheDocument();
+    // Honest gaps: hazards + region degrade to em-dashes (not fabricated).
+    expect(screen.getByText("Hazards")).toBeInTheDocument();
+    expect(screen.getByText("Region")).toBeInTheDocument();
+    // Preserved richer data still present.
+    expect(screen.getByText("Curve count")).toBeInTheDocument();
+    expect(screen.getByText("Elevation gain")).toBeInTheDocument();
   });
 
-  it("shows missing-GPS states per side without hiding the comparison", async () => {
+  it("shows a missing-GPS state for a ride without a route track", async () => {
     mockCompareApi(
       comparableRide("ride-a"),
       comparableRide("ride-b", { route_geometry: null }),
@@ -170,10 +161,7 @@ describe("CompareRidesPage analytics", () => {
       expect(screen.getAllByTestId("ride-route-map")).toHaveLength(1);
     });
     expect(mockedRideRouteMap).toHaveBeenCalledWith(
-      expect.objectContaining({
-        label: "Ride A interactive route map",
-        fitBounds: null,
-      }),
+      expect.objectContaining({ label: "Ride A route map" }),
     );
     expect(screen.getByText("Ride B has no GPS track.")).toBeInTheDocument();
   });

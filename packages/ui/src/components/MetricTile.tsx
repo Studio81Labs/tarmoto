@@ -16,8 +16,20 @@ const variantClass: Record<MetricTileVariant, string> = {
 
 export interface MetricTileProps {
   label: string;
-  value: ReactNode;
+  /**
+   * A `number` is run through `formatValue` (e.g. `12643.8` → `12 643,8`), so
+   * callers pass raw numbers and let the tile format. Pass a string/node only
+   * for pre-formatted values (em dash, "4.1", etc.).
+   */
+  value: number | ReactNode;
   unit?: string;
+  /**
+   * Formats a numeric `value`. Supply the app's number formatter (typically
+   * from a locale/preferences hook) so number presentation stays centralised
+   * and future user-custom formats apply everywhere. Defaults to
+   * `toLocaleString()` (runtime locale).
+   */
+  formatValue?: (value: number) => string;
   /** Optional secondary text under the value ("+18% vs March"). */
   delta?: ReactNode;
   variant?: MetricTileVariant;
@@ -30,12 +42,17 @@ export function MetricTile({
   label,
   value,
   unit,
+  formatValue,
   delta,
   variant = "default",
   accentNumber = false,
   className,
 }: MetricTileProps) {
   const inverted = variant === "ink";
+  const displayValue =
+    typeof value === "number"
+      ? (formatValue ?? ((n: number) => n.toLocaleString()))(value)
+      : value;
   return (
     <div
       className={cn(
@@ -59,7 +76,7 @@ export function MetricTile({
             accentNumber && "text-accent",
           )}
         >
-          {value}
+          {displayValue}
         </div>
         {unit && (
           // Source `.metric .u` carries no letter-spacing — adding any

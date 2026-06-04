@@ -67,28 +67,34 @@ test.describe("rides read path", () => {
 
     await page.goto("/rides");
 
-    // Each seeded ride surfaces by its custom name; this also proves
-    // the list endpoint actually fetched our seeded data rather than
-    // showing the empty-state fallback row.
-    await expect(page.getByRole("button", { name: RIDE_OLD.name })).toBeVisible(
-      { timeout: 10_000 },
-    );
+    // Each seeded ride surfaces by its custom name. The DataTable renders
+    // each row as a real <tr> whose RIDE cell is a <Link> to the detail
+    // page — the link's accessible name carries the ride name (plus the
+    // ride type), so match on the name with a regex.
     await expect(
-      page.getByRole("button", { name: RIDE_RECENT.name }),
+      page.getByRole("link", { name: new RegExp(RIDE_OLD.name) }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("link", { name: new RegExp(RIDE_RECENT.name) }),
     ).toBeVisible();
 
-    // Distance / duration / quality cells render in their formatted
-    // shape. We assert on the recent ride's values to avoid the
-    // possible `80.0 km` ↔ `80 km` rounding ambiguity of the older
-    // ride's whole-number distance.
-    await expect(page.getByText("220.0 km")).toBeVisible();
-    await expect(page.getByText("240 min")).toBeVisible();
-    // The quality pill renders the score as `X.Y`.
-    await expect(page.getByText("4.6")).toBeVisible();
+    // Distance / duration / quality cells render in their formatted shape.
+    // Scope to the recent ride's row: KM column shows whole km, DURATION
+    // uses the compact "Xh Ym" form, and QUALITY renders the QualityBars
+    // glyph (aria-labelled "Quality N of 5"; 4.6 → tier 5).
+    const recentRow = page
+      .getByRole("row")
+      .filter({ hasText: RIDE_RECENT.name });
+    await expect(recentRow.getByText("220")).toBeVisible();
+    await expect(recentRow.getByText("4h 0m")).toBeVisible();
+    await expect(recentRow.getByLabel("Quality 5 of 5")).toBeVisible();
 
-    // Total-count badge reflects both rides. The exact string ("2
-    // rides") is what RidesTable renders for the count slot.
-    await expect(page.getByText("2 rides")).toBeVisible();
+    // The "All rides · N" tab badge reflects both rides (the single-page
+    // table no longer renders an inline "N rides" footer — that count
+    // lives in the tab badge).
+    await expect(page.getByRole("link", { name: /All rides/ })).toContainText(
+      "2",
+    );
   });
 
   // T30 — Filter by date range + min distance: applying filters writes
@@ -104,9 +110,9 @@ test.describe("rides read path", () => {
     await mockApi.seedRide(user, RIDE_RECENT);
 
     await page.goto("/rides");
-    await expect(page.getByRole("button", { name: RIDE_OLD.name })).toBeVisible(
-      { timeout: 10_000 },
-    );
+    await expect(
+      page.getByRole("link", { name: new RegExp(RIDE_OLD.name) }),
+    ).toBeVisible({ timeout: 10_000 });
 
     // Filters live inside <label> wrappers — getByLabel resolves to the
     // wrapped input. The label text is rendered through the i18n
@@ -134,14 +140,17 @@ test.describe("rides read path", () => {
       .toBe("100");
 
     // Filter-pruning: the March ride should drop off, the April one
-    // stays. The total-count badge tracks the post-filter set size.
+    // stays. The "All rides · N" tab badge tracks the post-filter set size
+    // (the All-rides page feeds the badge its own filtered total).
     await expect(
-      page.getByRole("button", { name: RIDE_OLD.name }),
+      page.getByRole("link", { name: new RegExp(RIDE_OLD.name) }),
     ).toBeHidden();
     await expect(
-      page.getByRole("button", { name: RIDE_RECENT.name }),
+      page.getByRole("link", { name: new RegExp(RIDE_RECENT.name) }),
     ).toBeVisible();
-    await expect(page.getByText("1 ride")).toBeVisible();
+    await expect(page.getByRole("link", { name: /All rides/ })).toContainText(
+      "1",
+    );
   });
 
   // T31 — Ride detail: clicking the "Open ride" link routes to
@@ -158,24 +167,25 @@ test.describe("rides read path", () => {
 
     await page.goto("/rides");
     await expect(
-      page.getByRole("button", { name: RIDE_DETAIL.name }),
+      page.getByRole("link", { name: new RegExp(RIDE_DETAIL.name) }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Each row exposes an "Open ride" affordance — there are as many
-    // such links as rides, so scope to the row containing our seeded
-    // ride name. (`getByRole("link", { name: /open ride/i }).first()`
-    // would also work with a single ride, but the scoped lookup keeps
-    // the test resilient to seeding more rides later.)
-    const row = page.getByRole("row").filter({ hasText: RIDE_DETAIL.name });
-    await row.getByRole("link", { name: /open ride/i }).click();
+    // Each row's RIDE cell is a <Link> to the detail page; click it to
+    // route through. (The whole row is clickable via a stretched overlay,
+    // but the link in the row is the single discoverable navigation
+    // control.)
+    await page
+      .getByRole("link", { name: new RegExp(RIDE_DETAIL.name) })
+      .click();
     await expect(page).toHaveURL(new RegExp(`/rides/${seeded.id}$`), {
       timeout: 10_000,
     });
 
-    // H1: "Ride on <date>" — the date format is locale-sensitive, so
-    // accept either US ("4/20/2026") or ISO ("2026-04-20") rendering.
+    // H1: the detail header now surfaces the ride's name (the rename
+    // affordance lives here); an unnamed ride falls back to "Ride on
+    // <date>". This ride is seeded with an explicit name.
     await expect(
-      page.getByRole("heading", { level: 1, name: /^Ride on / }),
+      page.getByRole("heading", { level: 1, name: RIDE_DETAIL.name }),
     ).toBeVisible();
 
     // Stat cards key off the seeded metadata. The value + unit are
@@ -363,29 +373,23 @@ test.describe("rides extras", () => {
     // route map's aria-label, so scope to the combobox role.
     await page.getByRole("combobox", { name: /ride a/i }).selectOption(a.id);
 
-    // The Stats-diff table renders one row per metric with the value
-    // and unit in sibling DOM nodes, so scope to the table by its
-    // heading. Ride A is our explicit pick (RIDE_OLD = 80.0 km); Ride
-    // B is whatever the auto-default landed on first (the second-
-    // most-recent ride, RIDE_RECENT = 220.0 km). Asserting both
-    // distances catches a regression that loses either pick or only
-    // re-fetches one side after the explicit override.
-    //
-    // Scope by the "Stats diff" heading rather than a `section`
-    // element selector — the surrounding container migrated from
-    // `<section>` to a `<Card>` (`<div>`) when /rides/compare adopted
-    // canonical @tarmoto/ui primitives, but the heading text and the
-    // visible stats payload are unchanged.
+    // The metric table renders one row per metric (Metric / Ride A /
+    // Ride B). The v2 redesign dropped the separate "Stats diff" heading
+    // and the delta column for a clean two-column read, so scope to the
+    // card by the unique "Metric" header cell plus the "Distance" row
+    // (`.last()` resolves to the innermost div containing both — the card
+    // itself, not an outer page wrapper). Ride A is our explicit pick
+    // (RIDE_OLD = 80.0 km); Ride B is the auto-default's first landing
+    // (RIDE_RECENT = 220.0 km). Asserting both distances catches a
+    // regression that loses either pick or only re-fetches one side.
     const statsTable = page
       .locator("div")
-      .filter({ has: page.getByRole("heading", { name: /^stats diff/i }) })
-      .first();
+      .filter({ hasText: "Metric" })
+      .filter({ hasText: "Distance" })
+      .last();
     await expect(statsTable).toBeVisible({ timeout: 10_000 });
     await expect(statsTable).toContainText("80.0");
     await expect(statsTable).toContainText("220.0");
-    // Sanity check the delta arithmetic surfaced. Catches regressions
-    // in `computeStatRows`'s `b - a` formula.
-    await expect(statsTable).toContainText("+140.0");
   });
 
   // T35 — Export ride data: the ride detail page's Export menu offers
@@ -402,7 +406,7 @@ test.describe("rides extras", () => {
     const seeded = await mockApi.seedRide(user, RIDE_DETAIL);
     await page.goto(`/rides/${seeded.id}`);
     await expect(
-      page.getByRole("heading", { level: 1, name: /^Ride on / }),
+      page.getByRole("heading", { level: 1, name: RIDE_DETAIL.name }),
     ).toBeVisible({ timeout: 10_000 });
 
     const [download] = await Promise.all([

@@ -5,6 +5,7 @@ import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthSync } from "@/components/AuthSync";
 import { RealtimeProvider } from "@/components/RealtimeProvider";
+import { PreferencesSync } from "@/components/PreferencesSync";
 
 export function AuthenticatedAppProviders({
   children,
@@ -40,6 +41,7 @@ export function AuthenticatedAppProviders({
       <QueryClientProvider client={queryClient}>
         <AuthSync />
         <RealtimeProvider />
+        <PreferencesSync />
         {children}
       </QueryClientProvider>
     </SessionProvider>

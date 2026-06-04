@@ -3285,6 +3285,9 @@ function serializeRideSummary(ride: import("./state").MockRide) {
 function serializeRideDetail(ride: import("./state").MockRide) {
   return {
     id: ride.id,
+    // `name` is inherited from the summary contract (RideSummaryDto); the
+    // detail header surfaces it (falling back to "Ride on <date>" when null).
+    name: ride.name ?? null,
     status: ride.status,
     ride_type: ride.ride_type,
     started_at: ride.started_at,

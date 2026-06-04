@@ -1,10 +1,20 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import { RotateCcw, Search } from "lucide-react";
+import { FilterX, Search } from "lucide-react";
+import { Button, SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
 import type { RidesQueryState } from "./useRidesQuery";
 import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
-const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
+
+// Ride-type segmented control. "all" is a UI sentinel that clears the `type`
+// filter; the rest map 1:1 to the backend ride_type values.
+const TYPE_OPTIONS: SegmentedOption<string>[] = [
+  { value: "all", label: "All" },
+  { value: "free", label: "Free" },
+  { value: "commute", label: "Commute" },
+  { value: "trip", label: "Trip" },
+  { value: "tracked", label: "Tracked" },
+];
 interface Props {
   state: RidesQueryState;
   update: (patch: Partial<RidesQueryState>) => void;
@@ -163,21 +173,14 @@ export function RidesFilters({ state, update, reset }: Props) {
 
         <div className="flex flex-col gap-1.5">
           <span className={labelClass}>{t("Type")}</span>
-          <div className="flex flex-wrap gap-1.5">
-            <TypeChip
-              label="All"
-              active={!state.type}
-              onClick={() => update({ type: undefined })}
-            />
-            {RIDE_TYPES.map((rideType) => (
-              <TypeChip
-                key={rideType}
-                label={rideType}
-                active={state.type === rideType}
-                onClick={() => update({ type: rideType })}
-              />
-            ))}
-          </div>
+          <SegmentedControl
+            ariaLabel={t("Ride type filter")}
+            value={state.type ?? "all"}
+            onChange={(next) =>
+              update({ type: next === "all" ? undefined : next })
+            }
+            options={TYPE_OPTIONS}
+          />
         </div>
 
         <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
@@ -200,39 +203,18 @@ export function RidesFilters({ state, update, reset }: Props) {
         <PlaceSearch value={placeValue} onChange={handlePlaceChange} />
 
         {hasAny && (
-          <button
-            type="button"
+          <Button
+            iconOnly
+            variant="secondary"
+            size="sm"
             onClick={reset}
-            className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
+            aria-label={t("Reset filters")}
+            title={t("Reset filters")}
           >
-            <RotateCcw size={14} />
-            {t("Reset ")}
-          </button>
+            <FilterX size={16} />
+          </Button>
         )}
       </div>
     </div>
-  );
-}
-function TypeChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${
-        active
-          ? "bg-ink border-ink text-cream"
-          : "bg-paper border-line text-ink hover:bg-paper-2"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

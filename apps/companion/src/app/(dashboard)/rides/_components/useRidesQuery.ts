@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
 
 export type SortField =
   | "started_at"
@@ -33,6 +34,13 @@ export interface RidesQueryState extends RidesFilters {
   sort: SortField;
   order: SortOrder;
   page: number; // 1-based
+  /**
+   * Effective `started_from` lower bound sent to the API: the later of the
+   * advanced "From" date filter and the shared `?window=` time-pill bound.
+   * Kept separate from `from` so the advanced date input still shows the
+   * user's own value while the relative time pill ("Last 90 days") layers on top.
+   */
+  effectiveFrom?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -65,8 +73,22 @@ export function parseQuery(params: URLSearchParams): RidesQueryState {
   const nKm = num("nearKm");
   const nearComplete = nLat != null && nLng != null && nKm != null;
 
+  // Shared time-window pill (`?window=`) → relative `started_from` lower
+  // bound. The effective bound the API sees is the later (more restrictive)
+  // of the advanced "From" filter and this window start, so the two controls
+  // compose instead of clobbering each other.
+  const advancedFrom = str("from");
+  const windowFrom = windowStartISO(parseTimeWindow(params.get("window")));
+  const effectiveFrom =
+    advancedFrom && windowFrom
+      ? advancedFrom > windowFrom
+        ? advancedFrom
+        : windowFrom
+      : (advancedFrom ?? windowFrom ?? undefined);
+
   return {
-    from: str("from"),
+    from: advancedFrom,
+    effectiveFrom,
     to: str("to"),
     minDistance: num("minDist"),
     maxDistance: num("maxDist"),
@@ -84,7 +106,10 @@ export function parseQuery(params: URLSearchParams): RidesQueryState {
   };
 }
 
-export function serializeQuery(state: Partial<RidesQueryState>): string {
+export function serializeQuery(
+  state: Partial<RidesQueryState>,
+  window?: string,
+): string {
   const u = new URLSearchParams();
   if (state.from) u.set("from", state.from);
   if (state.to) u.set("to", state.to);
@@ -103,6 +128,11 @@ export function serializeQuery(state: Partial<RidesQueryState>): string {
   if (state.sort && state.sort !== "started_at") u.set("sort", state.sort);
   if (state.order && state.order !== "desc") u.set("order", state.order);
   if (state.page && state.page !== 1) u.set("page", String(state.page));
+  // The shared time-window pill lives in `?window=` (read by both the
+  // All-rides and Road-map tabs). It's not part of `RidesQueryState`, so
+  // preserve it verbatim across filter/sort/page updates here rather than
+  // having every `update()` silently reset the window to "all".
+  if (window && window !== "all") u.set("window", window);
   return u.toString();
 }
 
@@ -113,7 +143,7 @@ function toListParams(s: RidesQueryState): Record<string, string | number> {
     sort: s.sort,
     order: s.order,
   };
-  if (s.from) p.started_from = s.from;
+  if (s.effectiveFrom) p.started_from = s.effectiveFrom;
   if (s.to) p.started_to = s.to;
   if (s.minDistance != null) p.min_distance_km = s.minDistance;
   if (s.maxDistance != null) p.max_distance_km = s.maxDistance;
@@ -129,8 +159,15 @@ function toListParams(s: RidesQueryState): Record<string, string | number> {
   return p;
 }
 
-function toTracksParams(s: RidesQueryState): Record<string, string | number> {
-  // Same filters as list, minus pagination/sort.
+/**
+ * The filter-only params shared by `GET /rides` and `GET /rides/stats` —
+ * pagination/sort stripped. Exported so the KPI-stats hook reflects the EXACT
+ * same filter window the table renders, keeping the cards and the list in
+ * lockstep.
+ */
+export function toFilterParams(
+  s: RidesQueryState,
+): Record<string, string | number> {
   const {
     limit: _l,
     offset: _o,
@@ -156,23 +193,12 @@ export interface RideSummary {
   avg_speed: number | null;
   avg_road_quality: number | null;
   duration_min: number | null;
-}
-
-export interface RideTrack {
-  id: string;
-  geometry: { type: "LineString"; coordinates: number[][] } | null;
+  max_lean_angle: number | null;
 }
 
 interface ListResult {
   rides: RideSummary[];
   total: number;
-  loading: boolean;
-  error: string | null;
-}
-
-interface TracksResult {
-  tracks: RideTrack[];
-  truncated: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -192,6 +218,18 @@ export function useRidesQuery() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // The shared `?window=` pill isn't part of `RidesQueryState`, so `stateRef`
+  // doesn't carry it — mirror it in its own ref. A debounced `update()` (the
+  // 300 ms search box in RidesFilters) can fire after the rider switches the
+  // window pill; reading `params.get("window")` off the stale closure would
+  // then serialize the *previous* window and snap the list/KPIs back to all
+  // time. Reading the ref at call time always sees the latest committed value.
+  const windowParam = params.get("window");
+  const windowRef = useRef(windowParam);
+  useEffect(() => {
+    windowRef.current = windowParam;
+  }, [windowParam]);
 
   // Gate fetches on the access token being hydrated by `AuthSync`.
   // Without this, both the list and tracks effects fire on mount before
@@ -247,69 +285,17 @@ export function useRidesQuery() {
     return () => ctrl.abort();
   }, [authReady, state]);
 
-  // ── tracks fetch (debounced on filter changes) ──
-  const [tracks, setTracks] = useState<TracksResult>({
-    tracks: [],
-    truncated: false,
-    loading: true,
-    error: null,
-  });
-  const tracksKey = useMemo(
-    () => JSON.stringify(toTracksParams(state)),
-    [state],
-  );
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clamp an out-of-range page once the count is known. A stale/bookmarked
+  // `?page=` (or data shrinking below the page boundary) would otherwise
+  // request an empty offset and render "No rides match" while page 1 has
+  // rides. Resetting to the last valid page is a bare page change, so it
+  // doesn't wipe the active filters.
   useEffect(() => {
-    if (!authReady) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const ctrl = new AbortController();
-    setTracks((s) => ({ ...s, loading: true, error: null }));
-    debounceRef.current = setTimeout(() => {
-      api
-        .GET("/api/v1/rides/tracks", {
-          params: { query: toTracksParams(state) as never },
-          signal: ctrl.signal,
-        })
-        .then(({ data, error }) => {
-          if (ctrl.signal.aborted) return;
-          if (error) {
-            setTracks({
-              tracks: [],
-              truncated: false,
-              loading: false,
-              error: "Failed to load tracks",
-            });
-            return;
-          }
-          const d = data as unknown as {
-            tracks: RideTrack[];
-            truncated: boolean;
-          };
-          setTracks({
-            tracks: d.tracks ?? [],
-            truncated: !!d.truncated,
-            loading: false,
-            error: null,
-          });
-        })
-        .catch((err: Error) => {
-          if (ctrl.signal.aborted) return;
-          setTracks({
-            tracks: [],
-            truncated: false,
-            loading: false,
-            error: err.message,
-          });
-        });
-    }, 250);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      ctrl.abort();
-    };
-    // tracksKey captures every param that affects this fetch; state is
-    // intentionally excluded so pagination/sort changes don't re-trigger.
+    if (list.loading || list.error) return;
+    const maxPage = Math.max(1, Math.ceil(list.total / PAGE_SIZE));
+    if (state.page > maxPage) update({ page: maxPage });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authReady, tracksKey]);
+  }, [list.loading, list.error, list.total, state.page]);
 
   function update(patch: Partial<RidesQueryState>) {
     // Read the freshest state via the ref so stale-closure callers still
@@ -326,13 +312,21 @@ export function useRidesQuery() {
       ...patch,
       page: isBarePageChange ? (patch.page ?? current.page) : 1,
     };
-    const qs = serializeQuery(next);
+    // Preserve the shared `?window=` pill across filter/sort/page changes.
+    // Read it from the ref (not the closure's `params`) so a stale debounced
+    // caller still serializes the window the rider currently has selected.
+    const qs = serializeQuery(next, windowRef.current ?? undefined);
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
   function reset() {
-    router.replace(pathname, { scroll: false });
+    // Reset clears advanced filters but keeps the shared time-window pill —
+    // it's a top-level control on the tab row, not a filter-bar field. Read
+    // from the ref so a stale closure still preserves the current window.
+    const w = windowRef.current;
+    const qs = w && w !== "all" ? `window=${w}` : "";
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  return { state, list, tracks, update, reset, pageSize: PAGE_SIZE };
+  return { state, list, update, reset, pageSize: PAGE_SIZE };
 }

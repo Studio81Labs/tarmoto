@@ -13,6 +13,7 @@ export * from "./monthly-stats";
 export * from "./notifications";
 export * from "./privacy";
 export * from "./public-profile";
+export * from "./ride-stats";
 export * from "./ride-tag-events";
 export * from "./rider-format";
 export * from "./sensor-calibration";
