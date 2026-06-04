@@ -48,6 +48,8 @@ export const en = {
   "Add your motorcycle to get bike-specific stats and recommendations. ":
     "Add your motorcycle to get bike-specific stats and recommendations. ",
   "Adopt as trip draft ": "Adopt as trip draft ",
+  "All time": "All time",
+  "All-time distance": "All-time distance",
   "All years": "All years",
   "All your rides are already in this collection":
     "All your rides are already in this collection",
@@ -424,6 +426,7 @@ export const en = {
   "My Trips": "My Trips",
   Name: "Name",
   "Name ": "Name ",
+  "Nearby unridden": "Nearby unridden",
   "Nearby unridden suggestions": "Nearby unridden suggestions",
   "Neither ride recorded per-segment quality readings. ":
     "Neither ride recorded per-segment quality readings. ",
@@ -605,6 +608,7 @@ export const en = {
   "Record another ride to add it here. ":
     "Record another ride to add it here. ",
   "Redo ": "Redo ",
+  "Region coverage": "Region coverage",
   "Region scope": "Region scope",
   "Region: ": "Region: ",
   "Regional avg ": "Regional avg ",
@@ -688,6 +692,7 @@ export const en = {
   "Segment quality (": "Segment quality (",
   Segments: "Segments",
   "Segments ": "Segments ",
+  "Segments ridden": "Segments ridden",
   "Select review photos": "Select review photos",
   "Send reset link": "Send reset link",
   "Sending...": "Sending...",
@@ -812,6 +817,7 @@ export const en = {
   Type: "Type",
   "Undo ": "Undo ",
   Unnamed: "Unnamed",
+  "Unnamed road": "Unnamed road",
   "Unridden ": "Unridden ",
   "Unsaved changes": "Unsaved changes",
   "Generated routes use backend road geometry from the start waypoint and planner parameters. ":
@@ -917,6 +923,7 @@ export const en = {
   "member ": "member ",
   "no longer available": "no longer available",
   "of ": "of ",
+  "of {total} in region": "of {total} in region",
   open: "open",
   "open suggestion ": "open suggestion ",
   "or continue with ": "or continue with ",

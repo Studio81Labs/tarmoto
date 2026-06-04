@@ -9,10 +9,8 @@ import {
   Loader2,
   Map as MapIcon,
   MapPin,
-  Navigation,
-  Sparkles,
 } from "lucide-react";
-import { Card } from "@tarmoto/ui";
+import { Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { Link2 } from "lucide-react";
@@ -24,21 +22,12 @@ import type {
   UnriddenSegment,
 } from "@/lib/api";
 import {
-  QUALITY_CONFIG,
   formatDistance,
   formatDistanceFromMeters,
-  scoreToTier,
+  scoreToQualityTier,
 } from "@/lib/utils";
-import { fetchAllRides } from "@/lib/rides-fetch";
 import { useAuthStore } from "@/stores/auth";
-import type { RideForStats } from "@/lib/ride-stats";
-import {
-  TIME_PERIODS,
-  TIME_PERIOD_LABELS,
-  computePeriodStats,
-  groupUnriddenByRegion,
-  type TimePeriod,
-} from "@/lib/exploration";
+import { useTimeWindow } from "../_components/TimeWindowPills";
 import {
   buildMapShareSnapshot,
   filterRiddenByPeriod,
@@ -91,12 +80,16 @@ type ShareState =
       message: string;
     };
 export default function RoadMapPage() {
+  // The tab-row time pills drive the window via `?window=`; the road-map
+  // reads it (no local period state) so flipping a pill updates the map,
+  // the legend count, and the share snapshot together. The `TimeWindow`
+  // union is value-identical to the `TimePeriod` keys consumed by the
+  // pure exploration/road-map helpers, so it's passed straight through.
+  const period = useTimeWindow();
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
-  const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<TimePeriod>("all");
   const [center, setCenter] = useState(FALLBACK_CENTER);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
@@ -116,24 +109,19 @@ export default function RoadMapPage() {
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-  // Gate the exploration + rides fetch on auth so a cold visit to
-  // `/rides/road-map` doesn't race AuthSync. The three Promise.all
-  // calls all hit authed endpoints.
+  // Gate the exploration fetch on auth so a cold visit to
+  // `/rides/road-map` doesn't race AuthSync. Both calls hit authed
+  // endpoints.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
     setLoading(true);
-    Promise.all([
-      explorationApi.getStats(),
-      explorationApi.getRiddenSegments(),
-      fetchAllRides(),
-    ])
-      .then(([statsRes, riddenRes, ridesList]) => {
+    Promise.all([explorationApi.getStats(), explorationApi.getRiddenSegments()])
+      .then(([statsRes, riddenRes]) => {
         if (cancelled) return;
         setStats(statsRes.data);
         setRiddenSegments(riddenRes.data.segments);
-        setRides(ridesList);
         setLoading(false);
       })
       .catch((err: Error) => {
@@ -182,15 +170,10 @@ export default function RoadMapPage() {
       cancelled = true;
     };
   }, [authReady, center.lat, center.lng]);
-  const periodStats = useMemo(
-    () => computePeriodStats(rides, period),
-    [rides, period],
-  );
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
   );
-  const regionBuckets = useMemo(() => groupUnriddenByRegion(nearby), [nearby]);
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
   // that claim resilient if the service ordering ever changes.
@@ -453,28 +436,6 @@ export default function RoadMapPage() {
         </div>
       }
     >
-      <div
-        className="mb-3 flex items-center gap-1.5"
-        role="group"
-        aria-label={t("Filter by period")}
-      >
-        {TIME_PERIODS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setPeriod(p)}
-            aria-pressed={period === p}
-            className={`rounded-lg px-3 py-1.5 text-sm transition ${
-              period === p
-                ? "bg-ink text-cream"
-                : "bg-paper text-ink hover:bg-paper-2"
-            }`}
-          >
-            {TIME_PERIOD_LABELS[p]}
-          </button>
-        ))}
-      </div>
-
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
         <div className="relative bg-cream border-b lg:border-b-0 lg:border-r border-line min-h-[320px]">
           <PersonalRoadMap
@@ -498,193 +459,87 @@ export default function RoadMapPage() {
           </button>
         </div>
 
-        <aside className="overflow-y-auto bg-paper/60">
-          <section className="p-5 border-b border-line space-y-4">
-            <SummaryCards
-              stats={stats}
-              periodStats={periodStats}
-              units={unitSystem}
-              riddenInPeriod={filteredRidden.length}
-            />
-          </section>
+        <aside className="overflow-y-auto bg-paper/60 p-5 space-y-3.5">
+          {/* 1 — Segments ridden (ink hero card, accent number). */}
+          <Card variant="ink">
+            <Stamp tone="on-dark">{t("Segments ridden")}</Stamp>
+            <div className="mt-2 text-[36px] font-extrabold leading-none tracking-[-1px] text-accent tabular-nums">
+              {stats.ridden_segments.toLocaleString()}
+            </div>
+            <p className="mt-2 text-[12px] text-fg-on-dark-dim">
+              {t("of {total} in region", {
+                total: stats.total_segments.toLocaleString(),
+              })}
+            </p>
+          </Card>
 
-          <section className="p-5 border-b border-line">
-            <SectionHeader
-              icon={<Crosshair size={14} />}
-              title={t("Explore near")}
-              subtitle={center.label}
-            />
-            <NearbyCenterControls
-              center={center}
-              locating={locating}
-              onUseMyLocation={handleUseMyLocation}
-              onCoordinatesChanged={(lat, lng, label) => {
-                setCenter({ lat, lng, label });
-                mapRef.current?.flyTo({ lat, lng });
-              }}
-            />
-          </section>
+          {/* 2 — All-time (lifetime) distance ridden. */}
+          <Card>
+            <Stamp>{t("All-time distance")}</Stamp>
+            <div className="mt-2 text-[28px] font-extrabold leading-none tracking-[-0.5px] text-ink tabular-nums">
+              {formatDistance(stats.total_distance_km, unitSystem)}
+            </div>
+          </Card>
 
-          <section className="p-5 border-b border-line">
-            <SectionHeader
-              icon={<Sparkles size={14} />}
-              title={t("Regional breakdown")}
-              subtitle={`${nearby.length} unridden roads within ${formatDistance(NEARBY_DEFAULT_RADIUS_KM, unitSystem)}`}
-            />
-            {nearbyLoading ? (
-              <LoaderRow label="Loading unridden roads…" />
-            ) : nearbyError ? (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
-              >
-                <AlertTriangle
-                  size={14}
-                  className="mt-0.5 shrink-0"
-                  aria-hidden="true"
-                />
-                <span>{nearbyError}</span>
-              </div>
-            ) : regionBuckets.length === 0 ? (
-              <EmptyState label="No unridden roads found nearby. You've explored this area well!" />
-            ) : (
-              <ul className="space-y-2">
-                {regionBuckets.slice(0, 6).map((bucket) => (
-                  <li
-                    key={bucket.key}
-                    className="flex items-center justify-between rounded-lg bg-cream border border-line px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-ink truncate">
-                        {bucket.label}
-                      </p>
-                      <p className="text-xs text-fg-dim">
-                        {t(
-                          bucket.segments.length === 1
-                            ? "{count} segment to discover"
-                            : "{count} segments to discover",
-                          { count: bucket.segments.length },
-                        )}
-                      </p>
-                    </div>
-                    <span className="text-xs text-fg-dim tabular-nums">
-                      {formatDistance(bucket.totalLengthKm, unitSystem)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {/* 3 — Region coverage. No region label backing data → no subline. */}
+          <Card>
+            <Stamp>{t("Region coverage")}</Stamp>
+            <div className="mt-2 text-[28px] font-extrabold leading-none tracking-[-0.5px] text-accent tabular-nums">
+              {stats.percent_explored}%
+            </div>
+          </Card>
 
-          <section className="p-5">
-            <SectionHeader
-              icon={<Navigation size={14} />}
-              title={t("Nearby unridden suggestions")}
-              subtitle="Sorted by distance"
-            />
-            {nearbyLoading ? (
-              <LoaderRow label="Loading suggestions…" />
-            ) : nearbyError ? (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
-              >
-                <AlertTriangle
-                  size={14}
-                  className="mt-0.5 shrink-0"
-                  aria-hidden="true"
-                />
-                <span>{nearbyError}</span>
-              </div>
-            ) : nearby.length === 0 ? (
-              <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
-            ) : (
-              <ul className="space-y-2">
-                {nearbyByDistance.slice(0, 10).map((seg) => (
-                  <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
-                ))}
-              </ul>
-            )}
-          </section>
+          {/* 4 — Nearby unridden roads (name · km · quality bars). */}
+          <Card padded={false} className="overflow-hidden">
+            <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
+              <Stamp>{t("Nearby unridden")}</Stamp>
+              <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
+                {center.label}
+              </span>
+            </div>
+            <div className="px-[18px] py-3">
+              {nearbyLoading ? (
+                <LoaderRow label="Loading unridden roads…" />
+              ) : nearbyError ? (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
+                >
+                  <AlertTriangle
+                    size={14}
+                    className="mt-0.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span>{nearbyError}</span>
+                </div>
+              ) : nearby.length === 0 ? (
+                <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
+              ) : (
+                <ul className="space-y-3">
+                  {nearbyByDistance.slice(0, 10).map((seg) => (
+                    <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-line px-[18px] py-3">
+              <NearbyCenterControls
+                center={center}
+                locating={locating}
+                onUseMyLocation={handleUseMyLocation}
+                onCoordinatesChanged={(lat, lng, label) => {
+                  setCenter({ lat, lng, label });
+                  mapRef.current?.flyTo({ lat, lng });
+                }}
+              />
+            </div>
+          </Card>
         </aside>
       </div>
     </RidesScaffold>
   );
 }
 // ── Sub-components ──
-interface SummaryCardsProps {
-  stats: ExplorationStats;
-  periodStats: ReturnType<typeof computePeriodStats>;
-  units: UnitSystem;
-  riddenInPeriod: number;
-}
-function SummaryCards({
-  stats,
-  periodStats,
-  units,
-  riddenInPeriod,
-}: SummaryCardsProps) {
-  const isAllTime = periodStats.period === "all";
-  const cards = [
-    {
-      label: isAllTime ? "Segments ridden" : "Segments highlighted",
-      value: (isAllTime
-        ? stats.ridden_segments
-        : riddenInPeriod
-      ).toLocaleString(),
-      // All-time view doesn't expose `of X total` — `total_segments` is the
-      // entire road dataset (millions of segments in prod), which made the
-      // ratio a demoralising 0-ish % rather than progress feedback.
-      sub: isAllTime
-        ? undefined
-        : `of ${stats.ridden_segments.toLocaleString()} all-time ridden`,
-    },
-    {
-      label: "All-time distance",
-      value: formatDistance(stats.total_distance_km, units),
-      sub: `${stats.ridden_segments.toLocaleString()} segments ridden`,
-    },
-    {
-      label: `Rides — ${TIME_PERIOD_LABELS[periodStats.period]}`,
-      value: periodStats.rideCount.toLocaleString(),
-      sub:
-        periodStats.rideCount === 0
-          ? "No rides in this period"
-          : `${formatDistance(periodStats.distanceKm, units)} · ${periodStats.activeDays} active day${periodStats.activeDays === 1 ? "" : "s"}`,
-    },
-  ];
-  return (
-    <div className="grid grid-cols-1 gap-2">
-      {cards.map((c) => (
-        <Card key={c.label} padded={false} className="p-3">
-          <p className="text-xs uppercase tracking-wider text-fg-dim">
-            {c.label}
-          </p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-ink">
-            {c.value}
-          </p>
-          {c.sub && <p className="mt-0.5 text-xs text-fg-dim">{c.sub}</p>}
-        </Card>
-      ))}
-    </div>
-  );
-}
-interface SectionHeaderProps {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-}
-function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
-  return (
-    <div className="mb-3">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-accent">{icon}</span>
-        <h2 className="text-sm font-semibold">{title}</h2>
-      </div>
-      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
-    </div>
-  );
-}
 interface NearbyCenterControlsProps {
   center: {
     lat: number;
@@ -778,30 +633,22 @@ interface NearbyRowProps {
   units: UnitSystem;
 }
 function NearbyRow({ segment, units }: NearbyRowProps) {
-  const tier =
-    segment.quality_score != null ? scoreToTier(segment.quality_score) : null;
-  const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
+  const tier = scoreToQualityTier(segment.quality_score);
   return (
-    <li className="flex items-center gap-3 rounded-lg bg-cream border border-line px-3 py-2">
-      <span
-        className={`w-2 h-2 rounded-full ${tierInfo?.bg ?? "bg-fg-mute"}`}
-        aria-hidden
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-ink truncate">
-          {segment.road_name ?? "Unnamed road"}
+    <li className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-bold text-ink">
+          {segment.road_name ?? t("Unnamed road")}
         </p>
-        <p className="text-xs text-fg-dim capitalize">
-          {segment.surface_type}
-          {tierInfo ? ` · ${tierInfo.label.toLowerCase()}` : ""} ·{" "}
-          {formatDistanceFromMeters(segment.length_m, units)}
-        </p>
+        <Mono className="text-[11px] text-fg-mute">
+          {formatDistanceFromMeters(segment.distance_m, units)}
+        </Mono>
       </div>
-      <span className="text-xs text-fg-dim tabular-nums">
-        {t("{distance} away", {
-          distance: formatDistanceFromMeters(segment.distance_m, units),
-        })}
-      </span>
+      {tier != null ? (
+        <QualityBars q={tier} size={4} />
+      ) : (
+        <span className="text-fg-mute">—</span>
+      )}
     </li>
   );
 }
