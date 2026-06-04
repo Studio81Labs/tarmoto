@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
+import { TimeWindowPills } from "./_components/TimeWindowPills";
 
 /**
  * Ride History section tab strip. Only rendered on the three section
@@ -21,23 +22,30 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
   const pathname = usePathname();
   const show = ROOT_ROUTES.includes(pathname);
   if (!show) return null;
+  // Time-window pills are shared by All rides + Road map (both filter by the
+  // same `?window=` lower bound). Compare picks two specific rides, so a time
+  // window is meaningless there — hide the pills on `/rides/compare`.
+  const showPills = pathname !== "/rides/compare";
   return (
-    <SubRouteTabs
-      ariaLabel="Ride history sections"
-      tabs={[
-        {
-          href: "/rides",
-          label: "All rides",
-          badge: allRidesBadge,
-          // `/rides/road-map` and `/rides/compare` share the
-          // `/rides` prefix; without `exact`, the default
-          // `startsWith` rule would keep this tab active on those
-          // sibling routes alongside the real one.
-          exact: true,
-        },
-        { href: "/rides/road-map", label: "Road map" },
-        { href: "/rides/compare", label: "Compare rides" },
-      ]}
-    />
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <SubRouteTabs
+        ariaLabel="Ride history sections"
+        tabs={[
+          {
+            href: "/rides",
+            label: "All rides",
+            badge: allRidesBadge,
+            // `/rides/road-map` and `/rides/compare` share the
+            // `/rides` prefix; without `exact`, the default
+            // `startsWith` rule would keep this tab active on those
+            // sibling routes alongside the real one.
+            exact: true,
+          },
+          { href: "/rides/road-map", label: "Road map" },
+          { href: "/rides/compare", label: "Compare rides" },
+        ]}
+      />
+      {showPills && <TimeWindowPills />}
+    </div>
   );
 }
