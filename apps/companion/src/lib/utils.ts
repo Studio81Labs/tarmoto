@@ -255,12 +255,13 @@ export function roundCoordinate(value: number): number {
 }
 
 /**
- * Keep only the rides whose `started_at` falls within the last `days`
- * (inclusive of the boundary), preserving input order. Used by the home
- * "Last 30 days" section so the heading stays truthful — a rider whose
- * latest ride is older than the window gets an empty list here, while the
- * caller keeps the unwindowed list for the returning-vs-first-time check.
- * `now` is injectable for deterministic tests.
+ * Keep only the rides whose `started_at` falls in the window (now − days …
+ * now], preserving input order. Both bounds matter: the lower cutoff keeps
+ * the home "Last 30 days" heading truthful (a rider whose latest ride is
+ * older than the window gets an empty list), and the `<= now` upper bound
+ * drops future-dated rides (clock skew / GPX import) so an impossible ride
+ * can't render under that heading. The caller keeps the unwindowed list
+ * for the returning-vs-first-time check. `now` is injectable for tests.
  */
 export function ridesWithinDays<T extends { started_at: string }>(
   rides: T[],
@@ -268,7 +269,10 @@ export function ridesWithinDays<T extends { started_at: string }>(
   now: number = Date.now(),
 ): T[] {
   const cutoff = now - days * 24 * 60 * 60 * 1000;
-  return rides.filter((r) => new Date(r.started_at).getTime() >= cutoff);
+  return rides.filter((r) => {
+    const t = new Date(r.started_at).getTime();
+    return t >= cutoff && t <= now;
+  });
 }
 
 export function formatRideType(value: string): string {

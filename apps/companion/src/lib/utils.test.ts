@@ -26,6 +26,13 @@ describe("ridesWithinDays", () => {
     expect(ridesWithinDays([ride(exactly30dAgo)], 30, now)).toHaveLength(1);
   });
 
+  it("excludes future-dated rides (clock skew / GPX import)", () => {
+    const tomorrow = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    const today = new Date(now - 60 * 60 * 1000).toISOString(); // 1h ago
+    const result = ridesWithinDays([ride(tomorrow), ride(today)], 30, now);
+    expect(result.map((r) => r.id)).toEqual([today]);
+  });
+
   it("returns empty when every ride predates the window", () => {
     expect(ridesWithinDays([ride("2026-01-01T00:00:00Z")], 30, now)).toEqual(
       [],
