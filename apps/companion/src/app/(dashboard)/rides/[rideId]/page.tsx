@@ -278,7 +278,10 @@ export default function RideDetailPage() {
                     setRenaming(true);
                   }}
                   aria-label={t("Rename ride")}
-                  className="rounded-lg p-1.5 text-fg-mute opacity-0 transition hover:bg-paper-2 hover:text-ink group-hover:opacity-100"
+                  // Visible by default so it's discoverable on touch / no-hover
+                  // devices and via keyboard focus; on hover-capable pointers it
+                  // fades in on row hover for the cleaner desktop treatment.
+                  className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
                 >
                   <Pencil size={14} />
                 </button>

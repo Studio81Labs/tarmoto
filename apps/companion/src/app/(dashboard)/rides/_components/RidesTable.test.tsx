@@ -78,12 +78,17 @@ describe("RidesTable", () => {
     );
   });
 
-  it("renders a row that links to the ride detail page with the design cells", () => {
+  it("renders a row whose RIDE cell links to the ride detail page", () => {
     renderTable([ride()]);
-    // The row anchor carries role="row"; the header row is also role="row",
-    // so target the one containing the ride name.
-    const row = screen.getByText("Sunday loop").closest("a")!;
-    expect(row).toHaveAttribute("href", "/rides/ride-1");
+    // The data row carries role="row" (so does the header row); target the
+    // one containing the ride name. The navigable control is a real link
+    // inside the RIDE cell — a stretched ::after overlay makes the whole row
+    // clickable while keeping a single discoverable link in the a11y tree.
+    const row = screen
+      .getByText("Sunday loop")
+      .closest<HTMLElement>('[role="row"]')!;
+    const link = within(row).getByRole("link", { name: "Sunday loop" });
+    expect(link).toHaveAttribute("href", "/rides/ride-1");
 
     const cells = within(row).getAllByRole("cell");
     // RIDE name + ride_type subtext (region/hazard omitted by design).
@@ -97,7 +102,9 @@ describe("RidesTable", () => {
 
   it("shows an em dash for a missing lean angle", () => {
     renderTable([ride({ id: "r2", name: "No lean", max_lean_angle: null })]);
-    const row = screen.getByText("No lean").closest("a")!;
+    const row = screen
+      .getByText("No lean")
+      .closest<HTMLElement>('[role="row"]')!;
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 

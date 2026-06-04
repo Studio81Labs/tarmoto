@@ -1,5 +1,4 @@
 "use client";
-import { t } from "@/i18n";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
@@ -17,9 +16,12 @@ interface Props {
 }
 
 /**
- * A single Ride History table row. The whole row is a `Link` to the ride
- * detail page (`/rides/[rideId]`), where rename + full stats live. Mirrors
- * the home `RecentRidesTable` styling + a11y roles.
+ * A single Ride History table row. The RIDE cell holds a real `<Link>` to the
+ * ride detail page (`/rides/[rideId]`, where rename + full stats live); a
+ * stretched `::after` overlay makes the entire row clickable while keeping a
+ * single, discoverable link in the accessibility tree (the prior whole-row
+ * `<a role="row">` overrode its own link role, so screen readers exposed a
+ * row with no navigable control). Mirrors the home `RecentRidesTable` styling.
  *
  * Honest data gaps (per the v2 plan): the per-ride region subtext and the
  * ⚠ hazard badge have no backing data on the summary, so the RIDE cell shows
@@ -29,10 +31,9 @@ export function RideRow({ ride, last }: Props) {
   const tier = scoreToQualityTier(ride.avg_road_quality);
   const name = ride.name ?? formatShortDate(ride.started_at);
   return (
-    <Link
-      href={`/rides/${ride.id}`}
+    <div
       role="row"
-      className={`${ROW_COLS} px-5 py-3.5 text-[13px] transition hover:bg-paper ${
+      className={`${ROW_COLS} relative px-5 py-3.5 text-[13px] transition hover:bg-paper focus-within:bg-paper ${
         last ? "" : "border-b border-line"
       }`}
     >
@@ -40,7 +41,12 @@ export function RideRow({ ride, last }: Props) {
         <Mono className="text-fg-dim">{formatShortDate(ride.started_at)}</Mono>
       </span>
       <span role="cell" className="min-w-0">
-        <span className="block truncate font-bold text-ink">{name}</span>
+        <Link
+          href={`/rides/${ride.id}`}
+          className="block truncate rounded-sm font-bold text-ink after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          {name}
+        </Link>
         <Mono className="text-[10px] uppercase text-fg-mute">
           {ride.ride_type}
         </Mono>
@@ -75,12 +81,8 @@ export function RideRow({ ride, last }: Props) {
         )}
       </span>
       <span role="cell" className="justify-self-end">
-        <ArrowRight
-          size={14}
-          className="text-fg-mute"
-          aria-label={t("Open ride")}
-        />
+        <ArrowRight size={14} className="text-fg-mute" aria-hidden />
       </span>
-    </Link>
+    </div>
   );
 }
