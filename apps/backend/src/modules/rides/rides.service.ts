@@ -529,12 +529,23 @@ ${tracks.join('\n')}
       });
     }
     if (query.started_to) {
-      // inclusive end-of-day — add one day, compare with <
-      const to = new Date(query.started_to);
-      to.setUTCDate(to.getUTCDate() + 1);
-      qb.andWhere('ride.started_at < :started_to_excl', {
-        started_to_excl: to.toISOString(),
-      });
+      if (/^\d{4}-\d{2}-\d{2}$/.test(query.started_to)) {
+        // Date-only (the rides-list date picker) means inclusive end-of-day:
+        // add one day and compare with `<`.
+        const to = new Date(query.started_to);
+        to.setUTCDate(to.getUTCDate() + 1);
+        qb.andWhere('ride.started_at < :started_to_excl', {
+          started_to_excl: to.toISOString(),
+        });
+      } else {
+        // A full ISO timestamp (the home recent-rides hook capping at "now")
+        // is an exact instant upper bound — `<=`, without the +1-day
+        // end-of-day widening, so a future-dated ride can't slip past a
+        // "now" cap and starve the recent-rides window.
+        qb.andWhere('ride.started_at <= :started_to_instant', {
+          started_to_instant: new Date(query.started_to).toISOString(),
+        });
+      }
     }
     if (query.min_distance_km !== undefined) {
       qb.andWhere('ride.distance_km >= :min_distance_km', {

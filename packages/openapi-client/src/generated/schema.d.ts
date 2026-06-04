@@ -7429,7 +7429,7 @@ export interface operations {
         type?: "free" | "commute" | "trip" | "tracked";
         /** @description ISO 8601 date (inclusive) */
         started_from?: string;
-        /** @description ISO 8601 date (inclusive end-of-day) */
+        /** @description ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening). */
         started_to?: string;
         min_distance_km?: number;
         max_distance_km?: number;
@@ -7566,7 +7566,7 @@ export interface operations {
         type?: "free" | "commute" | "trip" | "tracked";
         /** @description ISO 8601 date (inclusive) */
         started_from?: string;
-        /** @description ISO 8601 date (inclusive end-of-day) */
+        /** @description ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening). */
         started_to?: string;
         min_distance_km?: number;
         max_distance_km?: number;

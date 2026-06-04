@@ -28,9 +28,11 @@ export function useRecentRides(limit: number): {
     queryKey: ["recent-rides", userId, limit],
     enabled: userId != null,
     queryFn: async ({ signal }) => {
-      // YYYY-MM-DD; the backend treats `started_to` as inclusive end-of-day,
-      // so this keeps all of today and excludes tomorrow-or-later rides.
-      const startedTo = new Date().toISOString().slice(0, 10);
+      // Full ISO instant. The backend reads a timestamped `started_to` as an
+      // exact `<= now` bound (a date-only value would widen to end-of-day and
+      // still admit later-today future rides), so future-dated rides never
+      // occupy a slot in this capped page and can't starve the window.
+      const startedTo = new Date().toISOString();
       const { data, error } = await api.GET("/api/v1/rides", {
         params: {
           query: {

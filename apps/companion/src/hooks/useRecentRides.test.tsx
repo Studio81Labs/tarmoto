@@ -47,8 +47,11 @@ describe("useRecentRides", () => {
           limit: 5,
           sort: "started_at",
           order: "desc",
-          // Upper-bounded at today so future-dated rides can't fill the cap.
-          started_to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          // Upper-bounded at the current instant (full ISO) so future-dated
+          // rides can't fill the cap and starve the window.
+          started_to: expect.stringMatching(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+          ),
         },
       },
       signal: expect.anything(),
