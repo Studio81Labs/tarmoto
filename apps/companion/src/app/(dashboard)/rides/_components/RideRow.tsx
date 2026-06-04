@@ -33,14 +33,14 @@ export function RideRow({ ride, last }: Props) {
   return (
     <div
       role="row"
-      className={`${ROW_COLS} relative px-5 py-3.5 text-[13px] transition hover:bg-paper focus-within:bg-paper ${
+      className={`${ROW_COLS} relative px-5 py-3 text-[13px] transition hover:bg-paper focus-within:bg-paper ${
         last ? "" : "border-b border-line"
       }`}
     >
       <span role="cell">
         <Mono className="text-fg-dim">{formatShortDate(ride.started_at)}</Mono>
       </span>
-      <span role="cell" className="min-w-0">
+      <span role="cell" className="min-w-0 leading-tight">
         <Link
           href={`/rides/${ride.id}`}
           className="block truncate rounded-sm font-bold text-ink after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
