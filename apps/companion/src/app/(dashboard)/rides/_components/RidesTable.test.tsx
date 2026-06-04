@@ -60,34 +60,33 @@ function renderTable(
 }
 
 describe("RidesTable", () => {
-  it("renders the v2 design column headers including LEAN", () => {
-    renderTable([ride()]);
-    const headers = screen
-      .getAllByRole("columnheader")
-      .map((h) => h.textContent?.trim());
-    expect(headers).toEqual(
-      expect.arrayContaining([
-        "DATE",
-        "RIDE",
-        "KM",
-        "DURATION",
-        "AVG",
-        "LEAN",
-        "QUALITY",
-      ]),
-    );
+  it("renders a real <table> with the v2 design column headers including LEAN", () => {
+    const { container } = renderTable([ride()]);
+    // Semantic table — not div+ARIA roles.
+    expect(container.querySelector("table")).toBeInTheDocument();
+    // Header labels (sortable ones may carry a sort caret, so match loosely).
+    for (const label of [
+      "DATE",
+      "RIDE",
+      "KM",
+      "DURATION",
+      "AVG",
+      "LEAN",
+      "QUALITY",
+    ]) {
+      expect(
+        screen.getByRole("columnheader", { name: new RegExp(label) }),
+      ).toBeInTheDocument();
+    }
   });
 
   it("renders a row whose RIDE cell links to the ride detail page", () => {
     renderTable([ride()]);
-    // The data row carries role="row" (so does the header row); target the
-    // one containing the ride name. The navigable control is a real link
-    // inside the RIDE cell — a stretched ::after overlay makes the whole row
+    // Real <tr> (implicit role row); the navigable control is a real link in
+    // the RIDE cell — a stretched ::after overlay makes the whole row
     // clickable while keeping a single discoverable link in the a11y tree.
-    const row = screen
-      .getByText("Sunday loop")
-      .closest<HTMLElement>('[role="row"]')!;
-    const link = within(row).getByRole("link", { name: "Sunday loop" });
+    const row = screen.getByText("Sunday loop").closest("tr")!;
+    const link = within(row).getByRole("link", { name: /Sunday loop/ });
     expect(link).toHaveAttribute("href", "/rides/ride-1");
 
     const cells = within(row).getAllByRole("cell");
@@ -102,9 +101,7 @@ describe("RidesTable", () => {
 
   it("shows an em dash for a missing lean angle", () => {
     renderTable([ride({ id: "r2", name: "No lean", max_lean_angle: null })]);
-    const row = screen
-      .getByText("No lean")
-      .closest<HTMLElement>('[role="row"]')!;
+    const row = screen.getByText("No lean").closest("tr")!;
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 
