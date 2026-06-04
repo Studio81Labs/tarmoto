@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import RideDetailPage from "./page";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -20,6 +20,7 @@ vi.mock("@/lib/api", async () => {
     api: {
       ...actual.api,
       GET: vi.fn(),
+      PATCH: vi.fn(),
     },
   };
 });
@@ -31,6 +32,7 @@ vi.mock("../_components/RideRouteMap", () => ({
 function ride(overrides: Record<string, unknown> = {}) {
   return {
     id: "ride-1",
+    name: null,
     status: "completed",
     ride_type: "solo",
     started_at: "2026-05-01T08:00:00.000Z",
@@ -76,6 +78,7 @@ describe("RideDetailPage analytics", () => {
     routeRideId = "ride-1";
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
+    vi.mocked(api.PATCH).mockReset();
     // The detail page now gates its fetch on `useAuthStore.accessToken`
     // (matches the AuthSync race fix). Seed a session so the effect
     // actually fires under test.
@@ -113,6 +116,39 @@ describe("RideDetailPage analytics", () => {
       screen.getByText("No elevation profile was recorded for this ride."),
     ).toBeInTheDocument();
     expect(screen.getByText(/98 km\/h peak/i)).toBeInTheDocument();
+  });
+
+  it("renames the ride via PATCH and reflects the new name", async () => {
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({ name: null }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+    vi.mocked(api.PATCH).mockResolvedValueOnce({
+      data: { ...ride(), name: "Sunday loop" },
+      error: undefined,
+    } as unknown as Awaited<ReturnType<typeof api.PATCH>>);
+
+    render(<RideDetailPage />);
+
+    // Unnamed ride falls back to the date label; the rename control exists.
+    await screen.findByText(/Ride on/);
+    fireEvent.click(screen.getByRole("button", { name: "Rename ride" }));
+    const input = screen.getByRole("textbox", { name: "Ride name" });
+    fireEvent.change(input, { target: { value: "Sunday loop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.PATCH)).toHaveBeenCalledWith(
+        "/api/v1/rides/{rideId}",
+        expect.objectContaining({
+          params: { path: { rideId: "ride-1" } },
+          body: { name: "Sunday loop" },
+        }),
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Sunday loop" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a visible speed marker for one-segment rides", async () => {

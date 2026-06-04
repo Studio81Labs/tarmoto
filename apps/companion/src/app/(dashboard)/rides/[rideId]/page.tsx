@@ -6,14 +6,17 @@ import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import {
   ArrowLeft,
+  Check,
   Clock,
   Download,
   Gauge,
   Loader2,
   Mountain,
+  Pencil,
   Route,
   Share2,
   Thermometer,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { QualityTier } from "@/lib/types";
@@ -31,6 +34,7 @@ import { RideRouteMap } from "../_components/RideRouteMap";
 import { Card } from "@tarmoto/ui";
 interface RideDetail {
   id: string;
+  name: string | null;
   status: string;
   ride_type: string;
   started_at: string;
@@ -62,6 +66,13 @@ export default function RideDetailPage() {
   const [exporting, setExporting] = useState<RideExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  // Inline rename of the ride name (the All-rides table row now navigates
+  // here rather than editing in place, so this is the rename entry point;
+  // it reaches `PATCH /api/v1/rides/{rideId}`).
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   // Gate the detail fetch on the access token being hydrated by
   // `AuthSync`. Without this, the initial mount races AuthSync and
   // the first GET goes out without a Bearer header → backend 401s.
@@ -139,6 +150,31 @@ export default function RideDetailPage() {
       // Clipboard API can reject on insecure origins; fall back silently.
     }
   }
+  async function saveRename() {
+    if (renameSaving) return;
+    setRenameSaving(true);
+    setRenameError(null);
+    const trimmed = renameDraft.trim();
+    try {
+      const { data, error: apiError } = await api.PATCH(
+        "/api/v1/rides/{rideId}",
+        {
+          params: { path: { rideId } },
+          body: { name: trimmed === "" ? null : trimmed },
+        } as never,
+      );
+      if (apiError) throw new Error("Rename failed");
+      const nextName =
+        (data as { name?: string | null } | undefined)?.name ??
+        (trimmed === "" ? null : trimmed);
+      setRide((r) => (r ? { ...r, name: nextName } : r));
+      setRenaming(false);
+    } catch {
+      setRenameError("Couldn't rename this ride. Try again.");
+    } finally {
+      setRenameSaving(false);
+    }
+  }
   if (loading) {
     return (
       <PageShell>
@@ -173,7 +209,10 @@ export default function RideDetailPage() {
       </PageShell>
     );
   }
-  const rideName = `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
+  // Prefer the rider's custom name; fall back to a date label when unset.
+  const rideName = ride.name?.trim()
+    ? ride.name
+    : `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
   const avgTier = readingToTier(ride.avg_road_quality);
   // Guard against empty strings from the API; the `as unknown as RideDetail`
   // cast bypasses the type system, so we can't assume a non-empty value.
@@ -192,11 +231,66 @@ export default function RideDetailPage() {
             <ArrowLeft size={20} className="text-fg-dim" />
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold truncate">{rideName}</h1>
+            {renaming ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={renameDraft}
+                  maxLength={120}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveRename();
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  aria-label={t("Ride name")}
+                  className="min-w-0 flex-1 rounded-lg border border-line bg-cream px-2.5 py-1.5 text-lg font-bold text-ink focus:border-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveRename()}
+                  disabled={renameSaving}
+                  aria-label={t("Save name")}
+                  className="rounded-lg p-2 text-accent hover:bg-paper-2 disabled:opacity-50"
+                >
+                  {renameSaving ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Check size={16} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRenaming(false)}
+                  aria-label={t("Cancel")}
+                  className="rounded-lg p-2 text-fg-dim hover:bg-paper-2"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="group flex items-center gap-2">
+                <h1 className="truncate text-2xl font-bold">{rideName}</h1>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenameDraft(ride.name ?? "");
+                    setRenameError(null);
+                    setRenaming(true);
+                  }}
+                  aria-label={t("Rename ride")}
+                  className="rounded-lg p-1.5 text-fg-mute opacity-0 transition hover:bg-paper-2 hover:text-ink group-hover:opacity-100"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+            )}
             <p className="text-sm text-fg-dim mt-0.5">
               {new Date(ride.started_at).toLocaleString()} ·{" "}
               {t("{rideType} ride", { rideType: rideTypeLabel })}
             </p>
+            {renameError && (
+              <p className="mt-1 text-xs text-red-400">{renameError}</p>
+            )}
           </div>
           <button
             type="button"
