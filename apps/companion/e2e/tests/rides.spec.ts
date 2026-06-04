@@ -373,29 +373,23 @@ test.describe("rides extras", () => {
     // route map's aria-label, so scope to the combobox role.
     await page.getByRole("combobox", { name: /ride a/i }).selectOption(a.id);
 
-    // The Stats-diff table renders one row per metric with the value
-    // and unit in sibling DOM nodes, so scope to the table by its
-    // heading. Ride A is our explicit pick (RIDE_OLD = 80.0 km); Ride
-    // B is whatever the auto-default landed on first (the second-
-    // most-recent ride, RIDE_RECENT = 220.0 km). Asserting both
-    // distances catches a regression that loses either pick or only
-    // re-fetches one side after the explicit override.
-    //
-    // Scope by the "Stats diff" heading rather than a `section`
-    // element selector — the surrounding container migrated from
-    // `<section>` to a `<Card>` (`<div>`) when /rides/compare adopted
-    // canonical @tarmoto/ui primitives, but the heading text and the
-    // visible stats payload are unchanged.
+    // The metric table renders one row per metric (Metric / Ride A /
+    // Ride B). The v2 redesign dropped the separate "Stats diff" heading
+    // and the delta column for a clean two-column read, so scope to the
+    // card by the unique "Metric" header cell plus the "Distance" row
+    // (`.last()` resolves to the innermost div containing both — the card
+    // itself, not an outer page wrapper). Ride A is our explicit pick
+    // (RIDE_OLD = 80.0 km); Ride B is the auto-default's first landing
+    // (RIDE_RECENT = 220.0 km). Asserting both distances catches a
+    // regression that loses either pick or only re-fetches one side.
     const statsTable = page
       .locator("div")
-      .filter({ has: page.getByRole("heading", { name: /^stats diff/i }) })
-      .first();
+      .filter({ hasText: "Metric" })
+      .filter({ hasText: "Distance" })
+      .last();
     await expect(statsTable).toBeVisible({ timeout: 10_000 });
     await expect(statsTable).toContainText("80.0");
     await expect(statsTable).toContainText("220.0");
-    // Sanity check the delta arithmetic surfaced. Catches regressions
-    // in `computeStatRows`'s `b - a` formula.
-    await expect(statsTable).toContainText("+140.0");
   });
 
   // T35 — Export ride data: the ride detail page's Export menu offers
