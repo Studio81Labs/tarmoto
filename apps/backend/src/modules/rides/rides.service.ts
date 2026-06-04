@@ -25,6 +25,7 @@ import {
   RideTracksResponseDto,
   type RideStatus,
 } from './dto/ride-response.dto.js';
+import { RideStatsDto } from './dto/ride-stats.dto.js';
 import { CsvService } from './csv.service.js';
 import { normalizeLeanDistribution } from '@tarmoto/shared';
 
@@ -244,6 +245,65 @@ export class RidesService {
     return {
       rides: rides.map((r) => this.toSummary(r)),
       total,
+    };
+  }
+
+  /**
+   * Aggregate KPIs for the SAME filtered set as `list()` — drives the Ride
+   * History "All rides" cards so they track the active filter window. Runs
+   * two raw aggregates in parallel, both routed through `applyRidesFilters`
+   * so the WHERE clause matches the list exactly: a single-row scalar
+   * aggregate (distance / hours / weighted quality / count) on `rides`, plus
+   * a distinct-road-segment count that needs the `ride_segments` join.
+   * Splitting the distinct-roads count out keeps the scalar aggregate from
+   * fanning out across the one-to-many join (which would inflate SUM/COUNT).
+   */
+  async stats(userId: string, query: ListRidesDto): Promise<RideStatsDto> {
+    const base = (): SelectQueryBuilder<Ride> =>
+      this.applyRidesFilters(
+        this.rideRepo
+          .createQueryBuilder('ride')
+          .where('ride.user_id = :userId', { userId }),
+        query,
+      );
+
+    const [agg, roadsRow] = await Promise.all([
+      base()
+        .select('COALESCE(SUM(ride.distance_km), 0)', 'km')
+        .addSelect(
+          'COALESCE(SUM(EXTRACT(EPOCH FROM (ride.ended_at - ride.started_at)) / 3600.0), 0)',
+          'hours',
+        )
+        .addSelect(
+          'CASE WHEN SUM(ride.distance_km) FILTER (WHERE ride.avg_road_quality IS NOT NULL) > 0 ' +
+            'THEN SUM(ride.avg_road_quality * ride.distance_km) ' +
+            '/ SUM(ride.distance_km) FILTER (WHERE ride.avg_road_quality IS NOT NULL) ' +
+            'ELSE AVG(ride.avg_road_quality) END',
+          'quality',
+        )
+        .addSelect('COUNT(*)', 'count')
+        .getRawOne<{
+          km: string;
+          hours: string;
+          quality: string | null;
+          count: string;
+        }>(),
+      base()
+        .innerJoin('ride_segments', 'seg', 'seg.ride_id = ride.id')
+        .select('COUNT(DISTINCT seg.road_segment_id)', 'roads')
+        .andWhere('seg.road_segment_id IS NOT NULL')
+        .getRawOne<{ roads: string }>(),
+    ]);
+
+    return {
+      total_distance_km: Math.round(parseFloat(agg?.km ?? '0')),
+      total_hours: Math.round(parseFloat(agg?.hours ?? '0')),
+      new_roads: parseInt(roadsRow?.roads ?? '0', 10),
+      avg_quality:
+        agg?.quality != null
+          ? Math.round(parseFloat(agg.quality) * 10) / 10
+          : null,
+      ride_count: parseInt(agg?.count ?? '0', 10),
     };
   }
 

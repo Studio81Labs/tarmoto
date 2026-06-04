@@ -33,6 +33,7 @@ import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import { RenameRideDto } from './dto/rename-ride.dto.js';
+import { RideStatsDto } from './dto/ride-stats.dto.js';
 import {
   RideResponseDto,
   RideSummaryDto,
@@ -150,6 +151,16 @@ export class RidesController {
     @Query() query: ListRidesDto,
   ): Promise<RideTracksResponseDto> {
     return this.ridesService.getTracks(req.user!.userId, query);
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Aggregate KPIs for a filtered set of rides' })
+  @ApiResponse({ status: 200, type: RideStatsDto })
+  async stats(
+    @Req() req: express.Request,
+    @Query() query: ListRidesDto,
+  ): Promise<RideStatsDto> {
+    return this.ridesService.stats(req.user!.userId, query);
   }
 
   @Patch(':rideId')

@@ -980,4 +980,93 @@ describe('RidesService', () => {
       expect(gpx.match(/<trk>/g)).toHaveLength(2);
     });
   });
+
+  describe('stats', () => {
+    // The aggregate builder (#1) carries select/addSelect + getRawOne; the
+    // distinct-roads builder (#2) carries innerJoin + getRawOne. Each is
+    // first run through applyRidesFilters, so andWhere must be chainable.
+    function makeAggQbSpy(raw: {
+      km: string;
+      hours: string;
+      quality: string | null;
+      count: string;
+    }) {
+      const andWhere = jest.fn().mockReturnThis();
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        getRawOne: jest.fn().mockResolvedValue(raw),
+      };
+      return { qb, andWhere };
+    }
+
+    function makeRoadsQbSpy(raw: { roads: string }) {
+      const andWhere = jest.fn().mockReturnThis();
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        getRawOne: jest.fn().mockResolvedValue(raw),
+      };
+      return { qb, andWhere };
+    }
+
+    it('aggregates distance/hours/quality/count + distinct roads for the filter', async () => {
+      const agg = makeAggQbSpy({
+        km: '1284',
+        hours: '32',
+        quality: '4.1',
+        count: '8',
+      });
+      const roads = makeRoadsQbSpy({ roads: '47' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', { type: 'trip' });
+
+      expect(res.total_distance_km).toBe(1284);
+      expect(res.total_hours).toBe(32);
+      expect(res.new_roads).toBe(47);
+      expect(res.avg_quality).toBeCloseTo(4.1);
+      expect(res.ride_count).toBe(8);
+
+      // The same filter predicate is applied to BOTH builders.
+      expect(
+        agg.andWhere.mock.calls.some(
+          (c: unknown[]) =>
+            typeof c[0] === 'string' && c[0].includes('ride_type ='),
+        ),
+      ).toBe(true);
+      expect(
+        roads.andWhere.mock.calls.some(
+          (c: unknown[]) =>
+            typeof c[0] === 'string' && c[0].includes('ride_type ='),
+        ),
+      ).toBe(true);
+    });
+
+    it('maps a null quality aggregate (no scored rides) to null', async () => {
+      const agg = makeAggQbSpy({
+        km: '0',
+        hours: '0',
+        quality: null,
+        count: '0',
+      });
+      const roads = makeRoadsQbSpy({ roads: '0' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', {});
+
+      expect(res.avg_quality).toBeNull();
+      expect(res.ride_count).toBe(0);
+      expect(res.new_roads).toBe(0);
+    });
+  });
 });
