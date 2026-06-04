@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  AlertTriangle,
   Check,
   Copy,
   Crosshair,
@@ -18,6 +17,7 @@ import {
   MapPin,
 } from "lucide-react";
 import {
+  Alert,
   Button,
   Card,
   MetricTile,
@@ -67,12 +67,13 @@ const NEARBY_LIMIT = 25;
 // Fallback coordinate used when the browser blocks or doesn't have geolocation.
 // Prague (50.0755, 14.4378) is a neutral Central-European anchor for the
 // initial nearby-roads fetch; the rider replaces it via "Use my location" or
-// the lat/lng inputs. Label deliberately reads as a placeholder so it doesn't
-// look like a curated suggestion of "Prague" specifically.
+// the lat/lng inputs. Empty label so the default centre shows no placeholder
+// chip in the card header (only real picks — "My location" / "Custom point" —
+// surface a label there).
 const FALLBACK_CENTER = {
   lat: 50.0755,
   lng: 14.4378,
-  label: "Default — pick yours below",
+  label: "",
 };
 const INITIAL_MAP_ZOOM = 8;
 type ShareState =
@@ -535,27 +536,21 @@ function RoadMapPageInner() {
           <Card padded={false} className="overflow-hidden">
             <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
               <Stamp>{t("Nearby unridden")}</Stamp>
-              <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
-                {center.label}
-              </span>
+              {center.label && (
+                <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
+                  {center.label}
+                </span>
+              )}
             </div>
             <div className="px-[18px] py-3">
               {nearbyLoading ? (
                 <LoaderRow label="Loading unridden roads…" />
               ) : nearbyError ? (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
-                >
-                  <AlertTriangle
-                    size={14}
-                    className="mt-0.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span>{nearbyError}</span>
-                </div>
+                <Alert compact intent="danger" title={nearbyError} />
               ) : nearby.length === 0 ? (
-                <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
+                <Alert compact intent="neutral" title={t("Nothing nearby")}>
+                  {t("— zoom out or pick a new centre.")}
+                </Alert>
               ) : (
                 <ul className="space-y-3">
                   {nearbyByDistance.slice(0, 10).map((seg) => (
@@ -625,19 +620,16 @@ function NearbyCenterControls({
   };
   return (
     <div className="space-y-2">
-      <button
-        type="button"
+      <Button
+        block
+        size="sm"
+        variant="secondary"
         onClick={onUseMyLocation}
-        disabled={locating}
-        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition disabled:opacity-60"
+        loading={locating}
+        leftIcon={<Crosshair size={14} />}
       >
-        {locating ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <Crosshair size={14} />
-        )}
-        {locating ? "Locating…" : "Use my location"}
-      </button>
+        {locating ? t("Locating… ") : t("Use my location")}
+      </Button>
       <div className="grid grid-cols-2 gap-2">
         <label className="text-xs text-fg-dim">
           <span className="block mb-1">{t("Latitude")}</span>
@@ -660,13 +652,9 @@ function NearbyCenterControls({
           />
         </label>
       </div>
-      <button
-        type="button"
-        onClick={apply}
-        className="w-full px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-sm hover:bg-accent/20 transition"
-      >
+      <Button block size="sm" variant="accent" onClick={apply}>
         {t("Apply coordinates ")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -703,12 +691,6 @@ function LoaderRow({ label }: LoaderRowProps) {
       <Loader2 size={14} className="animate-spin" /> {label}
     </div>
   );
-}
-interface EmptyStateProps {
-  label: string;
-}
-function EmptyState({ label }: EmptyStateProps) {
-  return <p className="text-sm text-fg-dim">{label}</p>;
 }
 interface MapLegendProps {
   riddenCount: number;
