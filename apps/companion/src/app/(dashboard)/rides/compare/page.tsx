@@ -12,6 +12,7 @@ import type { QualityTier } from "@/lib/types";
 import {
   QUALITY_CONFIG,
   formatDurationCompact,
+  formatKmValue,
   formatShortDate,
   scoreToQualityTier,
 } from "@/lib/utils";
@@ -257,7 +258,7 @@ function ABCard({
       )}
       <div className="mt-3 flex items-center gap-3">
         <Mono className="text-[11px] text-fg-dim">
-          {distance != null ? `${Math.round(distance)} KM` : "— KM"}
+          {`${formatKmValue(distance)} KM`}
         </Mono>
         <span className="text-fg-mute">·</span>
         <Mono className="text-[11px] text-fg-dim">
@@ -275,7 +276,7 @@ function formatPickerOption(ride: RideOption): string {
   const date = formatShortDate(ride.started_at);
   const name = ride.name ?? t("Untitled ride");
   const km =
-    ride.distance_km != null ? ` (${Math.round(ride.distance_km)} km)` : "";
+    ride.distance_km != null ? ` (${formatKmValue(ride.distance_km)} km)` : "";
   return `${date} · ${name}${km}`;
 }
 

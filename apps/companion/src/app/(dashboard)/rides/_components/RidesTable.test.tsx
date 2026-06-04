@@ -105,6 +105,13 @@ describe("RidesTable", () => {
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 
+  it("keeps a decimal for sub-km distances instead of rounding to 0", () => {
+    renderTable([ride({ id: "r3", name: "Short hop", distance_km: 0.4 })]);
+    const row = screen.getByText("Short hop").closest("tr")!;
+    expect(within(row).getByText("0.4")).toBeInTheDocument();
+    expect(within(row).queryByText("0")).not.toBeInTheDocument();
+  });
+
   it("renders the empty state when there are no rides", () => {
     renderTable([], { total: 0 });
     expect(

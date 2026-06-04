@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 // Mock Next.js navigation and other runtime-only deps so the module can be
@@ -26,6 +26,7 @@ import {
 } from "./useRidesQuery";
 import { windowStartISO } from "./TimeWindowPills";
 import { useAuthStore } from "@/stores/auth";
+import { api } from "@/lib/api";
 
 // Fixed reference date used to derive expected window bounds.
 // 2026-06-04T00:00:00Z:
@@ -203,5 +204,34 @@ describe("useRidesQuery — window preserved for a stale debounced update", () =
     const url = replace.mock.calls[0][0] as string;
     expect(url).toContain("window=30d"); // latest window, not the stale "all"
     expect(url).toContain("q=ridge");
+  });
+});
+
+// ── clamp an out-of-range ?page= once the count is known ───────────────────
+
+describe("useRidesQuery — out-of-range page clamping", () => {
+  it("resets a stale ?page= past the last page back to a valid page", async () => {
+    // waitFor needs real timers; the file pins fake timers in beforeEach.
+    vi.useRealTimers();
+    const replace = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ replace } as never);
+    vi.mocked(usePathname).mockReturnValue("/rides");
+    vi.mocked(useAuthStore).mockReturnValue(true as never); // authReady
+    // ?page=5, but only 15 rides exist → a single page. The mock returns the
+    // same params object every render, so once clamped the effect settles.
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("page=5") as never,
+    );
+    vi.mocked(api.GET).mockResolvedValue({
+      data: { rides: [], total: 15 },
+      error: undefined,
+    } as never);
+
+    renderHook(() => useRidesQuery());
+
+    // Clamped to page 1 → page param dropped → bare pathname.
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith("/rides", { scroll: false }),
+    );
   });
 });

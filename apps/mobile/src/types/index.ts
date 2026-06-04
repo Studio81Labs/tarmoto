@@ -286,6 +286,12 @@ export interface RideSummary {
   /** Rider-supplied label. Null when not renamed yet. */
   name: string | null;
   duration_min: number | null;
+  /**
+   * Max absolute lean angle (deg) over the ride. Promoted onto the summary so
+   * ride lists (`GET /rides`) carry it — matches the backend `RideSummaryDto`,
+   * OpenAPI, and companion. Null while active or when no lean samples exist.
+   */
+  max_lean_angle: number | null;
 }
 
 export interface RideDetail extends RideSummary {
@@ -295,7 +301,6 @@ export interface RideDetail extends RideSummary {
   elevation_gain: number | null;
   elevation_loss: number | null;
   curve_count: number | null;
-  max_lean_angle: number | null;
   /**
    * US-19 lean histogram. Each bucket carries the number of 1-second
    * sensor windows the rider's absolute lean fell into that bucket.

@@ -10,6 +10,7 @@ import {
 } from "@tarmoto/ui";
 import {
   formatDurationCompact,
+  formatKmValue,
   formatShortDate,
   scoreToQualityTier,
 } from "@/lib/utils";
@@ -67,9 +68,7 @@ const COLUMNS: DataTableColumn<RideSummary>[] = [
     size: "80px",
     sortable: true,
     render: (r) => (
-      <Mono className="font-bold text-ink">
-        {r.distance_km != null ? Math.round(r.distance_km) : "—"}
-      </Mono>
+      <Mono className="font-bold text-ink">{formatKmValue(r.distance_km)}</Mono>
     ),
   },
   {

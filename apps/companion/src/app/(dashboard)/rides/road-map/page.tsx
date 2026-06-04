@@ -503,13 +503,17 @@ function RoadMapPageInner() {
         </div>
 
         <aside className="space-y-3.5 overflow-y-auto">
-          {/* 1 — Segments ridden (ink hero tile, accent number + region subline). */}
+          {/* 1 — Segments ridden (ink hero tile, accent number + region subline).
+               Reflects the active period: the map/legend filter to the window,
+               so an all-time total here would contradict a near-empty map. */}
           <MetricTile
             variant="ink"
             accentNumber
             formatValue={format}
             label={t("Segments ridden")}
-            value={stats.ridden_segments}
+            value={
+              period === "all" ? stats.ridden_segments : filteredRidden.length
+            }
             delta={t("of {total} in region", {
               total: format(stats.total_segments),
             })}

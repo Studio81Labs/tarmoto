@@ -285,6 +285,18 @@ export function useRidesQuery() {
     return () => ctrl.abort();
   }, [authReady, state]);
 
+  // Clamp an out-of-range page once the count is known. A stale/bookmarked
+  // `?page=` (or data shrinking below the page boundary) would otherwise
+  // request an empty offset and render "No rides match" while page 1 has
+  // rides. Resetting to the last valid page is a bare page change, so it
+  // doesn't wipe the active filters.
+  useEffect(() => {
+    if (list.loading || list.error) return;
+    const maxPage = Math.max(1, Math.ceil(list.total / PAGE_SIZE));
+    if (state.page > maxPage) update({ page: maxPage });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.loading, list.error, list.total, state.page]);
+
   function update(patch: Partial<RidesQueryState>) {
     // Read the freshest state via the ref so stale-closure callers still
     // merge against the current snapshot (see `stateRef` comment above).
