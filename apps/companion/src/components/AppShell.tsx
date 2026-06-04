@@ -8,7 +8,13 @@ import { Sidebar } from "./Sidebar";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-cream text-ink">
+    // `fixed inset-0` pins the shell to the exact visual viewport rather than
+    // `h-screen` (100vh). 100vh ignores a horizontal scrollbar's height, so
+    // with `body { min-height: 100vh }` the body ends up taller than the usable
+    // area and scrolls the whole page — a second scrollbar on top of the inner
+    // region's. Out-of-flow + inset-0 sidesteps that entirely; only the inner
+    // region below scrolls.
+    <div className="fixed inset-0 flex overflow-hidden bg-cream text-ink">
       <Sidebar />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/*
