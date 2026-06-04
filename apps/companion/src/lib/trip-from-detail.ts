@@ -38,6 +38,16 @@ export interface TripDetailResponse {
    */
   owner_id?: string;
   folder_id?: string | null;
+  /**
+   * #647 rollups. `TripDetailDto` extends `TripSummaryDto`, so the backend
+   * serves these on the detail response too. Carried through
+   * `tripFromDetail` so a detail-derived list row (the duplicate-trip flow
+   * before the list refetch) shows the same KM / quality / passes metadata
+   * a list refetch would. Optional/nullable to match the wire contract.
+   */
+  distance_km?: number | null;
+  quality_avg?: number | null;
+  passes_count?: number | null;
 }
 
 export interface TripDetailMember {
@@ -209,6 +219,12 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
     // Backend doesn't return updated_at on the detail DTO. Fall back to
     // created_at so callers ordering by recency don't crash.
     updatedAt: detail.created_at,
+    // #647 rollups served on the detail DTO too — pass through so a
+    // detail-derived list row (duplicate-trip flow) carries the same card
+    // metadata as a list-endpoint row instead of blanks until refetch.
+    distance_km: detail.distance_km ?? null,
+    quality_avg: detail.quality_avg ?? null,
+    passes_count: detail.passes_count ?? null,
   };
 }
 

@@ -108,6 +108,22 @@ describe("tripFromDetail", () => {
     expect(trip.status).toBe("draft");
   });
 
+  it("carries the #647 rollups so a detail-derived list row isn't blank", () => {
+    const trip = tripFromDetail(
+      makeDetail({ distance_km: 610, quality_avg: 4.4, passes_count: 6 }),
+    );
+    expect(trip.distance_km).toBe(610);
+    expect(trip.quality_avg).toBeCloseTo(4.4);
+    expect(trip.passes_count).toBe(6);
+  });
+
+  it("defaults the rollups to null when the detail omits them", () => {
+    const trip = tripFromDetail(makeDetail());
+    expect(trip.distance_km).toBeNull();
+    expect(trip.quality_avg).toBeNull();
+    expect(trip.passes_count).toBeNull();
+  });
+
   it("derives planner parameters from the persisted daily_km band and num_days", () => {
     const trip = tripFromDetail(makeDetail());
     expect(trip.parameters.days).toBe(3);
