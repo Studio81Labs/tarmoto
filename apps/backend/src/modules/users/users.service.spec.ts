@@ -377,6 +377,129 @@ describe('UsersService', () => {
     });
   });
 
+  describe('getMonthlyStats', () => {
+    // `getMonthlyStats` issues four independent query builders, so unlike
+    // `getMeProfile` (one shared builder) the mock must hand back a fresh
+    // chainable builder per `createQueryBuilder` call and resolve the
+    // terminal `getRawMany`/`getRawOne` in issue order.
+    // The service now buckets via `to_char(..., 'YYYY-MM')`, so the mock
+    // months rows are keyed by the UTC 'YYYY-MM' string (not an ISO date).
+    const utcMonthKey = (offsetMonths: number): string => {
+      const now = new Date();
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1),
+      );
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const buildQb = (terminal: 'getRawMany' | 'getRawOne', value: unknown) => {
+      const qb: Record<string, jest.Mock> = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+      };
+      qb[terminal] = jest.fn().mockResolvedValue(value);
+      return qb;
+    };
+
+    it('returns current + previous month aggregates and the max-lean ride', async () => {
+      const builders = [
+        // 1) months getRawMany
+        buildQb('getRawMany', [
+          { month: utcMonthKey(0), km: '1284', hours: '32.4' },
+          { month: utcMonthKey(-1), km: '1088', hours: '28.6' },
+        ]),
+        // 2) lean getRawOne
+        buildQb('getRawOne', {
+          lean: 41,
+          name: 'Passo Gavia',
+          started_at: new Date('2026-06-01T08:00:00Z'),
+        }),
+        // 3) roads getRawOne
+        buildQb('getRawOne', { roads: '47' }),
+        // 4) sync getRawOne
+        buildQb('getRawOne', { synced: new Date('2026-06-02T19:30:00Z') }),
+      ];
+      let call = 0;
+      rideRepo.createQueryBuilder.mockImplementation(() => builders[call++]);
+
+      const result = await service.getMonthlyStats('user-1');
+
+      expect(result.this_month_km).toBe(1284);
+      expect(result.prev_month_km).toBe(1088);
+      expect(result.ride_hours).toBe(32.4);
+      expect(result.prev_ride_hours).toBe(28.6);
+      expect(result.new_roads).toBe(47);
+      expect(result.max_lean_deg).toBe(41);
+      expect(result.max_lean_ride_name).toBe('Passo Gavia');
+      expect(result.max_lean_at).toBe('2026-06-01T08:00:00.000Z');
+      expect(typeof result.last_synced_at).toBe('string');
+      expect(rideRepo.createQueryBuilder).toHaveBeenCalledTimes(4);
+    });
+
+    it('caps the month-scoped queries at ride end time, not the month end', async () => {
+      const builders = [
+        buildQb('getRawMany', []),
+        buildQb('getRawOne', undefined),
+        buildQb('getRawOne', { roads: '0' }),
+        buildQb('getRawOne', { synced: null }),
+      ];
+      let call = 0;
+      rideRepo.createQueryBuilder.mockImplementation(() => builders[call++]);
+
+      await service.getMonthlyStats('user-1');
+
+      // The months, lean and roads builders must each bound on
+      // `ended_at <= now()` so a ride that ends in the future (e.g. a
+      // clock-skewed GPX) can't inflate the KPIs — and must NOT use the
+      // looser `started_at <= now` cap or the next-month boundary.
+      for (const idx of [0, 1, 2]) {
+        const predicates = builders[idx].andWhere.mock.calls.map(
+          (c: unknown[]) => c[0] as string,
+        );
+        expect(predicates).toContainEqual(
+          expect.stringContaining(
+            "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+          ),
+        );
+        expect(predicates).not.toContainEqual(
+          expect.stringContaining("(r.started_at AT TIME ZONE 'UTC') <= "),
+        );
+        expect(predicates).not.toContainEqual(
+          expect.stringContaining("+ interval '1 month'"),
+        );
+      }
+    });
+
+    it('coerces empty aggregations to numeric/null defaults', async () => {
+      const builders = [
+        buildQb('getRawMany', []),
+        buildQb('getRawOne', undefined),
+        buildQb('getRawOne', { roads: '0' }),
+        buildQb('getRawOne', { synced: null }),
+      ];
+      let call = 0;
+      rideRepo.createQueryBuilder.mockImplementation(() => builders[call++]);
+
+      const result = await service.getMonthlyStats('user-1');
+
+      expect(result.this_month_km).toBe(0);
+      expect(result.prev_month_km).toBe(0);
+      expect(result.ride_hours).toBe(0);
+      expect(result.prev_ride_hours).toBe(0);
+      expect(result.new_roads).toBe(0);
+      expect(result.max_lean_deg).toBeNull();
+      expect(result.max_lean_ride_name).toBeNull();
+      expect(result.max_lean_at).toBeNull();
+      expect(result.last_synced_at).toBeNull();
+    });
+  });
+
   describe('updateProfile', () => {
     it('should update display_name', async () => {
       const result = await service.updateProfile('user-1', {

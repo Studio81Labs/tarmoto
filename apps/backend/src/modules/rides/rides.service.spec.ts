@@ -459,6 +459,37 @@ describe('RidesService', () => {
       );
     });
 
+    it('treats a date-only started_to as inclusive end-of-day (< next day)', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', { started_to: '2026-04-20' });
+
+      const call = andWhere.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes('started_at <'),
+      ) as [string, Record<string, string>] | undefined;
+      expect(call).toBeDefined();
+      expect(call![0]).toContain('started_at < :started_to_excl');
+      expect(call![1].started_to_excl).toBe('2026-04-21T00:00:00.000Z');
+    });
+
+    it('treats a full-timestamp started_to as an exact instant bound (<=)', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', { started_to: '2026-04-20T15:30:00.000Z' });
+
+      const call = andWhere.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes('started_to_instant'),
+      ) as [string, Record<string, string>] | undefined;
+      expect(call).toBeDefined();
+      expect(call![0]).toContain('started_at <= :started_to_instant');
+      // Exact instant — no +1-day end-of-day widening.
+      expect(call![1].started_to_instant).toBe('2026-04-20T15:30:00.000Z');
+    });
+
     it('applies ST_DWithin when all near_* params are supplied', async () => {
       const { qb, andWhere } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);

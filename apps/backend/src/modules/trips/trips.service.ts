@@ -67,6 +67,8 @@ export class TripsService {
   constructor(
     @InjectRepository(Trip)
     private readonly tripRepo: Repository<Trip>,
+    @InjectRepository(TripDay)
+    private readonly tripDayRepo: Repository<TripDay>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
     @InjectRepository(TripFolder)
@@ -877,7 +879,90 @@ export class TripsService {
     }
 
     const trips = await qb.getMany();
-    return trips.map((t) => this.toSummary(t));
+    if (trips.length === 0) return [];
+
+    const aggById = await this.computeTripAggregates(trips.map((t) => t.id));
+    return trips.map((t) => this.toSummary(t, aggById.get(t.id)));
+  }
+
+  /**
+   * Roll up total distance, distance-weighted quality, and nearby-pass count
+   * for a set of trips in one grouped query over `trip_days`. Shared by
+   * `list` and `getDetail` so summary cards and any detail-derived summary
+   * row (e.g. the optimistic duplicate-trip insert that pushes a
+   * `TripDetailDto` into the list before refetch) carry identical metadata.
+   * Returns a map keyed by trip id; trips with no `trip_days` rows are
+   * absent and the callers fall back to nulls. An empty `ids` short-circuits
+   * without touching the DB.
+   */
+  private async computeTripAggregates(ids: string[]): Promise<
+    Map<
+      string,
+      {
+        distance_km: number | null;
+        quality_avg: number | null;
+        passes_count: number | null;
+      }
+    >
+  > {
+    if (ids.length === 0) return new Map();
+
+    const aggRows = await this.tripDayRepo
+      .createQueryBuilder('d')
+      .select('d.trip_id', 'trip_id')
+      .addSelect('SUM(d.distance_km)', 'distance_km')
+      // Distance-weighted so a long high-quality day outweighs a short
+      // detour. The denominator is FILTERed to scored days only: a day
+      // with a distance but NULL avg_quality drops out of the numerator
+      // (NULL * x = NULL) and must drop out of the denominator too, or it
+      // would dilute the average toward zero for partially-scored trips.
+      // Days with quality but no distance can't be weighted, so they fall
+      // out of both sums; the ELSE AVG fallback covers trips whose days
+      // have quality but no recorded distance at all.
+      .addSelect(
+        'CASE WHEN SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) > 0 ' +
+          'THEN SUM(d.avg_quality * d.distance_km) ' +
+          '/ SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) ' +
+          'ELSE AVG(d.avg_quality) END',
+        'quality_avg',
+      )
+      // Pass count is an isolated scalar subquery on purpose: joining
+      // `mountain_passes` into this grouped query would fan out the
+      // `trip_days` rows and inflate the SUM(distance_km) / weighted
+      // quality aggregates. Keep it as a correlated EXISTS so the
+      // distance/quality rollups stay one-row-per-day. `mountain_passes`
+      // is a small curated table; the per-trip scan is acceptable at the
+      // own-trips scale this endpoint serves (a handful of trips/days).
+      // Note: the ::geography cast means a plain GiST index on
+      // trip_days.route_geom wouldn't serve this operator — revisit with a
+      // geography expression index only if mountain_passes grows large.
+      .addSelect(
+        '(SELECT COUNT(DISTINCT mp.id) FROM mountain_passes mp ' +
+          'WHERE EXISTS (SELECT 1 FROM trip_days td WHERE td.trip_id = d.trip_id ' +
+          'AND td.route_geom IS NOT NULL ' +
+          'AND ST_DWithin(mp.location::geography, td.route_geom::geography, 2000)))',
+        'passes_count',
+      )
+      .where('d.trip_id IN (:...ids)', { ids })
+      .groupBy('d.trip_id')
+      .getRawMany<{
+        trip_id: string;
+        distance_km: string | null;
+        quality_avg: string | null;
+        passes_count: string | null;
+      }>();
+
+    return new Map(
+      aggRows.map((r) => [
+        r.trip_id,
+        {
+          distance_km: r.distance_km != null ? parseFloat(r.distance_km) : null,
+          quality_avg: r.quality_avg != null ? parseFloat(r.quality_avg) : null,
+          passes_count:
+            r.passes_count != null ? parseInt(r.passes_count, 10) : null,
+        },
+      ]),
+    );
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {
@@ -911,7 +996,12 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    return this.toDetail(trip);
+    // Compute the same rollups `list` serves so the inherited summary
+    // fields (distance_km / quality_avg / passes_count) aren't null on
+    // detail — a detail-derived summary row (optimistic duplicate insert)
+    // would otherwise show blank card metadata until a list refetch.
+    const aggById = await this.computeTripAggregates([trip.id]);
+    return this.toDetail(trip, aggById.get(trip.id));
   }
 
   async join(
@@ -967,7 +1057,14 @@ export class TripsService {
     return this.getDetail(userId, tripId);
   }
 
-  private toSummary(trip: Trip): TripSummaryDto {
+  private toSummary(
+    trip: Trip,
+    agg?: {
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+    },
+  ): TripSummaryDto {
     return {
       id: trip.id,
       owner_id: trip.owner_id,
@@ -982,10 +1079,24 @@ export class TripsService {
       member_count: trip.member_count ?? trip.members?.length ?? 0,
       folder_id: trip.folder_id ?? null,
       created_at: trip.created_at.toISOString(),
+      // Rolled up from `trip_days` by `computeTripAggregates` — passed in by
+      // both `list` and (via `toDetail`) `getDetail`, so summary cards and
+      // detail-derived summaries carry the same metadata. Null only when the
+      // caller has no aggregate row for this trip (e.g. a trip with no days).
+      distance_km: agg?.distance_km ?? null,
+      quality_avg: agg?.quality_avg ?? null,
+      passes_count: agg?.passes_count ?? null,
     };
   }
 
-  private toDetail(trip: Trip): TripDetailDto {
+  private toDetail(
+    trip: Trip,
+    agg?: {
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+    },
+  ): TripDetailDto {
     const members: TripMemberDto[] = (trip.members ?? []).map((m) => ({
       user_id: m.user_id,
       display_name: m.user?.display_name ?? 'Unknown rider',
@@ -1026,7 +1137,7 @@ export class TripsService {
     }));
 
     return {
-      ...this.toSummary(trip),
+      ...this.toSummary(trip, agg),
       member_count: members.length,
       daily_km_min: trip.daily_km_min,
       daily_km_max: trip.daily_km_max,

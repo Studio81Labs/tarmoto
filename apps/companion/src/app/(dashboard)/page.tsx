@@ -3,6 +3,15 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useRecentRides } from "@/hooks/useRecentRides";
+import { useMonthlyStats } from "@/hooks/useMonthlyStats";
+import {
+  formatShortDate,
+  ridesWithinDays,
+  scoreToQualityTier,
+} from "@/lib/utils";
+import type { MonthlyStats } from "@tarmoto/shared";
+import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
   ArrowUpRight,
   BarChart3,
@@ -11,7 +20,14 @@ import {
   Plus,
   Route,
 } from "lucide-react";
-import { Card, Heading, MiniRouteSvg, Mono, Stamp } from "@tarmoto/ui";
+import {
+  Card,
+  Heading,
+  MiniRouteSvg,
+  Mono,
+  QualityBars,
+  Stamp,
+} from "@tarmoto/ui";
 
 const QUICK_ACTIONS = [
   {
@@ -44,43 +60,35 @@ const QUICK_ACTIONS = [
   },
 ] as const;
 
-// Fields not yet on the trips list endpoint (need backend follow-up
-// before the populated state can show real values):
-//   - distance_km (total across days)
-//   - quality_avg / quality_tier (average road quality)
-//   - passes_count (mountain passes touched)
-// When those land, populate them on TripSummary in @/lib/types + the
-// list endpoint, and the trip-draft cards below will light them up
-// automatically. Until then `km` / `passes` slots stay hidden and the
-// QualityBars unit only renders when quality data is present.
-//
-// Similarly, monthly KPI tiles (this month KM / ride time / new roads /
-// max lean) need a stats endpoint, and the "Mobile synced …" pill
-// needs a sync-status hook — both render their honest "empty" variants
-// per spec until the data lands.
-
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
+  const {
+    rides: recentRides,
+    loading: ridesLoading,
+    error: ridesError,
+  } = useRecentRides(5);
   const firstName = user?.displayName?.split(" ")[0];
   const draftTrips = trips
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
     .slice(0, 3);
 
-  // Surfaces stats data when wired. Until the stats endpoint exists,
-  // this is null and the KPI tile row stays hidden — spec's empty-
-  // state HTML has no tiles either, so honest empty matches the spec.
-  const monthlyStats: MonthlyStats | null = null;
+  // Current-month KPI snapshot. Null while loading / before first fetch;
+  // the tile row stays hidden until a non-empty month resolves, and the
+  // sync pill reads `last_synced_at` off this same payload.
+  const { stats: monthlyStats } = useMonthlyStats();
 
-  // Same for the live sync-status hook. Spec's empty pill copy is
-  // "No mobile sync yet", which is exactly what we want to show now.
-  const mobileSync: MobileSyncStatus | null = null;
-
-  // Returning rider check uses ALL trips (any status), not just
-  // active drafts — an account with only active/completed trips IS a
-  // returning rider, not a first-time user. When a rides signal lands
-  // (we don't have a rides endpoint today), include it here too.
-  const hasAnyContent = trips.length > 0;
+  // Returning rider check uses ALL trips (any status) + recent rides —
+  // an account with only active/completed trips, or one that has rides
+  // but no saved trips, IS a returning rider, not a first-time user. This
+  // intentionally uses the UNWINDOWED ride list: a rider whose last ride
+  // is older than 30 days is still returning, not first-time.
+  const hasAnyContent = trips.length > 0 || recentRides.length > 0;
+  // The section heading is "Last 30 days", so the table itself only shows
+  // rides inside that window (the unwindowed list above stays for the
+  // returning-rider check). Rides come newest-first and are capped at 5,
+  // so windowing the fetched page is equivalent to a server date bound.
+  const ridesInWindow = ridesWithinDays(recentRides, 30);
   const hasDrafts = draftTrips.length > 0;
   // First-time hero copy ("Welcome to Tarmoto") only when we've
   // finished loading AND confirmed an empty trip list — during the
@@ -88,11 +96,13 @@ export default function HomePage() {
   // "Welcome back" so returning riders don't see first-time messaging
   // flash on every cold load (statistically the dominant case under
   // normal network latency).
-  const isFirstTimeUser = !loading && !tripsError && !hasAnyContent;
-  // `tripsError` only matters in the empty / loading branches — when
-  // we have drafts to show, swallow the error rather than nudging a
-  // rider with real saved trips toward starting a new one.
-  const showTripsError = tripsError && !hasAnyContent && !loading;
+  const isFirstTimeUser =
+    !loading && !ridesLoading && !tripsError && !ridesError && !hasAnyContent;
+  // A load error only surfaces in the no-content branch (below) — once we
+  // have trips/rides to show, swallow it rather than nudging a returning
+  // rider with real data toward a "first trip" CTA. We can't honestly
+  // claim "no rides/trips" when the fetch itself failed, so each side of
+  // the empty layout shows its own retry card instead of onboarding copy.
 
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in px-10 py-8 pb-12">
@@ -109,11 +119,21 @@ export default function HomePage() {
             {t("Know the road before you ride it.")}
           </p>
         </div>
-        <SyncPill status={mobileSync} />
+        {/* Only render once stats resolve — while loading or on a fetch
+            error `monthlyStats` is null, and asserting "No mobile sync yet"
+            then would misrepresent an outage as an unsynced account. A
+            genuine null `last_synced_at` from a successful fetch still
+            shows the no-sync pill. */}
+        {monthlyStats && <SyncPill syncedAt={monthlyStats.last_synced_at} />}
       </header>
 
-      {/* 4-KPI tile row (only when stats endpoint is wired) */}
-      {monthlyStats && <KpiTileRow stats={monthlyStats} />}
+      {/* 4-KPI tile row — shown once the rider has logged distance this
+          month (so an idle month doesn't render a wall of zeros). The
+          current-month figure is computed from a UTC 'YYYY-MM' bucket
+          server-side; see UsersService.getMonthlyStats. */}
+      {monthlyStats && monthlyStats.this_month_km > 0 && (
+        <KpiTileRow stats={monthlyStats} />
+      )}
 
       {/* Jump in */}
       <Stamp className="block">{t("Jump in")}</Stamp>
@@ -150,7 +170,7 @@ export default function HomePage() {
         ))}
       </div>
 
-      {loading ? (
+      {loading || ridesLoading ? (
         <DualEmptyState
           ridesEmpty={<RidesEmptyCard />}
           tripsEmpty={
@@ -161,44 +181,42 @@ export default function HomePage() {
             </Card>
           }
         />
-      ) : showTripsError ? (
-        // Network outage on a fresh visit: don't push them toward a
-        // "Plan a trip" CTA — they may already have drafts on the
-        // server that we just couldn't reach.
+      ) : !hasAnyContent ? (
+        // Nothing loaded. If a fetch failed, show a per-side retry card
+        // rather than first-time onboarding — we can't claim "no rides /
+        // no trips" when we never reached the server (they may have data
+        // we couldn't load). Otherwise both genuinely empty → the simple
+        // 2-col centered cards, with the trips "Plan a trip" CTA.
         <DualEmptyState
-          ridesEmpty={<RidesEmptyCard />}
+          ridesEmpty={
+            ridesError ? (
+              <LoadErrorCard
+                title={t("Couldn't load your rides")}
+                message={t(
+                  "We hit a network hiccup loading your rides. Refresh to try again.",
+                )}
+              />
+            ) : (
+              <RidesEmptyCard />
+            )
+          }
           tripsEmpty={
-            <Card padded={false} className="px-6 py-10 text-center">
-              <Stamp className="text-quality-q1">
-                {t("Couldn't load your trips")}
-              </Stamp>
-              <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
-                {t(
+            tripsError ? (
+              <LoadErrorCard
+                title={t("Couldn't load your trips")}
+                message={t(
                   "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.",
                 )}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== "undefined") window.location.reload();
-                }}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
-              >
-                {t("Retry")}
-              </button>
-            </Card>
+              />
+            ) : (
+              <TripsEmptyCard />
+            )
           }
-        />
-      ) : !hasAnyContent ? (
-        // Per spec: both empty → simple 2-col centered cards.
-        <DualEmptyState
-          ridesEmpty={<RidesEmptyCard />}
-          tripsEmpty={<TripsEmptyCard />}
         />
       ) : (
         // Returning rider → render the populated layout: Recent rides
-        // section (centered empty card since no rides endpoint) + Trip
-        // drafts section (3-up grid when there are drafts, otherwise
+        // section (RecentRidesTable when rides exist, empty card otherwise) +
+        // Trip drafts section (3-up grid when there are drafts, otherwise
         // a centered empty Card so the section affordance stays
         // visible to riders with only active/completed trips).
         <>
@@ -208,22 +226,36 @@ export default function HomePage() {
             actionHref="/rides"
             actionLabel={t("View all")}
           />
-          <Card padded={false} className="px-6 py-10 text-center">
-            <History
-              size={18}
-              strokeWidth={2}
-              className="mx-auto text-fg-mute"
-            />
-            <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
-            <p className="mt-1 text-[16px] font-bold text-ink">
-              {t("No rides recorded yet")}
-            </p>
-            <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
-              {t(
-                "Your rides from the mobile app will appear here once you start tracking.",
+          {ridesError ? (
+            // Rides failed but trips loaded — asserting "No rides recorded
+            // yet" here would be wrong, so show the same retry the
+            // no-content branch uses.
+            <LoadErrorCard
+              title={t("Couldn't load your rides")}
+              message={t(
+                "We hit a network hiccup loading your rides. Refresh to try again.",
               )}
-            </p>
-          </Card>
+            />
+          ) : ridesInWindow.length > 0 ? (
+            <RecentRidesTable rides={ridesInWindow} />
+          ) : (
+            <Card padded={false} className="px-6 py-10 text-center">
+              <History
+                size={18}
+                strokeWidth={2}
+                className="mx-auto text-fg-mute"
+              />
+              <Stamp className="mt-2.5 block">{t("Recent rides")}</Stamp>
+              <p className="mt-1 text-[16px] font-bold text-ink">
+                {t("No rides recorded yet")}
+              </p>
+              <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+                {t(
+                  "Your rides from the mobile app will appear here once you start tracking.",
+                )}
+              </p>
+            </Card>
+          )}
 
           <div className="mt-10">
             <SectionHeader
@@ -232,7 +264,17 @@ export default function HomePage() {
               actionHref="/trips/planner"
               actionLabel={t("Plan new trip")}
             />
-            {hasDrafts ? (
+            {tripsError ? (
+              // Reached the populated layout via rides, but the trips fetch
+              // failed — don't assert "No trips planned yet" (or nudge a
+              // "Plan a trip" CTA) over saved trips we just couldn't reach.
+              <LoadErrorCard
+                title={t("Couldn't load your trips")}
+                message={t(
+                  "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.",
+                )}
+              />
+            ) : hasDrafts ? (
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                 {draftTrips.map((trip, i) => (
                   <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
@@ -270,25 +312,10 @@ export default function HomePage() {
   );
 }
 
-interface MonthlyStats {
-  thisMonthKm: number;
-  rideHours: number;
-  newRoads: number;
-  maxLeanDeg: number;
-  vsLastMonthKm: string;
-  vsLastMonthHours: string;
-  newRoadsThisMonth: number;
-  maxLeanLocation: string;
-}
-
-interface MobileSyncStatus {
-  syncedAt: Date;
-}
-
-function SyncPill({ status }: { status: MobileSyncStatus | null }) {
-  if (!status) {
+function SyncPill({ syncedAt }: { syncedAt: string | null }) {
+  if (!syncedAt) {
     // Spec's empty-state pill — ghost / line-strong border / fg-mute
-    // dot + text. Truthful while the mobile-sync hook is unwired.
+    // dot + text. Shown until the rider's first mobile upload lands.
     return (
       <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-fg-dim">
         <span aria-hidden="true" className="size-1.5 rounded-full bg-fg-mute" />
@@ -299,7 +326,7 @@ function SyncPill({ status }: { status: MobileSyncStatus | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(status.syncedAt)}
+      {formatSyncedLabel(new Date(syncedAt))}
     </div>
   );
 }
@@ -322,33 +349,60 @@ function formatSyncedLabel(d: Date): string {
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
+  const kmPct =
+    stats.prev_month_km > 0
+      ? Math.round(
+          ((stats.this_month_km - stats.prev_month_km) / stats.prev_month_km) *
+            100,
+        )
+      : null;
+  const kmDelta =
+    kmPct == null
+      ? t("first tracked month")
+      : `${kmPct > 0 ? "+" : ""}${kmPct}% ${t("vs last month")}`;
+  // Hours arrive with one decimal of precision; the design shows whole
+  // hours ("32 HRS"), so round the display value but compute the delta
+  // from the raw values to avoid rounding-induced misleading deltas.
+  const hoursNow = Math.round(stats.ride_hours);
+  const rawHoursDelta = Math.round(stats.ride_hours - stats.prev_ride_hours);
+  const hoursDelta = `${rawHoursDelta > 0 ? "+" : ""}${rawHoursDelta}h ${t("vs last month")}`;
+  // Key the sublabel off the lean reading itself (max_lean_at), not the
+  // ride name — an unnamed ride can still hold this month's max lean, so
+  // fall back to just the date rather than the misleading "No lean recorded".
+  const leanSub =
+    stats.max_lean_at != null
+      ? [stats.max_lean_ride_name, formatShortDate(stats.max_lean_at)]
+          .filter(Boolean)
+          .join(" · ")
+      : t("No lean recorded");
+
   return (
     <div className="mb-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
       <KpiTile
         label={t("This month")}
-        value={stats.thisMonthKm.toLocaleString()}
+        value={stats.this_month_km.toLocaleString()}
         unit="KM"
-        delta={`+${stats.vsLastMonthKm} vs last month`}
+        delta={kmDelta}
         ink
         accentValue
       />
       <KpiTile
         label={t("Ride time")}
-        value={String(stats.rideHours)}
+        value={String(hoursNow)}
         unit="HRS"
-        delta={`+${stats.vsLastMonthHours} vs last month`}
+        delta={hoursDelta}
       />
       <KpiTile
         label={t("New roads")}
-        value={String(stats.newRoads)}
+        value={String(stats.new_roads)}
         unit="DISCOVERED"
-        delta={`+${stats.newRoadsThisMonth} this month`}
+        delta={t("this month")}
       />
       <KpiTile
         label={t("Lean angle")}
-        value={`${stats.maxLeanDeg}°`}
+        value={stats.max_lean_deg != null ? `${stats.max_lean_deg}°` : "—"}
         unit="MAX"
-        delta={stats.maxLeanLocation}
+        delta={leanSub}
         accentValue
       />
     </div>
@@ -427,6 +481,29 @@ function DualEmptyState({
       {ridesEmpty}
       {tripsEmpty}
     </div>
+  );
+}
+
+// Shown in the no-content branch when a rides or trips fetch failed, in
+// place of the "you have nothing yet" empty card — a transient outage
+// must not read as an empty account. Reload re-runs both queries.
+function LoadErrorCard({ title, message }: { title: string; message: string }) {
+  return (
+    <Card padded={false} className="px-6 py-10 text-center">
+      <Stamp className="text-quality-q1">{title}</Stamp>
+      <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          if (typeof window !== "undefined") window.location.reload();
+        }}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
+      >
+        {t("Retry")}
+      </button>
+    </Card>
   );
 }
 
@@ -521,23 +598,34 @@ function TripDraftCard({
   trip,
   seed,
 }: {
-  trip: { id: string; name: string; status: string; num_days: number };
+  trip: {
+    id: string;
+    name: string;
+    status: string;
+    num_days: number;
+    distance_km?: number | null;
+    quality_avg?: number | null;
+    passes_count?: number | null;
+  };
   seed: number;
 }) {
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
-  // No quality / km / passes on summary payloads yet — wire those
-  // through when the trips list endpoint exposes them (see TODO at
-  // file top). For now the thumbnail uses q=3 (yellow-ish neutral)
-  // and we hide the QualityBars + km + passes meta slots.
-  const q: 1 | 2 | 3 | 4 | 5 = 3;
+  // MiniRouteSvg and QualityBars are visually coupled — both take this one
+  // tier. MiniRouteSvg has no "no data" state (it always draws a route in a
+  // q-colour), so when a trip has no rolled-up quality yet (e.g. an empty
+  // draft) we default both to the neutral mid-tier rather than hiding the
+  // bars alone, which would leave the card's sketch and glyph mismatched.
+  // (The KM/PASSES slots below DO hide when absent — they aren't coupled to
+  // the sketch.) Matches the trip-card treatment on the /trips page.
+  const tier = scoreToQualityTier(trip.quality_avg) ?? 3;
   return (
     <Link
       href={`/trips/${trip.id}`}
       className="block overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
     >
       <div className="h-[120px]">
-        <MiniRouteSvg q={q} seed={seed} />
+        <MiniRouteSvg q={tier} seed={seed} />
       </div>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
@@ -547,15 +635,29 @@ function TripDraftCard({
               {trip.name}
             </div>
           </div>
+          <QualityBars q={tier} size={4} />
         </div>
         <div className="mt-2.5 flex items-center gap-3 text-[11px] text-fg-dim">
+          {trip.distance_km != null && trip.distance_km > 0 && (
+            <Mono className="uppercase">
+              <span className="font-bold text-ink">
+                {Math.round(trip.distance_km)}
+              </span>{" "}
+              {t("KM")}
+            </Mono>
+          )}
           {trip.num_days > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.num_days}</span>{" "}
-              {trip.num_days === 1 ? t("day") : t("days")}
+              {trip.num_days === 1 ? t("DAY") : t("DAYS")}
             </Mono>
           )}
-          {/* km + passes hidden until the trips list endpoint exposes them */}
+          {trip.passes_count != null && trip.passes_count > 0 && (
+            <Mono className="uppercase">
+              <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
+              {trip.passes_count === 1 ? t("PASS") : t("PASSES")}
+            </Mono>
+          )}
         </div>
       </div>
     </Link>

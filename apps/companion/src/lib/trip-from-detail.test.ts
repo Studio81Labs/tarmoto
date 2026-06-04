@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   findOwnerId,
   tripFromDetail,
+  tripSummaryFromWire,
   type TripDetailResponse,
+  type TripSummaryWire,
 } from "./trip-from-detail";
 
 function makeDetail(
@@ -104,6 +106,22 @@ describe("tripFromDetail", () => {
   it("falls back to a safe status when the backend returns an unknown value", () => {
     const trip = tripFromDetail(makeDetail({ status: "archived" }));
     expect(trip.status).toBe("draft");
+  });
+
+  it("carries the #647 rollups so a detail-derived list row isn't blank", () => {
+    const trip = tripFromDetail(
+      makeDetail({ distance_km: 610, quality_avg: 4.4, passes_count: 6 }),
+    );
+    expect(trip.distance_km).toBe(610);
+    expect(trip.quality_avg).toBeCloseTo(4.4);
+    expect(trip.passes_count).toBe(6);
+  });
+
+  it("defaults the rollups to null when the detail omits them", () => {
+    const trip = tripFromDetail(makeDetail());
+    expect(trip.distance_km).toBeNull();
+    expect(trip.quality_avg).toBeNull();
+    expect(trip.passes_count).toBeNull();
   });
 
   it("derives planner parameters from the persisted daily_km band and num_days", () => {
@@ -254,5 +272,45 @@ describe("findOwnerId", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+function makeWire(overrides: Partial<TripSummaryWire> = {}): TripSummaryWire {
+  return {
+    id: "trip-1",
+    title: "Italian Loop",
+    region: "Dolomites",
+    num_days: 3,
+    status: "planned",
+    member_count: 2,
+    folder_id: null,
+    created_at: "2026-04-24T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("tripSummaryFromWire", () => {
+  it("translates snake_case name/createdAt into the local shape", () => {
+    const summary = tripSummaryFromWire(makeWire());
+    expect(summary.name).toBe("Italian Loop");
+    expect(summary.createdAt).toBe("2026-04-24T10:00:00.000Z");
+    expect(summary.status).toBe("planned");
+    expect(summary.num_days).toBe(3);
+  });
+
+  it("passes the #647 summary-meta fields through when present", () => {
+    const summary = tripSummaryFromWire(
+      makeWire({ distance_km: 480, quality_avg: 4.2, passes_count: 6 }),
+    );
+    expect(summary.distance_km).toBe(480);
+    expect(summary.quality_avg).toBe(4.2);
+    expect(summary.passes_count).toBe(6);
+  });
+
+  it("maps missing summary-meta fields to null so cards can null-guard", () => {
+    const summary = tripSummaryFromWire(makeWire());
+    expect(summary.distance_km).toBeNull();
+    expect(summary.quality_avg).toBeNull();
+    expect(summary.passes_count).toBeNull();
   });
 });

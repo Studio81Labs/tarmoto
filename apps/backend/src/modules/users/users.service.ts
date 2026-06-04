@@ -26,6 +26,7 @@ import {
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
 import { MeProfileDto } from './dto/me-profile.dto.js';
+import { MonthlyStatsDto } from './dto/monthly-stats.dto.js';
 import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
 import { toUserResponse } from './user-response.mapper.js';
 
@@ -107,6 +108,126 @@ export class UsersService {
       follower_count: followerCount,
       following_count: followingCount,
       badges_earned: badgesEarned,
+    };
+  }
+
+  /**
+   * Current calendar month KPI snapshot for the companion home dashboard
+   * (Task B2). Aggregates the rider's completed rides — distance, ride
+   * time, distinct roads, and max lean — for the current month, with the
+   * previous month's distance/hours included so the client renders deltas
+   * locally. All four reads run in parallel on `rideRepo`, joining
+   * `ride_stats` / `ride_segments` by raw table string (the same pattern
+   * `ExplorationService` uses) so no extra repos need injecting. No
+   * schema migration: pure aggregation over existing tables.
+   *
+   * "This month" vs "last month" is split server-side via
+   * `date_trunc('month', now())`; we re-bucket the grouped rows against
+   * the current UTC month so the metric stays stable across requests.
+   * `last_synced_at` uses `MAX(created_at)` across all rides (not just
+   * this month) since it represents the most recent mobile upload.
+   */
+  async getMonthlyStats(userId: string): Promise<MonthlyStatsDto> {
+    const [months, leanRow, roadsRow, syncRow] = await Promise.all([
+      this.rideRepo
+        .createQueryBuilder('r')
+        // Emit the bucket as a UTC 'YYYY-MM' string. Returning the raw
+        // `date_trunc` timestamp (tz-naive) and parsing it in JS would shift
+        // the month in a non-UTC server zone (e.g. June → May at UTC+2) and
+        // mis-file current-month rides as previous-month.
+        .select(
+          "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
+          'month',
+        )
+        .addSelect('COALESCE(SUM(r.distance_km), 0)', 'km')
+        .addSelect(
+          'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
+          'hours',
+        )
+        .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
+        .andWhere('r.ended_at IS NOT NULL')
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month'",
+        )
+        // Bound on `ended_at <= now()`, not `started_at`: a completed ride
+        // that starts before now but ends in the future (clock-skewed GPX
+        // whose last trackpoint is ahead of now) must not contribute its
+        // full distance/hours before it has happened. `ended_at <= now()`
+        // implies `started_at <= now()`, so it also keeps future buckets out
+        // and lets `prev` only ever match last month.
+        .andWhere(
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+        )
+        .groupBy(
+          "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
+        )
+        .getRawMany<{ month: string; km: string; hours: string }>(),
+      this.rideRepo
+        .createQueryBuilder('r')
+        .innerJoin('ride_stats', 's', 's.ride_id = r.id')
+        .select('s.max_lean_angle', 'lean')
+        .addSelect('r.name', 'name')
+        .addSelect('r.started_at', 'started_at')
+        .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
+        )
+        // Only rides that have finished (ended_at <= now) — excludes a ride
+        // that starts this month but ends in the future.
+        .andWhere(
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+        )
+        .andWhere('s.max_lean_angle IS NOT NULL')
+        .orderBy('s.max_lean_angle', 'DESC')
+        .limit(1)
+        .getRawOne<{ lean: number; name: string | null; started_at: Date }>(),
+      this.rideRepo
+        .createQueryBuilder('r')
+        .innerJoin('ride_segments', 'seg', 'seg.ride_id = r.id')
+        .select('COUNT(DISTINCT seg.road_segment_id)', 'roads')
+        .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
+        )
+        // Only rides that have finished (ended_at <= now) — excludes a ride
+        // that starts this month but ends in the future.
+        .andWhere(
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+        )
+        .andWhere('seg.road_segment_id IS NOT NULL')
+        .getRawOne<{ roads: string }>(),
+      this.rideRepo
+        .createQueryBuilder('r')
+        .select('MAX(r.created_at)', 'synced')
+        .where('r.user_id = :userId', { userId })
+        .getRawOne<{ synced: Date | null }>(),
+    ]);
+
+    // Match the SQL bucket as a UTC 'YYYY-MM' string — no Date parsing, so
+    // the server's local timezone can't shift the month classification.
+    const now = new Date();
+    const thisMonthKey = `${now.getUTCFullYear()}-${String(
+      now.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
+
+    const cur = months.find((m) => m.month === thisMonthKey);
+    const prev = months.find((m) => m.month !== thisMonthKey);
+
+    return {
+      this_month_km: Math.round(parseFloat(cur?.km ?? '0')),
+      prev_month_km: Math.round(parseFloat(prev?.km ?? '0')),
+      ride_hours: Math.round(parseFloat(cur?.hours ?? '0') * 10) / 10,
+      prev_ride_hours: Math.round(parseFloat(prev?.hours ?? '0') * 10) / 10,
+      new_roads: parseInt(roadsRow?.roads ?? '0', 10),
+      max_lean_deg: leanRow ? Math.round(leanRow.lean) : null,
+      max_lean_ride_name: leanRow?.name ?? null,
+      max_lean_at: leanRow ? new Date(leanRow.started_at).toISOString() : null,
+      last_synced_at: syncRow?.synced
+        ? new Date(syncRow.synced).toISOString()
+        : null,
     };
   }
 

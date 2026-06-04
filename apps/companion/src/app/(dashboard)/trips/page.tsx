@@ -973,7 +973,7 @@ function TripCard({
             <span>
               <span className="font-bold text-ink">{trip.num_days}</span> DAYS
             </span>
-            {typeof trip.passes_count === "number" && (
+            {trip.passes_count != null && trip.passes_count > 0 && (
               <span>
                 <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
                 PASSES

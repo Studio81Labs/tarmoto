@@ -145,9 +145,9 @@ export interface TripSummary {
    * optional: backend ships them incrementally; cards hide
    * whichever fields are missing on a given response.
    */
-  distance_km?: number;
-  passes_count?: number;
-  quality_avg?: number;
+  distance_km?: number | null;
+  passes_count?: number | null;
+  quality_avg?: number | null;
   warnings_count?: number;
   updatedAt?: string;
 }

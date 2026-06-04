@@ -52,7 +52,9 @@ export class ListRidesDto {
 
   @ApiProperty({
     required: false,
-    description: 'ISO 8601 date (inclusive end-of-day)',
+    description:
+      'ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; ' +
+      'a full timestamp is an exact `<=` instant bound (no end-of-day widening).',
   })
   @IsOptional()
   @IsISO8601()

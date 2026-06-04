@@ -22,7 +22,7 @@ export interface UserRide {
   avg_road_quality: number | null;
 }
 
-interface RideListResponse {
+export interface RideListResponse {
   rides: UserRide[];
   total: number;
 }

@@ -66,6 +66,31 @@ export class TripSummaryDto {
 
   @ApiProperty()
   created_at!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Total planned distance (km) = SUM of the trip days’ `distance_km`. ' +
+      '`null` when no day has a recorded distance.',
+  })
+  distance_km!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Distance-weighted average road quality (0–5) across the trip days. ' +
+      '`null` when no day has a recorded quality.',
+  })
+  quality_avg!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Count of mountain passes within 2 km of any of the trip’s day ' +
+      'geometries. `0` when the trip has days but no nearby passes (or no day ' +
+      'geometry); `null` only when the trip has no trip-days at all.',
+  })
+  passes_count!: number | null;
 }
 
 export class TripMemberDto {
