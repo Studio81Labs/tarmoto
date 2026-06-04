@@ -1,6 +1,13 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertTriangle,
   Check,
@@ -80,6 +87,17 @@ type ShareState =
       message: string;
     };
 export default function RoadMapPage() {
+  // `useTimeWindow` (below) reads `?window=` via useSearchParams, which needs
+  // a Suspense boundary for Next.js static prerender (mirrors the All-rides
+  // page wrapper).
+  return (
+    <Suspense fallback={null}>
+      <RoadMapPageInner />
+    </Suspense>
+  );
+}
+
+function RoadMapPageInner() {
   // The tab-row time pills drive the window via `?window=`; the road-map
   // reads it (no local period state) so flipping a pill updates the map,
   // the legend count, and the share snapshot together. The `TimeWindow`
