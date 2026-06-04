@@ -99,37 +99,46 @@ export function RidesTable({
         ))
       )}
 
-      <div className="flex items-center justify-between border-t border-line px-5 py-2.5 text-sm text-fg-dim">
-        <span className="font-mono tabular-nums">
-          {total === 0 ? "0 rides" : `${total} ride${total === 1 ? "" : "s"}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onPage(state.page - 1)}
-            disabled={state.page <= 1}
-            aria-label={t("Previous page")}
-            className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronLeft size={16} />
-          </button>
+      {/*
+        Pagination footer only when it earns its space. On a single page the
+        arrows are inert and the ride count already lives in the "All rides · N"
+        tab badge, so the strip just reads as dead padding between the last row
+        and the card's bottom edge — the last row sits flush instead (matching
+        the home RecentRidesTable).
+      */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-line px-5 py-2.5 text-sm text-fg-dim">
           <span className="font-mono tabular-nums">
-            {t("Page {currentPage} of {pageCount}", {
-              currentPage: state.page,
-              pageCount: totalPages,
-            })}
+            {`${total} ride${total === 1 ? "" : "s"}`}
           </span>
-          <button
-            type="button"
-            onClick={() => onPage(state.page + 1)}
-            disabled={state.page >= totalPages}
-            aria-label={t("Next page")}
-            className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronRight size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onPage(state.page - 1)}
+              disabled={state.page <= 1}
+              aria-label={t("Previous page")}
+              className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="font-mono tabular-nums">
+              {t("Page {currentPage} of {pageCount}", {
+                currentPage: state.page,
+                pageCount: totalPages,
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPage(state.page + 1)}
+              disabled={state.page >= totalPages}
+              aria-label={t("Next page")}
+              className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </Card>
   );
 }

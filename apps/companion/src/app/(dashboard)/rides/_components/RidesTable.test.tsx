@@ -114,4 +114,21 @@ describe("RidesTable", () => {
       screen.getByText(/no rides match these filters/i),
     ).toBeInTheDocument();
   });
+
+  it("hides the pagination footer on a single page (no dead trailing strip)", () => {
+    renderTable([ride()], { total: 1, pageSize: 20 });
+    expect(
+      screen.queryByRole("button", { name: /next page/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/page 1 of/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the pagination footer when there is more than one page", () => {
+    renderTable([ride()], { total: 42, pageSize: 20 });
+    expect(
+      screen.getByRole("button", { name: /next page/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument();
+    expect(screen.getByText("42 rides")).toBeInTheDocument();
+  });
 });
