@@ -377,7 +377,7 @@ function RoadMapPageInner() {
   ]);
   if (loading) {
     return (
-      <RidesScaffold>
+      <RidesScaffold fill>
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading road map\u2026")}
@@ -387,7 +387,7 @@ function RoadMapPageInner() {
   }
   if (loadError || !stats) {
     return (
-      <RidesScaffold>
+      <RidesScaffold fill>
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
             {loadError ?? "Could not load exploration data"}
@@ -399,7 +399,7 @@ function RoadMapPageInner() {
   const hasAnyRiddenSegments = stats.ridden_segments > 0;
   if (!hasAnyRiddenSegments) {
     return (
-      <RidesScaffold>
+      <RidesScaffold fill>
         <RidesEmptyState
           icon={<MapIcon size={18} strokeWidth={2} />}
           title={t("Your road map is empty")}
@@ -434,6 +434,7 @@ function RoadMapPageInner() {
           : Link2;
   return (
     <RidesScaffold
+      fill
       headerRight={
         <div className="flex items-center gap-2">
           <button

@@ -23,14 +23,23 @@ import { useRidesTotal } from "./_useRidesTotal";
  * regardless of which one is mounted. The All rides page can
  * still override via `allRidesBadge` — it already has the total
  * from its heavier `useRidesQuery` and avoids a duplicate fetch.
+ *
+ * `fill` opts a page into a bounded full-height flex body — the Road map
+ * needs it so the MapLibre canvas fills the viewport and its sidebar scrolls
+ * independently. The default (All rides, Compare) lets the body grow with its
+ * content and scroll through the AppShell's scroller; forcing `h-full` there
+ * would squeeze a tall table into the viewport and clip its last rows under
+ * the card's `overflow-hidden`.
  */
 export function RidesScaffold({
   headerRight,
   allRidesBadge,
+  fill = false,
   children,
 }: {
   headerRight?: ReactNode;
   allRidesBadge?: ReactNode;
+  fill?: boolean;
   children: ReactNode;
 }) {
   const fallbackTotal = useRidesTotal();
@@ -41,7 +50,11 @@ export function RidesScaffold({
       <Mono className="text-[11px]">{fallbackTotal}</Mono>
     ) : null;
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-page animate-fade-in flex-col p-4 md:p-7">
+    <div
+      className={`mx-auto w-full max-w-page animate-fade-in p-4 md:p-7 ${
+        fill ? "flex h-full min-h-0 flex-col" : ""
+      }`}
+    >
       <PageHeader
         stamp={t("Ride history")}
         icon={<Activity size={18} strokeWidth={2} />}
@@ -54,7 +67,11 @@ export function RidesScaffold({
       <div className="mb-[18px]">
         <RidesTabsBar allRidesBadge={badge} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      {fill ? (
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      ) : (
+        children
+      )}
     </div>
   );
 }
