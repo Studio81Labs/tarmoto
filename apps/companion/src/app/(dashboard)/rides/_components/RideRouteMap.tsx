@@ -19,6 +19,12 @@ interface Props {
   label?: string;
   color?: string;
   fitBounds?: RouteMapBounds | null;
+  /**
+   * Overrides the default full-height container sizing. Lets compact callers
+   * (e.g. the compare A/B thumbnails) render the same real-route map at a
+   * smaller fixed height without forking the component.
+   */
+  containerClassName?: string;
 }
 
 export function RideRouteMap({
@@ -26,6 +32,7 @@ export function RideRouteMap({
   label = "Ride route map",
   color = "#22d3ee",
   fitBounds,
+  containerClassName = "h-[360px] min-h-[280px]",
 }: Props) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const [ready, setReady] = useState(false);
@@ -54,7 +61,7 @@ export function RideRouteMap({
 
   return (
     <div
-      className="relative h-[360px] min-h-[280px] w-full overflow-hidden rounded-xl border border-line bg-paper"
+      className={`relative w-full overflow-hidden rounded-xl border border-line bg-paper ${containerClassName}`}
       aria-label={label}
     >
       <MapCanvas
