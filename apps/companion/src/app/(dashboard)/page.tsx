@@ -5,7 +5,11 @@ import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
-import { formatShortDate, scoreToQualityTier } from "@/lib/utils";
+import {
+  formatShortDate,
+  ridesWithinDays,
+  scoreToQualityTier,
+} from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
@@ -76,8 +80,15 @@ export default function HomePage() {
 
   // Returning rider check uses ALL trips (any status) + recent rides —
   // an account with only active/completed trips, or one that has rides
-  // but no saved trips, IS a returning rider, not a first-time user.
+  // but no saved trips, IS a returning rider, not a first-time user. This
+  // intentionally uses the UNWINDOWED ride list: a rider whose last ride
+  // is older than 30 days is still returning, not first-time.
   const hasAnyContent = trips.length > 0 || recentRides.length > 0;
+  // The section heading is "Last 30 days", so the table itself only shows
+  // rides inside that window (the unwindowed list above stays for the
+  // returning-rider check). Rides come newest-first and are capped at 5,
+  // so windowing the fetched page is equivalent to a server date bound.
+  const ridesInWindow = ridesWithinDays(recentRides, 30);
   const hasDrafts = draftTrips.length > 0;
   // First-time hero copy ("Welcome to Tarmoto") only when we've
   // finished loading AND confirmed an empty trip list — during the
@@ -208,8 +219,8 @@ export default function HomePage() {
             actionHref="/rides"
             actionLabel={t("View all")}
           />
-          {recentRides.length > 0 ? (
-            <RecentRidesTable rides={recentRides} />
+          {ridesInWindow.length > 0 ? (
+            <RecentRidesTable rides={ridesInWindow} />
           ) : (
             <Card padded={false} className="px-6 py-10 text-center">
               <History

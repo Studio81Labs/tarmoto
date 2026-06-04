@@ -254,6 +254,23 @@ export function roundCoordinate(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
+/**
+ * Keep only the rides whose `started_at` falls within the last `days`
+ * (inclusive of the boundary), preserving input order. Used by the home
+ * "Last 30 days" section so the heading stays truthful — a rider whose
+ * latest ride is older than the window gets an empty list here, while the
+ * caller keeps the unwindowed list for the returning-vs-first-time check.
+ * `now` is injectable for deterministic tests.
+ */
+export function ridesWithinDays<T extends { started_at: string }>(
+  rides: T[],
+  days: number,
+  now: number = Date.now(),
+): T[] {
+  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  return rides.filter((r) => new Date(r.started_at).getTime() >= cutoff);
+}
+
 export function formatRideType(value: string): string {
   if (!value) return "Ride";
   return value.charAt(0).toUpperCase() + value.slice(1);
