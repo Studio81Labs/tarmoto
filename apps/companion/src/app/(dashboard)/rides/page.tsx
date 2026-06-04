@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, ArrowUpRight, Loader2, Share2 } from "lucide-react";
+import { Activity, ArrowUpRight, Share2 } from "lucide-react";
 import {
   downloadAllRidesExport,
   type RideExportFormat,
@@ -13,7 +13,7 @@ import { RidesTable } from "./_components/RidesTable";
 import { RideKpiCards } from "./_components/RideKpiCards";
 import { RidesScaffold } from "./_RidesScaffold";
 import { RidesEmptyState } from "./_RidesEmptyState";
-import { Mono } from "@tarmoto/ui";
+import { Button, Mono } from "@tarmoto/ui";
 import {
   toFilterParams,
   useRidesQuery,
@@ -86,13 +86,18 @@ function RidesPageInner() {
         // access to Export CSV / Share map.
         isPristineEmpty ? null : (
           <div className="flex items-center gap-2">
-            <Link
-              href={roadMapHref}
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+            <Button
+              variant="secondary"
+              uppercase
+              leftIcon={<Share2 size={14} />}
+              renderLink={({ className, children }) => (
+                <Link href={roadMapHref} className={className}>
+                  {children}
+                </Link>
+              )}
             >
-              <Share2 size={14} />
               {t("Share map")}
-            </Link>
+            </Button>
             <BulkExportMenu />
           </div>
         )
@@ -155,21 +160,17 @@ function BulkExportMenu() {
   }
   return (
     <div className="relative" ref={containerRef}>
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        uppercase
         onClick={() => setOpen((o) => !o)}
-        disabled={busy !== null}
+        loading={busy !== null}
+        leftIcon={<ArrowUpRight size={14} />}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-ink bg-ink px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-cream transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {busy ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <ArrowUpRight size={14} />
-        )}
         {t("Export CSV")}
-      </button>
+      </Button>
 
       {open && (
         <div

@@ -37,6 +37,14 @@ export interface ButtonProps extends Omit<
    * `aria-label` so the control stays announced.
    */
   iconOnly?: boolean;
+  /** Uppercase the label with the CTA letter-spacing (header action style). */
+  uppercase?: boolean;
+  /**
+   * Render as a link instead of a `<button>` — pass your router's link
+   * component (e.g. Next's `<Link>`) wrapping the supplied class + content.
+   * Keeps `@tarmoto/ui` framework-agnostic, mirroring `DataTable.renderLink`.
+   */
+  renderLink?: (props: { className: string; children: ReactNode }) => ReactNode;
   type?: "button" | "submit" | "reset";
 }
 
@@ -75,6 +83,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       leftIcon,
       rightIcon,
       iconOnly = false,
+      uppercase = false,
+      renderLink,
       type = "button",
       className,
       disabled,
@@ -89,37 +99,45 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         className="inline-block size-3 animate-spin rounded-full border-2 border-current/30 border-t-current"
       />
     );
+    const classes = cn(
+      "inline-flex items-center justify-center gap-2 border whitespace-nowrap",
+      "font-sans font-bold select-none",
+      "transition-colors duration-100",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
+      "disabled:opacity-40 disabled:cursor-not-allowed",
+      iconOnly ? iconSizeClass[size] : sizeClass[size],
+      variantClass[variant],
+      uppercase && "uppercase tracking-[0.4px]",
+      block && "flex w-full",
+      className,
+    );
+    const body = iconOnly ? (
+      loading ? (
+        spinner
+      ) : (
+        children
+      )
+    ) : (
+      <>
+        {loading ? spinner : leftIcon}
+        <span>{children}</span>
+        {!loading && rightIcon}
+      </>
+    );
+
+    if (renderLink) {
+      return <>{renderLink({ className: classes, children: body })}</>;
+    }
+
     return (
       <button
         ref={ref}
         type={type}
         disabled={disabled || loading}
-        className={cn(
-          "inline-flex items-center justify-center gap-2 border whitespace-nowrap",
-          "font-sans font-bold select-none",
-          "transition-colors duration-100",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
-          "disabled:opacity-40 disabled:cursor-not-allowed",
-          iconOnly ? iconSizeClass[size] : sizeClass[size],
-          variantClass[variant],
-          block && "flex w-full",
-          className,
-        )}
+        className={classes}
         {...rest}
       >
-        {iconOnly ? (
-          loading ? (
-            spinner
-          ) : (
-            children
-          )
-        ) : (
-          <>
-            {loading ? spinner : leftIcon}
-            <span>{children}</span>
-            {!loading && rightIcon}
-          </>
-        )}
+        {body}
       </button>
     );
   },
