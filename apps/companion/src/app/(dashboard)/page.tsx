@@ -366,9 +366,14 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
   const hoursNow = Math.round(stats.ride_hours);
   const rawHoursDelta = Math.round(stats.ride_hours - stats.prev_ride_hours);
   const hoursDelta = `${rawHoursDelta > 0 ? "+" : ""}${rawHoursDelta}h ${t("vs last month")}`;
+  // Key the sublabel off the lean reading itself (max_lean_at), not the
+  // ride name — an unnamed ride can still hold this month's max lean, so
+  // fall back to just the date rather than the misleading "No lean recorded".
   const leanSub =
-    stats.max_lean_ride_name && stats.max_lean_at
-      ? `${stats.max_lean_ride_name} · ${formatShortDate(stats.max_lean_at)}`
+    stats.max_lean_at != null
+      ? [stats.max_lean_ride_name, formatShortDate(stats.max_lean_at)]
+          .filter(Boolean)
+          .join(" · ")
       : t("No lean recorded");
 
   return (

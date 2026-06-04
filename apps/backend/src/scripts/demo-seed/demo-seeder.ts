@@ -24,6 +24,7 @@ import { Bike } from '../../entities/bike.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
+import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
@@ -50,6 +51,12 @@ import {
 } from './demo-data-builders.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The most recent rides per persona are packed into the last few weeks so
+// every demo account has both current-month and previous-month activity (the
+// home "This month" KPI tiles + their "vs last month" deltas). The rest of a
+// persona's history stays spread across its membership window.
+const RECENT_RIDE_COUNT = 14;
+const RECENT_RIDE_SPAN_DAYS = 28;
 const BCRYPT_ROUNDS = 12;
 const SAVE_CHUNK = 200;
 
@@ -251,6 +258,7 @@ export class DemoSeeder {
 
     const rides = await this.seedRides(persona, user.id, bikes, rng, now);
     await this.seedRideSegments(persona, roads, rides, rng);
+    await this.seedRideStats(rides, rng);
     const hazards = await this.seedHazards(persona, user.id, roads, rng, now);
     const reviews = await this.seedReviews(persona, user.id, roads, rng, now);
     const sharedRides = await this.seedSharedRides(
@@ -281,6 +289,9 @@ export class DemoSeeder {
     if (persona.rideCount === 0) return [];
     const repo = this.repo(Ride);
     const rows: Ride[] = [];
+    const startOfMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
     for (let i = 0; i < persona.rideCount; i++) {
       // First ride is the longest, to give `single_ride` something to bite.
       const distanceKm =
@@ -289,12 +300,33 @@ export class DemoSeeder {
           : round1(persona.baseRideKm * (0.6 + rng() * 0.9));
       const avgSpeed = 45 + rng() * 30;
       const durationMs = (distanceKm / avgSpeed) * 60 * 60 * 1000;
-      // Spread rides chronologically across the membership window.
-      const ageDays =
-        (persona.joinedDaysAgo * (persona.rideCount - i)) /
-          (persona.rideCount + 1) +
-        rng();
-      const startedAt = new Date(now.getTime() - ageDays * DAY_MS);
+      // Spread rides chronologically across the membership window — but pull
+      // the most recent rides into the last ~4 weeks so every persona has
+      // both current-month rides (the home "This month" KPI tiles need
+      // `this_month_km > 0`) and previous-month rides (so the tiles' "vs last
+      // month" deltas compute), regardless of which day of the month the
+      // seed runs on.
+      const recentRank = persona.rideCount - 1 - i; // 0 = newest
+      let startedAt: Date;
+      if (recentRank < RECENT_RIDE_COUNT) {
+        const ageDays =
+          (recentRank + rng()) * (RECENT_RIDE_SPAN_DAYS / RECENT_RIDE_COUNT);
+        startedAt = new Date(now.getTime() - ageDays * DAY_MS);
+        // Guarantee the single newest ride lands in the current calendar
+        // month even on the 1st, so the tiles are never empty.
+        if (recentRank === 0 && startedAt < startOfMonth) {
+          startedAt = new Date(
+            startOfMonth.getTime() +
+              rng() * (now.getTime() - startOfMonth.getTime()),
+          );
+        }
+      } else {
+        const ageDays =
+          (persona.joinedDaysAgo * (persona.rideCount - i)) /
+            (persona.rideCount + 1) +
+          rng();
+        startedAt = new Date(now.getTime() - ageDays * DAY_MS);
+      }
       rows.push(
         repo.create({
           user_id: userId,
@@ -347,6 +379,34 @@ export class DemoSeeder {
         quality_reading: round1(2 + rng() * 3),
         entered_at: ride.started_at,
         exited_at: ride.ended_at,
+      });
+    });
+    await repo.save(rows, { chunk: SAVE_CHUNK });
+  }
+
+  /**
+   * One `ride_stats` row per ride. The home "Lean angle" KPI tile and the
+   * ride-detail screen read `ride_stats.max_lean_angle`; without these rows
+   * the tile renders "—" even when the rider has current-month rides.
+   */
+  private async seedRideStats(rides: Ride[], rng: () => number): Promise<void> {
+    if (rides.length === 0) return;
+    const repo = this.repo(RideStats);
+    const rows = rides.map((ride) => {
+      const maxLean = round1(28 + rng() * 22); // 28–50°
+      const endedAt = ride.ended_at ?? ride.started_at;
+      const durationSec = Math.max(
+        0,
+        Math.round((endedAt.getTime() - ride.started_at.getTime()) / 1000),
+      );
+      return repo.create({
+        ride_id: ride.id,
+        max_lean_angle: maxLean,
+        avg_lean_angle: round1(maxLean * (0.45 + rng() * 0.2)),
+        duration: `${durationSec} seconds`,
+        elevation_gain: round1(200 + rng() * 1200),
+        elevation_loss: round1(200 + rng() * 1200),
+        curve_count: Math.round(20 + rng() * 120),
       });
     });
     await repo.save(rows, { chunk: SAVE_CHUNK });
