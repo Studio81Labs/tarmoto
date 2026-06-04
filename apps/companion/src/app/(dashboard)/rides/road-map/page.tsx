@@ -17,7 +17,14 @@ import {
   Map as MapIcon,
   MapPin,
 } from "lucide-react";
-import { Button, Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  MetricTile,
+  Mono,
+  QualityBars,
+  Stamp,
+} from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { Link2 } from "lucide-react";
@@ -432,6 +439,16 @@ function RoadMapPageInner() {
         : shareState.kind === "error"
           ? Copy
           : Link2;
+  // `formatDistance` returns a combined "<value> <unit>" string; split it so
+  // the MetricTile renders the number big and the unit in its small slot.
+  const allTimeDistance = formatDistance(stats.total_distance_km, unitSystem);
+  const distanceSpace = allTimeDistance.lastIndexOf(" ");
+  const distanceValue =
+    distanceSpace > 0
+      ? allTimeDistance.slice(0, distanceSpace)
+      : allTimeDistance;
+  const distanceUnit =
+    distanceSpace > 0 ? allTimeDistance.slice(distanceSpace + 1) : undefined;
   return (
     <RidesScaffold
       fill
@@ -481,34 +498,31 @@ function RoadMapPageInner() {
         </div>
 
         <aside className="space-y-3.5 overflow-y-auto">
-          {/* 1 — Segments ridden (ink hero card, accent number). */}
-          <Card variant="ink">
-            <Stamp tone="on-dark">{t("Segments ridden")}</Stamp>
-            <div className="mt-2 text-[36px] font-extrabold leading-none tracking-[-1px] text-accent tabular-nums">
-              {stats.ridden_segments.toLocaleString()}
-            </div>
-            <p className="mt-2 text-[12px] text-fg-on-dark-dim">
-              {t("of {total} in region", {
-                total: stats.total_segments.toLocaleString(),
-              })}
-            </p>
-          </Card>
+          {/* 1 — Segments ridden (ink hero tile, accent number + region subline). */}
+          <MetricTile
+            variant="ink"
+            accentNumber
+            label={t("Segments ridden")}
+            value={stats.ridden_segments.toLocaleString()}
+            delta={t("of {total} in region", {
+              total: stats.total_segments.toLocaleString(),
+            })}
+          />
 
           {/* 2 — All-time (lifetime) distance ridden. */}
-          <Card>
-            <Stamp>{t("All-time distance")}</Stamp>
-            <div className="mt-2 text-[28px] font-extrabold leading-none tracking-[-0.5px] text-ink tabular-nums">
-              {formatDistance(stats.total_distance_km, unitSystem)}
-            </div>
-          </Card>
+          <MetricTile
+            label={t("All-time distance")}
+            value={distanceValue}
+            unit={distanceUnit}
+          />
 
           {/* 3 — Region coverage. No region label backing data → no subline. */}
-          <Card>
-            <Stamp>{t("Region coverage")}</Stamp>
-            <div className="mt-2 text-[28px] font-extrabold leading-none tracking-[-0.5px] text-accent tabular-nums">
-              {stats.percent_explored}%
-            </div>
-          </Card>
+          <MetricTile
+            accentNumber
+            label={t("Region coverage")}
+            value={stats.percent_explored}
+            unit="%"
+          />
 
           {/* 4 — Nearby unridden roads (name · km · quality bars). */}
           <Card padded={false} className="overflow-hidden">
