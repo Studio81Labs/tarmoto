@@ -69,6 +69,11 @@ function RidesPageInner() {
     ) || state.page > 1;
   const isPristineEmpty =
     !list.loading && !list.error && !hasActiveFilter && list.total === 0;
+  // Carry the active time window onto the "Share map" CTA so it lands on the
+  // same period the rider is viewing — matching how `RidesTabsBar` propagates
+  // `?window=` across tabs. Omitted for the "all" default (bare href).
+  const roadMapHref =
+    window === "all" ? "/rides/road-map" : `/rides/road-map?window=${window}`;
   return (
     <RidesScaffold
       allRidesBadge={
@@ -82,7 +87,7 @@ function RidesPageInner() {
         isPristineEmpty ? null : (
           <div className="flex items-center gap-2">
             <Link
-              href="/rides/road-map"
+              href={roadMapHref}
               className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
             >
               <Share2 size={14} />
