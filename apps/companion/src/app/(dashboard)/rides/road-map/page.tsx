@@ -17,7 +17,7 @@ import {
   Map as MapIcon,
   MapPin,
 } from "lucide-react";
-import { Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import { Button, Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { Link2 } from "lucide-react";
@@ -437,26 +437,28 @@ function RoadMapPageInner() {
       fill
       headerRight={
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            uppercase
             onClick={handleShare}
             disabled={shareState.kind === "creating"}
             title={shareState.kind === "error" ? shareState.message : undefined}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:opacity-60"
+            leftIcon={
+              <ShareIcon
+                size={14}
+                className={
+                  shareState.kind === "creating" ? "animate-spin" : undefined
+                }
+              />
+            }
           >
-            <ShareIcon
-              size={14}
-              className={
-                shareState.kind === "creating" ? "animate-spin" : undefined
-              }
-            />
             {shareLabel}
-          </button>
+          </Button>
         </div>
       }
     >
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
-        <div className="relative bg-cream border-b lg:border-b-0 lg:border-r border-line min-h-[320px]">
+      <div className="flex-1 min-h-0 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
+        <div className="relative min-h-[320px] overflow-hidden rounded-[14px] border border-line bg-cream">
           <PersonalRoadMap
             ref={mapRef}
             initialCenter={{
@@ -478,7 +480,7 @@ function RoadMapPageInner() {
           </button>
         </div>
 
-        <aside className="overflow-y-auto bg-paper/60 p-5 space-y-3.5">
+        <aside className="space-y-3.5 overflow-y-auto">
           {/* 1 — Segments ridden (ink hero card, accent number). */}
           <Card variant="ink">
             <Stamp tone="on-dark">{t("Segments ridden")}</Stamp>
