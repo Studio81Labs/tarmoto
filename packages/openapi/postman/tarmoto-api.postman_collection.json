@@ -1554,6 +1554,23 @@
               ]
             }
           }
+        },
+        {
+          "name": "Current month's KPI snapshot for the home dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/stats/monthly",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "stats", "monthly"]
+            }
+          }
         }
       ]
     },
@@ -3061,7 +3078,7 @@
                 {
                   "key": "started_to",
                   "value": "",
-                  "description": "ISO 8601 date (inclusive end-of-day)",
+                  "description": "ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening).",
                   "disabled": true
                 },
                 {
@@ -3253,7 +3270,7 @@
                 {
                   "key": "started_to",
                   "value": "",
-                  "description": "ISO 8601 date (inclusive end-of-day)",
+                  "description": "ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening).",
                   "disabled": true
                 },
                 {
