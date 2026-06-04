@@ -3,8 +3,9 @@ import { cn } from "../utils/cn";
 
 /**
  * Button · the "commit" surface. Spec: §17.
- * Three sizes (sm 32 · md 40 · lg 48) × six variants
+ * Three sizes (sm 34 · md 40 · lg 48) × six variants
  * (primary · accent · secondary · ghost · danger · on-dark).
+ * `sm` is 34 px so it lines up with the 34 px form inputs/selects.
  *
  * Use a Pill (§08) for filter chips, toolbar items, status indicators
  * — Button is for verbs that change state.
@@ -40,13 +41,13 @@ export interface ButtonProps extends Omit<
 }
 
 const sizeClass: Record<ButtonSize, string> = {
-  sm: "h-8 px-3.5 text-xs rounded-lg",
+  sm: "h-[34px] px-3.5 text-xs rounded-lg",
   md: "h-10 px-[18px] text-[13px] rounded-[10px]",
   lg: "h-12 px-[22px] text-sm rounded-xl",
 };
 
 const iconSizeClass: Record<ButtonSize, string> = {
-  sm: "h-8 w-8 text-xs rounded-lg",
+  sm: "h-[34px] w-[34px] text-xs rounded-lg",
   md: "h-10 w-10 text-[13px] rounded-[10px]",
   lg: "h-12 w-12 text-sm rounded-xl",
 };
