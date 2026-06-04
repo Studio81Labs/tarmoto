@@ -224,7 +224,17 @@ export default function HomePage() {
             actionHref="/rides"
             actionLabel={t("View all")}
           />
-          {ridesInWindow.length > 0 ? (
+          {ridesError ? (
+            // Rides failed but trips loaded — asserting "No rides recorded
+            // yet" here would be wrong, so show the same retry the
+            // no-content branch uses.
+            <LoadErrorCard
+              title={t("Couldn't load your rides")}
+              message={t(
+                "We hit a network hiccup loading your rides. Refresh to try again.",
+              )}
+            />
+          ) : ridesInWindow.length > 0 ? (
             <RecentRidesTable rides={ridesInWindow} />
           ) : (
             <Card padded={false} className="px-6 py-10 text-center">
@@ -252,7 +262,17 @@ export default function HomePage() {
               actionHref="/trips/planner"
               actionLabel={t("Plan new trip")}
             />
-            {hasDrafts ? (
+            {tripsError ? (
+              // Reached the populated layout via rides, but the trips fetch
+              // failed — don't assert "No trips planned yet" (or nudge a
+              // "Plan a trip" CTA) over saved trips we just couldn't reach.
+              <LoadErrorCard
+                title={t("Couldn't load your trips")}
+                message={t(
+                  "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.",
+                )}
+              />
+            ) : hasDrafts ? (
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                 {draftTrips.map((trip, i) => (
                   <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
