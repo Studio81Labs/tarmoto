@@ -288,6 +288,13 @@ export class RidesService {
           quality: string | null;
           count: string;
         }>(),
+      // Distinct road segments ridden by rides matching the filter. For a
+      // windowed filter this is "roads ridden in the window", NOT first-time
+      // discoveries — a road first ridden last year and repeated this month
+      // still counts. The companion labels this KPI "Roads / RIDDEN" rather
+      // than "discovered" so it doesn't overstate exploration. (A true
+      // first-discovery count would need MIN(started_at) per segment across
+      // all the user's rides, gated on the window — left as a follow-up.)
       base()
         .innerJoin('ride_segments', 'seg', 'seg.ride_id = ride.id')
         .select('COUNT(DISTINCT seg.road_segment_id)', 'roads')

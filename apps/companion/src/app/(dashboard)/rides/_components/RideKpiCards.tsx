@@ -3,20 +3,10 @@
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { usePreferencesStore } from "@/stores/preferences";
+import { splitFormattedDistance } from "@/lib/utils";
 
 const DASH = "—";
-
-/**
- * Backend serves unrounded km totals; round for display, but drop to meters
- * for sub-km windows so a real 0.4 km total doesn't floor to "0 KM". Returns
- * the raw number — MetricTile applies locale grouping.
- */
-function formatDistance(km: number): { value: number; unit: string } {
-  if (km > 0 && km < 1) {
-    return { value: Math.round(km * 1000), unit: "M" };
-  }
-  return { value: Math.round(km), unit: "KM" };
-}
 
 /**
  * Backend serves unrounded hour totals; round for display, but drop to minutes
@@ -53,9 +43,16 @@ export function RideKpiCards({
   error?: boolean;
 }) {
   const { format } = useNumberFormat();
-  const distance = formatDistance(stats?.total_distance_km ?? 0);
-  const rideTime = formatRideTime(stats?.total_hours ?? 0);
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const has = stats != null;
+  // Distance honours the rider's unit preference (km/m vs mi/ft); the unit
+  // shows km/mi even on the em-dash state so the card reads consistently.
+  const distance = has
+    ? splitFormattedDistance(stats.total_distance_km, unitSystem)
+    : null;
+  const distanceUnit =
+    distance?.unit ?? (unitSystem === "imperial" ? "MI" : "KM");
+  const rideTime = formatRideTime(stats?.total_hours ?? 0);
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
   // ink + accent "proudest metric"; the rest are default cream tiles.
@@ -64,8 +61,8 @@ export function RideKpiCards({
   const tiles: MetricTileProps[] = [
     {
       label: "Distance",
-      value: has ? distance.value : DASH,
-      unit: distance.unit,
+      value: distance ? distance.value : DASH,
+      unit: distanceUnit,
       variant: "ink",
       accentNumber: true,
     },
@@ -75,9 +72,12 @@ export function RideKpiCards({
       unit: rideTime.unit,
     },
     {
-      label: "New roads",
+      // Distinct roads ridden in the active window — not strictly first-time
+      // discoveries (a road repeated in the window still counts), so the
+      // sublabel reads RIDDEN rather than overstating DISCOVERED.
+      label: "Roads",
       value: has ? stats.new_roads : DASH,
-      unit: "DISCOVERED",
+      unit: "RIDDEN",
     },
     {
       label: "Avg quality",

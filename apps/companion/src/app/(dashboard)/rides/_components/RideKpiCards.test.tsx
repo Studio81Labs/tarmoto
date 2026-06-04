@@ -15,9 +15,11 @@ function stats(overrides: Partial<RideStats> = {}): RideStats {
 }
 
 describe("RideKpiCards", () => {
-  it("rounds normal totals to whole KM / HRS", () => {
+  it("formats metric distance/time per the rider's units (default metric)", () => {
     render(<RideKpiCards stats={stats()} />);
-    expect(screen.getByText("1,284")).toBeInTheDocument();
+    // Distance respects the unit preference and keeps formatDistance's one
+    // decimal (1284.4 km → "1,284.4"); ride time rounds to whole hours.
+    expect(screen.getByText("1,284.4")).toBeInTheDocument();
     expect(screen.getByText("KM")).toBeInTheDocument();
     expect(screen.getByText("33")).toBeInTheDocument(); // 32.6 → 33
     expect(screen.getByText("HRS")).toBeInTheDocument();

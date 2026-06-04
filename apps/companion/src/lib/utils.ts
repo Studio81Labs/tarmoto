@@ -173,6 +173,24 @@ export function formatDistance(
 }
 
 /**
+ * `formatDistance` split into a numeric value + uppercased unit, for KPI tiles
+ * that format the number themselves (locale grouping) and render the unit in a
+ * separate slot. Honours the rider's unit preference (km/m vs mi/ft) so the
+ * tile converts at display time instead of leaking metric totals.
+ */
+export function splitFormattedDistance(
+  km: number,
+  units: UnitSystem = "metric",
+): { value: number; unit: string } {
+  const formatted = formatDistance(km, units);
+  const i = formatted.lastIndexOf(" ");
+  return {
+    value: Number(i > 0 ? formatted.slice(0, i) : formatted),
+    unit: (i > 0 ? formatted.slice(i + 1) : "").toUpperCase(),
+  };
+}
+
+/**
  * Thin wrapper for sources whose native unit is metres (road segment lengths,
  * distance-to-point from /exploration/nearby-unridden). Kept next to
  * `formatDistance` so a single display rule covers both shapes.
