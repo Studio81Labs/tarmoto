@@ -2,14 +2,15 @@
 
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
 
 export type TimeWindow = "all" | "year" | "90d" | "30d";
 
-const OPTIONS: { key: TimeWindow; label: string }[] = [
-  { key: "all", label: "All time" },
-  { key: "year", label: "This year" },
-  { key: "90d", label: "Last 90" },
-  { key: "30d", label: "Last 30" },
+const OPTIONS: SegmentedOption<TimeWindow>[] = [
+  { value: "all", label: "All time" },
+  { value: "year", label: "This year" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "30d", label: "Last 30 days" },
 ];
 
 const VALID = new Set<TimeWindow>(["all", "year", "90d", "30d"]);
@@ -69,22 +70,11 @@ export function TimeWindowPills() {
   );
 
   return (
-    <div className="inline-flex gap-1.5">
-      {OPTIONS.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          onClick={() => onChange(o.key)}
-          aria-pressed={value === o.key}
-          className={
-            value === o.key
-              ? "rounded-full bg-ink px-2.5 py-[5px] text-[11px] font-bold text-cream"
-              : "rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold text-ink transition hover:bg-paper"
-          }
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel="Time window"
+      value={value}
+      onChange={onChange}
+      options={OPTIONS}
+    />
   );
 }

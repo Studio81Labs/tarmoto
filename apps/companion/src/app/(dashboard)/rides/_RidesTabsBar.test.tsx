@@ -58,8 +58,8 @@ describe("RidesTabsBar — window preserved across tabs", () => {
   it("hides the time-window pills on the Compare tab", () => {
     setNav("/rides/compare", "window=30d");
     render(<RidesTabsBar />);
-    // "Last 30" pill only renders when pills are shown.
-    expect(screen.queryByRole("button", { name: "Last 30" })).toBeNull();
+    // "Last 30 days" pill (a SegmentedControl radio) only renders when shown.
+    expect(screen.queryByRole("radio", { name: "Last 30 days" })).toBeNull();
   });
 });
 
@@ -72,7 +72,7 @@ describe("TimeWindowPills — pagination reset on window change", () => {
   it("drops the stale page offset when the window changes", () => {
     setNav("/rides", "page=4&type=trip");
     render(<RidesTabsBar />);
-    fireEvent.click(screen.getByRole("button", { name: "Last 30" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Last 30 days" }));
     expect(mockReplace).toHaveBeenCalledTimes(1);
     const url = mockReplace.mock.calls[0][0] as string;
     expect(url).toContain("window=30d");

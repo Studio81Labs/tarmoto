@@ -38,7 +38,7 @@ export interface RidesQueryState extends RidesFilters {
    * Effective `started_from` lower bound sent to the API: the later of the
    * advanced "From" date filter and the shared `?window=` time-pill bound.
    * Kept separate from `from` so the advanced date input still shows the
-   * user's own value while the relative time pill ("Last 90") layers on top.
+   * user's own value while the relative time pill ("Last 90 days") layers on top.
    */
   effectiveFrom?: string;
 }
