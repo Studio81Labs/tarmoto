@@ -119,7 +119,12 @@ export default function HomePage() {
             {t("Know the road before you ride it.")}
           </p>
         </div>
-        <SyncPill syncedAt={monthlyStats?.last_synced_at ?? null} />
+        {/* Only render once stats resolve — while loading or on a fetch
+            error `monthlyStats` is null, and asserting "No mobile sync yet"
+            then would misrepresent an outage as an unsynced account. A
+            genuine null `last_synced_at` from a successful fetch still
+            shows the no-sync pill. */}
+        {monthlyStats && <SyncPill syncedAt={monthlyStats.last_synced_at} />}
       </header>
 
       {/* 4-KPI tile row — only for a non-empty current month so a

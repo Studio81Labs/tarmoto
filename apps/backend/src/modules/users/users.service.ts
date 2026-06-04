@@ -143,6 +143,12 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month'",
         )
+        // Upper bound at the next month boundary so a future-dated ride
+        // (GPX import, clock skew) can't leak into this/last month or make
+        // `prev` below match a future bucket instead of last month.
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
+        )
         .groupBy("date_trunc('month', r.started_at AT TIME ZONE 'UTC')")
         .getRawMany<{ month: string; km: string; hours: string }>(),
       this.rideRepo
@@ -156,6 +162,9 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
         )
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
+        )
         .andWhere('s.max_lean_angle IS NOT NULL')
         .orderBy('s.max_lean_angle', 'DESC')
         .limit(1)
@@ -168,6 +177,9 @@ export class UsersService {
         .andWhere("r.status = 'completed'")
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
+        )
+        .andWhere(
+          "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
         )
         .andWhere('seg.road_segment_id IS NOT NULL')
         .getRawOne<{ roads: string }>(),
