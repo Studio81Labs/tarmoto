@@ -1069,6 +1069,28 @@ describe('RidesService', () => {
       ).toBe(true);
     });
 
+    it('returns unrounded totals so short-ride windows do not floor to zero', async () => {
+      // A filter window of short rides: 0.4 km / ~20 min. Rounding these in
+      // the service would report 0 km / 0 hrs even though rides exist.
+      const agg = makeAggQbSpy({
+        km: '0.4',
+        hours: '0.3333',
+        quality: '4.137',
+        count: '1',
+      });
+      const roads = makeRoadsQbSpy({ roads: '1' });
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(agg.qb)
+        .mockReturnValueOnce(roads.qb);
+
+      const res = await service.stats('user-1', {});
+
+      expect(res.total_distance_km).toBeCloseTo(0.4);
+      expect(res.total_hours).toBeCloseTo(0.3333);
+      // avg_quality is served unrounded; the client formats it.
+      expect(res.avg_quality).toBeCloseTo(4.137);
+    });
+
     it('maps a null quality aggregate (no scored rides) to null', async () => {
       const agg = makeAggQbSpy({
         km: '0',

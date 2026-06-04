@@ -295,14 +295,16 @@ export class RidesService {
         .getRawOne<{ roads: string }>(),
     ]);
 
+    // Return the raw numeric aggregates — rounding here would report
+    // materially wrong totals for filter windows of short rides (a 20-minute
+    // ride floors to 0 hours; a 0.4 km commute floors to 0 km) even though
+    // matching rides exist. The client (RideKpiCards) rounds/formats for
+    // display. new_roads and ride_count are genuine integer counts.
     return {
-      total_distance_km: Math.round(parseFloat(agg?.km ?? '0')),
-      total_hours: Math.round(parseFloat(agg?.hours ?? '0')),
+      total_distance_km: parseFloat(agg?.km ?? '0'),
+      total_hours: parseFloat(agg?.hours ?? '0'),
       new_roads: parseInt(roadsRow?.roads ?? '0', 10),
-      avg_quality:
-        agg?.quality != null
-          ? Math.round(parseFloat(agg.quality) * 10) / 10
-          : null,
+      avg_quality: agg?.quality != null ? parseFloat(agg.quality) : null,
       ride_count: parseInt(agg?.count ?? '0', 10),
     };
   }

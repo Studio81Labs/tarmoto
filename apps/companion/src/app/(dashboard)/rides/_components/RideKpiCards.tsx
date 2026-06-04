@@ -17,14 +17,15 @@ export function RideKpiCards({ stats }: { stats: RideStats | null }) {
   const cards: { label: string; value: string; unit: string; ink?: boolean }[] =
     [
       {
+        // Backend returns unrounded totals; round for display here.
         label: "Distance",
-        value: (stats?.total_distance_km ?? 0).toLocaleString(),
+        value: Math.round(stats?.total_distance_km ?? 0).toLocaleString(),
         unit: "KM",
         ink: true,
       },
       {
         label: "Ride time",
-        value: String(stats?.total_hours ?? 0),
+        value: String(Math.round(stats?.total_hours ?? 0)),
         unit: "HRS",
       },
       {
