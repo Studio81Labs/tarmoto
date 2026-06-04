@@ -210,6 +210,11 @@ export class RidesService {
 
     const qb = this.rideRepo
       .createQueryBuilder('ride')
+      // OneToOne — surfaces `ride.stats.max_lean_angle` on the summary so the
+      // Ride History table can show a LEAN column without a per-ride detail
+      // fetch. A LEFT JOIN keeps rides without stats in the result, and being
+      // OneToOne it can't multiply rows or inflate the getManyAndCount total.
+      .leftJoinAndSelect('ride.stats', 'stats')
       .where('ride.user_id = :userId', { userId })
       .skip(offset)
       .take(limit);
@@ -506,6 +511,9 @@ ${tracks.join('\n')}
       ...this.toRideResponse(ride),
       name: ride.name ?? null,
       duration_min: this.calcDurationMin(ride),
+      // Optional-chains so callers that don't hydrate `stats` (importGpx,
+      // rename) safely yield null rather than crashing.
+      max_lean_angle: ride.stats?.max_lean_angle ?? null,
     };
   }
 

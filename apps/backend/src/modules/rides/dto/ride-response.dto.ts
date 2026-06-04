@@ -96,6 +96,15 @@ export class RideSummaryDto extends RideResponseDto {
 
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Max lean angle (deg) from the ride's `ride_stats`, surfaced on the " +
+      'summary so list views (Ride History table) can show a LEAN column ' +
+      'without fetching each ride detail. `null` when the ride has no stats.',
+  })
+  max_lean_angle!: number | null;
 }
 
 export class RideDetailDto extends RideSummaryDto {
@@ -114,8 +123,8 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
   curve_count!: number | null;
 
-  @ApiProperty({ nullable: true })
-  max_lean_angle!: number | null;
+  // `max_lean_angle` is inherited from RideSummaryDto (surfaced there for the
+  // Ride History LEAN column); the detail response carries the same field.
 
   @ApiProperty({ type: LeanDistributionDto, nullable: true })
   lean_distribution!: LeanDistributionDto | null;

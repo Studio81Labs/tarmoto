@@ -18,6 +18,7 @@ function makeQbSpy() {
   const andWhere = jest.fn().mockReturnThis();
   const orderBy = jest.fn().mockReturnThis();
   const qb = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere,
     orderBy,
@@ -65,6 +66,7 @@ describe('RidesService', () => {
       query: jest.fn().mockResolvedValue([{ weighted_avg: null }]),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -369,6 +371,7 @@ describe('RidesService', () => {
   describe('list', () => {
     it('should return paginated rides', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -390,8 +393,51 @@ describe('RidesService', () => {
       expect(result.rides[0].duration_min).toBe(60);
     });
 
+    it('surfaces max_lean_angle from the joined stats relation', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([
+            [{ ...mockRide, stats: { max_lean_angle: 38 } }],
+            1,
+          ]),
+      };
+      rideRepo.createQueryBuilder!.mockReturnValueOnce(qb as never);
+
+      const result = await service.list('user-1', {});
+
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('ride.stats', 'stats');
+      expect(result.rides[0].max_lean_angle).toBe(38);
+    });
+
+    it('returns null max_lean_angle when the ride has no stats', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([[{ ...mockRide, stats: null }], 1]),
+      };
+      rideRepo.createQueryBuilder!.mockReturnValueOnce(qb as never);
+
+      const result = await service.list('user-1', {});
+
+      expect(result.rides[0].max_lean_angle).toBeNull();
+    });
+
     it('should filter by ride type', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
@@ -410,6 +456,7 @@ describe('RidesService', () => {
 
     it('should use custom limit and offset', async () => {
       const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
