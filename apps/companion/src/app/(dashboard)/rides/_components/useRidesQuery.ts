@@ -219,6 +219,18 @@ export function useRidesQuery() {
     stateRef.current = state;
   }, [state]);
 
+  // The shared `?window=` pill isn't part of `RidesQueryState`, so `stateRef`
+  // doesn't carry it — mirror it in its own ref. A debounced `update()` (the
+  // 300 ms search box in RidesFilters) can fire after the rider switches the
+  // window pill; reading `params.get("window")` off the stale closure would
+  // then serialize the *previous* window and snap the list/KPIs back to all
+  // time. Reading the ref at call time always sees the latest committed value.
+  const windowParam = params.get("window");
+  const windowRef = useRef(windowParam);
+  useEffect(() => {
+    windowRef.current = windowParam;
+  }, [windowParam]);
+
   // Gate fetches on the access token being hydrated by `AuthSync`.
   // Without this, both the list and tracks effects fire on mount before
   // `useSession` returns and Zustand picks up the user's token — the
@@ -289,14 +301,17 @@ export function useRidesQuery() {
       page: isBarePageChange ? (patch.page ?? current.page) : 1,
     };
     // Preserve the shared `?window=` pill across filter/sort/page changes.
-    const qs = serializeQuery(next, params.get("window") ?? undefined);
+    // Read it from the ref (not the closure's `params`) so a stale debounced
+    // caller still serializes the window the rider currently has selected.
+    const qs = serializeQuery(next, windowRef.current ?? undefined);
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
   function reset() {
     // Reset clears advanced filters but keeps the shared time-window pill —
-    // it's a top-level control on the tab row, not a filter-bar field.
-    const w = params.get("window");
+    // it's a top-level control on the tab row, not a filter-bar field. Read
+    // from the ref so a stale closure still preserves the current window.
+    const w = windowRef.current;
     const qs = w && w !== "all" ? `window=${w}` : "";
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }

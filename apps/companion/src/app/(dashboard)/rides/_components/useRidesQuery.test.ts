@@ -1,4 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 // Mock Next.js navigation and other runtime-only deps so the module can be
 // imported in a plain Node/jsdom environment without a running Next.js server.
@@ -16,8 +18,14 @@ vi.mock("@/stores/auth", () => ({
   useAuthStore: vi.fn(),
 }));
 
-import { parseQuery, serializeQuery, toFilterParams } from "./useRidesQuery";
+import {
+  parseQuery,
+  serializeQuery,
+  toFilterParams,
+  useRidesQuery,
+} from "./useRidesQuery";
 import { windowStartISO } from "./TimeWindowPills";
+import { useAuthStore } from "@/stores/auth";
 
 // Fixed reference date used to derive expected window bounds.
 // 2026-06-04T00:00:00Z:
@@ -158,5 +166,42 @@ describe("serializeQuery — ?window= preservation", () => {
     expect(parsed.get("from")).toBe("2026-01-01");
     // effectiveFrom is a derived field, not a URL key
     expect(parsed.get("effectiveFrom")).toBeNull();
+  });
+});
+
+// ── update() — latest window survives a stale debounced caller ─────────────
+
+describe("useRidesQuery — window preserved for a stale debounced update", () => {
+  it("serializes the current window even when update() is a stale closure", () => {
+    const replace = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ replace } as never);
+    vi.mocked(usePathname).mockReturnValue("/rides");
+    // Auth gate off → the list-fetch effect early-returns, so we don't need
+    // to stub api.GET; we're only exercising the update() URL serialization.
+    vi.mocked(useAuthStore).mockReturnValue(false as never);
+
+    // Mutable search params the mock reads each render, so we can simulate the
+    // rider switching the window pill between scheduling and firing a debounce.
+    let current = new URLSearchParams(); // window defaults to "all"
+    vi.mocked(useSearchParams).mockImplementation(() => current as never);
+
+    const { result, rerender } = renderHook(() => useRidesQuery());
+
+    // A debounced caller (e.g. the 300 ms search box) captures THIS update.
+    const staleUpdate = result.current.update;
+
+    // Rider switches the window pill → URL gains ?window=30d → rerender.
+    current = new URLSearchParams("window=30d");
+    rerender();
+
+    // The debounce fires now, using the stale closure from before the switch.
+    act(() => {
+      staleUpdate({ q: "ridge" });
+    });
+
+    expect(replace).toHaveBeenCalledTimes(1);
+    const url = replace.mock.calls[0][0] as string;
+    expect(url).toContain("window=30d"); // latest window, not the stale "all"
+    expect(url).toContain("q=ridge");
   });
 });
