@@ -59,7 +59,11 @@ const QUICK_ACTIONS = [
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
-  const { rides: recentRides, loading: ridesLoading } = useRecentRides(5);
+  const {
+    rides: recentRides,
+    loading: ridesLoading,
+    error: ridesError,
+  } = useRecentRides(5);
   const firstName = user?.displayName?.split(" ")[0];
   const draftTrips = trips
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
@@ -82,11 +86,12 @@ export default function HomePage() {
   // flash on every cold load (statistically the dominant case under
   // normal network latency).
   const isFirstTimeUser =
-    !loading && !ridesLoading && !tripsError && !hasAnyContent;
-  // `tripsError` only matters in the empty / loading branches — when
-  // we have drafts to show, swallow the error rather than nudging a
-  // rider with real saved trips toward starting a new one.
-  const showTripsError = tripsError && !hasAnyContent && !loading;
+    !loading && !ridesLoading && !tripsError && !ridesError && !hasAnyContent;
+  // A load error only surfaces in the no-content branch (below) — once we
+  // have trips/rides to show, swallow it rather than nudging a returning
+  // rider with real data toward a "first trip" CTA. We can't honestly
+  // claim "no rides/trips" when the fetch itself failed, so each side of
+  // the empty layout shows its own retry card instead of onboarding copy.
 
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in px-10 py-8 pb-12">
@@ -158,39 +163,37 @@ export default function HomePage() {
             </Card>
           }
         />
-      ) : showTripsError ? (
-        // Network outage on a fresh visit: don't push them toward a
-        // "Plan a trip" CTA — they may already have drafts on the
-        // server that we just couldn't reach.
+      ) : !hasAnyContent ? (
+        // Nothing loaded. If a fetch failed, show a per-side retry card
+        // rather than first-time onboarding — we can't claim "no rides /
+        // no trips" when we never reached the server (they may have data
+        // we couldn't load). Otherwise both genuinely empty → the simple
+        // 2-col centered cards, with the trips "Plan a trip" CTA.
         <DualEmptyState
-          ridesEmpty={<RidesEmptyCard />}
+          ridesEmpty={
+            ridesError ? (
+              <LoadErrorCard
+                title={t("Couldn't load your rides")}
+                message={t(
+                  "We hit a network hiccup loading your rides. Refresh to try again.",
+                )}
+              />
+            ) : (
+              <RidesEmptyCard />
+            )
+          }
           tripsEmpty={
-            <Card padded={false} className="px-6 py-10 text-center">
-              <Stamp className="text-quality-q1">
-                {t("Couldn't load your trips")}
-              </Stamp>
-              <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
-                {t(
+            tripsError ? (
+              <LoadErrorCard
+                title={t("Couldn't load your trips")}
+                message={t(
                   "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.",
                 )}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== "undefined") window.location.reload();
-                }}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
-              >
-                {t("Retry")}
-              </button>
-            </Card>
+              />
+            ) : (
+              <TripsEmptyCard />
+            )
           }
-        />
-      ) : !hasAnyContent ? (
-        // Per spec: both empty → simple 2-col centered cards.
-        <DualEmptyState
-          ridesEmpty={<RidesEmptyCard />}
-          tripsEmpty={<TripsEmptyCard />}
         />
       ) : (
         // Returning rider → render the populated layout: Recent rides
@@ -435,6 +438,29 @@ function DualEmptyState({
       {ridesEmpty}
       {tripsEmpty}
     </div>
+  );
+}
+
+// Shown in the no-content branch when a rides or trips fetch failed, in
+// place of the "you have nothing yet" empty card — a transient outage
+// must not read as an empty account. Reload re-runs both queries.
+function LoadErrorCard({ title, message }: { title: string; message: string }) {
+  return (
+    <Card padded={false} className="px-6 py-10 text-center">
+      <Stamp className="text-quality-q1">{title}</Stamp>
+      <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          if (typeof window !== "undefined") window.location.reload();
+        }}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
+      >
+        {t("Retry")}
+      </button>
+    </Card>
   );
 }
 
