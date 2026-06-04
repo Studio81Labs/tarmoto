@@ -385,8 +385,13 @@ export class RidesService {
     rideId: string,
     name: string | null | undefined,
   ): Promise<RideSummaryDto> {
+    // Hydrate `stats` so the returned summary carries the real
+    // `max_lean_angle` — `RideSummaryDto` documents it, and clients that
+    // refresh their row from the PATCH response would otherwise drop the
+    // LEAN value to null until a full list/detail refetch.
     const ride = await this.rideRepo.findOne({
       where: { id: rideId, user_id: userId },
+      relations: { stats: true },
     });
     if (!ride) {
       throw new NotFoundException('Ride not found');
@@ -395,6 +400,9 @@ export class RidesService {
     const trimmed = typeof name === 'string' ? name.trim() : '';
     ride.name = trimmed.length > 0 ? trimmed : null;
     const saved = await this.rideRepo.save(ride);
+    // `save` may return a fresh instance without the eager-loaded relation;
+    // carry it over so `toSummary` reads the hydrated stats.
+    saved.stats = ride.stats;
     return this.toSummary(saved);
   }
 
@@ -571,8 +579,8 @@ ${tracks.join('\n')}
       ...this.toRideResponse(ride),
       name: ride.name ?? null,
       duration_min: this.calcDurationMin(ride),
-      // Optional-chains so callers that don't hydrate `stats` (importGpx,
-      // rename) safely yield null rather than crashing.
+      // Optional-chains so callers that don't hydrate `stats` (e.g. importGpx)
+      // safely yield null rather than crashing.
       max_lean_angle: ride.stats?.max_lean_angle ?? null,
     };
   }

@@ -730,11 +730,30 @@ describe('RidesService', () => {
 
       expect(rideRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'ride-1', user_id: 'user-1' },
+        relations: { stats: true },
       });
       expect(rideRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Sunday loop' }),
       );
       expect(result.name).toBe('Sunday loop');
+    });
+
+    it('returns hydrated max_lean_angle even when save drops the relation', async () => {
+      const existing = {
+        ...mockRide,
+        name: null,
+        stats: { max_lean_angle: 38 },
+      } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      // Simulate TypeORM returning a fresh instance without the eager
+      // relation — the service must carry `stats` over from the loaded ride.
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r: Ride) =>
+        Promise.resolve({ ...r, stats: undefined }),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(result.max_lean_angle).toBe(38);
     });
 
     it('trims whitespace and coerces empty to null', async () => {
