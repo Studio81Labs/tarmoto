@@ -1472,6 +1472,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/rides/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Aggregate KPIs for a filtered set of rides */
+    get: operations["RidesController_stats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/rides/{rideId}": {
     parameters: {
       query?: never;
@@ -3807,6 +3824,8 @@ export interface components {
       bike_id: string | null;
       name: string | null;
       duration_min: number | null;
+      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+      max_lean_angle: number | null;
     };
     RideListResponseDto: {
       rides: components["schemas"]["RideSummaryDto"][];
@@ -3848,6 +3867,18 @@ export interface components {
       /** @description true when the 500-row cap was hit */
       truncated: boolean;
     };
+    RideStatsDto: {
+      /** @description Sum of distance_km across filtered rides. */
+      total_distance_km: number;
+      /** @description Total ride time (hours) across filtered rides. */
+      total_hours: number;
+      /** @description Distinct road segments touched (new roads). */
+      new_roads: number;
+      /** @description Distance-weighted avg quality (0–5). */
+      avg_quality: number | null;
+      /** @description Number of rides matched by the filter. */
+      ride_count: number;
+    };
     RenameRideDto: {
       name?: string | null;
     };
@@ -3886,12 +3917,13 @@ export interface components {
       bike_id: string | null;
       name: string | null;
       duration_min: number | null;
+      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+      max_lean_angle: number | null;
       max_speed: number | null;
       route_geometry: components["schemas"]["LatLngResponseDto"][] | null;
       elevation_gain: number | null;
       elevation_loss: number | null;
       curve_count: number | null;
-      max_lean_angle: number | null;
       lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
       fuel_estimate_l: number | null;
       segments: components["schemas"]["RideSegmentDto"][];
@@ -4929,6 +4961,7 @@ export type SchemaRideResponseDto = components["schemas"]["RideResponseDto"];
 export type SchemaRideTrackDto = components["schemas"]["RideTrackDto"];
 export type SchemaRideTracksResponseDto =
   components["schemas"]["RideTracksResponseDto"];
+export type SchemaRideStatsDto = components["schemas"]["RideStatsDto"];
 export type SchemaRenameRideDto = components["schemas"]["RenameRideDto"];
 export type SchemaLeanDistributionDto =
   components["schemas"]["LeanDistributionDto"];
@@ -7599,6 +7632,51 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RideTracksResponseDto"];
+        };
+      };
+    };
+  };
+  RidesController_stats: {
+    parameters: {
+      query?: {
+        limit?: number;
+        offset?: number;
+        type?: "free" | "commute" | "trip" | "tracked";
+        /** @description ISO 8601 date (inclusive) */
+        started_from?: string;
+        /** @description ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening). */
+        started_to?: string;
+        min_distance_km?: number;
+        max_distance_km?: number;
+        min_quality?: number;
+        max_quality?: number;
+        /** @description Case-insensitive substring match against ride name */
+        q?: string;
+        /** @description Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together. */
+        near_lat?: number;
+        /** @description Longitude of the reference point. See near_lat. */
+        near_lng?: number;
+        /** @description Proximity radius in kilometres for the near_lat/near_lng filter. */
+        near_km?: number;
+        sort?:
+          | "started_at"
+          | "distance_km"
+          | "duration_min"
+          | "avg_road_quality";
+        order?: "asc" | "desc";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RideStatsDto"];
         };
       };
     };
