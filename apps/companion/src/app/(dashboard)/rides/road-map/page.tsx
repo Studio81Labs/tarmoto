@@ -27,6 +27,7 @@ import {
 } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
+import { useNumberFormat } from "@/hooks/useNumberFormat";
 import { Link2 } from "lucide-react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
@@ -130,6 +131,7 @@ function RoadMapPageInner() {
   // store still returns the metric default so the server-rendered markup
   // matches the first client paint.
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const { format } = useNumberFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   useEffect(() => {
     hydratePreferences();
@@ -439,14 +441,16 @@ function RoadMapPageInner() {
         : shareState.kind === "error"
           ? Copy
           : Link2;
-  // `formatDistance` returns a combined "<value> <unit>" string; split it so
-  // the MetricTile renders the number big and the unit in its small slot.
+  // `formatDistance` carries the metric/imperial conversion + decimal rule;
+  // take its number for the tile (so the shared formatter applies locale
+  // grouping) and its unit for the tile's small slot.
   const allTimeDistance = formatDistance(stats.total_distance_km, unitSystem);
   const distanceSpace = allTimeDistance.lastIndexOf(" ");
-  const distanceValue =
+  const distanceValue = Number(
     distanceSpace > 0
       ? allTimeDistance.slice(0, distanceSpace)
-      : allTimeDistance;
+      : allTimeDistance,
+  );
   const distanceUnit =
     distanceSpace > 0 ? allTimeDistance.slice(distanceSpace + 1) : undefined;
   return (
@@ -502,15 +506,17 @@ function RoadMapPageInner() {
           <MetricTile
             variant="ink"
             accentNumber
+            formatValue={format}
             label={t("Segments ridden")}
-            value={stats.ridden_segments.toLocaleString()}
+            value={stats.ridden_segments}
             delta={t("of {total} in region", {
-              total: stats.total_segments.toLocaleString(),
+              total: format(stats.total_segments),
             })}
           />
 
           {/* 2 — All-time (lifetime) distance ridden. */}
           <MetricTile
+            formatValue={format}
             label={t("All-time distance")}
             value={distanceValue}
             unit={distanceUnit}
@@ -519,6 +525,7 @@ function RoadMapPageInner() {
           {/* 3 — Region coverage. No region label backing data → no subline. */}
           <MetricTile
             accentNumber
+            formatValue={format}
             label={t("Region coverage")}
             value={stats.percent_explored}
             unit="%"

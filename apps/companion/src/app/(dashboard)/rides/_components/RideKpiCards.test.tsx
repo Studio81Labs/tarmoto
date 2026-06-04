@@ -49,4 +49,12 @@ describe("RideKpiCards", () => {
       /couldn't load ride stats/i,
     );
   });
+
+  it("groups large totals via the shared number formatter", () => {
+    // Default locale (en) groups thousands; the value is run through
+    // useNumberFormat, not String(), so it isn't a bare "12643".
+    render(<RideKpiCards stats={stats({ total_distance_km: 12643 })} />);
+    expect(screen.getByText("12,643")).toBeInTheDocument();
+    expect(screen.queryByText("12643")).not.toBeInTheDocument();
+  });
 });

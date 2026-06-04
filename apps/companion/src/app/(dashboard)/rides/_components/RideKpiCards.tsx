@@ -2,29 +2,31 @@
 
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
+import { useNumberFormat } from "@/hooks/useNumberFormat";
 
 const DASH = "—";
 
 /**
  * Backend serves unrounded km totals; round for display, but drop to meters
- * for sub-km windows so a real 0.4 km total doesn't floor to "0 KM".
+ * for sub-km windows so a real 0.4 km total doesn't floor to "0 KM". Returns
+ * the raw number — MetricTile applies locale grouping.
  */
-function formatDistance(km: number): { value: string; unit: string } {
+function formatDistance(km: number): { value: number; unit: string } {
   if (km > 0 && km < 1) {
-    return { value: String(Math.round(km * 1000)), unit: "M" };
+    return { value: Math.round(km * 1000), unit: "M" };
   }
-  return { value: Math.round(km).toLocaleString(), unit: "KM" };
+  return { value: Math.round(km), unit: "KM" };
 }
 
 /**
  * Backend serves unrounded hour totals; round for display, but drop to minutes
  * for sub-hour windows so a 20-minute total doesn't floor to "0 HRS".
  */
-function formatRideTime(hours: number): { value: string; unit: string } {
+function formatRideTime(hours: number): { value: number; unit: string } {
   if (hours > 0 && hours < 1) {
-    return { value: String(Math.round(hours * 60)), unit: "MIN" };
+    return { value: Math.round(hours * 60), unit: "MIN" };
   }
-  return { value: String(Math.round(hours)), unit: "HRS" };
+  return { value: Math.round(hours), unit: "HRS" };
 }
 
 /**
@@ -50,12 +52,15 @@ export function RideKpiCards({
   stats: RideStats | null;
   error?: boolean;
 }) {
+  const { format } = useNumberFormat();
   const distance = formatDistance(stats?.total_distance_km ?? 0);
   const rideTime = formatRideTime(stats?.total_hours ?? 0);
   const has = stats != null;
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
   // ink + accent "proudest metric"; the rest are default cream tiles.
+  // Numeric values are passed raw so MetricTile applies locale grouping;
+  // avg quality keeps a fixed 1-decimal, locale-formatted string.
   const tiles: MetricTileProps[] = [
     {
       label: "Distance",
@@ -71,13 +76,18 @@ export function RideKpiCards({
     },
     {
       label: "New roads",
-      value: has ? String(stats.new_roads) : DASH,
+      value: has ? stats.new_roads : DASH,
       unit: "DISCOVERED",
     },
     {
       label: "Avg quality",
       value:
-        has && stats.avg_quality != null ? stats.avg_quality.toFixed(1) : DASH,
+        has && stats.avg_quality != null
+          ? format(stats.avg_quality, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })
+          : DASH,
       unit: "/ 5",
     },
   ];
@@ -86,7 +96,7 @@ export function RideKpiCards({
     <div className="mb-[18px]">
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
         {tiles.map((tile) => (
-          <MetricTile key={tile.label} {...tile} />
+          <MetricTile key={tile.label} formatValue={format} {...tile} />
         ))}
       </div>
       {error && (
