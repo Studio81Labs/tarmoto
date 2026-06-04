@@ -42,7 +42,15 @@ describe("useRecentRides", () => {
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getMock).toHaveBeenCalledWith("/api/v1/rides", {
-      params: { query: { limit: 5, sort: "started_at", order: "desc" } },
+      params: {
+        query: {
+          limit: 5,
+          sort: "started_at",
+          order: "desc",
+          // Upper-bounded at today so future-dated rides can't fill the cap.
+          started_to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        },
+      },
       signal: expect.anything(),
     });
     expect(result.current.rides).toHaveLength(1);
