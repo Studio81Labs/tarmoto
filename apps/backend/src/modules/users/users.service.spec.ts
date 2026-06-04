@@ -442,7 +442,7 @@ describe('UsersService', () => {
       expect(rideRepo.createQueryBuilder).toHaveBeenCalledTimes(4);
     });
 
-    it('caps the month-scoped queries at the current instant, not the month end', async () => {
+    it('caps the month-scoped queries at ride end time, not the month end', async () => {
       const builders = [
         buildQb('getRawMany', []),
         buildQb('getRawOne', undefined),
@@ -454,15 +454,21 @@ describe('UsersService', () => {
 
       await service.getMonthlyStats('user-1');
 
-      // The months, lean and roads builders must each bound at `<= now()`
-      // so a completed ride dated later this month can't inflate the KPIs,
-      // and must NOT fall back to the looser next-month boundary.
+      // The months, lean and roads builders must each bound on
+      // `ended_at <= now()` so a ride that ends in the future (e.g. a
+      // clock-skewed GPX) can't inflate the KPIs — and must NOT use the
+      // looser `started_at <= now` cap or the next-month boundary.
       for (const idx of [0, 1, 2]) {
         const predicates = builders[idx].andWhere.mock.calls.map(
           (c: unknown[]) => c[0] as string,
         );
         expect(predicates).toContainEqual(
-          expect.stringContaining("<= (now() AT TIME ZONE 'UTC')"),
+          expect.stringContaining(
+            "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+          ),
+        );
+        expect(predicates).not.toContainEqual(
+          expect.stringContaining("(r.started_at AT TIME ZONE 'UTC') <= "),
         );
         expect(predicates).not.toContainEqual(
           expect.stringContaining("+ interval '1 month'"),

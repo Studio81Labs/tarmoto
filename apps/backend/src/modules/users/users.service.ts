@@ -150,13 +150,14 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month'",
         )
-        // Upper-bound at the current instant, not the month end, so a
-        // completed ride dated later this month (GPX import / clock skew)
-        // doesn't inflate this-month KPIs before it has happened. `<= now()`
-        // includes all of last month (which is < now) and excludes any
-        // future bucket, so `prev` can't match a month that hasn't started.
+        // Bound on `ended_at <= now()`, not `started_at`: a completed ride
+        // that starts before now but ends in the future (clock-skewed GPX
+        // whose last trackpoint is ahead of now) must not contribute its
+        // full distance/hours before it has happened. `ended_at <= now()`
+        // implies `started_at <= now()`, so it also keeps future buckets out
+        // and lets `prev` only ever match last month.
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .groupBy(
           "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
@@ -173,9 +174,10 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
         )
-        // Exclude rides dated later this month (not yet ridden).
+        // Only rides that have finished (ended_at <= now) — excludes a ride
+        // that starts this month but ends in the future.
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .andWhere('s.max_lean_angle IS NOT NULL')
         .orderBy('s.max_lean_angle', 'DESC')
@@ -190,9 +192,10 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') >= date_trunc('month', now() AT TIME ZONE 'UTC')",
         )
-        // Exclude rides dated later this month (not yet ridden).
+        // Only rides that have finished (ended_at <= now) — excludes a ride
+        // that starts this month but ends in the future.
         .andWhere(
-          "(r.started_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
+          "(r.ended_at AT TIME ZONE 'UTC') <= (now() AT TIME ZONE 'UTC')",
         )
         .andWhere('seg.road_segment_id IS NOT NULL')
         .getRawOne<{ roads: string }>(),
