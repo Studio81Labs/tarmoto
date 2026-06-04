@@ -45,7 +45,7 @@ function RidesPageInner() {
   // `started_from` (via `state.effectiveFrom`), so the cards and list stay in
   // lockstep automatically. Memoized so the stats query key is stable.
   const statsParams = useMemo(() => toFilterParams(state), [state]);
-  const { stats } = useRideStats(statsParams);
+  const { stats, error: statsError } = useRideStats(statsParams);
 
   // Distinguish a truly pristine account (no rides ever) from a
   // filtered / errored zero result. `list.total` reflects the
@@ -108,7 +108,7 @@ function RidesPageInner() {
         />
       ) : (
         <>
-          <RideKpiCards stats={stats} />
+          <RideKpiCards stats={stats} error={statsError} />
           <RidesFilters state={state} update={update} reset={reset} />
           <RidesTable
             state={state}
