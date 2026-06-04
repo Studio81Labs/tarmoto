@@ -30,6 +30,12 @@ export interface ButtonProps extends Omit<
   loading?: boolean;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
+  /**
+   * Square icon-only button: drops the text label and horizontal padding so
+   * the icon (passed as `children`) sits centred. Always pair with an
+   * `aria-label` so the control stays announced.
+   */
+  iconOnly?: boolean;
   type?: "button" | "submit" | "reset";
 }
 
@@ -37,6 +43,12 @@ const sizeClass: Record<ButtonSize, string> = {
   sm: "h-8 px-3.5 text-xs rounded-lg",
   md: "h-10 px-[18px] text-[13px] rounded-[10px]",
   lg: "h-12 px-[22px] text-sm rounded-xl",
+};
+
+const iconSizeClass: Record<ButtonSize, string> = {
+  sm: "h-8 w-8 text-xs rounded-lg",
+  md: "h-10 w-10 text-[13px] rounded-[10px]",
+  lg: "h-12 w-12 text-sm rounded-xl",
 };
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -61,6 +73,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       loading = false,
       leftIcon,
       rightIcon,
+      iconOnly = false,
       type = "button",
       className,
       disabled,
@@ -69,6 +82,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) {
+    const spinner = (
+      <span
+        aria-hidden="true"
+        className="inline-block size-3 animate-spin rounded-full border-2 border-current/30 border-t-current"
+      />
+    );
     return (
       <button
         ref={ref}
@@ -80,23 +99,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           "transition-colors duration-100",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
           "disabled:opacity-40 disabled:cursor-not-allowed",
-          sizeClass[size],
+          iconOnly ? iconSizeClass[size] : sizeClass[size],
           variantClass[variant],
           block && "flex w-full",
           className,
         )}
         {...rest}
       >
-        {loading ? (
-          <span
-            aria-hidden="true"
-            className="inline-block size-3 animate-spin rounded-full border-2 border-current/30 border-t-current"
-          />
+        {iconOnly ? (
+          loading ? (
+            spinner
+          ) : (
+            children
+          )
         ) : (
-          leftIcon
+          <>
+            {loading ? spinner : leftIcon}
+            <span>{children}</span>
+            {!loading && rightIcon}
+          </>
         )}
-        <span>{children}</span>
-        {!loading && rightIcon}
       </button>
     );
   },

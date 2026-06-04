@@ -1,8 +1,8 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import { RotateCcw, Search } from "lucide-react";
-import { SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
+import { FilterX, Search } from "lucide-react";
+import { Button, SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
 import type { RidesQueryState } from "./useRidesQuery";
 import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
 
@@ -203,14 +203,16 @@ export function RidesFilters({ state, update, reset }: Props) {
         <PlaceSearch value={placeValue} onChange={handlePlaceChange} />
 
         {hasAny && (
-          <button
-            type="button"
+          <Button
+            iconOnly
+            variant="secondary"
+            size="sm"
             onClick={reset}
-            className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition"
+            aria-label={t("Reset filters")}
+            title={t("Reset filters")}
           >
-            <RotateCcw size={14} />
-            {t("Reset ")}
-          </button>
+            <FilterX size={16} />
+          </Button>
         )}
       </div>
     </div>
