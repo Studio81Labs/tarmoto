@@ -127,8 +127,10 @@ export default function HomePage() {
         {monthlyStats && <SyncPill syncedAt={monthlyStats.last_synced_at} />}
       </header>
 
-      {/* 4-KPI tile row — only for a non-empty current month so a
-          rider who hasn't ridden this month doesn't see a wall of zeros. */}
+      {/* 4-KPI tile row — shown once the rider has logged distance this
+          month (so an idle month doesn't render a wall of zeros). The
+          current-month figure is computed from a UTC 'YYYY-MM' bucket
+          server-side; see UsersService.getMonthlyStats. */}
       {monthlyStats && monthlyStats.this_month_km > 0 && (
         <KpiTileRow stats={monthlyStats} />
       )}

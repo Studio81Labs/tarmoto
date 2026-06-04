@@ -131,7 +131,14 @@ export class UsersService {
     const [months, leanRow, roadsRow, syncRow] = await Promise.all([
       this.rideRepo
         .createQueryBuilder('r')
-        .select("date_trunc('month', r.started_at AT TIME ZONE 'UTC')", 'month')
+        // Emit the bucket as a UTC 'YYYY-MM' string. Returning the raw
+        // `date_trunc` timestamp (tz-naive) and parsing it in JS would shift
+        // the month in a non-UTC server zone (e.g. June → May at UTC+2) and
+        // mis-file current-month rides as previous-month.
+        .select(
+          "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
+          'month',
+        )
         .addSelect('COALESCE(SUM(r.distance_km), 0)', 'km')
         .addSelect(
           'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
@@ -149,7 +156,9 @@ export class UsersService {
         .andWhere(
           "(r.started_at AT TIME ZONE 'UTC') < date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month'",
         )
-        .groupBy("date_trunc('month', r.started_at AT TIME ZONE 'UTC')")
+        .groupBy(
+          "to_char(date_trunc('month', r.started_at AT TIME ZONE 'UTC'), 'YYYY-MM')",
+        )
         .getRawMany<{ month: string; km: string; hours: string }>(),
       this.rideRepo
         .createQueryBuilder('r')
@@ -190,17 +199,15 @@ export class UsersService {
         .getRawOne<{ synced: Date | null }>(),
     ]);
 
-    const monthStart = startOfUtcMonth(new Date());
-    const isThisMonth = (m: string): boolean => {
-      const d = new Date(m);
-      return (
-        d.getUTCMonth() === monthStart.getUTCMonth() &&
-        d.getUTCFullYear() === monthStart.getUTCFullYear()
-      );
-    };
+    // Match the SQL bucket as a UTC 'YYYY-MM' string — no Date parsing, so
+    // the server's local timezone can't shift the month classification.
+    const now = new Date();
+    const thisMonthKey = `${now.getUTCFullYear()}-${String(
+      now.getUTCMonth() + 1,
+    ).padStart(2, '0')}`;
 
-    const cur = months.find((m) => isThisMonth(m.month));
-    const prev = months.find((m) => !isThisMonth(m.month));
+    const cur = months.find((m) => m.month === thisMonthKey);
+    const prev = months.find((m) => m.month !== thisMonthKey);
 
     return {
       this_month_km: Math.round(parseFloat(cur?.km ?? '0')),
@@ -485,9 +492,4 @@ export class UsersService {
       created_at: contact.created_at.toISOString(),
     };
   }
-}
-
-/** First instant of the current UTC calendar month. */
-function startOfUtcMonth(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }

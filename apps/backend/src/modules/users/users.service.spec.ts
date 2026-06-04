@@ -382,11 +382,14 @@ describe('UsersService', () => {
     // `getMeProfile` (one shared builder) the mock must hand back a fresh
     // chainable builder per `createQueryBuilder` call and resolve the
     // terminal `getRawMany`/`getRawOne` in issue order.
-    const firstOfUtcMonth = (offsetMonths: number): string => {
+    // The service now buckets via `to_char(..., 'YYYY-MM')`, so the mock
+    // months rows are keyed by the UTC 'YYYY-MM' string (not an ISO date).
+    const utcMonthKey = (offsetMonths: number): string => {
       const now = new Date();
-      return new Date(
+      const d = new Date(
         Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1),
-      ).toISOString();
+      );
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
     };
 
     const buildQb = (terminal: 'getRawMany' | 'getRawOne', value: unknown) => {
@@ -408,8 +411,8 @@ describe('UsersService', () => {
       const builders = [
         // 1) months getRawMany
         buildQb('getRawMany', [
-          { month: firstOfUtcMonth(0), km: '1284', hours: '32.4' },
-          { month: firstOfUtcMonth(-1), km: '1088', hours: '28.6' },
+          { month: utcMonthKey(0), km: '1284', hours: '32.4' },
+          { month: utcMonthKey(-1), km: '1088', hours: '28.6' },
         ]),
         // 2) lean getRawOne
         buildQb('getRawOne', {
