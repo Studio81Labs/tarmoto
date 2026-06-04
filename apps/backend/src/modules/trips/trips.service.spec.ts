@@ -1374,6 +1374,38 @@ describe('TripsService', () => {
       );
     });
 
+    it('populates the summary rollups (distance/quality/passes) on detail', async () => {
+      // Regression: TripDetailDto inherits these fields, so a detail-derived
+      // summary row (e.g. the optimistic duplicate-trip insert) must carry
+      // the same metadata as a list summary, not nulls.
+      mockGetDetailReturns(makeOwnedTrip());
+      mockListAggReturns([
+        {
+          trip_id: TRIP_ID,
+          distance_km: '610',
+          quality_avg: '4.4',
+          passes_count: '6',
+        },
+      ]);
+
+      const result = await service.getDetail(OWNER_ID, TRIP_ID);
+
+      expect(result.distance_km).toBe(610);
+      expect(result.quality_avg).toBeCloseTo(4.4);
+      expect(result.passes_count).toBe(6);
+    });
+
+    it('leaves rollups null on detail when the trip has no day aggregate', async () => {
+      mockGetDetailReturns(makeOwnedTrip());
+      mockListAggReturns([]); // no trip_days rows for this trip
+
+      const result = await service.getDetail(OWNER_ID, TRIP_ID);
+
+      expect(result.distance_km).toBeNull();
+      expect(result.quality_avg).toBeNull();
+      expect(result.passes_count).toBeNull();
+    });
+
     it('404s when the SQL-level membership filter excludes the caller', async () => {
       // `getOne` returning null mirrors the production behaviour: the
       // inner join finds no caller-membership row, so no trip row is

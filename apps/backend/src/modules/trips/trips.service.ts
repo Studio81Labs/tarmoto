@@ -881,11 +881,32 @@ export class TripsService {
     const trips = await qb.getMany();
     if (trips.length === 0) return [];
 
-    const ids = trips.map((t) => t.id);
+    const aggById = await this.computeTripAggregates(trips.map((t) => t.id));
+    return trips.map((t) => this.toSummary(t, aggById.get(t.id)));
+  }
 
-    // One pass over trip_days for distance + distance-weighted quality, plus a
-    // spatial count of nearby passes, grouped by trip. Single round trip over
-    // the page of trips the caller can see (their own) — no N+1.
+  /**
+   * Roll up total distance, distance-weighted quality, and nearby-pass count
+   * for a set of trips in one grouped query over `trip_days`. Shared by
+   * `list` and `getDetail` so summary cards and any detail-derived summary
+   * row (e.g. the optimistic duplicate-trip insert that pushes a
+   * `TripDetailDto` into the list before refetch) carry identical metadata.
+   * Returns a map keyed by trip id; trips with no `trip_days` rows are
+   * absent and the callers fall back to nulls. An empty `ids` short-circuits
+   * without touching the DB.
+   */
+  private async computeTripAggregates(ids: string[]): Promise<
+    Map<
+      string,
+      {
+        distance_km: number | null;
+        quality_avg: number | null;
+        passes_count: number | null;
+      }
+    >
+  > {
+    if (ids.length === 0) return new Map();
+
     const aggRows = await this.tripDayRepo
       .createQueryBuilder('d')
       .select('d.trip_id', 'trip_id')
@@ -931,7 +952,7 @@ export class TripsService {
         passes_count: string | null;
       }>();
 
-    const aggById = new Map(
+    return new Map(
       aggRows.map((r) => [
         r.trip_id,
         {
@@ -942,8 +963,6 @@ export class TripsService {
         },
       ]),
     );
-
-    return trips.map((t) => this.toSummary(t, aggById.get(t.id)));
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {
@@ -977,7 +996,12 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    return this.toDetail(trip);
+    // Compute the same rollups `list` serves so the inherited summary
+    // fields (distance_km / quality_avg / passes_count) aren't null on
+    // detail — a detail-derived summary row (optimistic duplicate insert)
+    // would otherwise show blank card metadata until a list refetch.
+    const aggById = await this.computeTripAggregates([trip.id]);
+    return this.toDetail(trip, aggById.get(trip.id));
   }
 
   async join(
@@ -1055,16 +1079,24 @@ export class TripsService {
       member_count: trip.member_count ?? trip.members?.length ?? 0,
       folder_id: trip.folder_id ?? null,
       created_at: trip.created_at.toISOString(),
-      // Derived live in `list`; `toDetail` (which doesn't pass `agg`) leaves
-      // these null because the detail response already carries full `days[]`
-      // with per-day distance/quality and doesn't need the rollup.
+      // Rolled up from `trip_days` by `computeTripAggregates` — passed in by
+      // both `list` and (via `toDetail`) `getDetail`, so summary cards and
+      // detail-derived summaries carry the same metadata. Null only when the
+      // caller has no aggregate row for this trip (e.g. a trip with no days).
       distance_km: agg?.distance_km ?? null,
       quality_avg: agg?.quality_avg ?? null,
       passes_count: agg?.passes_count ?? null,
     };
   }
 
-  private toDetail(trip: Trip): TripDetailDto {
+  private toDetail(
+    trip: Trip,
+    agg?: {
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+    },
+  ): TripDetailDto {
     const members: TripMemberDto[] = (trip.members ?? []).map((m) => ({
       user_id: m.user_id,
       display_name: m.user?.display_name ?? 'Unknown rider',
@@ -1105,7 +1137,7 @@ export class TripsService {
     }));
 
     return {
-      ...this.toSummary(trip),
+      ...this.toSummary(trip, agg),
       member_count: members.length,
       daily_km_min: trip.daily_km_min,
       daily_km_max: trip.daily_km_max,
