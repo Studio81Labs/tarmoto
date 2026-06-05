@@ -476,7 +476,7 @@ const WINDOW_OPTIONS: SegmentedOption<StatsWindow>[] = STATS_WINDOWS.map(
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <SegmentedControl
         ariaLabel={t("Time window")}
         value={filters.window}
