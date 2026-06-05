@@ -313,6 +313,10 @@ export class MockState {
     string,
     { ride_id: string; is_public: boolean; view_count: number }
   >();
+  /** Community route hearts: ride_id → set of user_ids who liked it. */
+  rideLikes = new Map<string, Set<string>>();
+  /** Community route clone counters: ride_id → clone count. */
+  rideClones = new Map<string, number>();
   /**
    * Seeded road closures. The planner's `useClosures` hook polls
    * `/api/v1/closures` for the bbox + `/api/v1/closures/check-route`
@@ -374,6 +378,8 @@ export class MockState {
     this.trips.clear();
     this.rides.clear();
     this.rideShares.clear();
+    this.rideLikes.clear();
+    this.rideClones.clear();
     this.collections.clear();
     this.collectionsBySlug.clear();
     this.collectionFollows.clear();
