@@ -6,15 +6,23 @@ import { Repository } from 'typeorm';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SharingService } from './sharing.service.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { RideLike } from '../../entities/ride-like.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { Trip } from '../../entities/trip.entity.js';
+import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('SharingService', () => {
   let service: SharingService;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
+  let rideLikeRepo: Partial<jest.Mocked<Repository<RideLike>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
+  let tripRepo: Partial<jest.Mocked<Repository<Trip>>>;
+  let tripDayRepo: Partial<jest.Mocked<Repository<TripDay>>>;
+  let tripMemberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
   let privacy: { loadPreferences: jest.Mock };
 
   const mockOwner = {
@@ -90,11 +98,39 @@ describe('SharingService', () => {
       increment: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     };
+    const likeQb = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    };
+    rideLikeRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(likeQb),
+      find: jest.fn().mockResolvedValue([]),
+      insert: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      count: jest.fn().mockResolvedValue(0),
+    };
     rideRepo = {
       findOne: jest.fn().mockResolvedValue(mockRide),
     };
     userRepo = {
       findOne: jest.fn().mockResolvedValue(mockOwner),
+    };
+    tripRepo = {
+      create: jest.fn().mockImplementation((d) => d),
+      save: jest
+        .fn()
+        .mockImplementation((e) => Promise.resolve({ id: 'trip-1', ...e })),
+    };
+    tripDayRepo = {
+      create: jest.fn().mockImplementation((d) => d),
+      save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
+    };
+    tripMemberRepo = {
+      create: jest.fn().mockImplementation((d) => d),
+      save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
     };
     privacy = {
       loadPreferences: jest
@@ -106,8 +142,12 @@ describe('SharingService', () => {
       providers: [
         SharingService,
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+        { provide: getRepositoryToken(RideLike), useValue: rideLikeRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getRepositoryToken(Trip), useValue: tripRepo },
+        { provide: getRepositoryToken(TripDay), useValue: tripDayRepo },
+        { provide: getRepositoryToken(TripMember), useValue: tripMemberRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
@@ -845,6 +885,72 @@ describe('SharingService', () => {
 
       expect(result.items).toEqual([]);
       expect(result.total).toBe(0);
+    });
+  });
+
+  describe('likeRide / unlikeRide', () => {
+    it('inserts a like and returns the fresh count + state', async () => {
+      rideLikeRepo.count!.mockResolvedValueOnce(5);
+
+      const result = await service.likeRide('viewer-2', 'ride-1');
+
+      expect(rideLikeRepo.insert).toHaveBeenCalledWith({
+        ride_id: 'ride-1',
+        user_id: 'viewer-2',
+      });
+      expect(result).toEqual({ like_count: 5, viewer_has_liked: true });
+    });
+
+    it('rejects a like against a non-public / unknown ride', async () => {
+      sharedRideRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.likeRide('viewer-2', 'ride-x')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(rideLikeRepo.insert).not.toHaveBeenCalled();
+    });
+
+    it('removes a like idempotently', async () => {
+      rideLikeRepo.count!.mockResolvedValueOnce(4);
+
+      const result = await service.unlikeRide('viewer-2', 'ride-1');
+
+      expect(rideLikeRepo.delete).toHaveBeenCalledWith({
+        ride_id: 'ride-1',
+        user_id: 'viewer-2',
+      });
+      expect(result).toEqual({ like_count: 4, viewer_has_liked: false });
+    });
+  });
+
+  describe('cloneRide', () => {
+    it('creates a draft trip + day + owner membership and bumps clone_count', async () => {
+      const result = await service.cloneRide('viewer-2', 'ride-1');
+
+      expect(tripRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ owner_id: 'viewer-2', status: 'draft' }),
+      );
+      expect(tripMemberRepo.save).toHaveBeenCalled();
+      expect(tripDayRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ route_geom: mockRide.route_geom }),
+      );
+      expect(sharedRideRepo.increment).toHaveBeenCalledWith(
+        { id: 'shared-1' },
+        'clone_count',
+        1,
+      );
+      expect(result.trip_id).toBe('trip-1');
+    });
+
+    it('rejects cloning a route with no geometry', async () => {
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        ...mockShared,
+        ride: { ...mockRide, route_geom: null },
+      });
+
+      await expect(service.cloneRide('viewer-2', 'ride-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });

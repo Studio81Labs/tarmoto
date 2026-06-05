@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { SharingService } from './sharing.service.js';
 import {
   ToggleShareDto,
@@ -27,6 +28,8 @@ import {
   SharedRideResponseDto,
   SharedRideDetailDto,
   CommunityRidesResponseDto,
+  RideLikeResponseDto,
+  CloneRideResponseDto,
 } from './dto/sharing.dto.js';
 
 @ApiTags('sharing')
@@ -89,6 +92,7 @@ export class SharingController {
   }
 
   @Get('community')
+  @UseGuards(OptionalAuthGuard)
   @ApiOperation({
     summary: 'Browse the public community ride feed',
     description:
@@ -101,8 +105,49 @@ export class SharingController {
   })
   @ApiResponse({ status: 200, type: CommunityRidesResponseDto })
   async listCommunityRides(
+    @Req() req: express.Request,
     @Query() query: CommunityRidesQueryDto,
   ): Promise<CommunityRidesResponseDto> {
-    return this.sharingService.listCommunityRides(query);
+    return this.sharingService.listCommunityRides(query, req.user?.userId);
+  }
+
+  @Post(':rideId/like')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Heart a community route' })
+  @ApiResponse({ status: 201, type: RideLikeResponseDto })
+  @ApiResponse({ status: 404, description: 'Shared ride not found' })
+  async likeRide(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<RideLikeResponseDto> {
+    return this.sharingService.likeRide(req.user!.userId, rideId);
+  }
+
+  @Delete(':rideId/like')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remove a heart from a community route' })
+  @ApiResponse({ status: 200, type: RideLikeResponseDto })
+  @ApiResponse({ status: 404, description: 'Shared ride not found' })
+  async unlikeRide(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<RideLikeResponseDto> {
+    return this.sharingService.unlikeRide(req.user!.userId, rideId);
+  }
+
+  @Post(':rideId/clone')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Clone a community route into a new draft trip' })
+  @ApiResponse({ status: 201, type: CloneRideResponseDto })
+  @ApiResponse({ status: 400, description: 'Route has no geometry to clone' })
+  @ApiResponse({ status: 404, description: 'Shared ride not found' })
+  async cloneRide(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<CloneRideResponseDto> {
+    return this.sharingService.cloneRide(req.user!.userId, rideId);
   }
 }
