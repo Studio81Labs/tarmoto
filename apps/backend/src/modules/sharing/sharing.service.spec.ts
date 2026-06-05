@@ -18,6 +18,12 @@ describe('SharingService', () => {
   let service: SharingService;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
   let rideLikeRepo: Partial<jest.Mocked<Repository<RideLike>>>;
+  let likeBuilder: {
+    values: jest.Mock;
+    orIgnore: jest.Mock;
+    execute: jest.Mock;
+    [key: string]: jest.Mock;
+  };
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let tripRepo: Partial<jest.Mocked<Repository<Trip>>>;
@@ -104,11 +110,16 @@ describe('SharingService', () => {
       where: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue([]),
+      // Insert (ON CONFLICT DO NOTHING) builder chain used by likeRide.
+      insert: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orIgnore: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({}),
     };
+    likeBuilder = likeQb;
     rideLikeRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(likeQb),
       find: jest.fn().mockResolvedValue([]),
-      insert: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       count: jest.fn().mockResolvedValue(0),
     };
@@ -889,16 +900,26 @@ describe('SharingService', () => {
   });
 
   describe('likeRide / unlikeRide', () => {
-    it('inserts a like and returns the fresh count + state', async () => {
+    it('inserts a like (ON CONFLICT DO NOTHING) and returns fresh state', async () => {
       rideLikeRepo.count!.mockResolvedValueOnce(5);
 
       const result = await service.likeRide('viewer-2', 'ride-1');
 
-      expect(rideLikeRepo.insert).toHaveBeenCalledWith({
+      expect(likeBuilder.values).toHaveBeenCalledWith({
         ride_id: 'ride-1',
         user_id: 'viewer-2',
       });
+      expect(likeBuilder.orIgnore).toHaveBeenCalled();
+      expect(likeBuilder.execute).toHaveBeenCalled();
       expect(result).toEqual({ like_count: 5, viewer_has_liked: true });
+    });
+
+    it('lets a real insert failure surface instead of a phantom like', async () => {
+      likeBuilder.execute.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.likeRide('viewer-2', 'ride-1')).rejects.toThrow(
+        'db down',
+      );
     });
 
     it('rejects a like against a non-public / unknown ride', async () => {
@@ -907,7 +928,7 @@ describe('SharingService', () => {
       await expect(service.likeRide('viewer-2', 'ride-x')).rejects.toThrow(
         NotFoundException,
       );
-      expect(rideLikeRepo.insert).not.toHaveBeenCalled();
+      expect(likeBuilder.execute).not.toHaveBeenCalled();
     });
 
     it('removes a like idempotently', async () => {

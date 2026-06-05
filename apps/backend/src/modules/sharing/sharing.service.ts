@@ -389,11 +389,16 @@ export class SharingService {
   /** Heart a community route (idempotent). Returns the new count + state. */
   async likeRide(userId: string, rideId: string): Promise<RideLikeResponseDto> {
     await this.assertCommunityRide(rideId);
-    // A double-tap races two inserts; the unique (ride_id, user_id) makes the
-    // second a no-op rather than a duplicate row.
+    // ON CONFLICT DO NOTHING — a double-tap (the unique (ride_id, user_id)
+    // collision) is a no-op, but any *real* write failure (FK drift, transient
+    // DB error, constraint issue) still throws rather than reporting a phantom
+    // "liked" state to the client.
     await this.rideLikeRepo
-      .insert({ ride_id: rideId, user_id: userId })
-      .catch(() => undefined);
+      .createQueryBuilder()
+      .insert()
+      .values({ ride_id: rideId, user_id: userId })
+      .orIgnore()
+      .execute();
     return {
       like_count: await this.rideLikeRepo.count({ where: { ride_id: rideId } }),
       viewer_has_liked: true,
