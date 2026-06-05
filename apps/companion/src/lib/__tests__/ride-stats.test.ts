@@ -3,8 +3,8 @@ import {
   availableYears,
   computeAllTimeTotals,
   computeCalendarHeatmap,
+  computeDistanceSeries,
   computeMonthlyDistance,
-  computeRollingMonthly,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -190,37 +190,74 @@ describe("windowStart", () => {
   });
 });
 
-describe("computeRollingMonthly", () => {
+describe("computeDistanceSeries", () => {
   const now = new Date("2026-06-15T10:00:00Z");
 
-  it("returns the last 12 calendar months oldest→newest with single-letter labels", () => {
-    const buckets = computeRollingMonthly([], 12, now);
-    expect(buckets).toHaveLength(12);
-    expect(buckets[0]?.key).toBe("2025-07");
-    expect(buckets[11]?.key).toBe("2026-06");
-    expect(buckets[11]?.monthLabel).toBe("J"); // June
-    expect(buckets.every((b) => b.distanceKm === 0 && b.rides === 0)).toBe(
-      true,
-    );
+  it("all-time → last 12 rolling months with unambiguous labels", () => {
+    const points = computeDistanceSeries([], "all", now);
+    expect(points).toHaveLength(12);
+    expect(points[0]?.key).toBe("2025-07");
+    expect(points[11]?.key).toBe("2026-06");
+    expect(points[11]?.axisLabel).toBe("Jun");
+    expect(points[11]?.tooltipLabel).toBe("Jun 2026");
+    expect(points.every((p) => p.distanceKm === 0 && p.rides === 0)).toBe(true);
   });
 
-  it("buckets rides into their calendar month and ignores out-of-range rides", () => {
-    const buckets = computeRollingMonthly(
+  it("all-time → buckets rides by calendar month, ignores >12mo-old rides", () => {
+    const points = computeDistanceSeries(
       [
         ride({ id: "1", started_at: "2026-06-02T10:00:00Z", distance_km: 40 }),
         ride({ id: "2", started_at: "2026-06-09T10:00:00Z", distance_km: 60 }),
         ride({ id: "3", started_at: "2026-04-01T10:00:00Z", distance_km: 25 }),
         ride({ id: "4", started_at: "2024-01-01T10:00:00Z", distance_km: 999 }),
       ],
-      12,
+      "all",
       now,
     );
-    const june = buckets.find((b) => b.key === "2026-06");
-    const april = buckets.find((b) => b.key === "2026-04");
-    expect(june).toMatchObject({ distanceKm: 100, rides: 2 });
-    expect(april).toMatchObject({ distanceKm: 25, rides: 1 });
-    // The 2024 ride is older than 12 months → not represented.
-    expect(buckets.some((b) => b.distanceKm === 999)).toBe(false);
+    expect(points.find((p) => p.key === "2026-06")).toMatchObject({
+      distanceKm: 100,
+      rides: 2,
+    });
+    expect(points.find((p) => p.key === "2026-04")).toMatchObject({
+      distanceKm: 25,
+      rides: 1,
+    });
+    expect(points.some((p) => p.distanceKm === 999)).toBe(false);
+  });
+
+  it("this-year → Jan→Dec of the current year, future months empty", () => {
+    const points = computeDistanceSeries(
+      [ride({ id: "1", started_at: "2026-03-10T10:00:00Z", distance_km: 30 })],
+      "year",
+      now,
+    );
+    expect(points).toHaveLength(12);
+    expect(points[0]?.key).toBe("2026-01");
+    expect(points[11]?.key).toBe("2026-12");
+    expect(points[2]).toMatchObject({ axisLabel: "Mar", distanceKm: 30 });
+    // December is in the future relative to `now` → stays empty.
+    expect(points[11]?.distanceKm).toBe(0);
+  });
+
+  it("last-30-days → one bar per day for the trailing 30 days", () => {
+    const points = computeDistanceSeries(
+      [ride({ id: "1", started_at: "2026-06-10T08:00:00Z", distance_km: 12 })],
+      "30d",
+      now,
+    );
+    expect(points).toHaveLength(30);
+    expect(points[29]?.key).toBe("2026-06-15"); // today
+    expect(points.find((p) => p.key === "2026-06-10")).toMatchObject({
+      axisLabel: "10",
+      tooltipLabel: "10 Jun 2026",
+      distanceKm: 12,
+    });
+  });
+
+  it("last-90-days → 90 daily bars", () => {
+    const points = computeDistanceSeries([], "90d", now);
+    expect(points).toHaveLength(90);
+    expect(points[89]?.key).toBe("2026-06-15");
   });
 });
 

@@ -37,7 +37,7 @@ import {
   availableYears,
   computeAllTimeTotals,
   computeCalendarHeatmap,
-  computeRollingMonthly,
+  computeDistanceSeries,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -115,7 +115,10 @@ export default function StatsPage() {
     filters.window === "all"
       ? (years[0] ?? new Date().getFullYear())
       : new Date().getFullYear();
-  const monthly = useMemo(() => computeRollingMonthly(filtered), [filtered]);
+  const series = useMemo(
+    () => computeDistanceSeries(filtered, filters.window),
+    [filtered, filters.window],
+  );
   const calendar = useMemo(
     () => computeCalendarHeatmap(filtered, focusYear),
     [filtered, focusYear],
@@ -173,8 +176,17 @@ export default function StatsPage() {
   }
   const windowLabel =
     STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time";
-  const monthlyTitle =
-    filters.window === "all" ? "Last 12 months" : windowLabel;
+  // The chart switches from monthly to daily bars on the short windows; the
+  // header copy follows so "Distance by day" reads honestly for 90/30 days.
+  const isDayView = filters.window === "30d" || filters.window === "90d";
+  const chartStamp = isDayView ? "Distance by day" : "Distance by month";
+  const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
+  // `key` is unique per bar, so the axis tick + tooltip both resolve their
+  // human labels through this map rather than the (ambiguous) display string.
+  const seriesByKey = new Map(series.map((point) => [point.key, point]));
+  const tickLabel = (key: string) => seriesByKey.get(key)?.axisLabel ?? key;
+  const tooltipLabel = (key: string) =>
+    seriesByKey.get(key)?.tooltipLabel ?? key;
   const totalDistance = splitFormattedDistance(
     totals.totalDistanceKm,
     unitSystem,
@@ -229,9 +241,9 @@ export default function StatsPage() {
       <Card padded={false} className="p-[22px]">
         <div className="mb-[18px] flex items-end justify-between gap-4">
           <div>
-            <Stamp>{t("Distance by month")}</Stamp>
+            <Stamp>{t(chartStamp)}</Stamp>
             <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-              {monthlyTitle}
+              {chartTitle}
             </div>
           </div>
           <Mono className="text-[11px] text-fg-dim">
@@ -242,7 +254,7 @@ export default function StatsPage() {
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={monthly}
+              data={series}
               margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
             >
               <CartesianGrid
@@ -250,10 +262,13 @@ export default function StatsPage() {
                 stroke="rgba(14, 14, 16, 0.10)"
               />
               <XAxis
-                dataKey="monthLabel"
+                dataKey="key"
                 stroke="rgba(14, 14, 16, 0.42)"
                 fontSize={12}
                 tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={16}
+                tickFormatter={(value: string) => tickLabel(value)}
               />
               <YAxis
                 stroke="rgba(14, 14, 16, 0.42)"
@@ -271,6 +286,7 @@ export default function StatsPage() {
                   fontSize: 12,
                 }}
                 labelStyle={{ color: "#0E0E10" }}
+                labelFormatter={(label) => tooltipLabel(String(label))}
                 formatter={(value) => [
                   formatDistanceTooltipValue(value),
                   "Distance",

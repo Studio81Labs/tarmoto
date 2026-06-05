@@ -205,49 +205,101 @@ export function computeMonthlyDistance(
   return buckets;
 }
 
-export interface RollingMonthBucket {
-  /** `YYYY-MM` key for the calendar month. */
+export type ChartGranularity = "month" | "day";
+
+/** A single bar in the distance chart — a month or a day, per the window. */
+export interface DistancePoint {
+  /** Stable bucket key: `YYYY-MM` (month) or `YYYY-MM-DD` (day). */
   key: string;
-  /** Single-letter month initial (design axis), e.g. "A" for April. */
-  monthLabel: string;
+  /** Compact x-axis tick: month abbreviation, or day-of-month. */
+  axisLabel: string;
+  /** Full, unambiguous label for the tooltip ("Jun 2026" / "5 Jun 2026"). */
+  tooltipLabel: string;
   distanceKm: number;
   rides: number;
 }
 
-/**
- * Distance bucketed into the last `monthsBack` calendar months ending at `now`
- * (oldest → newest) — the design's rolling "Last 12 months" bar chart. Feed it
- * already-window/type-filtered rides; out-of-range months simply stay at zero.
- */
-export function computeRollingMonthly(
+/** Short rolling windows render one bar per day; the rest, one per month. */
+export function distanceGranularity(window: StatsWindow): ChartGranularity {
+  return window === "30d" || window === "90d" ? "day" : "month";
+}
+
+const monthKeyOf = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+function monthPoint(year: number, monthIndex: number): DistancePoint {
+  return {
+    key: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+    axisLabel: MONTH_LABELS[monthIndex]!,
+    tooltipLabel: `${MONTH_LABELS[monthIndex]} ${year}`,
+    distanceKm: 0,
+    rides: 0,
+  };
+}
+
+function dayPoint(date: Date): DistancePoint {
+  return {
+    key: localDateKey(date),
+    axisLabel: String(date.getDate()),
+    tooltipLabel: `${date.getDate()} ${MONTH_LABELS[date.getMonth()]} ${date.getFullYear()}`,
+    distanceKm: 0,
+    rides: 0,
+  };
+}
+
+function fillSeries(
+  points: DistancePoint[],
   rides: readonly RideForStats[],
-  monthsBack = 12,
-  now = new Date(),
-): RollingMonthBucket[] {
-  const buckets: RollingMonthBucket[] = [];
-  const index = new Map<string, RollingMonthBucket>();
-  for (let i = monthsBack - 1; i >= 0; i -= 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const bucket: RollingMonthBucket = {
-      key,
-      monthLabel: MONTH_LABELS[d.getMonth()]!.charAt(0),
-      distanceKm: 0,
-      rides: 0,
-    };
-    buckets.push(bucket);
-    index.set(key, bucket);
-  }
+  keyOf: (date: Date) => string,
+): DistancePoint[] {
+  const index = new Map(points.map((p) => [p.key, p]));
   for (const ride of rides) {
     const date = parseStartedAt(ride.started_at);
     if (!date) continue;
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const bucket = index.get(key);
+    const bucket = index.get(keyOf(date));
     if (!bucket) continue;
     bucket.distanceKm += toNumber(ride.distance_km);
     bucket.rides += 1;
   }
-  return buckets;
+  return points;
+}
+
+/**
+ * Distance bars shaped to the active window (oldest → newest). Feed
+ * already-type-filtered rides; the time window is applied here:
+ *  - "all": the last 12 calendar months (rolling) ending at `now`.
+ *  - "year": Jan → Dec of the current year — future months stay empty.
+ *  - "90d"/"30d": one bar per day for the last 90 / 30 days.
+ * Out-of-range rides simply have no bucket and don't appear.
+ */
+export function computeDistanceSeries(
+  rides: readonly RideForStats[],
+  window: StatsWindow,
+  now = new Date(),
+): DistancePoint[] {
+  if (window === "30d" || window === "90d") {
+    const daysBack = window === "90d" ? 90 : 30;
+    const points: DistancePoint[] = [];
+    for (let i = daysBack - 1; i >= 0; i -= 1) {
+      points.push(
+        dayPoint(
+          new Date(now.getFullYear(), now.getMonth(), now.getDate() - i),
+        ),
+      );
+    }
+    return fillSeries(points, rides, localDateKey);
+  }
+  if (window === "year") {
+    const year = now.getFullYear();
+    const points = MONTH_LABELS.map((_, m) => monthPoint(year, m));
+    return fillSeries(points, rides, monthKeyOf);
+  }
+  const points: DistancePoint[] = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    points.push(monthPoint(d.getFullYear(), d.getMonth()));
+  }
+  return fillSeries(points, rides, monthKeyOf);
 }
 
 export function computeYearlyTotals(
