@@ -263,9 +263,11 @@ export default function StatsPage() {
   ];
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in space-y-[18px] p-4 md:p-7">
-      <StatsPageHeader
-        right={<FilterBar filters={filters} onChange={setFilters} />}
-      />
+      <StatsPageHeader />
+
+      {/* Filters sit under the heading (matching Ride History) rather than on
+          the header row. */}
+      <FilterBar filters={filters} onChange={setFilters} />
 
       <TotalsGrid
         totals={totals}
@@ -447,7 +449,7 @@ export default function StatsPage() {
 // is intentionally hidden on the stats route (the wider `RIDES`
 // sidebar item ships `Statistics` as a sibling top-level page,
 // not a sub-section).
-function StatsPageHeader({ right }: { right?: React.ReactNode }) {
+function StatsPageHeader() {
   return (
     <PageHeader
       stamp={t("Statistics")}
@@ -456,7 +458,6 @@ function StatsPageHeader({ right }: { right?: React.ReactNode }) {
       sub={t(
         "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
       )}
-      right={right}
     />
   );
 }
@@ -475,7 +476,7 @@ const WINDOW_OPTIONS: SegmentedOption<StatsWindow>[] = STATS_WINDOWS.map(
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <SegmentedControl
         ariaLabel={t("Time window")}
         value={filters.window}
