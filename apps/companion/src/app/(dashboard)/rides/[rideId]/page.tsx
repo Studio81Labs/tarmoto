@@ -36,6 +36,7 @@ import {
   splitFormattedSpeed,
 } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
+import type { UnitSystem } from "@tarmoto/shared";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
@@ -567,6 +568,7 @@ export default function RideDetailPage() {
           segments={ride.segments}
           distanceKm={ride.distance_km}
           format={format}
+          unitSystem={unitSystem}
         />
       )}
     </PageShell>
@@ -680,11 +682,16 @@ function RoadSegments({
   segments,
   distanceKm,
   format,
+  unitSystem,
 }: {
   segments: RideSegment[];
   distanceKm: number | null;
   format: (n: number, o?: Intl.NumberFormatOptions) => string;
+  unitSystem: UnitSystem;
 }) {
+  const total =
+    distanceKm != null ? splitFormattedDistance(distanceKm, unitSystem) : null;
+  const speedUnit = splitFormattedSpeed(0, unitSystem).unit;
   // KM-per-segment, surface, and character aren't on the segment payload, so
   // the table surfaces the telemetry we do record (avg / max speed, lean,
   // quality) — the design's missing columns degrade rather than fabricate.
@@ -711,21 +718,25 @@ function RoadSegments({
     },
     {
       key: "avg",
-      label: "AVG",
-      size: "80px",
+      label: `AVG ${speedUnit}`,
+      size: "100px",
       render: (s) => (
         <Mono className="text-ink">
-          {s.speed_avg != null ? Math.round(s.speed_avg) : "—"}
+          {s.speed_avg != null
+            ? splitFormattedSpeed(s.speed_avg, unitSystem).value
+            : "—"}
         </Mono>
       ),
     },
     {
       key: "max",
-      label: "MAX",
-      size: "80px",
+      label: `MAX ${speedUnit}`,
+      size: "100px",
       render: (s) => (
         <Mono className="text-ink">
-          {s.speed_max != null ? Math.round(s.speed_max) : "—"}
+          {s.speed_max != null
+            ? splitFormattedSpeed(s.speed_max, unitSystem).value
+            : "—"}
         </Mono>
       ),
     },
@@ -768,9 +779,9 @@ function RoadSegments({
               {t("{count} roads ridden", { count: segments.length })}
             </div>
           </div>
-          {distanceKm != null && (
+          {total != null && (
             <Mono className="text-[11px] text-fg-dim">
-              {format(Math.round(distanceKm))} {t("KM TOTAL")}
+              {format(total.value)} {total.unit} {t("TOTAL")}
             </Mono>
           )}
         </div>
