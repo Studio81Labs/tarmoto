@@ -205,6 +205,12 @@ test.describe("rides read path", () => {
     await expect(page.getByLabel(/ride route map/i)).toBeVisible();
     await expect(page.getByText(/no gps track was recorded/i)).toBeHidden();
 
+    // Speed profile (US-48): the per-segment speed graph renders for rides
+    // with segment telemetry.
+    await expect(
+      page.getByRole("img", { name: /ride speed graph/i }),
+    ).toBeVisible();
+
     // Road segments table: each seeded segment surfaces by its road_name.
     await expect(page.getByText("Stelvio Pass")).toBeVisible();
     await expect(page.getByText("Bormio Loop")).toBeVisible();

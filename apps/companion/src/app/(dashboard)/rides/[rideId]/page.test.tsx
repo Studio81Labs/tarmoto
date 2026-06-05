@@ -125,6 +125,12 @@ describe("RideDetailPage", () => {
     expect(screen.getByText("+700 m")).toBeInTheDocument();
     expect(screen.getByText("−650 m")).toBeInTheDocument();
 
+    // Speed profile (US-48): the per-segment speed graph renders for rides
+    // with segment telemetry.
+    expect(
+      screen.getByRole("img", { name: /ride speed graph/i }),
+    ).toBeInTheDocument();
+
     // Lean dynamics: avg lean derived from the histogram (weighted 24°).
     expect(screen.getByText("Time spent leaning")).toBeInTheDocument();
     expect(screen.getByText("24°")).toBeInTheDocument();

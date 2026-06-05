@@ -35,8 +35,8 @@ import {
   splitFormattedElevation,
   splitFormattedSpeed,
 } from "@/lib/utils";
-import { formatNumber } from "@/lib/ride-detail";
-import type { UnitSystem } from "@tarmoto/shared";
+import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
+import { kmToMiles, type UnitSystem } from "@tarmoto/shared";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
@@ -502,6 +502,9 @@ export default function RideDetailPage() {
         </div>
       </Card>
 
+      {/* Speed profile (US-48): per-segment avg/max speed for populated rides */}
+      <SpeedProfileCard segments={ride.segments} unitSystem={unitSystem} />
+
       {/* Ride dynamics + character */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
@@ -797,4 +800,158 @@ function splitDuration(min: number | null): { value: string; unit: string } {
   const space = compact.indexOf(" ");
   if (space < 0) return { value: compact, unit: "" };
   return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
+}
+
+/**
+ * Per-segment speed visualisation (US-48 / T31). The map + tiles give totals;
+ * this restores the speed graph the product spec requires for populated rides,
+ * unit-aware (km/h vs mph).
+ */
+function SpeedProfileCard({
+  segments,
+  unitSystem,
+}: {
+  segments: RideSegment[];
+  unitSystem: UnitSystem;
+}) {
+  const points = buildSpeedProfile(segments);
+  const conv = (kmh: number) =>
+    unitSystem === "imperial" ? kmToMiles(kmh) : kmh;
+  const unit = splitFormattedSpeed(0, unitSystem).unit;
+  const avg = points
+    .filter((p) => p.avgKmh != null)
+    .map((p) => ({ x: p.segmentNumber, y: conv(p.avgKmh!) }));
+  const max = points
+    .filter((p) => p.maxKmh != null)
+    .map((p) => ({ x: p.segmentNumber, y: conv(p.maxKmh!) }));
+  const peak = Math.max(...[...avg, ...max].map((p) => p.y), 1);
+  return (
+    <Card className="mb-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <Stamp>{t("Speed profile")}</Stamp>
+          <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("Per-segment speed")}
+          </div>
+        </div>
+        {points.length > 0 && (
+          <Mono className="text-[11px] text-fg-dim">
+            {Math.round(peak)} {unit} {t("PEAK")}
+          </Mono>
+        )}
+      </div>
+      {points.length === 0 ? (
+        <div className="mt-4 flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
+          {t("No speed samples were recorded for this ride.")}
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 flex items-center gap-4 text-[11px] text-fg-dim">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              {t("Avg")}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-pink-400" />
+              {t("Max")}
+            </span>
+          </div>
+          <SpeedLineChart
+            points={avg}
+            secondaryPoints={max}
+            minY={0}
+            maxY={peak}
+            unit={unit}
+          />
+        </>
+      )}
+    </Card>
+  );
+}
+
+function SpeedLineChart({
+  points,
+  secondaryPoints,
+  minY,
+  maxY,
+  unit,
+}: {
+  points: Array<{ x: number; y: number }>;
+  secondaryPoints: Array<{ x: number; y: number }>;
+  minY: number;
+  maxY: number;
+  unit: string;
+}) {
+  const all = [...points, ...secondaryPoints];
+  const minX = Math.min(...all.map((p) => p.x));
+  const maxX = Math.max(...all.map((p) => p.x));
+  const ySpan = Math.max(maxY - minY, 1);
+  const xSpan = Math.max(maxX - minX, 1);
+  const project = (p: { x: number; y: number }) => ({
+    x: 16 + ((p.x - minX) / xSpan) * 368,
+    y: 132 - ((p.y - minY) / ySpan) * 108,
+  });
+  const renderSeries = (
+    series: Array<{ x: number; y: number }>,
+    stroke: string,
+    width: string,
+    dash?: string,
+  ) => {
+    if (series.length === 0) return null;
+    if (series.length === 1) {
+      const p = project(series[0]!);
+      return <circle cx={p.x} cy={p.y} r="4" fill={stroke} />;
+    }
+    return (
+      <polyline
+        points={series
+          .map((p) => {
+            const q = project(p);
+            return `${q.x.toFixed(1)},${q.y.toFixed(1)}`;
+          })
+          .join(" ")}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={width}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={dash}
+      />
+    );
+  };
+  const lastY = all.at(-1)?.y;
+  return (
+    <div className="mt-4">
+      <svg
+        viewBox="0 0 400 152"
+        className="h-[150px] w-full"
+        role="img"
+        aria-label={t("Ride speed graph")}
+      >
+        {[24, 78, 132].map((y) => (
+          <line
+            key={y}
+            x1="16"
+            x2="384"
+            y1={y}
+            y2={y}
+            stroke="rgba(14,14,16,0.10)"
+            strokeWidth="1"
+            strokeDasharray="3 4"
+          />
+        ))}
+        {renderSeries(points, "#FF6A1A", "3")}
+        {renderSeries(secondaryPoints, "#f472b6", "2.5", "6 5")}
+      </svg>
+      <div className="flex items-center justify-between text-[11px] text-fg-mute">
+        <span>1</span>
+        {lastY != null && (
+          <Mono>
+            {Math.round(lastY)} {unit}
+          </Mono>
+        )}
+        <span>{maxX}</span>
+      </div>
+    </div>
+  );
 }
