@@ -149,8 +149,12 @@ export function filterRides(
     if (filters.rideType !== "all" && ride.ride_type !== filters.rideType) {
       return false;
     }
+    const date = parseStartedAt(ride.started_at);
+    // Reject future-dated rides (clock skew or a bad GPX import) so the KPIs
+    // and the server breakdown never count rides the charts/heatmap — which
+    // only bucket through today — can't show.
+    if (date && date > now) return false;
     if (start) {
-      const date = parseStartedAt(ride.started_at);
       if (!date || date < start) return false;
     }
     return true;

@@ -18,7 +18,13 @@ export async function fetchRideBreakdown(
   now = new Date(),
 ): Promise<RideBreakdown> {
   const start = windowStart(filters.window, now);
-  const query: { started_from?: string; type?: RideType } = {};
+  const query: { started_from?: string; started_to?: string; type?: RideType } =
+    {
+      // Upper bound at "now" so future-dated rides (clock skew / bad import)
+      // are excluded server-side too, matching the client-side KPI filter and
+      // the charts (which only bucket through today).
+      started_to: now.toISOString(),
+    };
   // Send the exact instant (not a truncated date) so the server aggregate uses
   // the same lower bound as the client-side KPI filter — otherwise the cards
   // would count rides from midnight on the boundary day that the KPIs exclude.

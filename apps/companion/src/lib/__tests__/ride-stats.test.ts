@@ -163,6 +163,22 @@ describe("filterRides", () => {
     );
     expect(result.map((r) => r.id)).toEqual(["a", "b"]);
   });
+
+  it("rejects future-dated rides (clock skew / bad import) in every window", () => {
+    const withFuture = [
+      ...dataset,
+      ride({ id: "future", started_at: "2026-12-31T10:00:00Z" }),
+    ];
+    // Future ride is dropped from both the windowed and the all-time view.
+    expect(
+      filterRides(withFuture, makeFilters({ window: "year" }), now).map(
+        (r) => r.id,
+      ),
+    ).toEqual(["a", "b"]);
+    expect(
+      filterRides(withFuture, makeFilters(), now).map((r) => r.id),
+    ).toEqual(["a", "b", "c"]);
+  });
 });
 
 describe("windowStart", () => {
