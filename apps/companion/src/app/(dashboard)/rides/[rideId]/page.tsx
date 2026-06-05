@@ -469,37 +469,46 @@ export default function RideDetailPage() {
         </div>
       </div>
 
-      {/* Elevation summary (per-sample profile not recorded yet) */}
+      {/* Elevation summary. We store climb/descent totals but not a per-sample
+          altitude track, so the card is the totals — no empty chart slot. */}
       <Card className="mb-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Stamp>{t("Elevation profile")}</Stamp>
-            <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-              {t("Climb & descent")}
-            </div>
-          </div>
-          <div className="flex gap-7 text-right">
-            <ElevationStat
-              label={t("Total ascent")}
-              value={
-                ride.elevation_gain != null
-                  ? `+${format(ascent.value)} ${ascent.unit.toLowerCase()}`
-                  : "—"
-              }
-            />
-            <ElevationStat
-              label={t("Total descent")}
-              value={
-                ride.elevation_loss != null
-                  ? `−${format(descent.value)} ${descent.unit.toLowerCase()}`
-                  : "—"
-              }
-            />
-          </div>
+        <Stamp>{t("Elevation profile")}</Stamp>
+        <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          {t("Climb & descent")}
         </div>
-        <div className="mt-4 flex h-[120px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
-          {t("Per-sample elevation isn't recorded yet — totals above.")}
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          <ElevationStat
+            label={t("Total ascent")}
+            value={
+              ride.elevation_gain != null
+                ? `+${format(ascent.value)} ${ascent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
+          <ElevationStat
+            label={t("Total descent")}
+            value={
+              ride.elevation_loss != null
+                ? `−${format(descent.value)} ${descent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
+          <ElevationStat
+            label={t("Net change")}
+            value={
+              ride.elevation_gain != null && ride.elevation_loss != null
+                ? `${ascent.value - descent.value >= 0 ? "+" : "−"}${format(
+                    Math.abs(ascent.value - descent.value),
+                  )} ${ascent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
         </div>
+        <p className="mt-3 text-xs text-fg-mute">
+          {t(
+            "Per-sample elevation profile isn't recorded yet — climb/descent totals shown above.",
+          )}
+        </p>
       </Card>
 
       {/* Speed profile (US-48): per-segment avg/max speed for populated rides */}
