@@ -279,4 +279,52 @@ describe('FollowersService', () => {
       expect(result[0].duration_min).toBeNull();
     });
   });
+
+  describe('getSuggestions', () => {
+    it('maps ranked candidate rows to suggestion DTOs', async () => {
+      const suggestQb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'user-9',
+            display_name: 'Matteo Ferri',
+            avatar_url: null,
+            home_region: 'Bergamo · IT',
+            ride_count: '312',
+          },
+        ]),
+      };
+      userRepo.findOne = jest
+        .fn()
+        .mockResolvedValue({ home_region: 'Bergamo · IT' });
+      userRepo.createQueryBuilder = jest.fn().mockReturnValue(suggestQb);
+      // The NOT-IN subquery is built from `followRepo.createQueryBuilder`.
+      followRepo.createQueryBuilder = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getQuery: jest.fn().mockReturnValue('(SELECT 1)'),
+      });
+
+      const result = await service.getSuggestions('user-1', 6);
+
+      expect(result).toEqual([
+        {
+          id: 'user-9',
+          display_name: 'Matteo Ferri',
+          avatar_url: null,
+          home_region: 'Bergamo · IT',
+          ride_count: 312,
+        },
+      ]);
+    });
+  });
 });
