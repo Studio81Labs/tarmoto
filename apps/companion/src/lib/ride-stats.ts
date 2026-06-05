@@ -69,15 +69,40 @@ export type YearOverYearPoint = {
   monthLabel: (typeof MONTH_LABELS)[number];
 } & Record<string, number | string>;
 
+/**
+ * Time window for the stats filter — mirrors the Ride History time pills so the
+ * two screens share one mental model (All time / This year / Last 90 / Last 30).
+ */
+export type StatsWindow = "all" | "year" | "90d" | "30d";
+
+export const STATS_WINDOWS: { value: StatsWindow; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "year", label: "This year" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "30d", label: "Last 30 days" },
+];
+
 export interface RideFilters {
-  year: number | "all";
+  window: StatsWindow;
   rideType: RideType | "all";
 }
 
 export const DEFAULT_RIDE_FILTERS: RideFilters = {
-  year: "all",
+  window: "all",
   rideType: "all",
 };
+
+/** Inclusive lower bound for a window, or null for "all". */
+export function windowStart(
+  window: StatsWindow,
+  now = new Date(),
+): Date | null {
+  if (window === "all") return null;
+  if (window === "year") return new Date(now.getFullYear(), 0, 1);
+  const d = new Date(now);
+  d.setDate(d.getDate() - (window === "90d" ? 90 : 30));
+  return d;
+}
 
 export function isRideType(value: unknown): value is RideType {
   return (
@@ -108,14 +133,16 @@ export function localDateKey(date: Date): string {
 export function filterRides(
   rides: readonly RideForStats[],
   filters: RideFilters,
+  now = new Date(),
 ): RideForStats[] {
+  const start = windowStart(filters.window, now);
   return rides.filter((ride) => {
     if (filters.rideType !== "all" && ride.ride_type !== filters.rideType) {
       return false;
     }
-    if (filters.year !== "all") {
+    if (start) {
       const date = parseStartedAt(ride.started_at);
-      if (!date || date.getFullYear() !== filters.year) return false;
+      if (!date || date < start) return false;
     }
     return true;
   });
@@ -175,6 +202,51 @@ export function computeMonthlyDistance(
     bucket.rides += 1;
   }
 
+  return buckets;
+}
+
+export interface RollingMonthBucket {
+  /** `YYYY-MM` key for the calendar month. */
+  key: string;
+  /** Single-letter month initial (design axis), e.g. "A" for April. */
+  monthLabel: string;
+  distanceKm: number;
+  rides: number;
+}
+
+/**
+ * Distance bucketed into the last `monthsBack` calendar months ending at `now`
+ * (oldest → newest) — the design's rolling "Last 12 months" bar chart. Feed it
+ * already-window/type-filtered rides; out-of-range months simply stay at zero.
+ */
+export function computeRollingMonthly(
+  rides: readonly RideForStats[],
+  monthsBack = 12,
+  now = new Date(),
+): RollingMonthBucket[] {
+  const buckets: RollingMonthBucket[] = [];
+  const index = new Map<string, RollingMonthBucket>();
+  for (let i = monthsBack - 1; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const bucket: RollingMonthBucket = {
+      key,
+      monthLabel: MONTH_LABELS[d.getMonth()]!.charAt(0),
+      distanceKm: 0,
+      rides: 0,
+    };
+    buckets.push(bucket);
+    index.set(key, bucket);
+  }
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const bucket = index.get(key);
+    if (!bucket) continue;
+    bucket.distanceKm += toNumber(ride.distance_km);
+    bucket.rides += 1;
+  }
   return buckets;
 }
 

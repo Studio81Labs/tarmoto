@@ -15,31 +15,47 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import {
+  Card,
+  DataTable,
+  MetricTile,
+  Mono,
+  PageHeader,
+  SegmentedControl,
+  Stamp,
+  type DataTableColumn,
+  type MetricTileProps,
+  type SegmentedOption,
+} from "@tarmoto/ui";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { fetchAllRides } from "@/lib/rides-fetch";
 import { useAuthStore } from "@/stores/auth";
+import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { usePreferencesStore } from "@/stores/preferences";
+import { splitFormattedDistance } from "@/lib/utils";
 import {
   availableYears,
   computeAllTimeTotals,
   computeCalendarHeatmap,
-  computeMonthlyDistance,
+  computeRollingMonthly,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
   filterRides,
-  isRideType,
-  RIDE_TYPES,
+  STATS_WINDOWS,
   type RideForStats,
   type RideFilters,
   type RideType,
+  type StatsWindow,
+  type YearlyTotal,
 } from "@/lib/ride-stats";
-const RIDE_TYPE_LABELS: Record<RideType, string> = {
-  free: "Free ride",
-  commute: "Commute",
-  trip: "Trip",
-  tracked: "Tracked",
-};
+const RIDE_TYPE_OPTIONS: SegmentedOption<string>[] = [
+  { value: "all", label: "All" },
+  { value: "free", label: "Free" },
+  { value: "commute", label: "Commute" },
+  { value: "trip", label: "Trip" },
+  { value: "tracked", label: "Tracked" },
+];
 // Year-over-year line palette tuned for cream surfaces. Each hue lands
 // at ≥3:1 against bg-cream so the chart lines read as distinct strokes
 // (WCAG 3:1 graphic-element bar). The plain canonical accent (#FF6A1A)
@@ -64,6 +80,8 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
+  const { format } = useNumberFormat();
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -90,27 +108,24 @@ export default function StatsPage() {
   const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
-  // The monthly + heatmap charts always need a single concrete year. When the
-  // year filter is "all" we anchor on the latest year that has data so the
-  // charts stay populated instead of going blank.
+  // The rolling distance chart shows the last 12 calendar months of the
+  // filtered rides. The heatmap still needs one concrete year: anchor on the
+  // current year for windowed filters, or the latest year with data for "all".
   const focusYear =
-    filters.year !== "all"
-      ? filters.year
-      : (years[0] ?? new Date().getFullYear());
-  const monthly = useMemo(
-    () => computeMonthlyDistance(filtered, focusYear),
-    [filtered, focusYear],
-  );
+    filters.window === "all"
+      ? (years[0] ?? new Date().getFullYear())
+      : new Date().getFullYear();
+  const monthly = useMemo(() => computeRollingMonthly(filtered), [filtered]);
   const calendar = useMemo(
     () => computeCalendarHeatmap(filtered, focusYear),
     [filtered, focusYear],
   );
   const yoyYears = useMemo(() => years.slice(0, 3), [years]);
   // YoY and the "All years" table compare across years, so they ignore the
-  // year filter — otherwise selecting a single year would collapse both to a
-  // single data point.
+  // time window — otherwise a windowed filter would collapse both to a single
+  // data point. Ride-type still applies.
   const ridesAcrossYears = useMemo(
-    () => filterRides(rides, { ...filters, year: "all" }),
+    () => filterRides(rides, { ...filters, window: "all" }),
     [rides, filters],
   );
   const yearlyTotals = useMemo(
@@ -156,22 +171,74 @@ export default function StatsPage() {
       </div>
     );
   }
+  const windowLabel =
+    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time";
+  const monthlyTitle =
+    filters.window === "all" ? "Last 12 months" : windowLabel;
+  const totalDistance = splitFormattedDistance(
+    totals.totalDistanceKm,
+    unitSystem,
+  );
+  const formatDistance = (km: number) => {
+    const d = splitFormattedDistance(km, unitSystem);
+    return `${format(d.value)} ${d.unit.toLowerCase()}`;
+  };
+  const yearColumns: DataTableColumn<YearlyTotal>[] = [
+    {
+      key: "year",
+      label: t("Year"),
+      primary: true,
+      render: (row) => <span className="font-bold text-ink">{row.year}</span>,
+    },
+    {
+      key: "rides",
+      label: t("Rides"),
+      align: "right",
+      numeric: true,
+      render: (row) => format(row.rides),
+    },
+    {
+      key: "distance",
+      label: t("Distance"),
+      align: "right",
+      numeric: true,
+      render: (row) => formatDistance(row.distanceKm),
+    },
+    {
+      key: "avg",
+      label: t("Avg / ride"),
+      align: "right",
+      numeric: true,
+      render: (row) =>
+        row.rides > 0 ? formatDistance(row.distanceKm / row.rides) : "—",
+    },
+  ];
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in space-y-8 p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in space-y-[18px] p-4 md:p-7">
       <StatsPageHeader
-        right={
-          <FilterBar filters={filters} years={years} onChange={setFilters} />
-        }
+        right={<FilterBar filters={filters} onChange={setFilters} />}
       />
 
-      <TotalsGrid totals={totals} />
+      <TotalsGrid
+        totals={totals}
+        windowLabel={windowLabel.toLowerCase()}
+        unitSystem={unitSystem}
+        format={format}
+      />
 
-      <Card padded={false} className="p-5">
-        <ChartHeader
-          icon={<BarChart3 size={16} />}
-          title={`Monthly distance — ${focusYear}`}
-          subtitle="Distance ridden each month."
-        />
+      <Card padded={false} className="p-[22px]">
+        <div className="mb-[18px] flex items-end justify-between gap-4">
+          <div>
+            <Stamp>{t("Distance by month")}</Stamp>
+            <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+              {monthlyTitle}
+            </div>
+          </div>
+          <Mono className="text-[11px] text-fg-dim">
+            {format(totalDistance.value)} {totalDistance.unit.toLowerCase()}{" "}
+            {t("total")}
+          </Mono>
+        </div>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -292,53 +359,22 @@ export default function StatsPage() {
       )}
 
       {yearlyTotals.length > 0 && (
-        <Card padded={false} className="p-5">
-          <ChartHeader
-            icon={<BarChart3 size={16} />}
-            title={t("All years")}
-            subtitle="Total distance per calendar year."
-          />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
-                  <th className="py-2 pr-4 font-semibold">{t("Year")}</th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Rides")}
-                  </th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Distance ")}
-                  </th>
-                  <th className="py-2 font-semibold text-right">
-                    {t("Avg / ride")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {yearlyTotals
-                  .slice()
-                  .reverse()
-                  .map((row) => (
-                    <tr key={row.year} className="text-ink">
-                      <td className="py-2 pr-4 font-medium">{row.year}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {row.rides}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {row.distanceKm.toFixed(0)}
-                        {t("km ")}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-fg-dim">
-                        {row.rides > 0
-                          ? `${(row.distanceKm / row.rides).toFixed(0)} km`
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <DataTable<YearlyTotal>
+          ariaLabel={t("Distance by year")}
+          showCaret={false}
+          header={
+            <div className="px-5 pt-5">
+              <ChartHeader
+                icon={<BarChart3 size={16} />}
+                title={t("All years")}
+                subtitle={t("Total distance per calendar year.")}
+              />
+            </div>
+          }
+          columns={yearColumns}
+          rows={yearlyTotals.slice().reverse()}
+          rowKey={(row) => String(row.year)}
+        />
       )}
     </div>
   );
@@ -367,115 +403,96 @@ function StatsPageHeader({ right }: { right?: React.ReactNode }) {
 
 interface FilterBarProps {
   filters: RideFilters;
-  years: number[];
   onChange: (filters: RideFilters) => void;
 }
-function FilterBar({ filters, years, onChange }: FilterBarProps) {
+const WINDOW_OPTIONS: SegmentedOption<StatsWindow>[] = STATS_WINDOWS.map(
+  (w) => ({
+    value: w.value,
+    label: w.label,
+  }),
+);
+// Filters mirror the Ride History controls: a time-window pill group + a
+// ride-type group, both the shared `SegmentedControl`.
+function FilterBar({ filters, onChange }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <FilterSelect
-        label="Year"
-        value={filters.year === "all" ? "all" : String(filters.year)}
-        onChange={(value) =>
-          onChange({
-            ...filters,
-            year: value === "all" ? "all" : Number(value),
-          })
-        }
-        options={[
-          { value: "all", label: "All years" },
-          ...years.map((y) => ({ value: String(y), label: String(y) })),
-        ]}
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <SegmentedControl
+        ariaLabel={t("Time window")}
+        value={filters.window}
+        onChange={(window) => onChange({ ...filters, window })}
+        options={WINDOW_OPTIONS}
       />
-      <FilterSelect
-        label="Ride type"
+      <SegmentedControl
+        ariaLabel={t("Ride type filter")}
         value={filters.rideType}
-        onChange={(value) =>
+        onChange={(next) =>
           onChange({
             ...filters,
-            rideType: value === "all" || !isRideType(value) ? "all" : value,
+            rideType: next === "all" ? "all" : (next as RideType),
           })
         }
-        options={[
-          { value: "all", label: "All types" },
-          ...RIDE_TYPES.map((rideType) => ({
-            value: rideType,
-            label: RIDE_TYPE_LABELS[rideType],
-          })),
-        ]}
+        options={RIDE_TYPE_OPTIONS}
       />
     </div>
   );
 }
-interface FilterSelectProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: {
-    value: string;
-    label: string;
-  }[];
-}
-function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
-  return (
-    <label className="flex items-center gap-2 text-xs text-fg-dim">
-      <span className="uppercase tracking-wider font-semibold">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-paper border border-line-strong rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-ink"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 interface TotalsGridProps {
   totals: ReturnType<typeof computeAllTimeTotals>;
+  /** Active window label (e.g. "all time") shown as the lead KPI's delta. */
+  windowLabel: string;
+  unitSystem: Parameters<typeof splitFormattedDistance>[1];
+  format: (value: number) => string;
 }
-function TotalsGrid({ totals }: TotalsGridProps) {
-  const cards = [
+// KPI bricks (§12) — the shared `MetricTile`. Distance leads on an ink tile
+// with the accent number; the remaining four use the default cream tile.
+// Distance values are unit-aware (km/mi) so imperial users see honest numbers.
+function TotalsGrid({
+  totals,
+  windowLabel,
+  unitSystem,
+  format,
+}: TotalsGridProps) {
+  const distance = splitFormattedDistance(totals.totalDistanceKm, unitSystem);
+  const avgPerRide = splitFormattedDistance(
+    totals.avgRideDistanceKm,
+    unitSystem,
+  );
+  const tiles: MetricTileProps[] = [
     {
-      label: "Total distance",
-      value: totals.totalDistanceKm.toFixed(0),
-      unit: "km",
+      label: t("Total distance"),
+      value: distance.value,
+      unit: distance.unit,
+      formatValue: format,
+      variant: "ink",
+      accentNumber: true,
+      delta: windowLabel,
     },
-    { label: "Total rides", value: String(totals.totalRides), unit: "" },
     {
-      label: "Total hours",
+      label: t("Total rides"),
+      value: totals.totalRides,
+      formatValue: format,
+    },
+    {
+      label: t("Total hours"),
       value: totals.totalHours.toFixed(1),
       unit: "h",
     },
     {
-      label: "Riding days",
-      value: String(totals.ridingDays),
-      unit: "",
+      label: t("Riding days"),
+      value: totals.ridingDays,
+      formatValue: format,
     },
     {
-      label: "Avg per ride",
-      value:
-        totals.totalRides === 0 ? "0" : totals.avgRideDistanceKm.toFixed(0),
-      unit: "km",
+      label: t("Avg per ride"),
+      value: totals.totalRides === 0 ? "0" : avgPerRide.value,
+      unit: avgPerRide.unit,
+      formatValue: format,
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-      {cards.map((stat) => (
-        <Card key={stat.label} padded={false} className="p-4">
-          <Stamp>{stat.label}</Stamp>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
-            {stat.value}
-            {stat.unit && (
-              <span className="ml-1 text-sm font-normal text-fg-dim">
-                {stat.unit}
-              </span>
-            )}
-          </p>
-        </Card>
+    <div className="grid grid-cols-2 gap-[14px] md:grid-cols-5">
+      {tiles.map((tile) => (
+        <MetricTile key={tile.label} {...tile} />
       ))}
     </div>
   );
@@ -519,14 +536,20 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
     ...Array.from<Cell>({ length: firstDay }).fill(null),
     ...days,
   ];
+  // Flexible week columns (one per ~7 days) sized at `1fr` so the grid stretches
+  // to the full card width instead of leaving the fixed-width strip + empty
+  // gutter the old 12px columns produced. The container's aspect ratio keeps the
+  // day cells square as they grow.
+  const weeks = Math.ceil(cells.length / 7);
   return (
     <div className="space-y-3">
       <div
-        className="grid gap-[3px] overflow-x-auto"
+        className="grid gap-[3px]"
         style={{
-          gridTemplateRows: "repeat(7, 12px)",
+          gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
+          gridTemplateRows: "repeat(7, 1fr)",
           gridAutoFlow: "column",
-          gridAutoColumns: "12px",
+          aspectRatio: `${weeks} / 7`,
         }}
         role="img"
         aria-label={`Riding calendar for ${year}`}

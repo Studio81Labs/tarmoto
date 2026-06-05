@@ -4,11 +4,13 @@ import {
   computeAllTimeTotals,
   computeCalendarHeatmap,
   computeMonthlyDistance,
+  computeRollingMonthly,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
   filterRides,
   isRideType,
+  windowStart,
   type RideFilters,
   type RideForStats,
 } from "../ride-stats";
@@ -117,34 +119,108 @@ describe("filterRides", () => {
     }),
   ];
 
-  it("returns everything with default filters", () => {
-    expect(filterRides(dataset, makeFilters())).toHaveLength(3);
+  // Fixed "now" so the rolling windows are deterministic across runs.
+  const now = new Date("2026-06-20T00:00:00Z");
+
+  it("returns everything with default filters (all time)", () => {
+    expect(filterRides(dataset, makeFilters(), now)).toHaveLength(3);
   });
 
-  it("filters by year", () => {
-    const result = filterRides(dataset, makeFilters({ year: 2025 }));
-    expect(result.map((r) => r.id)).toEqual(["c"]);
+  it("filters by this-year window", () => {
+    const result = filterRides(dataset, makeFilters({ window: "year" }), now);
+    expect(result.map((r) => r.id)).toEqual(["a", "b"]);
   });
 
-  it("filters by ride type", () => {
-    const result = filterRides(dataset, makeFilters({ rideType: "commute" }));
+  it("filters by last-30-days window", () => {
+    const result = filterRides(dataset, makeFilters({ window: "30d" }), now);
     expect(result.map((r) => r.id)).toEqual(["b"]);
   });
 
-  it("combines filters with AND semantics", () => {
+  it("filters by ride type", () => {
     const result = filterRides(
       dataset,
-      makeFilters({ year: 2026, rideType: "free" }),
+      makeFilters({ rideType: "commute" }),
+      now,
+    );
+    expect(result.map((r) => r.id)).toEqual(["b"]);
+  });
+
+  it("combines window and ride type with AND semantics", () => {
+    const result = filterRides(
+      dataset,
+      makeFilters({ window: "year", rideType: "free" }),
+      now,
     );
     expect(result.map((r) => r.id)).toEqual(["a"]);
   });
 
-  it("excludes rides with unparseable started_at when filtering by year", () => {
+  it("excludes rides with unparseable started_at inside a window", () => {
     const result = filterRides(
       [...dataset, ride({ id: "d", started_at: "garbage", ride_type: "free" })],
-      makeFilters({ year: 2026 }),
+      makeFilters({ window: "year" }),
+      now,
     );
     expect(result.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("windowStart", () => {
+  const now = new Date("2026-06-20T00:00:00Z");
+
+  it("returns null for the all-time window", () => {
+    expect(windowStart("all", now)).toBeNull();
+  });
+
+  it("anchors the year window to Jan 1 of the current year", () => {
+    const start = windowStart("year", now);
+    expect(start?.getFullYear()).toBe(2026);
+    expect(start?.getMonth()).toBe(0);
+    expect(start?.getDate()).toBe(1);
+  });
+
+  it("subtracts the rolling day count for 30d / 90d", () => {
+    const start30 = windowStart("30d", now);
+    const start90 = windowStart("90d", now);
+    expect(Math.round((now.getTime() - start30!.getTime()) / 86_400_000)).toBe(
+      30,
+    );
+    expect(Math.round((now.getTime() - start90!.getTime()) / 86_400_000)).toBe(
+      90,
+    );
+  });
+});
+
+describe("computeRollingMonthly", () => {
+  const now = new Date("2026-06-15T10:00:00Z");
+
+  it("returns the last 12 calendar months oldest→newest with single-letter labels", () => {
+    const buckets = computeRollingMonthly([], 12, now);
+    expect(buckets).toHaveLength(12);
+    expect(buckets[0]?.key).toBe("2025-07");
+    expect(buckets[11]?.key).toBe("2026-06");
+    expect(buckets[11]?.monthLabel).toBe("J"); // June
+    expect(buckets.every((b) => b.distanceKm === 0 && b.rides === 0)).toBe(
+      true,
+    );
+  });
+
+  it("buckets rides into their calendar month and ignores out-of-range rides", () => {
+    const buckets = computeRollingMonthly(
+      [
+        ride({ id: "1", started_at: "2026-06-02T10:00:00Z", distance_km: 40 }),
+        ride({ id: "2", started_at: "2026-06-09T10:00:00Z", distance_km: 60 }),
+        ride({ id: "3", started_at: "2026-04-01T10:00:00Z", distance_km: 25 }),
+        ride({ id: "4", started_at: "2024-01-01T10:00:00Z", distance_km: 999 }),
+      ],
+      12,
+      now,
+    );
+    const june = buckets.find((b) => b.key === "2026-06");
+    const april = buckets.find((b) => b.key === "2026-04");
+    expect(june).toMatchObject({ distanceKm: 100, rides: 2 });
+    expect(april).toMatchObject({ distanceKm: 25, rides: 1 });
+    // The 2024 ride is older than 12 months → not represented.
+    expect(buckets.some((b) => b.distanceKm === 999)).toBe(false);
   });
 });
 

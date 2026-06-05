@@ -257,7 +257,7 @@ test.describe("rides extras", () => {
     await expect(totalRidesCard).toContainText("2");
     await expect(page.getByText(/total distance/i).first()).toBeVisible();
     // Monthly chart header proves the chart section mounted.
-    await expect(page.getByText(/monthly distance —/i)).toBeVisible();
+    await expect(page.getByText(/distance by month/i)).toBeVisible();
   });
 
   // T33 — Personal road map: `/rides/road-map` overlays the rider's
