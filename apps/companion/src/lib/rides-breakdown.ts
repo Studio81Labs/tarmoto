@@ -29,8 +29,10 @@ export async function fetchRideBreakdown(
     params: { query },
   });
   if (error) {
+    // `error` is already truthy here, so the typeof-object guard is enough to
+    // safely probe for a `message` field.
     const apiMessage =
-      typeof error === "object" && error !== null && "message" in error
+      typeof error === "object" && "message" in error
         ? (error as { message?: unknown }).message
         : undefined;
     throw new Error(
