@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
+import { BarChart3, Loader2 } from "lucide-react";
 import {
   Card,
   DataTable,
@@ -239,18 +239,17 @@ export default function StatsPage() {
       />
 
       <Card padded={false} className="p-[22px]">
-        <div className="mb-[18px] flex items-end justify-between gap-4">
-          <div>
-            <Stamp>{t(chartStamp)}</Stamp>
-            <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-              {chartTitle}
-            </div>
-          </div>
-          <Mono className="text-[11px] text-fg-dim">
-            {format(totalDistance.value)} {totalDistance.unit.toLowerCase()}{" "}
-            {t("total")}
-          </Mono>
-        </div>
+        <SectionHeading
+          className="mb-[18px]"
+          stamp={t(chartStamp)}
+          title={chartTitle}
+          caption={
+            <>
+              {format(totalDistance.value)} {totalDistance.unit.toLowerCase()}{" "}
+              {t("total")}
+            </>
+          }
+        />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -301,21 +300,25 @@ export default function StatsPage() {
         </div>
       </Card>
 
-      <Card padded={false} className="p-5">
-        <ChartHeader
-          icon={<CalendarDays size={16} />}
-          title={`Calendar heatmap — ${focusYear}`}
-          subtitle="Each cell is one day. Brighter = longer ride."
+      <Card padded={false} className="p-[22px]">
+        <SectionHeading
+          className="mb-[18px]"
+          stamp={`${t("Calendar")} · ${focusYear}`}
+          title={t("Riding days")}
+          caption={t("brighter = longer ride")}
         />
         <CalendarHeatmap days={calendar} year={focusYear} />
       </Card>
 
       {yoyYears.length >= 2 && (
-        <Card padded={false} className="p-5">
-          <ChartHeader
-            icon={<TrendingUp size={16} />}
-            title={t("Year-over-year")}
-            subtitle={`Monthly distance, last ${yoyYears.length} years.`}
+        <Card padded={false} className="p-[22px]">
+          <SectionHeading
+            className="mb-[18px]"
+            stamp={t("Year-over-year")}
+            title={`${t("Monthly distance")} · ${t("last {count} years", {
+              count: yoyYears.length,
+            })}`}
+            caption={t("km / month")}
           />
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -379,13 +382,11 @@ export default function StatsPage() {
           ariaLabel={t("Distance by year")}
           showCaret={false}
           header={
-            <div className="px-5 pt-5">
-              <ChartHeader
-                icon={<BarChart3 size={16} />}
-                title={t("All years")}
-                subtitle={t("Total distance per calendar year.")}
-              />
-            </div>
+            <SectionHeading
+              className="px-5 pb-4 pt-5"
+              stamp={t("Annual totals")}
+              title={t("All years")}
+            />
           }
           columns={yearColumns}
           rows={yearlyTotals.slice().reverse()}
@@ -513,19 +514,38 @@ function TotalsGrid({
     </div>
   );
 }
-interface ChartHeaderProps {
-  icon: React.ReactNode;
+interface SectionHeadingProps {
+  /** Mono uppercase eyebrow, e.g. "Year-over-year". */
+  stamp: string;
+  /** Big Space Grotesk title, e.g. "Monthly distance · last 3 years". */
   title: string;
-  subtitle?: string;
+  /** Optional right-aligned mono caption, e.g. "km / month". */
+  caption?: React.ReactNode;
+  className?: string;
 }
-function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
+// The single card-header pattern (§ design): mono stamp eyebrow → 20px bold
+// title, with an optional right-aligned mono caption. Shared by the distance
+// chart, calendar heatmap, year-over-year and all-years cards so every section
+// reads with the same chrome.
+function SectionHeading({
+  stamp,
+  title,
+  caption,
+  className,
+}: SectionHeadingProps) {
   return (
-    <div className="mb-4">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-accent">{icon}</span>
-        <h2 className="text-sm font-semibold">{title}</h2>
+    <div
+      className={`flex flex-wrap items-end justify-between gap-4 ${className ?? ""}`}
+    >
+      <div>
+        <Stamp>{stamp}</Stamp>
+        <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          {title}
+        </div>
       </div>
-      {subtitle && <p className="mt-0.5 text-xs text-fg-dim">{subtitle}</p>}
+      {caption && (
+        <Mono className="shrink-0 text-[11px] text-fg-dim">{caption}</Mono>
+      )}
     </div>
   );
 }
