@@ -6,6 +6,7 @@ import {
   computeDistanceSeries,
   computeMonthlyDistance,
   computeQualityTrend,
+  computeRollingHeatmap,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -479,6 +480,33 @@ describe("computeCalendarHeatmap", () => {
       2026,
     );
     expect(heatmap.every((d) => d.distanceKm === 0)).toBe(true);
+  });
+});
+
+describe("computeRollingHeatmap", () => {
+  it("spans the last N days, including the previous year across Jan 1", () => {
+    const now = new Date("2026-01-15T10:00:00Z");
+    const days = computeRollingHeatmap(
+      [
+        ride({ id: "1", started_at: "2025-11-20T10:00:00Z", distance_km: 40 }),
+        ride({ id: "2", started_at: "2026-01-10T10:00:00Z", distance_km: 25 }),
+        // Older than 90 days → not represented.
+        ride({ id: "3", started_at: "2025-09-01T10:00:00Z", distance_km: 99 }),
+      ],
+      90,
+      now,
+    );
+    expect(days).toHaveLength(90);
+    expect(days[89]?.date).toBe("2026-01-15");
+    expect(days.find((d) => d.date === "2025-11-20")).toMatchObject({
+      distanceKm: 40,
+      rides: 1,
+    });
+    expect(days.find((d) => d.date === "2026-01-10")).toMatchObject({
+      distanceKm: 25,
+      rides: 1,
+    });
+    expect(days.some((d) => d.distanceKm === 99)).toBe(false);
   });
 });
 

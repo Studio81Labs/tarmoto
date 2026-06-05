@@ -434,6 +434,37 @@ export function computeCalendarHeatmap(
   return [...byDate.values()];
 }
 
+/**
+ * Calendar-heatmap cells for the last `daysBack` days ending at `now`
+ * (oldest → newest). The rolling 30/90-day windows use this instead of a fixed
+ * calendar year so the "Riding days" grid covers the same span as the KPIs and
+ * the daily distance chart — including rides from the previous year when the
+ * window straddles Jan 1.
+ */
+export function computeRollingHeatmap(
+  rides: readonly RideForStats[],
+  daysBack: number,
+  now = new Date(),
+): CalendarDay[] {
+  const byDate = new Map<string, CalendarDay>();
+  for (let i = daysBack - 1; i >= 0; i -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = localDateKey(date);
+    byDate.set(key, { date: key, distanceKm: 0, rides: 0 });
+  }
+
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const day = byDate.get(localDateKey(date));
+    if (!day) continue;
+    day.distanceKm += toNumber(ride.distance_km);
+    day.rides += 1;
+  }
+
+  return [...byDate.values()];
+}
+
 export function computeYearOverYear(
   rides: readonly RideForStats[],
   years: readonly number[],

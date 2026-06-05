@@ -45,6 +45,7 @@ import {
   computeCalendarHeatmap,
   computeDistanceSeries,
   computeQualityTrend,
+  computeRollingHeatmap,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -158,9 +159,15 @@ export default function StatsPage() {
     () => computeDistanceSeries(filtered, filters.window),
     [filtered, filters.window],
   );
+  // For the short rolling windows the heatmap follows the window's day span
+  // (so a 90/30-day window crossing Jan 1 still shows the previous-year days the
+  // KPIs/chart include); for year/all it stays a full calendar-year grid.
   const calendar = useMemo(
-    () => computeCalendarHeatmap(filtered, focusYear),
-    [filtered, focusYear],
+    () =>
+      filters.window === "30d" || filters.window === "90d"
+        ? computeRollingHeatmap(filtered, filters.window === "90d" ? 90 : 30)
+        : computeCalendarHeatmap(filtered, focusYear),
+    [filtered, filters.window, focusYear],
   );
   const yoyYears = useMemo(() => years.slice(0, 3), [years]);
   const yearlyTotals = useMemo(
@@ -219,6 +226,8 @@ export default function StatsPage() {
   const isDayView = filters.window === "30d" || filters.window === "90d";
   const chartStamp = isDayView ? "Distance by day" : "Distance by month";
   const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
+  // The heatmap spans the rolling window on day views, a calendar year otherwise.
+  const heatmapLabel = isDayView ? windowLabel : String(focusYear);
   // `key` is unique per bar, so the axis tick + tooltip both resolve their
   // human labels through this map rather than the (ambiguous) display string.
   const seriesByKey = new Map(series.map((point) => [point.key, point]));
@@ -370,11 +379,11 @@ export default function StatsPage() {
       <Card padded={false} className="p-[22px]">
         <SectionHeading
           className="mb-[18px]"
-          stamp={`${t("Calendar")} · ${focusYear}`}
+          stamp={`${t("Calendar")} · ${heatmapLabel}`}
           title={t("Riding days")}
           caption={t("brighter = longer ride")}
         />
-        <CalendarHeatmap days={calendar} year={focusYear} />
+        <CalendarHeatmap days={calendar} label={heatmapLabel} />
       </Card>
 
       {yoyYears.length >= 2 && (
@@ -862,14 +871,22 @@ interface CalendarHeatmapProps {
     distanceKm: number;
     rides: number;
   }[];
-  year: number;
+  /** Period shown (year or window label) — used only for the a11y label. */
+  label: string;
 }
-function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
+function CalendarHeatmap({ days, label }: CalendarHeatmapProps) {
   // Find the max so cell intensity scales relative to this filtered view
   // rather than to a hard-coded ceiling that would wash out short rides.
   const maxDistance = days.reduce((acc, d) => Math.max(acc, d.distanceKm), 0);
   // Pad the start so the first column begins on Sunday (column = day of week).
-  const firstDay = new Date(year, 0, 1).getDay();
+  // Derive the weekday from the first day shown so the grid aligns for both the
+  // calendar-year and rolling-window views.
+  const firstDay = (() => {
+    const first = days[0]?.date;
+    if (!first) return 0;
+    const [y, m, d] = first.split("-").map(Number);
+    return new Date(y!, m! - 1, d!).getDay();
+  })();
   type Cell = {
     date: string;
     distanceKm: number;
@@ -895,7 +912,7 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
           aspectRatio: `${weeks} / 7`,
         }}
         role="img"
-        aria-label={`Riding calendar for ${year}`}
+        aria-label={`Riding calendar — ${label}`}
       >
         {cells.map((cell, index) => (
           <CalendarCell key={index} cell={cell} maxDistance={maxDistance} />
