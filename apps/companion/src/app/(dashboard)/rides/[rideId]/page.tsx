@@ -32,6 +32,8 @@ import {
   formatDurationCompact,
   scoreToQualityTier,
   splitFormattedDistance,
+  splitFormattedElevation,
+  splitFormattedSpeed,
 } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
@@ -242,28 +244,36 @@ export default function RideDetailPage() {
     month: "short",
     year: "numeric",
   });
+  // All metrics honour the rider's unit preference (km/m·mph·ft) so the grid
+  // stays internally consistent — not a mix of converted distance and raw
+  // metric speed/elevation.
   const distance = splitFormattedDistance(ride.distance_km ?? 0, unitSystem);
   const duration = splitDuration(ride.duration_min);
+  const avgSpeed = splitFormattedSpeed(ride.avg_speed ?? 0, unitSystem);
+  const topSpeed = splitFormattedSpeed(ride.max_speed ?? 0, unitSystem);
+  const ascent = splitFormattedElevation(ride.elevation_gain ?? 0, unitSystem);
+  const descent = splitFormattedElevation(ride.elevation_loss ?? 0, unitSystem);
+  const speedUnit = avgSpeed.unit;
 
   // Distance / Duration / Avg / Top / Max lean / Ascent — the design's 2×3 grid.
   const tiles: MetricTileProps[] = [
     {
       label: "Distance",
       value: ride.distance_km != null ? distance.value : "—",
-      unit: ride.distance_km != null ? distance.unit : "KM",
+      unit: distance.unit,
       variant: "ink",
       accentNumber: true,
     },
     { label: "Duration", value: duration.value, unit: duration.unit },
     {
       label: "Avg speed",
-      value: ride.avg_speed != null ? Math.round(ride.avg_speed) : "—",
-      unit: "KM/H",
+      value: ride.avg_speed != null ? avgSpeed.value : "—",
+      unit: speedUnit,
     },
     {
       label: "Top speed",
-      value: ride.max_speed != null ? Math.round(ride.max_speed) : "—",
-      unit: "KM/H",
+      value: ride.max_speed != null ? topSpeed.value : "—",
+      unit: speedUnit,
     },
     {
       label: "Max lean",
@@ -274,9 +284,8 @@ export default function RideDetailPage() {
     },
     {
       label: "Ascent",
-      value:
-        ride.elevation_gain != null ? Math.round(ride.elevation_gain) : "—",
-      unit: "M",
+      value: ride.elevation_gain != null ? ascent.value : "—",
+      unit: ascent.unit,
       accentNumber: true,
     },
   ];
@@ -473,7 +482,7 @@ export default function RideDetailPage() {
               label={t("Total ascent")}
               value={
                 ride.elevation_gain != null
-                  ? `+${format(Math.round(ride.elevation_gain))} m`
+                  ? `+${format(ascent.value)} ${ascent.unit.toLowerCase()}`
                   : "—"
               }
             />
@@ -481,7 +490,7 @@ export default function RideDetailPage() {
               label={t("Total descent")}
               value={
                 ride.elevation_loss != null
-                  ? `−${format(Math.round(ride.elevation_loss))} m`
+                  ? `−${format(descent.value)} ${descent.unit.toLowerCase()}`
                   : "—"
               }
             />
@@ -544,7 +553,7 @@ export default function RideDetailPage() {
               label={t("Elev. descent")}
               value={
                 ride.elevation_loss != null
-                  ? `${format(Math.round(ride.elevation_loss))} m`
+                  ? `${format(descent.value)} ${descent.unit.toLowerCase()}`
                   : "—"
               }
             />
