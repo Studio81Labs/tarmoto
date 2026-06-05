@@ -590,6 +590,7 @@ export class SharingService {
       rider_id: sr.user_id,
       rider_name: sr.user?.display_name ?? 'Unknown',
       rider_avatar_url: sr.user?.avatar_url ?? null,
+      name: ride.name ?? null,
       ride_type: ride.ride_type,
       started_at: ride.started_at.toISOString(),
       distance_km: ride.distance_km,

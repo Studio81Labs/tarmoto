@@ -274,6 +274,12 @@ export class CommunityRideDto {
   @ApiProperty({ nullable: true })
   rider_avatar_url!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Rider-given ride name, used as the feed-card title.',
+  })
+  name!: string | null;
+
   @ApiProperty()
   ride_type!: string;
 

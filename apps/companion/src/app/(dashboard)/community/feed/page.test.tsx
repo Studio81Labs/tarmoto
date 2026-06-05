@@ -2,12 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CommunityFeedPage from "./page";
 import { api, communityApi, type CommunityRidePage } from "@/lib/api";
 
+vi.mock("next/navigation", async () => {
+  const actual =
+    await vi.importActual<typeof import("next/navigation")>("next/navigation");
+  return { ...actual, useRouter: () => ({ push: vi.fn() }) };
+});
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     api: {
-      GET: vi.fn(),
+      GET: vi.fn().mockResolvedValue({ data: undefined, error: { status: 0 } }),
     },
     communityApi: {
       list: vi.fn(),
@@ -24,6 +30,7 @@ function pageData(): CommunityRidePage {
         rider_id: "rider-1",
         rider_name: "John Rider",
         rider_avatar_url: null,
+        name: "Three Passes Sunday",
         ride_type: "trip",
         started_at: "2026-04-22T10:00:00.000Z",
         distance_km: 242.6,
@@ -32,6 +39,10 @@ function pageData(): CommunityRidePage {
         avg_curviness: 6.1,
         duration_min: 215,
         view_count: 123,
+        description: null,
+        like_count: 142,
+        viewer_has_liked: false,
+        clone_count: 12,
         route_geometry: [
           { lat: 49.2, lng: 16.6 },
           { lat: 49.15, lng: 16.7 },
