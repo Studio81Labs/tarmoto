@@ -91,7 +91,11 @@ export class RouteCollectionsController {
       Number.isFinite(parsedLimit)
         ? Math.min(Math.max(parsedLimit, 1), 48)
         : 12,
-      Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
+      // Upper-bound the offset so an unauthenticated caller can't force an
+      // arbitrarily deep (expensive) OFFSET scan, matching the rides feed cap.
+      Number.isFinite(parsedOffset)
+        ? Math.min(Math.max(parsedOffset, 0), 10_000)
+        : 0,
     );
   }
 

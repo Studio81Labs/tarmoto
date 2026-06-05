@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder, In } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder, In } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { RideLike } from '../../entities/ride-like.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -46,6 +46,7 @@ export class SharingService {
     private readonly tripDayRepo: Repository<TripDay>,
     @InjectRepository(TripMember)
     private readonly tripMemberRepo: Repository<TripMember>,
+    private readonly dataSource: DataSource,
     private readonly privacy: PrivacyPreferencesService,
   ) {}
 
@@ -436,35 +437,41 @@ export class SharingService {
     }
 
     const title = ride.name?.trim() || 'Cloned route';
-    const trip = await this.tripRepo.save(
-      this.tripRepo.create({
-        owner_id: userId,
-        title,
-        num_days: 1,
-        status: 'draft',
-        invite_code: generateInviteCode(),
-      }),
-    );
-    await this.tripMemberRepo.save(
-      this.tripMemberRepo.create({
-        trip_id: trip.id,
-        user_id: userId,
-        role: 'owner',
-      }),
-    );
-    await this.tripDayRepo.save(
-      this.tripDayRepo.create({
-        trip_id: trip.id,
-        day_number: 1,
-        title,
-        distance_km: ride.distance_km,
-        route_geom: ride.route_geom,
-        avg_quality: ride.avg_road_quality,
-        curviness_score: ride.avg_curviness ?? null,
-      }),
-    );
-    await this.sharedRideRepo.increment({ id: shared.id }, 'clone_count', 1);
-    return { trip_id: trip.id, clone_count: (shared.clone_count ?? 0) + 1 };
+    // Atomic: the trip, its owner membership, the day, and the clone-count
+    // bump all commit together — a mid-sequence failure leaves no orphan or
+    // half-built trip (mirrors the trip create/duplicate paths).
+    const tripId = await this.dataSource.transaction(async (manager) => {
+      const trip = await manager.save(
+        this.tripRepo.create({
+          owner_id: userId,
+          title,
+          num_days: 1,
+          status: 'draft',
+          invite_code: generateInviteCode(),
+        }),
+      );
+      await manager.save(
+        this.tripMemberRepo.create({
+          trip_id: trip.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+      await manager.save(
+        this.tripDayRepo.create({
+          trip_id: trip.id,
+          day_number: 1,
+          title,
+          distance_km: ride.distance_km,
+          route_geom: ride.route_geom,
+          avg_quality: ride.avg_road_quality,
+          curviness_score: ride.avg_curviness ?? null,
+        }),
+      );
+      await manager.increment(SharedRide, { id: shared.id }, 'clone_count', 1);
+      return trip.id;
+    });
+    return { trip_id: tripId, clone_count: (shared.clone_count ?? 0) + 1 };
   }
 
   /**
