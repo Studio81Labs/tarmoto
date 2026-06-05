@@ -217,10 +217,10 @@ test.describe("rides read path", () => {
     await expect(page.getByText(/roads ridden/i)).toBeVisible();
 
     // Elevation summary: per-sample profile isn't recorded yet, so the card
-    // shows the climb/descent totals + an honest empty note.
+    // shows the climb/descent totals + an honest note.
     await expect(page.getByText("Climb & descent")).toBeVisible();
     await expect(
-      page.getByText(/per-sample elevation isn't recorded yet/i),
+      page.getByText(/per-sample elevation profile isn't recorded yet/i),
     ).toBeVisible();
   });
 });
