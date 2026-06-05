@@ -34,6 +34,8 @@ export interface RideForStats {
   distance_km?: number | null;
   duration_min?: number | null;
   ride_type?: string | null;
+  /** Distance-weighted road-quality score (0–5); drives the quality trend. */
+  avg_road_quality?: number | null;
 }
 
 export interface AllTimeTotals {
@@ -69,15 +71,47 @@ export type YearOverYearPoint = {
   monthLabel: (typeof MONTH_LABELS)[number];
 } & Record<string, number | string>;
 
+/**
+ * Time window for the stats filter — mirrors the Ride History time pills so the
+ * two screens share one mental model (All time / This year / Last 90 / Last 30).
+ */
+export type StatsWindow = "all" | "year" | "90d" | "30d";
+
+export const STATS_WINDOWS: { value: StatsWindow; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "year", label: "This year" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "30d", label: "Last 30 days" },
+];
+
 export interface RideFilters {
-  year: number | "all";
+  window: StatsWindow;
   rideType: RideType | "all";
 }
 
 export const DEFAULT_RIDE_FILTERS: RideFilters = {
-  year: "all",
+  window: "all",
   rideType: "all",
 };
+
+/** Inclusive lower bound for a window, or null for "all". */
+export function windowStart(
+  window: StatsWindow,
+  now = new Date(),
+): Date | null {
+  if (window === "all") return null;
+  if (window === "year") return new Date(now.getFullYear(), 0, 1);
+  // Start of the calendar day `days - 1` before today, so the window spans
+  // exactly `days` calendar days including today. This keeps the rolling KPI
+  // filter, the daily chart buckets (`computeDistanceSeries`) and the server
+  // breakdown bound on the same day — no ride lands in one but not the others.
+  const days = window === "90d" ? 90 : 30;
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - (days - 1),
+  );
+}
 
 export function isRideType(value: unknown): value is RideType {
   return (
@@ -108,14 +142,20 @@ export function localDateKey(date: Date): string {
 export function filterRides(
   rides: readonly RideForStats[],
   filters: RideFilters,
+  now = new Date(),
 ): RideForStats[] {
+  const start = windowStart(filters.window, now);
   return rides.filter((ride) => {
     if (filters.rideType !== "all" && ride.ride_type !== filters.rideType) {
       return false;
     }
-    if (filters.year !== "all") {
-      const date = parseStartedAt(ride.started_at);
-      if (!date || date.getFullYear() !== filters.year) return false;
+    const date = parseStartedAt(ride.started_at);
+    // Reject future-dated rides (clock skew or a bad GPX import) so the KPIs
+    // and the server breakdown never count rides the charts/heatmap — which
+    // only bucket through today — can't show.
+    if (date && date > now) return false;
+    if (start) {
+      if (!date || date < start) return false;
     }
     return true;
   });
@@ -178,6 +218,173 @@ export function computeMonthlyDistance(
   return buckets;
 }
 
+export type ChartGranularity = "month" | "day";
+
+/** A single bar in the distance chart — a month or a day, per the window. */
+export interface DistancePoint {
+  /** Stable bucket key: `YYYY-MM` (month) or `YYYY-MM-DD` (day). */
+  key: string;
+  /** Compact x-axis tick: month abbreviation, or day-of-month. */
+  axisLabel: string;
+  /** Full, unambiguous label for the tooltip ("Jun 2026" / "5 Jun 2026"). */
+  tooltipLabel: string;
+  distanceKm: number;
+  rides: number;
+}
+
+/** Short rolling windows render one bar per day; the rest, one per month. */
+export function distanceGranularity(window: StatsWindow): ChartGranularity {
+  return window === "30d" || window === "90d" ? "day" : "month";
+}
+
+const monthKeyOf = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+function monthPoint(year: number, monthIndex: number): DistancePoint {
+  return {
+    key: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+    axisLabel: MONTH_LABELS[monthIndex]!,
+    tooltipLabel: `${MONTH_LABELS[monthIndex]} ${year}`,
+    distanceKm: 0,
+    rides: 0,
+  };
+}
+
+function dayPoint(date: Date): DistancePoint {
+  return {
+    key: localDateKey(date),
+    axisLabel: String(date.getDate()),
+    tooltipLabel: `${date.getDate()} ${MONTH_LABELS[date.getMonth()]} ${date.getFullYear()}`,
+    distanceKm: 0,
+    rides: 0,
+  };
+}
+
+function fillSeries(
+  points: DistancePoint[],
+  rides: readonly RideForStats[],
+  keyOf: (date: Date) => string,
+): DistancePoint[] {
+  const index = new Map(points.map((p) => [p.key, p]));
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const bucket = index.get(keyOf(date));
+    if (!bucket) continue;
+    bucket.distanceKm += toNumber(ride.distance_km);
+    bucket.rides += 1;
+  }
+  return points;
+}
+
+/**
+ * Distance bars shaped to the active window (oldest → newest). Feed
+ * already-type-filtered rides; the time window is applied here:
+ *  - "all": the last 12 calendar months (rolling) ending at `now`.
+ *  - "year": Jan → Dec of the current year — future months stay empty.
+ *  - "90d"/"30d": one bar per day for the last 90 / 30 days.
+ * Out-of-range rides simply have no bucket and don't appear.
+ */
+export function computeDistanceSeries(
+  rides: readonly RideForStats[],
+  window: StatsWindow,
+  now = new Date(),
+): DistancePoint[] {
+  if (window === "30d" || window === "90d") {
+    const daysBack = window === "90d" ? 90 : 30;
+    const points: DistancePoint[] = [];
+    for (let i = daysBack - 1; i >= 0; i -= 1) {
+      points.push(
+        dayPoint(
+          new Date(now.getFullYear(), now.getMonth(), now.getDate() - i),
+        ),
+      );
+    }
+    return fillSeries(points, rides, localDateKey);
+  }
+  if (window === "year") {
+    const year = now.getFullYear();
+    const points = MONTH_LABELS.map((_, m) => monthPoint(year, m));
+    return fillSeries(points, rides, monthKeyOf);
+  }
+  const points: DistancePoint[] = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    points.push(monthPoint(d.getFullYear(), d.getMonth()));
+  }
+  return fillSeries(points, rides, monthKeyOf);
+}
+
+export interface QualityPoint {
+  /** `YYYY-MM` key for the calendar month. */
+  key: string;
+  /** Compact x-axis tick (month abbreviation). */
+  axisLabel: string;
+  /** Full tooltip label, e.g. "Jun 2026". */
+  tooltipLabel: string;
+  /** Distance-weighted average road quality (0–5), or null with no scored rides. */
+  avgQuality: number | null;
+  rides: number;
+}
+
+/**
+ * Monthly distance-weighted road-quality average for the last 12 calendar
+ * months ending at `now` (oldest → newest) — the "Quality trend · 12 months"
+ * card. Backed entirely by `ride.avg_road_quality` already on the ride list;
+ * a month with no scored rides yields `avgQuality: null` so the chart can gap
+ * it rather than plot a misleading zero.
+ */
+export function computeQualityTrend(
+  rides: readonly RideForStats[],
+  now = new Date(),
+): QualityPoint[] {
+  interface Acc {
+    point: QualityPoint;
+    weighted: number;
+    weight: number;
+    sum: number;
+    scored: number;
+  }
+  const accs: Acc[] = [];
+  const index = new Map<string, Acc>();
+  for (let i = 11; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const base = monthPoint(d.getFullYear(), d.getMonth());
+    const acc: Acc = {
+      point: { ...base, avgQuality: null, rides: 0 },
+      weighted: 0,
+      weight: 0,
+      sum: 0,
+      scored: 0,
+    };
+    accs.push(acc);
+    index.set(base.key, acc);
+  }
+
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const acc = index.get(monthKeyOf(date));
+    if (!acc) continue;
+    acc.point.rides += 1;
+    const quality = ride.avg_road_quality;
+    if (typeof quality !== "number" || !Number.isFinite(quality)) continue;
+    const distance = toNumber(ride.distance_km);
+    acc.weighted += quality * distance;
+    acc.weight += distance;
+    acc.sum += quality;
+    acc.scored += 1;
+  }
+
+  return accs.map(({ point, weighted, weight, sum, scored }) => {
+    if (scored === 0) return point;
+    // Distance-weight when distances exist; fall back to a plain mean so a
+    // month of zero-distance rides still reports its quality.
+    const avg = weight > 0 ? weighted / weight : sum / scored;
+    return { ...point, avgQuality: Math.round(avg * 100) / 100 };
+  });
+}
+
 export function computeYearlyTotals(
   rides: readonly RideForStats[],
 ): YearlyTotal[] {
@@ -219,6 +426,37 @@ export function computeCalendarHeatmap(
     if (!date || date.getFullYear() !== year) continue;
     const key = localDateKey(date);
     const day = byDate.get(key);
+    if (!day) continue;
+    day.distanceKm += toNumber(ride.distance_km);
+    day.rides += 1;
+  }
+
+  return [...byDate.values()];
+}
+
+/**
+ * Calendar-heatmap cells for the last `daysBack` days ending at `now`
+ * (oldest → newest). The rolling 30/90-day windows use this instead of a fixed
+ * calendar year so the "Riding days" grid covers the same span as the KPIs and
+ * the daily distance chart — including rides from the previous year when the
+ * window straddles Jan 1.
+ */
+export function computeRollingHeatmap(
+  rides: readonly RideForStats[],
+  daysBack: number,
+  now = new Date(),
+): CalendarDay[] {
+  const byDate = new Map<string, CalendarDay>();
+  for (let i = daysBack - 1; i >= 0; i -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = localDateKey(date);
+    byDate.set(key, { date: key, distanceKm: 0, rides: 0 });
+  }
+
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const day = byDate.get(localDateKey(date));
     if (!day) continue;
     day.distanceKm += toNumber(ride.distance_km);
     day.rides += 1;

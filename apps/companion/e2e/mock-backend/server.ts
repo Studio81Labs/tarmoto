@@ -2726,6 +2726,47 @@ export function buildApp(): Express {
     });
   });
 
+  // Surface + curviness breakdown. The real backend derives this from the
+  // rides' snapped `ride_segments → road_segments`; the mock returns a
+  // deterministic non-empty sample (or an empty breakdown when the filter
+  // matches no rides) so the stats cards exercise both render branches.
+  // Registered before `:rideId` so "stats" isn't captured as a rideId.
+  app.get(
+    "/api/v1/rides/stats/breakdown",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const rides = filterRides(req, session.user_id);
+      if (rides.length === 0) {
+        res.json({ surface: [], curviness: [], total_meters: 0 });
+        return;
+      }
+      const slice = (key: string, label: string, pct: number) => ({
+        key,
+        label,
+        meters: pct * 1000,
+        pct,
+      });
+      res.json({
+        surface: [
+          slice("asphalt", "Asphalt", 78),
+          slice("concrete", "Concrete", 8),
+          slice("cobblestone", "Cobblestone", 5),
+          slice("gravel", "Gravel", 7),
+          slice("dirt", "Dirt", 2),
+        ],
+        curviness: [
+          slice("straight", "Straight", 12),
+          slice("flowing", "Flowing", 28),
+          slice("twisty", "Twisty", 36),
+          slice("tight", "Tight", 18),
+          slice("hairpin", "Hairpin", 6),
+        ],
+        total_meters: 100000,
+      });
+    },
+  );
+
   // Public shared-ride view — anonymous access, no auth middleware.
   // Must register BEFORE `/api/v1/rides/:rideId` so the "shared"
   // segment isn't captured as a rideId.

@@ -14,32 +14,57 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
-import { Card, PageHeader, Stamp } from "@tarmoto/ui";
+import { BarChart3, Loader2 } from "lucide-react";
+import {
+  Card,
+  DataTable,
+  MetricTile,
+  Mono,
+  PageHeader,
+  SegmentedControl,
+  Stamp,
+  type DataTableColumn,
+  type MetricTileProps,
+  type SegmentedOption,
+} from "@tarmoto/ui";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { fetchAllRides } from "@/lib/rides-fetch";
+import {
+  fetchRideBreakdown,
+  type RideBreakdown,
+  type RideBreakdownSlice,
+} from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
+import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { usePreferencesStore } from "@/stores/preferences";
+import { splitFormattedDistance } from "@/lib/utils";
+import { kmToMiles } from "@tarmoto/shared";
 import {
   availableYears,
   computeAllTimeTotals,
   computeCalendarHeatmap,
-  computeMonthlyDistance,
+  computeDistanceSeries,
+  computeQualityTrend,
+  computeRollingHeatmap,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
   filterRides,
-  isRideType,
-  RIDE_TYPES,
+  STATS_WINDOWS,
+  type QualityPoint,
   type RideForStats,
   type RideFilters,
   type RideType,
+  type StatsWindow,
+  type YearlyTotal,
 } from "@/lib/ride-stats";
-const RIDE_TYPE_LABELS: Record<RideType, string> = {
-  free: "Free ride",
-  commute: "Commute",
-  trip: "Trip",
-  tracked: "Tracked",
-};
+const RIDE_TYPE_OPTIONS: SegmentedOption<string>[] = [
+  { value: "all", label: "All" },
+  { value: "free", label: "Free" },
+  { value: "commute", label: "Commute" },
+  { value: "trip", label: "Trip" },
+  { value: "tracked", label: "Tracked" },
+];
 // Year-over-year line palette tuned for cream surfaces. Each hue lands
 // at ≥3:1 against bg-cream so the chart lines read as distinct strokes
 // (WCAG 3:1 graphic-element bar). The plain canonical accent (#FF6A1A)
@@ -54,16 +79,13 @@ const YOY_COLORS = [
   "#A16207", // amber-700 (was yellow-400)
   "#047857", // emerald-700 (matches compare DeltaChip improved)
 ] as const;
-function formatDistanceTooltipValue(value: TooltipValueType | undefined) {
-  const numeric =
-    typeof value === "number" ? value : Number.parseFloat(String(value));
-  return Number.isFinite(numeric) ? `${numeric.toFixed(0)} km` : "—";
-}
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
+  const { format } = useNumberFormat();
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -87,34 +109,75 @@ export default function StatsPage() {
       cancelled = true;
     };
   }, [authReady]);
-  const years = useMemo(() => availableYears(rides), [rides]);
+  // Surface + curviness breakdown is a server-side per-segment aggregate, so it
+  // refetches whenever the active filter changes (unlike the client-aggregated
+  // cards). `null` = still loading; the card renders honest empty/error states.
+  const [breakdown, setBreakdown] = useState<RideBreakdown | null>(null);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!authReady) return;
+    let cancelled = false;
+    setBreakdown(null);
+    setBreakdownError(null);
+    fetchRideBreakdown(filters)
+      .then((data) => {
+        if (!cancelled) setBreakdown(data);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setBreakdownError(err.message || "Could not load the breakdown");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, filters]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
-  // The monthly + heatmap charts always need a single concrete year. When the
-  // year filter is "all" we anchor on the latest year that has data so the
-  // charts stay populated instead of going blank.
-  const focusYear =
-    filters.year !== "all"
-      ? filters.year
-      : (years[0] ?? new Date().getFullYear());
-  const monthly = useMemo(
-    () => computeMonthlyDistance(filtered, focusYear),
-    [filtered, focusYear],
-  );
-  const calendar = useMemo(
-    () => computeCalendarHeatmap(filtered, focusYear),
-    [filtered, focusYear],
-  );
-  const yoyYears = useMemo(() => years.slice(0, 3), [years]);
   // YoY and the "All years" table compare across years, so they ignore the
-  // year filter — otherwise selecting a single year would collapse both to a
-  // single data point.
+  // time window — otherwise a windowed filter would collapse both to a single
+  // data point. Ride-type still applies.
   const ridesAcrossYears = useMemo(
-    () => filterRides(rides, { ...filters, year: "all" }),
+    () => filterRides(rides, { ...filters, window: "all" }),
     [rides, filters],
   );
+  // Year anchors come from the ride-type-filtered set so the calendar/YoY/all
+  // years stay in scope — otherwise picking "Trip" could anchor the calendar on
+  // a year that only has commutes and render an empty grid.
+  const years = useMemo(
+    () => availableYears(ridesAcrossYears),
+    [ridesAcrossYears],
+  );
+  // The rolling distance chart shows the last 12 calendar months of the
+  // filtered rides. The heatmap still needs one concrete year: anchor on the
+  // current year for windowed filters, or the latest year with data for "all".
+  const focusYear =
+    filters.window === "all"
+      ? (years[0] ?? new Date().getFullYear())
+      : new Date().getFullYear();
+  const series = useMemo(
+    () => computeDistanceSeries(filtered, filters.window),
+    [filtered, filters.window],
+  );
+  // For the short rolling windows the heatmap follows the window's day span
+  // (so a 90/30-day window crossing Jan 1 still shows the previous-year days the
+  // KPIs/chart include); for year/all it stays a full calendar-year grid.
+  const calendar = useMemo(
+    () =>
+      filters.window === "30d" || filters.window === "90d"
+        ? computeRollingHeatmap(filtered, filters.window === "90d" ? 90 : 30)
+        : computeCalendarHeatmap(filtered, focusYear),
+    [filtered, filters.window, focusYear],
+  );
+  const yoyYears = useMemo(() => years.slice(0, 3), [years]);
   const yearlyTotals = useMemo(
     () => computeYearlyTotals(ridesAcrossYears),
+    [ridesAcrossYears],
+  );
+  // Quality trend is the last 12 months regardless of the window (ride-type
+  // still applies), computed client-side from `avg_road_quality`.
+  const qualityTrend = useMemo(
+    () => computeQualityTrend(ridesAcrossYears),
     [ridesAcrossYears],
   );
   const yoy = useMemo(
@@ -156,26 +219,113 @@ export default function StatsPage() {
       </div>
     );
   }
+  const windowLabel =
+    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time";
+  // The chart switches from monthly to daily bars on the short windows; the
+  // header copy follows so "Distance by day" reads honestly for 90/30 days.
+  const isDayView = filters.window === "30d" || filters.window === "90d";
+  const chartStamp = isDayView ? "Distance by day" : "Distance by month";
+  const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
+  // The heatmap spans the rolling window on day views, a calendar year otherwise.
+  const heatmapLabel = isDayView ? windowLabel : String(focusYear);
+  // `key` is unique per bar, so the axis tick + tooltip both resolve their
+  // human labels through this map rather than the (ambiguous) display string.
+  const seriesByKey = new Map(series.map((point) => [point.key, point]));
+  const tickLabel = (key: string) => seriesByKey.get(key)?.axisLabel ?? key;
+  const tooltipLabel = (key: string) =>
+    seriesByKey.get(key)?.tooltipLabel ?? key;
+  // Charts plot in the rider's display unit so a single card never mixes km and
+  // mi. `value` is the converted distance the bars/axis/tooltip read.
+  const distanceUnit = unitSystem === "imperial" ? "mi" : "km";
+  const toDisplayDistance = (km: number) =>
+    unitSystem === "imperial" ? kmToMiles(km) : km;
+  const chartData = series.map((point) => ({
+    ...point,
+    value: toDisplayDistance(point.distanceKm),
+  }));
+  // "… total" sums only the displayed buckets (not all-time), so the
+  // "Last 12 months" / windowed chart and its total stay in agreement.
+  const seriesTotalKm = series.reduce((acc, p) => acc + p.distanceKm, 0);
+  const chartTotal = splitFormattedDistance(seriesTotalKm, unitSystem);
+  const distanceTooltip = (value: TooltipValueType | undefined) => {
+    const n =
+      typeof value === "number" ? value : Number.parseFloat(String(value));
+    return Number.isFinite(n) ? `${Math.round(n)} ${distanceUnit}` : "—";
+  };
+  // YoY values are km on the wire; convert each year's series to the display
+  // unit so the chart, axis and tooltip match the unit-aware KPIs/table.
+  const yoyDisplay = yoy.map((point) => {
+    const next = { ...point };
+    for (const year of yoyYears) {
+      next[String(year)] = toDisplayDistance(Number(point[String(year)] ?? 0));
+    }
+    return next;
+  });
+  const formatDistance = (km: number) => {
+    const d = splitFormattedDistance(km, unitSystem);
+    return `${format(d.value)} ${d.unit.toLowerCase()}`;
+  };
+  const yearColumns: DataTableColumn<YearlyTotal>[] = [
+    {
+      key: "year",
+      label: t("Year"),
+      primary: true,
+      render: (row) => <span className="font-bold text-ink">{row.year}</span>,
+    },
+    {
+      key: "rides",
+      label: t("Rides"),
+      align: "right",
+      numeric: true,
+      render: (row) => format(row.rides),
+    },
+    {
+      key: "distance",
+      label: t("Distance"),
+      align: "right",
+      numeric: true,
+      render: (row) => formatDistance(row.distanceKm),
+    },
+    {
+      key: "avg",
+      label: t("Avg / ride"),
+      align: "right",
+      numeric: true,
+      render: (row) =>
+        row.rides > 0 ? formatDistance(row.distanceKm / row.rides) : "—",
+    },
+  ];
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in space-y-8 p-7">
-      <StatsPageHeader
-        right={
-          <FilterBar filters={filters} years={years} onChange={setFilters} />
-        }
+    <div className="mx-auto w-full max-w-page animate-fade-in space-y-[18px] p-4 md:p-7">
+      <StatsPageHeader />
+
+      {/* Filters sit under the heading (matching Ride History) rather than on
+          the header row. */}
+      <FilterBar filters={filters} onChange={setFilters} />
+
+      <TotalsGrid
+        totals={totals}
+        windowLabel={windowLabel.toLowerCase()}
+        unitSystem={unitSystem}
+        format={format}
       />
 
-      <TotalsGrid totals={totals} />
-
-      <Card padded={false} className="p-5">
-        <ChartHeader
-          icon={<BarChart3 size={16} />}
-          title={`Monthly distance — ${focusYear}`}
-          subtitle="Distance ridden each month."
+      <Card padded={false} className="p-[22px]">
+        <SectionHeading
+          className="mb-[18px]"
+          stamp={t(chartStamp)}
+          title={chartTitle}
+          caption={
+            <>
+              {format(chartTotal.value)} {chartTotal.unit.toLowerCase()}{" "}
+              {t("total")}
+            </>
+          }
         />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={monthly}
+              data={chartData}
               margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
             >
               <CartesianGrid
@@ -183,10 +333,13 @@ export default function StatsPage() {
                 stroke="rgba(14, 14, 16, 0.10)"
               />
               <XAxis
-                dataKey="monthLabel"
+                dataKey="key"
                 stroke="rgba(14, 14, 16, 0.42)"
                 fontSize={12}
                 tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={16}
+                tickFormatter={(value: string) => tickLabel(value)}
               />
               <YAxis
                 stroke="rgba(14, 14, 16, 0.42)"
@@ -204,40 +357,49 @@ export default function StatsPage() {
                   fontSize: 12,
                 }}
                 labelStyle={{ color: "#0E0E10" }}
-                formatter={(value) => [
-                  formatDistanceTooltipValue(value),
-                  "Distance",
-                ]}
+                labelFormatter={(label) => tooltipLabel(String(label))}
+                formatter={(value) => [distanceTooltip(value), "Distance"]}
               />
               {/* Dark brand-orange #D44F00 ≈ 4.3:1 on cream; canonical
                   #FF6A1A is only ~2.5:1 and fails the WCAG 3:1
                   graphic-element bar for the monthly distance bars. */}
-              <Bar dataKey="distanceKm" fill="#D44F00" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="#D44F00" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      <Card padded={false} className="p-5">
-        <ChartHeader
-          icon={<CalendarDays size={16} />}
-          title={`Calendar heatmap — ${focusYear}`}
-          subtitle="Each cell is one day. Brighter = longer ride."
+      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
+        <SurfaceBreakdownCard breakdown={breakdown} error={breakdownError} />
+        <CurvinessMixCard breakdown={breakdown} error={breakdownError} />
+      </div>
+
+      <QualityTrendCard points={qualityTrend} />
+
+      <Card padded={false} className="p-[22px]">
+        <SectionHeading
+          className="mb-[18px]"
+          stamp={`${t("Calendar")} · ${heatmapLabel}`}
+          title={t("Riding days")}
+          caption={t("brighter = longer ride")}
         />
-        <CalendarHeatmap days={calendar} year={focusYear} />
+        <CalendarHeatmap days={calendar} label={heatmapLabel} />
       </Card>
 
       {yoyYears.length >= 2 && (
-        <Card padded={false} className="p-5">
-          <ChartHeader
-            icon={<TrendingUp size={16} />}
-            title={t("Year-over-year")}
-            subtitle={`Monthly distance, last ${yoyYears.length} years.`}
+        <Card padded={false} className="p-[22px]">
+          <SectionHeading
+            className="mb-[18px]"
+            stamp={t("Year-over-year")}
+            title={`${t("Monthly distance")} · ${t("last {count} years", {
+              count: yoyYears.length,
+            })}`}
+            caption={`${distanceUnit} / month`}
           />
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={yoy}
+                data={yoyDisplay}
                 margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
               >
                 <CartesianGrid
@@ -266,7 +428,7 @@ export default function StatsPage() {
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "#0E0E10" }}
-                  formatter={formatDistanceTooltipValue}
+                  formatter={distanceTooltip}
                 />
                 <Legend
                   wrapperStyle={{
@@ -292,53 +454,20 @@ export default function StatsPage() {
       )}
 
       {yearlyTotals.length > 0 && (
-        <Card padded={false} className="p-5">
-          <ChartHeader
-            icon={<BarChart3 size={16} />}
-            title={t("All years")}
-            subtitle="Total distance per calendar year."
-          />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
-                  <th className="py-2 pr-4 font-semibold">{t("Year")}</th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Rides")}
-                  </th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Distance ")}
-                  </th>
-                  <th className="py-2 font-semibold text-right">
-                    {t("Avg / ride")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {yearlyTotals
-                  .slice()
-                  .reverse()
-                  .map((row) => (
-                    <tr key={row.year} className="text-ink">
-                      <td className="py-2 pr-4 font-medium">{row.year}</td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {row.rides}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {row.distanceKm.toFixed(0)}
-                        {t("km ")}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-fg-dim">
-                        {row.rides > 0
-                          ? `${(row.distanceKm / row.rides).toFixed(0)} km`
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <DataTable<YearlyTotal>
+          ariaLabel={t("Distance by year")}
+          showCaret={false}
+          header={
+            <SectionHeading
+              className="px-5 pb-4 pt-5"
+              stamp={t("Annual totals")}
+              title={t("All years")}
+            />
+          }
+          columns={yearColumns}
+          rows={yearlyTotals.slice().reverse()}
+          rowKey={(row) => String(row.year)}
+        />
       )}
     </div>
   );
@@ -351,7 +480,7 @@ export default function StatsPage() {
 // is intentionally hidden on the stats route (the wider `RIDES`
 // sidebar item ships `Statistics` as a sibling top-level page,
 // not a sub-section).
-function StatsPageHeader({ right }: { right?: React.ReactNode }) {
+function StatsPageHeader() {
   return (
     <PageHeader
       stamp={t("Statistics")}
@@ -360,140 +489,380 @@ function StatsPageHeader({ right }: { right?: React.ReactNode }) {
       sub={t(
         "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
       )}
-      right={right}
     />
   );
 }
 
 interface FilterBarProps {
   filters: RideFilters;
-  years: number[];
   onChange: (filters: RideFilters) => void;
 }
-function FilterBar({ filters, years, onChange }: FilterBarProps) {
+const WINDOW_OPTIONS: SegmentedOption<StatsWindow>[] = STATS_WINDOWS.map(
+  (w) => ({
+    value: w.value,
+    label: w.label,
+  }),
+);
+// Filters mirror the Ride History controls: a time-window pill group + a
+// ride-type group, both the shared `SegmentedControl`.
+function FilterBar({ filters, onChange }: FilterBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <FilterSelect
-        label="Year"
-        value={filters.year === "all" ? "all" : String(filters.year)}
-        onChange={(value) =>
-          onChange({
-            ...filters,
-            year: value === "all" ? "all" : Number(value),
-          })
-        }
-        options={[
-          { value: "all", label: "All years" },
-          ...years.map((y) => ({ value: String(y), label: String(y) })),
-        ]}
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <SegmentedControl
+        ariaLabel={t("Time window")}
+        value={filters.window}
+        onChange={(window) => onChange({ ...filters, window })}
+        options={WINDOW_OPTIONS}
       />
-      <FilterSelect
-        label="Ride type"
+      <SegmentedControl
+        ariaLabel={t("Ride type filter")}
         value={filters.rideType}
-        onChange={(value) =>
+        onChange={(next) =>
           onChange({
             ...filters,
-            rideType: value === "all" || !isRideType(value) ? "all" : value,
+            rideType: next === "all" ? "all" : (next as RideType),
           })
         }
-        options={[
-          { value: "all", label: "All types" },
-          ...RIDE_TYPES.map((rideType) => ({
-            value: rideType,
-            label: RIDE_TYPE_LABELS[rideType],
-          })),
-        ]}
+        options={RIDE_TYPE_OPTIONS}
       />
     </div>
-  );
-}
-interface FilterSelectProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: {
-    value: string;
-    label: string;
-  }[];
-}
-function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
-  return (
-    <label className="flex items-center gap-2 text-xs text-fg-dim">
-      <span className="uppercase tracking-wider font-semibold">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-paper border border-line-strong rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-ink"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 interface TotalsGridProps {
   totals: ReturnType<typeof computeAllTimeTotals>;
+  /** Active window label (e.g. "all time") shown as the lead KPI's delta. */
+  windowLabel: string;
+  unitSystem: Parameters<typeof splitFormattedDistance>[1];
+  format: (value: number) => string;
 }
-function TotalsGrid({ totals }: TotalsGridProps) {
-  const cards = [
+// KPI bricks (§12) — the shared `MetricTile`. Distance leads on an ink tile
+// with the accent number; the remaining four use the default cream tile.
+// Distance values are unit-aware (km/mi) so imperial users see honest numbers.
+function TotalsGrid({
+  totals,
+  windowLabel,
+  unitSystem,
+  format,
+}: TotalsGridProps) {
+  const distance = splitFormattedDistance(totals.totalDistanceKm, unitSystem);
+  const avgPerRide = splitFormattedDistance(
+    totals.avgRideDistanceKm,
+    unitSystem,
+  );
+  const tiles: MetricTileProps[] = [
     {
-      label: "Total distance",
-      value: totals.totalDistanceKm.toFixed(0),
-      unit: "km",
+      label: t("Total distance"),
+      value: distance.value,
+      unit: distance.unit,
+      formatValue: format,
+      variant: "ink",
+      accentNumber: true,
+      delta: windowLabel,
     },
-    { label: "Total rides", value: String(totals.totalRides), unit: "" },
     {
-      label: "Total hours",
+      label: t("Total rides"),
+      value: totals.totalRides,
+      formatValue: format,
+    },
+    {
+      label: t("Total hours"),
       value: totals.totalHours.toFixed(1),
       unit: "h",
     },
     {
-      label: "Riding days",
-      value: String(totals.ridingDays),
-      unit: "",
+      label: t("Riding days"),
+      value: totals.ridingDays,
+      formatValue: format,
     },
     {
-      label: "Avg per ride",
-      value:
-        totals.totalRides === 0 ? "0" : totals.avgRideDistanceKm.toFixed(0),
-      unit: "km",
+      label: t("Avg per ride"),
+      value: totals.totalRides === 0 ? "0" : avgPerRide.value,
+      unit: avgPerRide.unit,
+      formatValue: format,
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-      {cards.map((stat) => (
-        <Card key={stat.label} padded={false} className="p-4">
-          <Stamp>{stat.label}</Stamp>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
-            {stat.value}
-            {stat.unit && (
-              <span className="ml-1 text-sm font-normal text-fg-dim">
-                {stat.unit}
-              </span>
-            )}
-          </p>
-        </Card>
+    <div className="grid grid-cols-2 gap-[14px] md:grid-cols-5">
+      {tiles.map((tile) => (
+        <MetricTile key={tile.label} {...tile} />
       ))}
     </div>
   );
 }
-interface ChartHeaderProps {
-  icon: React.ReactNode;
+interface SectionHeadingProps {
+  /** Mono uppercase eyebrow, e.g. "Year-over-year". */
+  stamp: string;
+  /** Big Space Grotesk title, e.g. "Monthly distance · last 3 years". */
   title: string;
-  subtitle?: string;
+  /** Optional right-aligned mono caption, e.g. "km / month". */
+  caption?: React.ReactNode;
+  className?: string;
 }
-function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
+// The single card-header pattern (§ design): mono stamp eyebrow → 20px bold
+// title, with an optional right-aligned mono caption. Shared by the distance
+// chart, calendar heatmap, year-over-year and all-years cards so every section
+// reads with the same chrome.
+function SectionHeading({
+  stamp,
+  title,
+  caption,
+  className,
+}: SectionHeadingProps) {
   return (
-    <div className="mb-4">
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-accent">{icon}</span>
-        <h2 className="text-sm font-semibold">{title}</h2>
+    <div
+      className={`flex flex-wrap items-end justify-between gap-4 ${className ?? ""}`}
+    >
+      <div>
+        <Stamp>{stamp}</Stamp>
+        <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          {title}
+        </div>
       </div>
-      {subtitle && <p className="mt-0.5 text-xs text-fg-dim">{subtitle}</p>}
+      {caption && (
+        <Mono className="shrink-0 text-[11px] text-fg-dim">{caption}</Mono>
+      )}
     </div>
+  );
+}
+
+// Surface swatches keyed by the canonical `SURFACE_TYPES`. Hex values match the
+// v2 design's surface legend; kept inline (like the chart colours) so SSR and
+// CSS render identically.
+const SURFACE_COLORS: Record<string, string> = {
+  asphalt: "#26262B",
+  concrete: "#9A958C",
+  cobblestone: "#A971D6",
+  gravel: "#D2A06A",
+  dirt: "#7E5A3C",
+  unknown: "#C7C0B2",
+};
+const surfaceColor = (key: string) => SURFACE_COLORS[key] ?? "#C7C0B2";
+// Light track behind the curviness/quality bars (paper-on-cream).
+const TRACK_COLOR = "#E7DECF";
+
+interface BreakdownBodyProps {
+  breakdown: RideBreakdown | null;
+  error: string | null;
+  slices: RideBreakdownSlice[] | undefined;
+  emptyLabel: string;
+  children: (slices: RideBreakdownSlice[]) => React.ReactNode;
+}
+// Shared loading / error / empty gate for the two breakdown cards so each
+// renders an honest state instead of an all-zero chart.
+function BreakdownBody({
+  breakdown,
+  error,
+  slices,
+  emptyLabel,
+  children,
+}: BreakdownBodyProps) {
+  if (error) {
+    return <p className="text-sm text-fg-dim">{error}</p>;
+  }
+  if (!breakdown) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-fg-dim">
+        <Loader2 size={14} className="animate-spin" />
+        {t("Loading… ")}
+      </div>
+    );
+  }
+  if (!slices || slices.length === 0) {
+    return <p className="text-sm text-fg-dim">{emptyLabel}</p>;
+  }
+  return <>{children(slices)}</>;
+}
+
+interface BreakdownCardProps {
+  breakdown: RideBreakdown | null;
+  error: string | null;
+}
+function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Surface breakdown")}
+        title={t("By distance ridden")}
+      />
+      <BreakdownBody
+        breakdown={breakdown}
+        error={error}
+        slices={breakdown?.surface}
+        emptyLabel={t(
+          "No road surfaces yet — needs rides matched to known roads.",
+        )}
+      >
+        {(slices) => (
+          <>
+            <div className="flex h-3 overflow-hidden rounded-full">
+              {slices.map((s) => (
+                <div
+                  key={s.key}
+                  style={{
+                    width: `${s.pct}%`,
+                    backgroundColor: surfaceColor(s.key),
+                  }}
+                  title={`${s.label} · ${s.pct}%`}
+                />
+              ))}
+            </div>
+            <ul className="mt-4 space-y-2.5">
+              {slices.map((s) => (
+                <li
+                  key={s.key}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: surfaceColor(s.key) }}
+                    />
+                    <span className="text-ink">{s.label}</span>
+                  </span>
+                  <Mono className="text-fg-dim">{s.pct}%</Mono>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </BreakdownBody>
+    </Card>
+  );
+}
+
+function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Curviness mix")}
+        title={t("How twisty was your year")}
+      />
+      <BreakdownBody
+        breakdown={breakdown}
+        error={error}
+        slices={breakdown?.curviness}
+        emptyLabel={t(
+          "No curviness data yet — needs rides matched to known roads.",
+        )}
+      >
+        {(slices) => {
+          // Accent the single dominant band; ties default to none so we never
+          // light up two bars as "the" peak.
+          const top = slices.reduce(
+            (best, s) => (s.pct > best ? s.pct : best),
+            0,
+          );
+          const peakCount = slices.filter((s) => s.pct === top).length;
+          return (
+            <div className="space-y-3">
+              {slices.map((s) => {
+                const isPeak = top > 0 && s.pct === top && peakCount === 1;
+                return (
+                  <div key={s.key}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-ink">{s.label}</span>
+                      <Mono className="text-fg-dim">{s.pct}%</Mono>
+                    </div>
+                    <div
+                      className="mt-1.5 h-2 overflow-hidden rounded-full"
+                      style={{ backgroundColor: TRACK_COLOR }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${s.pct}%`,
+                          backgroundColor: isPeak ? "#D44F00" : "#26262B",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }}
+      </BreakdownBody>
+    </Card>
+  );
+}
+
+function QualityTrendCard({ points }: { points: QualityPoint[] }) {
+  const hasData = points.some((p) => p.avgQuality !== null);
+  const byKey = new Map(points.map((p) => [p.key, p]));
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Quality trend · 12 months")}
+        title={t("Average road quality")}
+        caption={t("0–5 scale")}
+      />
+      {hasData ? (
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={points}
+              margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(14, 14, 16, 0.10)"
+              />
+              <XAxis
+                dataKey="key"
+                stroke="rgba(14, 14, 16, 0.42)"
+                fontSize={12}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={16}
+                tickFormatter={(value: string) =>
+                  byKey.get(value)?.axisLabel ?? value
+                }
+              />
+              <YAxis
+                stroke="rgba(14, 14, 16, 0.42)"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                width={32}
+                domain={[0, 5]}
+                ticks={[0, 1, 2, 3, 4, 5]}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "#F5EFE6",
+                  border: "1px solid rgba(14, 14, 16, 0.10)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: "#0E0E10" }}
+                labelFormatter={(label) =>
+                  byKey.get(String(label))?.tooltipLabel ?? String(label)
+                }
+                formatter={(value) => [
+                  typeof value === "number" ? value.toFixed(2) : "—",
+                  "Avg quality",
+                ]}
+              />
+              <Line
+                type="monotone"
+                dataKey="avgQuality"
+                stroke="#D44F00"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                connectNulls={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <p className="text-sm text-fg-dim">
+          {t("No scored rides in the last 12 months.")}
+        </p>
+      )}
+    </Card>
   );
 }
 interface CalendarHeatmapProps {
@@ -502,14 +871,22 @@ interface CalendarHeatmapProps {
     distanceKm: number;
     rides: number;
   }[];
-  year: number;
+  /** Period shown (year or window label) — used only for the a11y label. */
+  label: string;
 }
-function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
+function CalendarHeatmap({ days, label }: CalendarHeatmapProps) {
   // Find the max so cell intensity scales relative to this filtered view
   // rather than to a hard-coded ceiling that would wash out short rides.
   const maxDistance = days.reduce((acc, d) => Math.max(acc, d.distanceKm), 0);
   // Pad the start so the first column begins on Sunday (column = day of week).
-  const firstDay = new Date(year, 0, 1).getDay();
+  // Derive the weekday from the first day shown so the grid aligns for both the
+  // calendar-year and rolling-window views.
+  const firstDay = (() => {
+    const first = days[0]?.date;
+    if (!first) return 0;
+    const [y, m, d] = first.split("-").map(Number);
+    return new Date(y!, m! - 1, d!).getDay();
+  })();
   type Cell = {
     date: string;
     distanceKm: number;
@@ -519,17 +896,23 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
     ...Array.from<Cell>({ length: firstDay }).fill(null),
     ...days,
   ];
+  // Flexible week columns (one per ~7 days) sized at `1fr` so the grid stretches
+  // to the full card width instead of leaving the fixed-width strip + empty
+  // gutter the old 12px columns produced. The container's aspect ratio keeps the
+  // day cells square as they grow.
+  const weeks = Math.ceil(cells.length / 7);
   return (
     <div className="space-y-3">
       <div
-        className="grid gap-[3px] overflow-x-auto"
+        className="grid gap-[3px]"
         style={{
-          gridTemplateRows: "repeat(7, 12px)",
+          gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
+          gridTemplateRows: "repeat(7, 1fr)",
           gridAutoFlow: "column",
-          gridAutoColumns: "12px",
+          aspectRatio: `${weeks} / 7`,
         }}
         role="img"
-        aria-label={`Riding calendar for ${year}`}
+        aria-label={`Riding calendar — ${label}`}
       >
         {cells.map((cell, index) => (
           <CalendarCell key={index} cell={cell} maxDistance={maxDistance} />

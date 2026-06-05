@@ -1110,4 +1110,90 @@ describe('RidesService', () => {
       expect(res.new_roads).toBe(0);
     });
   });
+
+  describe('breakdown', () => {
+    // `breakdown()` calls `base()` twice (surface, then curviness) inside a
+    // Promise.all. Each base() builds: createQueryBuilder → where →
+    // applyRidesFilters (andWhere) → innerJoin → innerJoin, then
+    // select/addSelect/groupBy/getRawMany.
+    function makeBreakdownQb(rows: Array<{ key: string; meters: string }>) {
+      const andWhere = jest.fn().mockReturnThis();
+      const qb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+      };
+      return { qb, andWhere };
+    }
+
+    it('returns distance-weighted surface + curviness percentages', async () => {
+      const surface = makeBreakdownQb([
+        { key: 'asphalt', meters: '7000' },
+        { key: 'concrete', meters: '2000' },
+        { key: 'gravel', meters: '1000' },
+      ]);
+      const curviness = makeBreakdownQb([
+        { key: 'straight', meters: '2000' },
+        { key: 'twisty', meters: '5000' },
+        { key: 'hairpin', meters: '3000' },
+      ]);
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(surface.qb)
+        .mockReturnValueOnce(curviness.qb);
+
+      const res = await service.breakdown('user-1', { type: 'trip' });
+
+      expect(res.total_meters).toBe(10000);
+      // Surface: canonical order, zero-distance surfaces omitted.
+      expect(res.surface).toEqual([
+        { key: 'asphalt', label: 'Asphalt', meters: 7000, pct: 70 },
+        { key: 'concrete', label: 'Concrete', meters: 2000, pct: 20 },
+        { key: 'gravel', label: 'Gravel', meters: 1000, pct: 10 },
+      ]);
+      // Curviness: full straight→hairpin ladder, empty bands at 0%.
+      expect(res.curviness.map((c) => c.key)).toEqual([
+        'straight',
+        'flowing',
+        'twisty',
+        'tight',
+        'hairpin',
+      ]);
+      expect(res.curviness).toContainEqual({
+        key: 'twisty',
+        label: 'Twisty',
+        meters: 5000,
+        pct: 50,
+      });
+      expect(res.curviness).toContainEqual({
+        key: 'flowing',
+        label: 'Flowing',
+        meters: 0,
+        pct: 0,
+      });
+
+      // The active filter reaches the joined aggregate.
+      expect(
+        surface.andWhere.mock.calls.some(
+          (c: unknown[]) =>
+            typeof c[0] === 'string' && c[0].includes('ride_type ='),
+        ),
+      ).toBe(true);
+    });
+
+    it('returns an honest empty breakdown when no segments are snapped', async () => {
+      const surface = makeBreakdownQb([]);
+      const curviness = makeBreakdownQb([]);
+      (rideRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce(surface.qb)
+        .mockReturnValueOnce(curviness.qb);
+
+      const res = await service.breakdown('user-1', {});
+
+      expect(res).toEqual({ surface: [], curviness: [], total_meters: 0 });
+    });
+  });
 });
