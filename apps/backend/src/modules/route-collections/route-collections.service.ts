@@ -109,10 +109,19 @@ export class RouteCollectionsService {
         .leftJoin('c.owner', 'owner')
         .leftJoin('privacy_preferences', 'pp', 'pp.user_id = c.owner_id')
         .where("c.visibility = 'public'")
-        .andWhere('owner.deleted_at IS NULL')
-        .andWhere(
+        .andWhere('owner.deleted_at IS NULL');
+      if (viewerId) {
+        // Signed-in viewers see public + riders-only owners (NULL = the
+        // riders-only default); only `private` profiles are hidden.
+        qb.andWhere(
           "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
         );
+      } else {
+        // Anonymous viewers only see public-profile owners — `riders-only`
+        // (and the NULL default) is a signed-in-only audience, so showing the
+        // owner_id/owner_name to logged-out callers would leak their identity.
+        qb.andWhere("pp.profile_visibility = 'public'");
+      }
       if (search) qb.andWhere('c.title ILIKE :q', { q: `%${search}%` });
       return qb;
     };

@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { canShowPersonalizedRecommendations } from '@tarmoto/shared';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { PushService } from '../push/index.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   FollowUserResponseDto,
   FollowerDto,
@@ -31,6 +33,7 @@ export class FollowersService {
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
     private readonly pushService: PushService,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async follow(
@@ -159,6 +162,12 @@ export class FollowersService {
     userId: string,
     limit = 6,
   ): Promise<SuggestedRiderDto[]> {
+    // "People you might follow" is an inherently personal recommendation
+    // (ranked by the caller's region + follow graph), so it returns nothing
+    // when the rider has opted out of personalised recommendations (#279).
+    const prefs = await this.privacy.loadPreferences(userId);
+    if (!canShowPersonalizedRecommendations(prefs)) return [];
+
     const me = await this.userRepo.findOne({
       where: { id: userId },
       select: { home_region: true },
