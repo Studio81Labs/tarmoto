@@ -378,9 +378,12 @@ export class RidesService {
 
     const [surfaceRows, curvinessRows] = await Promise.all([
       base()
-        .select('road.surface_type', 'key')
+        // `surface_type` can be NULL (the aggregation pipeline preserves it
+        // when no surface mode exists); fold those metres into "unknown" so
+        // they stay visible and the slices still sum to the total distance.
+        .select("COALESCE(road.surface_type, 'unknown')", 'key')
         .addSelect('COALESCE(SUM(road.length_m), 0)', 'meters')
-        .groupBy('road.surface_type')
+        .groupBy("COALESCE(road.surface_type, 'unknown')")
         .getRawMany<{ key: string; meters: string }>(),
       base()
         .select(curvinessCase, 'key')

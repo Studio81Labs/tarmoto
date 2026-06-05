@@ -19,7 +19,10 @@ export async function fetchRideBreakdown(
 ): Promise<RideBreakdown> {
   const start = windowStart(filters.window, now);
   const query: { started_from?: string; type?: RideType } = {};
-  if (start) query.started_from = start.toISOString().slice(0, 10);
+  // Send the exact instant (not a truncated date) so the server aggregate uses
+  // the same lower bound as the client-side KPI filter — otherwise the cards
+  // would count rides from midnight on the boundary day that the KPIs exclude.
+  if (start) query.started_from = start.toISOString();
   if (filters.rideType !== "all") query.type = filters.rideType;
 
   const { data, error } = await api.GET("/api/v1/rides/stats/breakdown", {
@@ -27,7 +30,7 @@ export async function fetchRideBreakdown(
   });
   if (error) {
     const apiMessage =
-      error && typeof error === "object" && "message" in error
+      typeof error === "object" && error !== null && "message" in error
         ? (error as { message?: unknown }).message
         : undefined;
     throw new Error(

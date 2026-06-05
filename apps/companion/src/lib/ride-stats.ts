@@ -101,9 +101,16 @@ export function windowStart(
 ): Date | null {
   if (window === "all") return null;
   if (window === "year") return new Date(now.getFullYear(), 0, 1);
-  const d = new Date(now);
-  d.setDate(d.getDate() - (window === "90d" ? 90 : 30));
-  return d;
+  // Start of the calendar day `days - 1` before today, so the window spans
+  // exactly `days` calendar days including today. This keeps the rolling KPI
+  // filter, the daily chart buckets (`computeDistanceSeries`) and the server
+  // breakdown bound on the same day — no ride lands in one but not the others.
+  const days = window === "90d" ? 90 : 30;
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - (days - 1),
+  );
 }
 
 export function isRideType(value: unknown): value is RideType {

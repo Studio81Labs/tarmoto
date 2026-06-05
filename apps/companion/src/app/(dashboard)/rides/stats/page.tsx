@@ -38,6 +38,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import { usePreferencesStore } from "@/stores/preferences";
 import { splitFormattedDistance } from "@/lib/utils";
+import { kmToMiles } from "@tarmoto/shared";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -77,11 +78,6 @@ const YOY_COLORS = [
   "#A16207", // amber-700 (was yellow-400)
   "#047857", // emerald-700 (matches compare DeltaChip improved)
 ] as const;
-function formatDistanceTooltipValue(value: TooltipValueType | undefined) {
-  const numeric =
-    typeof value === "number" ? value : Number.parseFloat(String(value));
-  return Number.isFinite(numeric) ? `${numeric.toFixed(0)} km` : "—";
-}
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,9 +131,22 @@ export default function StatsPage() {
       cancelled = true;
     };
   }, [authReady, filters]);
-  const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
+  // YoY and the "All years" table compare across years, so they ignore the
+  // time window — otherwise a windowed filter would collapse both to a single
+  // data point. Ride-type still applies.
+  const ridesAcrossYears = useMemo(
+    () => filterRides(rides, { ...filters, window: "all" }),
+    [rides, filters],
+  );
+  // Year anchors come from the ride-type-filtered set so the calendar/YoY/all
+  // years stay in scope — otherwise picking "Trip" could anchor the calendar on
+  // a year that only has commutes and render an empty grid.
+  const years = useMemo(
+    () => availableYears(ridesAcrossYears),
+    [ridesAcrossYears],
+  );
   // The rolling distance chart shows the last 12 calendar months of the
   // filtered rides. The heatmap still needs one concrete year: anchor on the
   // current year for windowed filters, or the latest year with data for "all".
@@ -154,13 +163,6 @@ export default function StatsPage() {
     [filtered, focusYear],
   );
   const yoyYears = useMemo(() => years.slice(0, 3), [years]);
-  // YoY and the "All years" table compare across years, so they ignore the
-  // time window — otherwise a windowed filter would collapse both to a single
-  // data point. Ride-type still applies.
-  const ridesAcrossYears = useMemo(
-    () => filterRides(rides, { ...filters, window: "all" }),
-    [rides, filters],
-  );
   const yearlyTotals = useMemo(
     () => computeYearlyTotals(ridesAcrossYears),
     [ridesAcrossYears],
@@ -223,10 +225,33 @@ export default function StatsPage() {
   const tickLabel = (key: string) => seriesByKey.get(key)?.axisLabel ?? key;
   const tooltipLabel = (key: string) =>
     seriesByKey.get(key)?.tooltipLabel ?? key;
-  const totalDistance = splitFormattedDistance(
-    totals.totalDistanceKm,
-    unitSystem,
-  );
+  // Charts plot in the rider's display unit so a single card never mixes km and
+  // mi. `value` is the converted distance the bars/axis/tooltip read.
+  const distanceUnit = unitSystem === "imperial" ? "mi" : "km";
+  const toDisplayDistance = (km: number) =>
+    unitSystem === "imperial" ? kmToMiles(km) : km;
+  const chartData = series.map((point) => ({
+    ...point,
+    value: toDisplayDistance(point.distanceKm),
+  }));
+  // "… total" sums only the displayed buckets (not all-time), so the
+  // "Last 12 months" / windowed chart and its total stay in agreement.
+  const seriesTotalKm = series.reduce((acc, p) => acc + p.distanceKm, 0);
+  const chartTotal = splitFormattedDistance(seriesTotalKm, unitSystem);
+  const distanceTooltip = (value: TooltipValueType | undefined) => {
+    const n =
+      typeof value === "number" ? value : Number.parseFloat(String(value));
+    return Number.isFinite(n) ? `${Math.round(n)} ${distanceUnit}` : "—";
+  };
+  // YoY values are km on the wire; convert each year's series to the display
+  // unit so the chart, axis and tooltip match the unit-aware KPIs/table.
+  const yoyDisplay = yoy.map((point) => {
+    const next = { ...point };
+    for (const year of yoyYears) {
+      next[String(year)] = toDisplayDistance(Number(point[String(year)] ?? 0));
+    }
+    return next;
+  });
   const formatDistance = (km: number) => {
     const d = splitFormattedDistance(km, unitSystem);
     return `${format(d.value)} ${d.unit.toLowerCase()}`;
@@ -283,7 +308,7 @@ export default function StatsPage() {
           title={chartTitle}
           caption={
             <>
-              {format(totalDistance.value)} {totalDistance.unit.toLowerCase()}{" "}
+              {format(chartTotal.value)} {chartTotal.unit.toLowerCase()}{" "}
               {t("total")}
             </>
           }
@@ -291,7 +316,7 @@ export default function StatsPage() {
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={series}
+              data={chartData}
               margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
             >
               <CartesianGrid
@@ -324,15 +349,12 @@ export default function StatsPage() {
                 }}
                 labelStyle={{ color: "#0E0E10" }}
                 labelFormatter={(label) => tooltipLabel(String(label))}
-                formatter={(value) => [
-                  formatDistanceTooltipValue(value),
-                  "Distance",
-                ]}
+                formatter={(value) => [distanceTooltip(value), "Distance"]}
               />
               {/* Dark brand-orange #D44F00 ≈ 4.3:1 on cream; canonical
                   #FF6A1A is only ~2.5:1 and fails the WCAG 3:1
                   graphic-element bar for the monthly distance bars. */}
-              <Bar dataKey="distanceKm" fill="#D44F00" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="#D44F00" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -363,12 +385,12 @@ export default function StatsPage() {
             title={`${t("Monthly distance")} · ${t("last {count} years", {
               count: yoyYears.length,
             })}`}
-            caption={t("km / month")}
+            caption={`${distanceUnit} / month`}
           />
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={yoy}
+                data={yoyDisplay}
                 margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
               >
                 <CartesianGrid
@@ -397,7 +419,7 @@ export default function StatsPage() {
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "#0E0E10" }}
-                  formatter={formatDistanceTooltipValue}
+                  formatter={distanceTooltip}
                 />
                 <Legend
                   wrapperStyle={{

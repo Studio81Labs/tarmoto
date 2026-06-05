@@ -179,14 +179,18 @@ describe("windowStart", () => {
     expect(start?.getDate()).toBe(1);
   });
 
-  it("subtracts the rolling day count for 30d / 90d", () => {
-    const start30 = windowStart("30d", now);
-    const start90 = windowStart("90d", now);
-    expect(Math.round((now.getTime() - start30!.getTime()) / 86_400_000)).toBe(
-      30,
+  it("anchors 30d / 90d to the start of the day spanning N calendar days", () => {
+    const start30 = windowStart("30d", now)!;
+    const start90 = windowStart("90d", now)!;
+    // Local midnight, exactly `days - 1` whole days before today → `days`
+    // calendar days including today.
+    expect(start30.getHours()).toBe(0);
+    expect(start30.getMinutes()).toBe(0);
+    expect(start30.getTime()).toBe(
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29).getTime(),
     );
-    expect(Math.round((now.getTime() - start90!.getTime()) / 86_400_000)).toBe(
-      90,
+    expect(start90.getTime()).toBe(
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - 89).getTime(),
     );
   });
 });
