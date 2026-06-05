@@ -191,6 +191,33 @@ export function splitFormattedDistance(
 }
 
 /**
+ * Speed (backend km/h) as a rounded value + uppercased unit, honouring the
+ * rider's unit preference (km/h vs mph). For MetricTile-style displays that
+ * format the number themselves.
+ */
+export function splitFormattedSpeed(
+  kmh: number,
+  units: UnitSystem = "metric",
+): { value: number; unit: string } {
+  return units === "imperial"
+    ? { value: Math.round(kmToMiles(kmh)), unit: "MPH" }
+    : { value: Math.round(kmh), unit: "KM/H" };
+}
+
+/**
+ * Elevation (backend metres) as a rounded value + uppercased unit, honouring
+ * the rider's unit preference (m vs ft).
+ */
+export function splitFormattedElevation(
+  meters: number,
+  units: UnitSystem = "metric",
+): { value: number; unit: string } {
+  return units === "imperial"
+    ? { value: Math.round(metersToFeet(meters)), unit: "FT" }
+    : { value: Math.round(meters), unit: "M" };
+}
+
+/**
  * Thin wrapper for sources whose native unit is metres (road segment lengths,
  * distance-to-point from /exploration/nearby-unridden). Kept next to
  * `formatDistance` so a single display rule covers both shapes.

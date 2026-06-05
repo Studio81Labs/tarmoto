@@ -399,6 +399,17 @@ export class DemoSeeder {
         0,
         Math.round((endedAt.getTime() - ride.started_at.getTime()) / 1000),
       );
+      // Plausible per-ride lean histogram (1-second sensor windows) so the
+      // ride-detail "Time spent leaning" chart has data. Roughly a third of
+      // the ride is spent leaning, weighted toward the lower buckets.
+      const leaning = Math.max(40, Math.round(durationSec / 3));
+      const w = [
+        0.3 + rng() * 0.2, // 0–10°
+        0.3 + rng() * 0.15, // 10–20°
+        0.15 + rng() * 0.15, // 20–30°
+        0.05 + rng() * 0.15, // 30°+
+      ];
+      const wSum = w[0]! + w[1]! + w[2]! + w[3]!;
       return repo.create({
         ride_id: ride.id,
         max_lean_angle: maxLean,
@@ -407,6 +418,12 @@ export class DemoSeeder {
         elevation_gain: round1(200 + rng() * 1200),
         elevation_loss: round1(200 + rng() * 1200),
         curve_count: Math.round(20 + rng() * 120),
+        lean_distribution_json: {
+          '0_10': Math.round((leaning * w[0]!) / wSum),
+          '10_20': Math.round((leaning * w[1]!) / wSum),
+          '20_30': Math.round((leaning * w[2]!) / wSum),
+          '30_plus': Math.round((leaning * w[3]!) / wSum),
+        },
       });
     });
     await repo.save(rows, { chunk: SAVE_CHUNK });

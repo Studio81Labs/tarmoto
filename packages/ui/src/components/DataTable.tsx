@@ -66,6 +66,9 @@ export interface DataTableProps<T> {
   caret?: ReactNode;
   /** Body shown when `rows` is empty. */
   emptyState?: ReactNode;
+  /** Header content (e.g. a title bar) rendered above the column row, inside
+   *  the card, with a hairline divider below it. */
+  header?: ReactNode;
   /** Footer content (e.g. pagination), spanning all columns in a `<tfoot>`. */
   footer?: ReactNode;
   className?: string;
@@ -84,6 +87,7 @@ export function DataTable<T>({
   showCaret = true,
   caret,
   emptyState,
+  header,
   footer,
   className,
   ariaLabel,
@@ -118,6 +122,7 @@ export function DataTable<T>({
         className,
       )}
     >
+      {header && <div className="border-b border-line">{header}</div>}
       <table
         className="w-full table-fixed border-collapse"
         aria-label={ariaLabel}

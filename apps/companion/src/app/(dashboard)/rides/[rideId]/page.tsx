@@ -3,35 +3,58 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useAuthStore } from "@/stores/auth";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Check,
-  Clock,
-  Download,
-  Gauge,
   Loader2,
-  Mountain,
   Pencil,
-  Route,
+  Scale,
   Share2,
-  Thermometer,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
-import type { QualityTier } from "@/lib/types";
-import { formatDuration, QUALITY_CONFIG } from "@/lib/utils";
 import {
-  buildSpeedProfile,
-  computeQualityBreakdown,
-  formatNumber,
-  readingToTier,
-  type RideSegmentLike,
-  type SpeedProfilePoint,
-} from "@/lib/ride-detail";
+  Button,
+  Card,
+  DataTable,
+  MetricTile,
+  Mono,
+  QualityBars,
+  Stamp,
+  type DataTableColumn,
+  type MetricTileProps,
+} from "@tarmoto/ui";
+import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
+import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { usePreferencesStore } from "@/stores/preferences";
+import {
+  formatDurationCompact,
+  scoreToQualityTier,
+  splitFormattedDistance,
+  splitFormattedElevation,
+  splitFormattedSpeed,
+} from "@/lib/utils";
+import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
+import { kmToMiles, type UnitSystem } from "@tarmoto/shared";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
 import { RideRouteMap } from "../_components/RideRouteMap";
-import { Card } from "@tarmoto/ui";
+
+interface LeanDistribution {
+  "0_10": number;
+  "10_20": number;
+  "20_30": number;
+  "30_plus": number;
+}
+
+interface RideSegment {
+  road_name: string | null;
+  quality_reading: number | null;
+  speed_avg: number | null;
+  speed_max: number | null;
+  lean_angle_max: number | null;
+}
+
 interface RideDetail {
   id: string;
   name: string | null;
@@ -48,17 +71,30 @@ interface RideDetail {
   elevation_loss: number | null;
   curve_count: number | null;
   max_lean_angle: number | null;
+  lean_distribution: LeanDistribution | null;
   fuel_estimate_l: number | null;
-  route_geometry: Array<{
-    lat: number;
-    lng: number;
-  }> | null;
-  segments: RideSegmentLike[];
+  route_geometry: Array<{ lat: number; lng: number }> | null;
+  segments: RideSegment[];
 }
+
+// Lean buckets the backend reports (US-19). The v2 "Time spent leaning" chart
+// uses these 4 buckets directly rather than the design mock's 5 — we render the
+// data we actually have rather than fabricating finer bands.
+const LEAN_BUCKETS: Array<{
+  key: keyof LeanDistribution;
+  label: string;
+  mid: number;
+}> = [
+  { key: "0_10", label: "0–10°", mid: 5 },
+  { key: "10_20", label: "10–20°", mid: 15 },
+  { key: "20_30", label: "20–30°", mid: 25 },
+  { key: "30_plus", label: "30°+", mid: 35 },
+];
+
 export default function RideDetailPage() {
-  const { rideId } = useParams<{
-    rideId: string;
-  }>();
+  const { rideId } = useParams<{ rideId: string }>();
+  const { format } = useNumberFormat();
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,17 +102,13 @@ export default function RideDetailPage() {
   const [exporting, setExporting] = useState<RideExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
-  // Inline rename of the ride name (the All-rides table row now navigates
-  // here rather than editing in place, so this is the rename entry point;
-  // it reaches `PATCH /api/v1/rides/{rideId}`).
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-  // Gate the detail fetch on the access token being hydrated by
-  // `AuthSync`. Without this, the initial mount races AuthSync and
-  // the first GET goes out without a Bearer header → backend 401s.
-  // Same pattern as `useRidesQuery` and `useUserTrips`.
+
+  // Gate the fetch on the access token being hydrated by AuthSync (same
+  // pattern as useRidesQuery) so the first GET carries a Bearer header.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!rideId || !authReady) return;
@@ -108,24 +140,7 @@ export default function RideDetailPage() {
       cancelled = true;
     };
   }, [rideId, authReady]);
-  const breakdown = useMemo(
-    () => computeQualityBreakdown(ride?.segments ?? []),
-    [ride?.segments],
-  );
-  const speedProfile = useMemo(
-    () => buildSpeedProfile(ride?.segments ?? []),
-    [ride?.segments],
-  );
-  const maxSegmentSpeed = useMemo(() => {
-    if (!ride) return 0;
-    return ride.segments.reduce((acc, s) => {
-      const avg =
-        s.speed_avg != null && Number.isFinite(s.speed_avg) ? s.speed_avg : 0;
-      const max =
-        s.speed_max != null && Number.isFinite(s.speed_max) ? s.speed_max : 0;
-      return Math.max(acc, avg, max);
-    }, 0);
-  }, [ride]);
+
   async function handleExport(format: RideExportFormat) {
     if (!ride || exporting) return;
     setExporting(format);
@@ -133,8 +148,6 @@ export default function RideDetailPage() {
     try {
       await downloadRideExport(ride.id, format);
     } catch (err) {
-      // Keep this separate from the page-level `error` state so a transient
-      // export failure doesn't replace the whole ride view with an error card.
       setExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExporting(null);
@@ -147,7 +160,7 @@ export default function RideDetailPage() {
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2000);
     } catch {
-      // Clipboard API can reject on insecure origins; fall back silently.
+      // Clipboard can reject on insecure origins; fail silently.
     }
   }
   async function saveRename() {
@@ -175,12 +188,25 @@ export default function RideDetailPage() {
       setRenameSaving(false);
     }
   }
+
+  const avgLean = useMemo(() => {
+    const d = ride?.lean_distribution;
+    if (!d) return null;
+    const total = LEAN_BUCKETS.reduce((acc, b) => acc + (d[b.key] ?? 0), 0);
+    if (total === 0) return null;
+    const weighted = LEAN_BUCKETS.reduce(
+      (acc, b) => acc + (d[b.key] ?? 0) * b.mid,
+      0,
+    );
+    return weighted / total;
+  }, [ride?.lean_distribution]);
+
   if (loading) {
     return (
       <PageShell>
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
-          {t("Loading ride\u2026 ")}
+          {t("Loading ride… ")}
         </div>
       </PageShell>
     );
@@ -189,8 +215,7 @@ export default function RideDetailPage() {
     return (
       <PageShell>
         <Card padded={false} className="p-10 text-center">
-          <Route size={40} className="mx-auto mb-3 text-fg-mute" />
-          <p className="mb-1 font-medium text-ink">{t("Ride not found")}</p>
+          <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
           <p className="text-sm text-fg-dim">
             {t(
               "This ride may have been deleted or doesn't belong to your account. ",
@@ -209,134 +234,200 @@ export default function RideDetailPage() {
       </PageShell>
     );
   }
-  // Prefer the rider's custom name; fall back to a date label when unset.
+
   const rideName = ride.name?.trim()
     ? ride.name
     : `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-  const avgTier = readingToTier(ride.avg_road_quality);
-  // Guard against empty strings from the API; the `as unknown as RideDetail`
-  // cast bypasses the type system, so we can't assume a non-empty value.
-  const rideTypeLabel = ride.ride_type
-    ? ride.ride_type[0]!.toUpperCase() + ride.ride_type.slice(1)
-    : "Unknown";
+  const avgTier = scoreToQualityTier(ride.avg_road_quality);
+  const startedDate = new Date(ride.started_at).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  // All metrics honour the rider's unit preference (km/m·mph·ft) so the grid
+  // stays internally consistent — not a mix of converted distance and raw
+  // metric speed/elevation.
+  const distance = splitFormattedDistance(ride.distance_km ?? 0, unitSystem);
+  const duration = splitDuration(ride.duration_min);
+  const avgSpeed = splitFormattedSpeed(ride.avg_speed ?? 0, unitSystem);
+  const topSpeed = splitFormattedSpeed(ride.max_speed ?? 0, unitSystem);
+  const ascent = splitFormattedElevation(ride.elevation_gain ?? 0, unitSystem);
+  const descent = splitFormattedElevation(ride.elevation_loss ?? 0, unitSystem);
+  const speedUnit = avgSpeed.unit;
+
+  // Distance / Duration / Avg / Top / Max lean / Ascent — the design's 2×3 grid.
+  const tiles: MetricTileProps[] = [
+    {
+      label: "Distance",
+      value: ride.distance_km != null ? distance.value : "—",
+      unit: distance.unit,
+      variant: "ink",
+      accentNumber: true,
+    },
+    { label: "Duration", value: duration.value, unit: duration.unit },
+    {
+      label: "Avg speed",
+      value: ride.avg_speed != null ? avgSpeed.value : "—",
+      unit: speedUnit,
+    },
+    {
+      label: "Top speed",
+      value: ride.max_speed != null ? topSpeed.value : "—",
+      unit: speedUnit,
+    },
+    {
+      label: "Max lean",
+      value:
+        ride.max_lean_angle != null
+          ? `${Math.round(ride.max_lean_angle)}°`
+          : "—",
+    },
+    {
+      label: "Ascent",
+      value: ride.elevation_gain != null ? ascent.value : "—",
+      unit: ascent.unit,
+      accentNumber: true,
+    },
+  ];
+
   return (
     <PageShell
       header={
-        <div className="flex items-center gap-4 mb-6">
+        <>
           <Link
             href="/rides"
-            className="p-2 rounded-lg hover:bg-paper transition"
-            aria-label={t("Back to rides")}
+            className="inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
           >
-            <ArrowLeft size={20} className="text-fg-dim" />
+            <ArrowLeft size={14} />
+            {t("Ride History · All rides")}
           </Link>
-          <div className="flex-1 min-w-0">
-            {renaming ? (
-              <div className="flex items-center gap-2">
-                <input
-                  autoFocus
-                  value={renameDraft}
-                  maxLength={120}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void saveRename();
-                    if (e.key === "Escape") setRenaming(false);
-                  }}
-                  aria-label={t("Ride name")}
-                  className="min-w-0 flex-1 rounded-lg border border-line bg-cream px-2.5 py-1.5 text-lg font-bold text-ink focus:border-ink focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => void saveRename()}
-                  disabled={renameSaving}
-                  aria-label={t("Save name")}
-                  className="rounded-lg p-2 text-accent hover:bg-paper-2 disabled:opacity-50"
-                >
-                  {renameSaving ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
+
+          <div className="mt-3.5 mb-[22px] flex items-end justify-between gap-6">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
+                  {ride.ride_type}
+                </Mono>
+                <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
+                <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
+                  {startedDate}
+                </Mono>
+              </div>
+
+              {renaming ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    maxLength={120}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveRename();
+                      if (e.key === "Escape") setRenaming(false);
+                    }}
+                    aria-label={t("Ride name")}
+                    className="min-w-0 flex-1 rounded-lg border border-line bg-cream px-2.5 py-1.5 text-2xl font-extrabold text-ink focus:border-ink focus:outline-none"
+                  />
+                  <Button
+                    iconOnly
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void saveRename()}
+                    loading={renameSaving}
+                    aria-label={t("Save name")}
+                  >
                     <Check size={16} />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRenaming(false)}
-                  aria-label={t("Cancel")}
-                  className="rounded-lg p-2 text-fg-dim hover:bg-paper-2"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ) : (
-              <div className="group flex items-center gap-2">
-                <h1 className="truncate text-2xl font-bold">{rideName}</h1>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenameDraft(ride.name ?? "");
-                    setRenameError(null);
-                    setRenaming(true);
-                  }}
-                  aria-label={t("Rename ride")}
-                  // Visible by default so it's discoverable on touch / no-hover
-                  // devices and via keyboard focus; on hover-capable pointers it
-                  // fades in on row hover for the cleaner desktop treatment.
-                  className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-                >
-                  <Pencil size={14} />
-                </button>
-              </div>
-            )}
-            <p className="text-sm text-fg-dim mt-0.5">
-              {new Date(ride.started_at).toLocaleString()} ·{" "}
-              {t("{rideType} ride", { rideType: rideTypeLabel })}
-            </p>
-            {renameError && (
-              <p className="mt-1 text-xs text-red-400">{renameError}</p>
-            )}
+                  </Button>
+                  <Button
+                    iconOnly
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setRenaming(false)}
+                    aria-label={t("Cancel")}
+                  >
+                    <X size={16} />
+                  </Button>
+                </div>
+              ) : (
+                <div className="group mt-2 flex items-center gap-3.5">
+                  <h1 className="truncate text-[34px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+                    {rideName}
+                  </h1>
+                  {avgTier != null && <QualityBars q={avgTier} size={8} />}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenameDraft(ride.name ?? "");
+                      setRenameError(null);
+                      setRenaming(true);
+                    }}
+                    aria-label={t("Rename ride")}
+                    className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+              )}
+              {renameError && (
+                <p className="mt-1 text-xs text-red-400">{renameError}</p>
+              )}
+            </div>
+
+            <div className="flex flex-shrink-0 gap-2">
+              <Button
+                variant="secondary"
+                uppercase
+                leftIcon={<Scale size={16} />}
+                renderLink={({ className, children }) => (
+                  <Link
+                    href={`/rides/compare?a=${ride.id}`}
+                    className={className}
+                  >
+                    {children}
+                  </Link>
+                )}
+              >
+                {t("Compare")}
+              </Button>
+              <Button
+                variant="secondary"
+                uppercase
+                leftIcon={<Share2 size={14} />}
+                onClick={handleShare}
+                title={shareCopied ? t("Link copied") : t("Copy share link")}
+              >
+                {shareCopied ? t("Copied") : t("Share")}
+              </Button>
+              <Button
+                variant="primary"
+                uppercase
+                loading={exporting === "gpx"}
+                leftIcon={<ArrowUpRight size={14} />}
+                onClick={() => handleExport("gpx")}
+                disabled={exporting !== null}
+              >
+                {t("Export GPX")}
+              </Button>
+              <Button
+                variant="secondary"
+                uppercase
+                loading={exporting === "csv"}
+                leftIcon={<ArrowUpRight size={14} />}
+                onClick={() => handleExport("csv")}
+                disabled={exporting !== null}
+              >
+                {t("Export CSV")}
+              </Button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleShare}
-            className="p-2 rounded-lg bg-paper text-ink hover:bg-paper-2 transition"
-            aria-label={t("Copy share link")}
-            title={shareCopied ? "Link copied" : "Copy share link"}
-          >
-            <Share2 size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExport("gpx")}
-            disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            {exporting === "gpx" ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Download size={14} />
-            )}
-            {t("Export GPX ")}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExport("csv")}
-            disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            {exporting === "csv" ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Download size={14} />
-            )}
-            {t("Export CSV ")}
-          </button>
-        </div>
+        </>
       }
     >
       {exportError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400 flex items-center justify-between gap-3"
+          className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
         >
           <span>
             {t("Export failed: ")}
@@ -345,245 +436,157 @@ export default function RideDetailPage() {
           <button
             type="button"
             onClick={() => setExportError(null)}
-            className="text-xs text-red-400/70 hover:text-red-400 transition"
+            className="text-xs text-red-400/70 transition hover:text-red-400"
           >
             {t("Dismiss ")}
           </button>
         </div>
       )}
 
-      {/* Route map */}
-      <Card padded={false} className="mb-6 p-5">
-        <SectionHeader
-          icon={<Route size={16} />}
-          title={t("Route")}
-          subtitle="Interactive ride route with road quality overlay where Tarmoto has segment data."
-        />
+      {/* Route map + stats grid */}
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {ride.route_geometry && ride.route_geometry.length >= 2 ? (
-          <div className="mt-4">
-            <RideRouteMap geometry={ride.route_geometry} />
+          <div className="relative h-[440px]">
+            <RideRouteMap
+              geometry={ride.route_geometry}
+              containerClassName="h-full"
+            />
+            <div className="absolute bottom-4 left-4 flex gap-4 rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 shadow-[0_6px_16px_rgba(14,14,16,0.08)]">
+              <LegendDot label={t("Start")} ink />
+              <LegendDot label={t("Finish")} />
+            </div>
           </div>
         ) : (
-          <div className="mt-4 rounded-xl border border-dashed border-line p-10 text-center text-sm text-fg-dim">
+          <div className="flex h-[440px] items-center justify-center rounded-[14px] border border-dashed border-line text-sm text-fg-dim">
             {t("No GPS track was recorded for this ride.")}
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-3 lg:content-start">
+          {tiles.map((tile) => (
+            <MetricTile key={tile.label} formatValue={format} {...tile} />
+          ))}
+        </div>
+      </div>
+
+      {/* Elevation summary. We store climb/descent totals but not a per-sample
+          altitude track, so the card is the totals — no empty chart slot. */}
+      <Card className="mb-4">
+        <Stamp>{t("Elevation profile")}</Stamp>
+        <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          {t("Climb & descent")}
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          <ElevationStat
+            label={t("Total ascent")}
+            value={
+              ride.elevation_gain != null
+                ? `+${format(ascent.value)} ${ascent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
+          <ElevationStat
+            label={t("Total descent")}
+            value={
+              ride.elevation_loss != null
+                ? `−${format(descent.value)} ${descent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
+          <ElevationStat
+            label={t("Net change")}
+            value={
+              ride.elevation_gain != null && ride.elevation_loss != null
+                ? `${ascent.value - descent.value >= 0 ? "+" : "−"}${format(
+                    Math.abs(ascent.value - descent.value),
+                  )} ${ascent.unit.toLowerCase()}`
+                : "—"
+            }
+          />
+        </div>
+        <p className="mt-3 text-xs text-fg-mute">
+          {t(
+            "Per-sample elevation profile isn't recorded yet — climb/descent totals shown above.",
+          )}
+        </p>
       </Card>
 
-      <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card padded={false} className="p-5">
-          <SectionHeader
-            icon={<Mountain size={16} />}
-            title={t("Elevation profile")}
-            subtitle="Elevation gain/loss is available in the stats below; per-sample ride elevation is not recorded yet."
-          />
-          <ElevationProfileChart />
-        </Card>
-        <Card padded={false} className="p-5">
-          <SectionHeader
-            icon={<Gauge size={16} />}
-            title={t("Speed graph")}
-            subtitle={
-              speedProfile.length > 0
-                ? `${formatNumber(maxSegmentSpeed, 0)} km/h peak across recorded segments.`
-                : "Speed samples are attached once segment telemetry is available."
-            }
-          />
-          <SpeedProfileChart points={speedProfile} />
-        </Card>
-      </section>
+      {/* Speed profile (US-48): per-segment avg/max speed for populated rides */}
+      <SpeedProfileCard segments={ride.segments} unitSystem={unitSystem} />
 
-      {/* Stats */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          icon={<Route size={14} />}
-          label="Distance"
-          value={formatNumber(ride.distance_km, 1)}
-          unit="km"
-        />
-        <StatCard
-          icon={<Clock size={14} />}
-          label="Duration"
-          value={formatDuration(ride.duration_min)}
-        />
-        <StatCard
-          icon={<Gauge size={14} />}
-          label="Avg speed"
-          value={formatNumber(ride.avg_speed, 0)}
-          unit="km/h"
-        />
-        <StatCard
-          icon={<Gauge size={14} />}
-          label="Max speed"
-          value={formatNumber(ride.max_speed, 0)}
-          unit="km/h"
-        />
-        <StatCard
-          icon={<Mountain size={14} />}
-          label="Elevation gain"
-          value={formatNumber(ride.elevation_gain, 0)}
-          unit="m"
-        />
-        <StatCard
-          icon={<Mountain size={14} />}
-          label="Elevation loss"
-          value={formatNumber(ride.elevation_loss, 0)}
-          unit="m"
-        />
-        <StatCard
-          icon={<Route size={14} />}
-          label="Curve count"
-          value={
-            ride.curve_count == null ? "—" : ride.curve_count.toLocaleString()
-          }
-        />
-        <StatCard
-          icon={<Thermometer size={14} />}
-          label="Max lean"
-          value={formatNumber(ride.max_lean_angle, 0)}
-          unit="°"
-        />
-      </section>
-
-      {/* Quality breakdown + fuel */}
-      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card padded={false} className="p-5 md:col-span-2">
-          <SectionHeader
-            icon={<Gauge size={16} />}
-            title={t("Road quality breakdown")}
-            subtitle={
-              ride.segments.length === 0
-                ? "No segment data recorded for this ride."
-                : `Across ${ride.segments.length} segment${ride.segments.length === 1 ? "" : "s"}.`
-            }
-          />
-          <QualityBar breakdown={breakdown} />
-          <ul className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-            {breakdown.map((row) => (
-              <li
-                key={row.tier}
-                className="flex items-center gap-2 text-xs text-ink"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: row.color }}
-                />
-                <span className="flex-1 truncate">{row.label}</span>
-                <span className="tabular-nums text-fg-dim">{row.percent}%</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card padded={false} className="flex flex-col gap-5 p-5">
-          <div>
-            <p className="mb-1 text-xs text-fg-dim">{t("Avg road quality")}</p>
-            {avgTier ? (
-              <span
-                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold quality-${avgTier}`}
-              >
-                {QUALITY_CONFIG[avgTier].label}
-                <span className="text-[10px] opacity-70 tabular-nums">
-                  {formatNumber(ride.avg_road_quality, 1)}/5
-                </span>
-              </span>
-            ) : (
-              <span className="text-fg-dim text-sm">—</span>
-            )}
+      {/* Ride dynamics + character */}
+      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card>
+          <div className="flex items-start justify-between">
+            <div>
+              <Stamp>{t("Ride dynamics")}</Stamp>
+              <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+                {t("Time spent leaning")}
+              </div>
+            </div>
+            <div className="text-right">
+              <Stamp>{t("Avg lean")}</Stamp>
+              <div className="mt-0.5 text-[18px] font-extrabold text-accent">
+                {avgLean != null ? `${Math.round(avgLean)}°` : "—"}
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="mb-1 text-xs text-fg-dim">{t("Fuel estimate")}</p>
-            <p className="text-xl font-bold tabular-nums text-ink">
-              {formatNumber(ride.fuel_estimate_l, 2)}
-              <span className="ml-1 text-sm font-normal text-fg-dim">
-                {t("L")}
-              </span>
-            </p>
+          <LeanHistogram distribution={ride.lean_distribution} />
+        </Card>
+
+        <Card>
+          <Stamp>{t("Conditions & setup")}</Stamp>
+          <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("How it rode")}
+          </div>
+          {/* Weather / temperature / bike / surface aren't recorded per ride
+              yet, so we surface the character data we do have. */}
+          <div className="mt-4 grid grid-cols-2 gap-3.5">
+            <CharacterStat
+              label={t("Avg road quality")}
+              value={
+                ride.avg_road_quality != null
+                  ? `${formatNumber(ride.avg_road_quality, 1)} / 5`
+                  : "—"
+              }
+            />
+            <CharacterStat
+              label={t("Curves")}
+              value={ride.curve_count != null ? format(ride.curve_count) : "—"}
+            />
+            <CharacterStat
+              label={t("Fuel estimate")}
+              value={
+                ride.fuel_estimate_l != null
+                  ? `${formatNumber(ride.fuel_estimate_l, 1)} L`
+                  : "—"
+              }
+            />
+            <CharacterStat
+              label={t("Elev. descent")}
+              value={
+                ride.elevation_loss != null
+                  ? `${format(descent.value)} ${descent.unit.toLowerCase()}`
+                  : "—"
+              }
+            />
           </div>
         </Card>
-      </section>
+      </div>
 
-      {/* Segments table */}
+      {/* Road segments */}
       {ride.segments.length > 0 && (
-        <Card padded={false} className="p-5">
-          <SectionHeader
-            icon={<Route size={16} />}
-            title={t("Segments")}
-            subtitle="Per-segment road quality, speed, and lean angle."
-          />
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-fg-dim">
-                  <th className="py-2 pr-4 font-semibold">{t("Road")}</th>
-                  <th className="py-2 pr-4 font-semibold">{t("Quality")}</th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Avg speed ")}
-                  </th>
-                  <th className="py-2 pr-4 font-semibold text-right">
-                    {t("Max lean ")}
-                  </th>
-                  <th className="py-2 pr-0 font-semibold">{t("Speed")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {ride.segments.map((seg, index) => {
-                  const tier = readingToTier(seg.quality_reading);
-                  const pct =
-                    maxSegmentSpeed > 0 && seg.speed_avg != null
-                      ? Math.max(
-                          4,
-                          Math.round((seg.speed_avg / maxSegmentSpeed) * 100),
-                        )
-                      : 0;
-                  return (
-                    <tr key={index} className="text-ink">
-                      <td className="py-2 pr-4">
-                        {seg.road_name ?? (
-                          <span className="text-fg-dim">{t("Unnamed")}</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4">
-                        {tier ? (
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold quality-${tier}`}
-                          >
-                            {QUALITY_CONFIG[tier].label}
-                          </span>
-                        ) : (
-                          <span className="text-fg-dim">—</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {formatNumber(seg.speed_avg, 0)}
-                        <span className="text-fg-dim ml-1">{t("km/h")}</span>
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {seg.lean_angle_max == null
-                          ? "—"
-                          : `${formatNumber(seg.lean_angle_max, 0)}°`}
-                      </td>
-                      <td className="py-2 pr-0 w-40">
-                        <div
-                          className="h-1.5 rounded-full bg-paper"
-                          aria-hidden
-                        >
-                          <div
-                            className="h-full rounded-full bg-accent"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <RoadSegments
+          segments={ride.segments}
+          distanceKm={ride.distance_km}
+          format={format}
+          unitSystem={unitSystem}
+        />
       )}
     </PageShell>
   );
 }
+
 function PageShell({
   children,
   header,
@@ -592,265 +595,372 @@ function PageShell({
   header?: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       {header ?? (
-        <div className="mb-6 flex items-center gap-4">
-          <Link
-            href="/rides"
-            className="p-2 rounded-lg hover:bg-paper transition"
-            aria-label={t("Back to rides")}
-          >
-            <ArrowLeft size={20} className="text-fg-dim" />
-          </Link>
-          <h1 className="text-2xl font-bold flex-1">{t("Ride")}</h1>
-        </div>
+        <Link
+          href="/rides"
+          className="mb-6 inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
+        >
+          <ArrowLeft size={14} />
+          {t("Ride History · All rides")}
+        </Link>
       )}
       {children}
     </div>
   );
 }
-function StatCard({
-  icon,
-  label,
-  value,
-  unit,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  unit?: string;
-}) {
+
+function LegendDot({ label, ink = false }: { label: string; ink?: boolean }) {
   return (
-    <Card padded={false} className="p-4">
-      <div className="mb-1 flex items-center gap-2 text-xs text-fg-dim">
-        <span className="text-accent">{icon}</span>
-        {label}
-      </div>
-      <p className="text-xl font-bold tabular-nums text-ink">
+    <div className="flex items-center gap-1.5">
+      <span
+        className={`grid h-4 w-4 place-items-center rounded-full ${
+          ink ? "bg-ink text-cream" : "bg-accent text-ink"
+        }`}
+      >
+        <span className="font-mono text-[9px] font-extrabold">
+          {ink ? "A" : "B"}
+        </span>
+      </span>
+      <span className="text-[11px] font-semibold text-ink">{label}</span>
+    </div>
+  );
+}
+
+function ElevationStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <Stamp>{label}</Stamp>
+      <div className="mt-0.5 text-[18px] font-extrabold tracking-[-0.4px] text-ink">
         {value}
-        {unit && (
-          <span className="ml-1 text-sm font-normal text-fg-dim">{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+function CharacterStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-l-2 border-line-strong pl-3">
+      <Stamp>{label}</Stamp>
+      <div className="mt-1 text-[14px] font-bold text-ink">{value}</div>
+    </div>
+  );
+}
+
+function LeanHistogram({
+  distribution,
+}: {
+  distribution: LeanDistribution | null;
+}) {
+  if (!distribution) {
+    return (
+      <div className="mt-[18px] flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
+        {t("No lean samples were recorded for this ride.")}
+      </div>
+    );
+  }
+  const counts = LEAN_BUCKETS.map((b) => distribution[b.key] ?? 0);
+  const total = counts.reduce((a, c) => a + c, 0);
+  const pcts = counts.map((c) =>
+    total > 0 ? Math.round((c / total) * 100) : 0,
+  );
+  const peak = Math.max(...pcts, 1);
+  // The fullest bucket is the rider's "comfort" lean — highlight it in accent.
+  const peakIdx = pcts.indexOf(Math.max(...pcts));
+  return (
+    <div className="mt-[18px] flex h-[150px] items-end gap-3">
+      {LEAN_BUCKETS.map((bucket, i) => (
+        <div
+          key={bucket.key}
+          className="flex flex-1 flex-col items-center justify-end gap-1.5"
+        >
+          <Mono className="text-[10px] text-fg-mute">{pcts[i]}%</Mono>
+          <div
+            className={`w-full rounded-t ${
+              i === peakIdx ? "bg-accent" : "bg-ink/[0.82]"
+            }`}
+            style={{ height: `${Math.max(4, (pcts[i]! / peak) * 110)}px` }}
+          />
+          <Mono className="text-[9px] font-bold text-fg-mute">
+            {bucket.label}
+          </Mono>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RoadSegments({
+  segments,
+  distanceKm,
+  format,
+  unitSystem,
+}: {
+  segments: RideSegment[];
+  distanceKm: number | null;
+  format: (n: number, o?: Intl.NumberFormatOptions) => string;
+  unitSystem: UnitSystem;
+}) {
+  const total =
+    distanceKm != null ? splitFormattedDistance(distanceKm, unitSystem) : null;
+  const speedUnit = splitFormattedSpeed(0, unitSystem).unit;
+  // KM-per-segment, surface, and character aren't on the segment payload, so
+  // the table surfaces the telemetry we do record (avg / max speed, lean,
+  // quality) — the design's missing columns degrade rather than fabricate.
+  const columns: DataTableColumn<RideSegment & { idx: number }>[] = [
+    {
+      key: "idx",
+      label: "#",
+      size: "40px",
+      render: (s) => (
+        <Mono className="font-bold text-fg-mute">
+          {String(s.idx + 1).padStart(2, "0")}
+        </Mono>
+      ),
+    },
+    {
+      key: "segment",
+      label: "SEGMENT",
+      primary: true,
+      render: (s) => (
+        <span className="truncate font-bold text-ink">
+          {s.road_name ?? t("Unnamed road")}
+        </span>
+      ),
+    },
+    {
+      key: "avg",
+      label: `AVG ${speedUnit}`,
+      size: "100px",
+      render: (s) => (
+        <Mono className="text-ink">
+          {s.speed_avg != null
+            ? splitFormattedSpeed(s.speed_avg, unitSystem).value
+            : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "max",
+      label: `MAX ${speedUnit}`,
+      size: "100px",
+      render: (s) => (
+        <Mono className="text-ink">
+          {s.speed_max != null
+            ? splitFormattedSpeed(s.speed_max, unitSystem).value
+            : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "lean",
+      label: "LEAN",
+      size: "70px",
+      render: (s) => (
+        <Mono className="text-ink">
+          {s.lean_angle_max != null ? `${Math.round(s.lean_angle_max)}°` : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "quality",
+      label: "QUALITY",
+      size: "110px",
+      render: (s) => {
+        const tier = scoreToQualityTier(s.quality_reading);
+        return tier != null ? (
+          <QualityBars q={tier} size={4} />
+        ) : (
+          <span className="text-fg-mute">—</span>
+        );
+      },
+    },
+  ];
+  return (
+    <DataTable<RideSegment & { idx: number }>
+      ariaLabel={t("Road segments")}
+      showCaret={false}
+      columns={columns}
+      rows={segments.map((s, idx) => ({ ...s, idx }))}
+      rowKey={(s) => String(s.idx)}
+      header={
+        <div className="flex items-center justify-between px-5 py-3">
+          <div>
+            <Stamp>{t("Road segments")}</Stamp>
+            <div className="mt-0.5 text-[15px] font-extrabold text-ink">
+              {t("{count} roads ridden", { count: segments.length })}
+            </div>
+          </div>
+          {total != null && (
+            <Mono className="text-[11px] text-fg-dim">
+              {format(total.value)} {total.unit} {t("TOTAL")}
+            </Mono>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+/** Duration split into a big value + small unit for the MetricTile. */
+function splitDuration(min: number | null): { value: string; unit: string } {
+  if (min == null) return { value: "—", unit: "" };
+  const compact = formatDurationCompact(min); // "4h 12m" or "52m"
+  const space = compact.indexOf(" ");
+  if (space < 0) return { value: compact, unit: "" };
+  return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
+}
+
+/**
+ * Per-segment speed visualisation (US-48 / T31). The map + tiles give totals;
+ * this restores the speed graph the product spec requires for populated rides,
+ * unit-aware (km/h vs mph).
+ */
+function SpeedProfileCard({
+  segments,
+  unitSystem,
+}: {
+  segments: RideSegment[];
+  unitSystem: UnitSystem;
+}) {
+  const points = buildSpeedProfile(segments);
+  const conv = (kmh: number) =>
+    unitSystem === "imperial" ? kmToMiles(kmh) : kmh;
+  const unit = splitFormattedSpeed(0, unitSystem).unit;
+  const avg = points
+    .filter((p) => p.avgKmh != null)
+    .map((p) => ({ x: p.segmentNumber, y: conv(p.avgKmh!) }));
+  const max = points
+    .filter((p) => p.maxKmh != null)
+    .map((p) => ({ x: p.segmentNumber, y: conv(p.maxKmh!) }));
+  const peak = Math.max(...[...avg, ...max].map((p) => p.y), 1);
+  return (
+    <Card className="mb-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <Stamp>{t("Speed profile")}</Stamp>
+          <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("Per-segment speed")}
+          </div>
+        </div>
+        {points.length > 0 && (
+          <Mono className="text-[11px] text-fg-dim">
+            {Math.round(peak)} {unit} {t("PEAK")}
+          </Mono>
         )}
-      </p>
+      </div>
+      {points.length === 0 ? (
+        <div className="mt-4 flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
+          {t("No speed samples were recorded for this ride.")}
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 flex items-center gap-4 text-[11px] text-fg-dim">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              {t("Avg")}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-pink-400" />
+              {t("Max")}
+            </span>
+          </div>
+          <SpeedLineChart
+            points={avg}
+            secondaryPoints={max}
+            minY={0}
+            maxY={peak}
+            unit={unit}
+          />
+        </>
+      )}
     </Card>
   );
 }
-function SectionHeader({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center gap-2 text-ink">
-        <span className="text-accent">{icon}</span>
-        <h2 className="text-sm font-semibold">{title}</h2>
-      </div>
-      {subtitle && <p className="text-xs text-fg-dim mt-0.5">{subtitle}</p>}
-    </div>
-  );
-}
-function QualityBar({
-  breakdown,
-}: {
-  breakdown: {
-    tier: QualityTier;
-    color: string;
-    percent: number;
-  }[];
-}) {
-  const total = breakdown.reduce((acc, row) => acc + row.percent, 0);
-  if (total === 0) {
-    return <div className="mt-4 h-3 rounded-full bg-paper" aria-hidden />;
-  }
-  return (
-    <div
-      className="mt-4 flex h-3 rounded-full overflow-hidden bg-paper"
-      role="img"
-      aria-label={t("Road quality distribution")}
-    >
-      {breakdown
-        .filter((row) => row.percent > 0)
-        .map((row) => (
-          <div
-            key={row.tier}
-            style={{ width: `${row.percent}%`, backgroundColor: row.color }}
-            title={`${row.percent}% ${row.tier}`}
-          />
-        ))}
-    </div>
-  );
-}
 
-function ElevationProfileChart() {
-  return (
-    <EmptyChartState>
-      {t("No elevation profile was recorded for this ride.")}
-    </EmptyChartState>
-  );
-}
-
-function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
-  if (points.length === 0) {
-    return (
-      <EmptyChartState>
-        {t("No speed samples were recorded for this ride.")}
-      </EmptyChartState>
-    );
-  }
-  const avgPoints = points
-    .filter((point) => point.avgKmh != null)
-    .map((point) => ({ x: point.segmentNumber, y: point.avgKmh! }));
-  const maxPoints = points
-    .filter((point) => point.maxKmh != null)
-    .map((point) => ({ x: point.segmentNumber, y: point.maxKmh! }));
-  const values = [...avgPoints, ...maxPoints].map((point) => point.y);
-  const peak = values.length ? Math.max(...values) : 1;
-  return (
-    <div>
-      <div className="mt-4 flex items-center gap-4 text-[11px] text-fg-dim">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-accent" />
-          {t("Avg")}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-pink-400" />
-          {t("Max")}
-        </span>
-      </div>
-      <LineSeriesChart
-        points={avgPoints}
-        secondaryPoints={maxPoints}
-        color="#FF6A1A"
-        secondaryColor="#f472b6"
-        minY={0}
-        maxY={peak}
-        ariaLabel={t("Ride speed graph")}
-        xSuffix="seg"
-        valueSuffix="km/h"
-      />
-    </div>
-  );
-}
-
-function EmptyChartState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-4 flex h-56 items-center justify-center rounded-xl border border-dashed border-line px-4 text-center text-sm text-fg-dim">
-      {children}
-    </div>
-  );
-}
-
-function LineSeriesChart({
+function SpeedLineChart({
   points,
-  secondaryPoints = [],
-  color,
-  secondaryColor,
+  secondaryPoints,
   minY,
   maxY,
-  ariaLabel,
-  xSuffix = "km",
-  valueSuffix,
+  unit,
 }: {
   points: Array<{ x: number; y: number }>;
-  secondaryPoints?: Array<{ x: number; y: number }>;
-  color: string;
-  secondaryColor?: string;
+  secondaryPoints: Array<{ x: number; y: number }>;
   minY: number;
   maxY: number;
-  ariaLabel: string;
-  xSuffix?: string;
-  valueSuffix: string;
+  unit: string;
 }) {
-  const allPoints = [...points, ...secondaryPoints];
-  if (allPoints.length === 0) return null;
-  const minX = Math.min(...allPoints.map((point) => point.x));
-  const maxX = Math.max(...allPoints.map((point) => point.x));
+  const all = [...points, ...secondaryPoints];
+  const minX = Math.min(...all.map((p) => p.x));
+  const maxX = Math.max(...all.map((p) => p.x));
   const ySpan = Math.max(maxY - minY, 1);
   const xSpan = Math.max(maxX - minX, 1);
-  const project = (point: { x: number; y: number }) => {
-    const x = 16 + ((point.x - minX) / xSpan) * 368;
-    const y = 152 - ((point.y - minY) / ySpan) * 128;
-    return { x, y };
-  };
-  const path = (series: Array<{ x: number; y: number }>) =>
-    series
-      .map((point) => {
-        const projected = project(point);
-        return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`;
-      })
-      .join(" ");
-  const last = allPoints.at(-1);
+  const project = (p: { x: number; y: number }) => ({
+    x: 16 + ((p.x - minX) / xSpan) * 368,
+    y: 132 - ((p.y - minY) / ySpan) * 108,
+  });
   const renderSeries = (
     series: Array<{ x: number; y: number }>,
     stroke: string,
-    strokeWidth: string,
-    strokeDasharray?: string,
+    width: string,
+    dash?: string,
   ) => {
     if (series.length === 0) return null;
     if (series.length === 1) {
-      const projected = project(series[0]!);
-      return (
-        <circle
-          cx={projected.x}
-          cy={projected.y}
-          r="4"
-          fill={stroke}
-          stroke="#0f172a"
-          strokeWidth="2"
-        />
-      );
+      const p = project(series[0]!);
+      return <circle cx={p.x} cy={p.y} r="4" fill={stroke} />;
     }
-
     return (
       <polyline
-        points={path(series)}
+        points={series
+          .map((p) => {
+            const q = project(p);
+            return `${q.x.toFixed(1)},${q.y.toFixed(1)}`;
+          })
+          .join(" ")}
         fill="none"
         stroke={stroke}
-        strokeWidth={strokeWidth}
+        strokeWidth={width}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeDasharray={strokeDasharray}
+        strokeDasharray={dash}
       />
     );
   };
-
+  const lastY = all.at(-1)?.y;
   return (
     <div className="mt-4">
       <svg
-        viewBox="0 0 400 176"
-        className="h-56 w-full"
+        viewBox="0 0 400 152"
+        className="h-[150px] w-full"
         role="img"
-        aria-label={ariaLabel}
+        aria-label={t("Ride speed graph")}
       >
-        <line x1="16" y1="24" x2="384" y2="24" stroke="#1e293b" />
-        <line x1="16" y1="88" x2="384" y2="88" stroke="#1e293b" />
-        <line x1="16" y1="152" x2="384" y2="152" stroke="#334155" />
-        {renderSeries(points, color, "3")}
-        {secondaryColor &&
-          renderSeries(secondaryPoints, secondaryColor, "2.5", "6 5")}
+        {[24, 78, 132].map((y) => (
+          <line
+            key={y}
+            x1="16"
+            x2="384"
+            y1={y}
+            y2={y}
+            stroke="rgba(14,14,16,0.10)"
+            strokeWidth="1"
+            strokeDasharray="3 4"
+          />
+        ))}
+        {renderSeries(points, "#FF6A1A", "3")}
+        {renderSeries(secondaryPoints, "#f472b6", "2.5", "6 5")}
       </svg>
-      <div className="flex items-center justify-between text-[11px] text-fg-dim">
-        <span>
-          {formatChartXAxisValue(minX)} {xSuffix}
-        </span>
-        {last && (
-          <span>
-            {formatNumber(last.y, 0)} {valueSuffix}
-          </span>
+      <div className="flex items-center justify-between text-[11px] text-fg-mute">
+        <span>1</span>
+        {lastY != null && (
+          <Mono>
+            {Math.round(lastY)} {unit}
+          </Mono>
         )}
-        <span>
-          {formatChartXAxisValue(maxX)} {xSuffix}
-        </span>
+        <span>{maxX}</span>
       </div>
     </div>
   );
-}
-
-function formatChartXAxisValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : formatNumber(value, 1);
 }
