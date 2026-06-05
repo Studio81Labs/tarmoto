@@ -3582,6 +3582,8 @@ export interface components {
       rider_id: string;
       rider_name: string;
       rider_avatar_url: string | null;
+      /** @description Rider-given ride name, used as the feed-card title. */
+      name: string | null;
       ride_type: string;
       started_at: string;
       distance_km: number | null;

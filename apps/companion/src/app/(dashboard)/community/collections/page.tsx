@@ -26,6 +26,7 @@ import { useCollections } from "@/hooks/useCollections";
 import { Card, Mono, Stamp } from "@tarmoto/ui";
 import { Share2 } from "lucide-react";
 import { CommunityScaffold } from "../_CommunityScaffold";
+import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
@@ -184,6 +185,17 @@ export default function RouteCollectionsPage() {
       )}
 
       <Toolbar search={search} onSearch={setSearch} />
+
+      <div className="mt-5">
+        <CollectionsDiscover
+          search={search}
+          onCreate={() => setModal({ mode: "create" })}
+        />
+      </div>
+
+      <div className="mb-1 mt-10">
+        <Stamp as="h2">{t("Your collections")}</Stamp>
+      </div>
 
       {showSkeleton ? (
         <div
