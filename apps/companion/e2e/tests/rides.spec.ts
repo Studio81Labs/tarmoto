@@ -153,11 +153,10 @@ test.describe("rides read path", () => {
     );
   });
 
-  // T31 — Ride detail: clicking the "Open ride" link routes to
-  // `/rides/[id]` and the page shows the trip metadata. The H1 reads
-  // "Ride on <date>" (the page doesn't surface `ride.name` in the
-  // header), and the stat cards expose distance / duration / avg
-  // speed / elevation gain from the detail endpoint.
+  // T31 — Ride detail: clicking a ride row routes to `/rides/[id]` and the
+  // v2 detail page shows the trip metadata — H1 is the ride name, MetricTile
+  // stats (distance / avg speed / ascent …), the route map, the road-segments
+  // table, and the elevation climb/descent summary.
   test("T31: clicking through to a ride opens its detail with route + stats", async ({
     authedPage: page,
     mockApi,
@@ -188,85 +187,34 @@ test.describe("rides read path", () => {
       page.getByRole("heading", { level: 1, name: RIDE_DETAIL.name }),
     ).toBeVisible();
 
-    // Stat cards key off the seeded metadata. The value + unit are
-    // rendered inline (e.g. "90" and "km/h" inside the same paragraph,
-    // separated only by an inner <span>), so we scope to the StatCard
-    // by its label text and assert the value appears inside that card.
-    // Without hydration, the StatCard would render "—" and these
-    // assertions would fail.
-    const avgSpeedCard = page
-      .locator("div")
-      .filter({ hasText: "Avg speed" })
-      .filter({ hasText: "km/h" })
-      .first();
-    await expect(avgSpeedCard).toContainText("90");
+    // Stat tiles (MetricTile) key off the seeded metadata. Scope to each tile
+    // by its label + value (the innermost div carrying both is the tile) so a
+    // regression that drops hydration — rendering "—" — fails the assertion.
+    const statTile = (label: string, value: string) =>
+      page
+        .locator("div")
+        .filter({ hasText: label })
+        .filter({ hasText: value })
+        .last();
+    await expect(statTile("Avg speed", "90")).toBeVisible();
+    await expect(statTile("Distance", "175")).toBeVisible();
+    await expect(statTile("Ascent", "1,200")).toBeVisible();
 
-    const distanceCard = page
-      .locator("div")
-      .filter({ hasText: "Distance" })
-      .filter({ hasText: "km" })
-      .first();
-    await expect(distanceCard).toContainText("175.0");
-
-    const elevationCard = page
-      .locator("div")
-      .filter({ hasText: "Elevation gain" })
-      .first();
-    await expect(elevationCard).toContainText("1200");
-
-    // Distinguish "map rendered with the seeded geometry" from the
-    // "No GPS track was recorded" fallback: both branches share the
-    // same SectionHeader subtitle above them, so asserting on the
-    // subtitle alone wouldn't catch a regression that dropped to the
-    // fallback. The route map element is aria-labelled, and the
-    // fallback only appears when `route_geometry` is null or has
-    // fewer than 2 points — we assert both directions explicitly.
-    // `RideRouteMap` renders a `<div aria-label="Ride route map">` — a
-    // bare div doesn't carry an implicit landmark role, so we locate
-    // it by its aria-label rather than `getByRole("region", …)`.
+    // Route map rendered with the seeded geometry (not the no-GPS fallback).
+    // RideRouteMap renders `<div aria-label="Ride route map">`.
     await expect(page.getByLabel(/ride route map/i)).toBeVisible();
     await expect(page.getByText(/no gps track was recorded/i)).toBeHidden();
 
-    // Speed graph: assert two independent signals so a regression in
-    // either the subtitle wiring OR the chart rendering itself fails
-    // the test.
-    //
-    // 1) The SectionHeader subtitle reads "X km/h peak across recorded
-    //    segments" only when segments hydrated; the empty-state copy is
-    //    hidden. Catches a regression that drops segment wire data.
-    // 2) The chart component renders an `<svg role="img" aria-label=
-    //    "Ride speed graph">`. Asserting that directly catches a
-    //    regression that deletes the chart or makes it return null
-    //    even when the subtitle (which is computed upstream) still
-    //    shows the populated copy.
-    await expect(
-      page.getByText(/km\/h peak across recorded segments/i),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/speed samples are attached once segment telemetry/i),
-    ).toBeHidden();
-    await expect(
-      page.getByRole("img", { name: /ride speed graph/i }),
-    ).toBeVisible();
-
-    // Segments table: each seeded segment surfaces by its road_name.
-    // Also covers the "Per-segment road quality, speed, and lean
-    // angle" panel the doc names alongside the chart.
+    // Road segments table: each seeded segment surfaces by its road_name.
     await expect(page.getByText("Stelvio Pass")).toBeVisible();
     await expect(page.getByText("Bormio Loop")).toBeVisible();
+    await expect(page.getByText(/roads ridden/i)).toBeVisible();
 
-    // Elevation profile: per-sample elevation isn't recorded yet, so
-    // `ElevationProfileChart` always renders the empty state today.
-    // Assert both the section header and the empty-state copy so a
-    // regression that deletes the section (or breaks the chart slot)
-    // fails T31 — covering the "elevation profile" line of the doc
-    // even though it's currently a flat empty state. Replace with a
-    // real-data assertion when per-sample elevation lands.
+    // Elevation summary: per-sample profile isn't recorded yet, so the card
+    // shows the climb/descent totals + an honest empty note.
+    await expect(page.getByText("Climb & descent")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: /elevation profile/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/no elevation profile was recorded for this ride/i),
+      page.getByText(/per-sample elevation isn't recorded yet/i),
     ).toBeVisible();
   });
 });

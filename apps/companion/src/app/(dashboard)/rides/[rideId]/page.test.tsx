@@ -5,8 +5,8 @@ import { useAuthStore } from "@/stores/auth";
 
 let routeRideId = "ride-1";
 
-const mockedRideRouteMap = vi.fn(({ label }: { label?: string }) => (
-  <div data-testid="ride-route-map">{label ?? "Ride route map"}</div>
+const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
+  <div data-testid="ride-route-map">{props.label ?? "Ride route map"}</div>
 ));
 
 vi.mock("next/navigation", () => ({
@@ -34,7 +34,7 @@ function ride(overrides: Record<string, unknown> = {}) {
     id: "ride-1",
     name: null,
     status: "completed",
-    ride_type: "solo",
+    ride_type: "trip",
     started_at: "2026-05-01T08:00:00.000Z",
     ended_at: "2026-05-01T10:00:00.000Z",
     distance_km: 120,
@@ -47,6 +47,7 @@ function ride(overrides: Record<string, unknown> = {}) {
     curve_count: 140,
     max_lean_angle: 34,
     fuel_estimate_l: 5.2,
+    lean_distribution: { "0_10": 10, "10_20": 20, "20_30": 40, "30_plus": 30 },
     route_geometry: [
       { lat: 49.1, lng: 16.6 },
       { lat: 49.2, lng: 16.8 },
@@ -73,15 +74,12 @@ function ride(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("RideDetailPage analytics", () => {
+describe("RideDetailPage", () => {
   beforeEach(() => {
     routeRideId = "ride-1";
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
-    // The detail page now gates its fetch on `useAuthStore.accessToken`
-    // (matches the AuthSync race fix). Seed a session so the effect
-    // actually fires under test.
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -93,7 +91,7 @@ describe("RideDetailPage analytics", () => {
     });
   });
 
-  it("renders T31 route map, elevation profile, speed graph, and stats", async () => {
+  it("renders the v2 detail: breadcrumb, map, stat tiles, elevation, dynamics, segments", async () => {
     vi.mocked(api.GET).mockResolvedValueOnce({
       data: ride(),
       response: { status: 200 },
@@ -101,7 +99,13 @@ describe("RideDetailPage analytics", () => {
 
     render(<RideDetailPage />);
 
-    expect(await screen.findByTestId("ride-route-map")).toBeInTheDocument();
+    // Breadcrumb back to the list.
+    expect(
+      await screen.findByRole("link", { name: /Ride History · All rides/i }),
+    ).toHaveAttribute("href", "/rides");
+
+    // Route map gets the geometry.
+    expect(screen.getByTestId("ride-route-map")).toBeInTheDocument();
     expect(mockedRideRouteMap).toHaveBeenCalledWith(
       expect.objectContaining({
         geometry: [
@@ -110,12 +114,25 @@ describe("RideDetailPage analytics", () => {
         ],
       }),
     );
-    expect(screen.getByText("Elevation profile")).toBeInTheDocument();
-    expect(screen.getByText("Speed graph")).toBeInTheDocument();
-    expect(
-      screen.getByText("No elevation profile was recorded for this ride."),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/98 km\/h peak/i)).toBeInTheDocument();
+
+    // Stat tiles (distance/avg speed/max lean/ascent).
+    expect(screen.getByText("120")).toBeInTheDocument();
+    expect(screen.getByText("60")).toBeInTheDocument();
+    expect(screen.getByText("34°")).toBeInTheDocument();
+
+    // Elevation summary uses the totals (per-sample profile not recorded).
+    expect(screen.getByText("Climb & descent")).toBeInTheDocument();
+    expect(screen.getByText("+700 m")).toBeInTheDocument();
+    expect(screen.getByText("−650 m")).toBeInTheDocument();
+
+    // Lean dynamics: avg lean derived from the histogram (weighted 24°).
+    expect(screen.getByText("Time spent leaning")).toBeInTheDocument();
+    expect(screen.getByText("24°")).toBeInTheDocument();
+
+    // Road segments table.
+    expect(screen.getByText("2 roads ridden")).toBeInTheDocument();
+    expect(screen.getByText("Ridge Road")).toBeInTheDocument();
+    expect(screen.getByText("Forest Run")).toBeInTheDocument();
   });
 
   it("renames the ride via PATCH and reflects the new name", async () => {
@@ -151,35 +168,33 @@ describe("RideDetailPage analytics", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a visible speed marker for one-segment rides", async () => {
+  it("offers Compare / Share / Export actions in the header", async () => {
     vi.mocked(api.GET).mockResolvedValueOnce({
-      data: ride({
-        segments: [
-          {
-            road_segment_id: "seg-1",
-            road_name: "Ridge Road",
-            quality_reading: 4.4,
-            speed_avg: 58,
-            speed_max: 86,
-            lean_angle_max: 22,
-          },
-        ],
-      }),
+      data: ride(),
       response: { status: 200 },
     } as unknown as Awaited<ReturnType<typeof api.GET>>);
 
-    const { container } = render(<RideDetailPage />);
+    render(<RideDetailPage />);
 
-    expect(await screen.findByText(/86 km\/h peak/i)).toBeInTheDocument();
-    const speedGraph = container.querySelector(
-      'svg[aria-label="Ride speed graph"]',
-    );
-    expect(speedGraph?.querySelector("circle")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: /Compare/i }),
+    ).toHaveAttribute("href", "/rides/compare?a=ride-1");
+    expect(screen.getByRole("button", { name: /Share/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Export GPX/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Export CSV/i }),
+    ).toBeInTheDocument();
   });
 
-  it("distinguishes missing GPS and missing elevation from API failures", async () => {
+  it("degrades unbacked sections without GPS or lean samples", async () => {
     vi.mocked(api.GET).mockResolvedValueOnce({
-      data: ride({ route_geometry: null, segments: [] }),
+      data: ride({
+        route_geometry: null,
+        lean_distribution: null,
+        segments: [],
+      }),
       response: { status: 200 },
     } as unknown as Awaited<ReturnType<typeof api.GET>>);
 
@@ -193,7 +208,25 @@ describe("RideDetailPage analytics", () => {
       screen.getByText("No GPS track was recorded for this ride."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("No elevation profile was recorded for this ride."),
+      screen.getByText("No lean samples were recorded for this ride."),
     ).toBeInTheDocument();
+    // No segments → no segments table.
+    expect(screen.queryByText(/roads ridden/i)).not.toBeInTheDocument();
+  });
+
+  it("renders quality bars for the average road quality", async () => {
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride(),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    // avg_road_quality 4.1 → tier 4 (also rendered per quality segment).
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Quality 4 of 5").length).toBeGreaterThan(
+      0,
+    );
   });
 });
