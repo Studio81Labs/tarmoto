@@ -106,7 +106,10 @@ export function buildDemoRoadSpecs(count: number): DemoRoadSpec[] {
       road_name: `Demo Road ${i + 1}`,
       geom,
       length_m: Math.round(lineLengthKm(geom) * 1000),
-      curviness_score: round2(rng()),
+      // Canonical curviness scale is 0–5 (fun-zone clustering gates on
+      // `>= 3.0` and normalises via `/ 5.0`); seed across the full range so
+      // demo rides show a real surface/curviness spread, not all "straight".
+      curviness_score: round2(rng() * 5),
       quality_score: round2(
         ROAD_QUALITY.VERY_POOR +
           rng() * (ROAD_QUALITY.EXCELLENT - ROAD_QUALITY.VERY_POOR),

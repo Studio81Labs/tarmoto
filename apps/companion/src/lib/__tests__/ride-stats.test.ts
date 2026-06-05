@@ -5,6 +5,7 @@ import {
   computeCalendarHeatmap,
   computeDistanceSeries,
   computeMonthlyDistance,
+  computeQualityTrend,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -258,6 +259,83 @@ describe("computeDistanceSeries", () => {
     const points = computeDistanceSeries([], "90d", now);
     expect(points).toHaveLength(90);
     expect(points[89]?.key).toBe("2026-06-15");
+  });
+});
+
+describe("computeQualityTrend", () => {
+  const now = new Date("2026-06-15T10:00:00Z");
+
+  it("returns 12 rolling months, null for months without scored rides", () => {
+    const points = computeQualityTrend([], now);
+    expect(points).toHaveLength(12);
+    expect(points[0]?.key).toBe("2025-07");
+    expect(points[11]?.key).toBe("2026-06");
+    expect(points[11]?.axisLabel).toBe("Jun");
+    expect(points.every((p) => p.avgQuality === null && p.rides === 0)).toBe(
+      true,
+    );
+  });
+
+  it("distance-weights quality within a month and counts rides", () => {
+    const points = computeQualityTrend(
+      [
+        ride({
+          id: "1",
+          started_at: "2026-06-02T10:00:00Z",
+          distance_km: 10,
+          avg_road_quality: 4,
+        }),
+        ride({
+          id: "2",
+          started_at: "2026-06-09T10:00:00Z",
+          distance_km: 30,
+          avg_road_quality: 2,
+        }),
+      ],
+      now,
+    );
+    const june = points.find((p) => p.key === "2026-06");
+    // (4·10 + 2·30) / 40 = 2.5
+    expect(june?.avgQuality).toBeCloseTo(2.5);
+    expect(june?.rides).toBe(2);
+  });
+
+  it("ignores unscored rides for the average but still counts them", () => {
+    const points = computeQualityTrend(
+      [
+        ride({
+          id: "1",
+          started_at: "2026-05-02T10:00:00Z",
+          distance_km: 10,
+          avg_road_quality: null,
+        }),
+        ride({
+          id: "2",
+          started_at: "2026-05-09T10:00:00Z",
+          distance_km: 10,
+          avg_road_quality: 4,
+        }),
+      ],
+      now,
+    );
+    const may = points.find((p) => p.key === "2026-05");
+    expect(may?.avgQuality).toBeCloseTo(4);
+    expect(may?.rides).toBe(2);
+  });
+
+  it("ignores rides older than 12 months", () => {
+    const points = computeQualityTrend(
+      [
+        ride({
+          id: "1",
+          started_at: "2024-06-02T10:00:00Z",
+          distance_km: 10,
+          avg_road_quality: 5,
+        }),
+      ],
+      now,
+    );
+    expect(points.every((p) => p.avgQuality === null)).toBe(true);
   });
 });
 

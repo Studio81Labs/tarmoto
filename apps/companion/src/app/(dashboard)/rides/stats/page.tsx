@@ -29,6 +29,11 @@ import {
 } from "@tarmoto/ui";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { fetchAllRides } from "@/lib/rides-fetch";
+import {
+  fetchRideBreakdown,
+  type RideBreakdown,
+  type RideBreakdownSlice,
+} from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -38,11 +43,13 @@ import {
   computeAllTimeTotals,
   computeCalendarHeatmap,
   computeDistanceSeries,
+  computeQualityTrend,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
   filterRides,
   STATS_WINDOWS,
+  type QualityPoint,
   type RideForStats,
   type RideFilters,
   type RideType,
@@ -105,6 +112,29 @@ export default function StatsPage() {
       cancelled = true;
     };
   }, [authReady]);
+  // Surface + curviness breakdown is a server-side per-segment aggregate, so it
+  // refetches whenever the active filter changes (unlike the client-aggregated
+  // cards). `null` = still loading; the card renders honest empty/error states.
+  const [breakdown, setBreakdown] = useState<RideBreakdown | null>(null);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!authReady) return;
+    let cancelled = false;
+    setBreakdown(null);
+    setBreakdownError(null);
+    fetchRideBreakdown(filters)
+      .then((data) => {
+        if (!cancelled) setBreakdown(data);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setBreakdownError(err.message || "Could not load the breakdown");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, filters]);
   const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
@@ -133,6 +163,12 @@ export default function StatsPage() {
   );
   const yearlyTotals = useMemo(
     () => computeYearlyTotals(ridesAcrossYears),
+    [ridesAcrossYears],
+  );
+  // Quality trend is the last 12 months regardless of the window (ride-type
+  // still applies), computed client-side from `avg_road_quality`.
+  const qualityTrend = useMemo(
+    () => computeQualityTrend(ridesAcrossYears),
     [ridesAcrossYears],
   );
   const yoy = useMemo(
@@ -299,6 +335,13 @@ export default function StatsPage() {
           </ResponsiveContainer>
         </div>
       </Card>
+
+      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
+        <SurfaceBreakdownCard breakdown={breakdown} error={breakdownError} />
+        <CurvinessMixCard breakdown={breakdown} error={breakdownError} />
+      </div>
+
+      <QualityTrendCard points={qualityTrend} />
 
       <Card padded={false} className="p-[22px]">
         <SectionHeading
@@ -547,6 +590,247 @@ function SectionHeading({
         <Mono className="shrink-0 text-[11px] text-fg-dim">{caption}</Mono>
       )}
     </div>
+  );
+}
+
+// Surface swatches keyed by the canonical `SURFACE_TYPES`. Hex values match the
+// v2 design's surface legend; kept inline (like the chart colours) so SSR and
+// CSS render identically.
+const SURFACE_COLORS: Record<string, string> = {
+  asphalt: "#26262B",
+  concrete: "#9A958C",
+  cobblestone: "#A971D6",
+  gravel: "#D2A06A",
+  dirt: "#7E5A3C",
+  unknown: "#C7C0B2",
+};
+const surfaceColor = (key: string) => SURFACE_COLORS[key] ?? "#C7C0B2";
+// Light track behind the curviness/quality bars (paper-on-cream).
+const TRACK_COLOR = "#E7DECF";
+
+interface BreakdownBodyProps {
+  breakdown: RideBreakdown | null;
+  error: string | null;
+  slices: RideBreakdownSlice[] | undefined;
+  emptyLabel: string;
+  children: (slices: RideBreakdownSlice[]) => React.ReactNode;
+}
+// Shared loading / error / empty gate for the two breakdown cards so each
+// renders an honest state instead of an all-zero chart.
+function BreakdownBody({
+  breakdown,
+  error,
+  slices,
+  emptyLabel,
+  children,
+}: BreakdownBodyProps) {
+  if (error) {
+    return <p className="text-sm text-fg-dim">{error}</p>;
+  }
+  if (!breakdown) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-fg-dim">
+        <Loader2 size={14} className="animate-spin" />
+        {t("Loading… ")}
+      </div>
+    );
+  }
+  if (!slices || slices.length === 0) {
+    return <p className="text-sm text-fg-dim">{emptyLabel}</p>;
+  }
+  return <>{children(slices)}</>;
+}
+
+interface BreakdownCardProps {
+  breakdown: RideBreakdown | null;
+  error: string | null;
+}
+function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Surface breakdown")}
+        title={t("By distance ridden")}
+      />
+      <BreakdownBody
+        breakdown={breakdown}
+        error={error}
+        slices={breakdown?.surface}
+        emptyLabel={t(
+          "No road surfaces yet — needs rides matched to known roads.",
+        )}
+      >
+        {(slices) => (
+          <>
+            <div className="flex h-3 overflow-hidden rounded-full">
+              {slices.map((s) => (
+                <div
+                  key={s.key}
+                  style={{
+                    width: `${s.pct}%`,
+                    backgroundColor: surfaceColor(s.key),
+                  }}
+                  title={`${s.label} · ${s.pct}%`}
+                />
+              ))}
+            </div>
+            <ul className="mt-4 space-y-2.5">
+              {slices.map((s) => (
+                <li
+                  key={s.key}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: surfaceColor(s.key) }}
+                    />
+                    <span className="text-ink">{s.label}</span>
+                  </span>
+                  <Mono className="text-fg-dim">{s.pct}%</Mono>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </BreakdownBody>
+    </Card>
+  );
+}
+
+function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Curviness mix")}
+        title={t("How twisty was your year")}
+      />
+      <BreakdownBody
+        breakdown={breakdown}
+        error={error}
+        slices={breakdown?.curviness}
+        emptyLabel={t(
+          "No curviness data yet — needs rides matched to known roads.",
+        )}
+      >
+        {(slices) => {
+          // Accent the single dominant band; ties default to none so we never
+          // light up two bars as "the" peak.
+          const top = slices.reduce(
+            (best, s) => (s.pct > best ? s.pct : best),
+            0,
+          );
+          const peakCount = slices.filter((s) => s.pct === top).length;
+          return (
+            <div className="space-y-3">
+              {slices.map((s) => {
+                const isPeak = top > 0 && s.pct === top && peakCount === 1;
+                return (
+                  <div key={s.key}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-ink">{s.label}</span>
+                      <Mono className="text-fg-dim">{s.pct}%</Mono>
+                    </div>
+                    <div
+                      className="mt-1.5 h-2 overflow-hidden rounded-full"
+                      style={{ backgroundColor: TRACK_COLOR }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${s.pct}%`,
+                          backgroundColor: isPeak ? "#D44F00" : "#26262B",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }}
+      </BreakdownBody>
+    </Card>
+  );
+}
+
+function QualityTrendCard({ points }: { points: QualityPoint[] }) {
+  const hasData = points.some((p) => p.avgQuality !== null);
+  const byKey = new Map(points.map((p) => [p.key, p]));
+  return (
+    <Card padded={false} className="p-[22px]">
+      <SectionHeading
+        className="mb-[18px]"
+        stamp={t("Quality trend · 12 months")}
+        title={t("Average road quality")}
+        caption={t("0–5 scale")}
+      />
+      {hasData ? (
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={points}
+              margin={{ top: 8, right: 16, bottom: 0, left: 0 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(14, 14, 16, 0.10)"
+              />
+              <XAxis
+                dataKey="key"
+                stroke="rgba(14, 14, 16, 0.42)"
+                fontSize={12}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={16}
+                tickFormatter={(value: string) =>
+                  byKey.get(value)?.axisLabel ?? value
+                }
+              />
+              <YAxis
+                stroke="rgba(14, 14, 16, 0.42)"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                width={32}
+                domain={[0, 5]}
+                ticks={[0, 1, 2, 3, 4, 5]}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "#F5EFE6",
+                  border: "1px solid rgba(14, 14, 16, 0.10)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: "#0E0E10" }}
+                labelFormatter={(label) =>
+                  byKey.get(String(label))?.tooltipLabel ?? String(label)
+                }
+                formatter={(value) => [
+                  typeof value === "number" ? value.toFixed(2) : "—",
+                  "Avg quality",
+                ]}
+              />
+              <Line
+                type="monotone"
+                dataKey="avgQuality"
+                stroke="#D44F00"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                connectNulls={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <p className="text-sm text-fg-dim">
+          {t("No scored rides in the last 12 months.")}
+        </p>
+      )}
+    </Card>
   );
 }
 interface CalendarHeatmapProps {

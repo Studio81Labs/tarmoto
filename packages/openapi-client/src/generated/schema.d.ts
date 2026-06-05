@@ -1489,6 +1489,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/rides/stats/breakdown": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Surface + curviness distance breakdown for a filtered set */
+    get: operations["RidesController_breakdown"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/rides/{rideId}": {
     parameters: {
       query?: never;
@@ -3879,6 +3896,24 @@ export interface components {
       /** @description Number of rides matched by the filter. */
       ride_count: number;
     };
+    RideBreakdownSliceDto: {
+      /** @description Stable bucket key, e.g. "asphalt" or "twisty". */
+      key: string;
+      /** @description Display label, e.g. "Asphalt" or "Twisty". */
+      label: string;
+      /** @description Distance ridden in this bucket, in metres. */
+      meters: number;
+      /** @description Share of the total snapped distance, 0–100 (one decimal). */
+      pct: number;
+    };
+    RideBreakdownDto: {
+      /** @description Distance by road surface type, canonical order, surfaces with no distance omitted. */
+      surface: components["schemas"]["RideBreakdownSliceDto"][];
+      /** @description Distance by curviness band (straight → hairpin); the full ladder is returned so empty bands still render. */
+      curviness: components["schemas"]["RideBreakdownSliceDto"][];
+      /** @description Total snapped distance (metres) across the filtered rides. 0 when no segments are linked yet. */
+      total_meters: number;
+    };
     RenameRideDto: {
       name?: string | null;
     };
@@ -4962,6 +4997,9 @@ export type SchemaRideTrackDto = components["schemas"]["RideTrackDto"];
 export type SchemaRideTracksResponseDto =
   components["schemas"]["RideTracksResponseDto"];
 export type SchemaRideStatsDto = components["schemas"]["RideStatsDto"];
+export type SchemaRideBreakdownSliceDto =
+  components["schemas"]["RideBreakdownSliceDto"];
+export type SchemaRideBreakdownDto = components["schemas"]["RideBreakdownDto"];
 export type SchemaRenameRideDto = components["schemas"]["RenameRideDto"];
 export type SchemaLeanDistributionDto =
   components["schemas"]["LeanDistributionDto"];
@@ -7677,6 +7715,51 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RideStatsDto"];
+        };
+      };
+    };
+  };
+  RidesController_breakdown: {
+    parameters: {
+      query?: {
+        limit?: number;
+        offset?: number;
+        type?: "free" | "commute" | "trip" | "tracked";
+        /** @description ISO 8601 date (inclusive) */
+        started_from?: string;
+        /** @description ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening). */
+        started_to?: string;
+        min_distance_km?: number;
+        max_distance_km?: number;
+        min_quality?: number;
+        max_quality?: number;
+        /** @description Case-insensitive substring match against ride name */
+        q?: string;
+        /** @description Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together. */
+        near_lat?: number;
+        /** @description Longitude of the reference point. See near_lat. */
+        near_lng?: number;
+        /** @description Proximity radius in kilometres for the near_lat/near_lng filter. */
+        near_km?: number;
+        sort?:
+          | "started_at"
+          | "distance_km"
+          | "duration_min"
+          | "avg_road_quality";
+        order?: "asc" | "desc";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RideBreakdownDto"];
         };
       };
     };

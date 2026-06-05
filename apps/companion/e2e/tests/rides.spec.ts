@@ -258,6 +258,14 @@ test.describe("rides extras", () => {
     await expect(page.getByText(/total distance/i).first()).toBeVisible();
     // Monthly chart header proves the chart section mounted.
     await expect(page.getByText(/distance by month/i)).toBeVisible();
+    // Surface + curviness breakdown cards (server-derived) render their
+    // headings and at least one slice from the mock breakdown.
+    await expect(page.getByText(/by distance ridden/i)).toBeVisible();
+    await expect(page.getByText(/^Asphalt$/).first()).toBeVisible();
+    await expect(page.getByText(/how twisty was your year/i)).toBeVisible();
+    await expect(page.getByText(/^Twisty$/).first()).toBeVisible();
+    // Quality-trend card heading proves the client-side trend mounted.
+    await expect(page.getByText(/average road quality/i)).toBeVisible();
   });
 
   // T33 — Personal road map: `/rides/road-map` overlays the rider's

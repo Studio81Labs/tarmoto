@@ -34,6 +34,8 @@ export interface RideForStats {
   distance_km?: number | null;
   duration_min?: number | null;
   ride_type?: string | null;
+  /** Distance-weighted road-quality score (0–5); drives the quality trend. */
+  avg_road_quality?: number | null;
 }
 
 export interface AllTimeTotals {
@@ -300,6 +302,76 @@ export function computeDistanceSeries(
     points.push(monthPoint(d.getFullYear(), d.getMonth()));
   }
   return fillSeries(points, rides, monthKeyOf);
+}
+
+export interface QualityPoint {
+  /** `YYYY-MM` key for the calendar month. */
+  key: string;
+  /** Compact x-axis tick (month abbreviation). */
+  axisLabel: string;
+  /** Full tooltip label, e.g. "Jun 2026". */
+  tooltipLabel: string;
+  /** Distance-weighted average road quality (0–5), or null with no scored rides. */
+  avgQuality: number | null;
+  rides: number;
+}
+
+/**
+ * Monthly distance-weighted road-quality average for the last 12 calendar
+ * months ending at `now` (oldest → newest) — the "Quality trend · 12 months"
+ * card. Backed entirely by `ride.avg_road_quality` already on the ride list;
+ * a month with no scored rides yields `avgQuality: null` so the chart can gap
+ * it rather than plot a misleading zero.
+ */
+export function computeQualityTrend(
+  rides: readonly RideForStats[],
+  now = new Date(),
+): QualityPoint[] {
+  interface Acc {
+    point: QualityPoint;
+    weighted: number;
+    weight: number;
+    sum: number;
+    scored: number;
+  }
+  const accs: Acc[] = [];
+  const index = new Map<string, Acc>();
+  for (let i = 11; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const base = monthPoint(d.getFullYear(), d.getMonth());
+    const acc: Acc = {
+      point: { ...base, avgQuality: null, rides: 0 },
+      weighted: 0,
+      weight: 0,
+      sum: 0,
+      scored: 0,
+    };
+    accs.push(acc);
+    index.set(base.key, acc);
+  }
+
+  for (const ride of rides) {
+    const date = parseStartedAt(ride.started_at);
+    if (!date) continue;
+    const acc = index.get(monthKeyOf(date));
+    if (!acc) continue;
+    acc.point.rides += 1;
+    const quality = ride.avg_road_quality;
+    if (typeof quality !== "number" || !Number.isFinite(quality)) continue;
+    const distance = toNumber(ride.distance_km);
+    acc.weighted += quality * distance;
+    acc.weight += distance;
+    acc.sum += quality;
+    acc.scored += 1;
+  }
+
+  return accs.map(({ point, weighted, weight, sum, scored }) => {
+    if (scored === 0) return point;
+    // Distance-weight when distances exist; fall back to a plain mean so a
+    // month of zero-distance rides still reports its quality.
+    const avg = weight > 0 ? weighted / weight : sum / scored;
+    return { ...point, avgQuality: Math.round(avg * 100) / 100 };
+  });
 }
 
 export function computeYearlyTotals(

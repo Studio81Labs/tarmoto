@@ -26,8 +26,34 @@ import {
   type RideStatus,
 } from './dto/ride-response.dto.js';
 import { RideStatsDto } from './dto/ride-stats.dto.js';
+import {
+  RideBreakdownDto,
+  RideBreakdownSliceDto,
+} from './dto/ride-breakdown.dto.js';
 import { CsvService } from './csv.service.js';
-import { normalizeLeanDistribution } from '@tarmoto/shared';
+import { normalizeLeanDistribution, SURFACE_TYPES } from '@tarmoto/shared';
+
+// Display labels for the surface-breakdown slices. Keyed by the canonical
+// `SURFACE_TYPES` so the breakdown stays in lock-step with the shared enum.
+const SURFACE_LABELS: Record<string, string> = {
+  asphalt: 'Asphalt',
+  concrete: 'Concrete',
+  cobblestone: 'Cobblestone',
+  gravel: 'Gravel',
+  dirt: 'Dirt',
+  unknown: 'Unknown',
+};
+
+// Curviness bands over the canonical 0–5 `road_segments.curviness_score`
+// scale (the same scale the fun-zone clustering uses: `>= 3.0`, `/ 5.0`).
+// The SQL `CASE` in `breakdown()` mirrors these boundaries exactly.
+const CURVINESS_BANDS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'straight', label: 'Straight' },
+  { key: 'flowing', label: 'Flowing' },
+  { key: 'twisty', label: 'Twisty' },
+  { key: 'tight', label: 'Tight' },
+  { key: 'hairpin', label: 'Hairpin' },
+];
 
 @Injectable()
 export class RidesService {
@@ -314,6 +340,96 @@ export class RidesService {
       avg_quality: agg?.quality != null ? parseFloat(agg.quality) : null,
       ride_count: parseInt(agg?.count ?? '0', 10),
     };
+  }
+
+  /**
+   * Distance-weighted surface + curviness breakdown for the SAME filtered set
+   * as `list()`/`stats()`. Derived live from the rides' snapped segments
+   * (`ride_segments → road_segments`) rather than persisted on `ride_stats`,
+   * so a later correction to a segment's `surface_type` / `curviness_score`
+   * is reflected automatically and there's nothing to backfill. Each grouped
+   * aggregate runs over the `length_m` of the road segments the rides crossed.
+   */
+  async breakdown(
+    userId: string,
+    query: ListRidesDto,
+  ): Promise<RideBreakdownDto> {
+    // Base query matching the active filter, joined to the snapped road
+    // segments. INNER joins drop rides/segments without a linked road segment,
+    // which is exactly what "distance ridden on known roads" should measure.
+    const base = (): SelectQueryBuilder<Ride> =>
+      this.applyRidesFilters(
+        this.rideRepo
+          .createQueryBuilder('ride')
+          .where('ride.user_id = :userId', { userId }),
+        query,
+      )
+        .innerJoin('ride_segments', 'seg', 'seg.ride_id = ride.id')
+        .innerJoin('road_segments', 'road', 'road.id = seg.road_segment_id');
+
+    // Mirrors CURVINESS_BANDS on the canonical 0–5 curviness_score scale.
+    const curvinessCase = `CASE
+        WHEN road.curviness_score < 1 THEN 'straight'
+        WHEN road.curviness_score < 2 THEN 'flowing'
+        WHEN road.curviness_score < 3 THEN 'twisty'
+        WHEN road.curviness_score < 4 THEN 'tight'
+        ELSE 'hairpin'
+      END`;
+
+    const [surfaceRows, curvinessRows] = await Promise.all([
+      base()
+        .select('road.surface_type', 'key')
+        .addSelect('COALESCE(SUM(road.length_m), 0)', 'meters')
+        .groupBy('road.surface_type')
+        .getRawMany<{ key: string; meters: string }>(),
+      base()
+        .select(curvinessCase, 'key')
+        .addSelect('COALESCE(SUM(road.length_m), 0)', 'meters')
+        .groupBy(curvinessCase)
+        .getRawMany<{ key: string; meters: string }>(),
+    ]);
+
+    const metersByKey = (
+      rows: Array<{ key: string; meters: string }>,
+    ): Map<string, number> =>
+      new Map(rows.map((r) => [r.key, parseFloat(r.meters) || 0]));
+
+    const surfaceMeters = metersByKey(surfaceRows);
+    const curvinessMeters = metersByKey(curvinessRows);
+
+    const totalMeters = [...surfaceMeters.values()].reduce((a, b) => a + b, 0);
+
+    if (totalMeters <= 0) {
+      return { surface: [], curviness: [], total_meters: 0 };
+    }
+
+    const toSlice = (
+      key: string,
+      label: string,
+      meters: number,
+    ): RideBreakdownSliceDto => ({
+      key,
+      label,
+      meters,
+      // One-decimal percentage; the client renders the bar/legend verbatim.
+      pct: Math.round((meters / totalMeters) * 1000) / 10,
+    });
+
+    // Surface: canonical order, omit surfaces with no distance ridden.
+    const surface = SURFACE_TYPES.flatMap((key) => {
+      const meters = surfaceMeters.get(key) ?? 0;
+      return meters > 0
+        ? [toSlice(key, SURFACE_LABELS[key] ?? key, meters)]
+        : [];
+    });
+
+    // Curviness: return the full straight→hairpin ladder so empty bands still
+    // render their 0% rung.
+    const curviness = CURVINESS_BANDS.map((band) =>
+      toSlice(band.key, band.label, curvinessMeters.get(band.key) ?? 0),
+    );
+
+    return { surface, curviness, total_meters: totalMeters };
   }
 
   async getDetail(userId: string, rideId: string): Promise<RideDetailDto> {

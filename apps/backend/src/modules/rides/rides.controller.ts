@@ -34,6 +34,7 @@ import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import { RenameRideDto } from './dto/rename-ride.dto.js';
 import { RideStatsDto } from './dto/ride-stats.dto.js';
+import { RideBreakdownDto } from './dto/ride-breakdown.dto.js';
 import {
   RideResponseDto,
   RideSummaryDto,
@@ -161,6 +162,20 @@ export class RidesController {
     @Query() query: ListRidesDto,
   ): Promise<RideStatsDto> {
     return this.ridesService.stats(req.user!.userId, query);
+  }
+
+  // Two path segments, so it can't collide with the single-segment `:rideId`
+  // route below; declared next to `stats` for clarity.
+  @Get('stats/breakdown')
+  @ApiOperation({
+    summary: 'Surface + curviness distance breakdown for a filtered set',
+  })
+  @ApiResponse({ status: 200, type: RideBreakdownDto })
+  async breakdown(
+    @Req() req: express.Request,
+    @Query() query: ListRidesDto,
+  ): Promise<RideBreakdownDto> {
+    return this.ridesService.breakdown(req.user!.userId, query);
   }
 
   @Patch(':rideId')
