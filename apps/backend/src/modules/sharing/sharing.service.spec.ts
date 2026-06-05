@@ -932,10 +932,8 @@ describe('SharingService', () => {
       );
       // The invite code must be uppercase so `TripsService.join` (which
       // upper-cases submitted codes) can find the cloned trip.
-      const createdTrip = (tripRepo.create as jest.Mock).mock.calls[0][0] as {
-        invite_code: string;
-      };
-      expect(createdTrip.invite_code).toMatch(/^[A-Z0-9]{8}$/);
+      const createArg = tripRepo.create!.mock.calls[0]?.[0];
+      expect(createArg?.invite_code).toMatch(/^[A-Z0-9]{8}$/);
       expect(tripMemberRepo.save).toHaveBeenCalled();
       expect(tripDayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ route_geom: mockRide.route_geom }),

@@ -409,7 +409,7 @@ export class DemoSeeder {
         0.15 + rng() * 0.15, // 20–30°
         0.05 + rng() * 0.15, // 30°+
       ];
-      const wSum = w[0]! + w[1]! + w[2]! + w[3]!;
+      const wSum = w[0] + w[1] + w[2] + w[3];
       return repo.create({
         ride_id: ride.id,
         max_lean_angle: maxLean,
@@ -419,10 +419,10 @@ export class DemoSeeder {
         elevation_loss: round1(200 + rng() * 1200),
         curve_count: Math.round(20 + rng() * 120),
         lean_distribution_json: {
-          '0_10': Math.round((leaning * w[0]!) / wSum),
-          '10_20': Math.round((leaning * w[1]!) / wSum),
-          '20_30': Math.round((leaning * w[2]!) / wSum),
-          '30_plus': Math.round((leaning * w[3]!) / wSum),
+          '0_10': Math.round((leaning * w[0]) / wSum),
+          '10_20': Math.round((leaning * w[1]) / wSum),
+          '20_30': Math.round((leaning * w[2]) / wSum),
+          '30_plus': Math.round((leaning * w[3]) / wSum),
         },
       });
     });
