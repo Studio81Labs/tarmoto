@@ -37,6 +37,14 @@ export class SharedRide {
   @Column({ type: 'int', default: 0 })
   embed_click_count!: number;
 
+  /** How many times this route has been cloned into another rider's trips. */
+  @Column({ type: 'int', default: 0 })
+  clone_count!: number;
+
+  /** Optional rider-authored caption shown on the community feed card. */
+  @Column({ type: 'varchar', length: 280, nullable: true })
+  caption!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

@@ -28,6 +28,7 @@ export { FunZone } from './fun-zone.entity.js';
 export { FunZoneRoad } from './fun-zone-road.entity.js';
 export { CommuteRoute } from './commute-route.entity.js';
 export { SharedRide } from './shared-ride.entity.js';
+export { RideLike } from './ride-like.entity.js';
 export { TripShare } from './trip-share.entity.js';
 export { MapShare } from './map-share.entity.js';
 export { TripSuggestion } from './trip-suggestion.entity.js';
