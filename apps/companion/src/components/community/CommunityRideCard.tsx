@@ -31,6 +31,9 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const [likeCount, setLikeCount] = useState(ride.like_count);
   const [cloneCount, setCloneCount] = useState(ride.clone_count);
   const [cloning, setCloning] = useState(false);
+  // The global feed still returns stats-only rides with no track; the backend
+  // rejects cloning those (400), so the action is disabled for them.
+  const canClone = (ride.route_geometry?.length ?? 0) >= 2;
 
   const toggleLike = async () => {
     // Optimistic flip; revert on failure.
@@ -50,7 +53,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   };
 
   const clone = async () => {
-    if (cloning) return;
+    if (cloning || !canClone) return;
     setCloning(true);
     try {
       const { data } = await communityApi.clone(ride.id);
@@ -154,8 +157,9 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           <button
             type="button"
             onClick={clone}
-            disabled={cloning}
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold text-ink transition hover:brightness-95 disabled:opacity-60"
+            disabled={cloning || !canClone}
+            title={canClone ? undefined : t("This route has no track to clone")}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {cloning ? t("Adding…") : t("Add to trips →")}
           </button>

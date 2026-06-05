@@ -14,6 +14,7 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { generateInviteCode } from '../trips/invite-code.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
@@ -436,7 +437,7 @@ export class SharingService {
         title,
         num_days: 1,
         status: 'draft',
-        invite_code: randomBytes(6).toString('hex'),
+        invite_code: generateInviteCode(),
       }),
     );
     await this.tripMemberRepo.save(
