@@ -209,10 +209,20 @@ export class SharingService {
       // Hide rides owned by accounts that have requested deletion (US-62).
       // The hard-delete sweep removes the rows entirely; this filter
       // covers the 30-day grace window in between.
-      .andWhere('user.deleted_at IS NULL')
-      .andWhere(
+      .andWhere('user.deleted_at IS NULL');
+
+    if (viewerId) {
+      // Signed-in viewers see public + riders-only owners (NULL = the
+      // riders-only default); only `private` profiles are hidden.
+      qb.andWhere(
         "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
       );
+    } else {
+      // Anonymous (no token) viewers only see public-profile owners — the
+      // response carries `rider_id`/`rider_name`, so `riders-only` (and the
+      // NULL default) is a signed-in-only audience that must not leak.
+      qb.andWhere("pp.profile_visibility = 'public'");
+    }
 
     if (hasCentre) {
       // Only the spatial branch needs the geometry. The global feed

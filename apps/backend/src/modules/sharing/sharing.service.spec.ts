@@ -473,6 +473,20 @@ describe('SharingService', () => {
       expect(result.offset).toBe(0);
     });
 
+    it('restricts anonymous viewers to public-profile owners', async () => {
+      await service.listCommunityRides({});
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        "pp.profile_visibility = 'public'",
+      );
+    });
+
+    it('shows public + riders-only owners to a signed-in viewer', async () => {
+      await service.listCommunityRides({}, 'viewer-9');
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
+      );
+    });
+
     it('returns an empty page when nothing matches', async () => {
       mockQueryBuilder.getManyAndCount.mockResolvedValueOnce([[], 0]);
 
