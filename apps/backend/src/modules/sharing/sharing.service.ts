@@ -440,7 +440,7 @@ export class SharingService {
     // Atomic: the trip, its owner membership, the day, and the clone-count
     // bump all commit together — a mid-sequence failure leaves no orphan or
     // half-built trip (mirrors the trip create/duplicate paths).
-    const tripId = await this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async (manager) => {
       const trip = await manager.save(
         this.tripRepo.create({
           owner_id: userId,
@@ -469,9 +469,17 @@ export class SharingService {
         }),
       );
       await manager.increment(SharedRide, { id: shared.id }, 'clone_count', 1);
-      return trip.id;
+      // Read the post-increment value within the same transaction so two
+      // concurrent clones don't each report a stale `old + 1`.
+      const updated = await manager.findOne(SharedRide, {
+        where: { id: shared.id },
+        select: { id: true, clone_count: true },
+      });
+      return {
+        trip_id: trip.id,
+        clone_count: updated?.clone_count ?? (shared.clone_count ?? 0) + 1,
+      };
     });
-    return { trip_id: tripId, clone_count: (shared.clone_count ?? 0) + 1 };
   }
 
   /**

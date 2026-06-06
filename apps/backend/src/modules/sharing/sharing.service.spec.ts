@@ -29,7 +29,7 @@ describe('SharingService', () => {
   let tripRepo: Partial<jest.Mocked<Repository<Trip>>>;
   let tripDayRepo: Partial<jest.Mocked<Repository<TripDay>>>;
   let tripMemberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
-  let txManager: { save: jest.Mock; increment: jest.Mock };
+  let txManager: { save: jest.Mock; increment: jest.Mock; findOne: jest.Mock };
   let dataSource: { transaction: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
 
@@ -150,6 +150,8 @@ describe('SharingService', () => {
         .fn()
         .mockImplementation((e) => Promise.resolve({ id: 'trip-1', ...e })),
       increment: jest.fn().mockResolvedValue({ affected: 1 }),
+      // Post-increment re-read of the committed clone counter.
+      findOne: jest.fn().mockResolvedValue({ id: 'shared-1', clone_count: 8 }),
     };
     dataSource = {
       // Run the callback against the mock entity manager (no real tx).
@@ -987,6 +989,8 @@ describe('SharingService', () => {
         1,
       );
       expect(result.trip_id).toBe('trip-1');
+      // Reports the committed-within-tx counter, not a stale `old + 1`.
+      expect(result.clone_count).toBe(8);
     });
 
     it('rejects cloning a route with no geometry', async () => {
