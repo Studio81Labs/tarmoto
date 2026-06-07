@@ -50,7 +50,11 @@ export function CommunityScaffold({
       <Mono className="text-[11px]">{fallbackCollections}</Mono>
     ) : null;
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-page animate-fade-in flex-col p-4 md:p-7">
+    // Grows with content so the page scrolls through the AppShell scroller and
+    // the bottom padding is honoured (matching RidesScaffold). The earlier
+    // `h-full min-h-0 flex-col` "fill" layout pinned the scaffold to the
+    // viewport and pushed long feed/collection content past the bottom padding.
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <PageHeader
         stamp={t("Community")}
         icon={<Users size={18} strokeWidth={2} />}
@@ -63,7 +67,7 @@ export function CommunityScaffold({
       <div className="mb-[18px]">
         <CommunityTabsBar feedBadge={feed} collectionsBadge={collections} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      {children}
     </div>
   );
 }
