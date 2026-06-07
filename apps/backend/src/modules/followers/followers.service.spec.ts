@@ -13,12 +13,15 @@ import { User } from '../../entities/user.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { PushService } from '../push/index.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 
 describe('FollowersService', () => {
   let service: FollowersService;
   let followRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
+  let privacy: { loadPreferences: jest.Mock };
 
   const mockUser = {
     id: 'user-2',
@@ -76,6 +79,11 @@ describe('FollowersService', () => {
     sharedRideRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     };
+    privacy = {
+      loadPreferences: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -87,6 +95,7 @@ describe('FollowersService', () => {
           provide: PushService,
           useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -277,6 +286,85 @@ describe('FollowersService', () => {
       const result = await service.getFeed('user-1');
 
       expect(result[0].duration_min).toBeNull();
+    });
+  });
+
+  describe('getSuggestions', () => {
+    it('maps ranked candidate rows to suggestion DTOs', async () => {
+      // Capture predicates; for the `andWhere(cb)` form, run the callback with
+      // a sub-query-builder so we can assert the NOT-IN clause is parenthesised
+      // (a bare getQuery() would yield invalid `NOT IN SELECT …`).
+      const predicates: string[] = [];
+      const subQb = {
+        select: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getQuery: jest
+          .fn()
+          .mockReturnValue('(SELECT "uf"."following_id" FROM "user_follows")'),
+      };
+      const suggestQb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        subQuery: jest.fn().mockReturnValue(subQb),
+        andWhere: jest.fn(function (
+          this: unknown,
+          arg: string | ((qb: typeof suggestQb) => string),
+        ) {
+          predicates.push(typeof arg === 'function' ? arg(suggestQb) : arg);
+          return this;
+        }),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'user-9',
+            display_name: 'Matteo Ferri',
+            avatar_url: null,
+            home_region: 'Bergamo · IT',
+            ride_count: '312',
+          },
+        ]),
+      };
+      userRepo.findOne = jest
+        .fn()
+        .mockResolvedValue({ home_region: 'Bergamo · IT' });
+      userRepo.createQueryBuilder = jest.fn().mockReturnValue(suggestQb);
+
+      const result = await service.getSuggestions('user-1', 6);
+
+      expect(privacy.loadPreferences).toHaveBeenCalledWith('user-1');
+      // The follow-graph exclusion must be `NOT IN (SELECT …)`, not
+      // `NOT IN SELECT …` (which Postgres rejects with a syntax error).
+      expect(predicates.some((p) => /NOT IN \(SELECT/i.test(p))).toBe(true);
+      expect(result).toEqual([
+        {
+          id: 'user-9',
+          display_name: 'Matteo Ferri',
+          avatar_url: null,
+          home_region: 'Bergamo · IT',
+          ride_count: 312,
+        },
+      ]);
+    });
+
+    it('returns nothing when the rider opted out of personalised recs', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        personalized_recommendations_consent: false,
+      });
+      userRepo.createQueryBuilder = jest.fn();
+
+      const result = await service.getSuggestions('user-1', 6);
+
+      expect(result).toEqual([]);
+      // Short-circuits before building the ranking query.
+      expect(userRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 });

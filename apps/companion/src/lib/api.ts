@@ -1004,6 +1004,7 @@ export interface CommunityRide {
   rider_id: string;
   rider_name: string;
   rider_avatar_url: string | null;
+  name: string | null;
   ride_type: string;
   started_at: string;
   distance_km: number | null;
@@ -1012,7 +1013,21 @@ export interface CommunityRide {
   avg_curviness: number | null;
   duration_min: number | null;
   view_count: number;
+  description: string | null;
+  like_count: number;
+  viewer_has_liked: boolean;
+  clone_count: number;
   route_geometry: Array<{ lat: number; lng: number }> | null;
+}
+
+export interface RideLikeResult {
+  like_count: number;
+  viewer_has_liked: boolean;
+}
+
+export interface CloneRideResult {
+  trip_id: string;
+  clone_count: number;
 }
 
 export interface CommunityRidePage {
@@ -1047,6 +1062,18 @@ export const communityApi = {
     const suffix = query.size > 0 ? `?${query.toString()}` : "";
     return apiFetch<CommunityRidePage>(`/rides/community${suffix}`);
   },
+  like: (rideId: string) =>
+    apiFetch<RideLikeResult>(`/rides/${encodeURIComponent(rideId)}/like`, {
+      method: "POST",
+    }),
+  unlike: (rideId: string) =>
+    apiFetch<RideLikeResult>(`/rides/${encodeURIComponent(rideId)}/like`, {
+      method: "DELETE",
+    }),
+  clone: (rideId: string) =>
+    apiFetch<CloneRideResult>(`/rides/${encodeURIComponent(rideId)}/clone`, {
+      method: "POST",
+    }),
 };
 
 // ── Mountain passes endpoints (US-40 seasonal closures & pass status) ──

@@ -1,4 +1,3 @@
-import { randomBytes } from 'crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -26,6 +25,7 @@ import { CreateTripDto } from './dto/create-trip.dto.js';
 import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto } from './dto/invite-trip.dto.js';
+import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
@@ -40,10 +40,6 @@ import {
   type TripWaypointType,
 } from './dto/trip-response.dto.js';
 
-// Crockford-style base32 minus ambiguous chars (0/O, 1/I/L, U). 30 symbols
-// keep codes easy to dictate over the phone.
-const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
-const INVITE_LENGTH = 8;
 const MAX_INVITE_ALLOCATION_ATTEMPTS = 5;
 // Must match the unique index name in
 // `1714800000000-AddTripInviteCode.ts`. We disambiguate `23505` errors
@@ -267,9 +263,13 @@ export class TripsService {
    * propagates so a real bug isn't papered over as a code collision.
    * Centralised here so the retry budget, the collision check, and the
    * "gave up" error message stay in lockstep across every persist path
-   * (`POST /trips`, `POST /trips/import`, future variants).
+   * (`POST /trips`, `POST /trips/import`, ride cloning in SharingService).
+   * Public so sibling services reuse the same retry/collision semantics
+   * rather than writing `generateInviteCode()` directly and 500-ing on
+   * the rare collision; the callback owns all writes so they commit
+   * atomically with the allocated code.
    */
-  private async withInviteCodeAllocation<T>(
+  async withInviteCodeAllocation<T>(
     persist: (manager: EntityManager, inviteCode: string) => Promise<T>,
   ): Promise<T> {
     let lastError: unknown;
@@ -1148,22 +1148,6 @@ export class TripsService {
       days,
     };
   }
-}
-
-function generateInviteCode(): string {
-  // randomBytes for entropy; reject the small biased tail at the top of
-  // each byte so every code character is uniformly drawn from the
-  // 30-char alphabet (240 = floor(256 / 30) * 30).
-  const out: string[] = [];
-  while (out.length < INVITE_LENGTH) {
-    const buf = randomBytes(INVITE_LENGTH);
-    for (const byte of buf) {
-      if (byte >= 240) continue;
-      out.push(INVITE_ALPHABET[byte % INVITE_ALPHABET.length]);
-      if (out.length === INVITE_LENGTH) break;
-    }
-  }
-  return out.join('');
 }
 
 function lineStringToLatLngs(

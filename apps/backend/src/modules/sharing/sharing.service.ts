@@ -5,11 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { Repository, SelectQueryBuilder, In } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { RideLike } from '../../entities/ride-like.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { Trip } from '../../entities/trip.entity.js';
+import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { TripsService } from '../trips/trips.service.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
@@ -17,6 +22,8 @@ import {
   CommunityRidesResponseDto,
   CommunityRidesQueryDto,
   type CommunityRideSort,
+  RideLikeResponseDto,
+  CloneRideResponseDto,
   UserSharedRideDto,
   UserSharedRidesQueryDto,
   UserSharedRidesResponseDto,
@@ -27,10 +34,19 @@ export class SharingService {
   constructor(
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
+    @InjectRepository(RideLike)
+    private readonly rideLikeRepo: Repository<RideLike>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(Trip)
+    private readonly tripRepo: Repository<Trip>,
+    @InjectRepository(TripDay)
+    private readonly tripDayRepo: Repository<TripDay>,
+    @InjectRepository(TripMember)
+    private readonly tripMemberRepo: Repository<TripMember>,
+    private readonly tripsService: TripsService,
     private readonly privacy: PrivacyPreferencesService,
   ) {}
 
@@ -172,6 +188,7 @@ export class SharingService {
    */
   async listCommunityRides(
     query: CommunityRidesQueryDto,
+    viewerId?: string,
   ): Promise<CommunityRidesResponseDto> {
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
@@ -192,10 +209,20 @@ export class SharingService {
       // Hide rides owned by accounts that have requested deletion (US-62).
       // The hard-delete sweep removes the rows entirely; this filter
       // covers the 30-day grace window in between.
-      .andWhere('user.deleted_at IS NULL')
-      .andWhere(
+      .andWhere('user.deleted_at IS NULL');
+
+    if (viewerId) {
+      // Signed-in viewers see public + riders-only owners (NULL = the
+      // riders-only default); only `private` profiles are hidden.
+      qb.andWhere(
         "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
       );
+    } else {
+      // Anonymous (no token) viewers only see public-profile owners — the
+      // response carries `rider_id`/`rider_name`, so `riders-only` (and the
+      // NULL default) is a signed-in-only audience that must not leak.
+      qb.andWhere("pp.profile_visibility = 'public'");
+    }
 
     if (hasCentre) {
       // Only the spatial branch needs the geometry. The global feed
@@ -254,16 +281,52 @@ export class SharingService {
 
     const [rows, total] = await qb.getManyAndCount();
 
+    // Batch the heart counts (+ the viewer's own likes) for the page's rides
+    // in two small queries rather than a per-row correlated subquery.
+    const rideIds = rows.map((sr) => sr.ride.id);
+    const [likeCounts, likedRideIds] = await Promise.all([
+      this.likeCountsFor(rideIds),
+      viewerId ? this.likedRideIds(viewerId, rideIds) : Promise.resolve(null),
+    ]);
+
     return {
       items: rows.map((sr) =>
         this.toCommunityDto(
           sr as SharedRide & { ride: Ride; user: { display_name: string } },
+          likeCounts.get(sr.ride.id) ?? 0,
+          likedRideIds?.has(sr.ride.id) ?? false,
         ),
       ),
       total,
       limit,
       offset,
     };
+  }
+
+  private async likeCountsFor(
+    rideIds: readonly string[],
+  ): Promise<Map<string, number>> {
+    if (rideIds.length === 0) return new Map();
+    const rows = await this.rideLikeRepo
+      .createQueryBuilder('rl')
+      .select('rl.ride_id', 'ride_id')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('rl.ride_id IN (:...ids)', { ids: rideIds })
+      .groupBy('rl.ride_id')
+      .getRawMany<{ ride_id: string; cnt: string }>();
+    return new Map(rows.map((r) => [r.ride_id, parseInt(r.cnt, 10)]));
+  }
+
+  private async likedRideIds(
+    userId: string,
+    rideIds: readonly string[],
+  ): Promise<Set<string>> {
+    if (rideIds.length === 0) return new Set();
+    const rows = await this.rideLikeRepo.find({
+      where: { user_id: userId, ride_id: In(rideIds as string[]) },
+      select: { ride_id: true },
+    });
+    return new Set(rows.map((r) => r.ride_id));
   }
 
   /**
@@ -332,6 +395,130 @@ export class SharingService {
       limit,
       offset,
     };
+  }
+
+  /** Heart a community route (idempotent). Returns the new count + state. */
+  async likeRide(userId: string, rideId: string): Promise<RideLikeResponseDto> {
+    await this.assertCommunityRide(rideId);
+    // ON CONFLICT DO NOTHING — a double-tap (the unique (ride_id, user_id)
+    // collision) is a no-op, but any *real* write failure (FK drift, transient
+    // DB error, constraint issue) still throws rather than reporting a phantom
+    // "liked" state to the client.
+    await this.rideLikeRepo
+      .createQueryBuilder()
+      .insert()
+      .values({ ride_id: rideId, user_id: userId })
+      .orIgnore()
+      .execute();
+    return {
+      like_count: await this.rideLikeRepo.count({ where: { ride_id: rideId } }),
+      viewer_has_liked: true,
+    };
+  }
+
+  /** Remove a heart (idempotent). */
+  async unlikeRide(
+    userId: string,
+    rideId: string,
+  ): Promise<RideLikeResponseDto> {
+    await this.assertCommunityRide(rideId);
+    await this.rideLikeRepo.delete({ ride_id: rideId, user_id: userId });
+    return {
+      like_count: await this.rideLikeRepo.count({ where: { ride_id: rideId } }),
+      viewer_has_liked: false,
+    };
+  }
+
+  /** Clone a shared route into a new draft trip owned by the caller. */
+  async cloneRide(
+    userId: string,
+    rideId: string,
+  ): Promise<CloneRideResponseDto> {
+    const shared = await this.assertCommunityRide(rideId);
+    const ride =
+      shared.ride ?? (await this.rideRepo.findOne({ where: { id: rideId } }));
+    if (!ride) {
+      throw new NotFoundException('Shared ride not found');
+    }
+    if (!ride.route_geom) {
+      throw new BadRequestException(
+        'This route has no recorded geometry to clone',
+      );
+    }
+
+    const title = ride.name?.trim() || 'Cloned route';
+    // Atomic: the trip, its owner membership, the day, and the clone-count
+    // bump all commit together — a mid-sequence failure leaves no orphan or
+    // half-built trip (mirrors the trip create/duplicate paths). Allocate the
+    // invite code through TripsService so a rare `idx_trips_invite_code`
+    // collision retries with a fresh code instead of 500-ing the clone.
+    return this.tripsService.withInviteCodeAllocation(
+      async (manager, inviteCode) => {
+        const trip = await manager.save(
+          this.tripRepo.create({
+            owner_id: userId,
+            title,
+            num_days: 1,
+            status: 'draft',
+            invite_code: inviteCode,
+          }),
+        );
+        await manager.save(
+          this.tripMemberRepo.create({
+            trip_id: trip.id,
+            user_id: userId,
+            role: 'owner',
+          }),
+        );
+        await manager.save(
+          this.tripDayRepo.create({
+            trip_id: trip.id,
+            day_number: 1,
+            title,
+            distance_km: ride.distance_km,
+            route_geom: ride.route_geom,
+            avg_quality: ride.avg_road_quality,
+            curviness_score: ride.avg_curviness ?? null,
+          }),
+        );
+        await manager.increment(
+          SharedRide,
+          { id: shared.id },
+          'clone_count',
+          1,
+        );
+        // Read the post-increment value within the same transaction so two
+        // concurrent clones don't each report a stale `old + 1`.
+        const updated = await manager.findOne(SharedRide, {
+          where: { id: shared.id },
+          select: { id: true, clone_count: true },
+        });
+        return {
+          trip_id: trip.id,
+          clone_count: updated?.clone_count ?? (shared.clone_count ?? 0) + 1,
+        };
+      },
+    );
+  }
+
+  /**
+   * Resolve a ride that's actually in the community feed (publicly shared,
+   * owner not deleted or private). Likes/clones target the public route, not
+   * an arbitrary ride id, so a private/unshared ride 404s like the read path.
+   */
+  private async assertCommunityRide(rideId: string): Promise<SharedRide> {
+    const shared = await this.sharedRideRepo.findOne({
+      where: { ride_id: rideId, is_public: true },
+      relations: { ride: true, user: true },
+    });
+    if (!shared || shared.user?.deleted_at != null) {
+      throw new NotFoundException('Shared ride not found');
+    }
+    const prefs = await this.privacy.loadPreferences(shared.user_id);
+    if (prefs.profile_visibility === 'private') {
+      throw new NotFoundException('Shared ride not found');
+    }
+    return shared;
   }
 
   private applySort(
@@ -433,6 +620,8 @@ export class SharingService {
       ride: Ride;
       user: { display_name: string; avatar_url?: string | null };
     },
+    likeCount: number,
+    viewerHasLiked: boolean,
   ): CommunityRideDto {
     const ride = sr.ride;
     return {
@@ -441,6 +630,7 @@ export class SharingService {
       rider_id: sr.user_id,
       rider_name: sr.user?.display_name ?? 'Unknown',
       rider_avatar_url: sr.user?.avatar_url ?? null,
+      name: ride.name ?? null,
       ride_type: ride.ride_type,
       started_at: ride.started_at.toISOString(),
       distance_km: ride.distance_km,
@@ -449,6 +639,10 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: this.calcDurationMin(ride),
       view_count: sr.view_count ?? 0,
+      description: sr.caption ?? null,
+      like_count: likeCount,
+      viewer_has_liked: viewerHasLiked,
+      clone_count: sr.clone_count ?? 0,
       route_geometry: this.toRoutePreviewGeometry(ride),
     };
   }

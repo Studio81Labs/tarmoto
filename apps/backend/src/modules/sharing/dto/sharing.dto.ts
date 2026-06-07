@@ -274,6 +274,12 @@ export class CommunityRideDto {
   @ApiProperty({ nullable: true })
   rider_avatar_url!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Rider-given ride name, used as the feed-card title.',
+  })
+  name!: string | null;
+
   @ApiProperty()
   ride_type!: string;
 
@@ -307,11 +313,48 @@ export class CommunityRideDto {
 
   @ApiProperty({
     nullable: true,
+    description:
+      'Optional rider-authored caption for the feed card. Null when none was set.',
+  })
+  description!: string | null;
+
+  @ApiProperty({ description: 'Number of riders who hearted this route.' })
+  like_count!: number;
+
+  @ApiProperty({
+    description:
+      'Whether the authenticated viewer has hearted this route. Always false for anonymous viewers.',
+  })
+  viewer_has_liked!: boolean;
+
+  @ApiProperty({
+    description: 'Number of times this route has been cloned into trips.',
+  })
+  clone_count!: number;
+
+  @ApiProperty({
+    nullable: true,
     type: [RouteGeometryPointDto],
     description:
       'Polyline used for feed-card mini-previews. Null when the ride has no stored route geometry.',
   })
   route_geometry!: Array<{ lat: number; lng: number }> | null;
+}
+
+export class RideLikeResponseDto {
+  @ApiProperty({ description: 'Total hearts after the toggle.' })
+  like_count!: number;
+
+  @ApiProperty({ description: 'Whether the viewer now hearts this route.' })
+  viewer_has_liked!: boolean;
+}
+
+export class CloneRideResponseDto {
+  @ApiProperty({ description: 'Id of the trip created from the shared route.' })
+  trip_id!: string;
+
+  @ApiProperty({ description: 'Total clones after this one.' })
+  clone_count!: number;
 }
 
 export class CommunityRidesResponseDto {

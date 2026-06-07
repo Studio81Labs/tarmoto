@@ -1007,6 +1007,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/rides/{rideId}/like": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Heart a community route */
+    post: operations["SharingController_likeRide"];
+    /** Remove a heart from a community route */
+    delete: operations["SharingController_unlikeRide"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/{rideId}/clone": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Clone a community route into a new draft trip */
+    post: operations["SharingController_cloneRide"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/sensor/upload": {
     parameters: {
       query?: never;
@@ -1223,6 +1258,23 @@ export interface paths {
     };
     /** List the caller's owned and followed collections in one payload (US-56 follow/save). */
     get: operations["RouteCollectionsController_listLibrary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/discover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Browse public collections (search + popularity ranked) */
+    get: operations["RouteCollectionsController_discover"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2225,6 +2277,23 @@ export interface paths {
     post: operations["FollowersController_follow"];
     /** Unfollow a user */
     delete: operations["FollowersController_unfollow"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/users/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Riders the caller might want to follow */
+    get: operations["FollowersController_suggestions"];
+    put?: never;
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -3513,6 +3582,8 @@ export interface components {
       rider_id: string;
       rider_name: string;
       rider_avatar_url: string | null;
+      /** @description Rider-given ride name, used as the feed-card title. */
+      name: string | null;
       ride_type: string;
       started_at: string;
       distance_km: number | null;
@@ -3523,6 +3594,14 @@ export interface components {
       duration_min: number | null;
       /** @description Number of times this shared ride has been viewed via its token. Drives the `most_popular` sort. */
       view_count: number;
+      /** @description Optional rider-authored caption for the feed card. Null when none was set. */
+      description: string | null;
+      /** @description Number of riders who hearted this route. */
+      like_count: number;
+      /** @description Whether the authenticated viewer has hearted this route. Always false for anonymous viewers. */
+      viewer_has_liked: boolean;
+      /** @description Number of times this route has been cloned into trips. */
+      clone_count: number;
       /** @description Polyline used for feed-card mini-previews. Null when the ride has no stored route geometry. */
       route_geometry: components["schemas"]["RouteGeometryPointDto"][] | null;
     };
@@ -3532,6 +3611,18 @@ export interface components {
       total: number;
       limit: number;
       offset: number;
+    };
+    RideLikeResponseDto: {
+      /** @description Total hearts after the toggle. */
+      like_count: number;
+      /** @description Whether the viewer now hearts this route. */
+      viewer_has_liked: boolean;
+    };
+    CloneRideResponseDto: {
+      /** @description Id of the trip created from the shared route. */
+      trip_id: string;
+      /** @description Total clones after this one. */
+      clone_count: number;
     };
     CalibrationDto: {
       /** @description Mean accelerometer X (m/s²) over calibration window */
@@ -3753,6 +3844,27 @@ export interface components {
       owned: components["schemas"]["RouteCollectionSummaryDto"][];
       /** @description Collections the caller follows. Excludes private collections — if a curator demotes a collection back to private after being followed, the row is filtered out here so the library never lists an inaccessible link. */
       followed: components["schemas"]["RouteCollectionSummaryDto"][];
+    };
+    RouteCollectionCardDto: {
+      id: string;
+      slug: string;
+      title: string;
+      description: string | null;
+      owner_id: string | null;
+      owner_name: string | null;
+      /** @description Total routes in the collection. */
+      item_count: number;
+      /** @description How many riders follow this collection. */
+      follower_count: number;
+      /** @description Whether the authenticated viewer follows this collection. */
+      viewer_is_following: boolean;
+      updated_at: string;
+    };
+    RouteCollectionDiscoverResponseDto: {
+      items: components["schemas"]["RouteCollectionCardDto"][];
+      total: number;
+      limit: number;
+      offset: number;
     };
     CreateRouteCollectionDto: {
       title: string;
@@ -4423,6 +4535,14 @@ export interface components {
       display_name: string;
       followed_at: string;
     };
+    SuggestedRiderDto: {
+      id: string;
+      display_name: string;
+      avatar_url: string | null;
+      home_region: string | null;
+      /** @description Number of rides the rider has recorded. */
+      ride_count: number;
+    };
     FollowerDto: {
       user_id: string;
       display_name: string;
@@ -4935,6 +5055,10 @@ export type SchemaSharedRideDetailDto =
 export type SchemaCommunityRideDto = components["schemas"]["CommunityRideDto"];
 export type SchemaCommunityRidesResponseDto =
   components["schemas"]["CommunityRidesResponseDto"];
+export type SchemaRideLikeResponseDto =
+  components["schemas"]["RideLikeResponseDto"];
+export type SchemaCloneRideResponseDto =
+  components["schemas"]["CloneRideResponseDto"];
 export type SchemaCalibrationDto = components["schemas"]["CalibrationDto"];
 export type SchemaSensorReadingDto = components["schemas"]["SensorReadingDto"];
 export type SchemaRideTagEventDto = components["schemas"]["RideTagEventDto"];
@@ -4970,6 +5094,10 @@ export type SchemaRouteCollectionListResponseDto =
   components["schemas"]["RouteCollectionListResponseDto"];
 export type SchemaRouteCollectionLibraryResponseDto =
   components["schemas"]["RouteCollectionLibraryResponseDto"];
+export type SchemaRouteCollectionCardDto =
+  components["schemas"]["RouteCollectionCardDto"];
+export type SchemaRouteCollectionDiscoverResponseDto =
+  components["schemas"]["RouteCollectionDiscoverResponseDto"];
 export type SchemaCreateRouteCollectionDto =
   components["schemas"]["CreateRouteCollectionDto"];
 export type SchemaRouteCollectionItemResponseDto =
@@ -5079,6 +5207,8 @@ export type SchemaReviewVoteResultDto =
   components["schemas"]["ReviewVoteResultDto"];
 export type SchemaFollowUserResponseDto =
   components["schemas"]["FollowUserResponseDto"];
+export type SchemaSuggestedRiderDto =
+  components["schemas"]["SuggestedRiderDto"];
 export type SchemaFollowerDto = components["schemas"]["FollowerDto"];
 export type SchemaFollowingDto = components["schemas"]["FollowingDto"];
 export type SchemaFeedRideDto = components["schemas"]["FeedRideDto"];
@@ -6800,6 +6930,97 @@ export interface operations {
       };
     };
   };
+  SharingController_likeRide: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        rideId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RideLikeResponseDto"];
+        };
+      };
+      /** @description Shared ride not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  SharingController_unlikeRide: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        rideId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RideLikeResponseDto"];
+        };
+      };
+      /** @description Shared ride not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  SharingController_cloneRide: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        rideId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CloneRideResponseDto"];
+        };
+      };
+      /** @description Route has no geometry to clone */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Shared ride not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   SensorController_upload: {
     parameters: {
       query?: never;
@@ -7129,6 +7350,29 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RouteCollectionLibraryResponseDto"];
+        };
+      };
+    };
+  };
+  RouteCollectionsController_discover: {
+    parameters: {
+      query?: {
+        q?: string;
+        limit?: string;
+        offset?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RouteCollectionDiscoverResponseDto"];
         };
       };
     };
@@ -9303,6 +9547,27 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  FollowersController_suggestions: {
+    parameters: {
+      query?: {
+        limit?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestedRiderDto"][];
+        };
       };
     };
   };

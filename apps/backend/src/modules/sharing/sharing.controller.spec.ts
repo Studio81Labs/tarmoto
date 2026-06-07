@@ -105,33 +105,41 @@ describe('SharingController', () => {
     expect(service.trackEmbedClick).toHaveBeenCalledWith('abc123');
   });
 
-  it('GET /rides/community should forward the full query through to the service', async () => {
-    const result = await controller.listCommunityRides({
+  it('GET /rides/community should forward the full query + viewer through to the service', async () => {
+    const result = await controller.listCommunityRides(mockReq, {
       lat: 49.2,
       lng: 16.6,
       radius_km: 25,
       limit: 20,
     });
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith({
-      lat: 49.2,
-      lng: 16.6,
-      radius_km: 25,
-      limit: 20,
-    });
+    expect(service.listCommunityRides).toHaveBeenCalledWith(
+      {
+        lat: 49.2,
+        lng: 16.6,
+        radius_km: 25,
+        limit: 20,
+      },
+      'user-1',
+    );
     expect(result.items).toHaveLength(1);
     expect(result.total).toBe(1);
   });
 
   it('GET /rides/community should accept an empty query (global feed)', async () => {
-    const result = await controller.listCommunityRides({});
+    const result = await controller.listCommunityRides(mockReq, {});
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith({});
+    expect(service.listCommunityRides).toHaveBeenCalledWith({}, 'user-1');
     expect(result.items).toHaveLength(1);
   });
 
+  it('GET /rides/community works anonymously (no viewer id)', async () => {
+    await controller.listCommunityRides({ user: undefined } as never, {});
+    expect(service.listCommunityRides).toHaveBeenCalledWith({}, undefined);
+  });
+
   it('GET /rides/community should forward filter / sort / pagination params', async () => {
-    await controller.listCommunityRides({
+    await controller.listCommunityRides(mockReq, {
       min_distance_km: 50,
       max_distance_km: 300,
       min_quality: 3.5,
@@ -142,29 +150,35 @@ describe('SharingController', () => {
       limit: 10,
     });
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith({
-      min_distance_km: 50,
-      max_distance_km: 300,
-      min_quality: 3.5,
-      min_popularity: 250,
-      ride_type: 'trip',
-      sort: 'highest_quality',
-      offset: 40,
-      limit: 10,
-    });
+    expect(service.listCommunityRides).toHaveBeenCalledWith(
+      {
+        min_distance_km: 50,
+        max_distance_km: 300,
+        min_quality: 3.5,
+        min_popularity: 250,
+        ride_type: 'trip',
+        sort: 'highest_quality',
+        offset: 40,
+        limit: 10,
+      },
+      'user-1',
+    );
   });
 
   it('GET /rides/community should forward curviness filter + curviest sort', async () => {
-    await controller.listCommunityRides({
+    await controller.listCommunityRides(mockReq, {
       min_curviness: 2.5,
       max_curviness: 4,
       sort: 'curviest',
     });
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith({
-      min_curviness: 2.5,
-      max_curviness: 4,
-      sort: 'curviest',
-    });
+    expect(service.listCommunityRides).toHaveBeenCalledWith(
+      {
+        min_curviness: 2.5,
+        max_curviness: 4,
+        sort: 'curviest',
+      },
+      'user-1',
+    );
   });
 });

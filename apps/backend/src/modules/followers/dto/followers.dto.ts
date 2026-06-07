@@ -103,3 +103,20 @@ export class FeedRideDto {
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
 }
+
+export class SuggestedRiderDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  display_name!: string;
+
+  @ApiProperty({ nullable: true })
+  avatar_url!: string | null;
+
+  @ApiProperty({ nullable: true })
+  home_region!: string | null;
+
+  @ApiProperty({ description: 'Number of rides the rider has recorded.' })
+  ride_count!: number;
+}

@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -32,6 +33,7 @@ import {
   RouteCollectionLibraryResponseDto,
   RouteCollectionListResponseDto,
   RouteCollectionPreviewResponseDto,
+  RouteCollectionDiscoverResponseDto,
   UpdateRouteCollectionDto,
 } from './dto/route-collection.dto.js';
 
@@ -65,6 +67,36 @@ export class RouteCollectionsController {
     @Req() req: express.Request,
   ): Promise<RouteCollectionLibraryResponseDto> {
     return this.routeCollectionsService.listLibrary(req.user!.userId);
+  }
+
+  // Literal `discover` segment — declared before the `:id` route so it isn't
+  // captured as a collection id. Optional auth personalises `viewer_is_following`.
+  @Get('discover')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({
+    summary: 'Browse public collections (search + popularity ranked)',
+  })
+  @ApiResponse({ status: 200, type: RouteCollectionDiscoverResponseDto })
+  async discover(
+    @Req() req: express.Request,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<RouteCollectionDiscoverResponseDto> {
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : NaN;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : NaN;
+    return this.routeCollectionsService.listDiscover(
+      req.user?.userId ?? null,
+      q,
+      Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(parsedLimit, 1), 48)
+        : 12,
+      // Upper-bound the offset so an unauthenticated caller can't force an
+      // arbitrarily deep (expensive) OFFSET scan, matching the rides feed cap.
+      Number.isFinite(parsedOffset)
+        ? Math.min(Math.max(parsedOffset, 0), 10_000)
+        : 0,
+    );
   }
 
   @Post()

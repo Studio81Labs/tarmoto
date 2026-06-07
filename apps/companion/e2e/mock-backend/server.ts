@@ -1808,6 +1808,8 @@ export function buildApp(): Express {
   // state remains the default when nothing is seeded.
   app.get("/api/v1/rides/community", (req, res) => {
     const q = req.query;
+    // Optional auth — personalises `viewer_has_liked` when a token is present.
+    const session = state.resolveSession(req.header("authorization"));
     // `SharingService.listCommunityRides` defaults to `?? 20` when
     // the caller omits `limit`. The companion's feed page sends its
     // own PAGE_SIZE of 9, but API-only consumers + tests that rely
@@ -2026,6 +2028,7 @@ export function buildApp(): Express {
           rider_id: ride.user_id,
           rider_name: owner?.display_name ?? "Anonymous Rider",
           rider_avatar_url: null,
+          name: ride.name ?? null,
           ride_type: ride.ride_type,
           started_at: ride.started_at,
           distance_km: ride.distance_km,
@@ -2034,6 +2037,12 @@ export function buildApp(): Express {
           avg_curviness: ride.avg_curviness,
           duration_min: deriveDurationMin(ride),
           view_count: share.view_count,
+          description: null,
+          like_count: state.rideLikes.get(ride.id)?.size ?? 0,
+          viewer_has_liked: Boolean(
+            session && state.rideLikes.get(ride.id)?.has(session.user_id),
+          ),
+          clone_count: state.rideClones.get(ride.id) ?? 0,
           route_geometry: ride.route_geometry,
         };
       }),
@@ -2041,6 +2050,118 @@ export function buildApp(): Express {
       limit,
       offset,
     });
+  });
+
+  // Community route engagement: idempotent hearts + clone-to-trips.
+  app.post(
+    "/api/v1/rides/:rideId/like",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const rideId = param(req, "rideId");
+      const set = state.rideLikes.get(rideId) ?? new Set<string>();
+      set.add(session.user_id);
+      state.rideLikes.set(rideId, set);
+      res.status(201).json({ like_count: set.size, viewer_has_liked: true });
+    },
+  );
+  app.delete(
+    "/api/v1/rides/:rideId/like",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const rideId = param(req, "rideId");
+      const set = state.rideLikes.get(rideId) ?? new Set<string>();
+      set.delete(session.user_id);
+      state.rideLikes.set(rideId, set);
+      res.json({ like_count: set.size, viewer_has_liked: false });
+    },
+  );
+  app.post(
+    "/api/v1/rides/:rideId/clone",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const rideId = param(req, "rideId");
+      const count = (state.rideClones.get(rideId) ?? 0) + 1;
+      state.rideClones.set(rideId, count);
+      // Mirror production: cloning seeds a real draft trip owned by the caller
+      // so the post-clone navigation to `/trips/:id` resolves instead of
+      // 404-ing. Title follows the source ride name like the backend does.
+      const ride = state.rides.get(rideId);
+      const now = new Date().toISOString();
+      const id = randomUUID();
+      const trip = {
+        id,
+        owner_id: session.user_id,
+        title: ride?.name?.trim() || "Cloned route",
+        num_days: 1,
+        status: "draft" as const,
+        members: [session.user_id],
+        snapshot: {},
+        created_at: now,
+        updated_at: now,
+      };
+      state.trips.set(id, trip);
+      res.status(201).json({ trip_id: id, clone_count: count });
+    },
+  );
+
+  // "People you might follow" — riders the caller doesn't already follow.
+  app.get(
+    "/api/v1/users/suggestions",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const following = state.userFollows.get(session.user_id) ?? new Map();
+      const limit = Math.min(Math.max(Number(req.query.limit ?? 6), 1), 20);
+      const out: Array<{
+        id: string;
+        display_name: string;
+        avatar_url: string | null;
+        home_region: string | null;
+        ride_count: number;
+      }> = [];
+      for (const [id, user] of state.users) {
+        if (id === session.user_id || following.has(id)) continue;
+        out.push({
+          id,
+          display_name: user.display_name,
+          avatar_url: null,
+          home_region: user.home_region ?? null,
+          ride_count: 0,
+        });
+        if (out.length >= limit) break;
+      }
+      res.json(out);
+    },
+  );
+
+  // Public collection discovery feed (search + follower counts).
+  app.get("/api/v1/collections/discover", (req, res) => {
+    const session = state.resolveSession(req.header("authorization"));
+    const q = String(req.query.q ?? "").toLowerCase();
+    const items = [...state.collections.values()]
+      .filter((c) => c.visibility === "public")
+      .filter((c) => !q || c.title.toLowerCase().includes(q))
+      .map((c) => {
+        const followers = state.collectionFollows.get(c.id) ?? new Map();
+        return {
+          id: c.id,
+          slug: c.slug,
+          title: c.title,
+          description: c.description ?? null,
+          owner_id: c.owner_id,
+          owner_name: state.users.get(c.owner_id)?.display_name ?? null,
+          item_count: 0,
+          follower_count: followers.size,
+          viewer_is_following: Boolean(
+            session && followers.has(session.user_id),
+          ),
+          updated_at: c.updated_at,
+        };
+      });
+    res.json({ items, total: items.length, limit: 12, offset: 0 });
   });
 
   // ── Route collections ────────────────────────────────────────────

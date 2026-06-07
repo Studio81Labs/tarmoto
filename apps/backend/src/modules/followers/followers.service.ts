@@ -7,15 +7,18 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { canShowPersonalizedRecommendations } from '@tarmoto/shared';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { PushService } from '../push/index.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   FollowUserResponseDto,
   FollowerDto,
   FollowingDto,
   FeedRideDto,
+  SuggestedRiderDto,
 } from './dto/followers.dto.js';
 
 @Injectable()
@@ -30,6 +33,7 @@ export class FollowersService {
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
     private readonly pushService: PushService,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async follow(
@@ -146,6 +150,78 @@ export class FollowersService {
         display_name: f.following.display_name,
         followed_at: f.created_at.toISOString(),
       }));
+  }
+
+  /**
+   * "People you might follow" — riders the caller doesn't already follow,
+   * ranked by activity (ride count) then recency. Excludes self, deleted
+   * accounts and riders whose profile is private (#279). Same-region riders
+   * float up so the suggestions feel local without needing a heavy model.
+   */
+  async getSuggestions(
+    userId: string,
+    limit = 6,
+  ): Promise<SuggestedRiderDto[]> {
+    // "People you might follow" is an inherently personal recommendation
+    // (ranked by the caller's region + follow graph), so it returns nothing
+    // when the rider has opted out of personalised recommendations (#279).
+    const prefs = await this.privacy.loadPreferences(userId);
+    if (!canShowPersonalizedRecommendations(prefs)) return [];
+
+    const me = await this.userRepo.findOne({
+      where: { id: userId },
+      select: { home_region: true },
+    });
+    const homeRegion = me?.home_region ?? null;
+
+    const rows = await this.userRepo
+      .createQueryBuilder('u')
+      .leftJoin('privacy_preferences', 'pp', 'pp.user_id = u.id')
+      .leftJoin('rides', 'r', 'r.user_id = u.id')
+      .select('u.id', 'id')
+      .addSelect('u.display_name', 'display_name')
+      .addSelect('u.avatar_url', 'avatar_url')
+      .addSelect('u.home_region', 'home_region')
+      .addSelect('COUNT(r.id)', 'ride_count')
+      .where('u.id <> :userId', { userId })
+      .andWhere('u.deleted_at IS NULL')
+      .andWhere(
+        "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
+      )
+      // Exclude riders the caller already follows. `qb.subQuery()` wraps the
+      // SELECT in parentheses, so the predicate is a valid `NOT IN (SELECT …)`
+      // (a bare `getQuery()` omits the parens → `NOT IN SELECT …` syntax error).
+      .andWhere((qb) => {
+        const sub = qb
+          .subQuery()
+          .select('uf.following_id')
+          .from(UserFollow, 'uf')
+          .where('uf.follower_id = :userId')
+          .getQuery();
+        return `u.id NOT IN ${sub}`;
+      })
+      .groupBy('u.id')
+      // Same-region riders first, then most active, then newest.
+      .orderBy(homeRegion ? '(u.home_region = :homeRegion)' : 'TRUE', 'DESC')
+      .addOrderBy('COUNT(r.id)', 'DESC')
+      .addOrderBy('u.created_at', 'DESC')
+      .setParameter('homeRegion', homeRegion)
+      .limit(limit)
+      .getRawMany<{
+        id: string;
+        display_name: string;
+        avatar_url: string | null;
+        home_region: string | null;
+        ride_count: string;
+      }>();
+
+    return rows.map((r) => ({
+      id: r.id,
+      display_name: r.display_name,
+      avatar_url: r.avatar_url,
+      home_region: r.home_region,
+      ride_count: parseInt(r.ride_count, 10) || 0,
+    }));
   }
 
   async getFeed(

@@ -26,6 +26,7 @@ import {
   FollowingDto,
   FeedQueryDto,
   FeedRideDto,
+  SuggestedRiderDto,
 } from './dto/followers.dto.js';
 
 @ApiTags('followers')
@@ -58,6 +59,22 @@ export class FollowersController {
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<void> {
     return this.followersService.unfollow(req.user!.userId, userId);
+  }
+
+  // Two-segment literal path — declared before the `users/:userId/...`
+  // routes so "suggestions" isn't captured as a userId.
+  @Get('users/suggestions')
+  @ApiOperation({ summary: 'Riders the caller might want to follow' })
+  @ApiResponse({ status: 200, type: [SuggestedRiderDto] })
+  async suggestions(
+    @Req() req: express.Request,
+    @Query('limit') limit?: string,
+  ): Promise<SuggestedRiderDto[]> {
+    const parsed = limit ? Number.parseInt(limit, 10) : NaN;
+    const safeLimit = Number.isFinite(parsed)
+      ? Math.min(Math.max(parsed, 1), 20)
+      : 6;
+    return this.followersService.getSuggestions(req.user!.userId, safeLimit);
   }
 
   @Get('users/:userId/followers')

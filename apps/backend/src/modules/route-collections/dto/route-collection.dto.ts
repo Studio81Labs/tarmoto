@@ -314,3 +314,51 @@ export class RouteCollectionPreviewResponseDto {
   @ApiProperty({ type: [RouteCollectionPreviewItemDto] })
   routes!: RouteCollectionPreviewItemDto[];
 }
+
+export class RouteCollectionCardDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  slug!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty({ nullable: true })
+  description!: string | null;
+
+  @ApiProperty({ nullable: true })
+  owner_id!: string | null;
+
+  @ApiProperty({ nullable: true })
+  owner_name!: string | null;
+
+  @ApiProperty({ description: 'Total routes in the collection.' })
+  item_count!: number;
+
+  @ApiProperty({ description: 'How many riders follow this collection.' })
+  follower_count!: number;
+
+  @ApiProperty({
+    description: 'Whether the authenticated viewer follows this collection.',
+  })
+  viewer_is_following!: boolean;
+
+  @ApiProperty()
+  updated_at!: string;
+}
+
+export class RouteCollectionDiscoverResponseDto {
+  @ApiProperty({ type: [RouteCollectionCardDto] })
+  items!: RouteCollectionCardDto[];
+
+  @ApiProperty()
+  total!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  offset!: number;
+}

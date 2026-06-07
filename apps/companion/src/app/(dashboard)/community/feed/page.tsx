@@ -10,11 +10,13 @@ import {
   type CommunityRideSort,
 } from "@/lib/api";
 import { CommunityRideCard } from "@/components/community/CommunityRideCard";
+import { CommunitySidebar } from "@/components/community/CommunitySidebar";
 import {
   PlaceSearch,
   type PlaceValue,
 } from "../../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
+import { useAuthStore } from "@/stores/auth";
 import { Card, Mono } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -44,6 +46,10 @@ export default function CommunityFeedPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Wait for `AuthSync` to hydrate the token before fetching — otherwise the
+  // first request races it and goes out anonymously, which the backend now
+  // filters down to public-profile owners only (the feed is optional-auth).
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const query = useMemo(
     () =>
       buildCommunityRideQuery({
@@ -71,6 +77,7 @@ export default function CommunityFeedPage() {
     ],
   );
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -93,7 +100,7 @@ export default function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, authReady]);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   // Distinguish "pristine empty feed" (no filters, nothing in the
@@ -287,83 +294,89 @@ export default function CommunityFeedPage() {
         </p>
       )}
 
-      {error ? (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-400">
-          {error}
-        </div>
-      ) : loading ? (
-        <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading community rides\u2026 ")}
-        </div>
-      ) : isPristineEmpty ? (
-        <CommunityEmptyState
-          icon={<Users size={18} strokeWidth={2} />}
-          title={t("Quiet on the feed")}
-          body={t(
-            "Once you follow other riders or land in a busy region, their shared routes will appear here.",
-          )}
-        />
-      ) : items.length === 0 ? (
-        <Card padded={false} className="p-16 text-center">
-          <Users size={48} className="mx-auto mb-4 text-fg-mute" />
-          <p className="mb-2 text-lg font-semibold text-ink">
-            {t("No rides match these filters ")}
-          </p>
-          <p className="text-sm text-fg-dim">
-            {t(
-              "Try broadening the feed or switching back to the most popular rides. ",
-            )}
-          </p>
-        </Card>
-      ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((ride) => (
-              <CommunityRideCard key={ride.id} ride={ride} />
-            ))}
-          </div>
-
-          <Card
-            padded={false}
-            className="mt-6 flex items-center justify-between gap-3 p-4"
-          >
-            <p className="font-mono text-sm text-fg-dim tabular-nums">
-              {t("Page {currentPage} of {pageCount}", {
-                currentPage,
-                pageCount,
-              })}
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setOffset((current) => Math.max(current - PAGE_SIZE, 0))
-                }
-                disabled={offset === 0}
-                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("Previous ")}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setOffset((current) =>
-                    current + PAGE_SIZE >= total
-                      ? current
-                      : current + PAGE_SIZE,
-                  )
-                }
-                disabled={offset + PAGE_SIZE >= total}
-                className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t("Next ")}
-              </button>
+      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_320px]">
+        <div className="flex min-w-0 flex-col gap-[14px]">
+          {error ? (
+            <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-400">
+              {error}
             </div>
-          </Card>
-        </>
-      )}
+          ) : loading ? (
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
+              <Loader2 size={16} className="animate-spin" />
+              {t("Loading community rides\u2026 ")}
+            </div>
+          ) : isPristineEmpty ? (
+            <CommunityEmptyState
+              icon={<Users size={18} strokeWidth={2} />}
+              title={t("Quiet on the feed")}
+              body={t(
+                "Once you follow other riders or land in a busy region, their shared routes will appear here.",
+              )}
+            />
+          ) : items.length === 0 ? (
+            <Card padded={false} className="p-16 text-center">
+              <Users size={48} className="mx-auto mb-4 text-fg-mute" />
+              <p className="mb-2 text-lg font-semibold text-ink">
+                {t("No rides match these filters ")}
+              </p>
+              <p className="text-sm text-fg-dim">
+                {t(
+                  "Try broadening the feed or switching back to the most popular rides. ",
+                )}
+              </p>
+            </Card>
+          ) : (
+            <>
+              {items.map((ride) => (
+                <CommunityRideCard key={ride.id} ride={ride} />
+              ))}
+
+              {pageCount > 1 && (
+                <Card
+                  padded={false}
+                  className="flex items-center justify-between gap-3 p-4"
+                >
+                  <p className="font-mono text-sm text-fg-dim tabular-nums">
+                    {t("Page {currentPage} of {pageCount}", {
+                      currentPage,
+                      pageCount,
+                    })}
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOffset((current) => Math.max(current - PAGE_SIZE, 0))
+                      }
+                      disabled={offset === 0}
+                      className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {t("Previous ")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOffset((current) =>
+                          current + PAGE_SIZE >= total
+                            ? current
+                            : current + PAGE_SIZE,
+                        )
+                      }
+                      disabled={offset + PAGE_SIZE >= total}
+                      className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {t("Next ")}
+                    </button>
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </div>
+
+        {!error && <CommunitySidebar />}
+      </div>
     </CommunityScaffold>
   );
 }

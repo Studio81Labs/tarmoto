@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
@@ -24,6 +24,8 @@ import {
   RouteCollectionPreviewItemDto,
   RouteCollectionPreviewResponseDto,
   RouteCollectionSummaryDto,
+  RouteCollectionCardDto,
+  RouteCollectionDiscoverResponseDto,
   UpdateRouteCollectionDto,
 } from './dto/route-collection.dto.js';
 
@@ -84,6 +86,104 @@ export class RouteCollectionsService {
       this.toSummaryResponse(c, countById.get(c.id) ?? 0),
     );
     return { items, total: items.length };
+  }
+
+  /**
+   * Public collection discovery feed for the Community → Collections tab.
+   * Returns `public` collections (optionally filtered by a title search),
+   * each with its route count + follower count, ordered by popularity then
+   * recency. Owners with a private profile (#279) or a soft-deleted account
+   * are excluded. `viewer_is_following` is personalised when authenticated.
+   */
+  async listDiscover(
+    viewerId: string | null,
+    q: string | undefined,
+    limit = 12,
+    offset = 0,
+  ): Promise<RouteCollectionDiscoverResponseDto> {
+    const search = q?.trim();
+
+    const base = (): SelectQueryBuilder<RouteCollection> => {
+      const qb = this.collectionRepo
+        .createQueryBuilder('c')
+        .leftJoin('c.owner', 'owner')
+        .leftJoin('privacy_preferences', 'pp', 'pp.user_id = c.owner_id')
+        .where("c.visibility = 'public'")
+        .andWhere('owner.deleted_at IS NULL');
+      if (viewerId) {
+        // Signed-in viewers see public + riders-only owners (NULL = the
+        // riders-only default); only `private` profiles are hidden.
+        qb.andWhere(
+          "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
+        );
+      } else {
+        // Anonymous viewers only see public-profile owners — `riders-only`
+        // (and the NULL default) is a signed-in-only audience, so showing the
+        // owner_id/owner_name to logged-out callers would leak their identity.
+        qb.andWhere("pp.profile_visibility = 'public'");
+      }
+      if (search) qb.andWhere('c.title ILIKE :q', { q: `%${search}%` });
+      return qb;
+    };
+
+    const rows = await base()
+      .leftJoin('c.items', 'i')
+      .leftJoin(RouteCollectionFollow, 'f', 'f.collection_id = c.id')
+      .select('c.id', 'id')
+      .addSelect('c.owner_id', 'owner_id')
+      .addSelect('c.slug', 'slug')
+      .addSelect('c.title', 'title')
+      .addSelect('c.description', 'description')
+      .addSelect('c.updated_at', 'updated_at')
+      .addSelect('owner.display_name', 'owner_name')
+      .addSelect('COUNT(DISTINCT i.id)', 'item_count')
+      .addSelect('COUNT(DISTINCT f.id)', 'follower_count')
+      .groupBy('c.id')
+      .addGroupBy('owner.id')
+      .addGroupBy('owner.display_name')
+      .orderBy('COUNT(DISTINCT f.id)', 'DESC')
+      .addOrderBy('c.updated_at', 'DESC')
+      .offset(offset)
+      .limit(limit)
+      .getRawMany<{
+        id: string;
+        owner_id: string;
+        slug: string;
+        title: string;
+        description: string | null;
+        updated_at: Date;
+        owner_name: string | null;
+        item_count: string;
+        follower_count: string;
+      }>();
+
+    const total = await base().getCount();
+
+    // Personalise the viewer's follow state in one batched query.
+    const ids = rows.map((r) => r.id);
+    let followedSet = new Set<string>();
+    if (viewerId && ids.length > 0) {
+      const follows = await this.followRepo.find({
+        where: { user_id: viewerId, collection_id: In(ids) },
+        select: { collection_id: true },
+      });
+      followedSet = new Set(follows.map((f) => f.collection_id));
+    }
+
+    const items: RouteCollectionCardDto[] = rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      description: r.description ?? null,
+      owner_id: r.owner_id,
+      owner_name: r.owner_name,
+      item_count: parseInt(r.item_count, 10) || 0,
+      follower_count: parseInt(r.follower_count, 10) || 0,
+      viewer_is_following: followedSet.has(r.id),
+      updated_at: new Date(r.updated_at).toISOString(),
+    }));
+
+    return { items, total, limit, offset };
   }
 
   /**

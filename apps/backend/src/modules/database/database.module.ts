@@ -52,6 +52,9 @@ import { AddModelEvalSamples1717500000000 } from '../../migrations/1717500000000
 import { AddModelEvalReconcileAttemptedAt1717600000000 } from '../../migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
 import { AddTripFolders1717700000000 } from '../../migrations/1717700000000-AddTripFolders.js';
 import { AddInAppNotifications1717800000000 } from '../../migrations/1717800000000-AddInAppNotifications.js';
+import { AddHazardReportPhotoUrl1717900000000 } from '../../migrations/1717900000000-AddHazardReportPhotoUrl.js';
+import { AddCommuteRoutingEngineVersion1718000000000 } from '../../migrations/1718000000000-AddCommuteRoutingEngineVersion.js';
+import { AddCommunityEngagement1718100000000 } from '../../migrations/1718100000000-AddCommunityEngagement.js';
 import {
   User,
   UserContact,
@@ -75,6 +78,7 @@ import {
   FunZoneRoad,
   CommuteRoute,
   SharedRide,
+  RideLike,
   TripShare,
   MapShare,
   TripSuggestion,
@@ -126,6 +130,7 @@ const entities = [
   FunZoneRoad,
   CommuteRoute,
   SharedRide,
+  RideLike,
   TripShare,
   MapShare,
   TripSuggestion,
@@ -226,6 +231,9 @@ const entities = [
             AddModelEvalReconcileAttemptedAt1717600000000,
             AddTripFolders1717700000000,
             AddInAppNotifications1717800000000,
+            AddHazardReportPhotoUrl1717900000000,
+            AddCommuteRoutingEngineVersion1718000000000,
+            AddCommunityEngagement1718100000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
