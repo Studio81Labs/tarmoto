@@ -291,12 +291,31 @@ describe('FollowersService', () => {
 
   describe('getSuggestions', () => {
     it('maps ranked candidate rows to suggestion DTOs', async () => {
+      // Capture predicates; for the `andWhere(cb)` form, run the callback with
+      // a sub-query-builder so we can assert the NOT-IN clause is parenthesised
+      // (a bare getQuery() would yield invalid `NOT IN SELECT …`).
+      const predicates: string[] = [];
+      const subQb = {
+        select: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getQuery: jest
+          .fn()
+          .mockReturnValue('(SELECT "uf"."following_id" FROM "user_follows")'),
+      };
       const suggestQb = {
         leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
+        subQuery: jest.fn().mockReturnValue(subQb),
+        andWhere: jest.fn(function (
+          this: unknown,
+          arg: string | ((qb: typeof suggestQb) => string),
+        ) {
+          predicates.push(typeof arg === 'function' ? arg(suggestQb) : arg);
+          return this;
+        }),
         groupBy: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         addOrderBy: jest.fn().mockReturnThis(),
@@ -316,16 +335,13 @@ describe('FollowersService', () => {
         .fn()
         .mockResolvedValue({ home_region: 'Bergamo · IT' });
       userRepo.createQueryBuilder = jest.fn().mockReturnValue(suggestQb);
-      // The NOT-IN subquery is built from `followRepo.createQueryBuilder`.
-      followRepo.createQueryBuilder = jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getQuery: jest.fn().mockReturnValue('(SELECT 1)'),
-      });
 
       const result = await service.getSuggestions('user-1', 6);
 
       expect(privacy.loadPreferences).toHaveBeenCalledWith('user-1');
+      // The follow-graph exclusion must be `NOT IN (SELECT …)`, not
+      // `NOT IN SELECT …` (which Postgres rejects with a syntax error).
+      expect(predicates.some((p) => /NOT IN \(SELECT/i.test(p))).toBe(true);
       expect(result).toEqual([
         {
           id: 'user-9',

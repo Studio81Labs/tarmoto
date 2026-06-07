@@ -188,14 +188,18 @@ export class FollowersService {
       .andWhere(
         "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
       )
-      .andWhere(
-        'u.id NOT IN ' +
-          this.followRepo
-            .createQueryBuilder('uf')
-            .select('uf.following_id')
-            .where('uf.follower_id = :userId')
-            .getQuery(),
-      )
+      // Exclude riders the caller already follows. `qb.subQuery()` wraps the
+      // SELECT in parentheses, so the predicate is a valid `NOT IN (SELECT …)`
+      // (a bare `getQuery()` omits the parens → `NOT IN SELECT …` syntax error).
+      .andWhere((qb) => {
+        const sub = qb
+          .subQuery()
+          .select('uf.following_id')
+          .from(UserFollow, 'uf')
+          .where('uf.follower_id = :userId')
+          .getQuery();
+        return `u.id NOT IN ${sub}`;
+      })
       .groupBy('u.id')
       // Same-region riders first, then most active, then newest.
       .orderBy(homeRegion ? '(u.home_region = :homeRegion)' : 'TRUE', 'DESC')
