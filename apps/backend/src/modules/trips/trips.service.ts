@@ -263,9 +263,13 @@ export class TripsService {
    * propagates so a real bug isn't papered over as a code collision.
    * Centralised here so the retry budget, the collision check, and the
    * "gave up" error message stay in lockstep across every persist path
-   * (`POST /trips`, `POST /trips/import`, future variants).
+   * (`POST /trips`, `POST /trips/import`, ride cloning in SharingService).
+   * Public so sibling services reuse the same retry/collision semantics
+   * rather than writing `generateInviteCode()` directly and 500-ing on
+   * the rare collision; the callback owns all writes so they commit
+   * atomically with the allocated code.
    */
-  private async withInviteCodeAllocation<T>(
+  async withInviteCodeAllocation<T>(
     persist: (manager: EntityManager, inviteCode: string) => Promise<T>,
   ): Promise<T> {
     let lastError: unknown;

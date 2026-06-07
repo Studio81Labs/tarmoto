@@ -8,6 +8,7 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { AccountModule } from '../account/index.js';
+import { TripsModule } from '../trips/trips.module.js';
 import { SharingController } from './sharing.controller.js';
 import { SharingService } from './sharing.service.js';
 
@@ -23,6 +24,9 @@ import { SharingService } from './sharing.service.js';
       TripMember,
     ]),
     AccountModule,
+    // Reuse TripsService.withInviteCodeAllocation for collision-safe invite
+    // codes when cloning a community ride into a trip.
+    TripsModule,
   ],
   controllers: [SharingController],
   providers: [SharingService],

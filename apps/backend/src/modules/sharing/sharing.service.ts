@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, SelectQueryBuilder, In } from 'typeorm';
+import { Repository, SelectQueryBuilder, In } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { RideLike } from '../../entities/ride-like.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -14,7 +14,7 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
-import { generateInviteCode } from '../trips/invite-code.js';
+import { TripsService } from '../trips/trips.service.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
@@ -46,7 +46,7 @@ export class SharingService {
     private readonly tripDayRepo: Repository<TripDay>,
     @InjectRepository(TripMember)
     private readonly tripMemberRepo: Repository<TripMember>,
-    private readonly dataSource: DataSource,
+    private readonly tripsService: TripsService,
     private readonly privacy: PrivacyPreferencesService,
   ) {}
 
@@ -449,47 +449,56 @@ export class SharingService {
     const title = ride.name?.trim() || 'Cloned route';
     // Atomic: the trip, its owner membership, the day, and the clone-count
     // bump all commit together — a mid-sequence failure leaves no orphan or
-    // half-built trip (mirrors the trip create/duplicate paths).
-    return this.dataSource.transaction(async (manager) => {
-      const trip = await manager.save(
-        this.tripRepo.create({
-          owner_id: userId,
-          title,
-          num_days: 1,
-          status: 'draft',
-          invite_code: generateInviteCode(),
-        }),
-      );
-      await manager.save(
-        this.tripMemberRepo.create({
+    // half-built trip (mirrors the trip create/duplicate paths). Allocate the
+    // invite code through TripsService so a rare `idx_trips_invite_code`
+    // collision retries with a fresh code instead of 500-ing the clone.
+    return this.tripsService.withInviteCodeAllocation(
+      async (manager, inviteCode) => {
+        const trip = await manager.save(
+          this.tripRepo.create({
+            owner_id: userId,
+            title,
+            num_days: 1,
+            status: 'draft',
+            invite_code: inviteCode,
+          }),
+        );
+        await manager.save(
+          this.tripMemberRepo.create({
+            trip_id: trip.id,
+            user_id: userId,
+            role: 'owner',
+          }),
+        );
+        await manager.save(
+          this.tripDayRepo.create({
+            trip_id: trip.id,
+            day_number: 1,
+            title,
+            distance_km: ride.distance_km,
+            route_geom: ride.route_geom,
+            avg_quality: ride.avg_road_quality,
+            curviness_score: ride.avg_curviness ?? null,
+          }),
+        );
+        await manager.increment(
+          SharedRide,
+          { id: shared.id },
+          'clone_count',
+          1,
+        );
+        // Read the post-increment value within the same transaction so two
+        // concurrent clones don't each report a stale `old + 1`.
+        const updated = await manager.findOne(SharedRide, {
+          where: { id: shared.id },
+          select: { id: true, clone_count: true },
+        });
+        return {
           trip_id: trip.id,
-          user_id: userId,
-          role: 'owner',
-        }),
-      );
-      await manager.save(
-        this.tripDayRepo.create({
-          trip_id: trip.id,
-          day_number: 1,
-          title,
-          distance_km: ride.distance_km,
-          route_geom: ride.route_geom,
-          avg_quality: ride.avg_road_quality,
-          curviness_score: ride.avg_curviness ?? null,
-        }),
-      );
-      await manager.increment(SharedRide, { id: shared.id }, 'clone_count', 1);
-      // Read the post-increment value within the same transaction so two
-      // concurrent clones don't each report a stale `old + 1`.
-      const updated = await manager.findOne(SharedRide, {
-        where: { id: shared.id },
-        select: { id: true, clone_count: true },
-      });
-      return {
-        trip_id: trip.id,
-        clone_count: updated?.clone_count ?? (shared.clone_count ?? 0) + 1,
-      };
-    });
+          clone_count: updated?.clone_count ?? (shared.clone_count ?? 0) + 1,
+        };
+      },
+    );
   }
 
   /**

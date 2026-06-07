@@ -2,9 +2,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SharingService } from './sharing.service.js';
+import { TripsService } from '../trips/trips.service.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { RideLike } from '../../entities/ride-like.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -30,7 +31,7 @@ describe('SharingService', () => {
   let tripDayRepo: Partial<jest.Mocked<Repository<TripDay>>>;
   let tripMemberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
   let txManager: { save: jest.Mock; increment: jest.Mock; findOne: jest.Mock };
-  let dataSource: { transaction: jest.Mock };
+  let tripsService: { withInviteCodeAllocation: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
 
   const mockOwner = {
@@ -153,12 +154,15 @@ describe('SharingService', () => {
       // Post-increment re-read of the committed clone counter.
       findOne: jest.fn().mockResolvedValue({ id: 'shared-1', clone_count: 8 }),
     };
-    dataSource = {
-      // Run the callback against the mock entity manager (no real tx).
-      transaction: jest
+    tripsService = {
+      // Run the persist callback against the mock entity manager with a fixed
+      // (uppercase, 8-char) invite code — stands in for the real allocator's
+      // collision-retry loop without a live DB.
+      withInviteCodeAllocation: jest
         .fn()
-        .mockImplementation((cb: (m: typeof txManager) => unknown) =>
-          cb(txManager),
+        .mockImplementation(
+          (cb: (m: typeof txManager, code: string) => unknown) =>
+            cb(txManager, 'ABCD2345'),
         ),
     };
     privacy = {
@@ -177,7 +181,7 @@ describe('SharingService', () => {
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripDay), useValue: tripDayRepo },
         { provide: getRepositoryToken(TripMember), useValue: tripMemberRepo },
-        { provide: DataSource, useValue: dataSource },
+        { provide: TripsService, useValue: tripsService },
         { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
@@ -981,15 +985,18 @@ describe('SharingService', () => {
     it('creates a draft trip + day + owner membership and bumps clone_count', async () => {
       const result = await service.cloneRide('viewer-2', 'ride-1');
 
-      // All writes run inside one transaction (atomic clone — no orphan trip).
-      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      // The clone runs through the centralised invite-code allocator (one
+      // collision-safe attempt here) — all writes commit atomically with the
+      // allocated code, so a code clash retries instead of 500-ing.
+      expect(tripsService.withInviteCodeAllocation).toHaveBeenCalledTimes(1);
       expect(tripRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ owner_id: 'viewer-2', status: 'draft' }),
       );
-      // The invite code must be uppercase so `TripsService.join` (which
-      // upper-cases submitted codes) can find the cloned trip.
+      // The allocator hands the persist callback the invite code; the cloned
+      // trip must be created with exactly that code (uppercase, so
+      // `TripsService.join` — which upper-cases submitted codes — can find it).
       const createArg = tripRepo.create!.mock.calls[0]?.[0];
-      expect(createArg?.invite_code).toMatch(/^[A-Z0-9]{8}$/);
+      expect(createArg?.invite_code).toBe('ABCD2345');
       expect(tripDayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ route_geom: mockRide.route_geom }),
       );
