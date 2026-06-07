@@ -16,6 +16,7 @@ import {
   type PlaceValue,
 } from "../../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
+import { useAuthStore } from "@/stores/auth";
 import { Card, Mono } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -45,6 +46,10 @@ export default function CommunityFeedPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Wait for `AuthSync` to hydrate the token before fetching — otherwise the
+  // first request races it and goes out anonymously, which the backend now
+  // filters down to public-profile owners only (the feed is optional-auth).
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const query = useMemo(
     () =>
       buildCommunityRideQuery({
@@ -72,6 +77,7 @@ export default function CommunityFeedPage() {
     ],
   );
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -94,7 +100,7 @@ export default function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, authReady]);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   // Distinguish "pristine empty feed" (no filters, nothing in the
