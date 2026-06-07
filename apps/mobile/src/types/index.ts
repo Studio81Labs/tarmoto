@@ -89,6 +89,8 @@ export interface UserSharedRide {
   /** Underlying ride id — used to navigate into the ride detail screen. */
   id: string;
   share_token: string;
+  /** Rider-given ride name, used as the row title. Null if unset. */
+  name: string | null;
   ride_type: string;
   /**
    * Whether the share is publicly visible. Always true for non-self viewers
@@ -116,6 +118,8 @@ export interface UserSharedRidesResponse {
   items: UserSharedRide[];
   /** Total matches for the rider visible to the viewer (ignores limit/offset). */
   total: number;
+  /** Sum of `view_count` across the visible set (ignores limit/offset). */
+  total_views: number;
   limit: number;
   offset: number;
 }

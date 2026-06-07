@@ -54,6 +54,7 @@ function buildRide(overrides: Record<string, unknown> = {}) {
   return {
     id: "ride-1",
     share_token: "tok-1",
+    name: "Sunday switchbacks",
     ride_type: "free",
     is_public: true,
     started_at: "2026-04-14T09:00:00.000Z",
@@ -79,6 +80,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [buildRide()],
       total: 1,
+      total_views: 7,
       limit: 5,
       offset: 0,
     });
@@ -106,6 +108,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [buildRide({ is_public: false })],
       total: 1,
+      total_views: 7,
       limit: 5,
       offset: 0,
     });
@@ -122,6 +125,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [buildRide({ is_public: false })],
       total: 1,
+      total_views: 7,
       limit: 5,
       offset: 0,
     });
@@ -136,6 +140,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
+      total_views: 0,
       limit: 5,
       offset: 0,
     });
@@ -151,6 +156,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
+      total_views: 0,
       limit: 5,
       offset: 0,
     });
@@ -199,6 +205,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [buildRide()],
       total: 1,
+      total_views: 7,
       limit: 5,
       offset: 0,
     });
@@ -234,6 +241,7 @@ describe("SharedRidesSection", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
+      total_views: 0,
       limit: 5,
       offset: 0,
     });

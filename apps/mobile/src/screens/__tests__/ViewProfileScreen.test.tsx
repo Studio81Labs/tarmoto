@@ -96,6 +96,8 @@ function buildProfile(overrides: Record<string, unknown> = {}) {
     created_at: "2024-04-01T10:00:00.000Z",
     follower_count: 3,
     following_count: 1,
+    total_distance_km: 4200,
+    shared_ride_count: 2,
     is_following: false,
     is_self: false,
     ...overrides,
@@ -110,6 +112,7 @@ describe("ViewProfileScreen", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
+      total_views: 0,
       limit: 5,
       offset: 0,
     });

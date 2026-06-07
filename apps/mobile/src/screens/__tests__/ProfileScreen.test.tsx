@@ -155,6 +155,8 @@ describe("ProfileScreen", () => {
       created_at: "2025-04-01T10:00:00.000Z",
       follower_count: 12,
       following_count: 7,
+      total_distance_km: 1234,
+      shared_ride_count: 3,
       is_following: null,
       is_self: true,
     });
@@ -183,6 +185,7 @@ describe("ProfileScreen", () => {
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
+      total_views: 0,
       limit: 5,
       offset: 0,
     });
