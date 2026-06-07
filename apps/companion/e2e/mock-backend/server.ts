@@ -2621,6 +2621,20 @@ export function buildApp(): Express {
       const viewerFollowsTarget = isSelf
         ? null
         : (state.userFollows.get(session.user_id)?.has(target.id) ?? false);
+      // Lifetime distance over the rider's completed rides (Distance tile).
+      let totalDistanceKm = 0;
+      for (const ride of state.rides.values()) {
+        if (ride.user_id === target.id && ride.status === "completed") {
+          totalDistanceKm += ride.distance_km;
+        }
+      }
+      // Public-share count (Rides shared tile), viewer-independent.
+      let sharedRideCount = 0;
+      for (const share of state.rideShares.values()) {
+        if (!share.is_public) continue;
+        const ride = state.rides.get(share.ride_id);
+        if (ride?.user_id === target.id) sharedRideCount += 1;
+      }
       res.json({
         id: target.id,
         display_name: target.display_name,
@@ -2630,6 +2644,8 @@ export function buildApp(): Express {
         created_at: target.created_at,
         follower_count: followerCount,
         following_count: followingCount,
+        total_distance_km: Math.round(totalDistanceKm),
+        shared_ride_count: sharedRideCount,
         is_following: viewerFollowsTarget,
         is_self: isSelf,
       });
@@ -2702,6 +2718,7 @@ export function buildApp(): Express {
         .map(({ token, ride, is_public }) => ({
           id: ride.id,
           share_token: token,
+          name: ride.name,
           ride_type: ride.ride_type,
           is_public,
           started_at: ride.started_at,
@@ -2715,7 +2732,20 @@ export function buildApp(): Express {
           shared_at: ride.started_at,
           route_geometry: ride.route_geometry,
         }));
-      res.json({ items: page, total: shares.length, limit, offset });
+      // Views are summed across the whole visible set, not just the page —
+      // matching the backend aggregate that drives the "total views" figure.
+      const totalViews = shares.reduce(
+        (sum, { token }) =>
+          sum + (state.rideShares.get(token)?.view_count ?? 0),
+        0,
+      );
+      res.json({
+        items: page,
+        total: shares.length,
+        total_views: totalViews,
+        limit,
+        offset,
+      });
     },
   );
 

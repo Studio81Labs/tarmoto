@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { Ride } from '../../entities/ride.entity.js';
+import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { UserBadge } from '../../entities/user-badge.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
@@ -51,6 +52,8 @@ export class UsersService {
     private readonly userBadgeRepo: Repository<UserBadge>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    @InjectRepository(SharedRide)
+    private readonly sharedRideRepo: Repository<SharedRide>,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     private readonly privacy: PrivacyPreferencesService,
@@ -268,7 +271,13 @@ export class UsersService {
       }
     }
 
-    const [followerCount, followingCount, isFollowingRow] = await Promise.all([
+    const [
+      followerCount,
+      followingCount,
+      isFollowingRow,
+      distanceRow,
+      sharedRideCount,
+    ] = await Promise.all([
       this.userFollowRepo.count({ where: { following_id: userId } }),
       this.userFollowRepo.count({ where: { follower_id: userId } }),
       isSelf
@@ -277,6 +286,18 @@ export class UsersService {
             where: { follower_id: viewerId, following_id: userId },
             select: ['follower_id'],
           }),
+      // Lifetime distance over completed rides (the "Distance" hero tile).
+      this.rideRepo
+        .createQueryBuilder('r')
+        .select('COALESCE(SUM(r.distance_km), 0)', 'km')
+        .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
+        .getRawOne<{ km: string }>(),
+      // Public-share count, viewer-independent so the tile is a stable public
+      // metric even when the rider views their own profile.
+      this.sharedRideRepo.count({
+        where: { user_id: userId, is_public: true },
+      }),
     ]);
 
     return {
@@ -288,6 +309,8 @@ export class UsersService {
       created_at: user.created_at.toISOString(),
       follower_count: followerCount,
       following_count: followingCount,
+      total_distance_km: Math.round(parseFloat(distanceRow?.km ?? '0')),
+      shared_ride_count: sharedRideCount,
       is_following: isSelf ? null : isFollowingRow != null,
       is_self: isSelf,
     };

@@ -40,6 +40,18 @@ export class PublicProfileDto implements PublicProfile {
   following_count!: number;
 
   @ApiProperty({
+    description:
+      "Lifetime distance ridden (km) summed over the rider's completed rides. 0 when none.",
+  })
+  total_distance_km!: number;
+
+  @ApiProperty({
+    description:
+      'Count of the rider\'s publicly shared rides (the "Rides shared" tile).',
+  })
+  shared_ride_count!: number;
+
+  @ApiProperty({
     nullable: true,
     description:
       "Viewer's follow state on the target. Null when the viewer is the target.",
