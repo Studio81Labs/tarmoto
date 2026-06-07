@@ -118,4 +118,36 @@ test.describe("community follow-up flows", () => {
       page.getByRole("heading", { level: 3, name: /beskydy best/i }),
     ).toBeHidden({ timeout: 5_000 });
   });
+
+  // T45 — Clone to trips: "Add to trips" on a community feed card clones
+  // the shared ride into a fresh draft trip and routes to its detail page.
+  // Seed a public shared ride (the default 2-point geometry makes it
+  // clonable), click the card CTA, and assert the app lands on the new
+  // trip — proving the clone POST returned a real, resolvable trip id
+  // (the cloned-trip detail fetch 404s if the trip wasn't persisted).
+  test("T45: Add to trips clones a community ride into a new trip", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    const ride = await mockApi.seedRide(user, {
+      name: "Clone Test Route",
+      distance_km: 180,
+    });
+    await mockApi.seedRideShare(ride.id, { is_public: true });
+
+    await page.goto("/community");
+
+    await page
+      .getByRole("button", { name: /add to trips/i })
+      .first()
+      .click();
+
+    // Navigation to /trips/:id (a real UUID) proves the clone returned a
+    // persisted trip; the detail heading echoes the cloned title.
+    await page.waitForURL(/\/trips\/[0-9a-f-]{36}$/, { timeout: 10_000 });
+    await expect(
+      page.getByRole("heading", { level: 1, name: /clone test route/i }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
 });

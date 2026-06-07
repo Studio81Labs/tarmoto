@@ -2077,12 +2077,35 @@ export function buildApp(): Express {
       res.json({ like_count: set.size, viewer_has_liked: false });
     },
   );
-  app.post("/api/v1/rides/:rideId/clone", requireAuth, (req, res) => {
-    const rideId = param(req, "rideId");
-    const count = (state.rideClones.get(rideId) ?? 0) + 1;
-    state.rideClones.set(rideId, count);
-    res.status(201).json({ trip_id: `cloned-${rideId}`, clone_count: count });
-  });
+  app.post(
+    "/api/v1/rides/:rideId/clone",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const rideId = param(req, "rideId");
+      const count = (state.rideClones.get(rideId) ?? 0) + 1;
+      state.rideClones.set(rideId, count);
+      // Mirror production: cloning seeds a real draft trip owned by the caller
+      // so the post-clone navigation to `/trips/:id` resolves instead of
+      // 404-ing. Title follows the source ride name like the backend does.
+      const ride = state.rides.get(rideId);
+      const now = new Date().toISOString();
+      const id = randomUUID();
+      const trip = {
+        id,
+        owner_id: session.user_id,
+        title: ride?.name?.trim() || "Cloned route",
+        num_days: 1,
+        status: "draft" as const,
+        members: [session.user_id],
+        snapshot: {},
+        created_at: now,
+        updated_at: now,
+      };
+      state.trips.set(id, trip);
+      res.status(201).json({ trip_id: id, clone_count: count });
+    },
+  );
 
   // "People you might follow" — riders the caller doesn't already follow.
   app.get(
