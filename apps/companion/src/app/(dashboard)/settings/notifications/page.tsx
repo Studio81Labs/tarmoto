@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Bell, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Button, Card, Stamp, Toggle } from "@tarmoto/ui";
+import { Button, Card, RadioCardGrid, Stamp, Toggle } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -166,40 +166,13 @@ export default function NotificationsPage() {
             {t("Summary of your riding stats and community activity. ")}
           </p>
         </div>
-        <div
-          role="radiogroup"
-          aria-label={t("Email digest frequency")}
+        <RadioCardGrid
+          ariaLabel={t("Email digest frequency")}
           className="grid grid-cols-3 gap-2"
-        >
-          {EMAIL_DIGEST_OPTIONS.map((opt) => {
-            const active = prefs.email_digest === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setDigest(opt.value)}
-                className={
-                  active
-                    ? "flex flex-col items-start gap-0.5 rounded-lg border border-ink bg-ink px-3 py-2.5 text-left text-cream transition"
-                    : "flex flex-col items-start gap-0.5 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-ink transition hover:border-line-strong"
-                }
-              >
-                <span className="text-[14px] font-semibold">{opt.label}</span>
-                <span
-                  className={
-                    active
-                      ? "text-[12px] text-fg-on-dark-dim"
-                      : "text-[12px] text-fg-dim"
-                  }
-                >
-                  {opt.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+          value={prefs.email_digest}
+          onChange={setDigest}
+          options={EMAIL_DIGEST_OPTIONS}
+        />
       </Card>
 
       {/* Per-category toggles */}
