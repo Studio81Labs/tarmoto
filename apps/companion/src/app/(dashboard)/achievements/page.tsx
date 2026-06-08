@@ -8,7 +8,6 @@ import {
   Flag,
   Flame,
   Heart,
-  Loader2,
   Lock,
   Medal,
   Moon,
@@ -26,6 +25,7 @@ import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
 import {
+  Button,
   PageHeader as DashboardPageHeader,
   Mono,
   SegmentedControl,
@@ -778,25 +778,15 @@ function ChallengeCard({
 
       {!joined && (
         <div className="mt-3">
-          <button
-            type="button"
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
+            loading={joining}
             onClick={() => onJoin(challenge.id)}
-            disabled={joining}
-            className="inline-flex items-center gap-1.5 rounded-full border border-accent bg-accent px-3 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {joining ? (
-              <>
-                <Loader2
-                  size={11}
-                  className="animate-spin"
-                  aria-hidden="true"
-                />
-                {t("Joining\u2026")}
-              </>
-            ) : (
-              t("Join challenge")
-            )}
-          </button>
+            {joining ? t("Joining\u2026") : t("Join challenge")}
+          </Button>
         </div>
       )}
     </div>
