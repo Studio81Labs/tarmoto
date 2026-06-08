@@ -3488,6 +3488,10 @@ export interface components {
       created_at: string;
       follower_count: number;
       following_count: number;
+      /** @description Lifetime distance ridden (km) summed over the rider's completed rides. 0 when none. */
+      total_distance_km: number;
+      /** @description Count of the rider's publicly shared rides (the "Rides shared" tile). */
+      shared_ride_count: number;
       /** @description Viewer's follow state on the target. Null when the viewer is the target. */
       is_following: boolean | null;
       /** @description True when the viewer is the target. */
@@ -3501,6 +3505,8 @@ export interface components {
       /** @description Underlying ride id. */
       id: string;
       share_token: string;
+      /** @description Rider-given ride name, used as the row title. Null if unset. */
+      name: string | null;
       ride_type: string;
       /** @description Whether the share is publicly visible. Always true for non-self viewers (private shares are filtered out server-side); both states appear when the rider is viewing their own list so they can spot private shares. */
       is_public: boolean;
@@ -3523,6 +3529,8 @@ export interface components {
       items: components["schemas"]["UserSharedRideDto"][];
       /** @description Total number of shared rides for the rider visible to the viewer (ignores limit/offset). Lets clients render "page X of N". */
       total: number;
+      /** @description Sum of `view_count` across all shared rides visible to the viewer (ignores limit/offset) — the profile's "total views" figure. */
+      total_views: number;
       limit: number;
       offset: number;
     };

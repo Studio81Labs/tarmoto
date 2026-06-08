@@ -20,6 +20,7 @@ function ride(overrides: Partial<UserSharedRide> = {}): UserSharedRide {
   return {
     id: overrides.id ?? "ride-1",
     share_token: overrides.share_token ?? "tok-1",
+    name: overrides.name ?? "Sunday switchbacks",
     ride_type: overrides.ride_type ?? "free",
     is_public: overrides.is_public ?? true,
     started_at: overrides.started_at ?? "2026-04-14T09:00:00.000Z",
@@ -36,7 +37,13 @@ function ride(overrides: Partial<UserSharedRide> = {}): UserSharedRide {
 }
 
 function payload(items: UserSharedRide[]) {
-  return { items, total: items.length, limit: 5, offset: 0 };
+  return {
+    items,
+    total: items.length,
+    total_views: items.reduce((sum, r) => sum + r.view_count, 0),
+    limit: 5,
+    offset: 0,
+  };
 }
 
 describe("SharedRidesSection", () => {
@@ -60,6 +67,9 @@ describe("SharedRidesSection", () => {
         expect.objectContaining({ limit: 5 }),
       ),
     );
+    expect(screen.getByText("Sunday switchbacks")).toBeInTheDocument();
+    expect(screen.getByText("1 public rides")).toBeInTheDocument();
+    expect(screen.getByText("7 total views")).toBeInTheDocument();
     expect(screen.getByText("42.5 km")).toBeInTheDocument();
     expect(screen.getByText("1h 30m")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();

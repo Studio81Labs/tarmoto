@@ -27,6 +27,43 @@ test.describe("community follow-up flows", () => {
     ).toHaveAttribute("aria-pressed", "false");
   });
 
+  // T46 — Profile stats + shared rides: the v2 rider profile surfaces
+  // backend-derived lifetime distance, public-share count, and the shared
+  // rides table. Seed a target rider with a completed ride + a public share,
+  // then assert the Distance hero tile, the "Rides shared" tile, and the
+  // shared-rides row all reflect that data.
+  test("T46: /community/[riderId] renders v2 stats + shared rides from real data", async ({
+    authedPage: page,
+    mockApi,
+  }) => {
+    const target = await mockApi.seedUser({ displayName: "Mira Hajkova" });
+    const ride = await mockApi.seedRide(target, {
+      name: "Stelvio Loop",
+      distance_km: 180,
+    });
+    await mockApi.seedRideShare(ride.id, { is_public: true });
+
+    await page.goto(`/community/${target.id}`);
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /mira hajkova/i }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Distance hero tile: lifetime km over completed rides.
+    const distanceTile = page
+      .locator("div")
+      .filter({ hasText: /^Distance/ })
+      .first();
+    await expect(distanceTile).toContainText("180");
+    await expect(distanceTile).toContainText("KM");
+
+    // Shared-rides section reflects the one public share.
+    await expect(page.getByText("1 public rides")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /stelvio loop/i }),
+    ).toBeVisible();
+  });
+
   // T42 — Create collection: the "New collection" button on
   // `/community/collections` opens a modal that POSTs to
   // /api/v1/collections. After submit, the new collection should

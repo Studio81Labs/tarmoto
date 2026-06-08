@@ -387,11 +387,27 @@ export class SharingService {
       .skip(offset)
       .take(limit);
 
-    const [rows, total] = await qb.getManyAndCount();
+    // Total views is summed across the rider's whole visible share set (not
+    // just this page), mirroring the `total` count's "ignores limit/offset"
+    // semantics. Built off the same filters as `qb` via a separate aggregate
+    // so paging never truncates the figure.
+    const viewsQb = this.sharedRideRepo
+      .createQueryBuilder('sr')
+      .select('COALESCE(SUM(sr.view_count), 0)', 'views')
+      .where('sr.user_id = :userId', { userId });
+    if (!isSelf) {
+      viewsQb.andWhere('sr.is_public = true');
+    }
+
+    const [[rows, total], viewsRow] = await Promise.all([
+      qb.getManyAndCount(),
+      viewsQb.getRawOne<{ views: string }>(),
+    ]);
 
     return {
       items: rows.map((sr) => this.toUserSharedRideDto(sr)),
       total,
+      total_views: Number(viewsRow?.views ?? 0),
       limit,
       offset,
     };
@@ -654,6 +670,7 @@ export class SharingService {
     return {
       id: ride.id,
       share_token: sr.share_token,
+      name: ride.name ?? null,
       ride_type: ride.ride_type,
       is_public: sr.is_public,
       started_at: ride.started_at.toISOString(),

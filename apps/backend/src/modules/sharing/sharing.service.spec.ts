@@ -44,6 +44,7 @@ describe('SharingService', () => {
     id: 'ride-1',
     user_id: 'user-1',
     status: 'completed',
+    name: 'Sunday switchbacks',
     ride_type: 'free',
     started_at: new Date('2026-04-14T09:00:00Z'),
     ended_at: new Date('2026-04-14T10:30:00Z'),
@@ -78,6 +79,7 @@ describe('SharingService', () => {
   const mockQueryBuilder = {
     innerJoinAndSelect: jest.fn().mockReturnThis(),
     leftJoin: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
@@ -86,6 +88,9 @@ describe('SharingService', () => {
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn().mockResolvedValue([[mockShared], 1]),
+    // `listForUser` runs a second builder to SUM view_count across the
+    // visible share set for the profile's "total views" figure.
+    getRawOne: jest.fn().mockResolvedValue({ views: '42' }),
   };
 
   beforeEach(async () => {
@@ -834,6 +839,7 @@ describe('SharingService', () => {
         expect.objectContaining({
           id: 'ride-1',
           share_token: 'abc123def456abc123def456abc12345',
+          name: 'Sunday switchbacks',
           ride_type: 'free',
           is_public: true,
           distance_km: 42.5,
@@ -844,6 +850,8 @@ describe('SharingService', () => {
       );
       expect(result.items[0].route_geometry).toHaveLength(3);
       expect(result.total).toBe(1);
+      // Aggregate view total comes from the second (SUM) builder.
+      expect(result.total_views).toBe(42);
       expect(result.limit).toBe(20);
       expect(result.offset).toBe(0);
     });

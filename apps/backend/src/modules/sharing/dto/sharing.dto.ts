@@ -399,6 +399,12 @@ export class UserSharedRideDto {
   @ApiProperty()
   share_token!: string;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Rider-given ride name, used as the row title. Null if unset.',
+  })
+  name!: string | null;
+
   @ApiProperty()
   ride_type!: string;
 
@@ -463,6 +469,12 @@ export class UserSharedRidesResponseDto {
       'Total number of shared rides for the rider visible to the viewer (ignores limit/offset). Lets clients render "page X of N".',
   })
   total!: number;
+
+  @ApiProperty({
+    description:
+      'Sum of `view_count` across all shared rides visible to the viewer (ignores limit/offset) — the profile\'s "total views" figure.',
+  })
+  total_views!: number;
 
   @ApiProperty()
   limit!: number;

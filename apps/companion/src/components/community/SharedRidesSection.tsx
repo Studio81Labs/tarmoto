@@ -1,32 +1,46 @@
 "use client";
 import { t } from "@/i18n";
 /**
- * SharedRidesSection (#371) — companion mirror of mobile's SharedRidesSection.
+ * SharedRidesSection (#371, v2 profile) — companion mirror of mobile's
+ * shared-rides list on the public rider profile.
  *
- * Renders the rider's most recent shared rides on the public profile page.
- * The backend gates visibility on the rider's `profile_visibility` privacy
- * preference (private profiles 404 for non-self viewers) and on each
- * share's `is_public` flag (private shares are filtered server-side for
- * non-self viewers). This section treats both axes the same way as
- * mobile: a 404 collapses to the empty state instead of an error block,
- * and the per-card "Private" pill is only rendered for the rider's own
- * private shares so the UI never leaks a private flag that slipped past
- * the server filter.
+ * Renders the rider's shared rides as a v2 table: route mini-preview, title +
+ * shared date, distance, duration, views, and the signature quality bars. The
+ * backend gates visibility on the rider's `profile_visibility` (private
+ * profiles 404 for non-self viewers) and on each share's `is_public` flag
+ * (private shares are filtered server-side for non-self viewers). A 404
+ * collapses to the empty state rather than an error block, and the per-row
+ * "Private" pill renders only for the rider's own private shares so the UI
+ * never leaks a private flag that slipped past the server filter. The header
+ * surfaces the rider's total public-ride count and aggregate view total.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Calendar, Eye, Lock, Route as RouteIcon, Timer } from "lucide-react";
+import { Lock, Share2 } from "lucide-react";
+import { Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import { formatCount } from "@tarmoto/shared";
 import { fetchSharedRides, type UserSharedRide } from "@/lib/shared-rides";
-import { formatDate, formatDistance, formatDuration } from "@/lib/utils";
+import {
+  formatDistance,
+  formatDuration,
+  formatShortDate,
+  scoreToQualityTier,
+} from "@/lib/utils";
+import { buildRoutePreview } from "@/lib/ride-detail";
 import { useAuthStore } from "@/stores/auth";
+import { usePreferencesStore } from "@/stores/preferences";
+
 const PAGE_SIZE = 5;
+
 interface SharedRidesSectionProps {
   userId: string;
   isSelf: boolean;
   /** Display name used in the third-person empty-state copy. */
   displayName: string;
 }
+
 type Phase = "loading" | "ready" | "error";
+
 export function SharedRidesSection({
   userId,
   isSelf,
@@ -34,13 +48,16 @@ export function SharedRidesSection({
 }: SharedRidesSectionProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const [items, setItems] = useState<UserSharedRide[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalViews, setTotalViews] = useState(0);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   useEffect(() => {
     // Mirrors the cancellation pattern used by the parent profile page:
-    // openapi-fetch swallows AbortError into its result union, so we keep
-    // a `cancelled` flag alongside the controller to guard every setState
-    // when a userId or accessToken change races with an in-flight request.
+    // openapi-fetch swallows AbortError into its result union, so we keep a
+    // `cancelled` flag alongside the controller to guard every setState when
+    // a userId or accessToken change races with an in-flight request.
     let cancelled = false;
     const controller = new AbortController();
     setPhase("loading");
@@ -49,18 +66,13 @@ export function SharedRidesSection({
       .then((response) => {
         if (cancelled) return;
         setItems(response?.items ?? []);
+        setTotal(response?.total ?? 0);
+        setTotalViews(response?.total_views ?? 0);
         setPhase("ready");
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (
-          (
-            err as {
-              name?: string;
-            }
-          )?.name === "AbortError"
-        )
-          return;
+        if ((err as { name?: string })?.name === "AbortError") return;
         setPhase("error");
         setErrorMessage(
           err instanceof Error ? err.message : "Could not load shared rides.",
@@ -74,37 +86,48 @@ export function SharedRidesSection({
     // re-running on token change re-issues the request with the new viewer
     // identity so `is_self` and the private-share filter stay in sync.
   }, [userId, accessToken]);
+
   return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <RouteIcon size={14} />
-          {t("Shared rides ")}
-        </h2>
+    <section className="overflow-hidden rounded-[14px] border border-line bg-cream">
+      <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <Share2 size={14} className="shrink-0 text-accent" />
+          <div>
+            <Stamp as="h2">{t("Shared rides")}</Stamp>
+            <div className="mt-0.5 text-[18px] font-extrabold tracking-[-0.3px] text-ink">
+              {t("{count} public rides", { count: total })}
+            </div>
+          </div>
+        </div>
+        {phase === "ready" && total > 0 && (
+          <Mono className="shrink-0 text-[11px] text-fg-dim">
+            {t("{count} total views", { count: formatCount(totalViews) })}
+          </Mono>
+        )}
       </header>
 
       {phase === "loading" ? (
-        <div className="space-y-2">
+        <div className="space-y-2 p-4">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-16 rounded-xl bg-slate-800/40 animate-pulse"
+              className="h-[52px] animate-pulse rounded-lg bg-paper"
             />
           ))}
         </div>
       ) : phase === "error" ? (
-        <p className="text-sm text-red-400">{errorMessage}</p>
+        <p className="px-5 py-6 text-sm text-fg-dim">{errorMessage}</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="px-5 py-6 text-sm text-fg-dim">
           {isSelf
-            ? "You haven't shared any rides yet."
-            : `${displayName} hasn't shared any rides yet.`}
+            ? t("You haven't shared any rides yet.")
+            : t("{name} hasn't shared any rides yet.", { name: displayName })}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul>
           {items.map((ride) => (
             <li key={ride.share_token}>
-              <SharedRideCard ride={ride} isSelf={isSelf} />
+              <SharedRideRow ride={ride} isSelf={isSelf} />
             </li>
           ))}
         </ul>
@@ -112,72 +135,98 @@ export function SharedRidesSection({
     </section>
   );
 }
-function SharedRideCard({
+
+function SharedRideRow({
   ride,
   isSelf,
 }: {
   ride: UserSharedRide;
   isSelf: boolean;
 }) {
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const preview = buildRoutePreview(ride.route_geometry, 200, 6);
+  const tier = scoreToQualityTier(ride.avg_road_quality);
+  const title = ride.name?.trim() || formatShortDate(ride.started_at);
   const showPrivatePill = isSelf && !ride.is_public;
-  const href = `/rides/shared/${encodeURIComponent(ride.share_token)}`;
+
   return (
     <Link
-      href={href}
-      className="block rounded-xl border border-slate-800 bg-slate-950/60 p-3 transition hover:border-accent/40 hover:bg-slate-950"
+      href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+      className="flex flex-col gap-3 border-b border-line px-5 py-3 transition last:border-b-0 hover:bg-paper md:grid md:grid-cols-[64px_1fr_110px_110px_92px_80px] md:items-center md:gap-4"
     >
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
-          <Calendar size={12} />
-          {formatDate(ride.started_at)}
-        </span>
-        {showPrivatePill ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            <Lock size={10} />
-            {t("Private ")}
-          </span>
+      <div className="h-[42px] w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-paper">
+        {preview ? (
+          <svg
+            viewBox={preview.viewBox}
+            preserveAspectRatio="xMidYMid slice"
+            className="h-full w-full"
+            role="img"
+            aria-hidden="true"
+          >
+            <path
+              d={preview.path}
+              fill="none"
+              stroke="var(--color-accent)"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         ) : null}
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Metric
-          icon={<RouteIcon size={12} />}
-          label="Distance"
-          value={
-            ride.distance_km != null ? formatDistance(ride.distance_km) : "—"
-          }
-        />
-        <Metric
-          icon={<Timer size={12} />}
-          label="Duration"
-          value={formatDuration(ride.duration_min)}
-        />
-        <Metric
-          icon={<Eye size={12} />}
-          label="Views"
-          value={Math.max(0, Math.round(ride.view_count)).toLocaleString()}
-        />
+
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-bold text-ink">{title}</span>
+          {showPrivatePill && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line-strong px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg-mute">
+              <Lock size={9} />
+              {t("Private")}
+            </span>
+          )}
+        </div>
+        <Mono className="text-[10px] text-fg-mute">
+          {formatShortDate(ride.started_at)}
+        </Mono>
       </div>
+
+      <RowMetric
+        label={t("Distance")}
+        value={
+          ride.distance_km != null
+            ? formatDistance(ride.distance_km, unitSystem)
+            : "—"
+        }
+      />
+      <RowMetric
+        label={t("Duration")}
+        value={formatDuration(ride.duration_min)}
+      />
+      <RowMetric
+        label={t("Views")}
+        value={
+          <Mono>{formatCount(Math.max(0, Math.round(ride.view_count)))}</Mono>
+        }
+      />
+
+      <span className="md:justify-self-end">
+        {tier != null && <QualityBars q={tier} size={5} />}
+      </span>
     </Link>
   );
 }
-function Metric({
-  icon,
+
+function RowMetric({
   label,
   value,
 }: {
-  icon: React.ReactNode;
   label: string;
-  value: string;
+  value: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1 text-[11px] text-slate-500">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-0.5 text-sm font-semibold text-white tabular-nums">
-        {value}
-      </div>
+      <Stamp>{label}</Stamp>
+      <div className="mt-0.5 text-sm font-bold text-ink">{value}</div>
     </div>
   );
 }

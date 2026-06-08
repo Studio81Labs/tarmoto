@@ -22,6 +22,18 @@ export interface PublicProfile {
   created_at: string;
   follower_count: number;
   following_count: number;
+  /**
+   * Lifetime distance ridden in km, summed over the rider's completed rides.
+   * A public vanity stat (the "Road Warrior" distance badge already exposes
+   * the same signal); 0 when the rider has no completed rides.
+   */
+  total_distance_km: number;
+  /**
+   * Count of the rider's publicly shared rides — the headline number for the
+   * "Rides shared" tile. Always the public-share count regardless of viewer,
+   * so it stays a stable public metric.
+   */
+  shared_ride_count: number;
   /** Viewer's follow state on the target. Null when the viewer is the target. */
   is_following: boolean | null;
   /** True when the viewer is the target. */

@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { UsersService } from './users.service.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { UserBadge } from '../../entities/user-badge.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
@@ -31,6 +32,7 @@ describe('UsersService', () => {
     andWhere: jest.Mock;
     getRawOne: jest.Mock;
   };
+  let sharedRideRepo: { count: jest.Mock };
   let storage: jest.Mocked<ObjectStorage>;
   let privacy: { loadPreferences: jest.Mock };
   let badgesService: { computeStats: jest.Mock };
@@ -116,6 +118,9 @@ describe('UsersService', () => {
     } as unknown as Partial<jest.Mocked<Repository<Ride>>> & {
       createQueryBuilder: jest.Mock;
     };
+    sharedRideRepo = {
+      count: jest.fn().mockResolvedValue(0),
+    };
     privacy = {
       loadPreferences: jest
         .fn()
@@ -141,6 +146,7 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(UserFollow), useValue: userFollowRepo },
         { provide: getRepositoryToken(UserBadge), useValue: userBadgeRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: BadgesService, useValue: badgesService },
@@ -198,8 +204,25 @@ describe('UsersService', () => {
         created_at: '2026-04-13T10:00:00.000Z',
         follower_count: 7,
         following_count: 3,
+        total_distance_km: 0,
+        shared_ride_count: 0,
         is_following: true,
         is_self: false,
+      });
+    });
+
+    it('surfaces lifetime distance and public-share count', async () => {
+      // Distance is the rounded SUM of completed-ride km; the share count is
+      // the rider's public-share total (viewer-independent).
+      rideHoursQb.getRawOne.mockResolvedValueOnce({ km: '7733.4' });
+      sharedRideRepo.count.mockResolvedValueOnce(5);
+
+      const result = await service.getPublicProfile('viewer-1', 'user-1');
+
+      expect(result.total_distance_km).toBe(7733);
+      expect(result.shared_ride_count).toBe(5);
+      expect(sharedRideRepo.count).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', is_public: true },
       });
     });
 
