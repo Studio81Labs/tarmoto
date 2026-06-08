@@ -19,6 +19,13 @@ export interface SegmentedControlProps<T extends string> {
   options: ReadonlyArray<SegmentedOption<T>>;
   ariaLabel?: string;
   className?: string;
+  /**
+   * Fully disables the control: every option gets the native `disabled`
+   * attribute (so it leaves the tab order and ignores pointer *and* keyboard
+   * activation), the group is `aria-disabled`, and `onChange` is gated. Use
+   * while a selection-driven request is in flight.
+   */
+  disabled?: boolean;
 }
 
 export function SegmentedControl<T extends string>({
@@ -27,6 +34,7 @@ export function SegmentedControl<T extends string>({
   options,
   ariaLabel,
   className,
+  disabled = false,
 }: SegmentedControlProps<T>) {
   const { activeTabIndex, registerRef, handleKeyDown } = useRovingRadioGroup<
     SegmentedOption<T>,
@@ -42,8 +50,10 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      aria-disabled={disabled || undefined}
       className={cn(
         "inline-flex gap-1 rounded-[7px] bg-paper p-[3px]",
+        disabled && "opacity-50",
         className,
       )}
     >
@@ -56,15 +66,17 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
+            disabled={disabled}
             // Roving tabindex: only the active item participates in the
             // tab order; arrow keys handle intra-group movement.
             tabIndex={index === activeTabIndex ? 0 : -1}
-            onClick={() => onChange(opt.value)}
-            onKeyDown={(e) => handleKeyDown(e, index)}
+            onClick={() => !disabled && onChange(opt.value)}
+            onKeyDown={(e) => !disabled && handleKeyDown(e, index)}
             className={cn(
               "rounded-[5px] px-3 py-1.5",
               "font-sans text-[11px] font-bold tracking-[0.4px] capitalize",
               "transition-colors duration-100 cursor-pointer border-0",
+              "disabled:cursor-not-allowed",
               selected
                 ? "bg-ink text-cream"
                 : "bg-transparent text-fg-dim hover:text-ink",

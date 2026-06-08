@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
-import { Button } from "@tarmoto/ui";
+import { Button, SegmentedControl } from "@tarmoto/ui";
 import {
   ArrowLeft,
   Calendar,
@@ -597,25 +597,17 @@ function VisibilitySelector({
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
       <span className="text-fg-dim">{t("Visibility")}</span>
-      {(["private", "unlisted", "public"] as const).map((v) => (
-        <button
-          key={v}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(v)}
-          className={`px-2.5 py-1 rounded-full border transition disabled:opacity-50 ${
-            v === value
-              ? "border-accent/40 bg-accent/10 text-accent"
-              : "border-line bg-cream text-fg-dim hover:text-ink"
-          }`}
-        >
-          {v === "public"
-            ? "Public"
-            : v === "unlisted"
-              ? "Unlisted"
-              : "Private"}
-        </button>
-      ))}
+      <SegmentedControl
+        ariaLabel={t("Visibility")}
+        disabled={disabled}
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "private", label: "Private" },
+          { value: "unlisted", label: "Unlisted" },
+          { value: "public", label: "Public" },
+        ]}
+      />
     </div>
   );
 }

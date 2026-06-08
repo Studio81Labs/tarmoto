@@ -21,6 +21,7 @@ import {
   Route,
 } from "lucide-react";
 import {
+  Button,
   Card,
   Heading,
   MetricTile,
@@ -435,15 +436,16 @@ function LoadErrorCard({ title, message }: { title: string; message: string }) {
       <p className="mx-auto mt-2 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
         {message}
       </p>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        className="mt-4"
         onClick={() => {
           if (typeof window !== "undefined") window.location.reload();
         }}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
       >
         {t("Retry")}
-      </button>
+      </Button>
     </Card>
   );
 }
