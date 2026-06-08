@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { MapPin, X } from "lucide-react";
+import { SegmentedControl } from "@tarmoto/ui";
 import { api } from "@/lib/api";
 export interface PlaceValue {
   label: string;
@@ -198,28 +199,23 @@ export function PlaceSearch({
         )}
       </div>
       {value && (
-        <div className="flex items-center gap-1 mt-0.5">
-          {RADIUS_CHOICES.map((r) => (
-            <button
-              key={r.km}
-              type="button"
-              onClick={() =>
-                onChange({
-                  label: value.label,
-                  lat: value.lat,
-                  lng: value.lng,
-                  km: r.km,
-                })
-              }
-              className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition ${
-                value.km === r.km
-                  ? "bg-ink text-cream"
-                  : "bg-paper text-fg-dim hover:bg-paper-2 hover:text-ink"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="mt-0.5">
+          <SegmentedControl
+            ariaLabel="Search radius"
+            value={String(value.km)}
+            onChange={(km) =>
+              onChange({
+                label: value.label,
+                lat: value.lat,
+                lng: value.lng,
+                km: Number(km),
+              })
+            }
+            options={RADIUS_CHOICES.map((r) => ({
+              value: String(r.km),
+              label: r.label,
+            }))}
+          />
         </div>
       )}
     </div>
