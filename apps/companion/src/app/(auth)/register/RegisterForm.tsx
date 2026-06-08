@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { Button } from "@tarmoto/ui";
 import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
@@ -102,13 +103,9 @@ export function RegisterForm({
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-ink text-cream font-semibold hover:bg-tarmac disabled:opacity-50 transition"
-        >
+        <Button type="submit" variant="primary" block loading={loading}>
           {loading ? t("Creating account...") : t("Create account")}
-        </button>
+        </Button>
       </form>
 
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
