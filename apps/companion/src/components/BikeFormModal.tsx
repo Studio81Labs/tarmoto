@@ -1,7 +1,8 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState, type FormEvent } from "react";
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
+import { Button } from "@tarmoto/ui";
 import {
   EMPTY_BIKE_FORM,
   type BikeFormErrors,
@@ -152,30 +153,22 @@ export function BikeFormModal({
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition disabled:opacity-50"
-            >
+            <Button variant="ghost" disabled={submitting} onClick={onClose}>
               {t("Cancel ")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition disabled:opacity-50"
+              variant="accent"
+              size="sm"
+              uppercase
+              loading={submitting}
             >
-              {submitting ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  {t("Saving\u2026 ")}
-                </>
-              ) : mode === "add" ? (
-                "Add bike"
-              ) : (
-                "Save changes"
-              )}
-            </button>
+              {submitting
+                ? t("Saving\u2026 ")
+                : mode === "add"
+                  ? "Add bike"
+                  : "Save changes"}
+            </Button>
           </div>
         </form>
       </div>
