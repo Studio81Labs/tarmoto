@@ -40,7 +40,7 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
-import { Card, Heading, Stamp } from "@tarmoto/ui";
+import { Button, Card, Heading, Stamp } from "@tarmoto/ui";
 type RightTab = "days" | "members" | "collaborate";
 interface LoadedTrip {
   detail: TripDetailResponse;
@@ -272,46 +272,59 @@ export default function TripDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/trips/${loaded.detail.id}/edit`}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
+            leftIcon={<Edit size={16} />}
+            renderLink={({ className, children }) => (
+              <Link
+                href={`/trips/${loaded.detail.id}/edit`}
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
-            <Edit size={16} />
             {t("Edit ")}
-          </Link>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Share2 size={14} />}
             onClick={() => setCollaborateOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink hover:bg-paper-2 transition"
           >
-            <Share2 size={14} />
             {t("Share ")}
-          </button>
+          </Button>
           <TripExportMenu trip={trip} />
-          <Link
-            href={`/trips/${loaded.detail.id}/print`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink hover:bg-paper-2 transition"
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Printer size={14} />}
+            renderLink={({ className, children }) => (
+              <Link
+                href={`/trips/${loaded.detail.id}/print`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
-            <Printer size={14} />
             {t("Print ")}
-          </Link>
+          </Button>
           {isOwner && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
+            <Button
+              variant="danger"
+              size="sm"
+              loading={deleting}
+              leftIcon={<Trash2 size={14} />}
               aria-label={t("Delete trip")}
-              className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10 transition disabled:opacity-60 disabled:cursor-wait"
+              onClick={handleDelete}
             >
-              {deleting ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Trash2 size={14} />
-              )}
               {t("Delete ")}
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -707,13 +720,15 @@ function CollaborateTabSummary({
           {t("open suggestion ")}
           {suggestionsCount === 1 ? "" : "s"}
         </p>
-        <button
-          type="button"
+        <Button
+          variant="accent"
+          size="sm"
+          uppercase
+          className="mt-2"
           onClick={onOpenModal}
-          className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
         >
           {t("Open collaboration panel ")}
-        </button>
+        </Button>
       </div>
     </div>
   );
