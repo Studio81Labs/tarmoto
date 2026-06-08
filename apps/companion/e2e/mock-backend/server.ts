@@ -2673,6 +2673,56 @@ export function buildApp(): Express {
     },
   );
 
+  // Rider XP / level / tier for the achievements hero. Production derives XP
+  // from many lifetime stats; the mock uses the dominant terms it tracks
+  // (completed-ride distance + ride count) with the same level curve and tier
+  // bands as `progression-definitions.ts`, so the hero renders deterministic
+  // tier/level/progress in e2e.
+  app.get(
+    "/api/v1/users/me/progression",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      let totalDistanceKm = 0;
+      let rideCount = 0;
+      for (const ride of state.rides.values()) {
+        if (ride.user_id === session.user_id && ride.status === "completed") {
+          totalDistanceKm += ride.distance_km;
+          rideCount += 1;
+        }
+      }
+      const xp = Math.round(totalDistanceKm + rideCount * 50);
+      const xpForLevel = (lvl: number) =>
+        lvl <= 1 ? 0 : 125 * (lvl - 1) * lvl;
+      const level =
+        xp < 250 ? 1 : Math.floor((1 + Math.sqrt(1 + (4 * xp) / 125)) / 2);
+      const tiers = [
+        { name: "Rookie Rider", minLevel: 1 },
+        { name: "Road Tripper", minLevel: 5 },
+        { name: "Curve Hunter", minLevel: 10 },
+        { name: "Mountain Goat", minLevel: 15 },
+        { name: "Pass Master", minLevel: 20 },
+        { name: "Tarmac Legend", minLevel: 25 },
+      ];
+      let idx = 0;
+      for (let i = 0; i < tiers.length; i++) {
+        if (level >= tiers[i].minLevel) idx = i;
+      }
+      const current = tiers[idx];
+      const next = tiers[idx + 1] ?? null;
+      const nextTierXp = next ? xpForLevel(next.minLevel) : null;
+      res.json({
+        xp,
+        level,
+        tier: current.name,
+        next_tier: next?.name ?? null,
+        current_tier_xp: xpForLevel(current.minLevel),
+        next_tier_xp: nextTierXp,
+        xp_to_next_tier: nextTierXp != null ? Math.max(0, nextTierXp - xp) : 0,
+      });
+    },
+  );
+
   // Paginated list of the rider's shared rides. Non-self viewers only
   // see public shares; the rider viewing their own profile sees both
   // public and private shares (production `SharingService.listForUser`

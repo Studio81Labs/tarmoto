@@ -26,7 +26,7 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
-import { PageHeader as DashboardPageHeader, Mono } from "@tarmoto/ui";
+import { PageHeader as DashboardPageHeader, Mono, Stamp } from "@tarmoto/ui";
 import { initialsFromName } from "@/lib/rider-profile";
 import {
   activeChallenges,
@@ -50,8 +50,10 @@ import {
 } from "@/lib/gamification";
 import {
   fetchGamificationSnapshot,
+  fetchProgression,
   fetchRegionalLeaderboards,
   joinChallenge,
+  type RiderProgression,
 } from "@/lib/gamification-fetch";
 const BADGE_ICONS: Record<string, LucideIcon> = {
   compass: Compass,
@@ -348,6 +350,11 @@ function Dashboard({
     <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
       <PageHeader />
 
+      <TierHero
+        earnedBadgeCount={earnedBadgeCount}
+        activeCount={visibleChallenges.length}
+      />
+
       {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
 
       <section aria-labelledby="badges-heading">
@@ -442,6 +449,141 @@ function PageHeader() {
         "Badges, challenges, leaderboards, and milestones for your riding region.",
       )}
     />
+  );
+}
+// ── Current-tier hero ──
+/**
+ * Dark hero summarising the rider's XP / level / tier progression plus three
+ * headline counts (badges, active challenges, regional rank). Progression and
+ * the distance-dimension rank are fetched here so the section stays decoupled
+ * from the snapshot load and the leaderboards widget. Hidden for a rider with
+ * no XP yet — the empty-state design leads straight into the badge grid.
+ */
+function TierHero({
+  earnedBadgeCount,
+  activeCount,
+}: {
+  earnedBadgeCount: number;
+  activeCount: number;
+}) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const [progression, setProgression] = useState<RiderProgression | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    // Each widget is independent — a failed rank fetch still shows the tier.
+    void fetchProgression({ signal: controller.signal })
+      .then((p) => {
+        if (!cancelled) setProgression(p);
+      })
+      .catch(() => undefined);
+    void fetchRegionalLeaderboards({ signal: controller.signal })
+      .then((board) => {
+        if (!cancelled) setRank(board.total_distance_km.me?.rank ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [accessToken]);
+
+  // Brand-new riders (no XP) get no hero — matches the empty-state design.
+  if (!progression || progression.xp <= 0) return null;
+
+  const span =
+    progression.next_tier_xp != null
+      ? progression.next_tier_xp - progression.current_tier_xp
+      : 0;
+  const pct =
+    progression.next_tier_xp != null && span > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            ((progression.xp - progression.current_tier_xp) / span) * 100,
+          ),
+        )
+      : 100;
+
+  return (
+    <section className="rounded-[14px] bg-ink p-6 text-cream">
+      <div className="grid items-center gap-6 md:grid-cols-3">
+        <div>
+          <Stamp tone="accent">{t("Current tier")}</Stamp>
+          <div className="mt-1.5 text-[36px] font-extrabold leading-[1.05] tracking-[-0.5px] text-cream">
+            {progression.tier}
+          </div>
+          <div className="mt-1 text-[12px] text-fg-on-dark-mute">
+            {t("Level {level} · {xp} XP", {
+              level: progression.level,
+              xp: progression.xp.toLocaleString(),
+            })}
+          </div>
+        </div>
+
+        <div>
+          {progression.next_tier ? (
+            <>
+              <Stamp tone="on-dark-dim">
+                {t("Next tier · {tier}", { tier: progression.next_tier })}
+              </Stamp>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-cream/15">
+                <div
+                  className="h-full rounded-full bg-accent"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <Mono className="mt-1.5 block text-[11px] text-fg-on-dark-mute">
+                {t("{xp} XP to go", {
+                  xp: progression.xp_to_next_tier.toLocaleString(),
+                })}
+              </Mono>
+            </>
+          ) : (
+            <Stamp tone="on-dark-dim">{t("Top tier reached")}</Stamp>
+          )}
+        </div>
+
+        <div className="flex justify-start gap-[14px] md:justify-end">
+          <HeroStat
+            value={earnedBadgeCount.toLocaleString()}
+            label={t("Badges")}
+            accent
+          />
+          <HeroStat value={activeCount.toLocaleString()} label={t("Active")} />
+          <HeroStat value={rank != null ? `#${rank}` : "—"} label={t("Rank")} />
+        </div>
+      </div>
+    </section>
+  );
+}
+function HeroStat({
+  value,
+  label,
+  accent = false,
+}: {
+  value: string;
+  label: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="text-center">
+      <div
+        className={clsx(
+          "text-[28px] font-extrabold leading-none",
+          accent ? "text-accent" : "text-cream",
+        )}
+      >
+        {value}
+      </div>
+      <Mono className="mt-1 block text-[9px] uppercase tracking-[1px] text-fg-on-dark-mute">
+        {label}
+      </Mono>
+    </div>
   );
 }
 // ── Seasonal banner ──

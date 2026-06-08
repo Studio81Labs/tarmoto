@@ -574,6 +574,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/users/me/progression": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get the rider's XP / level / tier progression
+     * @description Derived deterministically from the rider's lifetime achievement stats (no XP ledger); recomputed on each read.
+     */
+    get: operations["BadgesController_getProgression"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/{userId}/badges": {
     parameters: {
       query?: never;
@@ -3101,6 +3121,22 @@ export interface components {
       bronze: number;
       silver: number;
       gold: number;
+    };
+    ProgressionDto: {
+      /** @description Total XP, derived from lifetime stats. */
+      xp: number;
+      /** @description Level derived from XP via the curve (min 1). */
+      level: number;
+      /** @description Current named tier. */
+      tier: string;
+      /** @description Next tier's name, or null at the top tier. */
+      next_tier: string | null;
+      /** @description XP at the start of the current tier. */
+      current_tier_xp: number;
+      /** @description XP needed to reach the next tier, or null at the top tier. */
+      next_tier_xp: number | null;
+      /** @description XP remaining to the next tier; 0 at the top. */
+      xp_to_next_tier: number;
     };
     BadgeDto: {
       key: string;
@@ -6215,6 +6251,25 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HazardResponseDto"][];
+        };
+      };
+    };
+  };
+  BadgesController_getProgression: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressionDto"];
         };
       };
     };

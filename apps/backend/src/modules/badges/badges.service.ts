@@ -8,7 +8,9 @@ import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { BADGE_DEFINITIONS, computeTier } from './badge-definitions.js';
+import { deriveProgression } from './progression-definitions.js';
 import { BadgeDto, CheckBadgesResponseDto } from './dto/badges.dto.js';
+import { ProgressionDto } from './dto/progression.dto.js';
 
 @Injectable()
 export class BadgesService {
@@ -97,6 +99,16 @@ export class BadgesService {
     });
 
     return { newly_earned: newlyEarned };
+  }
+
+  /**
+   * Rider progression (XP / level / tier) derived from current lifetime stats.
+   * No persistence — recomputed on read so it always reflects real
+   * achievements (see `progression-definitions.ts`).
+   */
+  async computeProgression(userId: string): Promise<ProgressionDto> {
+    const stats = await this.computeStats(userId);
+    return deriveProgression(stats);
   }
 
   async computeStats(userId: string): Promise<Record<string, number>> {
