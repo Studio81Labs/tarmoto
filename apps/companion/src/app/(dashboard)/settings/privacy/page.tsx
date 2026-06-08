@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Button, Card, Stamp, Toggle } from "@tarmoto/ui";
+import { Button, Card, RadioCardGrid, Stamp, Toggle } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import type {
   LocationRetention,
@@ -160,21 +160,13 @@ export default function PrivacyPage() {
             {t("Who can see your profile, stats, and shared rides. ")}
           </p>
         </div>
-        <div
-          role="radiogroup"
-          aria-label={t("Profile visibility")}
+        <RadioCardGrid
+          ariaLabel={t("Profile visibility")}
           className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-        >
-          {PROFILE_VISIBILITY_OPTIONS.map((opt) => (
-            <RadioOption
-              key={opt.value}
-              active={settings.profileVisibility === opt.value}
-              label={opt.label}
-              description={opt.description}
-              onClick={() => setProfileVisibility(opt.value)}
-            />
-          ))}
-        </div>
+          value={settings.profileVisibility}
+          onChange={setProfileVisibility}
+          options={PROFILE_VISIBILITY_OPTIONS}
+        />
       </Card>
 
       {/* Default ride sharing */}
@@ -189,21 +181,13 @@ export default function PrivacyPage() {
             )}
           </p>
         </div>
-        <div
-          role="radiogroup"
-          aria-label={t("Default ride sharing")}
+        <RadioCardGrid
+          ariaLabel={t("Default ride sharing")}
           className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-        >
-          {RIDE_SHARING_OPTIONS.map((opt) => (
-            <RadioOption
-              key={opt.value}
-              active={settings.defaultRideSharing === opt.value}
-              label={opt.label}
-              description={opt.description}
-              onClick={() => setRideSharing(opt.value)}
-            />
-          ))}
-        </div>
+          value={settings.defaultRideSharing}
+          onChange={setRideSharing}
+          options={RIDE_SHARING_OPTIONS}
+        />
       </Card>
 
       {/* Road data contribution */}
@@ -239,21 +223,13 @@ export default function PrivacyPage() {
             )}
           </p>
         </div>
-        <div
-          role="radiogroup"
-          aria-label={t("Location data retention")}
+        <RadioCardGrid
+          ariaLabel={t("Location data retention")}
           className="grid grid-cols-2 gap-2 sm:grid-cols-5"
-        >
-          {LOCATION_RETENTION_OPTIONS.map((opt) => (
-            <RadioOption
-              key={opt.value}
-              active={settings.locationRetention === opt.value}
-              label={opt.label}
-              description={opt.description}
-              onClick={() => setLocationRetention(opt.value)}
-            />
-          ))}
-        </div>
+          value={settings.locationRetention}
+          onChange={setLocationRetention}
+          options={LOCATION_RETENTION_OPTIONS}
+        />
       </Card>
 
       {/* Data processing consent */}
@@ -308,46 +284,6 @@ export default function PrivacyPage() {
 
       <SaveBar isDirty={isDirty} saveState={saveState} onSave={save} />
     </div>
-  );
-}
-
-interface RadioOptionProps {
-  active: boolean;
-  label: string;
-  description?: string;
-  onClick: () => void;
-}
-function RadioOption({
-  active,
-  label,
-  description,
-  onClick,
-}: RadioOptionProps) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={active}
-      onClick={onClick}
-      className={
-        active
-          ? "flex flex-col items-start gap-0.5 rounded-lg border border-ink bg-ink px-3 py-2.5 text-left text-cream transition"
-          : "flex flex-col items-start gap-0.5 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-ink transition hover:border-line-strong"
-      }
-    >
-      <span className="text-[14px] font-semibold">{label}</span>
-      {description && (
-        <span
-          className={
-            active
-              ? "text-[12px] text-fg-on-dark-dim"
-              : "text-[12px] text-fg-dim"
-          }
-        >
-          {description}
-        </span>
-      )}
-    </button>
   );
 }
 
