@@ -561,14 +561,16 @@ function CancelPlanCard({
           ? "You're currently on Free, so there is nothing to cancel."
           : `${renewalLabel}. If you need to scale back, we will show a lower-friction option before you leave.`}
       </p>
-      <button
-        type="button"
-        onClick={onCancel}
+      <Button
+        variant="danger"
+        size="sm"
+        uppercase
+        className="mt-5"
         disabled={currentTier === "free"}
-        className="mt-5 inline-flex items-center gap-2 rounded-full border border-quality-q2 bg-transparent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-amber-700 transition hover:bg-quality-q2/20 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={onCancel}
       >
         {t("Cancel subscription ")}
-      </button>
+      </Button>
     </Card>
   );
 }
