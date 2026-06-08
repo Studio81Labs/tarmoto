@@ -1,0 +1,162 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
+import AchievementsPage from "./page";
+import { useAuthStore } from "@/stores/auth";
+import {
+  fetchGamificationSnapshot,
+  fetchProgression,
+  fetchRegionalLeaderboards,
+} from "@/lib/gamification-fetch";
+import { usersApi } from "@/lib/api";
+import type { GamificationSnapshot } from "@/lib/gamification";
+
+vi.mock("@/lib/gamification-fetch", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/gamification-fetch")
+  >("@/lib/gamification-fetch");
+  return {
+    ...actual,
+    fetchGamificationSnapshot: vi.fn(),
+    fetchProgression: vi.fn(),
+    fetchRegionalLeaderboards: vi.fn(),
+    joinChallenge: vi.fn(),
+  };
+});
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return { ...actual, usersApi: { ...actual.usersApi, getMe: vi.fn() } };
+});
+
+const snapshotMock = vi.mocked(fetchGamificationSnapshot);
+const progressionMock = vi.mocked(fetchProgression);
+const leaderboardsMock = vi.mocked(fetchRegionalLeaderboards);
+const getMeMock = vi.mocked(usersApi.getMe);
+
+function snapshot(): GamificationSnapshot {
+  return {
+    badges: [],
+    challenges: [],
+    challengeMeta: {},
+    milestones: [],
+    seasonal: null,
+    stats: {
+      totalKm: 12000,
+      totalRides: 40,
+      totalHours: 320,
+      roadsDiscovered: 80,
+      hazardsReported: 6,
+      joinedAt: "2024-04-01T10:00:00.000Z",
+    },
+  };
+}
+
+function emptyDimension(rank: number | null) {
+  return {
+    dimension: "total_distance_km" as const,
+    unit: "km",
+    entries: [],
+    me:
+      rank != null
+        ? {
+            rank,
+            userId: "user-1",
+            displayName: "Test Rider",
+            homeRegion: "Lombardy",
+            value: 12000,
+            isMe: true,
+          }
+        : null,
+  };
+}
+
+function leaderboards(rank: number | null) {
+  return {
+    region: "Lombardy",
+    generatedAt: "2026-04-01T10:00:00.000Z",
+    total_distance_km: emptyDimension(rank),
+    roads_discovered: emptyDimension(null),
+    hazards_reported: emptyDimension(null),
+  };
+}
+
+describe("AchievementsPage — current-tier hero", () => {
+  beforeEach(() => {
+    snapshotMock.mockReset();
+    progressionMock.mockReset();
+    leaderboardsMock.mockReset();
+    getMeMock.mockReset();
+    useAuthStore.setState({
+      accessToken: "test-token",
+      isAuthenticated: true,
+      user: { id: "user-1", email: "rider@example.com", displayName: "Rider" },
+    });
+    snapshotMock.mockResolvedValue(snapshot());
+    // The leaderboards widget resolves home_region from /users/me.
+    getMeMock.mockResolvedValue({
+      data: { home_region: "Lombardy" },
+    } as Awaited<ReturnType<typeof usersApi.getMe>>);
+    leaderboardsMock.mockResolvedValue(leaderboards(7));
+  });
+
+  it("renders the dark progression hero from the rider's progression + rank", async () => {
+    progressionMock.mockResolvedValue({
+      xp: 23750,
+      level: 14,
+      tier: "Curve Hunter",
+      next_tier: "Mountain Goat",
+      current_tier_xp: 11250,
+      next_tier_xp: 26250,
+      xp_to_next_tier: 2500,
+    });
+
+    render(<AchievementsPage />);
+
+    expect(
+      await screen.findByText("Curve Hunter", undefined, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Current tier")).toBeInTheDocument();
+    expect(screen.getByText("Level 14 · 23,750 XP")).toBeInTheDocument();
+    expect(screen.getByText("Next tier · Mountain Goat")).toBeInTheDocument();
+    expect(screen.getByText("2,500 XP to go")).toBeInTheDocument();
+    // Regional rank pulled from the distance-dimension `me` row, scoped to the
+    // rider's home region so it agrees with the leaderboard below.
+    await waitFor(() => expect(screen.getByText("#7")).toBeInTheDocument());
+    expect(leaderboardsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "Lombardy" }),
+    );
+
+    // Leaderboard filters render as segmented controls (stats-page style):
+    // a dimension group plus a region group once home_region resolves.
+    expect(
+      screen.getByRole("radiogroup", { name: /leaderboard dimension/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Distance" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("radio", { name: "Global" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the hero for a rider with no XP (empty-state design)", async () => {
+    progressionMock.mockResolvedValue({
+      xp: 0,
+      level: 1,
+      tier: "Rookie Rider",
+      next_tier: "Road Tripper",
+      current_tier_xp: 0,
+      next_tier_xp: 2500,
+      xp_to_next_tier: 2500,
+    });
+
+    render(<AchievementsPage />);
+
+    // Let the snapshot load so the dashboard (and its PageHeader) mounts.
+    await waitFor(() => expect(snapshotMock).toHaveBeenCalled());
+    expect(
+      await screen.findByRole("heading", { level: 1, name: /achievements/i }),
+    ).toBeInTheDocument();
+    // The tier hero is absent for a zero-XP rider.
+    expect(screen.queryByText("Current tier")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rookie Rider")).not.toBeInTheDocument();
+  });
+});

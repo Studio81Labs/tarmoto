@@ -26,6 +26,7 @@ type BadgeDto = components["schemas"]["BadgeDto"];
 type ChallengeDto = components["schemas"]["ChallengeDto"];
 type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
 type MeProfileDto = components["schemas"]["MeProfileDto"];
+export type RiderProgression = components["schemas"]["ProgressionDto"];
 
 export class GamificationFetchError extends Error {
   readonly status: number | null;
@@ -99,6 +100,23 @@ export async function fetchMeProfile(
   if (error || !data) {
     throw new GamificationFetchError(
       errorMessage(error, "Could not load your profile summary"),
+      status,
+    );
+  }
+  return data;
+}
+
+export async function fetchProgression(
+  options: FetchOptions = {},
+): Promise<RiderProgression> {
+  const { data, error, response } = await api.GET(
+    "/api/v1/users/me/progression",
+    { signal: options.signal },
+  );
+  const status = response.status;
+  if (error || !data) {
+    throw new GamificationFetchError(
+      errorMessage(error, "Could not load your progression"),
       status,
     );
   }

@@ -17,6 +17,12 @@
 // guarantees the wire format stays in lock-step.
 export type { PublicProfile } from "@tarmoto/shared";
 
+// Rider progression (XP / level / tier) for the achievements screen. Same
+// rationale as PublicProfile — re-exported from `@tarmoto/shared` so the
+// backend `ProgressionDto implements RiderProgression` keeps the wire shape
+// aligned across backend, mobile, and companion.
+export type { RiderProgression } from "@tarmoto/shared";
+
 // Authenticated rider's own profile summary (issue #334). Re-exported from
 // `@tarmoto/shared` so backend, mobile, and companion share one definition.
 export type { MeProfile } from "@tarmoto/shared";

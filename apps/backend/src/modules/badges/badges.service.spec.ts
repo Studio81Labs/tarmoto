@@ -287,4 +287,26 @@ describe('BadgesService', () => {
       expect(stats.roads_discovered).toBe(0);
     });
   });
+
+  describe('computeProgression', () => {
+    it('derives XP / level / tier from the rider stats', async () => {
+      jest.spyOn(service, 'computeStats').mockResolvedValueOnce({
+        total_distance: 22750,
+        single_ride: 0,
+        ride_count: 0,
+        roads_discovered: 0,
+        reviews_written: 0,
+        hazards_reported: 0,
+        rides_shared: 0,
+      });
+
+      const progression = await service.computeProgression('user-1');
+
+      // 22,750 km → 22,750 XP + gold Road Warrior bonus (1,000) = 23,750.
+      expect(progression.xp).toBe(23750);
+      expect(progression.level).toBe(14);
+      expect(progression.tier).toBe('Curve Hunter');
+      expect(progression.next_tier).toBe('Mountain Goat');
+    });
+  });
 });

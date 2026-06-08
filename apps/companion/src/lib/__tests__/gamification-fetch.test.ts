@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchGamificationSnapshot,
   fetchMeProfile,
+  fetchProgression,
   fetchRegionalLeaderboards,
   GamificationFetchError,
   joinChallenge,
@@ -115,6 +116,40 @@ describe("fetchMeProfile", () => {
       expect(ge.message).toBe("boom");
       expect(ge.status).toBe(500);
     }
+  });
+});
+
+describe("fetchProgression", () => {
+  it("returns the rider's XP / level / tier on success", async () => {
+    mockGet.mockResolvedValueOnce(
+      ok({
+        xp: 23750,
+        level: 14,
+        tier: "Curve Hunter",
+        next_tier: "Mountain Goat",
+        current_tier_xp: 11250,
+        next_tier_xp: 26250,
+        xp_to_next_tier: 2500,
+      }),
+    );
+
+    const progression = await fetchProgression();
+
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/users/me/progression", {
+      signal: undefined,
+    });
+    expect(progression.tier).toBe("Curve Hunter");
+    expect(progression.next_tier).toBe("Mountain Goat");
+    expect(progression.xp_to_next_tier).toBe(2500);
+  });
+
+  it("wraps backend errors in GamificationFetchError with the status", async () => {
+    mockGet.mockResolvedValueOnce(fail(503, { message: "down" }));
+
+    await expect(fetchProgression()).rejects.toMatchObject({
+      name: "GamificationFetchError",
+      status: 503,
+    });
   });
 });
 

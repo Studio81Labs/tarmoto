@@ -10,7 +10,6 @@ import {
   Heart,
   Loader2,
   Lock,
-  Map as MapIcon,
   Medal,
   Moon,
   Mountain,
@@ -26,7 +25,12 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
-import { PageHeader as DashboardPageHeader, Mono } from "@tarmoto/ui";
+import {
+  PageHeader as DashboardPageHeader,
+  Mono,
+  SegmentedControl,
+  Stamp,
+} from "@tarmoto/ui";
 import { initialsFromName } from "@/lib/rider-profile";
 import {
   activeChallenges,
@@ -50,8 +54,10 @@ import {
 } from "@/lib/gamification";
 import {
   fetchGamificationSnapshot,
+  fetchProgression,
   fetchRegionalLeaderboards,
   joinChallenge,
+  type RiderProgression,
 } from "@/lib/gamification-fetch";
 const BADGE_ICONS: Record<string, LucideIcon> = {
   compass: Compass,
@@ -348,6 +354,11 @@ function Dashboard({
     <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
       <PageHeader />
 
+      <TierHero
+        earnedBadgeCount={earnedBadgeCount}
+        activeCount={visibleChallenges.length}
+      />
+
       {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
 
       <section aria-labelledby="badges-heading">
@@ -442,6 +453,152 @@ function PageHeader() {
         "Badges, challenges, leaderboards, and milestones for your riding region.",
       )}
     />
+  );
+}
+// ── Current-tier hero ──
+/**
+ * Dark hero summarising the rider's XP / level / tier progression plus three
+ * headline counts (badges, active challenges, regional rank). Progression and
+ * the distance-dimension rank are fetched here so the section stays decoupled
+ * from the snapshot load and the leaderboards widget. Hidden for a rider with
+ * no XP yet — the empty-state design leads straight into the badge grid.
+ */
+function TierHero({
+  earnedBadgeCount,
+  activeCount,
+}: {
+  earnedBadgeCount: number;
+  activeCount: number;
+}) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const [progression, setProgression] = useState<RiderProgression | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    // Each widget is independent — a failed rank fetch still shows the tier.
+    void fetchProgression({ signal: controller.signal })
+      .then((p) => {
+        if (!cancelled) setProgression(p);
+      })
+      .catch(() => undefined);
+    // Scope the hero rank to the rider's home region (when set) so it matches
+    // the regional leaderboard's default view directly below — otherwise the
+    // hero would show a global rank that disagrees with the regional board.
+    void usersApi
+      .getMe({ signal: controller.signal })
+      .then(({ data }) => {
+        const region = data?.home_region?.trim() || undefined;
+        return fetchRegionalLeaderboards({
+          region,
+          signal: controller.signal,
+        });
+      })
+      .then((board) => {
+        if (!cancelled) setRank(board.total_distance_km.me?.rank ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [accessToken]);
+
+  // Brand-new riders (no XP) get no hero — matches the empty-state design.
+  if (!progression || progression.xp <= 0) return null;
+
+  const span =
+    progression.next_tier_xp != null
+      ? progression.next_tier_xp - progression.current_tier_xp
+      : 0;
+  const pct =
+    progression.next_tier_xp != null && span > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            ((progression.xp - progression.current_tier_xp) / span) * 100,
+          ),
+        )
+      : 100;
+
+  return (
+    <section className="rounded-[14px] bg-ink p-6 text-cream">
+      <div className="grid items-center gap-6 md:grid-cols-3">
+        <div>
+          <Stamp tone="accent">{t("Current tier")}</Stamp>
+          <div className="mt-1.5 text-[36px] font-extrabold leading-[1.05] tracking-[-0.5px] text-cream">
+            {progression.tier}
+          </div>
+          <div className="mt-1 text-[12px] text-fg-on-dark-mute">
+            {t("Level {level} · {xp} XP", {
+              level: progression.level,
+              xp: progression.xp.toLocaleString(),
+            })}
+          </div>
+        </div>
+
+        <div>
+          {progression.next_tier ? (
+            <>
+              <Stamp tone="on-dark-dim">
+                {t("Next tier · {tier}", { tier: progression.next_tier })}
+              </Stamp>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-cream/15">
+                <div
+                  className="h-full rounded-full bg-accent"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <Mono className="mt-1.5 block text-[11px] text-fg-on-dark-mute">
+                {t("{xp} XP to go", {
+                  xp: progression.xp_to_next_tier.toLocaleString(),
+                })}
+              </Mono>
+            </>
+          ) : (
+            <Stamp tone="on-dark-dim">{t("Top tier reached")}</Stamp>
+          )}
+        </div>
+
+        <div className="flex justify-start gap-[14px] md:justify-end">
+          <HeroStat
+            value={earnedBadgeCount.toLocaleString()}
+            label={t("Badges")}
+            accent
+          />
+          <HeroStat value={activeCount.toLocaleString()} label={t("Active")} />
+          <HeroStat value={rank != null ? `#${rank}` : "—"} label={t("Rank")} />
+        </div>
+      </div>
+    </section>
+  );
+}
+function HeroStat({
+  value,
+  label,
+  accent = false,
+}: {
+  value: string;
+  label: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="text-center">
+      <div
+        className={clsx(
+          "text-[28px] font-extrabold leading-none",
+          accent ? "text-accent" : "text-cream",
+        )}
+      >
+        {value}
+      </div>
+      <Mono className="mt-1 block text-[9px] uppercase tracking-[1px] text-fg-on-dark-mute">
+        {label}
+      </Mono>
+    </div>
   );
 }
 // ── Seasonal banner ──
@@ -778,9 +935,27 @@ function RegionalLeaderboardsSection() {
         }
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <RegionPill scope={scope} homeRegion={homeRegion} onChange={setScope} />
-        <DimensionPills current={dimension} onChange={setDimension} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {homeRegion && (
+          <SegmentedControl
+            ariaLabel={t("Region scope")}
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "global", label: t("Global") },
+              { value: "region", label: homeRegion },
+            ]}
+          />
+        )}
+        <SegmentedControl
+          ariaLabel={t("Leaderboard dimension")}
+          value={dimension}
+          onChange={setDimension}
+          options={LEADERBOARD_DIMENSION_KEYS.map((dim) => ({
+            value: dim,
+            label: labelForDimension(dim),
+          }))}
+        />
       </div>
 
       {load.status === "error" ? (
@@ -812,102 +987,6 @@ function RegionalLeaderboardsSection() {
         <RegionalLeaderboardTable dim={dim} />
       )}
     </section>
-  );
-}
-function RegionPill({
-  scope,
-  homeRegion,
-  onChange,
-}: {
-  scope: RegionScope;
-  homeRegion: string | null;
-  onChange: (scope: RegionScope) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={t("Region scope")}
-      className="inline-flex gap-1.5"
-    >
-      <FilterPill
-        active={scope === "global"}
-        onClick={() => onChange("global")}
-        ariaLabel={t("Global ranking")}
-      >
-        {t("Global")}
-      </FilterPill>
-      {homeRegion && (
-        <FilterPill
-          active={scope === "region"}
-          onClick={() => onChange("region")}
-          ariaLabel={t("Riders from {region}", { region: homeRegion })}
-        >
-          <MapIcon size={11} className="-mt-0.5 inline" aria-hidden="true" />{" "}
-          {homeRegion}
-        </FilterPill>
-      )}
-    </div>
-  );
-}
-function DimensionPills({
-  current,
-  onChange,
-}: {
-  current: LeaderboardDimensionKey;
-  onChange: (dim: LeaderboardDimensionKey) => void;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={t("Leaderboard dimension")}
-      className="inline-flex flex-wrap gap-1.5"
-    >
-      {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
-        <FilterPill
-          key={dim}
-          active={current === dim}
-          onClick={() => onChange(dim)}
-          ariaLabel={labelForDimension(dim)}
-        >
-          {labelForDimension(dim)}
-        </FilterPill>
-      ))}
-    </div>
-  );
-}
-/**
- * Spec leaderboard filter pill — rounded-full, mono-style 11/700/uppercase,
- * orange-tinted bg + accent border when active, transparent + line border
- * otherwise. Shared by region scope + dimension rows so the two filter
- * groups read as one visual treatment.
- */
-function FilterPill({
-  active,
-  onClick,
-  ariaLabel,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  ariaLabel: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      aria-label={ariaLabel}
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] transition",
-        active
-          ? "border-accent bg-accent/30 text-ink"
-          : "border-line bg-transparent text-ink hover:bg-paper",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 function RegionalLeaderboardTable({

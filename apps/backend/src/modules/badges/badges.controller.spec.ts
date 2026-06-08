@@ -26,6 +26,15 @@ describe('BadgesController', () => {
       checkAndAward: jest
         .fn()
         .mockResolvedValue({ newly_earned: ['total_distance:silver'] }),
+      computeProgression: jest.fn().mockResolvedValue({
+        xp: 23750,
+        level: 14,
+        tier: 'Curve Hunter',
+        next_tier: 'Mountain Goat',
+        current_tier_xp: 11250,
+        next_tier_xp: 26250,
+        xp_to_next_tier: 2500,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -53,5 +62,14 @@ describe('BadgesController', () => {
 
     expect(service.checkAndAward).toHaveBeenCalledWith('user-1');
     expect(result.newly_earned).toContain('total_distance:silver');
+  });
+
+  it("GET /users/me/progression returns the caller's progression", async () => {
+    const result = await controller.getProgression(mockReq);
+
+    expect(service.computeProgression).toHaveBeenCalledWith('user-1');
+    expect(result.tier).toBe('Curve Hunter');
+    expect(result.next_tier).toBe('Mountain Goat');
+    expect(result.level).toBe(14);
   });
 });

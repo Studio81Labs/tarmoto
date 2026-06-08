@@ -12,6 +12,7 @@ export * from "./me-profile";
 export * from "./monthly-stats";
 export * from "./notifications";
 export * from "./privacy";
+export * from "./progression";
 export * from "./public-profile";
 export * from "./ride-stats";
 export * from "./ride-tag-events";
