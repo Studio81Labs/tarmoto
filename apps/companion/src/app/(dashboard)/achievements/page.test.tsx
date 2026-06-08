@@ -119,8 +119,12 @@ describe("AchievementsPage — current-tier hero", () => {
     expect(screen.getByText("Level 14 · 23,750 XP")).toBeInTheDocument();
     expect(screen.getByText("Next tier · Mountain Goat")).toBeInTheDocument();
     expect(screen.getByText("2,500 XP to go")).toBeInTheDocument();
-    // Regional rank pulled from the distance-dimension `me` row.
+    // Regional rank pulled from the distance-dimension `me` row, scoped to the
+    // rider's home region so it agrees with the leaderboard below.
     await waitFor(() => expect(screen.getByText("#7")).toBeInTheDocument());
+    expect(leaderboardsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "Lombardy" }),
+    );
 
     // Leaderboard filters render as segmented controls (stats-page style):
     // a dimension group plus a region group once home_region resolves.

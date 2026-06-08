@@ -484,7 +484,18 @@ function TierHero({
         if (!cancelled) setProgression(p);
       })
       .catch(() => undefined);
-    void fetchRegionalLeaderboards({ signal: controller.signal })
+    // Scope the hero rank to the rider's home region (when set) so it matches
+    // the regional leaderboard's default view directly below — otherwise the
+    // hero would show a global rank that disagrees with the regional board.
+    void usersApi
+      .getMe({ signal: controller.signal })
+      .then(({ data }) => {
+        const region = data?.home_region?.trim() || undefined;
+        return fetchRegionalLeaderboards({
+          region,
+          signal: controller.signal,
+        });
+      })
       .then((board) => {
         if (!cancelled) setRank(board.total_distance_km.me?.rank ?? null);
       })
