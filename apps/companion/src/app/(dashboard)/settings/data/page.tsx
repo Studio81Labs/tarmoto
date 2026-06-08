@@ -14,7 +14,7 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
-import { Card, Stamp } from "@tarmoto/ui";
+import { Button, Card, Stamp } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ExportState =
   | { kind: "idle" }
@@ -198,31 +198,23 @@ export default function DataPage() {
         </ul>
 
         <div className="ml-12 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={requestExport}
-            disabled={
-              !accessToken ||
+          <Button
+            variant="accent"
+            uppercase
+            disabled={!accessToken}
+            loading={
               exportState.kind === "requesting" ||
               exportState.kind === "polling"
             }
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            leftIcon={<Download size={14} />}
+            onClick={requestExport}
           >
-            {exportState.kind === "requesting" ||
-            exportState.kind === "polling" ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                {exportState.kind === "requesting"
-                  ? t("Requesting… ")
-                  : t("Assembling your data… ")}
-              </>
-            ) : (
-              <>
-                <Download size={14} />
-                {t("Request export ")}
-              </>
-            )}
-          </button>
+            {exportState.kind === "requesting"
+              ? t("Requesting… ")
+              : exportState.kind === "polling"
+                ? t("Assembling your data… ")
+                : t("Request export ")}
+          </Button>
 
           {exportState.kind === "polling" && (
             <span
@@ -273,14 +265,14 @@ export default function DataPage() {
         </div>
 
         <div className="ml-12">
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            uppercase
+            leftIcon={<Trash2 size={14} />}
             onClick={() => setConfirmOpen(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-quality-q1 bg-transparent px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-quality-q1 transition hover:bg-quality-q1/10"
           >
-            <Trash2 size={14} />
             {t("Delete my account… ")}
-          </button>
+          </Button>
         </div>
       </Card>
 
@@ -406,14 +398,9 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-line p-5">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-md px-4 py-2 text-[14px] font-semibold text-fg-dim transition hover:bg-paper hover:text-ink disabled:opacity-50"
-          >
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("Cancel ")}
-          </button>
+          </Button>
           <button
             type="button"
             onClick={confirmDelete}
