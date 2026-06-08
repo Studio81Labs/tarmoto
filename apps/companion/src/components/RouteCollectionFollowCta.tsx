@@ -3,7 +3,8 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bookmark, BookmarkCheck, Loader2 } from "lucide-react";
+import { Bookmark, BookmarkCheck } from "lucide-react";
+import { Button } from "@tarmoto/ui";
 import { ApiError, routeCollectionsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
@@ -195,26 +196,21 @@ export function RouteCollectionFollowCta({
           ? "This collection appears under Followed in your dashboard. Unfollow any time to remove it."
           : "Follow to add this collection to your library and revisit it from your dashboard."}
       </p>
-      <button
-        type="button"
-        onClick={() => void onClick()}
-        disabled={pending}
+      <Button
+        variant={isFollowing ? "on-dark" : "accent"}
+        loading={pending}
         aria-pressed={isFollowing}
-        className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-50 ${
-          isFollowing
-            ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-            : "bg-accent text-ink hover:brightness-95"
-        }`}
+        leftIcon={
+          isFollowing ? (
+            <BookmarkCheck size={16} aria-hidden="true" />
+          ) : (
+            <Bookmark size={16} aria-hidden="true" />
+          )
+        }
+        onClick={() => void onClick()}
       >
-        {pending ? (
-          <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-        ) : isFollowing ? (
-          <BookmarkCheck size={16} aria-hidden="true" />
-        ) : (
-          <Bookmark size={16} aria-hidden="true" />
-        )}
         {isFollowing ? "Following" : "Follow collection"}
-      </button>
+      </Button>
       {error && (
         <p role="alert" className="mt-3 text-xs text-red-400">
           {error}

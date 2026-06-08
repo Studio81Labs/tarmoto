@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Loader2, MapPin, X } from "lucide-react";
+import { Button } from "@tarmoto/ui";
 import {
   importedRouteToTrip,
   parseImportedRoute,
@@ -49,7 +50,6 @@ export function TripImportDialog({
   }, [open]);
   useEffect(() => {
     if (open && initialFile) void handleFile(initialFile);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
   useEffect(() => {
     if (!open) return;
@@ -170,21 +170,13 @@ export function TripImportDialog({
         </div>
 
         <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition"
-          >
+          <Button variant="on-dark" size="sm" onClick={onClose}>
             {t("Cancel ")}
-          </button>
+          </Button>
           {status === "ready" && (
-            <button
-              type="button"
-              onClick={handleAdopt}
-              className="px-3 py-1.5 rounded-lg bg-accent text-ink text-sm font-semibold hover:brightness-95 transition"
-            >
+            <Button variant="accent" size="sm" onClick={handleAdopt}>
               {t("Adopt as trip draft ")}
-            </button>
+            </Button>
           )}
         </footer>
       </div>
