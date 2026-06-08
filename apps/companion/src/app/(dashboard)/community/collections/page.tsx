@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
-import { Card, Mono, Stamp } from "@tarmoto/ui";
+import { Button, Card, Mono, Stamp } from "@tarmoto/ui";
 import { Share2 } from "lucide-react";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
@@ -155,21 +155,26 @@ export default function RouteCollectionsPage() {
       }
       headerRight={
         <div className="flex items-center gap-2">
-          <Link
-            href="/rides"
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+          <Button
+            variant="secondary"
+            uppercase
+            leftIcon={<Share2 size={14} />}
+            renderLink={({ className, children }) => (
+              <Link href="/rides" className={className}>
+                {children}
+              </Link>
+            )}
           >
-            <Share2 size={14} />
             {t("Share a route")}
-          </Link>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="accent"
+            uppercase
+            leftIcon={<Plus size={14} />}
             onClick={() => setModal({ mode: "create" })}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            <Plus size={14} />
             {t("New collection")}
-          </button>
+          </Button>
         </div>
       }
     >
@@ -225,13 +230,9 @@ export default function RouteCollectionsPage() {
           <p className="text-sm text-fg-dim mb-4">
             {errorMessage ?? "Try again in a moment."}
           </p>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
-          >
+          <Button variant="secondary" onClick={() => void refresh()}>
             {t("Retry")}
-          </button>
+          </Button>
         </div>
       ) : collections.length === 0 ? (
         <CommunityEmptyState
@@ -359,9 +360,11 @@ function MigrationBanner({
         </p>
       )}
       <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          disabled={pending}
+        <Button
+          variant="accent"
+          size="sm"
+          uppercase
+          loading={pending}
           onClick={async () => {
             setPending(true);
             setError(null);
@@ -373,18 +376,17 @@ function MigrationBanner({
               setPending(false);
             }
           }}
-          className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
         >
           {pending ? "Moving…" : "Move to my account"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           disabled={pending}
           onClick={migration.decline}
-          className="px-3 py-1.5 rounded-lg text-xs text-fg-dim hover:text-ink transition disabled:opacity-50"
         >
           {t("Not now")}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -763,25 +765,22 @@ function CollectionModal({
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition disabled:opacity-50"
-          >
+          <Button variant="ghost" disabled={submitting} onClick={onClose}>
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
+            variant="accent"
+            size="sm"
+            uppercase
+            loading={submitting}
           >
             {submitting
               ? t("Saving…")
               : mode === "create"
                 ? t("Create")
                 : t("Save")}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -806,13 +805,15 @@ function EmptyState({
       <FolderOpen size={48} className="mx-auto mb-4 text-fg-mute" />
       <p className="mb-2 text-lg text-fg-dim">{title}</p>
       <p className="mb-6 text-sm text-fg-dim">{body}</p>
-      <button
-        type="button"
+      <Button
+        variant="accent"
+        size="sm"
+        uppercase
+        leftIcon={<Plus size={16} />}
         onClick={onAction}
-        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
       >
-        <Plus size={16} /> {actionLabel}
-      </button>
+        {actionLabel}
+      </Button>
     </Card>
   );
 }
