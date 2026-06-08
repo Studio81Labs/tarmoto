@@ -24,12 +24,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
-import { Mono, Stamp } from "@tarmoto/ui";
+import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
-import { TarmotoMark } from "./tarmoto/atoms";
 import { t } from "@/i18n";
 
 /**

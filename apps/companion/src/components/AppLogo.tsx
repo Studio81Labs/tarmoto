@@ -1,6 +1,6 @@
 import { t } from "@/i18n";
 import Link from "next/link";
-import { TarmotoMark } from "./tarmoto/atoms";
+import { TarmotoMark } from "@tarmoto/ui";
 
 export function AppLogo({ inverted = false }: { inverted?: boolean }) {
   return (
