@@ -23,6 +23,7 @@ import {
 import {
   Card,
   Heading,
+  MetricTile,
   MiniRouteSvg,
   Mono,
   QualityBars,
@@ -378,93 +379,33 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-      <KpiTile
+      <MetricTile
+        variant="ink"
+        accentNumber
         label={t("This month")}
         value={stats.this_month_km.toLocaleString()}
         unit="KM"
         delta={kmDelta}
-        ink
-        accentValue
       />
-      <KpiTile
+      <MetricTile
         label={t("Ride time")}
         value={String(hoursNow)}
         unit="HRS"
         delta={hoursDelta}
       />
-      <KpiTile
+      <MetricTile
         label={t("New roads")}
         value={String(stats.new_roads)}
         unit="DISCOVERED"
         delta={t("this month")}
       />
-      <KpiTile
+      <MetricTile
+        accentNumber
         label={t("Lean angle")}
         value={stats.max_lean_deg != null ? `${stats.max_lean_deg}°` : "—"}
         unit="MAX"
         delta={leanSub}
-        accentValue
       />
-    </div>
-  );
-}
-
-interface KpiTileProps {
-  label: string;
-  value: string;
-  unit: string;
-  delta?: string;
-  ink?: boolean;
-  accentValue?: boolean;
-}
-function KpiTile({
-  label,
-  value,
-  unit,
-  delta,
-  ink,
-  accentValue,
-}: KpiTileProps) {
-  return (
-    <div
-      className={
-        ink
-          ? "rounded-[14px] border border-ink bg-ink p-[18px] text-cream"
-          : "rounded-[14px] border border-line bg-cream p-[18px] text-ink"
-      }
-    >
-      <Stamp tone={ink ? "on-dark" : "dim"}>{label}</Stamp>
-      <div className="mt-2 flex items-baseline gap-1.5">
-        <div
-          className={
-            accentValue
-              ? "text-[36px] font-extrabold leading-none tracking-[-1px] text-accent"
-              : ink
-                ? "text-[36px] font-extrabold leading-none tracking-[-1px] text-cream"
-                : "text-[36px] font-extrabold leading-none tracking-[-1px] text-ink"
-          }
-        >
-          {value}
-        </div>
-        <Mono
-          className={
-            ink ? "text-[11px] text-fg-on-dark-dim" : "text-[11px] text-fg-dim"
-          }
-        >
-          {unit}
-        </Mono>
-      </div>
-      {delta && (
-        <div
-          className={
-            ink
-              ? "mt-1.5 text-[11px] text-fg-on-dark-mute"
-              : "mt-1.5 text-[11px] text-fg-mute"
-          }
-        >
-          {delta}
-        </div>
-      )}
     </div>
   );
 }
