@@ -941,22 +941,12 @@ function ConfirmDialog({
           {message}
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-ink hover:bg-paper transition"
-          >
+          <Button ref={cancelRef} variant="ghost" onClick={onCancel}>
             {t("Cancel")}
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-red-500 transition"
-          >
+          </Button>
+          <Button ref={confirmRef} variant="danger-solid" onClick={onConfirm}>
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

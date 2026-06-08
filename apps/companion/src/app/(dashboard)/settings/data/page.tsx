@@ -7,7 +7,6 @@ import {
   Check,
   Database,
   Download,
-  Loader2,
   Trash2,
   X,
 } from "lucide-react";
@@ -401,24 +400,17 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("Cancel ")}
           </Button>
-          <button
-            type="button"
+          <Button
+            variant="danger-solid"
+            size="sm"
+            uppercase
+            disabled={!canSubmit}
+            loading={busy}
+            leftIcon={<Trash2 size={14} />}
             onClick={confirmDelete}
-            disabled={!canSubmit || busy}
-            className="inline-flex items-center gap-2 rounded-full bg-quality-q1 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                {t("Deleting… ")}
-              </>
-            ) : (
-              <>
-                <Trash2 size={14} />
-                {t("Delete account ")}
-              </>
-            )}
-          </button>
+            {busy ? t("Deleting… ") : t("Delete account ")}
+          </Button>
         </footer>
       </div>
     </div>
