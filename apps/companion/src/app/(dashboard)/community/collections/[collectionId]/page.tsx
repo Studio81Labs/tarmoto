@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
+import { Button } from "@tarmoto/ui";
 import {
   ArrowLeft,
   Calendar,
@@ -307,13 +308,12 @@ export default function CollectionDetailPage() {
             {t("Couldn't load this collection")}
           </p>
           <p className="text-sm text-fg-dim mb-4">{load.message}</p>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => collectionId && void reload(collectionId)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-paper text-ink text-sm hover:bg-paper-2 transition"
           >
             {t("Retry")}
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -392,15 +392,16 @@ export default function CollectionDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <ShareButton collection={collection!} />
-          <button
-            type="button"
-            onClick={() => setShowPicker(true)}
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-50 transition"
+            leftIcon={<Plus size={14} />}
+            onClick={() => setShowPicker(true)}
           >
-            <Plus size={14} />
             {t("Add routes")}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -815,14 +816,15 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
       <p className="text-sm text-fg-dim mb-5">
         {t("Add routes from your planned or completed trips.")}
       </p>
-      <button
-        type="button"
+      <Button
+        variant="accent"
+        size="sm"
+        uppercase
+        leftIcon={<Plus size={16} />}
         onClick={onAdd}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
       >
-        <Plus size={16} />
         {t("Add routes")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1165,15 +1167,13 @@ function RoutePickerModal({
             {t("{count} selected", { count: totalSelected })}
           </p>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition"
-            >
+            <Button variant="ghost" onClick={onClose}>
               {t("Cancel")}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              uppercase
               disabled={totalSelected === 0}
               onClick={() =>
                 onAdd({
@@ -1181,11 +1181,10 @@ function RoutePickerModal({
                   rideIds: Array.from(selectedRides),
                 })
               }
-              className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               {t("Add")}
               {totalSelected > 0 ? ` (${totalSelected})` : ""}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -1288,14 +1287,14 @@ function TripPickerList({
         <p className="text-xs text-fg-dim mb-4">
           {t("Plan a trip first and it will show up here.")}
         </p>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Plus size={14} />}
           onClick={onPlanTrip}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-paper text-ink text-xs hover:bg-paper-2 transition"
         >
-          <Plus size={14} />
           {t("New trip")}
-        </button>
+        </Button>
       </div>
     );
   }
