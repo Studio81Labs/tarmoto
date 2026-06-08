@@ -3,10 +3,10 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@tarmoto/ui";
 import { useTripStore } from "@/stores/trip";
 import {
   ArrowLeft,
-  Loader2,
   Save,
   Clock3,
   GripVertical,
@@ -914,67 +914,65 @@ export default function TripPlannerPage() {
           {displayedTrip?.name ?? t("New Trip")}
         </h1>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={undo}
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<RotateCcw size={14} />}
             disabled={!canUndo}
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={undo}
           >
-            <RotateCcw size={14} />
             {t("Undo")}
-          </button>
-          <button
-            type="button"
-            onClick={redo}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<RotateCw size={14} />}
             disabled={!canRedo}
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={redo}
           >
-            <RotateCw size={14} />
             {t("Redo")}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Upload size={14} />}
             onClick={() => openImport()}
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2"
           >
-            <Upload size={14} />
             {t("Import GPX")}
-          </button>
+          </Button>
           <TripExportMenu trip={displayedTrip} context="planner" />
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Users size={14} />}
             onClick={() => setCollaborateOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-paper px-3 py-1.5 text-sm text-ink transition hover:bg-paper-2"
           >
-            <Users size={14} />
             {t("Collaborate")}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
+            loading={saving}
+            leftIcon={<Save size={14} />}
+            disabled={isGenerating || !displayedTrip}
             onClick={handleSave}
-            disabled={saving || isGenerating || !displayedTrip}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-60"
           >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Save size={14} />
-            )}
             {saving ? t("Saving…") : t("Save")}
-          </button>
+          </Button>
           {!displayedTrip && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 setGeneratedOptions([]);
                 setGeneratedOptionsSignature(null);
                 setSelectedOptionId(null);
                 setActiveTrip(DEMO_TRIP);
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-3 py-1.5 text-sm text-fg-dim transition hover:border-line-strong hover:text-ink"
             >
               {t("Load demo trip")}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -1687,14 +1685,16 @@ export default function TripPlannerPage() {
               "Generate itinerary" so the visible label stays exact-
               matchable for existing test selectors AND covers both
               first-time and re-run flows without conditional text. */}
-          <button
-            type="button"
+          <Button
+            variant="accent"
+            block
+            uppercase
+            className="mt-[18px]"
+            loading={isGenerating}
             onClick={handleGenerate}
-            disabled={isGenerating}
-            className="mt-[18px] inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-wait disabled:opacity-60"
           >
             {isGenerating ? t("Generating…") : t("Generate itinerary")}
-          </button>
+          </Button>
         </aside>
       </div>
 

@@ -48,7 +48,7 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { MiniRouteSvg, PageHeader } from "@tarmoto/ui";
+import { Button, MiniRouteSvg, PageHeader } from "@tarmoto/ui";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -1224,19 +1224,12 @@ function FolderModal({
         />
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-fg-dim hover:text-ink transition"
-          >
+          <Button variant="ghost" onClick={onClose}>
             {t("Cancel ")}
-          </button>
-          <button
-            type="submit"
-            className="px-3 py-1.5 rounded-lg bg-accent text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:brightness-95 transition"
-          >
+          </Button>
+          <Button type="submit" variant="accent" size="sm" uppercase>
             {mode === "create" ? "Create" : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -1281,13 +1274,9 @@ function EmptyState({
               <Plus size={14} /> {action.label}
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={action.onClick}
-              className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong bg-cream px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
-            >
+            <Button variant="secondary" uppercase onClick={action.onClick}>
               {action.label}
-            </button>
+            </Button>
           )}
         </div>
       )}
