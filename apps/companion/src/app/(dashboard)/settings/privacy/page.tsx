@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Card, Stamp, Toggle } from "@tarmoto/ui";
+import { Button, Card, Stamp, Toggle } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import type {
   LocationRetention,
@@ -359,21 +359,15 @@ interface SaveBarProps {
 function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
   return (
     <div className="flex items-center gap-3">
-      <button
-        type="button"
+      <Button
+        variant="accent"
+        uppercase
+        disabled={!isDirty}
+        loading={saveState.kind === "saving"}
         onClick={onSave}
-        disabled={!isDirty || saveState.kind === "saving"}
-        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {saveState.kind === "saving" ? (
-          <>
-            <Loader2 size={14} className="animate-spin" />
-            {t("Saving… ")}
-          </>
-        ) : (
-          t("Save preferences")
-        )}
-      </button>
+        {saveState.kind === "saving" ? t("Saving… ") : t("Save preferences")}
+      </Button>
       {saveState.kind === "saved" && !isDirty && (
         <span className="inline-flex items-center gap-1 text-[13px] text-accent">
           <Check size={14} />

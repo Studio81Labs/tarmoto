@@ -7,7 +7,7 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
-import { Card, Stamp } from "@tarmoto/ui";
+import { Button, Card, Stamp } from "@tarmoto/ui";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { Copy, Smartphone, User } from "lucide-react";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
@@ -323,16 +323,16 @@ export default function ProfilePage() {
             aria-hidden="true"
             tabIndex={-1}
           />
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            uppercase
+            loading={avatarUploadState === "uploading"}
             onClick={() => avatarFileInputRef.current?.click()}
-            disabled={avatarUploadState === "uploading"}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
           >
             {avatarUploadState === "uploading"
               ? t("Uploading…")
               : t("Change avatar")}
-          </button>
+          </Button>
         </div>
 
         {avatarUploadState === "uploaded" && (
@@ -421,22 +421,22 @@ export default function ProfilePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-2">
-          <button
-            type="button"
+          <Button
+            variant="accent"
+            uppercase
+            loading={saveState === "saving"}
             onClick={handleSave}
-            disabled={saveState === "saving"}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saveState === "saving" ? t("Saving…") : t("Save changes")}
-          </button>
-          <button
-            type="button"
-            onClick={handleCancel}
+          </Button>
+          <Button
+            variant="secondary"
+            uppercase
             disabled={saveState === "saving"}
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleCancel}
           >
             {t("Cancel")}
-          </button>
+          </Button>
           {saveState === "saved" && (
             <span
               role="status"
@@ -518,15 +518,16 @@ export default function ProfilePage() {
             {user?.email ?? t("No account email available")}
           </p>
           <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleCopySignInEmail}
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              leftIcon={<Copy size={14} />}
               disabled={!user?.email}
-              className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-cream px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleCopySignInEmail}
             >
-              <Copy size={14} />
               {t("Copy sign-in email ")}
-            </button>
+            </Button>
             {copyState === "copied" && (
               <span role="status" className="text-sm text-accent">
                 {t("Email copied. Use it to sign in on mobile. ")}

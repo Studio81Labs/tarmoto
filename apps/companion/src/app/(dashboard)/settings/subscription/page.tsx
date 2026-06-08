@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Card, Heading, Stamp } from "@tarmoto/ui";
+import { Button, Card, Heading, Stamp } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
@@ -185,24 +185,19 @@ export default function SubscriptionPage() {
         )}
         right={
           snapshot?.portalAvailable ? (
-            <button
-              type="button"
-              onClick={() => void openPortal("manage")}
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
               disabled={billingBusy}
-              className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-cream px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:opacity-50"
+              loading={actionState.kind === "portal-manage"}
+              rightIcon={<ExternalLink size={14} />}
+              onClick={() => void openPortal("manage")}
             >
-              {actionState.kind === "portal-manage" ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  {t("Opening billing portal… ")}
-                </>
-              ) : (
-                <>
-                  {t("Open billing portal ")}
-                  <ExternalLink size={14} />
-                </>
-              )}
-            </button>
+              {actionState.kind === "portal-manage"
+                ? t("Opening billing portal… ")
+                : t("Open billing portal ")}
+            </Button>
           ) : null
         }
       />
@@ -402,24 +397,19 @@ function PaymentMethodCard({
           )}
         </p>
         {snapshot.portalAvailable ? (
-          <button
-            type="button"
-            onClick={onUpdatePaymentMethod}
+          <Button
+            variant="secondary"
+            size="sm"
+            uppercase
             disabled={busy}
-            className="inline-flex items-center gap-2 rounded-full border border-line-strong px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+            loading={updateBusy}
+            rightIcon={<ExternalLink size={14} />}
+            onClick={onUpdatePaymentMethod}
           >
-            {updateBusy ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                {t("Opening payment settings… ")}
-              </>
-            ) : (
-              <>
-                {t("Update payment method ")}
-                <ExternalLink size={14} />
-              </>
-            )}
-          </button>
+            {updateBusy
+              ? t("Opening payment settings… ")
+              : t("Update payment method ")}
+          </Button>
         ) : (
           <p className="rounded-xl border border-line bg-paper px-3 py-2 text-fg-dim">
             {t(
@@ -483,29 +473,19 @@ function PlanCard({
         ))}
       </ul>
 
-      <button
-        type="button"
-        onClick={onSelect}
+      <Button
+        variant={isCurrent ? "secondary" : "accent"}
+        size="sm"
+        block
+        uppercase
+        className="mt-6"
         disabled={disabled}
-        aria-busy={actionBusy}
-        className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] transition ${
-          isCurrent
-            ? "border border-line-strong bg-paper text-ink hover:bg-paper-2"
-            : "bg-accent text-ink hover:brightness-95"
-        } disabled:cursor-not-allowed disabled:opacity-60`}
+        loading={actionBusy}
+        rightIcon={!isCurrent ? <ExternalLink size={14} /> : undefined}
+        onClick={onSelect}
       >
-        {actionBusy ? (
-          <>
-            <Loader2 size={14} className="animate-spin" />
-            {t("Opening… ")}
-          </>
-        ) : (
-          <>
-            {actionLabel}
-            {!isCurrent ? <ExternalLink size={14} /> : null}
-          </>
-        )}
-      </button>
+        {actionBusy ? t("Opening… ") : actionLabel}
+      </Button>
     </article>
   );
 }
@@ -637,41 +617,26 @@ function RetentionDialog({
         </div>
 
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-line-strong px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper"
-          >
+          <Button variant="secondary" size="sm" uppercase onClick={onClose}>
             {`Keep ${planName}`}
-          </button>
+          </Button>
 
           {canManage ? (
-            <button
-              type="button"
-              onClick={onOpenPortal}
+            <Button
+              variant="accent"
+              size="sm"
+              uppercase
               disabled={busy}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:opacity-50"
+              loading={busy}
+              rightIcon={<ExternalLink size={14} />}
+              onClick={onOpenPortal}
             >
-              {busy ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  {t("Opening billing portal… ")}
-                </>
-              ) : (
-                <>
-                  {t("Open billing portal ")}
-                  <ExternalLink size={14} />
-                </>
-              )}
-            </button>
+              {busy ? t("Opening billing portal… ") : t("Open billing portal ")}
+            </Button>
           ) : (
-            <button
-              type="button"
-              disabled
-              className="inline-flex items-center justify-center rounded-lg bg-accent/40 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink"
-            >
+            <Button variant="accent" size="sm" uppercase disabled>
               {t("Billing portal unavailable ")}
-            </button>
+            </Button>
           )}
         </div>
       </div>

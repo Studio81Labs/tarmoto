@@ -1,20 +1,13 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Bike as BikeIcon,
-  Loader2,
-  Pencil,
-  Plus,
-  Star,
-  Trash2,
-} from "lucide-react";
+import { Bike as BikeIcon, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
-import { Card, Pill } from "@tarmoto/ui";
+import { Button, Card, Pill } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ModalState =
   | {
@@ -151,14 +144,14 @@ export default function BikesPage() {
         title={t("My Bikes")}
         sub={t("Each ride attaches to whichever bike is active at the time.")}
         right={
-          <button
-            type="button"
+          <Button
+            variant="accent"
+            uppercase
+            leftIcon={<Plus size={14} />}
             onClick={() => setModal({ kind: "add" })}
-            className="inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            <Plus size={14} />
             {t("Add bike")}
-          </button>
+          </Button>
         }
       />
       {error?.kind === "action" && (
@@ -288,20 +281,17 @@ function BikeRow({
         {isActive ? (
           <Pill variant="accent">{t("Active ")}</Pill>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            uppercase
+            loading={pending}
+            leftIcon={<Star size={12} />}
             onClick={onSetActive}
-            disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:bg-paper disabled:opacity-50"
             aria-label={`Set ${formatBikeTitle(bike)} as active`}
           >
-            {pending ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Star size={12} />
-            )}
             {t("Make active")}
-          </button>
+          </Button>
         )}
         <button
           type="button"
@@ -351,14 +341,14 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
             "Add your motorcycle to get bike-specific stats and recommendations. ",
           )}
         </p>
-        <button
-          type="button"
+        <Button
+          variant="accent"
+          uppercase
+          leftIcon={<Plus size={16} />}
           onClick={onAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
         >
-          <Plus size={16} />
           {t("Add your first bike ")}
-        </button>
+        </Button>
       </div>
     </Card>
   );
