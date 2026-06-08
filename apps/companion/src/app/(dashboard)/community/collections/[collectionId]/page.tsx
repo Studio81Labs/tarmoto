@@ -599,9 +599,7 @@ function VisibilitySelector({
       <span className="text-fg-dim">{t("Visibility")}</span>
       <SegmentedControl
         ariaLabel={t("Visibility")}
-        // SegmentedControl has no `disabled` prop; gate interaction + dim it
-        // via className while a save is in flight.
-        className={disabled ? "pointer-events-none opacity-50" : undefined}
+        disabled={disabled}
         value={value}
         onChange={onChange}
         options={[
