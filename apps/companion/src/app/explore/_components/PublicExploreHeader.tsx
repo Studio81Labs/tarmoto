@@ -1,5 +1,6 @@
 import { t } from "@/i18n";
 import Link from "next/link";
+import { Button } from "@tarmoto/ui";
 interface Props {
   /** Path the user returns to after completing auth. Defaults to /explore. */
   callbackUrl?: string;
@@ -18,18 +19,32 @@ export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
         {t("armoto ")}
       </Link>
       <div className="flex items-center gap-2">
-        <Link
-          href={`/login?callbackUrl=${encoded}`}
-          className="px-3 py-1.5 rounded-md text-sm font-semibold text-fg-dim hover:text-ink hover:bg-paper transition"
+        <Button
+          variant="ghost"
+          size="sm"
+          renderLink={({ className, children }) => (
+            <Link href={`/login?callbackUrl=${encoded}`} className={className}>
+              {children}
+            </Link>
+          )}
         >
           {t("Sign in ")}
-        </Link>
-        <Link
-          href={`/register?callbackUrl=${encoded}`}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
+        </Button>
+        <Button
+          variant="accent"
+          size="sm"
+          uppercase
+          renderLink={({ className, children }) => (
+            <Link
+              href={`/register?callbackUrl=${encoded}`}
+              className={className}
+            >
+              {children}
+            </Link>
+          )}
         >
           {t("Create account ")}
-        </Link>
+        </Button>
       </div>
     </header>
   );
