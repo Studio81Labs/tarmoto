@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { Button } from "@tarmoto/ui";
 import { useI18n } from "@/i18n/I18nProvider";
 import { forgotPassword } from "@/lib/api";
 export default function ForgotPasswordPage() {
@@ -68,13 +69,9 @@ export default function ForgotPasswordPage() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-ink text-cream font-semibold hover:bg-tarmac disabled:opacity-50 transition"
-        >
+        <Button type="submit" variant="primary" block loading={loading}>
           {loading ? t("Sending...") : t("Send reset link")}
-        </button>
+        </Button>
       </form>
 
       <p className="mt-6 text-center text-sm text-ink/65">
