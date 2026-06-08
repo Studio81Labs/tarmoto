@@ -10,7 +10,6 @@ import {
   Heart,
   Loader2,
   Lock,
-  Map as MapIcon,
   Medal,
   Moon,
   Mountain,
@@ -26,7 +25,12 @@ import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
-import { PageHeader as DashboardPageHeader, Mono, Stamp } from "@tarmoto/ui";
+import {
+  PageHeader as DashboardPageHeader,
+  Mono,
+  SegmentedControl,
+  Stamp,
+} from "@tarmoto/ui";
 import { initialsFromName } from "@/lib/rider-profile";
 import {
   activeChallenges,
@@ -920,9 +924,27 @@ function RegionalLeaderboardsSection() {
         }
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <RegionPill scope={scope} homeRegion={homeRegion} onChange={setScope} />
-        <DimensionPills current={dimension} onChange={setDimension} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {homeRegion && (
+          <SegmentedControl
+            ariaLabel={t("Region scope")}
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "global", label: t("Global") },
+              { value: "region", label: homeRegion },
+            ]}
+          />
+        )}
+        <SegmentedControl
+          ariaLabel={t("Leaderboard dimension")}
+          value={dimension}
+          onChange={setDimension}
+          options={LEADERBOARD_DIMENSION_KEYS.map((dim) => ({
+            value: dim,
+            label: labelForDimension(dim),
+          }))}
+        />
       </div>
 
       {load.status === "error" ? (
@@ -954,102 +976,6 @@ function RegionalLeaderboardsSection() {
         <RegionalLeaderboardTable dim={dim} />
       )}
     </section>
-  );
-}
-function RegionPill({
-  scope,
-  homeRegion,
-  onChange,
-}: {
-  scope: RegionScope;
-  homeRegion: string | null;
-  onChange: (scope: RegionScope) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={t("Region scope")}
-      className="inline-flex gap-1.5"
-    >
-      <FilterPill
-        active={scope === "global"}
-        onClick={() => onChange("global")}
-        ariaLabel={t("Global ranking")}
-      >
-        {t("Global")}
-      </FilterPill>
-      {homeRegion && (
-        <FilterPill
-          active={scope === "region"}
-          onClick={() => onChange("region")}
-          ariaLabel={t("Riders from {region}", { region: homeRegion })}
-        >
-          <MapIcon size={11} className="-mt-0.5 inline" aria-hidden="true" />{" "}
-          {homeRegion}
-        </FilterPill>
-      )}
-    </div>
-  );
-}
-function DimensionPills({
-  current,
-  onChange,
-}: {
-  current: LeaderboardDimensionKey;
-  onChange: (dim: LeaderboardDimensionKey) => void;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={t("Leaderboard dimension")}
-      className="inline-flex flex-wrap gap-1.5"
-    >
-      {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
-        <FilterPill
-          key={dim}
-          active={current === dim}
-          onClick={() => onChange(dim)}
-          ariaLabel={labelForDimension(dim)}
-        >
-          {labelForDimension(dim)}
-        </FilterPill>
-      ))}
-    </div>
-  );
-}
-/**
- * Spec leaderboard filter pill — rounded-full, mono-style 11/700/uppercase,
- * orange-tinted bg + accent border when active, transparent + line border
- * otherwise. Shared by region scope + dimension rows so the two filter
- * groups read as one visual treatment.
- */
-function FilterPill({
-  active,
-  onClick,
-  ariaLabel,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  ariaLabel: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      aria-label={ariaLabel}
-      onClick={onClick}
-      className={clsx(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] transition",
-        active
-          ? "border-accent bg-accent/30 text-ink"
-          : "border-line bg-transparent text-ink hover:bg-paper",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 function RegionalLeaderboardTable({

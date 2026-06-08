@@ -121,6 +121,16 @@ describe("AchievementsPage — current-tier hero", () => {
     expect(screen.getByText("2,500 XP to go")).toBeInTheDocument();
     // Regional rank pulled from the distance-dimension `me` row.
     await waitFor(() => expect(screen.getByText("#7")).toBeInTheDocument());
+
+    // Leaderboard filters render as segmented controls (stats-page style):
+    // a dimension group plus a region group once home_region resolves.
+    expect(
+      screen.getByRole("radiogroup", { name: /leaderboard dimension/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Distance" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("radio", { name: "Global" }),
+    ).toBeInTheDocument();
   });
 
   it("hides the hero for a rider with no XP (empty-state design)", async () => {
