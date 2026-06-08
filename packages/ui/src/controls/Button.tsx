@@ -3,9 +3,15 @@ import { cn } from "../utils/cn";
 
 /**
  * Button · the "commit" surface. Spec: §17.
- * Three sizes (sm 34 · md 40 · lg 48) × six variants
- * (primary · accent · secondary · ghost · danger · on-dark).
+ * Three sizes (sm 34 · md 40 · lg 48) × seven variants
+ * (primary · accent · secondary · ghost · danger · danger-solid · on-dark).
  * `sm` is 34 px so it lines up with the 34 px form inputs/selects.
+ *
+ * `danger` is the low-emphasis outline (e.g. a "Delete…" entry point that
+ * opens a confirm); `danger-solid` is the filled commit used for the
+ * destructive *confirm* itself inside that dialog. Both use the `quality-q1`
+ * token; the solid pairs it with `text-ink` (≈4.5:1, matching the brand's
+ * ink-on-warm CTAs) rather than cream (which fails AA on `sm`).
  *
  * Use a Pill (§08) for filter chips, toolbar items, status indicators
  * — Button is for verbs that change state.
@@ -16,6 +22,7 @@ export type ButtonVariant =
   | "secondary"
   | "ghost"
   | "danger"
+  | "danger-solid"
   | "on-dark";
 
 export type ButtonSize = "sm" | "md" | "lg";
@@ -70,6 +77,8 @@ const variantClass: Record<ButtonVariant, string> = {
     "bg-transparent text-fg-dim border-transparent hover:bg-paper hover:text-ink",
   danger:
     "bg-transparent text-quality-q1 border-quality-q1 hover:bg-quality-q1/10",
+  "danger-solid":
+    "bg-quality-q1 text-ink border-transparent hover:brightness-95 disabled:hover:brightness-100",
   "on-dark": "bg-cream/10 text-cream border-cream/15 hover:bg-cream/15",
 };
 
