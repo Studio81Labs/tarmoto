@@ -5,14 +5,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Loader2,
   Lock,
   MapPin,
   Trophy,
   UserCheck,
   UserPlus,
 } from "lucide-react";
-import { Mono, Stamp } from "@tarmoto/ui";
+import { Button, MetricTile, Mono, Stamp } from "@tarmoto/ui";
 import { splitFormattedDistance } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -262,33 +261,34 @@ function Header({
 
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
           {profile.is_self ? (
-            <Link
-              href="/settings/profile"
-              className="inline-flex items-center justify-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+            <Button
+              variant="secondary"
+              uppercase
+              renderLink={({ className, children }) => (
+                <Link href="/settings/profile" className={className}>
+                  {children}
+                </Link>
+              )}
             >
               {t("Edit profile")}
-            </Link>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
+              variant={profile.is_following ? "secondary" : "accent"}
+              uppercase
+              loading={followPending}
+              leftIcon={
+                profile.is_following ? (
+                  <UserCheck size={14} />
+                ) : (
+                  <UserPlus size={14} />
+                )
+              }
               onClick={onToggleFollow}
-              disabled={followPending}
               aria-pressed={profile.is_following === true}
-              className={`inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                profile.is_following
-                  ? "border border-line-strong text-ink hover:bg-paper"
-                  : "bg-accent text-ink hover:brightness-95"
-              }`}
             >
-              {followPending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : profile.is_following ? (
-                <UserCheck size={14} />
-              ) : (
-                <UserPlus size={14} />
-              )}
               {profile.is_following ? t("Following") : t("Follow")}
-            </button>
+            </Button>
           )}
           {followError && (
             <span className="max-w-[14rem] text-right text-xs text-red-500">
@@ -314,32 +314,35 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
   );
   return (
     <div className="mb-4 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
-      {/* Distance — the dark hero tile. */}
-      <div className="rounded-[14px] border border-ink bg-ink p-[18px]">
-        <Stamp tone="on-dark">{t("Distance")}</Stamp>
-        <div className="mt-2 flex items-baseline gap-1.5">
-          <span className="text-[32px] font-extrabold leading-none tracking-[-1px] text-accent">
-            {formatCount(Math.round(distance.value))}
-          </span>
-          <Mono className="text-[11px] text-fg-on-dark-mute">
-            {distance.unit}
-          </Mono>
-        </div>
-      </div>
-      <StatTile label={t("Rides shared")} value={profile.shared_ride_count} />
-      <StatTile label={t("Followers")} value={profile.follower_count} />
-      <StatTile label={t("Following")} value={profile.following_count} />
-      <StatTile label={t("Badges")} value={earnedBadgeCount} />
-    </div>
-  );
-}
-function StatTile({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[14px] border border-line bg-cream p-[18px]">
-      <Stamp>{label}</Stamp>
-      <div className="mt-2 text-[32px] font-extrabold leading-none tracking-[-1px] tabular-nums text-ink">
-        {formatCount(value)}
-      </div>
+      {/* Distance — the dark hero tile (accent number). */}
+      <MetricTile
+        variant="ink"
+        accentNumber
+        label={t("Distance")}
+        value={Math.round(distance.value)}
+        unit={distance.unit}
+        formatValue={formatCount}
+      />
+      <MetricTile
+        label={t("Rides shared")}
+        value={profile.shared_ride_count}
+        formatValue={formatCount}
+      />
+      <MetricTile
+        label={t("Followers")}
+        value={profile.follower_count}
+        formatValue={formatCount}
+      />
+      <MetricTile
+        label={t("Following")}
+        value={profile.following_count}
+        formatValue={formatCount}
+      />
+      <MetricTile
+        label={t("Badges")}
+        value={earnedBadgeCount}
+        formatValue={formatCount}
+      />
     </div>
   );
 }

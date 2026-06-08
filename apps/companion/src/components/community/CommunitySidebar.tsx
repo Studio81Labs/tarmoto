@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import { Stamp, Mono } from "@tarmoto/ui";
+import { Button, Stamp, Mono } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import {
@@ -206,14 +206,15 @@ function SuggestionRow({ rider }: { rider: SuggestedRider }) {
           {t("{count} rides", { count: rider.ride_count })}
         </Mono>
       </div>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        className="shrink-0"
         onClick={follow}
         disabled={busy || following}
-        className="shrink-0 rounded-full border border-line-strong px-2.5 py-1 text-[11px] font-bold text-ink transition hover:bg-paper disabled:opacity-60"
       >
         {following ? t("Following") : t("Follow")}
-      </button>
+      </Button>
     </li>
   );
 }

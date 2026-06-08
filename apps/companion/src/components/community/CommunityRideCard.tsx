@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Heart, Plus } from "lucide-react";
-import { QualityBars } from "@tarmoto/ui";
+import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import {
@@ -154,15 +154,16 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
             </span>
           </div>
 
-          <button
-            type="button"
+          <Button
+            variant="accent"
+            size="sm"
+            className="shrink-0"
             onClick={clone}
             disabled={cloning || !canClone}
             title={canClone ? undefined : t("This route has no track to clone")}
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {cloning ? t("Adding…") : t("Add to trips →")}
-          </button>
+          </Button>
         </div>
       </div>
     </article>
