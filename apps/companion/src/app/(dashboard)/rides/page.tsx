@@ -1,8 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { Activity, ArrowUpRight, Share2 } from "lucide-react";
+import { Activity, ArrowUpRight } from "lucide-react";
 import {
   downloadAllRidesExport,
   type RideExportFormat,
@@ -69,38 +68,16 @@ function RidesPageInner() {
     ) || state.page > 1;
   const isPristineEmpty =
     !list.loading && !list.error && !hasActiveFilter && list.total === 0;
-  // Carry the active time window onto the "Share map" CTA so it lands on the
-  // same period the rider is viewing — matching how `RidesTabsBar` propagates
-  // `?window=` across tabs. Omitted for the "all" default (bare href).
-  const roadMapHref =
-    window === "all" ? "/rides/road-map" : `/rides/road-map?window=${window}`;
   return (
     <RidesScaffold
       allRidesBadge={
         list.loading ? null : <Mono className="text-[11px]">{list.total}</Mono>
       }
       headerRight={
-        // CTAs hide only on the truly-empty account state. With
-        // filters active and 0 results, the rider's unfiltered
-        // ride set may still be non-empty — they should keep
-        // access to Export CSV / Share map.
-        isPristineEmpty ? null : (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              uppercase
-              leftIcon={<Share2 size={14} />}
-              renderLink={({ className, children }) => (
-                <Link href={roadMapHref} className={className}>
-                  {children}
-                </Link>
-              )}
-            >
-              {t("Share map")}
-            </Button>
-            <BulkExportMenu />
-          </div>
-        )
+        // The export menu hides only on the truly-empty account state.
+        // With filters active and 0 results, the rider's unfiltered ride
+        // set may still be non-empty — they should keep access to Export.
+        isPristineEmpty ? null : <BulkExportMenu />
       }
     >
       {isPristineEmpty ? (
@@ -169,7 +146,7 @@ function BulkExportMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {t("Export CSV")}
+        {t("Export")}
       </Button>
 
       {open && (

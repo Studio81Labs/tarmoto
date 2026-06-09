@@ -69,10 +69,7 @@ vi.mock("@/lib/ride-export", () => ({
 
 import RidesPage from "./page";
 
-const shareMapHref = () =>
-  screen.getByRole("link", { name: /Share map/i }).getAttribute("href");
-
-describe("RidesPage — Share map CTA carries the active window", () => {
+describe("RidesPage — header Export menu", () => {
   beforeEach(() => {
     hookState.window = "all";
     hookState.total = 5;
@@ -80,14 +77,14 @@ describe("RidesPage — Share map CTA carries the active window", () => {
     hookState.error = null;
   });
 
-  it("links to the bare road map when the window is the 'all' default", () => {
+  it("renders the Export menu trigger when the rider has rides", () => {
     render(<RidesPage />);
-    expect(shareMapHref()).toBe("/rides/road-map");
+    expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
   });
 
-  it("appends ?window= so the road map opens the same period", () => {
-    hookState.window = "30d";
+  it("hides the header action on the pristine-empty account state", () => {
+    hookState.total = 0;
     render(<RidesPage />);
-    expect(shareMapHref()).toBe("/rides/road-map?window=30d");
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
   });
 });
