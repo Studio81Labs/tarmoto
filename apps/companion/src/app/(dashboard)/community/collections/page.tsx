@@ -177,10 +177,7 @@ export default function RouteCollectionsPage() {
       <Toolbar search={search} onSearch={setSearch} />
 
       <div className="mt-5">
-        <CollectionsDiscover
-          search={search}
-          onCreate={() => setModal({ mode: "create" })}
-        />
+        <CollectionsDiscover search={search} />
       </div>
 
       <div className="mb-1 mt-10">

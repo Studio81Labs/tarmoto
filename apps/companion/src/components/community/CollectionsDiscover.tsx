@@ -2,7 +2,6 @@
 import { t } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
 import { Mono, Stamp } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -31,13 +30,7 @@ function linePath(line: number[][]): string {
   );
 }
 
-export function CollectionsDiscover({
-  search,
-  onCreate,
-}: {
-  search: string;
-  onCreate: () => void;
-}) {
+export function CollectionsDiscover({ search }: { search: string }) {
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const [items, setItems] = useState<DiscoverCollection[] | null>(null);
 
@@ -56,28 +49,20 @@ export function CollectionsDiscover({
     };
   }, [authReady, search]);
 
+  // Discover is a read-only browse of *other* members' public collections
+  // (creating one lives in the header / "Your collections"). Hide the whole
+  // section until there's something to discover so it doesn't render an empty
+  // heading while loading or when the community has no public collections /
+  // no search matches.
+  if (!items || items.length === 0) return null;
+
   return (
     <section>
       <Stamp>{t("Discover")}</Stamp>
       <div className="mt-3 grid grid-cols-1 gap-[14px] sm:grid-cols-2 lg:grid-cols-3">
-        {(items ?? []).map((c) => (
+        {items.map((c) => (
           <DiscoverCard key={c.id} collection={c} />
         ))}
-        <button
-          type="button"
-          onClick={onCreate}
-          className="flex min-h-[260px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-line-strong text-fg-dim transition hover:border-accent hover:text-ink"
-        >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-paper">
-            <Plus size={14} />
-          </span>
-          <span className="text-sm font-bold text-ink">
-            {t("New collection")}
-          </span>
-          <span className="text-[11px]">
-            {t("Curate your favourite roads")}
-          </span>
-        </button>
       </div>
     </section>
   );
