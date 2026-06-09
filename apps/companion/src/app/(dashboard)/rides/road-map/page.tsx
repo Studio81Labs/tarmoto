@@ -421,19 +421,18 @@ function RoadMapPageInner() {
     );
   }
   // Share-button copy mirrors the post-action state so a click still
-  // surfaces the same "Creating link…" / "Link copied!" / "Shared" /
-  // "Share failed" feedback the previous chrome carried — visual is
-  // spec-styled outline pill matching the design's `Share map` CTA.
+  // surfaces "Creating link…" / "Copied" / "Shared" / "Share failed"
+  // feedback — visual is a spec-styled outline pill.
   const shareLabel =
     shareState.kind === "creating"
       ? t("Creating link…")
       : shareState.kind === "copied"
-        ? t("Link copied!")
+        ? t("Copied")
         : shareState.kind === "shared"
           ? t("Shared")
           : shareState.kind === "error"
             ? t("Share failed")
-            : t("Share map");
+            : t("Share");
   const ShareIcon =
     shareState.kind === "creating"
       ? Loader2
