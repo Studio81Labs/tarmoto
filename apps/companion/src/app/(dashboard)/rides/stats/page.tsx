@@ -45,7 +45,6 @@ import {
   computeCalendarHeatmap,
   computeDistanceSeries,
   computeQualityTrend,
-  computeRollingHeatmap,
   computeYearOverYear,
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
@@ -148,26 +147,20 @@ export default function StatsPage() {
     () => availableYears(ridesAcrossYears),
     [ridesAcrossYears],
   );
-  // The rolling distance chart shows the last 12 calendar months of the
-  // filtered rides. The heatmap still needs one concrete year: anchor on the
-  // current year for windowed filters, or the latest year with data for "all".
-  const focusYear =
-    filters.window === "all"
-      ? (years[0] ?? new Date().getFullYear())
-      : new Date().getFullYear();
   const series = useMemo(
     () => computeDistanceSeries(filtered, filters.window),
     [filtered, filters.window],
   );
-  // For the short rolling windows the heatmap follows the window's day span
-  // (so a 90/30-day window crossing Jan 1 still shows the previous-year days the
-  // KPIs/chart include); for year/all it stays a full calendar-year grid.
+  // The heatmap is intentionally decoupled from the time window: it always
+  // shows a full calendar-year grid for the latest year with data (the
+  // rider's current/last active year). A short window otherwise reshaped it
+  // into a handful of oversized cells. It uses the window-independent
+  // `ridesAcrossYears` (ride-type still applies) so changing 30d/90d/year/all
+  // doesn't redraw it.
+  const focusYear = years[0] ?? new Date().getFullYear();
   const calendar = useMemo(
-    () =>
-      filters.window === "30d" || filters.window === "90d"
-        ? computeRollingHeatmap(filtered, filters.window === "90d" ? 90 : 30)
-        : computeCalendarHeatmap(filtered, focusYear),
-    [filtered, filters.window, focusYear],
+    () => computeCalendarHeatmap(ridesAcrossYears, focusYear),
+    [ridesAcrossYears, focusYear],
   );
   const yoyYears = useMemo(() => years.slice(0, 3), [years]);
   const yearlyTotals = useMemo(
@@ -226,8 +219,8 @@ export default function StatsPage() {
   const isDayView = filters.window === "30d" || filters.window === "90d";
   const chartStamp = isDayView ? "Distance by day" : "Distance by month";
   const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
-  // The heatmap spans the rolling window on day views, a calendar year otherwise.
-  const heatmapLabel = isDayView ? windowLabel : String(focusYear);
+  // The heatmap is always the focus calendar year (window-independent).
+  const heatmapLabel = String(focusYear);
   // `key` is unique per bar, so the axis tick + tooltip both resolve their
   // human labels through this map rather than the (ambiguous) display string.
   const seriesByKey = new Map(series.map((point) => [point.key, point]));
