@@ -24,7 +24,6 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
 import { Button, Card, Mono, Stamp } from "@tarmoto/ui";
-import { Share2 } from "lucide-react";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -154,28 +153,14 @@ export default function RouteCollectionsPage() {
         )
       }
       headerRight={
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            uppercase
-            leftIcon={<Share2 size={14} />}
-            renderLink={({ className, children }) => (
-              <Link href="/rides" className={className}>
-                {children}
-              </Link>
-            )}
-          >
-            {t("Share a route")}
-          </Button>
-          <Button
-            variant="accent"
-            uppercase
-            leftIcon={<Plus size={14} />}
-            onClick={() => setModal({ mode: "create" })}
-          >
-            {t("New collection")}
-          </Button>
-        </div>
+        <Button
+          variant="accent"
+          uppercase
+          leftIcon={<Plus size={14} />}
+          onClick={() => setModal({ mode: "create" })}
+        >
+          {t("New collection")}
+        </Button>
       }
     >
       {migration && <MigrationBanner migration={migration} />}

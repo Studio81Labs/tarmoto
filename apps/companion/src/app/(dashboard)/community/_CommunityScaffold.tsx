@@ -17,7 +17,7 @@ import {
  * below with mono `Feed · N` / `Collections · N` badges.
  *
  * Each page mounts the scaffold with its own optional `headerRight`
- * slot (`New collection` / `Share a route` CTAs per spec) and may
+ * slot (e.g. the Collections tab's `New collection` CTA) and may
  * pass `feedBadge` / `collectionsBadge` overrides for whichever tab
  * it already has the count for. The scaffold falls back to the
  * lightweight `useCommunity*Total` hooks for the sibling tab so the
