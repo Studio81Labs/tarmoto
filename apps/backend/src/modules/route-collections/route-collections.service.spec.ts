@@ -432,6 +432,55 @@ describe('RouteCollectionsService', () => {
     });
   });
 
+  describe('listDiscover', () => {
+    // The discover query is built via a `base()` helper called twice (rows +
+    // count); a single capturing qb mock collects every `andWhere` clause so
+    // we can assert the owner-exclusion filter is (or isn't) applied.
+    function mockDiscoverQb(andWhereClauses: string[]) {
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn((clause: string) => {
+          andWhereClauses.push(clause);
+          return qb;
+        }),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        addGroupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      return qb;
+    }
+
+    it("excludes the viewer's own collections so Discover stays other members'", async () => {
+      const clauses: string[] = [];
+      (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockDiscoverQb(clauses),
+      );
+
+      await service.listDiscover(ownerId, undefined);
+
+      expect(clauses).toContain('c.owner_id <> :viewerId');
+    });
+
+    it('does not apply the owner filter for anonymous viewers', async () => {
+      const clauses: string[] = [];
+      (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockDiscoverQb(clauses),
+      );
+
+      await service.listDiscover(null, undefined);
+
+      expect(clauses).not.toContain('c.owner_id <> :viewerId');
+    });
+  });
+
   describe('create', () => {
     it('allocates a slug and persists the trimmed title', async () => {
       // Stub the post-save owner re-load so toDetailResponse can populate

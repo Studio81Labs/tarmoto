@@ -2143,6 +2143,9 @@ export function buildApp(): Express {
     const q = String(req.query.q ?? "").toLowerCase();
     const items = [...state.collections.values()]
       .filter((c) => c.visibility === "public")
+      // Mirror production `listDiscover`: signed-in viewers don't see their
+      // own collections in Discover (they live under "Your collections").
+      .filter((c) => !session || c.owner_id !== session.user_id)
       .filter((c) => !q || c.title.toLowerCase().includes(q))
       .map((c) => {
         const followers = state.collectionFollows.get(c.id) ?? new Map();

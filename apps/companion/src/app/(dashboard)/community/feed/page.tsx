@@ -1,8 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Loader2, Plus, Route, Share2, Users } from "lucide-react";
+import { Loader2, Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
@@ -123,24 +122,6 @@ export default function CommunityFeedPage() {
   return (
     <CommunityScaffold
       feedBadge={loading ? null : <Mono className="text-[11px]">{total}</Mono>}
-      headerRight={
-        <div className="flex items-center gap-2">
-          <Link
-            href="/community/collections"
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
-          >
-            <Plus size={14} />
-            {t("New collection")}
-          </Link>
-          <Link
-            href="/rides"
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-          >
-            <Share2 size={14} />
-            {t("Share a route")}
-          </Link>
-        </div>
-      }
     >
       <Card
         padded={false}

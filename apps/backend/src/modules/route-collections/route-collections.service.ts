@@ -111,6 +111,10 @@ export class RouteCollectionsService {
         .where("c.visibility = 'public'")
         .andWhere('owner.deleted_at IS NULL');
       if (viewerId) {
+        // Discover is for finding *other* members' public collections — a
+        // viewer's own public collections already live under "Your
+        // collections", so exclude them here to avoid showing them twice.
+        qb.andWhere('c.owner_id <> :viewerId', { viewerId });
         // Signed-in viewers see public + riders-only owners (NULL = the
         // riders-only default); only `private` profiles are hidden.
         qb.andWhere(
