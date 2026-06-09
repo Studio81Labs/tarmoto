@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ArrowUpRight,
   Check,
   Loader2,
   Pencil,
@@ -37,7 +36,8 @@ import {
 } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
 import { kmToMiles, type UnitSystem } from "@tarmoto/shared";
-import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
+import { downloadRideExport } from "@/lib/ride-export";
+import { RideExportMenu } from "../_components/RideExportMenu";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
 interface LeanDistribution {
@@ -99,8 +99,6 @@ export default function RideDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [exporting, setExporting] = useState<RideExportFormat | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
@@ -141,18 +139,6 @@ export default function RideDetailPage() {
     };
   }, [rideId, authReady]);
 
-  async function handleExport(format: RideExportFormat) {
-    if (!ride || exporting) return;
-    setExporting(format);
-    setExportError(null);
-    try {
-      await downloadRideExport(ride.id, format);
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setExporting(null);
-    }
-  }
   async function handleShare() {
     if (typeof window === "undefined") return;
     try {
@@ -399,50 +385,14 @@ export default function RideDetailPage() {
               >
                 {shareCopied ? t("Copied") : t("Share")}
               </Button>
-              <Button
-                variant="primary"
-                uppercase
-                loading={exporting === "gpx"}
-                leftIcon={<ArrowUpRight size={14} />}
-                onClick={() => handleExport("gpx")}
-                disabled={exporting !== null}
-              >
-                {t("Export GPX")}
-              </Button>
-              <Button
-                variant="secondary"
-                uppercase
-                loading={exporting === "csv"}
-                leftIcon={<ArrowUpRight size={14} />}
-                onClick={() => handleExport("csv")}
-                disabled={exporting !== null}
-              >
-                {t("Export CSV")}
-              </Button>
+              <RideExportMenu
+                onExport={(format) => downloadRideExport(ride.id, format)}
+              />
             </div>
           </div>
         </>
       }
     >
-      {exportError && (
-        <div
-          role="alert"
-          className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
-        >
-          <span>
-            {t("Export failed: ")}
-            {exportError}
-          </span>
-          <button
-            type="button"
-            onClick={() => setExportError(null)}
-            className="text-xs text-red-400/70 transition hover:text-red-400"
-          >
-            {t("Dismiss ")}
-          </button>
-        </div>
-      )}
-
       {/* Route map + stats grid */}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {ride.route_geometry && ride.route_geometry.length >= 2 ? (

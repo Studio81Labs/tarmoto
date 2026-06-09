@@ -15,8 +15,8 @@ import { useRidesTotal } from "./_useRidesTotal";
  *
  * Centralising the structure here keeps the three pages consistent
  * without forcing a Next layout-tree refactor: each page mounts the
- * scaffold with its own optional `headerRight` slot (Share map /
- * Export CSV buttons render only when the page has data).
+ * scaffold with its own optional `headerRight` slot (e.g. the Export
+ * menu, which renders only when the page has data).
  *
  * Tab badge count is fetched here via `useRidesTotal` so the
  * `All rides · N` badge stays visible across every sub-page

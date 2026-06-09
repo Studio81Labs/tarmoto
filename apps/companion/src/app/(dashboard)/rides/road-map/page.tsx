@@ -10,11 +10,11 @@ import {
 } from "react";
 import {
   Check,
-  Copy,
   Crosshair,
   Loader2,
   Map as MapIcon,
   MapPin,
+  Share2,
 } from "lucide-react";
 import {
   Alert,
@@ -28,7 +28,6 @@ import {
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
-import { Link2 } from "lucide-react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
 import type {
@@ -420,28 +419,20 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
-  // Share-button copy mirrors the post-action state so a click still
-  // surfaces the same "Creating link…" / "Link copied!" / "Shared" /
-  // "Share failed" feedback the previous chrome carried — visual is
-  // spec-styled outline pill matching the design's `Share map` CTA.
+  // Keep the button width stable while the share link is being created
+  // (an async POST): the spinner — Button `loading` — covers the in-flight
+  // state instead of swapping in a wide "Creating link…" label that would
+  // expand the button and snap back. The label only ever reads "Share"
+  // or, on success, "Copied" / "Shared", mirroring the ride-detail share
+  // button. Errors surface on the button's `title` (and auto-reset).
+  const shareSucceeded =
+    shareState.kind === "copied" || shareState.kind === "shared";
   const shareLabel =
-    shareState.kind === "creating"
-      ? t("Creating link…")
-      : shareState.kind === "copied"
-        ? t("Link copied!")
-        : shareState.kind === "shared"
-          ? t("Shared")
-          : shareState.kind === "error"
-            ? t("Share failed")
-            : t("Share map");
-  const ShareIcon =
-    shareState.kind === "creating"
-      ? Loader2
-      : shareState.kind === "copied" || shareState.kind === "shared"
-        ? Check
-        : shareState.kind === "error"
-          ? Copy
-          : Link2;
+    shareState.kind === "copied"
+      ? t("Copied")
+      : shareState.kind === "shared"
+        ? t("Shared")
+        : t("Share");
   // `formatDistance` carries the metric/imperial conversion + decimal rule;
   // take its number for the tile (so the shared formatter applies locale
   // grouping) and its unit for the tile's small slot.
@@ -462,16 +453,11 @@ function RoadMapPageInner() {
           <Button
             variant="secondary"
             uppercase
+            loading={shareState.kind === "creating"}
             onClick={handleShare}
-            disabled={shareState.kind === "creating"}
             title={shareState.kind === "error" ? shareState.message : undefined}
             leftIcon={
-              <ShareIcon
-                size={14}
-                className={
-                  shareState.kind === "creating" ? "animate-spin" : undefined
-                }
-              />
+              shareSucceeded ? <Check size={14} /> : <Share2 size={14} />
             }
           >
             {shareLabel}

@@ -371,9 +371,10 @@ test.describe("rides extras", () => {
       page.getByRole("heading", { level: 1, name: RIDE_DETAIL.name }),
     ).toBeVisible({ timeout: 10_000 });
 
+    await page.getByRole("button", { name: "Export" }).click();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: /export csv/i }).click(),
+      page.getByRole("menuitem", { name: /csv/i }).click(),
     ]);
     expect(download.suggestedFilename()).toMatch(/^tarmoto-ride-.*\.csv$/);
   });
