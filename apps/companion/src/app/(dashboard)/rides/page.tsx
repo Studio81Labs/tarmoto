@@ -1,18 +1,16 @@
 "use client";
 import { t } from "@/i18n";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowUpRight } from "lucide-react";
-import {
-  downloadAllRidesExport,
-  type RideExportFormat,
-} from "@/lib/ride-export";
+import { Suspense, useMemo } from "react";
+import { Activity } from "lucide-react";
+import { downloadAllRidesExport } from "@/lib/ride-export";
 import { useRideStats } from "@/hooks/useRideStats";
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesTable } from "./_components/RidesTable";
 import { RideKpiCards } from "./_components/RideKpiCards";
 import { RidesScaffold } from "./_RidesScaffold";
 import { RidesEmptyState } from "./_RidesEmptyState";
-import { Button, Mono } from "@tarmoto/ui";
+import { RideExportMenu } from "./_components/RideExportMenu";
+import { Mono } from "@tarmoto/ui";
 import {
   toFilterParams,
   useRidesQuery,
@@ -77,7 +75,9 @@ function RidesPageInner() {
         // The export menu hides only on the truly-empty account state.
         // With filters active and 0 results, the rider's unfiltered ride
         // set may still be non-empty — they should keep access to Export.
-        isPristineEmpty ? null : <BulkExportMenu />
+        isPristineEmpty ? null : (
+          <RideExportMenu onExport={downloadAllRidesExport} />
+        )
       }
     >
       {isPristineEmpty ? (
@@ -107,83 +107,5 @@ function RidesPageInner() {
         </>
       )}
     </RidesScaffold>
-  );
-}
-function BulkExportMenu() {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<RideExportFormat | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDown(ev: MouseEvent) {
-      if (!containerRef.current?.contains(ev.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  async function handleExport(format: RideExportFormat) {
-    if (busy) return;
-    setBusy(format);
-    setError(null);
-    try {
-      await downloadAllRidesExport(format);
-      setOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-  return (
-    <div className="relative" ref={containerRef}>
-      <Button
-        variant="primary"
-        uppercase
-        onClick={() => setOpen((o) => !o)}
-        loading={busy !== null}
-        leftIcon={<ArrowUpRight size={14} />}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        {t("Export")}
-      </Button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.14)]"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => handleExport("csv")}
-            disabled={busy !== null}
-            className="w-full px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("CSV (stats) ")}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => handleExport("gpx")}
-            disabled={busy !== null}
-            className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("GPX (tracks) ")}
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="absolute right-0 top-full mt-2 whitespace-nowrap text-xs text-red-400"
-        >
-          {t("Export failed: ")}
-          {error}
-        </p>
-      )}
-    </div>
   );
 }

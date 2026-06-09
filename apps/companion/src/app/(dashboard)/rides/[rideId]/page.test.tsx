@@ -186,12 +186,12 @@ describe("RideDetailPage", () => {
       await screen.findByRole("link", { name: /Compare/i }),
     ).toHaveAttribute("href", "/rides/compare?a=ride-1");
     expect(screen.getByRole("button", { name: /Share/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Export GPX/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Export CSV/i }),
-    ).toBeInTheDocument();
+    // Export is a single trigger that opens a CSV / GPX menu.
+    const exportTrigger = screen.getByRole("button", { name: "Export" });
+    expect(exportTrigger).toBeInTheDocument();
+    fireEvent.click(exportTrigger);
+    expect(screen.getByRole("menuitem", { name: /CSV/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /GPX/i })).toBeInTheDocument();
   });
 
   it("degrades unbacked sections without GPS or lean samples", async () => {
