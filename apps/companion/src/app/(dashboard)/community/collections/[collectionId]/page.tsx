@@ -4,18 +4,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
-import { Button, SegmentedControl } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  MetricTile,
+  Mono,
+  QualityBars,
+  SegmentedControl,
+  Stamp,
+  Tooltip,
+} from "@tarmoto/ui";
 import {
   ArrowLeft,
   Calendar,
   Check,
-  Copy,
-  Gauge,
   GripVertical,
   Loader2,
-  MapPin,
   Plus,
   Route as RouteIcon,
+  Search,
   Share2,
   Trash2,
   X,
@@ -53,7 +60,7 @@ import {
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import { tripDistanceKmOrNull } from "@/lib/trip-filters";
-import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
+import { type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { TripDay, TripSummary } from "@/lib/types";
 type LoadState =
@@ -119,12 +126,40 @@ export default function CollectionDetailPage() {
   // without it the cold-load race 401s and the page never recovers.
   // Same pattern as the rides pages.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  const user = useAuthStore((s) => s.user);
   useEffect(() => {
     if (!collectionId || !authReady) return;
     setLoad({ phase: "loading" });
     void reload(collectionId);
   }, [collectionId, authReady, reload]);
   const collection = load.phase === "ready" ? load.collection : null;
+  // Per-item route geometry (simplified polylines) for the row thumbnails,
+  // keyed by collection item id. Fetched from the owner-only preview endpoint
+  // and refreshed whenever the item set changes (add/remove bumps the
+  // collection's `updatedAt`). Reorder keeps the same items, so the map stays
+  // valid across a drag without a refetch.
+  const [previewsByItem, setPreviewsByItem] = useState<
+    Map<string, number[][][]>
+  >(new Map());
+  const itemSetKey = collection
+    ? `${collection.itemCount}:${collection.updatedAt}`
+    : null;
+  useEffect(() => {
+    if (!collectionId || !authReady || itemSetKey === null) return;
+    let cancelled = false;
+    void routeCollectionsApi
+      .getPreviewById(collectionId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const next = new Map<string, number[][][]>();
+        for (const route of data.routes) next.set(route.item_id, route.lines);
+        setPreviewsByItem(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [collectionId, authReady, itemSetKey]);
   const handleAddItems = async (input: {
     tripIds: string[];
     rideIds: string[];
@@ -261,7 +296,7 @@ export default function CollectionDetailPage() {
   };
   if (load.phase === "loading") {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <div className="flex items-center gap-2 text-fg-dim text-sm">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading collection\u2026")}
@@ -271,7 +306,7 @@ export default function CollectionDetailPage() {
   }
   if (load.phase === "not-found") {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <Link
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -295,7 +330,7 @@ export default function CollectionDetailPage() {
   }
   if (load.phase === "error") {
     return (
-      <div className="p-6 max-w-page mx-auto animate-fade-in">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <Link
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -366,7 +401,7 @@ export default function CollectionDetailPage() {
   const loadingMembers = loadingTrips || loadingRides;
   const memberLoadError = tripsError || ridesError;
   return (
-    <div className="p-6 max-w-page mx-auto animate-fade-in">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <Link
         href="/community/collections"
         className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
@@ -375,26 +410,32 @@ export default function CollectionDetailPage() {
         {t("Collections")}
       </Link>
 
-      <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-6">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold break-words mb-1">
-              {collection!.title}
-            </h1>
+          <h1 className="font-sans text-[32px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink break-words">
+            {collection!.title}
+          </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13px] text-fg-dim">
             <RouteCollectionVisibilityPill
               visibility={collection!.visibility}
             />
+            <span className="text-fg-mute">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-extrabold text-ink">
+                {(user?.displayName ?? "Y").trim().charAt(0).toUpperCase()}
+              </span>
+              {t("You")}
+            </span>
+            <span className="text-fg-mute">·</span>
+            <Mono className="text-[11px] text-fg-mute">
+              {t("Updated")} {formatRelativeTime(collection!.updatedAt)}
+            </Mono>
           </div>
-          <p className="text-xs text-fg-dim">
-            {t("Updated")}
-            {formatRelativeTime(collection!.updatedAt)}
-          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <ShareButton collection={collection!} />
           <Button
-            variant="accent"
-            size="sm"
+            variant="primary"
             uppercase
             disabled={busy}
             leftIcon={<Plus size={14} />}
@@ -423,63 +464,86 @@ export default function CollectionDetailPage() {
         </p>
       )}
 
-      <section className="mt-6 grid grid-cols-3 gap-3">
-        <Stat
-          label="Routes"
-          value={`${collection!.itemCount}`}
-          hint={
+      <section className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <MetricTile
+          variant="ink"
+          accentNumber
+          label={t("Routes")}
+          value={collection!.itemCount}
+          delta={
             // "Unavailable" rolls up trips + rides whose owning record was
-            // deleted (or hidden from the local cache). Suppress the badge
-            // while either fetch is in flight or errored — a transient API
-            // outage would otherwise look like everything was deleted.
+            // deleted (or hidden from the local cache). Suppressed while either
+            // fetch is in flight or errored so a transient outage doesn't look
+            // like everything was deleted.
             totalMissing > 0 && !loadingMembers && !memberLoadError
               ? `${totalMissing} unavailable`
               : undefined
           }
         />
-        <Stat
-          label="Total distance"
+        <MetricTile
+          label={t("Total distance")}
           value={
             loadingMembers || memberLoadError
               ? "—"
               : formatDistance(totalDistance)
           }
-          hint={
+          delta={
             // List-endpoint trips don't carry per-day distances, so their
-            // contribution is omitted from the aggregate rather than counted
-            // as zero. Surface the omission so the user understands the
-            // total isn't lying.
+            // contribution is omitted from the aggregate rather than counted as
+            // zero. Surface the omission so the total isn't silently lying.
             !loadingMembers && !memberLoadError && tripsWithUnknownDistance > 0
               ? `+${tripsWithUnknownDistance} trip${tripsWithUnknownDistance === 1 ? "" : "s"} not counted`
               : undefined
           }
         />
-        <Stat
-          label="Riding days"
-          value={loadingMembers || memberLoadError ? "—" : `${totalDays}`}
-          hint={
-            // Surface recorded-ride count separately so users see that ride
-            // items contribute to the collection even though they don't roll
-            // up into the multi-day "riding days" count.
+        <MetricTile
+          label={t("Riding days")}
+          value={loadingMembers || memberLoadError ? "—" : totalDays}
+          delta={
+            // Recorded rides contribute to the collection but don't roll up
+            // into the multi-day "riding days" count — surface them separately.
             !loadingMembers && !memberLoadError && presentRides.length > 0
               ? `+${presentRides.length} ride${presentRides.length === 1 ? "" : "s"}`
               : undefined
           }
         />
+        <MetricTile label={t("Followers")} value={collection!.followerCount} />
       </section>
 
-      <section className="mt-6">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-fg-dim mb-3">
-          {t("Routes")}
-        </h2>
+      <Card padded={false} className="mt-[18px] overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-4">
+          <div className="flex items-center gap-2.5">
+            <RouteIcon size={18} className="text-accent" aria-hidden="true" />
+            <div>
+              <Stamp>{t("Routes")}</Stamp>
+              <div className="mt-0.5 font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+                {collection!.itemCount === 1
+                  ? t("1 route")
+                  : t("{count} routes", { count: collection!.itemCount })}
+              </div>
+            </div>
+          </div>
+          {totalRefs > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              disabled={busy}
+              leftIcon={<Plus size={14} />}
+              onClick={() => setShowPicker(true)}
+            >
+              {t("Add routes")}
+            </Button>
+          )}
+        </div>
         {totalRefs === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
         ) : loadingMembers || memberLoadError ? (
-          <>
+          <div className="p-[18px]">
             {memberLoadError && (
               <div
                 role="alert"
-                className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200"
+                className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
               >
                 {t(
                   "Couldn't load your routes right now. Try again in a moment. ",
@@ -494,7 +558,7 @@ export default function CollectionDetailPage() {
                 <LoadingTripRow key={`ride-${ref.itemId}`} />
               ))}
             </ul>
-          </>
+          </div>
         ) : (
           <>
             {collection!.tripRefs.length > 0 && (
@@ -515,6 +579,7 @@ export default function CollectionDetailPage() {
                       {trip ? (
                         <TripRow
                           trip={trip}
+                          lines={previewsByItem.get(ref.itemId)}
                           onRemove={() => void handleRemoveItem(ref.itemId)}
                         />
                       ) : (
@@ -533,7 +598,6 @@ export default function CollectionDetailPage() {
                 ariaLabel="Rides in this collection. Drag handle to reorder."
                 ids={collection!.rideRefs.map((r) => r.itemId)}
                 disabled={busy || collection!.rideRefs.length < 2}
-                className={collection!.tripRefs.length > 0 ? "mt-3" : undefined}
                 onReorder={(from, to) => void handleReorder("rides", from, to)}
               >
                 {collection!.rideRefs.map((ref) => {
@@ -547,6 +611,7 @@ export default function CollectionDetailPage() {
                       {ride ? (
                         <RideRow
                           ride={ride}
+                          lines={previewsByItem.get(ref.itemId)}
                           onRemove={() => void handleRemoveItem(ref.itemId)}
                         />
                       ) : (
@@ -562,7 +627,7 @@ export default function CollectionDetailPage() {
             )}
           </>
         )}
-      </section>
+      </Card>
 
       {showPicker && (
         <RoutePickerModal
@@ -594,32 +659,42 @@ function VisibilitySelector({
   onChange: (next: RouteCollectionVisibility) => void;
   disabled: boolean;
 }) {
+  const description =
+    value === "private"
+      ? t("Only you can see this collection.")
+      : value === "unlisted"
+        ? t("Anyone with the link can view it — not listed publicly.")
+        : t("Listed publicly — other riders can follow it.");
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-fg-dim">{t("Visibility")}</span>
-      <SegmentedControl
-        ariaLabel={t("Visibility")}
-        disabled={disabled}
-        value={value}
-        onChange={onChange}
-        options={[
-          { value: "private", label: "Private" },
-          { value: "unlisted", label: "Unlisted" },
-          { value: "public", label: "Public" },
-        ]}
-      />
-    </div>
+    <Card
+      padded={false}
+      className="mb-4 flex flex-wrap items-center justify-between gap-4 px-[18px] py-3.5"
+    >
+      <div className="flex items-center gap-3.5">
+        <Stamp>{t("Visibility")}</Stamp>
+        <SegmentedControl
+          ariaLabel={t("Visibility")}
+          disabled={disabled}
+          value={value}
+          onChange={onChange}
+          options={[
+            { value: "private", label: "Private" },
+            { value: "unlisted", label: "Unlisted" },
+            { value: "public", label: "Public" },
+          ]}
+        />
+      </div>
+      <span className="text-[12px] text-fg-dim">{description}</span>
+    </Card>
   );
 }
 function ShareButton({ collection }: { collection: RouteCollectionView }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
-    "idle",
-  );
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => {
-    if (copyState === "idle") return;
-    const timeoutId = window.setTimeout(() => setCopyState("idle"), 2000);
+    if (state === "idle") return;
+    const timeoutId = window.setTimeout(() => setState("idle"), 2000);
     return () => window.clearTimeout(timeoutId);
-  }, [copyState]);
+  }, [state]);
   const sharable = collection.visibility !== "private";
   const url =
     typeof window === "undefined"
@@ -629,65 +704,141 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
     if (!sharable) return;
     try {
       await navigator.clipboard.writeText(url);
-      setCopyState("copied");
+      setState("copied");
     } catch {
-      setCopyState("error");
+      // Clipboard rejects on insecure origins / denied permission. Surface a
+      // visible "Copy failed" and fall back to a prompt pre-filled with the
+      // *share* URL — the page URL is the owner-only `/collections/:id` route,
+      // so telling the owner to copy the browser address would hand recipients
+      // a 404. The prompt lets them copy a link that actually works.
+      setState("failed");
+      if (typeof window !== "undefined") {
+        window.prompt(t("Copy this share link:"), url);
+      }
     }
   };
   return (
-    <button
-      type="button"
-      onClick={() => void handle()}
-      disabled={!sharable}
-      title={
+    <Tooltip
+      content={
         sharable
-          ? "Copy share link"
-          : "Make this collection unlisted or public to share"
+          ? state === "failed"
+            ? t("Couldn't copy automatically — link shown so you can copy it")
+            : t("Copy share link")
+          : t("Make this collection unlisted or public to share")
       }
-      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
-        !sharable
-          ? "bg-cream border border-line text-fg-dim cursor-not-allowed"
-          : copyState === "copied"
-            ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-            : "bg-cream border border-line text-ink hover:border-line-strong"
-      }`}
     >
-      {copyState === "copied" ? (
-        <>
-          <Check size={14} />
-          {t("Copied")}
-        </>
-      ) : copyState === "error" ? (
-        <>
-          <Copy size={14} />
-          {t("Copy failed")}
-        </>
-      ) : (
-        <>
-          <Share2 size={14} />
-          {t("Share")}
-        </>
-      )}
-    </button>
+      <Button
+        variant="secondary"
+        uppercase
+        disabled={!sharable}
+        leftIcon={
+          state === "copied" ? <Check size={14} /> : <Share2 size={14} />
+        }
+        onClick={() => void handle()}
+      >
+        {state === "copied"
+          ? t("Copied")
+          : state === "failed"
+            ? t("Copy failed")
+            : t("Share")}
+      </Button>
+    </Tooltip>
   );
 }
-function Stat({
+// Map a single simplified polyline ([lng,lat][]) to an SVG path inside the
+// 200×120 thumbnail box (north up). Mirrors `CollectionsDiscover.linePath`.
+function thumbPath(line: number[][]): string {
+  const xs = line.map((p) => p[0] ?? 0);
+  const ys = line.map((p) => p[1] ?? 0);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const w = Math.max(...xs) - minX || 1;
+  const h = Math.max(...ys) - minY || 1;
+  return (
+    "M " +
+    line
+      .map(([lng, lat]) => {
+        const x = (((lng ?? 0) - minX) / w) * 180 + 10;
+        const y = (1 - ((lat ?? 0) - minY) / h) * 100 + 10;
+        return `${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" L ")
+  );
+}
+
+/** 58×40 route-preview thumbnail; falls back to a route glyph with no geometry. */
+function RouteThumb({
+  lines,
   label,
-  value,
-  hint,
 }: {
+  lines: number[][][] | undefined;
   label: string;
-  value: string;
-  hint?: string;
+}) {
+  const line = lines?.find((l) => l && l.length >= 2);
+  return (
+    <div className="hidden h-10 w-[58px] shrink-0 overflow-hidden rounded-lg border border-line bg-paper sm:block">
+      {line ? (
+        <svg
+          viewBox="0 0 200 120"
+          preserveAspectRatio="xMidYMid slice"
+          className="h-full w-full"
+          role="img"
+          aria-label={`${label} route preview`}
+        >
+          <path
+            d={thumbPath(line)}
+            fill="none"
+            stroke="var(--color-accent)"
+            strokeWidth={4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : (
+        <div className="flex h-full items-center justify-center text-fg-mute">
+          <RouteIcon size={16} aria-hidden="true" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Status chip (planned / completed / shared / …) coloured like the design. */
+function StatusPill({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const tone =
+    s === "completed"
+      ? "border-[#1f8a5b]/40 text-[#1f8a5b]"
+      : s === "shared"
+        ? "border-[#b06a38]/40 text-[#b06a38]"
+        : s === "active"
+          ? "border-accent/45 text-accent"
+          : "border-line-strong text-ink";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.2px] ${tone}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function RemoveRouteButton({
+  onClick,
+  label,
+}: {
+  onClick: () => void;
+  label: string;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-cream p-4">
-      <p className="text-[11px] uppercase tracking-widest text-fg-dim">
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
-      {hint && <p className="mt-0.5 text-[11px] text-amber-400">{hint}</p>}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg border border-line-strong text-fg-mute transition hover:border-quality-q1 hover:text-quality-q1"
+    >
+      <Trash2 size={16} />
+    </button>
   );
 }
 /**
@@ -741,7 +892,7 @@ function SortableItemList({
         items={ids as string[]}
         strategy={verticalListSortingStrategy}
       >
-        <ul aria-label={ariaLabel} className={`space-y-3 ${className ?? ""}`}>
+        <ul aria-label={ariaLabel} className={className}>
           {children}
         </ul>
       </SortableContext>
@@ -781,7 +932,11 @@ function SortableRow({
     opacity: isDragging ? 0.85 : undefined,
   };
   return (
-    <li ref={setNodeRef} style={style} className="flex items-stretch gap-2">
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 border-b border-line px-[18px] py-3 transition-colors last:border-b-0 hover:bg-paper/40"
+    >
       <button
         type="button"
         ref={setActivatorNodeRef}
@@ -789,27 +944,27 @@ function SortableRow({
         {...listeners}
         disabled={disabled}
         aria-label={t("Reorder")}
-        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-fg-mute hover:text-ink hover:bg-paper/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${disabled ? "" : "cursor-grab active:cursor-grabbing"}`}
+        className={`shrink-0 rounded-md text-fg-mute transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-30 ${disabled ? "" : "cursor-grab active:cursor-grabbing"}`}
         style={{ touchAction: "none" }}
       >
-        <GripVertical size={16} aria-hidden="true" />
+        <GripVertical size={14} aria-hidden="true" />
       </button>
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </li>
   );
 }
 function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="rounded-2xl bg-cream border border-dashed border-line p-10 text-center">
-      <RouteIcon size={40} className="mx-auto text-fg-mute mb-3" />
-      <p className="text-fg-dim mb-1">
+    <div className="px-6 py-12 text-center">
+      <RouteIcon size={40} className="mx-auto mb-3 text-fg-mute" />
+      <p className="mb-1 font-bold text-ink">
         {t("No routes in this collection yet")}
       </p>
-      <p className="text-sm text-fg-dim mb-5">
+      <p className="mb-5 text-sm text-fg-dim">
         {t("Add routes from your planned or completed trips.")}
       </p>
       <Button
-        variant="accent"
+        variant="primary"
         size="sm"
         uppercase
         leftIcon={<Plus size={16} />}
@@ -822,131 +977,100 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
 }
 function TripRow({
   trip,
+  lines,
   onRemove,
 }: {
   trip: TripSummary;
+  lines: number[][][] | undefined;
   onRemove: () => void;
 }) {
-  // List-endpoint trips (TripSummary) don't carry `days` or per-day
-  // geometry, so the row keeps the preview empty and hides the
-  // distance pill — `null` instead of a confidently-wrong `0 km`.
+  // List-endpoint trips (TripSummary) don't carry per-day distances, so the
+  // distance is hidden when unknown — `null` rather than a confidently-wrong
+  // `0 km`. Geometry comes from the collection preview endpoint via `lines`.
   const dayCount = trip.num_days;
-  const points: Array<{ lat: number; lng: number }> = [];
-  const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKmOrNull(trip);
   return (
-    <div className="rounded-2xl border border-line bg-cream hover:border-line-strong transition">
-      <div className="flex items-stretch gap-0">
-        <Link
-          href={`/trips/${trip.id}`}
-          className="flex-1 flex items-center gap-4 p-4 min-w-0 group"
-        >
-          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-paper border border-line">
-            {preview ? (
-              <svg
-                viewBox={preview.viewBox}
-                className="h-full w-full"
-                role="img"
-                aria-label={`${trip.name} route preview`}
-              >
-                <path
-                  d={preview.path}
-                  fill="none"
-                  stroke="#0ED3CF"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : (
-              <RouteIcon size={20} className="text-fg-mute" />
-            )}
+    <div className="flex items-center gap-3">
+      <Link
+        href={`/trips/${trip.id}`}
+        className="group flex min-w-0 flex-1 items-center gap-3"
+      >
+        <RouteThumb lines={lines} label={trip.name} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-bold text-ink transition group-hover:text-accent">
+            {trip.name}
           </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-ink group-hover:text-accent transition truncate">
-              {trip.name}
-            </h3>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
-              <span className="inline-flex items-center gap-1">
-                <Calendar size={12} />
-                {dayCount === 1
-                  ? t("1 day")
-                  : t("{count} days", { count: dayCount })}
-              </span>
-              {distance !== null && (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin size={12} />
-                  {formatDistance(distance)}
-                </span>
-              )}
-              <span className="text-[11px] text-fg-mute uppercase tracking-widest">
-                {trip.status}
-              </span>
-            </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-fg-dim">
+            <span className="inline-flex items-center gap-1 text-fg-mute">
+              <Calendar size={13} aria-hidden="true" />
+              {dayCount}d
+            </span>
+            <span className="text-fg-mute">·</span>
+            <span className="truncate">{t("You")}</span>
           </div>
-        </Link>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${trip.name} from collection`}
-          className="px-3 text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
+        </div>
+      </Link>
+      {distance !== null && (
+        <Mono className="shrink-0 text-[13px] font-bold text-ink">
+          {formatDistance(distance)}
+        </Mono>
+      )}
+      <StatusPill status={trip.status} />
+      <RemoveRouteButton
+        onClick={onRemove}
+        label={`Remove ${trip.name} from collection`}
+      />
     </div>
   );
 }
-function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
+function RideRow({
+  ride,
+  lines,
+  onRemove,
+}: {
+  ride: UserRide;
+  lines: number[][][] | undefined;
+  onRemove: () => void;
+}) {
   const displayName =
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
   return (
-    <div className="rounded-2xl border border-line bg-cream hover:border-line-strong transition">
-      <div className="flex items-stretch gap-0">
-        <Link
-          href={`/rides/${ride.id}`}
-          className="flex-1 flex items-center gap-4 p-4 min-w-0 group"
-        >
-          <div className="hidden sm:flex shrink-0 w-24 h-16 items-center justify-center rounded-lg bg-paper border border-line">
-            <Gauge size={20} className="text-fg-mute" />
+    <div className="flex items-center gap-3">
+      <Link
+        href={`/rides/${ride.id}`}
+        className="group flex min-w-0 flex-1 items-center gap-3"
+      >
+        <RouteThumb lines={lines} label={displayName} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-bold text-ink transition group-hover:text-accent">
+            {displayName}
           </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-ink group-hover:text-accent transition truncate">
-              {displayName}
-            </h3>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
-              <span className="inline-flex items-center gap-1">
-                <Calendar size={12} />
-                {new Date(ride.started_at).toLocaleDateString()}
-              </span>
-              {ride.distance_km != null && (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin size={12} />
-                  {formatDistance(ride.distance_km)}
-                </span>
-              )}
-              {ride.avg_road_quality != null && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-fg-dim">
-                  {t("Quality {quality}", {
-                    quality: ride.avg_road_quality.toFixed(1),
-                  })}
-                </span>
-              )}
-              <span className="text-[11px] text-fg-mute uppercase tracking-widest">
-                {ride.ride_type}
-              </span>
-            </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-fg-dim">
+            <span className="inline-flex items-center gap-1 text-fg-mute">
+              <Calendar size={13} aria-hidden="true" />
+              {new Date(ride.started_at).toLocaleDateString()}
+            </span>
+            <span className="text-fg-mute">·</span>
+            <span className="truncate">{t("You")}</span>
+            {ride.avg_road_quality != null && (
+              <>
+                <span className="text-fg-mute">·</span>
+                <QualityBars q={ride.avg_road_quality} size={5} />
+              </>
+            )}
           </div>
-        </Link>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${displayName} from collection`}
-          className="px-3 text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
+        </div>
+      </Link>
+      {ride.distance_km != null && (
+        <Mono className="shrink-0 text-[13px] font-bold text-ink">
+          {formatDistance(ride.distance_km)}
+        </Mono>
+      )}
+      <StatusPill status={ride.status} />
+      <RemoveRouteButton
+        onClick={onRemove}
+        label={`Remove ${displayName} from collection`}
+      />
     </div>
   );
 }
@@ -959,23 +1083,16 @@ function MissingItemRow({
 }) {
   const label = kind === "trip" ? "Trip" : "Ride";
   return (
-    <div className="rounded-2xl border border-dashed border-line bg-cream/50 p-4 flex items-center justify-between gap-4">
+    <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-sm text-fg-dim">
+        <p className="truncate text-[14px] font-bold text-fg-dim">
           {t("{label} no longer available", { label })}
         </p>
         <p className="text-[11px] text-fg-mute">
           {t("The route may have been deleted or belongs to another account.")}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-fg-dim hover:text-red-400 hover:bg-red-500/10 transition"
-      >
-        <X size={12} />
-        {t("Remove")}
-      </button>
+      <RemoveRouteButton onClick={onRemove} label={t("Remove")} />
     </div>
   );
 }
@@ -1086,50 +1203,62 @@ function RoutePickerModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[80vh] rounded-2xl border border-line bg-cream p-5 shadow-xl flex flex-col"
+        className="flex max-h-[82vh] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl border border-line bg-cream shadow-[0_32px_80px_rgba(14,14,16,0.3)]"
       >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-ink">{t("Add routes")}</h2>
+        <div className="flex items-start justify-between px-[22px] pt-5">
+          <div>
+            <Stamp>{t("Collection")}</Stamp>
+            <h2 className="mt-1 font-sans text-[22px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+              {t("Add routes")}
+            </h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t("Close")}
-            className="p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-fg-mute transition hover:bg-paper hover:text-ink"
           >
-            <X size={14} />
+            <X size={18} />
           </button>
         </div>
 
-        <div
-          role="tablist"
-          aria-label={t("Add routes from")}
-          className="mb-3 flex gap-1 rounded-lg bg-paper border border-line p-1"
-        >
-          <PickerTabButton
-            active={tab === "trips"}
-            onClick={() => setTab("trips")}
-            label="Trips"
-            count={selectedTrips.size}
-          />
-          <PickerTabButton
-            active={tab === "rides"}
-            onClick={() => setTab("rides")}
-            label="Rides"
-            count={selectedRides.size}
-          />
+        <div className="flex flex-col gap-3 px-[22px] pb-3.5 pt-4">
+          <div
+            role="tablist"
+            aria-label={t("Add routes from")}
+            className="flex gap-1 rounded-[11px] bg-paper p-1"
+          >
+            <PickerTabButton
+              active={tab === "trips"}
+              onClick={() => setTab("trips")}
+              label="Trips"
+              count={trips.length}
+            />
+            <PickerTabButton
+              active={tab === "rides"}
+              onClick={() => setTab("rides")}
+              label="Rides"
+              count={rides.length}
+            />
+          </div>
+
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-mute">
+              <Search size={14} aria-hidden="true" />
+            </span>
+            <input
+              type="text"
+              placeholder={
+                tab === "trips" ? "Search your trips…" : "Search your rides…"
+              }
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-[10px] border border-line bg-cream py-2.5 pl-10 pr-3.5 text-sm text-ink placeholder:text-fg-mute focus:border-accent focus:outline-none"
+            />
+          </div>
         </div>
 
-        <input
-          type="text"
-          placeholder={
-            tab === "trips" ? "Search your trips…" : "Search your rides…"
-          }
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent mb-3"
-        />
-
-        <div className="flex-1 overflow-y-auto -mx-1 px-1">
+        <div className="min-h-[120px] flex-1 overflow-y-auto px-[22px]">
           {tab === "trips" ? (
             <TripPickerList
               trips={trips}
@@ -1154,19 +1283,19 @@ function RoutePickerModal({
           )}
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-fg-dim">
+        <div className="flex items-center justify-between gap-3 border-t border-line px-[22px] py-3.5">
+          <Mono className="text-[12px] font-bold text-fg-mute">
             {t("{count} selected", { count: totalSelected })}
-          </p>
+          </Mono>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="secondary" uppercase onClick={onClose}>
               {t("Cancel")}
             </Button>
             <Button
-              variant="accent"
-              size="sm"
+              variant="primary"
               uppercase
               disabled={totalSelected === 0}
+              leftIcon={<Plus size={14} />}
               onClick={() =>
                 onAdd({
                   tripIds: Array.from(selectedTrips),
@@ -1175,7 +1304,7 @@ function RoutePickerModal({
               }
             >
               {t("Add")}
-              {totalSelected > 0 ? ` (${totalSelected})` : ""}
+              {totalSelected > 0 ? ` ${totalSelected}` : ""}
             </Button>
           </div>
         </div>
@@ -1200,23 +1329,80 @@ function PickerTabButton({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-bold transition-colors ${
         active
-          ? "bg-paper text-ink"
-          : "text-fg-dim hover:text-ink hover:bg-cream"
+          ? "bg-ink text-cream"
+          : "bg-transparent text-fg-dim hover:text-ink"
       }`}
     >
-      {label}
+      <span>{label}</span>
       {count > 0 && (
-        <span
-          className={`ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] ${
-            active ? "bg-accent/20 text-accent" : "bg-paper text-ink"
-          }`}
+        <Mono
+          className={`text-[10px] ${active ? "text-cream/70" : "text-fg-mute"}`}
         >
-          {count}
-        </span>
+          · {count}
+        </Mono>
       )}
     </button>
+  );
+}
+/**
+ * One selectable row in the add-routes picker: custom checkbox, a route-glyph
+ * thumbnail (the picker lists every owned trip/ride and has no per-item
+ * geometry, so the thumb is a placeholder rather than a real preview), the
+ * name, a mono meta line, and a status pill.
+ */
+function PickerRow({
+  checked,
+  onToggle,
+  name,
+  meta,
+  status,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  name: string;
+  meta: string;
+  status: string;
+}) {
+  return (
+    <li>
+      <label
+        className={`flex cursor-pointer items-center gap-3 rounded-[11px] border px-3 py-2.5 transition ${
+          checked
+            ? "border-accent bg-accent/5"
+            : "border-line bg-cream hover:border-line-strong"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="peer sr-only"
+        />
+        <span
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 ${
+            checked
+              ? "border-accent bg-accent text-ink"
+              : "border-line-strong text-transparent"
+          }`}
+        >
+          <Check size={13} strokeWidth={3} aria-hidden="true" />
+        </span>
+        <span className="flex h-9 w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] border border-line bg-paper text-fg-mute">
+          <RouteIcon size={15} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-bold text-ink">
+            {name}
+          </span>
+          <Mono className="mt-0.5 block text-[10.5px] uppercase text-fg-mute">
+            {meta}
+          </Mono>
+        </span>
+        <StatusPill status={status} />
+      </label>
+    </li>
   );
 }
 function TripPickerList({
@@ -1298,43 +1484,27 @@ function TripPickerList({
     );
   }
   return (
-    <ul className="space-y-1.5">
+    <ul className="flex flex-col gap-2 pb-1">
       {visibleTrips.map((trip) => {
-        const checked = selected.has(trip.id);
         // `distance === null` ⇒ summary-only; drop the distance segment from
         // the meta line rather than rendering "0 km".
         const distance = tripDistanceKmOrNull(trip);
         const dayCount = trip.num_days;
         const dayLabel =
           dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount });
-        const metaParts = [dayLabel];
-        if (distance !== null) metaParts.push(formatDistance(distance));
-        metaParts.push(trip.status);
+        const meta =
+          distance !== null
+            ? `${dayLabel} · ${formatDistance(distance)}`
+            : dayLabel;
         return (
-          <li key={trip.id}>
-            <label
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
-                checked
-                  ? "border-accent/40 bg-accent/5"
-                  : "border-line bg-paper hover:border-line-strong"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(trip.id)}
-                className="accent-accent"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink truncate">
-                  {trip.name}
-                </p>
-                <p className="text-[11px] text-fg-dim">
-                  {metaParts.join(" · ")}
-                </p>
-              </div>
-            </label>
-          </li>
+          <PickerRow
+            key={trip.id}
+            checked={selected.has(trip.id)}
+            onToggle={() => onToggle(trip.id)}
+            name={trip.name}
+            meta={meta}
+            status={trip.status}
+          />
         );
       })}
     </ul>
@@ -1409,42 +1579,25 @@ function RidePickerList({
     );
   }
   return (
-    <ul className="space-y-1.5">
+    <ul className="flex flex-col gap-2 pb-1">
       {visibleRides.map((ride) => {
-        const checked = selected.has(ride.id);
         const displayName =
           ride.name ??
           `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
+        const date = new Date(ride.started_at).toLocaleDateString();
+        const meta =
+          ride.distance_km != null
+            ? `${date} · ${formatDistance(ride.distance_km)}`
+            : date;
         return (
-          <li key={ride.id}>
-            <label
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
-                checked
-                  ? "border-accent/40 bg-accent/5"
-                  : "border-line bg-paper hover:border-line-strong"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(ride.id)}
-                className="accent-accent"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink truncate">
-                  {displayName}
-                </p>
-                <p className="text-[11px] text-fg-dim">
-                  {new Date(ride.started_at).toLocaleDateString()}
-                  {ride.distance_km != null
-                    ? ` · ${formatDistance(ride.distance_km)}`
-                    : ""}
-                  {" · "}
-                  {ride.ride_type}
-                </p>
-              </div>
-            </label>
-          </li>
+          <PickerRow
+            key={ride.id}
+            checked={selected.has(ride.id)}
+            onToggle={() => onToggle(ride.id)}
+            name={displayName}
+            meta={meta}
+            status={ride.status}
+          />
         );
       })}
     </ul>
