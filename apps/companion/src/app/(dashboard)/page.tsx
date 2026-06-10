@@ -107,7 +107,7 @@ export default function HomePage() {
   // the empty layout shows its own retry card instead of onboarding copy.
 
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in px-10 py-8 pb-12">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       {/* Hero */}
       <header className="mb-7 flex items-end justify-between gap-6">
         <div>

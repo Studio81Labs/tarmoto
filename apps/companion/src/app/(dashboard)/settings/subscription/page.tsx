@@ -175,7 +175,7 @@ export default function SubscriptionPage() {
   }
   const billingBusy = actionState.kind !== null;
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <SettingsSubpageHeader
         stamp={t("Settings · Subscription")}
         icon={<CreditCard size={18} strokeWidth={2} />}

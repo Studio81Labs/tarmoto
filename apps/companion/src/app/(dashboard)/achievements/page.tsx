@@ -257,7 +257,7 @@ export default function AchievementsPage() {
   );
   if (!userId) {
     return (
-      <div className="mx-auto w-full max-w-page p-7 animate-fade-in">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">
         <PageHeader />
         <EmptyCard
           icon={<Lock size={32} className="text-fg-mute" />}
@@ -279,7 +279,7 @@ export default function AchievementsPage() {
         : null;
   if (!stateForUser) {
     return (
-      <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in space-y-8">
         <PageHeader />
         <SkeletonGrid />
       </div>
@@ -287,7 +287,7 @@ export default function AchievementsPage() {
   }
   if (stateForUser.status === "error") {
     return (
-      <div className="mx-auto w-full max-w-page p-7 animate-fade-in">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">
         <PageHeader />
         <ErrorCard
           message={stateForUser.message}
@@ -351,7 +351,7 @@ function Dashboard({
   );
   const earnedBadgeCount = snapshot.badges.filter((b) => b.earnedAt).length;
   return (
-    <div className="mx-auto w-full max-w-page p-7 animate-fade-in space-y-8">
+    <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in space-y-8">
       <PageHeader />
 
       <TierHero

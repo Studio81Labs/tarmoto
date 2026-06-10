@@ -64,7 +64,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 // previously bundled into this page lives at /settings/profile.
 export default function SettingsHubPage() {
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <PageHeader
         stamp={t("Settings")}
         icon={<SettingsIcon size={18} strokeWidth={2} />}

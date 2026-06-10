@@ -119,7 +119,7 @@ export default function NotificationsPage() {
   }
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-page p-7">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7">
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading preferences… ")}
@@ -129,7 +129,7 @@ export default function NotificationsPage() {
   }
   if (loadError) {
     return (
-      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <SettingsSubpageHeader
           stamp={t("Settings · Notifications")}
           icon={<Bell size={18} strokeWidth={2} />}
@@ -146,7 +146,7 @@ export default function NotificationsPage() {
     );
   }
   return (
-    <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+    <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <SettingsSubpageHeader
         stamp={t("Settings · Notifications")}
         icon={<Bell size={18} strokeWidth={2} />}
