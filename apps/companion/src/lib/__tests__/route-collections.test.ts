@@ -24,6 +24,7 @@ function detail(
     slug: "abcDEF12345",
     item_count: items.length,
     items,
+    follower_count: 0,
     owner_name: "Jane Rider",
     viewer_is_owner: true,
     viewer_is_following: false,

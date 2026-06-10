@@ -2457,7 +2457,17 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    res.json(serializeCollectionDetail(collection, /* viewerOwns */ true));
+    // `collectionFollows` is keyed user → {collection}, so a collection's
+    // follower count is the number of users whose set includes it.
+    let followerCount = 0;
+    for (const follows of state.collectionFollows.values()) {
+      if (follows.has(collection.id)) followerCount += 1;
+    }
+    res.json(
+      serializeCollectionDetail(collection, /* viewerOwns */ true, {
+        followerCount,
+      }),
+    );
   });
 
   // Owner-only delete. Production responds 404 when the collection is
@@ -3606,7 +3616,11 @@ function serializeCollectionSummary(
 function serializeCollectionDetail(
   collection: import("./state").MockCollection,
   viewerOwns: boolean,
-  opts: { maskOwner?: boolean; viewerIsFollowing?: boolean } = {},
+  opts: {
+    maskOwner?: boolean;
+    viewerIsFollowing?: boolean;
+    followerCount?: number;
+  } = {},
 ) {
   // Production `RouteCollectionsService.toDetailResponse` hydrates the
   // owner relation and surfaces `owner_name` on every detail response
@@ -3620,6 +3634,10 @@ function serializeCollectionDetail(
       maskOwner: opts.maskOwner,
     }),
     items: [] as unknown[],
+    // Mirrors production `toDetailResponse`. Callers inside `buildApp` (where
+    // `state` is in scope) pass the real count; defaults to 0 otherwise (e.g.
+    // a freshly created collection).
+    follower_count: opts.followerCount ?? 0,
     viewer_is_owner: viewerOwns,
     viewer_is_following: opts.viewerIsFollowing ?? false,
   };
