@@ -138,7 +138,12 @@ export default async function SharedRoadMapPage({
                     aria-hidden="true"
                   />
                   {formatDistance(snapshot.stats.total_distance_km)}{" "}
-                  {t("ridden")}
+                  {/* `total_distance_km` is a lifetime total even on a period
+                      share, so flag the scope next to the period-filtered
+                      "segments highlighted" chip. */}
+                  {snapshot.period === "all"
+                    ? t("ridden")
+                    : t("ridden all-time")}
                 </MetaChip>
               </>
             )}
