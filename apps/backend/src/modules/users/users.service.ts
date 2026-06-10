@@ -282,6 +282,7 @@ export class UsersService {
         home_region,
         rank_in_region: null,
         region_rider_count: null,
+        region_riders_behind: null,
         percentile: null,
       };
     }
@@ -290,7 +291,7 @@ export class UsersService {
     // match, not deleted, not private — except the viewer) so the per-user
     // aggregation only touches that region's contributors.
     const rankRows = await this.userRepo.query<
-      { rank: number | null; total: string | null }[]
+      { rank: number | null; total: string | null; behind: string | null }[]
     >(
       `WITH region_users AS (
          SELECT u.id
@@ -320,12 +321,21 @@ export class UsersService {
          WHERE m > 0
        )
        SELECT (SELECT rank FROM ranked WHERE user_id = $1)::int AS rank,
-              (SELECT COUNT(*) FROM ranked)::int AS total`,
+              (SELECT COUNT(*) FROM ranked)::int AS total,
+              -- Riders strictly below the viewer by km mapped. Tie-aware
+              -- "ahead of someone" signal: with DENSE_RANK a tie above one
+              -- last rider gives rank 2 / count 3, so rank<count would call
+              -- the last rider non-last; a strict-less count never does.
+              (SELECT COUNT(*) FROM per_user
+                WHERE m > 0
+                  AND m < (SELECT m FROM per_user WHERE user_id = $1))::int
+                AS behind`,
       [userId, home_region],
     );
 
     const rank_in_region = rankRows[0]?.rank ?? null;
     const region_rider_count = Number(rankRows[0]?.total ?? 0) || null;
+    const region_riders_behind = Number(rankRows[0]?.behind ?? 0);
     const percentile =
       rank_in_region != null && region_rider_count
         ? Math.max(1, Math.ceil((rank_in_region / region_rider_count) * 100))
@@ -337,6 +347,7 @@ export class UsersService {
       home_region,
       rank_in_region,
       region_rider_count,
+      region_riders_behind,
       percentile,
     };
   }

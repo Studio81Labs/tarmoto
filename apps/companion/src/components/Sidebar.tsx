@@ -342,21 +342,23 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
     percentile,
     rank_in_region,
     region_rider_count,
+    region_riders_behind,
     home_region,
   } = contribution;
   // Only claim a regional standing when the rider is actually ahead of
   // someone — i.e. not the sole contributor (rank 1 of 1) and not dead last,
-  // where "Top 100%" reads as misleading. Gate on `rank < count` rather than
-  // the rounded percentile: `ceil(rank / count * 100)` can hit 100 for a
-  // non-last rider once a region has >100 contributors (e.g. rank 100 of 101).
-  // The km total still shows when the line is dropped.
+  // where "Top 100%" reads as misleading. Gate on `region_riders_behind`
+  // (riders strictly below the viewer): `rank_in_region` is a DENSE_RANK, so
+  // comparing it to the rider count can't distinguish a genuinely-last rider
+  // from one tied behind others. The km total still shows when the line drops.
   const ranked =
     percentile != null &&
     home_region != null &&
     rank_in_region != null &&
     region_rider_count != null &&
     region_rider_count > 0 &&
-    rank_in_region < region_rider_count;
+    region_riders_behind != null &&
+    region_riders_behind > 0;
   const barPct = ranked
     ? Math.max(
         2,

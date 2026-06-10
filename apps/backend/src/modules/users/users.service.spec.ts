@@ -528,7 +528,7 @@ describe('UsersService', () => {
     it('returns km/segments + the regional rank for a contributor', async () => {
       (userRepo.query as jest.Mock)
         .mockResolvedValueOnce([{ segments: 12, km: '4284.4' }])
-        .mockResolvedValueOnce([{ rank: 3, total: 40 }]);
+        .mockResolvedValueOnce([{ rank: 3, total: 40, behind: 37 }]);
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         home_region: 'Lombardy',
@@ -542,10 +542,29 @@ describe('UsersService', () => {
         home_region: 'Lombardy',
         rank_in_region: 3,
         region_rider_count: 40,
+        region_riders_behind: 37,
         // ceil(3 / 40 * 100) = 8 → "Top 8%"
         percentile: 8,
       });
       expect(userRepo.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports region_riders_behind = 0 for a last-place rider tied behind others', async () => {
+      // DENSE_RANK gives rank 2 of 3 when two riders tie above the last one;
+      // `behind = 0` is what tells the client the rider is genuinely last.
+      (userRepo.query as jest.Mock)
+        .mockResolvedValueOnce([{ segments: 4, km: '40' }])
+        .mockResolvedValueOnce([{ rank: 2, total: 3, behind: 0 }]);
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        home_region: 'Lombardy',
+      });
+
+      const result = await service.getContribution('user-1');
+
+      expect(result.region_riders_behind).toBe(0);
+      expect(result.rank_in_region).toBe(2);
+      expect(result.region_rider_count).toBe(3);
     });
 
     it('skips ranking when the rider has no home region', async () => {

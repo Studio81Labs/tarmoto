@@ -42,6 +42,13 @@ export class ContributionStatsDto implements ContributionStats {
   @ApiProperty({
     nullable: true,
     description:
+      'Region riders strictly below the viewer by km mapped (tie-aware "ahead of someone" signal; 0 = last/sole); null when unranked.',
+  })
+  region_riders_behind!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
       '"Top N%" = ceil(rank / region_rider_count * 100), 1–100; null when unranked.',
   })
   percentile!: number | null;
