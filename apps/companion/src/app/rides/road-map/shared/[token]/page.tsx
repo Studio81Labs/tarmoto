@@ -161,7 +161,12 @@ export default async function SharedRoadMapPage({
                 variant="ink"
                 accentNumber
                 label={t("Segments ridden")}
-                value={snapshot.stats.ridden_segments}
+                // The highlighted (period-filtered) count, matching the map,
+                // legend, and the "segments highlighted" hero chip. Equal to
+                // `stats.ridden_segments` for an all-time share; for a period
+                // share `stats.ridden_segments` stays the all-time total, which
+                // would contradict the map.
+                value={snapshot.segments.length}
               />
               <MetricTile
                 label={t("Distance ridden")}
