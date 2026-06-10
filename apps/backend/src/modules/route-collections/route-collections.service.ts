@@ -424,7 +424,7 @@ export class RouteCollectionsService {
       throw new NotFoundException('Collection not found');
     }
 
-    return this.buildItemPreviews(collection.id);
+    return this.buildItemPreviews(collection.id, collection.owner_id);
   }
 
   /**
@@ -442,7 +442,7 @@ export class RouteCollectionsService {
       // `getOwned`.
       throw new NotFoundException('Collection not found');
     }
-    return this.buildItemPreviews(collection.id);
+    return this.buildItemPreviews(collection.id, collection.owner_id);
   }
 
   /**
@@ -453,6 +453,7 @@ export class RouteCollectionsService {
    */
   private async buildItemPreviews(
     collectionId: string,
+    ownerId: string,
   ): Promise<RouteCollectionPreviewResponseDto> {
     const items = await this.loadItems(collectionId);
     if (items.length === 0) {
@@ -492,17 +493,27 @@ export class RouteCollectionsService {
     // SUM of day distances; quality = distance-weighted average, NULL-filtered)
     // so a non-owner viewer can render the route rows without the viewer's own
     // trip/ride cache.
+    //
+    // Every query is scoped to `ownerId`. `route_collection_items.trip_id` /
+    // `ride_id` are unconstrained UUIDs and `addItem` doesn't verify route
+    // ownership, so a crafted/stale item could reference another rider's
+    // (possibly private) trip or ride. Filtering on `t.owner_id` /
+    // `rides.user_id` ensures the public/unlisted preview can only ever
+    // surface the collection owner's own routes — a non-owned item falls
+    // through to the empty-geometry / null-summary "missing item" shape.
     const [tripRows, rideRows, tripMetaRows, rideMetaRows] = await Promise.all([
       tripIds.length === 0
         ? Promise.resolve<TripDayRow[]>([])
         : this.dataSource.query<TripDayRow[]>(
-            `SELECT trip_id,
-                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
-             FROM trip_days
-             WHERE trip_id = ANY($2::uuid[])
-               AND route_geom IS NOT NULL
-             ORDER BY trip_id, day_number`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds],
+            `SELECT d.trip_id,
+                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, $1)) AS geometry
+             FROM trip_days d
+             JOIN trips t ON t.id = d.trip_id
+             WHERE d.trip_id = ANY($2::uuid[])
+               AND t.owner_id = $3
+               AND d.route_geom IS NOT NULL
+             ORDER BY d.trip_id, d.day_number`,
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds, ownerId],
           ),
       rideIds.length === 0
         ? Promise.resolve<RideRow[]>([])
@@ -511,8 +522,9 @@ export class RouteCollectionsService {
                     ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
              FROM rides
              WHERE id = ANY($2::uuid[])
+               AND user_id = $3
                AND route_geom IS NOT NULL`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds],
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds, ownerId],
           ),
       tripIds.length === 0
         ? Promise.resolve<TripMetaRow[]>([])
@@ -528,16 +540,18 @@ export class RouteCollectionsService {
              FROM trips t
              LEFT JOIN trip_days d ON d.trip_id = t.id
              WHERE t.id = ANY($1::uuid[])
+               AND t.owner_id = $2
              GROUP BY t.id`,
-            [tripIds],
+            [tripIds, ownerId],
           ),
       rideIds.length === 0
         ? Promise.resolve<RideMetaRow[]>([])
         : this.dataSource.query<RideMetaRow[]>(
             `SELECT id, name, status, distance_km, avg_road_quality
              FROM rides
-             WHERE id = ANY($1::uuid[])`,
-            [rideIds],
+             WHERE id = ANY($1::uuid[])
+               AND user_id = $2`,
+            [rideIds, ownerId],
           ),
     ]);
 

@@ -950,6 +950,17 @@ describe('RouteCollectionsService', () => {
           .filter((sql) => /ST_AsGeoJSON/.test(sql))
           .every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
       ).toBe(true);
+      // Every query is owner-scoped so a crafted cross-owner item can't leak
+      // another rider's route (geometry or summary) through the public preview.
+      expect(
+        calls.every((sql) => /t\.owner_id\s*=|user_id\s*=/.test(sql)),
+      ).toBe(true);
+      // The owner id is threaded into each query's params.
+      expect(
+        queryMock.mock.calls.every((c) =>
+          (c[1] as unknown[]).includes(ownerId),
+        ),
+      ).toBe(true);
     });
 
     it('returns empty lines for items whose underlying trip/ride has been deleted', async () => {
