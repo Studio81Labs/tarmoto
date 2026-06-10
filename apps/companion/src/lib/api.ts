@@ -643,6 +643,15 @@ export interface RouteCollectionPreviewItem {
   kind: "trip" | "ride";
   /** Each entry is a polyline as an array of [lng, lat] pairs (GeoJSON LineString). */
   lines: number[][][];
+  // Per-item summary fields so a non-owner viewer — the public shared page and
+  // the member discover view — can render the route rows without the viewer's
+  // own trip/ride cache. All `null` for a deleted item; `num_days` is `null`
+  // for rides (a single recorded day).
+  title: string | null;
+  num_days: number | null;
+  distance_km: number | null;
+  status: string | null;
+  quality_avg: number | null;
 }
 
 export interface RouteCollectionPreviewResponse {
