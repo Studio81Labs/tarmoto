@@ -86,7 +86,7 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
 
   return (
     <Link
-      href={`/community/collections/shared/${encodeURIComponent(collection.slug)}`}
+      href={`/community/collections/discover/${encodeURIComponent(collection.slug)}`}
       className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
     >
       <div className="grid h-[120px] grid-cols-3 grid-rows-2 bg-paper">

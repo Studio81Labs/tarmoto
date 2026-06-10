@@ -1,4 +1,7 @@
 import { Route as RouteIcon } from "lucide-react";
+import { Mono, QualityBars } from "@tarmoto/ui";
+import { t } from "@/i18n";
+import type { RouteCollectionPreviewItem } from "@/lib/api";
 
 /**
  * Pure, hook-free presentational atoms for a collection route row. Shared by
@@ -94,5 +97,72 @@ export function StatusPill({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+/**
+ * One read-only collection route row (numbered, non-interactive). Rendered from
+ * the per-item preview summaries (#689) so it works for any viewer — the public
+ * shared page and the in-app member discover view both use it. `author` is the
+ * collection owner (every item belongs to them).
+ */
+export function CollectionRouteRow({
+  route,
+  index,
+  author,
+}: {
+  route: RouteCollectionPreviewItem;
+  index: number;
+  author: string;
+}) {
+  const isRide = route.kind === "ride";
+  const daysLabel =
+    route.num_days != null
+      ? route.num_days === 1
+        ? t("1 day")
+        : t("{count} days", { count: route.num_days })
+      : isRide
+        ? t("1 day")
+        : null;
+  const metaParts = [daysLabel, author || null].filter(Boolean);
+  return (
+    <li className="grid grid-cols-[32px_64px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-cream p-3.5 sm:grid-cols-[32px_64px_minmax(0,1fr)_82px_96px_auto] sm:gap-3.5">
+      <Mono className="text-center text-[16px] font-extrabold text-fg-mute">
+        {index}
+      </Mono>
+      <RouteThumb
+        lines={route.lines}
+        label={route.title ?? t("Route")}
+        className="h-[42px] w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-paper"
+      />
+      <div className="min-w-0">
+        <div className="truncate text-[15px] font-bold text-ink">
+          {route.title ?? t("Untitled route")}
+        </div>
+        {metaParts.length > 0 && (
+          <Mono className="mt-0.5 block truncate text-[10.5px] uppercase text-fg-mute">
+            {metaParts.join(" · ")}
+          </Mono>
+        )}
+      </div>
+      <div className="text-right max-sm:hidden">
+        {route.distance_km != null && (
+          <>
+            <Mono className="text-[14px] font-bold text-ink">
+              {Math.round(route.distance_km)}
+            </Mono>
+            <Mono className="block text-[10px] text-fg-mute">{t("KM")}</Mono>
+          </>
+        )}
+      </div>
+      <div className="justify-self-start max-sm:hidden">
+        {route.status && <StatusPill status={route.status} />}
+      </div>
+      <div className="justify-self-end">
+        {route.quality_avg != null && (
+          <QualityBars q={route.quality_avg} size={5} />
+        )}
+      </div>
+    </li>
   );
 }

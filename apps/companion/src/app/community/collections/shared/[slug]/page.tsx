@@ -8,20 +8,16 @@ import {
   Route as RouteIcon,
   Shuffle,
 } from "lucide-react";
-import { Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import { Mono, Stamp } from "@tarmoto/ui";
 import {
   fetchSharedCollection,
   fetchSharedCollectionPreview,
 } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
-import {
-  RouteThumb,
-  StatusPill,
-} from "@/components/community/collection-route-atoms";
+import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { formatRelativeTime } from "@/lib/utils";
-import type { RouteCollectionPreviewItem } from "@/lib/api";
-import { CollectionPreviewMap } from "./_components/CollectionPreviewMap";
+import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 
 export const dynamic = "force-dynamic";
 
@@ -203,7 +199,7 @@ export default async function SharedCollectionPage({
         ) : (
           <ul className="mb-[30px] flex flex-col gap-2.5">
             {routes.map((route, idx) => (
-              <SharedRouteRow
+              <CollectionRouteRow
                 key={route.item_id}
                 route={route}
                 index={idx + 1}
@@ -245,72 +241,5 @@ function MetaChip({ children }: { children: React.ReactNode }) {
     <span className="inline-flex items-center gap-[7px] whitespace-nowrap rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
       {children}
     </span>
-  );
-}
-
-/**
- * One read-only route row on the public shared page. Not a link — a public
- * viewer can't open the owner's auth-gated trip/ride detail; the header CTA
- * is the conversion path. Author is the collection owner (every item belongs
- * to them — see the per-item summaries backend note).
- */
-function SharedRouteRow({
-  route,
-  index,
-  author,
-}: {
-  route: RouteCollectionPreviewItem;
-  index: number;
-  author: string;
-}) {
-  const isRide = route.kind === "ride";
-  const daysLabel =
-    route.num_days != null
-      ? route.num_days === 1
-        ? t("1 day")
-        : t("{count} days", { count: route.num_days })
-      : isRide
-        ? t("1 day")
-        : null;
-  const metaParts = [daysLabel, author || null].filter(Boolean);
-  return (
-    <li className="grid grid-cols-[32px_64px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-cream p-3.5 sm:grid-cols-[32px_64px_minmax(0,1fr)_82px_96px_auto] sm:gap-3.5">
-      <Mono className="text-center text-[16px] font-extrabold text-fg-mute">
-        {index}
-      </Mono>
-      <RouteThumb
-        lines={route.lines}
-        label={route.title ?? t("Route")}
-        className="h-[42px] w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-paper"
-      />
-      <div className="min-w-0">
-        <div className="truncate text-[15px] font-bold text-ink">
-          {route.title ?? t("Untitled route")}
-        </div>
-        {metaParts.length > 0 && (
-          <Mono className="mt-0.5 block truncate text-[10.5px] uppercase text-fg-mute">
-            {metaParts.join(" · ")}
-          </Mono>
-        )}
-      </div>
-      <div className="text-right max-sm:hidden">
-        {route.distance_km != null && (
-          <>
-            <Mono className="text-[14px] font-bold text-ink">
-              {Math.round(route.distance_km)}
-            </Mono>
-            <Mono className="block text-[10px] text-fg-mute">{t("KM")}</Mono>
-          </>
-        )}
-      </div>
-      <div className="justify-self-start max-sm:hidden">
-        {route.status && <StatusPill status={route.status} />}
-      </div>
-      <div className="justify-self-end">
-        {route.quality_avg != null && (
-          <QualityBars q={route.quality_avg} size={5} />
-        )}
-      </div>
-    </li>
   );
 }
