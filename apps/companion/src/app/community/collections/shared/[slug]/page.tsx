@@ -91,7 +91,7 @@ export default async function SharedCollectionPage({
   );
 
   return (
-    <div className="min-h-screen bg-cream text-ink">
+    <div className="flex min-h-screen flex-col bg-cream text-ink">
       {/* sticky brand header */}
       <header className="sticky top-0 z-30 border-b border-line bg-cream/[0.86] backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex h-[60px] max-w-[980px] items-center justify-between gap-4 px-7">
@@ -126,7 +126,7 @@ export default async function SharedCollectionPage({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
+      <main className="mx-auto w-full max-w-[980px] flex-1 px-7 pb-16 pt-8">
         {/* hero */}
         <section className="mb-[26px] rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="mb-2.5 flex items-center gap-3">
