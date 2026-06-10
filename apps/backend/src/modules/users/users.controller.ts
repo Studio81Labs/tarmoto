@@ -45,6 +45,7 @@ import {
 import { PublicProfileDto } from './dto/public-profile.dto.js';
 import { MeProfileDto } from './dto/me-profile.dto.js';
 import { MonthlyStatsDto } from './dto/monthly-stats.dto.js';
+import { ContributionStatsDto } from './dto/contribution-stats.dto.js';
 
 @ApiTags('users')
 @Controller('users')
@@ -106,6 +107,24 @@ export class UsersController {
   @ApiResponse({ status: 200, type: MonthlyStatsDto })
   async getMonthlyStats(@Req() req: express.Request): Promise<MonthlyStatsDto> {
     return this.usersService.getMonthlyStats(req.user!.userId);
+  }
+
+  // Literal `me/...` segment — declared before `:userId` for the same reason
+  // as the others above.
+  @Get('me/contribution')
+  @ApiOperation({
+    summary: "The rider's road-quality contribution for the sidebar badge",
+    description:
+      'Distinct km/segments the rider has contributed road-quality data for, ' +
+      'plus their rank + percentile within their home region by the same ' +
+      'metric. Rank fields are null when the rider has no home region set or ' +
+      'has contributed nothing.',
+  })
+  @ApiResponse({ status: 200, type: ContributionStatsDto })
+  async getContribution(
+    @Req() req: express.Request,
+  ): Promise<ContributionStatsDto> {
+    return this.usersService.getContribution(req.user!.userId);
   }
 
   @Get(':userId/profile')

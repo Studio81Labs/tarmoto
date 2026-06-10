@@ -28,6 +28,7 @@ import {
 import { PublicProfileDto } from './dto/public-profile.dto.js';
 import { MeProfileDto } from './dto/me-profile.dto.js';
 import { MonthlyStatsDto } from './dto/monthly-stats.dto.js';
+import { ContributionStatsDto } from './dto/contribution-stats.dto.js';
 import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
 import { toUserResponse } from './user-response.mapper.js';
 
@@ -231,6 +232,112 @@ export class UsersService {
       last_synced_at: syncRow?.synced
         ? new Date(syncRow.synced).toISOString()
         : null,
+    };
+  }
+
+  /**
+   * "Your contribution" sidebar badge (`GET /users/me/contribution`).
+   *
+   * `km_mapped` / `segments_mapped` are the rider's road-quality
+   * contribution: distinct road segments they've uploaded sensor readings
+   * for (the `surface_readings` table; one row per ~100m segment per ride,
+   * only persisted when `road_data_contribution` is on). De-duplicating by
+   * `road_segment_id` means riding the same road twice doesn't inflate the
+   * total — distinct from "distance ridden".
+   *
+   * The regional rank places the rider among other riders in their
+   * `home_region` by the same metric, reusing the leaderboard eligibility
+   * (excludes soft-deleted + `profile_visibility = 'private'`, except the
+   * viewer). All rank fields are null when the rider has no region or hasn't
+   * contributed anything.
+   */
+  async getContribution(userId: string): Promise<ContributionStatsDto> {
+    // Per-rider totals. The inner DISTINCT collapses repeat readings of the
+    // same segment to one row (length_m is functionally dependent on the
+    // segment id), so SUM/COUNT count each contributed segment once.
+    const totalsRows = await this.userRepo.query<
+      { segments: string | null; km: string | null }[]
+    >(
+      `SELECT COUNT(*)::int AS segments,
+              COALESCE(SUM(length_m), 0) / 1000.0 AS km
+       FROM (
+         SELECT DISTINCT sr.road_segment_id, rs.length_m
+         FROM surface_readings sr
+         JOIN road_segments rs ON rs.id = sr.road_segment_id
+         WHERE sr.user_id = $1
+       ) d`,
+      [userId],
+    );
+    const segments_mapped = Number(totalsRows[0]?.segments ?? 0);
+    const km_mapped = Math.round(Number(totalsRows[0]?.km ?? 0) * 10) / 10;
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const home_region = user?.home_region ?? null;
+
+    // No region, or nothing contributed → nothing to rank.
+    if (!home_region || segments_mapped === 0) {
+      return {
+        km_mapped,
+        segments_mapped,
+        home_region,
+        rank_in_region: null,
+        region_rider_count: null,
+        percentile: null,
+      };
+    }
+
+    // Regional rank. `region_users` is scoped first (case-insensitive region
+    // match, not deleted, not private — except the viewer) so the per-user
+    // aggregation only touches that region's contributors.
+    const rankRows = await this.userRepo.query<
+      { rank: number | null; total: string | null }[]
+    >(
+      `WITH region_users AS (
+         SELECT u.id
+         FROM users u
+         LEFT JOIN privacy_preferences pp ON pp.user_id = u.id
+         WHERE u.deleted_at IS NULL
+           AND LOWER(TRIM(u.home_region)) = LOWER(TRIM($2))
+           AND (
+             pp.profile_visibility IS NULL
+             OR pp.profile_visibility <> 'private'
+             OR u.id = $1
+           )
+       ),
+       per_user AS (
+         SELECT d.user_id, SUM(d.length_m) AS m
+         FROM (
+           SELECT DISTINCT sr.user_id, sr.road_segment_id, rs.length_m
+           FROM surface_readings sr
+           JOIN road_segments rs ON rs.id = sr.road_segment_id
+           WHERE sr.user_id IN (SELECT id FROM region_users)
+         ) d
+         GROUP BY d.user_id
+       ),
+       ranked AS (
+         SELECT user_id, DENSE_RANK() OVER (ORDER BY m DESC) AS rank
+         FROM per_user
+         WHERE m > 0
+       )
+       SELECT (SELECT rank FROM ranked WHERE user_id = $1)::int AS rank,
+              (SELECT COUNT(*) FROM ranked)::int AS total`,
+      [userId, home_region],
+    );
+
+    const rank_in_region = rankRows[0]?.rank ?? null;
+    const region_rider_count = Number(rankRows[0]?.total ?? 0) || null;
+    const percentile =
+      rank_in_region != null && region_rider_count
+        ? Math.max(1, Math.ceil((rank_in_region / region_rider_count) * 100))
+        : null;
+
+    return {
+      km_mapped,
+      segments_mapped,
+      home_region,
+      rank_in_region,
+      region_rider_count,
+      percentile,
     };
   }
 

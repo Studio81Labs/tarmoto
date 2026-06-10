@@ -7,6 +7,7 @@ export * from "./constants";
 export * from "./device-family";
 export * from "./geo";
 export * from "./gpx-kml-import";
+export * from "./contribution";
 export * from "./lean-angle";
 export * from "./me-profile";
 export * from "./monthly-stats";

@@ -865,6 +865,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/users/me/contribution": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The rider's road-quality contribution for the sidebar badge
+     * @description Distinct km/segments the rider has contributed road-quality data for, plus their rank + percentile within their home region by the same metric. Rank fields are null when the rider has no home region set or has contributed nothing.
+     */
+    get: operations["UsersController_getContribution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/{userId}/profile": {
     parameters: {
       query?: never;
@@ -3531,6 +3551,20 @@ export interface components {
       /** @description Latest mobile upload, or null. */
       last_synced_at: string | null;
     };
+    ContributionStatsDto: {
+      /** @description Distinct road-segment length the rider contributed quality data to, in km. */
+      km_mapped: number;
+      /** @description Count of distinct road segments the rider contributed quality data to. */
+      segments_mapped: number;
+      /** @description The rider's home_region, or null when unset. */
+      home_region: string | null;
+      /** @description 1-based DENSE_RANK within the region by km mapped; null when the rider has no region or no contribution. */
+      rank_in_region: number | null;
+      /** @description Riders ranked in the region (the rank denominator); null when unranked. */
+      region_rider_count: number | null;
+      /** @description "Top N%" = ceil(rank / region_rider_count * 100), 1–100; null when unranked. */
+      percentile: number | null;
+    };
     PublicProfileDto: {
       id: string;
       display_name: string;
@@ -5110,6 +5144,8 @@ export type SchemaUserPreferencesDto =
 export type SchemaUpdateProfileDto = components["schemas"]["UpdateProfileDto"];
 export type SchemaMeProfileDto = components["schemas"]["MeProfileDto"];
 export type SchemaMonthlyStatsDto = components["schemas"]["MonthlyStatsDto"];
+export type SchemaContributionStatsDto =
+  components["schemas"]["ContributionStatsDto"];
 export type SchemaPublicProfileDto = components["schemas"]["PublicProfileDto"];
 export type SchemaRouteGeometryPointDto =
   components["schemas"]["RouteGeometryPointDto"];
@@ -6663,6 +6699,25 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MonthlyStatsDto"];
+        };
+      };
+    };
+  };
+  UsersController_getContribution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContributionStatsDto"];
         };
       };
     };

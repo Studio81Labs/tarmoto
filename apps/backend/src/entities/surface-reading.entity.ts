@@ -13,6 +13,9 @@ import { User } from './user.entity.js';
 @Entity('surface_readings')
 @Index('idx_surface_readings_segment', ['road_segment_id'])
 @Index('idx_surface_readings_time', ['recorded_at'])
+// `idx_surface_readings_user` (partial, WHERE user_id IS NOT NULL) is created
+// by the AddAccountDeletion migration and serves these contribution queries
+// too — not re-declared here so the entity doesn't fight its partial form.
 export class SurfaceReading {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
