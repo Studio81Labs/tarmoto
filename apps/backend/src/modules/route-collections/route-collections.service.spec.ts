@@ -84,6 +84,9 @@ describe('RouteCollectionsService', () => {
     followRepo = {
       exists: jest.fn().mockResolvedValue(false),
       findOne: jest.fn().mockResolvedValue(null),
+      // `toDetailResponse` counts followers for the detail-page stats; default
+      // to 0 so the many detail-returning paths don't need per-test wiring.
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockImplementation((data) => ({
         id: 'follow-new',
         created_at: new Date('2026-04-20T11:00:00Z'),
@@ -437,13 +440,13 @@ describe('RouteCollectionsService', () => {
     // count); a single capturing qb mock collects every `andWhere` clause so
     // we can assert the owner-exclusion filter is (or isn't) applied.
     function mockDiscoverQb(andWhereClauses: string[]) {
+      // `andWhere` is declared separately so its capturing implementation can
+      // reference `qb` without a circular initializer (TS7022).
+      const andWhere = jest.fn();
       const qb = {
         leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn((clause: string) => {
-          andWhereClauses.push(clause);
-          return qb;
-        }),
+        andWhere,
         select: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
         groupBy: jest.fn().mockReturnThis(),
@@ -455,6 +458,10 @@ describe('RouteCollectionsService', () => {
         getRawMany: jest.fn().mockResolvedValue([]),
         getCount: jest.fn().mockResolvedValue(0),
       };
+      andWhere.mockImplementation((clause: string) => {
+        andWhereClauses.push(clause);
+        return qb;
+      });
       return qb;
     }
 
@@ -550,6 +557,18 @@ describe('RouteCollectionsService', () => {
       expect(result.viewer_is_following).toBe(false);
     });
 
+    it('includes the follower count from the follow repo', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      (followRepo.count as jest.Mock).mockResolvedValueOnce(7);
+      const result = await service.getOwned(ownerId, collectionId);
+      expect(result.follower_count).toBe(7);
+      expect(followRepo.count).toHaveBeenCalledWith({
+        where: { collection_id: collectionId },
+      });
+    });
+
     it('404s for non-owners (no 403 — id existence is not a side channel)', async () => {
       (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
         baseCollection,
@@ -564,6 +583,35 @@ describe('RouteCollectionsService', () => {
       await expect(service.getOwned(ownerId, collectionId)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getPreviewOwned', () => {
+    it("returns item previews for the owner's own collection (any visibility)", async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'private',
+      });
+      // Empty collection → no geometry queries, `routes` is [].
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce([]);
+      const result = await service.getPreviewOwned(ownerId, collectionId);
+      expect(result.routes).toEqual([]);
+    });
+
+    it('404s for a non-owner (no 403 — id existence is not a side channel)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      await expect(
+        service.getPreviewOwned(otherId, collectionId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s when the collection does not exist', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.getPreviewOwned(ownerId, collectionId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

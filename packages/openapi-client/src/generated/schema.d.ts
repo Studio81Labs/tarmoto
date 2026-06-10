@@ -1062,591 +1062,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/sensor/upload": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Upload batched accelerometer readings
-     * @description Upload a batch of sensor readings collected during a ride. Readings are processed server-side to update road quality scores.
-     */
-    post: operations["SensorController_upload"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trip-shares": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create a shareable invite link for a trip snapshot (US-35) */
-    post: operations["TripSharesController_create"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trip-shares/mine": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List the caller's own trip shares */
-    get: operations["TripSharesController_listMine"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trip-shares/{token}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** View a shared trip by token (no auth required, read-only) */
-    get: operations["TripSharesController_getByToken"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trip-shares/{token}/join": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Accept a shared trip token into collaboration membership */
-    post: operations["TripSharesController_joinByToken"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trip-shares/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Revoke a trip share (owner only) */
-    delete: operations["TripSharesController_revoke"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/trips/{tripId}/activity": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List recent activity for a trip (members only) */
-    get: operations["TripActivityController_list"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/map-shares": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create a shareable read-only link for a personal road-map snapshot (US-50) */
-    post: operations["MapSharesController_create"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/map-shares/mine": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List the caller's own road-map shares */
-    get: operations["MapSharesController_listMine"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/map-shares/{token}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** View a shared road-map snapshot by token (no auth required, read-only) */
-    get: operations["MapSharesController_getByToken"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/map-shares/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Revoke a map share (owner only) */
-    delete: operations["MapSharesController_revoke"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/me": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List the caller's own route collections (US-56) */
-    get: operations["RouteCollectionsController_listMine"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/me/library": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List the caller's owned and followed collections in one payload (US-56 follow/save). */
-    get: operations["RouteCollectionsController_listLibrary"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/discover": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Browse public collections (search + popularity ranked) */
-    get: operations["RouteCollectionsController_discover"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create a new route collection */
-    post: operations["RouteCollectionsController_create"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/by-slug/{slug}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read an unlisted/public collection by its slug (auth optional). Personalises `viewer_is_following` / `viewer_is_owner` when a valid Bearer token is supplied. */
-    get: operations["RouteCollectionsController_getBySlug"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/by-slug/{slug}/preview": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Map preview geometries (simplified polylines) for the items in a public/unlisted collection. No auth — visibility gating mirrors `/collections/by-slug/:slug`. */
-    get: operations["RouteCollectionsController_getPreviewBySlug"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read a collection the caller owns. Non-owners must use `/collections/by-slug/:slug`. */
-    get: operations["RouteCollectionsController_getOwned"];
-    put?: never;
-    post?: never;
-    /** Delete a collection (owner only) */
-    delete: operations["RouteCollectionsController_delete"];
-    options?: never;
-    head?: never;
-    /** Update collection metadata (owner only) */
-    patch: operations["RouteCollectionsController_update"];
-    trace?: never;
-  };
-  "/api/v1/collections/{id}/items": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Add a trip or ride to a collection (owner only). Duplicate adds return the existing row. */
-    post: operations["RouteCollectionsController_addItem"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/{id}/items/reorder": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Reorder all items in a collection (owner only). Send the full list of item ids in the desired order. */
-    patch: operations["RouteCollectionsController_reorderItems"];
-    trace?: never;
-  };
-  "/api/v1/collections/{id}/items/{itemId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Remove an item from a collection (owner only) */
-    delete: operations["RouteCollectionsController_removeItem"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/collections/{id}/follow": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Follow a collection so it appears in the caller's library (idempotent). */
-    post: operations["RouteCollectionsController_follow"];
-    /** Unfollow a collection (idempotent). */
-    delete: operations["RouteCollectionsController_unfollow"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List user's rides */
-    get: operations["RidesController_list"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/start": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Start a new ride */
-    post: operations["RidesController_start"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/import": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Import a GPX file as a route */
-    post: operations["RidesController_importGpx"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/export.csv": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Export all of the caller's rides as a CSV sheet */
-    get: operations["RidesController_exportAllCsv"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/export.gpx": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Export all of the caller's rides as a multi-track GPX */
-    get: operations["RidesController_exportAllGpx"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/tracks": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List simplified track geometries for map overlay */
-    get: operations["RidesController_tracks"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/stats": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Aggregate KPIs for a filtered set of rides */
-    get: operations["RidesController_stats"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/stats/breakdown": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Surface + curviness distance breakdown for a filtered set */
-    get: operations["RidesController_breakdown"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/{rideId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get ride details with stats */
-    get: operations["RidesController_getDetail"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Rename a ride */
-    patch: operations["RidesController_rename"];
-    trace?: never;
-  };
-  "/api/v1/rides/{rideId}/stop": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Stop an active ride */
-    post: operations["RidesController_stop"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/{rideId}/gpx": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Export ride as GPX */
-    get: operations["RidesController_exportGpx"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/rides/{rideId}/csv": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Export ride stats as CSV */
-    get: operations["RidesController_exportRideCsv"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/trips": {
     parameters: {
       query?: never;
@@ -1947,6 +1362,108 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/trips/{tripId}/activity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List recent activity for a trip (members only) */
+    get: operations["TripActivityController_list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trip-shares": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a shareable invite link for a trip snapshot (US-35) */
+    post: operations["TripSharesController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trip-shares/mine": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the caller's own trip shares */
+    get: operations["TripSharesController_listMine"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trip-shares/{token}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** View a shared trip by token (no auth required, read-only) */
+    get: operations["TripSharesController_getByToken"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trip-shares/{token}/join": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept a shared trip token into collaboration membership */
+    post: operations["TripSharesController_joinByToken"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trip-shares/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke a trip share (owner only) */
+    delete: operations["TripSharesController_revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/commute/routes": {
     parameters: {
       query?: never;
@@ -2045,6 +1562,506 @@ export interface paths {
     };
     /** Get commute statistics */
     get: operations["CommuteController_getStats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/sensor/upload": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Upload batched accelerometer readings
+     * @description Upload a batch of sensor readings collected during a ride. Readings are processed server-side to update road quality scores.
+     */
+    post: operations["SensorController_upload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/map-shares": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a shareable read-only link for a personal road-map snapshot (US-50) */
+    post: operations["MapSharesController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/map-shares/mine": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the caller's own road-map shares */
+    get: operations["MapSharesController_listMine"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/map-shares/{token}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** View a shared road-map snapshot by token (no auth required, read-only) */
+    get: operations["MapSharesController_getByToken"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/map-shares/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke a map share (owner only) */
+    delete: operations["MapSharesController_revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the caller's own route collections (US-56) */
+    get: operations["RouteCollectionsController_listMine"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/me/library": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the caller's owned and followed collections in one payload (US-56 follow/save). */
+    get: operations["RouteCollectionsController_listLibrary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/discover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Browse public collections (search + popularity ranked) */
+    get: operations["RouteCollectionsController_discover"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a new route collection */
+    post: operations["RouteCollectionsController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/by-slug/{slug}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read an unlisted/public collection by its slug (auth optional). Personalises `viewer_is_following` / `viewer_is_owner` when a valid Bearer token is supplied. */
+    get: operations["RouteCollectionsController_getBySlug"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/by-slug/{slug}/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Map preview geometries (simplified polylines) for the items in a public/unlisted collection. No auth — visibility gating mirrors `/collections/by-slug/:slug`. */
+    get: operations["RouteCollectionsController_getPreviewBySlug"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/{id}/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Map preview geometries (simplified polylines) for the items in a collection the caller owns — any visibility, including private. Powers the owner detail-page route thumbnails. Non-owners use `/collections/by-slug/:slug/preview`. */
+    get: operations["RouteCollectionsController_getPreviewOwned"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read a collection the caller owns. Non-owners must use `/collections/by-slug/:slug`. */
+    get: operations["RouteCollectionsController_getOwned"];
+    put?: never;
+    post?: never;
+    /** Delete a collection (owner only) */
+    delete: operations["RouteCollectionsController_delete"];
+    options?: never;
+    head?: never;
+    /** Update collection metadata (owner only) */
+    patch: operations["RouteCollectionsController_update"];
+    trace?: never;
+  };
+  "/api/v1/collections/{id}/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add a trip or ride to a collection (owner only). Duplicate adds return the existing row. */
+    post: operations["RouteCollectionsController_addItem"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/{id}/items/reorder": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Reorder all items in a collection (owner only). Send the full list of item ids in the desired order. */
+    patch: operations["RouteCollectionsController_reorderItems"];
+    trace?: never;
+  };
+  "/api/v1/collections/{id}/items/{itemId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove an item from a collection (owner only) */
+    delete: operations["RouteCollectionsController_removeItem"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/collections/{id}/follow": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Follow a collection so it appears in the caller's library (idempotent). */
+    post: operations["RouteCollectionsController_follow"];
+    /** Unfollow a collection (idempotent). */
+    delete: operations["RouteCollectionsController_unfollow"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List user's rides */
+    get: operations["RidesController_list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a new ride */
+    post: operations["RidesController_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/import": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Import a GPX file as a route */
+    post: operations["RidesController_importGpx"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/export.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Export all of the caller's rides as a CSV sheet */
+    get: operations["RidesController_exportAllCsv"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/export.gpx": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Export all of the caller's rides as a multi-track GPX */
+    get: operations["RidesController_exportAllGpx"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/tracks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List simplified track geometries for map overlay */
+    get: operations["RidesController_tracks"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Aggregate KPIs for a filtered set of rides */
+    get: operations["RidesController_stats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/stats/breakdown": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Surface + curviness distance breakdown for a filtered set */
+    get: operations["RidesController_breakdown"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/{rideId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get ride details with stats */
+    get: operations["RidesController_getDetail"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Rename a ride */
+    patch: operations["RidesController_rename"];
+    trace?: never;
+  };
+  "/api/v1/rides/{rideId}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop an active ride */
+    post: operations["RidesController_stop"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/{rideId}/gpx": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Export ride as GPX */
+    get: operations["RidesController_exportGpx"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/rides/{rideId}/csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Export ride stats as CSV */
+    get: operations["RidesController_exportRideCsv"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3116,12 +3133,6 @@ export interface components {
       /** @default 200 */
       buffer_m: number;
     };
-    BadgeProgressDto: {
-      current: number;
-      bronze: number;
-      silver: number;
-      gold: number;
-    };
     ProgressionDto: {
       /** @description Total XP, derived from lifetime stats. */
       xp: number;
@@ -3137,6 +3148,12 @@ export interface components {
       next_tier_xp: number | null;
       /** @description XP remaining to the next tier; 0 at the top. */
       xp_to_next_tier: number;
+    };
+    BadgeProgressDto: {
+      current: number;
+      bronze: number;
+      silver: number;
+      gold: number;
     };
     BadgeDto: {
       key: string;
@@ -3668,457 +3685,6 @@ export interface components {
       /** @description Total clones after this one. */
       clone_count: number;
     };
-    CalibrationDto: {
-      /** @description Mean accelerometer X (m/s²) over calibration window */
-      axis_mean_x: number;
-      /** @description Mean accelerometer Y (m/s²) over calibration window */
-      axis_mean_y: number;
-      /** @description Mean accelerometer Z (m/s²) over calibration window */
-      axis_mean_z: number;
-      /** @description Std accelerometer X (m/s²) over calibration window */
-      axis_std_x: number;
-      /** @description Std accelerometer Y (m/s²) over calibration window */
-      axis_std_y: number;
-      /** @description Std accelerometer Z (m/s²) over calibration window */
-      axis_std_z: number;
-      /** @description Number of samples that contributed to the mean / std */
-      sample_count: number;
-      /** @description true when the rider started moving before the full target window elapsed and the capture was truncated. A truncated window may still be usable if the sample count is above the floor. */
-      truncated: boolean;
-    };
-    SensorReadingDto: {
-      /** @description Unix timestamp milliseconds */
-      t: number;
-      /** @description Accelerometer X (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass — see UploadSensorDataDto.client_preprocessing_version for the marker. */
-      ax: number;
-      /** @description Accelerometer Y (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass. */
-      ay: number;
-      /** @description Accelerometer Z (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass. */
-      az: number;
-      lat?: number;
-      lng?: number;
-      /** @description Speed in m/s */
-      speed?: number;
-      /** @description Estimated bike-frame roll in degrees (signed). Absent when the client's orientation filter was still calibrating or the field wasn't computed. */
-      lean_deg?: number;
-    };
-    RideTagEventDto: {
-      /** @description Unix timestamp milliseconds at the moment of the tap */
-      t: number;
-      lat?: number;
-      lng?: number;
-      /**
-       * @description Rider-facing surface label. Backend normalises to (surface_type, quality_class) via SURFACE_LABEL_TO_TRUTH from @tarmoto/shared.
-       * @enum {string}
-       */
-      label:
-        | "smooth_asphalt"
-        | "rough_asphalt"
-        | "cobblestone"
-        | "gravel"
-        | "dirt"
-        | "pothole";
-    };
-    UploadSensorDataDto: {
-      /** Format: uuid */
-      ride_id: string;
-      /** @example iPhone 15 Pro */
-      device_model?: string;
-      /**
-       * @description Idle-baseline calibration values captured at ride start (issue
-       *     #494). Optional — older client builds and rides whose calibration
-       *     window never reached the minimum sample count upload without this
-       *     block. Backend treats absent calibration as `calibration_quality:
-       *     null` on every row in the batch (training pipeline can choose to
-       *     drop such rows).
-       */
-      calibration?: components["schemas"]["CalibrationDto"];
-      /**
-       * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model.
-       * @example rsc-v1.0.0
-       */
-      client_model_version?: string;
-      /**
-       * @description On-device preprocessing pipeline marker (issue #493). `lp22-v1` = 4th-order Butterworth low-pass at 22 Hz cutoff applied to ax/ay/az at sample ingest. Null/absent means raw axes (pre-#493 clients or a profile that disabled the filter).
-       * @example lp22-v1
-       */
-      client_preprocessing_version?: string;
-      readings: components["schemas"]["SensorReadingDto"][];
-      /**
-       * @description Rider-asserted surface tags captured during the ride (research
-       *     issue #7). Optional — most rides will not run the tagging UI, and
-       *     the sensor pipeline must keep working when the array is absent.
-       *     The backend stores tags both verbatim (`ride_tag_events`) and as
-       *     a per-window join (`surface_readings.rider_*_label`) so future
-       *     training queries can read either resolution.
-       */
-      tag_events?: components["schemas"]["RideTagEventDto"][];
-    };
-    UploadResponseDto: {
-      /** @description Number of readings accepted */
-      accepted: number;
-      /** @description Road segments that got new quality data */
-      segments_updated: number;
-    };
-    CreateTripShareDto: {
-      /** @description Display title for the shared trip (shown in listings). */
-      title: string;
-      /** @description Full client-side trip snapshot (days, waypoints, route geometry). Stored as JSONB and returned verbatim to public viewers. */
-      snapshot: {
-        [key: string]: unknown;
-      };
-      /** @description Persisted server trip id to attach to this share. When present, authenticated recipients can accept the share token into collaboration membership. */
-      trip_id?: string | null;
-    };
-    TripShareResponseDto: {
-      id: string;
-      share_token: string;
-      share_url: string;
-      trip_id: string | null;
-      title: string;
-      view_count: number;
-      created_at: string;
-      updated_at: string;
-    };
-    TripShareListResponseDto: {
-      items: components["schemas"]["TripShareResponseDto"][];
-      total: number;
-    };
-    TripSharePublicDto: {
-      share_token: string;
-      /** @description Server trip id when this public preview can be accepted into collaboration; null for legacy snapshot-only shares. */
-      trip_id: string | null;
-      title: string;
-      owner_name: string;
-      /** @description The full trip snapshot as captured at share time. Shape mirrors the companion `Trip` type; not validated server-side, the viewer renders it as-is. */
-      snapshot: {
-        [key: string]: unknown;
-      };
-      /** @description Total times this token has been fetched (post-increment). */
-      view_count: number;
-      created_at: string;
-      updated_at: string;
-    };
-    TripShareJoinResponseDto: {
-      trip_id: string;
-      /** @description Companion URL for opening the joined trip in the planner. */
-      planner_url: string;
-    };
-    TripActivityEntryDto: {
-      id: string;
-      trip_id: string;
-      actor_id: string | null;
-      actor_name: string | null;
-      /** @enum {string} */
-      action:
-        | "member_joined"
-        | "member_left"
-        | "member_invited"
-        | "trip_updated"
-        | "trip_generated"
-        | "suggestion_created"
-        | "suggestion_deleted"
-        | "suggestion_voted"
-        | "suggestion_vote_removed"
-        | "suggestion_accepted"
-        | "suggestion_rejected";
-      /** @description Action-specific structured payload. Shape depends on `action`. */
-      payload: Record<string, never>;
-      created_at: string;
-    };
-    TripActivityListResponseDto: {
-      activity: components["schemas"]["TripActivityEntryDto"][];
-    };
-    CreateMapShareDto: {
-      /** @description Display title for the shared road map (shown in listings). */
-      title: string;
-      /** @description Snapshot of the rider exploration state at share time (totals + ridden segment ids/metadata). Stored as JSONB and returned verbatim to public viewers. */
-      snapshot: {
-        [key: string]: unknown;
-      };
-    };
-    MapShareResponseDto: {
-      id: string;
-      share_token: string;
-      share_url: string;
-      title: string;
-      view_count: number;
-      created_at: string;
-      updated_at: string;
-    };
-    MapShareListResponseDto: {
-      items: components["schemas"]["MapShareResponseDto"][];
-      total: number;
-    };
-    MapSharePublicDto: {
-      share_token: string;
-      title: string;
-      owner_name: string;
-      /** @description The full road-map snapshot as captured at share time. Shape mirrors the companion `MapShareSnapshot` type; not validated server-side. */
-      snapshot: {
-        [key: string]: unknown;
-      };
-      /** @description Total times this token has been fetched (post-increment). */
-      view_count: number;
-      created_at: string;
-      updated_at: string;
-    };
-    RouteCollectionSummaryDto: {
-      id: string;
-      /** @description Stable id of the owning rider. `null` when the owner has set `profile_visibility = 'private'` and the viewer is not the owner — masked alongside `owner_name` so the id can't be cross-referenced to recover the rider's identity (#279 / #501). */
-      owner_id: string | null;
-      title: string;
-      description: string | null;
-      /** @enum {string} */
-      visibility: "private" | "unlisted" | "public";
-      slug: string;
-      /** @description Total items in the collection. */
-      item_count: number;
-      /** @description Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name. */
-      owner_name: string | null;
-      created_at: string;
-      updated_at: string;
-    };
-    RouteCollectionListResponseDto: {
-      items: components["schemas"]["RouteCollectionSummaryDto"][];
-      total: number;
-    };
-    RouteCollectionLibraryResponseDto: {
-      /** @description Collections the caller owns. */
-      owned: components["schemas"]["RouteCollectionSummaryDto"][];
-      /** @description Collections the caller follows. Excludes private collections — if a curator demotes a collection back to private after being followed, the row is filtered out here so the library never lists an inaccessible link. */
-      followed: components["schemas"]["RouteCollectionSummaryDto"][];
-    };
-    RouteCollectionCardDto: {
-      id: string;
-      slug: string;
-      title: string;
-      description: string | null;
-      owner_id: string | null;
-      owner_name: string | null;
-      /** @description Total routes in the collection. */
-      item_count: number;
-      /** @description How many riders follow this collection. */
-      follower_count: number;
-      /** @description Whether the authenticated viewer follows this collection. */
-      viewer_is_following: boolean;
-      updated_at: string;
-    };
-    RouteCollectionDiscoverResponseDto: {
-      items: components["schemas"]["RouteCollectionCardDto"][];
-      total: number;
-      limit: number;
-      offset: number;
-    };
-    CreateRouteCollectionDto: {
-      title: string;
-      description?: string | null;
-      /**
-       * @default private
-       * @enum {string}
-       */
-      visibility: "private" | "unlisted" | "public";
-    };
-    RouteCollectionItemResponseDto: {
-      id: string;
-      trip_id: string | null;
-      ride_id: string | null;
-      position: number;
-      created_at: string;
-    };
-    RouteCollectionDetailDto: {
-      id: string;
-      /** @description Stable id of the owning rider. `null` when the owner has set `profile_visibility = 'private'` and the viewer is not the owner — masked alongside `owner_name` so the id can't be cross-referenced to recover the rider's identity (#279 / #501). */
-      owner_id: string | null;
-      title: string;
-      description: string | null;
-      /** @enum {string} */
-      visibility: "private" | "unlisted" | "public";
-      slug: string;
-      /** @description Total items in the collection. */
-      item_count: number;
-      /** @description Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name. */
-      owner_name: string | null;
-      created_at: string;
-      updated_at: string;
-      items: components["schemas"]["RouteCollectionItemResponseDto"][];
-      /** @description True when the calling user follows this collection. False for the owner, anonymous viewers, and signed-in viewers who have not yet followed. */
-      viewer_is_following: boolean;
-      /** @description True when the calling user owns this collection. The owner uses the dashboard CRUD surface rather than the follow CTA. */
-      viewer_is_owner: boolean;
-    };
-    RouteCollectionPreviewItemDto: {
-      /** @description ID of the route_collection_items row. */
-      item_id: string;
-      /** @description Position of the item in the collection (zero-based). */
-      position: number;
-      /** @enum {string} */
-      kind: "trip" | "ride";
-      /** @description Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry. */
-      lines: number[][][];
-    };
-    RouteCollectionPreviewResponseDto: {
-      routes: components["schemas"]["RouteCollectionPreviewItemDto"][];
-    };
-    UpdateRouteCollectionDto: {
-      title?: string;
-      description?: string | null;
-      /** @enum {string} */
-      visibility?: "private" | "unlisted" | "public";
-    };
-    AddRouteCollectionItemDto: {
-      /** @description UUID of a planner trip. Mutually exclusive with `ride_id`. */
-      trip_id?: string | null;
-      /** @description UUID of a recorded ride. Mutually exclusive with `trip_id`. */
-      ride_id?: string | null;
-    };
-    ReorderRouteCollectionItemsDto: {
-      /** @description Full ordered list of the collection item ids (the join-row uuids returned by add-item / detail). Must exactly match the current set of items in the collection. */
-      item_ids: string[];
-    };
-    RouteCollectionFollowResponseDto: {
-      collection_id: string;
-      followed_at: string;
-    };
-    RideSummaryDto: {
-      id: string;
-      /** @enum {string} */
-      status: "active" | "completed" | "cancelled";
-      /** @enum {string} */
-      ride_type: "free" | "commute" | "trip" | "tracked";
-      started_at: string;
-      ended_at: string | null;
-      distance_km: number | null;
-      avg_speed: number | null;
-      avg_road_quality: number | null;
-      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
-      avg_curviness: number | null;
-      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
-      bike_id: string | null;
-      name: string | null;
-      duration_min: number | null;
-      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
-      max_lean_angle: number | null;
-    };
-    RideListResponseDto: {
-      rides: components["schemas"]["RideSummaryDto"][];
-      total: number;
-    };
-    StartRideDto: {
-      /**
-       * @default free
-       * @enum {string}
-       */
-      ride_type: "free" | "commute" | "trip" | "tracked";
-      /** @description Bike to attribute the ride to. Defaults to the rider’s active bike when omitted. */
-      bike_id?: string | null;
-    };
-    RideResponseDto: {
-      id: string;
-      /** @enum {string} */
-      status: "active" | "completed" | "cancelled";
-      /** @enum {string} */
-      ride_type: "free" | "commute" | "trip" | "tracked";
-      started_at: string;
-      ended_at: string | null;
-      distance_km: number | null;
-      avg_speed: number | null;
-      avg_road_quality: number | null;
-      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
-      avg_curviness: number | null;
-      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
-      bike_id: string | null;
-    };
-    RideTrackDto: {
-      id: string;
-      geometry: {
-        [key: string]: unknown;
-      } | null;
-    };
-    RideTracksResponseDto: {
-      tracks: components["schemas"]["RideTrackDto"][];
-      /** @description true when the 500-row cap was hit */
-      truncated: boolean;
-    };
-    RideStatsDto: {
-      /** @description Sum of distance_km across filtered rides. */
-      total_distance_km: number;
-      /** @description Total ride time (hours) across filtered rides. */
-      total_hours: number;
-      /** @description Distinct road segments touched (new roads). */
-      new_roads: number;
-      /** @description Distance-weighted avg quality (0–5). */
-      avg_quality: number | null;
-      /** @description Number of rides matched by the filter. */
-      ride_count: number;
-    };
-    RideBreakdownSliceDto: {
-      /** @description Stable bucket key, e.g. "asphalt" or "twisty". */
-      key: string;
-      /** @description Display label, e.g. "Asphalt" or "Twisty". */
-      label: string;
-      /** @description Distance ridden in this bucket, in metres. */
-      meters: number;
-      /** @description Share of the total snapped distance, 0–100 (one decimal). */
-      pct: number;
-    };
-    RideBreakdownDto: {
-      /** @description Distance by road surface type, canonical order, surfaces with no distance omitted. */
-      surface: components["schemas"]["RideBreakdownSliceDto"][];
-      /** @description Distance by curviness band (straight → hairpin); the full ladder is returned so empty bands still render. */
-      curviness: components["schemas"]["RideBreakdownSliceDto"][];
-      /** @description Total snapped distance (metres) across the filtered rides. 0 when no segments are linked yet. */
-      total_meters: number;
-    };
-    RenameRideDto: {
-      name?: string | null;
-    };
-    LeanDistributionDto: {
-      /** @description Samples with absolute lean < 10°. */
-      "0_10": number;
-      /** @description Samples with absolute lean ≥ 10° and < 20°. */
-      "10_20": number;
-      /** @description Samples with absolute lean ≥ 20° and < 30°. */
-      "20_30": number;
-      /** @description Samples with absolute lean ≥ 30°. */
-      "30_plus": number;
-    };
-    RideSegmentDto: {
-      road_segment_id: string | null;
-      road_name: string | null;
-      quality_reading: number | null;
-      speed_avg: number | null;
-      speed_max: number | null;
-      lean_angle_max: number | null;
-    };
-    RideDetailDto: {
-      id: string;
-      /** @enum {string} */
-      status: "active" | "completed" | "cancelled";
-      /** @enum {string} */
-      ride_type: "free" | "commute" | "trip" | "tracked";
-      started_at: string;
-      ended_at: string | null;
-      distance_km: number | null;
-      avg_speed: number | null;
-      avg_road_quality: number | null;
-      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
-      avg_curviness: number | null;
-      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
-      bike_id: string | null;
-      name: string | null;
-      duration_min: number | null;
-      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
-      max_lean_angle: number | null;
-      max_speed: number | null;
-      route_geometry: components["schemas"]["LatLngResponseDto"][] | null;
-      elevation_gain: number | null;
-      elevation_loss: number | null;
-      curve_count: number | null;
-      lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
-      fuel_estimate_l: number | null;
-      segments: components["schemas"]["RideSegmentDto"][];
-    };
     TripSummaryDto: {
       id: string;
       /** @description US-37 — owner uuid surfaced on the summary so the companion can decide whether to carry the source folder forward when duplicating (folders are private per-user; only the owner of the source can preserve filing without 404-ing the create). */
@@ -4376,6 +3942,75 @@ export interface components {
       /** @description Message body. Leading/trailing whitespace is trimmed. Empty strings are rejected. */
       body: string;
     };
+    TripActivityEntryDto: {
+      id: string;
+      trip_id: string;
+      actor_id: string | null;
+      actor_name: string | null;
+      /** @enum {string} */
+      action:
+        | "member_joined"
+        | "member_left"
+        | "member_invited"
+        | "trip_updated"
+        | "trip_generated"
+        | "suggestion_created"
+        | "suggestion_deleted"
+        | "suggestion_voted"
+        | "suggestion_vote_removed"
+        | "suggestion_accepted"
+        | "suggestion_rejected";
+      /** @description Action-specific structured payload. Shape depends on `action`. */
+      payload: Record<string, never>;
+      created_at: string;
+    };
+    TripActivityListResponseDto: {
+      activity: components["schemas"]["TripActivityEntryDto"][];
+    };
+    CreateTripShareDto: {
+      /** @description Display title for the shared trip (shown in listings). */
+      title: string;
+      /** @description Full client-side trip snapshot (days, waypoints, route geometry). Stored as JSONB and returned verbatim to public viewers. */
+      snapshot: {
+        [key: string]: unknown;
+      };
+      /** @description Persisted server trip id to attach to this share. When present, authenticated recipients can accept the share token into collaboration membership. */
+      trip_id?: string | null;
+    };
+    TripShareResponseDto: {
+      id: string;
+      share_token: string;
+      share_url: string;
+      trip_id: string | null;
+      title: string;
+      view_count: number;
+      created_at: string;
+      updated_at: string;
+    };
+    TripShareListResponseDto: {
+      items: components["schemas"]["TripShareResponseDto"][];
+      total: number;
+    };
+    TripSharePublicDto: {
+      share_token: string;
+      /** @description Server trip id when this public preview can be accepted into collaboration; null for legacy snapshot-only shares. */
+      trip_id: string | null;
+      title: string;
+      owner_name: string;
+      /** @description The full trip snapshot as captured at share time. Shape mirrors the companion `Trip` type; not validated server-side, the viewer renders it as-is. */
+      snapshot: {
+        [key: string]: unknown;
+      };
+      /** @description Total times this token has been fetched (post-increment). */
+      view_count: number;
+      created_at: string;
+      updated_at: string;
+    };
+    TripShareJoinResponseDto: {
+      trip_id: string;
+      /** @description Companion URL for opening the joined trip in the planner. */
+      planner_url: string;
+    };
     CommuteRouteResponseDto: {
       id: string;
       name: string;
@@ -4445,6 +4080,390 @@ export interface components {
       daily_breakdown: components["schemas"]["DailyBreakdownDto"][];
       /** @description Totals for the equivalent prior window (e.g. last week vs this week). */
       previous_period: components["schemas"]["CommuteStatsPeriodDto"];
+    };
+    CalibrationDto: {
+      /** @description Mean accelerometer X (m/s²) over calibration window */
+      axis_mean_x: number;
+      /** @description Mean accelerometer Y (m/s²) over calibration window */
+      axis_mean_y: number;
+      /** @description Mean accelerometer Z (m/s²) over calibration window */
+      axis_mean_z: number;
+      /** @description Std accelerometer X (m/s²) over calibration window */
+      axis_std_x: number;
+      /** @description Std accelerometer Y (m/s²) over calibration window */
+      axis_std_y: number;
+      /** @description Std accelerometer Z (m/s²) over calibration window */
+      axis_std_z: number;
+      /** @description Number of samples that contributed to the mean / std */
+      sample_count: number;
+      /** @description true when the rider started moving before the full target window elapsed and the capture was truncated. A truncated window may still be usable if the sample count is above the floor. */
+      truncated: boolean;
+    };
+    SensorReadingDto: {
+      /** @description Unix timestamp milliseconds */
+      t: number;
+      /** @description Accelerometer X (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass — see UploadSensorDataDto.client_preprocessing_version for the marker. */
+      ax: number;
+      /** @description Accelerometer Y (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass. */
+      ay: number;
+      /** @description Accelerometer Z (m/s²). Pre-#493 clients send raw axes; #493+ clients send axes filtered by an on-device 22 Hz low-pass. */
+      az: number;
+      lat?: number;
+      lng?: number;
+      /** @description Speed in m/s */
+      speed?: number;
+      /** @description Estimated bike-frame roll in degrees (signed). Absent when the client's orientation filter was still calibrating or the field wasn't computed. */
+      lean_deg?: number;
+    };
+    RideTagEventDto: {
+      /** @description Unix timestamp milliseconds at the moment of the tap */
+      t: number;
+      lat?: number;
+      lng?: number;
+      /**
+       * @description Rider-facing surface label. Backend normalises to (surface_type, quality_class) via SURFACE_LABEL_TO_TRUTH from @tarmoto/shared.
+       * @enum {string}
+       */
+      label:
+        | "smooth_asphalt"
+        | "rough_asphalt"
+        | "cobblestone"
+        | "gravel"
+        | "dirt"
+        | "pothole";
+    };
+    UploadSensorDataDto: {
+      /** Format: uuid */
+      ride_id: string;
+      /** @example iPhone 15 Pro */
+      device_model?: string;
+      /**
+       * @description Idle-baseline calibration values captured at ride start (issue
+       *     #494). Optional — older client builds and rides whose calibration
+       *     window never reached the minimum sample count upload without this
+       *     block. Backend treats absent calibration as `calibration_quality:
+       *     null` on every row in the batch (training pipeline can choose to
+       *     drop such rows).
+       */
+      calibration?: components["schemas"]["CalibrationDto"];
+      /**
+       * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model.
+       * @example rsc-v1.0.0
+       */
+      client_model_version?: string;
+      /**
+       * @description On-device preprocessing pipeline marker (issue #493). `lp22-v1` = 4th-order Butterworth low-pass at 22 Hz cutoff applied to ax/ay/az at sample ingest. Null/absent means raw axes (pre-#493 clients or a profile that disabled the filter).
+       * @example lp22-v1
+       */
+      client_preprocessing_version?: string;
+      readings: components["schemas"]["SensorReadingDto"][];
+      /**
+       * @description Rider-asserted surface tags captured during the ride (research
+       *     issue #7). Optional — most rides will not run the tagging UI, and
+       *     the sensor pipeline must keep working when the array is absent.
+       *     The backend stores tags both verbatim (`ride_tag_events`) and as
+       *     a per-window join (`surface_readings.rider_*_label`) so future
+       *     training queries can read either resolution.
+       */
+      tag_events?: components["schemas"]["RideTagEventDto"][];
+    };
+    UploadResponseDto: {
+      /** @description Number of readings accepted */
+      accepted: number;
+      /** @description Road segments that got new quality data */
+      segments_updated: number;
+    };
+    CreateMapShareDto: {
+      /** @description Display title for the shared road map (shown in listings). */
+      title: string;
+      /** @description Snapshot of the rider exploration state at share time (totals + ridden segment ids/metadata). Stored as JSONB and returned verbatim to public viewers. */
+      snapshot: {
+        [key: string]: unknown;
+      };
+    };
+    MapShareResponseDto: {
+      id: string;
+      share_token: string;
+      share_url: string;
+      title: string;
+      view_count: number;
+      created_at: string;
+      updated_at: string;
+    };
+    MapShareListResponseDto: {
+      items: components["schemas"]["MapShareResponseDto"][];
+      total: number;
+    };
+    MapSharePublicDto: {
+      share_token: string;
+      title: string;
+      owner_name: string;
+      /** @description The full road-map snapshot as captured at share time. Shape mirrors the companion `MapShareSnapshot` type; not validated server-side. */
+      snapshot: {
+        [key: string]: unknown;
+      };
+      /** @description Total times this token has been fetched (post-increment). */
+      view_count: number;
+      created_at: string;
+      updated_at: string;
+    };
+    RouteCollectionSummaryDto: {
+      id: string;
+      /** @description Stable id of the owning rider. `null` when the owner has set `profile_visibility = 'private'` and the viewer is not the owner — masked alongside `owner_name` so the id can't be cross-referenced to recover the rider's identity (#279 / #501). */
+      owner_id: string | null;
+      title: string;
+      description: string | null;
+      /** @enum {string} */
+      visibility: "private" | "unlisted" | "public";
+      slug: string;
+      /** @description Total items in the collection. */
+      item_count: number;
+      /** @description Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name. */
+      owner_name: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+    RouteCollectionListResponseDto: {
+      items: components["schemas"]["RouteCollectionSummaryDto"][];
+      total: number;
+    };
+    RouteCollectionLibraryResponseDto: {
+      /** @description Collections the caller owns. */
+      owned: components["schemas"]["RouteCollectionSummaryDto"][];
+      /** @description Collections the caller follows. Excludes private collections — if a curator demotes a collection back to private after being followed, the row is filtered out here so the library never lists an inaccessible link. */
+      followed: components["schemas"]["RouteCollectionSummaryDto"][];
+    };
+    RouteCollectionCardDto: {
+      id: string;
+      slug: string;
+      title: string;
+      description: string | null;
+      owner_id: string | null;
+      owner_name: string | null;
+      /** @description Total routes in the collection. */
+      item_count: number;
+      /** @description How many riders follow this collection. */
+      follower_count: number;
+      /** @description Whether the authenticated viewer follows this collection. */
+      viewer_is_following: boolean;
+      updated_at: string;
+    };
+    RouteCollectionDiscoverResponseDto: {
+      items: components["schemas"]["RouteCollectionCardDto"][];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    CreateRouteCollectionDto: {
+      title: string;
+      description?: string | null;
+      /**
+       * @default private
+       * @enum {string}
+       */
+      visibility: "private" | "unlisted" | "public";
+    };
+    RouteCollectionItemResponseDto: {
+      id: string;
+      trip_id: string | null;
+      ride_id: string | null;
+      position: number;
+      created_at: string;
+    };
+    RouteCollectionDetailDto: {
+      id: string;
+      /** @description Stable id of the owning rider. `null` when the owner has set `profile_visibility = 'private'` and the viewer is not the owner — masked alongside `owner_name` so the id can't be cross-referenced to recover the rider's identity (#279 / #501). */
+      owner_id: string | null;
+      title: string;
+      description: string | null;
+      /** @enum {string} */
+      visibility: "private" | "unlisted" | "public";
+      slug: string;
+      /** @description Total items in the collection. */
+      item_count: number;
+      /** @description Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name. */
+      owner_name: string | null;
+      created_at: string;
+      updated_at: string;
+      items: components["schemas"]["RouteCollectionItemResponseDto"][];
+      /** @description Number of riders following this collection. 0 for a brand-new collection; surfaced on the owner detail-page stats. */
+      follower_count: number;
+      /** @description True when the calling user follows this collection. False for the owner, anonymous viewers, and signed-in viewers who have not yet followed. */
+      viewer_is_following: boolean;
+      /** @description True when the calling user owns this collection. The owner uses the dashboard CRUD surface rather than the follow CTA. */
+      viewer_is_owner: boolean;
+    };
+    RouteCollectionPreviewItemDto: {
+      /** @description ID of the route_collection_items row. */
+      item_id: string;
+      /** @description Position of the item in the collection (zero-based). */
+      position: number;
+      /** @enum {string} */
+      kind: "trip" | "ride";
+      /** @description Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry. */
+      lines: number[][][];
+    };
+    RouteCollectionPreviewResponseDto: {
+      routes: components["schemas"]["RouteCollectionPreviewItemDto"][];
+    };
+    UpdateRouteCollectionDto: {
+      title?: string;
+      description?: string | null;
+      /** @enum {string} */
+      visibility?: "private" | "unlisted" | "public";
+    };
+    AddRouteCollectionItemDto: {
+      /** @description UUID of a planner trip. Mutually exclusive with `ride_id`. */
+      trip_id?: string | null;
+      /** @description UUID of a recorded ride. Mutually exclusive with `trip_id`. */
+      ride_id?: string | null;
+    };
+    ReorderRouteCollectionItemsDto: {
+      /** @description Full ordered list of the collection item ids (the join-row uuids returned by add-item / detail). Must exactly match the current set of items in the collection. */
+      item_ids: string[];
+    };
+    RouteCollectionFollowResponseDto: {
+      collection_id: string;
+      followed_at: string;
+    };
+    RideSummaryDto: {
+      id: string;
+      /** @enum {string} */
+      status: "active" | "completed" | "cancelled";
+      /** @enum {string} */
+      ride_type: "free" | "commute" | "trip" | "tracked";
+      started_at: string;
+      ended_at: string | null;
+      distance_km: number | null;
+      avg_speed: number | null;
+      avg_road_quality: number | null;
+      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
+      avg_curviness: number | null;
+      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
+      bike_id: string | null;
+      name: string | null;
+      duration_min: number | null;
+      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+      max_lean_angle: number | null;
+    };
+    RideListResponseDto: {
+      rides: components["schemas"]["RideSummaryDto"][];
+      total: number;
+    };
+    StartRideDto: {
+      /**
+       * @default free
+       * @enum {string}
+       */
+      ride_type: "free" | "commute" | "trip" | "tracked";
+      /** @description Bike to attribute the ride to. Defaults to the rider’s active bike when omitted. */
+      bike_id?: string | null;
+    };
+    RideResponseDto: {
+      id: string;
+      /** @enum {string} */
+      status: "active" | "completed" | "cancelled";
+      /** @enum {string} */
+      ride_type: "free" | "commute" | "trip" | "tracked";
+      started_at: string;
+      ended_at: string | null;
+      distance_km: number | null;
+      avg_speed: number | null;
+      avg_road_quality: number | null;
+      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
+      avg_curviness: number | null;
+      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
+      bike_id: string | null;
+    };
+    RideTrackDto: {
+      id: string;
+      geometry: {
+        [key: string]: unknown;
+      } | null;
+    };
+    RideTracksResponseDto: {
+      tracks: components["schemas"]["RideTrackDto"][];
+      /** @description true when the 500-row cap was hit */
+      truncated: boolean;
+    };
+    RideStatsDto: {
+      /** @description Sum of distance_km across filtered rides. */
+      total_distance_km: number;
+      /** @description Total ride time (hours) across filtered rides. */
+      total_hours: number;
+      /** @description Distinct road segments touched (new roads). */
+      new_roads: number;
+      /** @description Distance-weighted avg quality (0–5). */
+      avg_quality: number | null;
+      /** @description Number of rides matched by the filter. */
+      ride_count: number;
+    };
+    RideBreakdownSliceDto: {
+      /** @description Stable bucket key, e.g. "asphalt" or "twisty". */
+      key: string;
+      /** @description Display label, e.g. "Asphalt" or "Twisty". */
+      label: string;
+      /** @description Distance ridden in this bucket, in metres. */
+      meters: number;
+      /** @description Share of the total snapped distance, 0–100 (one decimal). */
+      pct: number;
+    };
+    RideBreakdownDto: {
+      /** @description Distance by road surface type, canonical order, surfaces with no distance omitted. */
+      surface: components["schemas"]["RideBreakdownSliceDto"][];
+      /** @description Distance by curviness band (straight → hairpin); the full ladder is returned so empty bands still render. */
+      curviness: components["schemas"]["RideBreakdownSliceDto"][];
+      /** @description Total snapped distance (metres) across the filtered rides. 0 when no segments are linked yet. */
+      total_meters: number;
+    };
+    RenameRideDto: {
+      name?: string | null;
+    };
+    LeanDistributionDto: {
+      /** @description Samples with absolute lean < 10°. */
+      "0_10": number;
+      /** @description Samples with absolute lean ≥ 10° and < 20°. */
+      "10_20": number;
+      /** @description Samples with absolute lean ≥ 20° and < 30°. */
+      "20_30": number;
+      /** @description Samples with absolute lean ≥ 30°. */
+      "30_plus": number;
+    };
+    RideSegmentDto: {
+      road_segment_id: string | null;
+      road_name: string | null;
+      quality_reading: number | null;
+      speed_avg: number | null;
+      speed_max: number | null;
+      lean_angle_max: number | null;
+    };
+    RideDetailDto: {
+      id: string;
+      /** @enum {string} */
+      status: "active" | "completed" | "cancelled";
+      /** @enum {string} */
+      ride_type: "free" | "commute" | "trip" | "tracked";
+      started_at: string;
+      ended_at: string | null;
+      distance_km: number | null;
+      avg_speed: number | null;
+      avg_road_quality: number | null;
+      /** @description Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet. */
+      avg_curviness: number | null;
+      /** @description Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike. */
+      bike_id: string | null;
+      name: string | null;
+      duration_min: number | null;
+      /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+      max_lean_angle: number | null;
+      max_speed: number | null;
+      route_geometry: components["schemas"]["LatLngResponseDto"][] | null;
+      elevation_gain: number | null;
+      elevation_loss: number | null;
+      curve_count: number | null;
+      lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
+      fuel_estimate_l: number | null;
+      segments: components["schemas"]["RideSegmentDto"][];
     };
     TripFolderResponseDto: {
       id: string;
@@ -5032,6 +5051,7 @@ export type SchemaHazardPhotoUploadResponseDto =
 export type SchemaCreateHazardDto = components["schemas"]["CreateHazardDto"];
 export type SchemaLatLng = components["schemas"]["LatLng"];
 export type SchemaRouteHazardsDto = components["schemas"]["RouteHazardsDto"];
+export type SchemaProgressionDto = components["schemas"]["ProgressionDto"];
 export type SchemaBadgeProgressDto = components["schemas"]["BadgeProgressDto"];
 export type SchemaBadgeDto = components["schemas"]["BadgeDto"];
 export type SchemaCheckBadgesResponseDto =
@@ -5103,13 +5123,39 @@ export type SchemaRideLikeResponseDto =
   components["schemas"]["RideLikeResponseDto"];
 export type SchemaCloneRideResponseDto =
   components["schemas"]["CloneRideResponseDto"];
-export type SchemaCalibrationDto = components["schemas"]["CalibrationDto"];
-export type SchemaSensorReadingDto = components["schemas"]["SensorReadingDto"];
-export type SchemaRideTagEventDto = components["schemas"]["RideTagEventDto"];
-export type SchemaUploadSensorDataDto =
-  components["schemas"]["UploadSensorDataDto"];
-export type SchemaUploadResponseDto =
-  components["schemas"]["UploadResponseDto"];
+export type SchemaTripSummaryDto = components["schemas"]["TripSummaryDto"];
+export type SchemaCreateTripDto = components["schemas"]["CreateTripDto"];
+export type SchemaTripMemberDto = components["schemas"]["TripMemberDto"];
+export type SchemaTripWaypointDto = components["schemas"]["TripWaypointDto"];
+export type SchemaTripDayDto = components["schemas"]["TripDayDto"];
+export type SchemaTripDetailDto = components["schemas"]["TripDetailDto"];
+export type SchemaImportTripPointDto =
+  components["schemas"]["ImportTripPointDto"];
+export type SchemaImportTripWaypointDto =
+  components["schemas"]["ImportTripWaypointDto"];
+export type SchemaImportTripDto = components["schemas"]["ImportTripDto"];
+export type SchemaFromShareTripDto = components["schemas"]["FromShareTripDto"];
+export type SchemaUpdateTripDto = components["schemas"]["UpdateTripDto"];
+export type SchemaGenerateTripDto = components["schemas"]["GenerateTripDto"];
+export type SchemaTripGenerationOptionDto =
+  components["schemas"]["TripGenerationOptionDto"];
+export type SchemaGenerateTripResponseDto =
+  components["schemas"]["GenerateTripResponseDto"];
+export type SchemaJoinTripDto = components["schemas"]["JoinTripDto"];
+export type SchemaInviteTripDto = components["schemas"]["InviteTripDto"];
+export type SchemaInviteTripResponseDto =
+  components["schemas"]["InviteTripResponseDto"];
+export type SchemaSuggestionDto = components["schemas"]["SuggestionDto"];
+export type SchemaCreateSuggestionDto =
+  components["schemas"]["CreateSuggestionDto"];
+export type SchemaVoteSuggestionDto =
+  components["schemas"]["VoteSuggestionDto"];
+export type SchemaMessageDto = components["schemas"]["MessageDto"];
+export type SchemaCreateMessageDto = components["schemas"]["CreateMessageDto"];
+export type SchemaTripActivityEntryDto =
+  components["schemas"]["TripActivityEntryDto"];
+export type SchemaTripActivityListResponseDto =
+  components["schemas"]["TripActivityListResponseDto"];
 export type SchemaCreateTripShareDto =
   components["schemas"]["CreateTripShareDto"];
 export type SchemaTripShareResponseDto =
@@ -5120,10 +5166,29 @@ export type SchemaTripSharePublicDto =
   components["schemas"]["TripSharePublicDto"];
 export type SchemaTripShareJoinResponseDto =
   components["schemas"]["TripShareJoinResponseDto"];
-export type SchemaTripActivityEntryDto =
-  components["schemas"]["TripActivityEntryDto"];
-export type SchemaTripActivityListResponseDto =
-  components["schemas"]["TripActivityListResponseDto"];
+export type SchemaCommuteRouteResponseDto =
+  components["schemas"]["CommuteRouteResponseDto"];
+export type SchemaCreateCommuteRouteDto =
+  components["schemas"]["CreateCommuteRouteDto"];
+export type SchemaCommuteStatusResponseDto =
+  components["schemas"]["CommuteStatusResponseDto"];
+export type SchemaAlternativeRouteDto =
+  components["schemas"]["AlternativeRouteDto"];
+export type SchemaCommuteAlternativesResponseDto =
+  components["schemas"]["CommuteAlternativesResponseDto"];
+export type SchemaDailyBreakdownDto =
+  components["schemas"]["DailyBreakdownDto"];
+export type SchemaCommuteStatsPeriodDto =
+  components["schemas"]["CommuteStatsPeriodDto"];
+export type SchemaCommuteStatsResponseDto =
+  components["schemas"]["CommuteStatsResponseDto"];
+export type SchemaCalibrationDto = components["schemas"]["CalibrationDto"];
+export type SchemaSensorReadingDto = components["schemas"]["SensorReadingDto"];
+export type SchemaRideTagEventDto = components["schemas"]["RideTagEventDto"];
+export type SchemaUploadSensorDataDto =
+  components["schemas"]["UploadSensorDataDto"];
+export type SchemaUploadResponseDto =
+  components["schemas"]["UploadResponseDto"];
 export type SchemaCreateMapShareDto =
   components["schemas"]["CreateMapShareDto"];
 export type SchemaMapShareResponseDto =
@@ -5177,51 +5242,6 @@ export type SchemaLeanDistributionDto =
   components["schemas"]["LeanDistributionDto"];
 export type SchemaRideSegmentDto = components["schemas"]["RideSegmentDto"];
 export type SchemaRideDetailDto = components["schemas"]["RideDetailDto"];
-export type SchemaTripSummaryDto = components["schemas"]["TripSummaryDto"];
-export type SchemaCreateTripDto = components["schemas"]["CreateTripDto"];
-export type SchemaTripMemberDto = components["schemas"]["TripMemberDto"];
-export type SchemaTripWaypointDto = components["schemas"]["TripWaypointDto"];
-export type SchemaTripDayDto = components["schemas"]["TripDayDto"];
-export type SchemaTripDetailDto = components["schemas"]["TripDetailDto"];
-export type SchemaImportTripPointDto =
-  components["schemas"]["ImportTripPointDto"];
-export type SchemaImportTripWaypointDto =
-  components["schemas"]["ImportTripWaypointDto"];
-export type SchemaImportTripDto = components["schemas"]["ImportTripDto"];
-export type SchemaFromShareTripDto = components["schemas"]["FromShareTripDto"];
-export type SchemaUpdateTripDto = components["schemas"]["UpdateTripDto"];
-export type SchemaGenerateTripDto = components["schemas"]["GenerateTripDto"];
-export type SchemaTripGenerationOptionDto =
-  components["schemas"]["TripGenerationOptionDto"];
-export type SchemaGenerateTripResponseDto =
-  components["schemas"]["GenerateTripResponseDto"];
-export type SchemaJoinTripDto = components["schemas"]["JoinTripDto"];
-export type SchemaInviteTripDto = components["schemas"]["InviteTripDto"];
-export type SchemaInviteTripResponseDto =
-  components["schemas"]["InviteTripResponseDto"];
-export type SchemaSuggestionDto = components["schemas"]["SuggestionDto"];
-export type SchemaCreateSuggestionDto =
-  components["schemas"]["CreateSuggestionDto"];
-export type SchemaVoteSuggestionDto =
-  components["schemas"]["VoteSuggestionDto"];
-export type SchemaMessageDto = components["schemas"]["MessageDto"];
-export type SchemaCreateMessageDto = components["schemas"]["CreateMessageDto"];
-export type SchemaCommuteRouteResponseDto =
-  components["schemas"]["CommuteRouteResponseDto"];
-export type SchemaCreateCommuteRouteDto =
-  components["schemas"]["CreateCommuteRouteDto"];
-export type SchemaCommuteStatusResponseDto =
-  components["schemas"]["CommuteStatusResponseDto"];
-export type SchemaAlternativeRouteDto =
-  components["schemas"]["AlternativeRouteDto"];
-export type SchemaCommuteAlternativesResponseDto =
-  components["schemas"]["CommuteAlternativesResponseDto"];
-export type SchemaDailyBreakdownDto =
-  components["schemas"]["DailyBreakdownDto"];
-export type SchemaCommuteStatsPeriodDto =
-  components["schemas"]["CommuteStatsPeriodDto"];
-export type SchemaCommuteStatsResponseDto =
-  components["schemas"]["CommuteStatsResponseDto"];
 export type SchemaTripFolderResponseDto =
   components["schemas"]["TripFolderResponseDto"];
 export type SchemaTripFolderListResponseDto =
@@ -7084,7 +7104,28 @@ export interface operations {
       };
     };
   };
-  SensorController_upload: {
+  TripsController_list: {
+    parameters: {
+      query?: {
+        status?: "draft" | "planned" | "active" | "completed";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripSummaryDto"][];
+        };
+      };
+    };
+  };
+  TripsController_create: {
     parameters: {
       query?: never;
       header?: never;
@@ -7093,7 +7134,303 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["UploadSensorDataDto"];
+        "application/json": components["schemas"]["CreateTripDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+    };
+  };
+  TripsController_importRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ImportTripDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+    };
+  };
+  TripsController_replaceImportedRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ImportTripDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_importFromShare: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FromShareTripDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Snapshot has no usable route data */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Share token unknown or owner account deleted */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_getDetail: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_remove: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Trip deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Trip not found or not owned */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateTripDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_generate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GenerateTripDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GenerateTripResponseDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_duplicate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_join: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["JoinTripDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Invalid trip or invite code */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripsController_invite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InviteTripDto"];
       };
     };
     responses: {
@@ -7102,8 +7439,348 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["UploadResponseDto"];
+          "application/json": components["schemas"]["InviteTripResponseDto"];
         };
+      };
+      /** @description Recipient is the caller themselves (already a member), or body failed validation (bad email, message > 500 chars). */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Trip not found or not owned */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_listSuggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"][];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_createSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSuggestionDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_deleteSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+        suggestionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Cannot delete this suggestion */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Suggestion not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_acceptSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+        suggestionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"];
+        };
+      };
+      /** @description Not owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Suggestion not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_rejectSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+        suggestionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"];
+        };
+      };
+      /** @description Not owner or admin */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Suggestion not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_voteSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+        suggestionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["VoteSuggestionDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"];
+        };
+      };
+      /** @description Suggestion not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_unvoteSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+        suggestionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionDto"];
+        };
+      };
+      /** @description Suggestion not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_listMessages: {
+    parameters: {
+      query?: {
+        /** @description Max number of messages to return (newest first). */
+        limit?: number;
+        /** @description Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Pair with `before_id` (the oldest message id in the previous page) so messages sharing the same `created_at` at a page boundary are not skipped. */
+        before?: string;
+        /** @description Tie-breaker for the keyset cursor — the id of the oldest message in the previous page. Required together with `before` to correctly page through messages that share a timestamp. */
+        before_id?: string;
+      };
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageDto"][];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripCollabController_createMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMessageDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  TripActivityController_list: {
+    parameters: {
+      query?: {
+        /** @description Max entries to return (1-200, default 100). */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripActivityListResponseDto"];
+        };
+      };
+      /** @description Trip not found or not a member */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -7245,15 +7922,54 @@ export interface operations {
       };
     };
   };
-  TripActivityController_list: {
+  CommuteController_listRoutes: {
     parameters: {
-      query?: {
-        /** @description Max entries to return (1-200, default 100). */
-        limit?: number;
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommuteRouteResponseDto"][];
+        };
       };
+    };
+  };
+  CommuteController_createRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateCommuteRouteDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommuteRouteResponseDto"];
+        };
+      };
+    };
+  };
+  CommuteController_setPrimaryRoute: {
+    parameters: {
+      query?: never;
       header?: never;
       path: {
-        tripId: string;
+        routeId: string;
       };
       cookie?: never;
     };
@@ -7264,15 +7980,137 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["TripActivityListResponseDto"];
+          "application/json": components["schemas"]["CommuteRouteResponseDto"];
         };
       };
-      /** @description Trip not found or not a member */
+      /** @description Route not found */
       404: {
         headers: {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  CommuteController_deleteRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        routeId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Route not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  CommuteController_getStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommuteStatusResponseDto"];
+        };
+      };
+      /** @description No primary commute route */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  CommuteController_getAlternatives: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommuteAlternativesResponseDto"];
+        };
+      };
+      /** @description No primary commute route */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  CommuteController_getStats: {
+    parameters: {
+      query?: {
+        period?: "week" | "month";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommuteStatsResponseDto"];
+        };
+      };
+    };
+  };
+  SensorController_upload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UploadSensorDataDto"];
+      };
+    };
+    responses: {
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadResponseDto"];
+        };
       };
     };
   };
@@ -7511,6 +8349,34 @@ export interface operations {
         };
       };
       /** @description Collection not found or private */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  RouteCollectionsController_getPreviewOwned: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RouteCollectionPreviewResponseDto"];
+        };
+      };
+      /** @description Collection not found */
       404: {
         headers: {
           [name: string]: unknown;
@@ -8210,824 +9076,6 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
-      };
-    };
-  };
-  TripsController_list: {
-    parameters: {
-      query?: {
-        status?: "draft" | "planned" | "active" | "completed";
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripSummaryDto"][];
-        };
-      };
-    };
-  };
-  TripsController_create: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateTripDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-    };
-  };
-  TripsController_importRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ImportTripDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-    };
-  };
-  TripsController_replaceImportedRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ImportTripDto"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_importFromShare: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["FromShareTripDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Snapshot has no usable route data */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Share token unknown or owner account deleted */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_getDetail: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_remove: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Trip deleted */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Trip not found or not owned */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_update: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateTripDto"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_generate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GenerateTripDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GenerateTripResponseDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_duplicate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_join: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["JoinTripDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TripDetailDto"];
-        };
-      };
-      /** @description Invalid trip or invite code */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripsController_invite: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["InviteTripDto"];
-      };
-    };
-    responses: {
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["InviteTripResponseDto"];
-        };
-      };
-      /** @description Recipient is the caller themselves (already a member), or body failed validation (bad email, message > 500 chars). */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Trip not found or not owned */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_listSuggestions: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"][];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_createSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateSuggestionDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_deleteSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-        suggestionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Cannot delete this suggestion */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Suggestion not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_acceptSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-        suggestionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"];
-        };
-      };
-      /** @description Not owner or admin */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Suggestion not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_rejectSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-        suggestionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"];
-        };
-      };
-      /** @description Not owner or admin */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Suggestion not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_voteSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-        suggestionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["VoteSuggestionDto"];
-      };
-    };
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"];
-        };
-      };
-      /** @description Suggestion not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_unvoteSuggestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-        suggestionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionDto"];
-        };
-      };
-      /** @description Suggestion not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_listMessages: {
-    parameters: {
-      query?: {
-        /** @description Max number of messages to return (newest first). */
-        limit?: number;
-        /** @description Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Pair with `before_id` (the oldest message id in the previous page) so messages sharing the same `created_at` at a page boundary are not skipped. */
-        before?: string;
-        /** @description Tie-breaker for the keyset cursor — the id of the oldest message in the previous page. Required together with `before` to correctly page through messages that share a timestamp. */
-        before_id?: string;
-      };
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MessageDto"][];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  TripCollabController_createMessage: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        tripId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateMessageDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MessageDto"];
-        };
-      };
-      /** @description Trip not found or not visible */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  CommuteController_listRoutes: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteRouteResponseDto"][];
-        };
-      };
-    };
-  };
-  CommuteController_createRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateCommuteRouteDto"];
-      };
-    };
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteRouteResponseDto"];
-        };
-      };
-    };
-  };
-  CommuteController_setPrimaryRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        routeId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteRouteResponseDto"];
-        };
-      };
-      /** @description Route not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  CommuteController_deleteRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        routeId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Route not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  CommuteController_getStatus: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteStatusResponseDto"];
-        };
-      };
-      /** @description No primary commute route */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  CommuteController_getAlternatives: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteAlternativesResponseDto"];
-        };
-      };
-      /** @description No primary commute route */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  CommuteController_getStats: {
-    parameters: {
-      query?: {
-        period?: "week" | "month";
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommuteStatsResponseDto"];
-        };
       };
     };
   };

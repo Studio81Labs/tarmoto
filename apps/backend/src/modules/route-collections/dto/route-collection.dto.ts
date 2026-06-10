@@ -204,6 +204,12 @@ export class RouteCollectionDetailDto extends RouteCollectionSummaryDto {
   @ApiProperty({ type: [RouteCollectionItemResponseDto] })
   items!: RouteCollectionItemResponseDto[];
 
+  @ApiProperty({
+    description:
+      'Number of riders following this collection. 0 for a brand-new collection; surfaced on the owner detail-page stats.',
+  })
+  follower_count!: number;
+
   // owner_name is inherited from the summary as `string | null`. Detail
   // responses always populate it (empty string for soft-deleted accounts,
   // since the controller 404s in that case before reaching the response),
