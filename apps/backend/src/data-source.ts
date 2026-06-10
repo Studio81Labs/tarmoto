@@ -97,7 +97,6 @@ import { AddInAppNotifications1717800000000 } from './migrations/1717800000000-A
 import { AddHazardReportPhotoUrl1717900000000 } from './migrations/1717900000000-AddHazardReportPhotoUrl.js';
 import { AddCommuteRoutingEngineVersion1718000000000 } from './migrations/1718000000000-AddCommuteRoutingEngineVersion.js';
 import { AddCommunityEngagement1718100000000 } from './migrations/1718100000000-AddCommunityEngagement.js';
-import { AddSurfaceReadingUserIndex1718200000000 } from './migrations/1718200000000-AddSurfaceReadingUserIndex.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -213,7 +212,6 @@ export const AppDataSource = new DataSource({
     AddHazardReportPhotoUrl1717900000000,
     AddCommuteRoutingEngineVersion1718000000000,
     AddCommunityEngagement1718100000000,
-    AddSurfaceReadingUserIndex1718200000000,
   ],
   synchronize: false,
 });
