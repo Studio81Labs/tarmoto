@@ -2549,6 +2549,25 @@ export function buildApp(): Express {
     });
   });
 
+  // `GET /users/me/contribution` — the sidebar "Your contribution" badge.
+  // Defaults to no contribution so the badge stays hidden across the suite
+  // (the badge rendering is covered by the Sidebar unit tests); the endpoint
+  // just needs to resolve so the fetch doesn't error in dashboard e2e.
+  app.get(
+    "/api/v1/users/me/contribution",
+    requireAuth,
+    (_req: AuthedRequest, res) => {
+      res.json({
+        km_mapped: 0,
+        segments_mapped: 0,
+        home_region: null,
+        rank_in_region: null,
+        region_rider_count: null,
+        percentile: null,
+      });
+    },
+  );
+
   // `PATCH /users/me` mutates the user's profile fields. Mirrors
   // production `UpdateProfileDto`:
   // - `display_name`: string, ≤100

@@ -24,6 +24,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { formatRelativeTime } from "@/lib/utils";
+import { useContribution } from "@/hooks/useContribution";
 import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
@@ -317,9 +318,73 @@ function SidebarItem({
 function SidebarFooter({ collapsed }: { collapsed: boolean }) {
   return (
     <div className={clsx("flex flex-col gap-1.5", collapsed && "items-center")}>
+      <SidebarContributionBadge collapsed={collapsed} />
       <SidebarOfflineIndicator collapsed={collapsed} />
       <SidebarNotificationBell collapsed={collapsed} />
       <SidebarUserMenu collapsed={collapsed} />
+    </div>
+  );
+}
+
+/**
+ * "Your contribution" badge — the rider's road-quality contribution (km of
+ * road they've mapped) plus their regional standing. Expanded-rail only, and
+ * only once they've mapped something; the regional line + bar are dropped when
+ * the rider has no home region (no rank). The bar fills by ranking position
+ * (1st = full), derived from the real rank rather than the design's mock 68%.
+ */
+function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
+  const { contribution } = useContribution();
+  if (collapsed || !contribution || contribution.km_mapped <= 0) return null;
+
+  const {
+    km_mapped,
+    percentile,
+    rank_in_region,
+    region_rider_count,
+    home_region,
+  } = contribution;
+  const ranked =
+    percentile != null &&
+    home_region != null &&
+    rank_in_region != null &&
+    region_rider_count != null &&
+    region_rider_count > 0;
+  const barPct = ranked
+    ? Math.max(
+        2,
+        Math.round(
+          ((region_rider_count - rank_in_region + 1) / region_rider_count) *
+            100,
+        ),
+      )
+    : 0;
+
+  return (
+    <div className="mb-1.5 rounded-[10px] border border-cream/[0.08] bg-cream/[0.06] p-3">
+      <Stamp tone="on-dark">{t("Your contribution")}</Stamp>
+      <div className="mt-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
+        {Math.round(km_mapped).toLocaleString()}{" "}
+        <Mono className="text-[10px] font-medium text-cream/60">
+          {t("KM MAPPED")}
+        </Mono>
+      </div>
+      {ranked && (
+        <>
+          <div className="mt-2 h-1 overflow-hidden rounded-sm bg-cream/10">
+            <div
+              className="h-full rounded-sm bg-accent"
+              style={{ width: `${barPct}%` }}
+            />
+          </div>
+          <Mono className="mt-1.5 block text-[9px] text-cream/50">
+            {t("Top {percentile}% of riders in {region}", {
+              percentile,
+              region: home_region,
+            })}
+          </Mono>
+        </>
+      )}
     </div>
   );
 }
