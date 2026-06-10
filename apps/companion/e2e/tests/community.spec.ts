@@ -87,6 +87,34 @@ test.describe("community read path", () => {
     }
   });
 
+  // T42 — Member discover view: a logged-in rider opening a collection
+  // they don't own from Discover lands on the in-app, read-only
+  // `/community/collections/discover/[slug]` view and gets a Follow CTA
+  // (not the owner's edit affordances). Seed the collection under a
+  // *different* owner so `viewer_is_owner` resolves false.
+  test("T42: /community/collections/discover/:slug renders read-only with a follow CTA", async ({
+    authedPage: page,
+    mockApi,
+  }) => {
+    const owner = await mockApi.seedUser();
+    const collection = await mockApi.seedCollection(owner, {
+      title: "Alpine Member Picks",
+      visibility: "public",
+      slug: "alpine-member-picks",
+    });
+
+    await page.goto(`/community/collections/discover/${collection.slug}`);
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /alpine member picks/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    // Non-owner → Follow CTA, and none of the owner edit controls.
+    await expect(page.getByRole("button", { name: /follow/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /add routes/i })).toHaveCount(
+      0,
+    );
+  });
+
   // T44 — Achievements: /achievements renders the achievements
   // shell. Full snapshot rendering would require mocking five extra
   // endpoints (`/users/:id/badges`, `/challenges`, `/users/me/profile`,
