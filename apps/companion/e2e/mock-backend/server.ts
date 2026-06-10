@@ -2250,6 +2250,24 @@ export function buildApp(): Express {
     res.json({ routes: [] });
   });
 
+  // Owner-by-id preview — mirrors `RouteCollectionsController.getPreviewOwned`:
+  // authed, owner-only (404 for a missing collection or a non-owner, any
+  // visibility). Items aren't modelled in the mock, so the natural empty shape
+  // `{ routes: [] }` — same as the slug preview.
+  app.get(
+    "/api/v1/collections/:id/preview",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const collection = state.collections.get(param(req, "id"));
+      if (!collection || collection.owner_id !== session.user_id) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      res.json({ routes: [] });
+    },
+  );
+
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     // `ownedByViewer: true` nulls `owner_name` — matches
