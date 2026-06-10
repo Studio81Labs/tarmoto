@@ -38,6 +38,7 @@ const contributionRef = {
     home_region: string | null;
     rank_in_region: number | null;
     region_rider_count: number | null;
+    region_riders_behind: number | null;
     percentile: number | null;
   } | null,
 };
@@ -82,6 +83,7 @@ describe("Sidebar — Web App v2 nav", () => {
       home_region: null,
       rank_in_region: null,
       region_rider_count: null,
+      region_riders_behind: null,
       percentile: null,
     };
     render(<Sidebar />);
@@ -95,6 +97,7 @@ describe("Sidebar — Web App v2 nav", () => {
       home_region: "Lombardy",
       rank_in_region: 3,
       region_rider_count: 40,
+      region_riders_behind: 37,
       percentile: 8,
     };
     render(<Sidebar />);
@@ -105,6 +108,59 @@ describe("Sidebar — Web App v2 nav", () => {
     ).toBeInTheDocument();
   });
 
+  it("drops the regional line for the sole contributor in a region", () => {
+    contributionRef.current = {
+      km_mapped: 2771,
+      segments_mapped: 510,
+      home_region: "Beskydy, CZ",
+      rank_in_region: 1,
+      region_rider_count: 1,
+      region_riders_behind: 0,
+      percentile: 100,
+    };
+    render(<Sidebar />);
+    // The km total still shows…
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.getByText(/2,771/)).toBeInTheDocument();
+    // …but no "Top 100%" line.
+    expect(screen.queryByText(/top .* riders/i)).not.toBeInTheDocument();
+  });
+
+  it("drops the regional line for a last-place rider tied behind others", () => {
+    // DENSE_RANK gives rank 2 of 3 when two riders tie above the last one, so
+    // rank<count would wrongly show it — gate on region_riders_behind (0 here).
+    contributionRef.current = {
+      km_mapped: 40,
+      segments_mapped: 8,
+      home_region: "Lombardy",
+      rank_in_region: 2,
+      region_rider_count: 3,
+      region_riders_behind: 0,
+      percentile: 67,
+    };
+    render(<Sidebar />);
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.queryByText(/top .* riders/i)).not.toBeInTheDocument();
+  });
+
+  it("still shows the rank for a non-last rider whose percentile rounds to 100", () => {
+    // Large region: ceil(100 / 101 * 100) === 100, but the rider is ahead of
+    // one other (region_riders_behind > 0) — the line must still render.
+    contributionRef.current = {
+      km_mapped: 640,
+      segments_mapped: 120,
+      home_region: "Lombardy",
+      rank_in_region: 100,
+      region_rider_count: 101,
+      region_riders_behind: 1,
+      percentile: 100,
+    };
+    render(<Sidebar />);
+    expect(
+      screen.getByText(/top 100% of riders in lombardy/i),
+    ).toBeInTheDocument();
+  });
+
   it("keeps a decimal for sub-1km contributions instead of showing 0", () => {
     contributionRef.current = {
       km_mapped: 0.3,
@@ -112,6 +168,7 @@ describe("Sidebar — Web App v2 nav", () => {
       home_region: null,
       rank_in_region: null,
       region_rider_count: null,
+      region_riders_behind: null,
       percentile: null,
     };
     render(<Sidebar />);
@@ -126,6 +183,7 @@ describe("Sidebar — Web App v2 nav", () => {
       home_region: null,
       rank_in_region: null,
       region_rider_count: null,
+      region_riders_behind: null,
       percentile: null,
     };
     render(<Sidebar />);

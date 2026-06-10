@@ -2563,6 +2563,7 @@ export function buildApp(): Express {
         home_region: null,
         rank_in_region: null,
         region_rider_count: null,
+        region_riders_behind: null,
         percentile: null,
       });
     },

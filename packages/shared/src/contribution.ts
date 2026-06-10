@@ -32,6 +32,14 @@ export interface ContributionStats {
   /** Riders ranked in the region (the rank denominator). `null` when unranked. */
   region_rider_count: number | null;
   /**
+   * Region riders strictly below the viewer by `km_mapped`. The tie-aware
+   * "ahead of someone" signal: `rank_in_region` is a DENSE_RANK, so comparing
+   * it to `region_rider_count` can't tell a genuinely-last rider from one tied
+   * behind others — this strict-less count can. `0` means the viewer is last
+   * (or sole); `null` when unranked.
+   */
+  region_riders_behind: number | null;
+  /**
    * "Top N%" = `ceil(rank_in_region / region_rider_count * 100)`, 1–100.
    * `null` when unranked.
    */

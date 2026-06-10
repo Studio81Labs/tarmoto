@@ -3562,6 +3562,8 @@ export interface components {
       rank_in_region: number | null;
       /** @description Riders ranked in the region (the rank denominator); null when unranked. */
       region_rider_count: number | null;
+      /** @description Region riders strictly below the viewer by km mapped (tie-aware "ahead of someone" signal; 0 = last/sole); null when unranked. */
+      region_riders_behind: number | null;
       /** @description "Top N%" = ceil(rank / region_rider_count * 100), 1–100; null when unranked. */
       percentile: number | null;
     };
