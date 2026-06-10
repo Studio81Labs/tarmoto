@@ -225,10 +225,10 @@ export default async function SharedCollectionPage({
             {new Date().getUTCFullYear()}
           </Mono>
           <Link
-            href="/"
+            href="/community/collections"
             className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
-            {t("Open in Tarmoto")}
+            {t("Manage in dashboard")}
           </Link>
         </div>
       </footer>
