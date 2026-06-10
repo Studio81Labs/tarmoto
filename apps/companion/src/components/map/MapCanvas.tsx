@@ -54,6 +54,12 @@ interface Props {
   surfaceOpacityExpression?: ExpressionSpecification | number;
   onViewChange?: (view: MapCanvasViewChange) => void;
   onReady?: (map: MapLibreMap) => void;
+  /**
+   * Pin the basemap to a specific theme instead of following the viewer's
+   * color-scheme preference. Used by the public share pages, which always
+   * render on cream regardless of who's viewing.
+   */
+  forceColorScheme?: MapColorScheme;
   children?: React.ReactNode;
 }
 
@@ -77,6 +83,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     surfaceOpacityExpression = 0.75,
     onViewChange,
     onReady,
+    forceColorScheme,
     children,
   },
   ref,
@@ -84,7 +91,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
-  const colorScheme = useMapColorScheme();
+  // Always call the hook (rules of hooks); `forceColorScheme` overrides the
+  // viewer preference when set.
+  const viewerColorScheme = useMapColorScheme();
+  const colorScheme = forceColorScheme ?? viewerColorScheme;
   const colorSchemeRef = useRef(colorScheme);
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
 

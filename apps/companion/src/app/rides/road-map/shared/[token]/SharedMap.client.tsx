@@ -20,6 +20,10 @@ export function SharedMap({ initialCenter, segments }: Props) {
         ref={mapRef}
         initialCenter={initialCenter}
         ridden={segments}
+        // The public share page is always cream — pin the basemap to light and
+        // paint unridden roads in a light tan that reads against it.
+        forceColorScheme="light"
+        dimColor="#C4BBA8"
       />
     </div>
   );
