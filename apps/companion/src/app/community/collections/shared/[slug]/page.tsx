@@ -91,7 +91,7 @@ export default async function SharedCollectionPage({
   );
 
   return (
-    <div className="min-h-screen bg-cream text-ink">
+    <div className="flex min-h-screen flex-col bg-cream text-ink">
       {/* sticky brand header */}
       <header className="sticky top-0 z-30 border-b border-line bg-cream/[0.86] backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex h-[60px] max-w-[980px] items-center justify-between gap-4 px-7">
@@ -126,7 +126,7 @@ export default async function SharedCollectionPage({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
+      <main className="mx-auto w-full max-w-[980px] flex-1 px-7 pb-16 pt-8">
         {/* hero */}
         <section className="mb-[26px] rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="mb-2.5 flex items-center gap-3">
@@ -217,19 +217,17 @@ export default async function SharedCollectionPage({
         />
       </main>
 
-      {/* footer */}
+      {/* footer — brand line only. The header carries the public "Open in
+          Tarmoto" entry and the auth-aware CTA block above the footer gives the
+          owner a "manage from dashboard" link, so a second footer CTA would
+          either duplicate the header or (when pointed at the protected
+          dashboard) send anonymous share recipients to a login wall. */}
       <footer className="border-t border-line bg-paper">
-        <div className="mx-auto flex max-w-[980px] flex-wrap items-center justify-between gap-4 px-7 py-[22px]">
+        <div className="mx-auto flex max-w-[980px] items-center px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
             {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
             {new Date().getUTCFullYear()}
           </Mono>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
-          >
-            {t("Open in Tarmoto")}
-          </Link>
         </div>
       </footer>
     </div>
