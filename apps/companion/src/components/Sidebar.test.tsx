@@ -105,6 +105,20 @@ describe("Sidebar — Web App v2 nav", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps a decimal for sub-1km contributions instead of showing 0", () => {
+    contributionRef.current = {
+      km_mapped: 0.3,
+      segments_mapped: 3,
+      home_region: null,
+      rank_in_region: null,
+      region_rider_count: null,
+      percentile: null,
+    };
+    render(<Sidebar />);
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.getByText(/0\.3/)).toBeInTheDocument();
+  });
+
   it("renders the km but drops the regional line when no home region", () => {
     contributionRef.current = {
       km_mapped: 1200,
