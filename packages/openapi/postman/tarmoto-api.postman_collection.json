@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "55c9c163-cc1a-4db0-945f-f0705a107185",
+    "_postman_id": "9d895c81-c577-4246-8973-cf4205d36990",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -984,6 +984,23 @@
       "name": "badges",
       "item": [
         {
+          "name": "Get the rider's XP / level / tier progression",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/progression",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "progression"]
+            }
+          }
+        },
+        {
           "name": "List a user's badges with progress",
           "request": {
             "method": "GET",
@@ -1375,6 +1392,40 @@
           }
         },
         {
+          "name": "Current month's KPI snapshot for the home dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/stats/monthly",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "stats", "monthly"]
+            }
+          }
+        },
+        {
+          "name": "The rider's road-quality contribution for the sidebar badge",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contribution",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contribution"]
+            }
+          }
+        },
+        {
           "name": "Get a rider's public profile",
           "request": {
             "method": "GET",
@@ -1552,23 +1603,6 @@
                   "value": ""
                 }
               ]
-            }
-          }
-        },
-        {
-          "name": "Current month's KPI snapshot for the home dashboard",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/stats/monthly",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "stats", "monthly"]
             }
           }
         }
@@ -1774,14 +1808,9 @@
               ]
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "sensor",
-      "item": [
+        },
         {
-          "name": "Upload batched accelerometer readings",
+          "name": "Heart a community route",
           "request": {
             "method": "POST",
             "header": [
@@ -1791,86 +1820,12 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sensor/upload",
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId/like",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sensor", "upload"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"calibration\": {\n    \"axis_mean_x\": 0,\n    \"axis_mean_y\": 0,\n    \"axis_mean_z\": 0,\n    \"axis_std_x\": 0,\n    \"axis_std_y\": 0,\n    \"axis_std_z\": 0,\n    \"sample_count\": 0,\n    \"truncated\": false\n  },\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"client_preprocessing_version\": \"lp22-v1\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ],\n  \"tag_events\": [\n    {\n      \"t\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"label\": \"smooth_asphalt\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "trip-shares",
-      "item": [
-        {
-          "name": "Create a shareable invite link for a trip snapshot (US-35)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trip-shares",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {},\n  \"trip_id\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "List the caller's own trip shares",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trip-shares/mine",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", "mine"]
-            }
-          }
-        },
-        {
-          "name": "View a shared trip by token (no auth required, read-only)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trip-shares/:token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":token"],
+              "path": ["api", "v1", "rides", ":rideId", "like"],
               "variable": [
                 {
-                  "key": "token",
+                  "key": "rideId",
                   "value": ""
                 }
               ]
@@ -1878,30 +1833,7 @@
           }
         },
         {
-          "name": "Accept a shared trip token into collaboration membership",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trip-shares/:token/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":token", "join"],
-              "variable": [
-                {
-                  "key": "token",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Revoke a trip share (owner only)",
+          "name": "Remove a heart from a community route",
           "request": {
             "method": "DELETE",
             "header": [
@@ -1911,12 +1843,35 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/trip-shares/:id",
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId/like",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":id"],
+              "path": ["api", "v1", "rides", ":rideId", "like"],
               "variable": [
                 {
-                  "key": "id",
+                  "key": "rideId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Clone a community route into a new draft trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId/clone",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "clone"],
+              "variable": [
+                {
+                  "key": "rideId",
                   "value": ""
                 }
               ]
@@ -1928,37 +1883,6 @@
     {
       "name": "trips",
       "item": [
-        {
-          "name": "List recent activity for a trip (members only)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/activity",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "activity"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "Max entries to return (1-200, default 100).",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
         {
           "name": "List trips the caller can see",
           "request": {
@@ -2603,6 +2527,338 @@
               }
             }
           }
+        },
+        {
+          "name": "List recent activity for a trip (members only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/activity",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "activity"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max entries to return (1-200, default 100).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "trip-shares",
+      "item": [
+        {
+          "name": "Create a shareable invite link for a trip snapshot (US-35)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {},\n  \"trip_id\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List the caller's own trip shares",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", "mine"]
+            }
+          }
+        },
+        {
+          "name": "View a shared trip by token (no auth required, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":token"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Accept a shared trip token into collaboration membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:token/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":token", "join"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke a trip share (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "commute",
+      "item": [
+        {
+          "name": "Get user's saved commute routes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
+            }
+          }
+        },
+        {
+          "name": "Save a commute route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Default\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mark a commute route as the primary one",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId/primary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes", ":routeId", "primary"],
+              "variable": [
+                {
+                  "key": "routeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete a commute route",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes", ":routeId"],
+              "variable": [
+                {
+                  "key": "routeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get current commute status (hazards, weather, route quality)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get alternative routes when primary has issues",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/alternatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "alternatives"]
+            }
+          }
+        },
+        {
+          "name": "Get commute statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "stats"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sensor",
+      "item": [
+        {
+          "name": "Upload batched accelerometer readings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sensor/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sensor", "upload"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"calibration\": {\n    \"axis_mean_x\": 0,\n    \"axis_mean_y\": 0,\n    \"axis_mean_z\": 0,\n    \"axis_std_x\": 0,\n    \"axis_std_y\": 0,\n    \"axis_std_z\": 0,\n    \"sample_count\": 0,\n    \"truncated\": false\n  },\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"client_preprocessing_version\": \"lp22-v1\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ],\n  \"tag_events\": [\n    {\n      \"t\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"label\": \"smooth_asphalt\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -2738,6 +2994,43 @@
           }
         },
         {
+          "name": "Browse public collections (search + popularity ranked)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/discover",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", "discover"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Create a new route collection",
           "request": {
             "method": "POST",
@@ -2810,6 +3103,29 @@
               "variable": [
                 {
                   "key": "slug",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Map preview geometries (simplified polylines) for the items in a collection the caller owns — any visibility, including private. Powers the owner detail-page route thumbnails. Non-owners use `/collections/by-slug/:slug/preview`.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/:id/preview",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", ":id", "preview"],
+              "variable": [
+                {
+                  "key": "id",
                   "value": ""
                 }
               ]
@@ -3338,6 +3654,224 @@
           }
         },
         {
+          "name": "Aggregate KPIs for a filtered set of rides",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "stats"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "started_from",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive)",
+                  "disabled": true
+                },
+                {
+                  "key": "started_to",
+                  "value": "",
+                  "description": "ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Case-insensitive substring match against ride name",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lat",
+                  "value": "",
+                  "description": "Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lng",
+                  "value": "",
+                  "description": "Longitude of the reference point. See near_lat.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_km",
+                  "value": "",
+                  "description": "Proximity radius in kilometres for the near_lat/near_lng filter.",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Surface + curviness distance breakdown for a filtered set",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/stats/breakdown",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "stats", "breakdown"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "started_from",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive)",
+                  "disabled": true
+                },
+                {
+                  "key": "started_to",
+                  "value": "",
+                  "description": "ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Case-insensitive substring match against ride name",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lat",
+                  "value": "",
+                  "description": "Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lng",
+                  "value": "",
+                  "description": "Longitude of the reference point. See near_lat.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_km",
+                  "value": "",
+                  "description": "Proximity radius in kilometres for the near_lat/near_lng filter.",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Rename a ride",
           "request": {
             "method": "PATCH",
@@ -3456,268 +3990,6 @@
                 {
                   "key": "rideId",
                   "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Aggregate KPIs for a filtered set of rides",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/rides/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "stats"],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "offset",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "type",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "started_from",
-                  "value": "",
-                  "description": "ISO 8601 date (inclusive)",
-                  "disabled": true
-                },
-                {
-                  "key": "started_to",
-                  "value": "",
-                  "description": "ISO 8601 upper bound. A date (YYYY-MM-DD) is inclusive end-of-day; a full timestamp is an exact `<=` instant bound (no end-of-day widening).",
-                  "disabled": true
-                },
-                {
-                  "key": "min_distance_km",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "max_distance_km",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "min_quality",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "max_quality",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "q",
-                  "value": "",
-                  "description": "Case-insensitive substring match against ride name",
-                  "disabled": true
-                },
-                {
-                  "key": "near_lat",
-                  "value": "",
-                  "description": "Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together.",
-                  "disabled": true
-                },
-                {
-                  "key": "near_lng",
-                  "value": "",
-                  "description": "Longitude of the reference point. See near_lat.",
-                  "disabled": true
-                },
-                {
-                  "key": "near_km",
-                  "value": "",
-                  "description": "Proximity radius in kilometres for the near_lat/near_lng filter.",
-                  "disabled": true
-                },
-                {
-                  "key": "sort",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "order",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "commute",
-      "item": [
-        {
-          "name": "Get user's saved commute routes",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
-            }
-          }
-        },
-        {
-          "name": "Save a commute route",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Default\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Mark a commute route as the primary one",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId/primary",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId", "primary"],
-              "variable": [
-                {
-                  "key": "routeId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Delete a commute route",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId"],
-              "variable": [
-                {
-                  "key": "routeId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get current commute status (hazards, weather, route quality)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "status"]
-            }
-          }
-        },
-        {
-          "name": "Get alternative routes when primary has issues",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/alternatives",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "alternatives"]
-            }
-          }
-        },
-        {
-          "name": "Get commute statistics",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "stats"],
-              "query": [
-                {
-                  "key": "period",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
                 }
               ]
             }
@@ -4265,6 +4537,31 @@
                 {
                   "key": "userId",
                   "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Riders the caller might want to follow",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/suggestions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "suggestions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
                 }
               ]
             }
