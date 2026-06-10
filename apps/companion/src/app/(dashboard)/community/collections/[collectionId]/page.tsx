@@ -22,6 +22,7 @@ import {
   Loader2,
   Plus,
   Route as RouteIcon,
+  Search,
   Share2,
   Trash2,
   X,
@@ -810,7 +811,7 @@ function StatusPill({ status }: { status: string }) {
           : "border-line-strong text-ink";
   return (
     <span
-      className={`hidden shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.2px] sm:inline-block ${tone}`}
+      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.2px] ${tone}`}
     >
       {status}
     </span>
@@ -1197,50 +1198,62 @@ function RoutePickerModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[80vh] rounded-2xl border border-line bg-cream p-5 shadow-xl flex flex-col"
+        className="flex max-h-[82vh] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl border border-line bg-cream shadow-[0_32px_80px_rgba(14,14,16,0.3)]"
       >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-ink">{t("Add routes")}</h2>
+        <div className="flex items-start justify-between px-[22px] pt-5">
+          <div>
+            <Stamp>{t("Collection")}</Stamp>
+            <h2 className="mt-1 font-sans text-[22px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+              {t("Add routes")}
+            </h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t("Close")}
-            className="p-1.5 rounded-lg text-fg-dim hover:text-ink hover:bg-paper transition"
+            className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-fg-mute transition hover:bg-paper hover:text-ink"
           >
-            <X size={14} />
+            <X size={18} />
           </button>
         </div>
 
-        <div
-          role="tablist"
-          aria-label={t("Add routes from")}
-          className="mb-3 inline-flex gap-1 rounded-[10px] border border-line bg-paper p-1"
-        >
-          <PickerTabButton
-            active={tab === "trips"}
-            onClick={() => setTab("trips")}
-            label="Trips"
-            count={selectedTrips.size}
-          />
-          <PickerTabButton
-            active={tab === "rides"}
-            onClick={() => setTab("rides")}
-            label="Rides"
-            count={selectedRides.size}
-          />
+        <div className="flex flex-col gap-3 px-[22px] pb-3.5 pt-4">
+          <div
+            role="tablist"
+            aria-label={t("Add routes from")}
+            className="flex gap-1 rounded-[11px] bg-paper p-1"
+          >
+            <PickerTabButton
+              active={tab === "trips"}
+              onClick={() => setTab("trips")}
+              label="Trips"
+              count={trips.length}
+            />
+            <PickerTabButton
+              active={tab === "rides"}
+              onClick={() => setTab("rides")}
+              label="Rides"
+              count={rides.length}
+            />
+          </div>
+
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-mute">
+              <Search size={14} aria-hidden="true" />
+            </span>
+            <input
+              type="text"
+              placeholder={
+                tab === "trips" ? "Search your trips…" : "Search your rides…"
+              }
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-[10px] border border-line bg-cream py-2.5 pl-10 pr-3.5 text-sm text-ink placeholder:text-fg-mute focus:border-accent focus:outline-none"
+            />
+          </div>
         </div>
 
-        <input
-          type="text"
-          placeholder={
-            tab === "trips" ? "Search your trips…" : "Search your rides…"
-          }
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent mb-3"
-        />
-
-        <div className="flex-1 overflow-y-auto -mx-1 px-1">
+        <div className="min-h-[120px] flex-1 overflow-y-auto px-[22px]">
           {tab === "trips" ? (
             <TripPickerList
               trips={trips}
@@ -1265,19 +1278,19 @@ function RoutePickerModal({
           )}
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-fg-dim">
+        <div className="flex items-center justify-between gap-3 border-t border-line px-[22px] py-3.5">
+          <Mono className="text-[12px] font-bold text-fg-mute">
             {t("{count} selected", { count: totalSelected })}
-          </p>
+          </Mono>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="secondary" uppercase onClick={onClose}>
               {t("Cancel")}
             </Button>
             <Button
-              variant="accent"
-              size="sm"
+              variant="primary"
               uppercase
               disabled={totalSelected === 0}
+              leftIcon={<Plus size={14} />}
               onClick={() =>
                 onAdd({
                   tripIds: Array.from(selectedTrips),
@@ -1286,7 +1299,7 @@ function RoutePickerModal({
               }
             >
               {t("Add")}
-              {totalSelected > 0 ? ` (${totalSelected})` : ""}
+              {totalSelected > 0 ? ` ${totalSelected}` : ""}
             </Button>
           </div>
         </div>
@@ -1311,7 +1324,7 @@ function PickerTabButton({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 text-[12px] font-bold transition-colors ${
+      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-bold transition-colors ${
         active
           ? "bg-ink text-cream"
           : "bg-transparent text-fg-dim hover:text-ink"
@@ -1326,6 +1339,65 @@ function PickerTabButton({
         </Mono>
       )}
     </button>
+  );
+}
+/**
+ * One selectable row in the add-routes picker: custom checkbox, a route-glyph
+ * thumbnail (the picker lists every owned trip/ride and has no per-item
+ * geometry, so the thumb is a placeholder rather than a real preview), the
+ * name, a mono meta line, and a status pill.
+ */
+function PickerRow({
+  checked,
+  onToggle,
+  name,
+  meta,
+  status,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  name: string;
+  meta: string;
+  status: string;
+}) {
+  return (
+    <li>
+      <label
+        className={`flex cursor-pointer items-center gap-3 rounded-[11px] border px-3 py-2.5 transition ${
+          checked
+            ? "border-accent bg-accent/5"
+            : "border-line bg-cream hover:border-line-strong"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="peer sr-only"
+        />
+        <span
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 ${
+            checked
+              ? "border-accent bg-accent text-ink"
+              : "border-line-strong text-transparent"
+          }`}
+        >
+          <Check size={13} strokeWidth={3} aria-hidden="true" />
+        </span>
+        <span className="flex h-9 w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] border border-line bg-paper text-fg-mute">
+          <RouteIcon size={15} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-bold text-ink">
+            {name}
+          </span>
+          <Mono className="mt-0.5 block text-[10.5px] uppercase text-fg-mute">
+            {meta}
+          </Mono>
+        </span>
+        <StatusPill status={status} />
+      </label>
+    </li>
   );
 }
 function TripPickerList({
@@ -1407,43 +1479,27 @@ function TripPickerList({
     );
   }
   return (
-    <ul className="space-y-1.5">
+    <ul className="flex flex-col gap-2 pb-1">
       {visibleTrips.map((trip) => {
-        const checked = selected.has(trip.id);
         // `distance === null` ⇒ summary-only; drop the distance segment from
         // the meta line rather than rendering "0 km".
         const distance = tripDistanceKmOrNull(trip);
         const dayCount = trip.num_days;
         const dayLabel =
           dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount });
-        const metaParts = [dayLabel];
-        if (distance !== null) metaParts.push(formatDistance(distance));
-        metaParts.push(trip.status);
+        const meta =
+          distance !== null
+            ? `${dayLabel} · ${formatDistance(distance)}`
+            : dayLabel;
         return (
-          <li key={trip.id}>
-            <label
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
-                checked
-                  ? "border-accent/40 bg-accent/5"
-                  : "border-line bg-paper hover:border-line-strong"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(trip.id)}
-                className="accent-accent"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink truncate">
-                  {trip.name}
-                </p>
-                <p className="text-[11px] text-fg-dim">
-                  {metaParts.join(" · ")}
-                </p>
-              </div>
-            </label>
-          </li>
+          <PickerRow
+            key={trip.id}
+            checked={selected.has(trip.id)}
+            onToggle={() => onToggle(trip.id)}
+            name={trip.name}
+            meta={meta}
+            status={trip.status}
+          />
         );
       })}
     </ul>
@@ -1518,42 +1574,25 @@ function RidePickerList({
     );
   }
   return (
-    <ul className="space-y-1.5">
+    <ul className="flex flex-col gap-2 pb-1">
       {visibleRides.map((ride) => {
-        const checked = selected.has(ride.id);
         const displayName =
           ride.name ??
           `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
+        const date = new Date(ride.started_at).toLocaleDateString();
+        const meta =
+          ride.distance_km != null
+            ? `${date} · ${formatDistance(ride.distance_km)}`
+            : date;
         return (
-          <li key={ride.id}>
-            <label
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition ${
-                checked
-                  ? "border-accent/40 bg-accent/5"
-                  : "border-line bg-paper hover:border-line-strong"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(ride.id)}
-                className="accent-accent"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink truncate">
-                  {displayName}
-                </p>
-                <p className="text-[11px] text-fg-dim">
-                  {new Date(ride.started_at).toLocaleDateString()}
-                  {ride.distance_km != null
-                    ? ` · ${formatDistance(ride.distance_km)}`
-                    : ""}
-                  {" · "}
-                  {ride.ride_type}
-                </p>
-              </div>
-            </label>
-          </li>
+          <PickerRow
+            key={ride.id}
+            checked={selected.has(ride.id)}
+            onToggle={() => onToggle(ride.id)}
+            name={displayName}
+            meta={meta}
+            status="completed"
+          />
         );
       })}
     </ul>
