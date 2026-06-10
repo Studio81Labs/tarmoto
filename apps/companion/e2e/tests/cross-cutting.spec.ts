@@ -67,13 +67,13 @@ test.describe("cross-cutting", () => {
   }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /notifications/i }).click();
-    // The dropdown carries the "Notification settings" affordance —
-    // a stable signal that the panel mounted regardless of unread
-    // state. (The bell itself is `aria-label="Notifications"`; the
-    // settings link is `aria-label="Notification settings"`.)
-    await expect(
-      page.getByRole("link", { name: /notification settings/i }),
-    ).toBeVisible({ timeout: 5_000 });
+    // The mock seeds an empty inbox, so the open dropdown shows the
+    // caught-up empty state — a stable signal that the panel mounted.
+    // (The bell button is `aria-label="Notifications"`; this text only
+    // renders inside the open dropdown.)
+    await expect(page.getByText(/you're all caught up/i)).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   // T63 — Active nav highlighting: a sub-route inside one of the
