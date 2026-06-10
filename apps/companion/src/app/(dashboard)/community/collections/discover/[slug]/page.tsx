@@ -185,14 +185,12 @@ export default function DiscoverCollectionPage() {
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {detail!.viewer_is_owner ? (
-            <Link href={`/community/collections/${detail!.id}`}>
-              <Button
-                variant="secondary"
-                uppercase
-                leftIcon={<Settings2 size={14} />}
-              >
-                {t("Manage")}
-              </Button>
+            <Link
+              href={`/community/collections/${detail!.id}`}
+              className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
+            >
+              <Settings2 size={14} aria-hidden="true" />
+              {t("Manage")}
             </Link>
           ) : (
             <Button
