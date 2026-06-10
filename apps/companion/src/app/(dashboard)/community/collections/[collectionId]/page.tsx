@@ -687,12 +687,12 @@ function VisibilitySelector({
   );
 }
 function ShareButton({ collection }: { collection: RouteCollectionView }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => {
-    if (!copied) return;
-    const timeoutId = window.setTimeout(() => setCopied(false), 2000);
+    if (state === "idle") return;
+    const timeoutId = window.setTimeout(() => setState("idle"), 2000);
     return () => window.clearTimeout(timeoutId);
-  }, [copied]);
+  }, [state]);
   const sharable = collection.visibility !== "private";
   const url =
     typeof window === "undefined"
@@ -702,9 +702,12 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
     if (!sharable) return;
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
+      setState("copied");
     } catch {
-      // Clipboard can reject on insecure origins; fail silently.
+      // Clipboard rejects on insecure origins / denied permission — surface a
+      // visible "Copy failed" so the user knows sharing didn't take rather
+      // than seeing the button do nothing.
+      setState("failed");
     }
   };
   return (
@@ -712,15 +715,21 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       variant="secondary"
       uppercase
       disabled={!sharable}
-      leftIcon={copied ? <Check size={14} /> : <Share2 size={14} />}
+      leftIcon={state === "copied" ? <Check size={14} /> : <Share2 size={14} />}
       title={
         sharable
-          ? t("Copy share link")
+          ? state === "failed"
+            ? t("Couldn't copy — copy the URL from your browser instead")
+            : t("Copy share link")
           : t("Make this collection unlisted or public to share")
       }
       onClick={() => void handle()}
     >
-      {copied ? t("Copied") : t("Share")}
+      {state === "copied"
+        ? t("Copied")
+        : state === "failed"
+          ? t("Copy failed")
+          : t("Share")}
     </Button>
   );
 }
