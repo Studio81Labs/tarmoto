@@ -512,7 +512,6 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
 
       {open && (
         <NotificationsDropdown
-          collapsed={collapsed}
           items={items}
           loading={loading}
           error={error}
@@ -527,7 +526,6 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
 }
 
 function NotificationsDropdown({
-  collapsed,
   items,
   loading,
   error,
@@ -536,7 +534,6 @@ function NotificationsDropdown({
   onMarkAllRead,
   onClose,
 }: {
-  collapsed: boolean;
   items: InAppNotification[];
   loading: boolean;
   error: string | null;
@@ -548,8 +545,10 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        "absolute z-50 mb-2 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
-        collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0",
+        // Anchored to the right edge of the sidebar (left-full) with a ~10px
+        // gap, bottom-aligned to the bell — matching the v2 design's
+        // `left: 240px` placement in both the expanded and collapsed rail.
+        "absolute bottom-0 left-full z-50 ml-2.5 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
       )}
     >
       <div className="mb-3.5 flex items-start justify-between gap-3">
