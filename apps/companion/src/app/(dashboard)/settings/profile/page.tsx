@@ -1,6 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -17,6 +18,7 @@ type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
 export default function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
+  const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [homeRegion, setHomeRegion] = useState("");
@@ -174,6 +176,12 @@ export default function ProfilePage() {
       if (user) {
         setAuthUser({ ...user, displayName: data.display_name });
       }
+      // A home_region change moves the rider's regional rank, so refresh the
+      // sidebar "Your contribution" badge (its query is cached per-user and
+      // window-focus refetch is off, so it won't update on its own).
+      if (payload.home_region !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: ["contribution"] });
+      }
       setSaveState("saved");
       if (saveResetTimerRef.current !== null) {
         window.clearTimeout(saveResetTimerRef.current);
@@ -192,7 +200,15 @@ export default function ProfilePage() {
         err instanceof Error ? err.message : t("Could not save your profile."),
       );
     }
-  }, [displayName, bio, homeRegion, user, setAuthUser, didHydrateProfile]);
+  }, [
+    displayName,
+    bio,
+    homeRegion,
+    user,
+    setAuthUser,
+    didHydrateProfile,
+    queryClient,
+  ]);
   const handleCopySignInEmail = useCallback(async () => {
     if (!user?.email) return;
     if (copyResetTimerRef.current !== null) {

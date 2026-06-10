@@ -19,6 +19,16 @@ vi.mock("qrcode", () => ({
   },
 }));
 
+// The page only pulls `useQueryClient` (to refresh the contribution badge
+// after a home_region save), so stub it rather than wrap every render in a
+// provider.
+const { invalidateQueriesMock } = vi.hoisted(() => ({
+  invalidateQueriesMock: vi.fn(),
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+}));
+
 const authState = {
   user: {
     id: "user-1",
@@ -69,6 +79,7 @@ describe("ProfilePage", () => {
     uploadAvatarMock.mockReset();
     updateMeMock.mockReset();
     qrToDataURLMock.mockClear();
+    invalidateQueriesMock.mockReset();
     authState.setUser.mockReset();
     preferencesState.setUnitSystem.mockReset();
     preferencesState.hydrate.mockReset();
@@ -78,6 +89,55 @@ describe("ProfilePage", () => {
         writeText: clipboardWriteText,
       },
     });
+  });
+
+  it("refreshes the contribution badge after a profile save (home_region may have changed)", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    updateMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: "Likes mountain passes",
+        home_region: "Lombardy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+
+    render(<ProfilePage />);
+    expect(
+      await screen.findByDisplayValue("Likes mountain passes"),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["contribution"],
+      }),
+    );
   });
 
   it("keeps the save button disabled while a second save is in flight after a prior success", async () => {

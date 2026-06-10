@@ -28,6 +28,27 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+// Stub the contribution badge's data hook so the nav tests don't need a
+// react-query provider. Mutable ref so a test can opt into contribution data;
+// defaults to none (the badge hides itself).
+const contributionRef = {
+  current: null as {
+    km_mapped: number;
+    segments_mapped: number;
+    home_region: string | null;
+    rank_in_region: number | null;
+    region_rider_count: number | null;
+    percentile: number | null;
+  } | null,
+};
+vi.mock("@/hooks/useContribution", () => ({
+  useContribution: () => ({
+    contribution: contributionRef.current,
+    loading: false,
+    error: false,
+  }),
+}));
+
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (selector: (s: { accessToken: string | null }) => unknown) =>
     selector({ accessToken: "test-token" }),
@@ -46,6 +67,7 @@ beforeEach(() => {
   });
   localStorage.clear();
   pathnameRef.current = "/";
+  contributionRef.current = null;
 });
 
 afterEach(() => {
@@ -53,6 +75,64 @@ afterEach(() => {
 });
 
 describe("Sidebar — Web App v2 nav", () => {
+  it("hides the contribution badge when the rider has mapped nothing", () => {
+    contributionRef.current = {
+      km_mapped: 0,
+      segments_mapped: 0,
+      home_region: null,
+      rank_in_region: null,
+      region_rider_count: null,
+      percentile: null,
+    };
+    render(<Sidebar />);
+    expect(screen.queryByText(/your contribution/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the contribution badge with km + regional standing", () => {
+    contributionRef.current = {
+      km_mapped: 4284.4,
+      segments_mapped: 510,
+      home_region: "Lombardy",
+      rank_in_region: 3,
+      region_rider_count: 40,
+      percentile: 8,
+    };
+    render(<Sidebar />);
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.getByText(/4,284/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/top 8% of riders in lombardy/i),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a decimal for sub-1km contributions instead of showing 0", () => {
+    contributionRef.current = {
+      km_mapped: 0.3,
+      segments_mapped: 3,
+      home_region: null,
+      rank_in_region: null,
+      region_rider_count: null,
+      percentile: null,
+    };
+    render(<Sidebar />);
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.getByText(/0\.3/)).toBeInTheDocument();
+  });
+
+  it("renders the km but drops the regional line when no home region", () => {
+    contributionRef.current = {
+      km_mapped: 1200,
+      segments_mapped: 90,
+      home_region: null,
+      rank_in_region: null,
+      region_rider_count: null,
+      percentile: null,
+    };
+    render(<Sidebar />);
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.queryByText(/top .* riders/i)).not.toBeInTheDocument();
+  });
+
   it("does not render Settings as a top-level nav item", () => {
     render(<Sidebar />);
     const navlinks = screen.getAllByRole("link");
