@@ -1208,7 +1208,7 @@ function RoutePickerModal({
         <div
           role="tablist"
           aria-label={t("Add routes from")}
-          className="mb-3 flex gap-1 rounded-lg bg-paper border border-line p-1"
+          className="mb-3 inline-flex gap-1 rounded-[10px] border border-line bg-paper p-1"
         >
           <PickerTabButton
             active={tab === "trips"}
@@ -1305,21 +1305,19 @@ function PickerTabButton({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+      className={`inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 text-[12px] font-bold transition-colors ${
         active
-          ? "bg-paper text-ink"
-          : "text-fg-dim hover:text-ink hover:bg-cream"
+          ? "bg-ink text-cream"
+          : "bg-transparent text-fg-dim hover:text-ink"
       }`}
     >
-      {label}
+      <span>{label}</span>
       {count > 0 && (
-        <span
-          className={`ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] px-1 rounded-full text-[10px] ${
-            active ? "bg-accent/20 text-accent" : "bg-paper text-ink"
-          }`}
+        <Mono
+          className={`text-[10px] ${active ? "text-cream/70" : "text-fg-mute"}`}
         >
-          {count}
-        </span>
+          · {count}
+        </Mono>
       )}
     </button>
   );
