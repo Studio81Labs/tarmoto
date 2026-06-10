@@ -545,10 +545,12 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        // Anchored to the right edge of the sidebar (left-full) with a ~10px
-        // gap, bottom-aligned to the bell — matching the v2 design's
-        // `left: 240px` placement in both the expanded and collapsed rail.
-        "absolute bottom-0 left-full z-50 ml-2.5 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
+        // Anchored to the right of the rail, bottom-aligned to the bell —
+        // matching the v2 design's `left: 240px` placement. `left-full` lands
+        // at the bell wrapper's right edge, which sits inside the rail's right
+        // padding, so the margin clears that padding (~14px) plus a ~10px gap
+        // to fully escape the sidebar.
+        "absolute bottom-0 left-full z-50 ml-6 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
       )}
     >
       <div className="mb-3.5 flex items-start justify-between gap-3">
