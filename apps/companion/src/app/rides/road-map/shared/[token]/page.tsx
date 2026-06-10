@@ -9,6 +9,7 @@ import {
   parseMapShareSnapshot,
   type MapShareSnapshot,
 } from "@/lib/road-map-layer";
+import { TIME_PERIOD_LABELS } from "@/lib/exploration";
 import { formatDistance } from "@/lib/utils";
 import { SharedMap } from "./SharedMap.client";
 
@@ -155,26 +156,33 @@ export default async function SharedRoadMapPage({
               <SnapshotLegend snapshot={snapshot} />
             </div>
 
-            {/* stats — no region field in the snapshot, so 3 tiles */}
+            {/* stats — no region field in the snapshot, so 3 tiles. On a
+                period share the segment count is period-filtered (matches the
+                map) while distance/coverage stay lifetime totals, so each tile
+                carries a scope label to explain the mix. */}
             <section className="mb-[30px] grid grid-cols-1 gap-3.5 sm:grid-cols-3">
               <MetricTile
                 variant="ink"
                 accentNumber
                 label={t("Segments ridden")}
                 // The highlighted (period-filtered) count, matching the map,
-                // legend, and the "segments highlighted" hero chip. Equal to
-                // `stats.ridden_segments` for an all-time share; for a period
-                // share `stats.ridden_segments` stays the all-time total, which
-                // would contradict the map.
+                // legend, and the "segments highlighted" hero chip.
                 value={snapshot.segments.length}
+                delta={
+                  snapshot.period === "all"
+                    ? undefined
+                    : TIME_PERIOD_LABELS[snapshot.period]
+                }
               />
               <MetricTile
                 label={t("Distance ridden")}
                 value={formatDistance(snapshot.stats.total_distance_km)}
+                delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
               <MetricTile
                 label={t("Coverage")}
                 value={`${snapshot.stats.percent_explored}%`}
+                delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
             </section>
           </>
