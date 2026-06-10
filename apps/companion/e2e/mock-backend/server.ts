@@ -2217,6 +2217,10 @@ export function buildApp(): Express {
       serializeCollectionDetail(collection, viewerOwns, {
         maskOwner,
         viewerIsFollowing,
+        followerCount: countCollectionFollowers(
+          state.collectionFollows,
+          collection.id,
+        ),
       }),
     );
   });
@@ -2457,15 +2461,12 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    // `collectionFollows` is keyed user → {collection}, so a collection's
-    // follower count is the number of users whose set includes it.
-    let followerCount = 0;
-    for (const follows of state.collectionFollows.values()) {
-      if (follows.has(collection.id)) followerCount += 1;
-    }
     res.json(
       serializeCollectionDetail(collection, /* viewerOwns */ true, {
-        followerCount,
+        followerCount: countCollectionFollowers(
+          state.collectionFollows,
+          collection.id,
+        ),
       }),
     );
   });
@@ -3611,6 +3612,21 @@ function serializeCollectionSummary(
     created_at: collection.created_at,
     updated_at: collection.updated_at,
   };
+}
+
+// `collectionFollows` is keyed user → {collectionId}, so a collection's
+// follower count is the number of users whose set includes it. Production
+// `toDetailResponse` counts follows for every detail endpoint, so all
+// detail serializers go through this.
+function countCollectionFollowers(
+  collectionFollows: Map<string, Map<string, string>>,
+  collectionId: string,
+): number {
+  let count = 0;
+  for (const follows of collectionFollows.values()) {
+    if (follows.has(collectionId)) count += 1;
+  }
+  return count;
 }
 
 function serializeCollectionDetail(
