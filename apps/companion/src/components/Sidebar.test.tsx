@@ -122,6 +122,23 @@ describe("Sidebar — Web App v2 nav", () => {
     expect(screen.queryByText(/top .* riders/i)).not.toBeInTheDocument();
   });
 
+  it("still shows the rank for a non-last rider whose percentile rounds to 100", () => {
+    // Large region: ceil(100 / 101 * 100) === 100, but the rider is ahead of
+    // one other — the line must still render (gate on rank < count, not %).
+    contributionRef.current = {
+      km_mapped: 640,
+      segments_mapped: 120,
+      home_region: "Lombardy",
+      rank_in_region: 100,
+      region_rider_count: 101,
+      percentile: 100,
+    };
+    render(<Sidebar />);
+    expect(
+      screen.getByText(/top 100% of riders in lombardy/i),
+    ).toBeInTheDocument();
+  });
+
   it("keeps a decimal for sub-1km contributions instead of showing 0", () => {
     contributionRef.current = {
       km_mapped: 0.3,
