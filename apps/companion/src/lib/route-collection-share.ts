@@ -1,8 +1,11 @@
 import { cache } from "react";
 import { API_BASE_SERVER } from "@/lib/config";
-import type { RouteCollectionDetail } from "@/lib/api";
+import type {
+  RouteCollectionDetail,
+  RouteCollectionPreviewResponse,
+} from "@/lib/api";
 
-export type { RouteCollectionDetail };
+export type { RouteCollectionDetail, RouteCollectionPreviewResponse };
 
 /**
  * Server-side fetch for the public/unlisted slug endpoint. Uses the server
@@ -34,5 +37,24 @@ export const fetchSharedCollection = cache(
     }
 
     return (await res.json()) as RouteCollectionDetail;
+  },
+);
+
+/**
+ * Server-side fetch for the per-item preview of a public/unlisted collection —
+ * the simplified route geometry plus the per-item summaries (#689) the shared
+ * page renders its route rows + map from. Same `cache()` + `no-store` rationale
+ * as `fetchSharedCollection`. Returns an empty `{ routes: [] }` on any
+ * non-200 (the detail fetch is the source of truth for not-found), so a
+ * transient preview hiccup degrades to "no routes traced" rather than a crash.
+ */
+export const fetchSharedCollectionPreview = cache(
+  async (slug: string): Promise<RouteCollectionPreviewResponse> => {
+    const res = await fetch(
+      `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}/preview`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return { routes: [] };
+    return (await res.json()) as RouteCollectionPreviewResponse;
   },
 );
