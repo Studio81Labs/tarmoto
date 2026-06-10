@@ -950,11 +950,17 @@ describe('RouteCollectionsService', () => {
           .filter((sql) => /ST_AsGeoJSON/.test(sql))
           .every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
       ).toBe(true);
-      // Every query is owner-scoped so a crafted cross-owner item can't leak
-      // another rider's route (geometry or summary) through the public preview.
-      expect(
-        calls.every((sql) => /t\.owner_id\s*=|user_id\s*=/.test(sql)),
-      ).toBe(true);
+      // Owner-scoped so a route the owner can't access can't leak. Trips scope
+      // via a `trip_members` membership check (covers owner + collaborator
+      // trips the picker can add); rides via `user_id` (no ride sharing).
+      const tripQueries = calls.filter((sql) =>
+        /trip_days|FROM\s+trips/i.test(sql),
+      );
+      const rideQueries = calls.filter((sql) => /FROM\s+rides/i.test(sql));
+      expect(tripQueries).toHaveLength(2);
+      expect(rideQueries).toHaveLength(2);
+      expect(tripQueries.every((sql) => /trip_members/i.test(sql))).toBe(true);
+      expect(rideQueries.every((sql) => /user_id\s*=/.test(sql))).toBe(true);
       // The owner id is threaded into each query's params.
       expect(
         queryMock.mock.calls.every((c) =>

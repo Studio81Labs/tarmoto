@@ -494,13 +494,19 @@ export class RouteCollectionsService {
     // so a non-owner viewer can render the route rows without the viewer's own
     // trip/ride cache.
     //
-    // Every query is scoped to `ownerId`. `route_collection_items.trip_id` /
-    // `ride_id` are unconstrained UUIDs and `addItem` doesn't verify route
-    // ownership, so a crafted/stale item could reference another rider's
-    // (possibly private) trip or ride. Filtering on `t.owner_id` /
-    // `rides.user_id` ensures the public/unlisted preview can only ever
-    // surface the collection owner's own routes — a non-owned item falls
-    // through to the empty-geometry / null-summary "missing item" shape.
+    // Every query is scoped to the collection owner. `route_collection_items`
+    // `trip_id` / `ride_id` are unconstrained UUIDs and `addItem` doesn't
+    // verify route accessibility, so a crafted/stale item could reference a
+    // route the owner can't see. Scope to what the owner is *allowed to see*,
+    // matching the picker (`TripsService.list` / `useUserTrips`):
+    //  - trips: a `trip_members` row for the owner — this covers both trips
+    //    they own AND collaborator trips they joined (the create flow inserts
+    //    the owner as a member), so legitimately-added collaborator trips keep
+    //    rendering instead of looking deleted.
+    //  - rides: `rides.user_id` — rides have no membership/sharing, so the
+    //    owner can only ever add their own.
+    // A route the owner can't access falls through to the empty-geometry /
+    // null-summary "missing item" shape.
     const [tripRows, rideRows, tripMetaRows, rideMetaRows] = await Promise.all([
       tripIds.length === 0
         ? Promise.resolve<TripDayRow[]>([])
@@ -508,9 +514,11 @@ export class RouteCollectionsService {
             `SELECT d.trip_id,
                     ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, $1)) AS geometry
              FROM trip_days d
-             JOIN trips t ON t.id = d.trip_id
              WHERE d.trip_id = ANY($2::uuid[])
-               AND t.owner_id = $3
+               AND EXISTS (
+                 SELECT 1 FROM trip_members tm
+                 WHERE tm.trip_id = d.trip_id AND tm.user_id = $3
+               )
                AND d.route_geom IS NOT NULL
              ORDER BY d.trip_id, d.day_number`,
             [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds, ownerId],
@@ -540,7 +548,10 @@ export class RouteCollectionsService {
              FROM trips t
              LEFT JOIN trip_days d ON d.trip_id = t.id
              WHERE t.id = ANY($1::uuid[])
-               AND t.owner_id = $2
+               AND EXISTS (
+                 SELECT 1 FROM trip_members tm
+                 WHERE tm.trip_id = t.id AND tm.user_id = $2
+               )
              GROUP BY t.id`,
             [tripIds, ownerId],
           ),
