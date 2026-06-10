@@ -706,10 +706,15 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       await navigator.clipboard.writeText(url);
       setState("copied");
     } catch {
-      // Clipboard rejects on insecure origins / denied permission — surface a
-      // visible "Copy failed" so the user knows sharing didn't take rather
-      // than seeing the button do nothing.
+      // Clipboard rejects on insecure origins / denied permission. Surface a
+      // visible "Copy failed" and fall back to a prompt pre-filled with the
+      // *share* URL — the page URL is the owner-only `/collections/:id` route,
+      // so telling the owner to copy the browser address would hand recipients
+      // a 404. The prompt lets them copy a link that actually works.
       setState("failed");
+      if (typeof window !== "undefined") {
+        window.prompt(t("Copy this share link:"), url);
+      }
     }
   };
   return (
@@ -717,7 +722,7 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       content={
         sharable
           ? state === "failed"
-            ? t("Couldn't copy — copy the URL from your browser instead")
+            ? t("Couldn't copy automatically — link shown so you can copy it")
             : t("Copy share link")
           : t("Make this collection unlisted or public to share")
       }
@@ -1061,7 +1066,7 @@ function RideRow({
           {formatDistance(ride.distance_km)}
         </Mono>
       )}
-      <StatusPill status="completed" />
+      <StatusPill status={ride.status} />
       <RemoveRouteButton
         onClick={onRemove}
         label={`Remove ${displayName} from collection`}
@@ -1591,7 +1596,7 @@ function RidePickerList({
             onToggle={() => onToggle(ride.id)}
             name={displayName}
             meta={meta}
-            status="completed"
+            status={ride.status}
           />
         );
       })}
