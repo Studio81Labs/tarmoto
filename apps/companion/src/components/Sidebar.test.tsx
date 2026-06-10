@@ -105,6 +105,23 @@ describe("Sidebar — Web App v2 nav", () => {
     ).toBeInTheDocument();
   });
 
+  it("drops the regional line at a misleading 100th percentile (sole/last)", () => {
+    contributionRef.current = {
+      km_mapped: 2771,
+      segments_mapped: 510,
+      home_region: "Beskydy, CZ",
+      rank_in_region: 1,
+      region_rider_count: 1,
+      percentile: 100,
+    };
+    render(<Sidebar />);
+    // The km total still shows…
+    expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
+    expect(screen.getByText(/2,771/)).toBeInTheDocument();
+    // …but no "Top 100%" line.
+    expect(screen.queryByText(/top .* riders/i)).not.toBeInTheDocument();
+  });
+
   it("keeps a decimal for sub-1km contributions instead of showing 0", () => {
     contributionRef.current = {
       km_mapped: 0.3,

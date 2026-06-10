@@ -344,8 +344,13 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
     region_rider_count,
     home_region,
   } = contribution;
+  // Only claim a regional standing when the rider is actually ahead of
+  // someone. `percentile === 100` means rank === count — the sole contributor
+  // in a region, or dead last — where "Top 100%" reads as misleading, so the
+  // regional line + bar are dropped (the km total still shows).
   const ranked =
     percentile != null &&
+    percentile < 100 &&
     home_region != null &&
     rank_in_region != null &&
     region_rider_count != null &&
