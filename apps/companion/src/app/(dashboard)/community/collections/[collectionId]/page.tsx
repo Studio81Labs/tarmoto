@@ -12,6 +12,7 @@ import {
   QualityBars,
   SegmentedControl,
   Stamp,
+  Tooltip,
 } from "@tarmoto/ui";
 import {
   ArrowLeft,
@@ -711,26 +712,31 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
     }
   };
   return (
-    <Button
-      variant="secondary"
-      uppercase
-      disabled={!sharable}
-      leftIcon={state === "copied" ? <Check size={14} /> : <Share2 size={14} />}
-      title={
+    <Tooltip
+      content={
         sharable
           ? state === "failed"
             ? t("Couldn't copy — copy the URL from your browser instead")
             : t("Copy share link")
           : t("Make this collection unlisted or public to share")
       }
-      onClick={() => void handle()}
     >
-      {state === "copied"
-        ? t("Copied")
-        : state === "failed"
-          ? t("Copy failed")
-          : t("Share")}
-    </Button>
+      <Button
+        variant="secondary"
+        uppercase
+        disabled={!sharable}
+        leftIcon={
+          state === "copied" ? <Check size={14} /> : <Share2 size={14} />
+        }
+        onClick={() => void handle()}
+      >
+        {state === "copied"
+          ? t("Copied")
+          : state === "failed"
+            ? t("Copy failed")
+            : t("Share")}
+      </Button>
+    </Tooltip>
   );
 }
 // Map a single simplified polyline ([lng,lat][]) to an SVG path inside the
