@@ -28,6 +28,7 @@ import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripFolder } from '../../entities/trip-folder.entity.js';
@@ -105,6 +106,21 @@ export class DemoSeeder {
     // too, so the demo data stays intact and the seed can be retried after
     // the stray reference is resolved instead of being stuck half-removed.
     return this.ds.transaction(async (manager) => {
+      // surface_readings FK ride_id / road_segment_id with no ON DELETE
+      // (RESTRICT) and user_id as SET NULL — so they don't cascade with the
+      // user, and while they exist they block deleting their ride (via the
+      // user→rides cascade) and their demo road. Clear the demo personas'
+      // readings first, by user_id (still set at this point), so the deletes
+      // below aren't blocked.
+      const demoUsers = await manager.find(User, {
+        where: { email: In(emails) },
+        select: ['id'],
+      });
+      if (demoUsers.length > 0) {
+        await manager.delete(SurfaceReading, {
+          user_id: In(demoUsers.map((u) => u.id)),
+        });
+      }
       const userResult = await manager.delete(User, { email: In(emails) });
       const roadResult = await manager.delete(RoadSegment, {
         road_number: Like(DEMO_ROAD_LIKE),
@@ -124,6 +140,17 @@ export class DemoSeeder {
     if (options.only) {
       // Refresh just this persona; leave shared roads (and other personas)
       // intact since their ride_segments reference the demo road pool.
+      // Clear this persona's surface_readings first — they FK ride_id with
+      // no ON DELETE, so they'd block the user→rides cascade below.
+      const existing = await this.repo(User).find({
+        where: { email: In([options.only]) },
+        select: ['id'],
+      });
+      if (existing.length > 0) {
+        await this.repo(SurfaceReading).delete({
+          user_id: In(existing.map((u) => u.id)),
+        });
+      }
       await this.repo(User).delete({ email: In([options.only]) });
       roads = await this.ensureRoads();
     } else {
@@ -258,6 +285,7 @@ export class DemoSeeder {
 
     const rides = await this.seedRides(persona, user.id, bikes, rng, now);
     await this.seedRideSegments(persona, roads, rides, rng);
+    await this.seedSurfaceReadings(persona, roads, rides, user.id, rng);
     await this.seedRideStats(rides, rng);
     const hazards = await this.seedHazards(persona, user.id, roads, rng, now);
     const reviews = await this.seedReviews(persona, user.id, roads, rng, now);
@@ -379,6 +407,47 @@ export class DemoSeeder {
         quality_reading: round1(2 + rng() * 3),
         entered_at: ride.started_at,
         exited_at: ride.ended_at,
+      });
+    });
+    await repo.save(rows, { chunk: SAVE_CHUNK });
+  }
+
+  /**
+   * One `surface_reading` per "discovered" road, attributed to the persona —
+   * what the sensor-upload pipeline persists for a rider with
+   * `road_data_contribution` on. This is the source the "Your contribution"
+   * sidebar badge (`/users/me/contribution`) counts: distinct road-quality
+   * contributions, which is deliberately separate from `ride_segments`
+   * (roads merely ridden). Without these rows every demo account reports
+   * `km_mapped = 0` and the badge stays hidden, so the seed couldn't show it.
+   * Attributing the same `discovered` roads gives each persona a real
+   * km-mapped total, and `road.hunter` (most roads, Beskydy) tops its region.
+   */
+  private async seedSurfaceReadings(
+    persona: DemoPersona,
+    roads: RoadSegment[],
+    rides: Ride[],
+    userId: string,
+    rng: () => number,
+  ): Promise<void> {
+    if (rides.length === 0 || persona.roadsRiddenCount === 0) return;
+    const repo = this.repo(SurfaceReading);
+    const contributed = roads.slice(
+      0,
+      Math.min(persona.roadsRiddenCount, roads.length),
+    );
+    const rows = contributed.map((road, k) => {
+      const ride = rides[k % rides.length];
+      // IRI ~1–7 m/km, classified with the same bands as the sensor pipeline.
+      const iri = round1(1 + rng() * 6);
+      return repo.create({
+        road_segment_id: road.id,
+        ride_id: ride.id,
+        user_id: userId,
+        iri_value: iri,
+        classification: classifyIri(iri),
+        // Seeded rides always set `ended_at`; fall back for the nullable type.
+        recorded_at: ride.ended_at ?? ride.started_at,
       });
     });
     await repo.save(rows, { chunk: SAVE_CHUNK });
@@ -703,4 +772,16 @@ function round1(n: number): number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * IRI (m/km) → quality class, mirroring the sensor service's `classify`
+ * bands so seeded surface_readings carry plausible classifications.
+ */
+function classifyIri(iri: number): string {
+  if (iri < 1.5) return 'excellent';
+  if (iri < 3.0) return 'good';
+  if (iri < 5.5) return 'fair';
+  if (iri < 9.0) return 'poor';
+  return 'very_poor';
 }
