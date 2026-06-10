@@ -98,17 +98,17 @@ export function RouteCollectionFollowCta({
     return (
       <div
         aria-busy="true"
-        className="h-[152px] rounded-2xl border border-slate-800 bg-slate-900 animate-pulse"
+        className="h-[152px] rounded-2xl border border-line bg-cream animate-pulse"
       />
     );
   }
   if (state.kind === "anonymous") {
     return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-        <h2 className="text-sm font-semibold text-white mb-1">
+      <div className="rounded-2xl border border-line bg-cream p-6">
+        <h2 className="text-sm font-semibold text-ink mb-1">
           {t("Want to save this collection? ")}
         </h2>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-sm text-fg-dim mb-4">
           {t(
             "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.",
             {
@@ -129,11 +129,11 @@ export function RouteCollectionFollowCta({
   }
   if (state.kind === "owner") {
     return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-        <h2 className="text-sm font-semibold text-white mb-1">
+      <div className="rounded-2xl border border-line bg-cream p-6">
+        <h2 className="text-sm font-semibold text-ink mb-1">
           {t("You own this collection ")}
         </h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-fg-dim">
           {t("Manage routes, visibility, and sharing from")}{" "}
           <Link
             href="/community/collections"
@@ -187,17 +187,17 @@ export function RouteCollectionFollowCta({
     }
   };
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-      <h2 className="text-sm font-semibold text-white mb-1">
+    <div className="rounded-2xl border border-line bg-cream p-6">
+      <h2 className="text-sm font-semibold text-ink mb-1">
         {isFollowing ? "Saved to your library" : "Save this collection"}
       </h2>
-      <p className="text-sm text-slate-400 mb-4">
+      <p className="text-sm text-fg-dim mb-4">
         {isFollowing
           ? "This collection appears under Followed in your dashboard. Unfollow any time to remove it."
           : "Follow to add this collection to your library and revisit it from your dashboard."}
       </p>
       <Button
-        variant={isFollowing ? "on-dark" : "accent"}
+        variant={isFollowing ? "secondary" : "accent"}
         loading={pending}
         aria-pressed={isFollowing}
         leftIcon={
@@ -212,7 +212,7 @@ export function RouteCollectionFollowCta({
         {isFollowing ? "Following" : "Follow collection"}
       </Button>
       {error && (
-        <p role="alert" className="mt-3 text-xs text-red-400">
+        <p role="alert" className="mt-3 text-xs text-quality-q1">
           {error}
         </p>
       )}
