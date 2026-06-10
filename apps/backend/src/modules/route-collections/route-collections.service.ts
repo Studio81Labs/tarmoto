@@ -424,7 +424,37 @@ export class RouteCollectionsService {
       throw new NotFoundException('Collection not found');
     }
 
-    const items = await this.loadItems(collection.id);
+    return this.buildItemPreviews(collection.id);
+  }
+
+  /**
+   * Owner-by-id variant of {@link getPreviewBySlug}: per-item route geometry
+   * for the authenticated owner's own collection, any visibility (including
+   * private). Powers the detail-page route-row thumbnails.
+   */
+  async getPreviewOwned(
+    userId: string,
+    id: string,
+  ): Promise<RouteCollectionPreviewResponseDto> {
+    const collection = await this.collectionRepo.findOne({ where: { id } });
+    if (!collection || collection.owner_id !== userId) {
+      // 404 (not 403) so id existence isn't a side channel, mirroring
+      // `getOwned`.
+      throw new NotFoundException('Collection not found');
+    }
+    return this.buildItemPreviews(collection.id);
+  }
+
+  /**
+   * Per-item simplified route geometry in canonical position order, batched
+   * into one query per kind. Items whose trip/ride was deleted or lacks
+   * geometry come back with an empty `lines` array. Shared by the public
+   * slug preview and the authed owner preview.
+   */
+  private async buildItemPreviews(
+    collectionId: string,
+  ): Promise<RouteCollectionPreviewResponseDto> {
+    const items = await this.loadItems(collectionId);
     if (items.length === 0) {
       return { routes: [] };
     }
@@ -871,13 +901,18 @@ export class RouteCollectionsService {
     };
   }
 
-  private toDetailResponse(
+  private async toDetailResponse(
     c: RouteCollection,
     items: RouteCollectionItem[],
     viewerId: string | null,
     viewerIsFollowing: boolean,
     opts: { ownerIsPrivate?: boolean } = {},
-  ): RouteCollectionDetailDto {
+  ): Promise<RouteCollectionDetailDto> {
+    // Follower count for the detail-page stats. A brand-new collection has
+    // no follow rows, so this naturally returns 0 on `create`.
+    const followerCount = await this.followRepo.count({
+      where: { collection_id: c.id },
+    });
     const rawOwnerName = c.owner?.display_name ?? '';
     // #279 / #501 — opted-out owners surface as `null`, matching
     // `listLibrary`'s followed-card shape (Cursor Bugbot review on
@@ -894,6 +929,7 @@ export class RouteCollectionsService {
       ...this.toSummaryResponse(c, items.length, ownerName || null, opts),
       items: items.map((i) => this.toItemResponse(i)),
       owner_name: ownerName,
+      follower_count: followerCount,
       viewer_is_owner: viewerId != null && viewerId === c.owner_id,
       viewer_is_following: viewerIsFollowing,
     };

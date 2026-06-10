@@ -60,6 +60,12 @@ export interface RouteCollectionView {
   /** Convenience derived list, mirrors `tripIds`. */
   rideIds: string[];
   itemCount: number;
+  /**
+   * Riders following this collection. Carries the real count for
+   * detail-sourced views (`mapDetailToView`); 0 for summary-sourced list
+   * views, which never render it (the summary DTO omits the field).
+   */
+  followerCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -146,6 +152,7 @@ export function mapDetailToView(
     rideRefs,
     rideIds: rideRefs.map((r) => r.rideId),
     itemCount: detail.item_count,
+    followerCount: detail.follower_count,
     createdAt: detail.created_at,
     updatedAt: detail.updated_at,
   };
@@ -170,6 +177,8 @@ export function mapSummaryToView(
     rideRefs: [],
     rideIds: [],
     itemCount: summary.item_count,
+    // Summary DTO omits follower_count; list views never render it.
+    followerCount: 0,
     createdAt: summary.created_at,
     updatedAt: summary.updated_at,
   };

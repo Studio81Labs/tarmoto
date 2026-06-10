@@ -588,6 +588,8 @@ export interface RouteCollectionItemResponse {
 
 export interface RouteCollectionDetail extends RouteCollectionSummary {
   items: RouteCollectionItemResponse[];
+  /** Riders following this collection. 0 for a brand-new collection. */
+  follower_count: number;
   // `owner_name` inherits `string | null` from the summary. The backend always
   // sends a string for detail responses (empty for soft-deleted owners, but
   // those 404 before reaching here), but keeping the looser type matches the
@@ -665,6 +667,13 @@ export const routeCollectionsApi = {
   getPreviewBySlug: (slug: string) =>
     apiFetch<RouteCollectionPreviewResponse>(
       `/collections/by-slug/${encodeURIComponent(slug)}/preview`,
+    ),
+  // Owner-by-id preview — per-item route geometry for the caller's own
+  // collection (any visibility, incl. private). Powers the owner detail-page
+  // route-row thumbnails.
+  getPreviewById: (id: string) =>
+    apiFetch<RouteCollectionPreviewResponse>(
+      `/collections/${encodeURIComponent(id)}/preview`,
     ),
   update: (id: string, input: UpdateRouteCollectionInput) =>
     apiFetch<RouteCollectionDetail>(`/collections/${encodeURIComponent(id)}`, {

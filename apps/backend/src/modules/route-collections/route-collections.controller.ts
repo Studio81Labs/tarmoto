@@ -142,6 +142,22 @@ export class RouteCollectionsController {
     return this.routeCollectionsService.getPreviewBySlug(slug);
   }
 
+  @Get(':id/preview')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Map preview geometries (simplified polylines) for the items in a collection the caller owns — any visibility, including private. Powers the owner detail-page route thumbnails. Non-owners use `/collections/by-slug/:slug/preview`.',
+  })
+  @ApiResponse({ status: 200, type: RouteCollectionPreviewResponseDto })
+  @ApiResponse({ status: 404, description: 'Collection not found' })
+  async getPreviewOwned(
+    @Req() req: express.Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RouteCollectionPreviewResponseDto> {
+    return this.routeCollectionsService.getPreviewOwned(req.user!.userId, id);
+  }
+
   @Get(':id')
   @UseGuards(AuthGuard)
   @ApiBearerAuth()

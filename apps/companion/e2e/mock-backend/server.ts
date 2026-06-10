@@ -2217,6 +2217,10 @@ export function buildApp(): Express {
       serializeCollectionDetail(collection, viewerOwns, {
         maskOwner,
         viewerIsFollowing,
+        followerCount: countCollectionFollowers(
+          state.collectionFollows,
+          collection.id,
+        ),
       }),
     );
   });
@@ -2245,6 +2249,24 @@ export function buildApp(): Express {
     }
     res.json({ routes: [] });
   });
+
+  // Owner-by-id preview — mirrors `RouteCollectionsController.getPreviewOwned`:
+  // authed, owner-only (404 for a missing collection or a non-owner, any
+  // visibility). Items aren't modelled in the mock, so the natural empty shape
+  // `{ routes: [] }` — same as the slug preview.
+  app.get(
+    "/api/v1/collections/:id/preview",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const collection = state.collections.get(param(req, "id"));
+      if (!collection || collection.owner_id !== session.user_id) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      res.json({ routes: [] });
+    },
+  );
 
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
@@ -2457,7 +2479,14 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    res.json(serializeCollectionDetail(collection, /* viewerOwns */ true));
+    res.json(
+      serializeCollectionDetail(collection, /* viewerOwns */ true, {
+        followerCount: countCollectionFollowers(
+          state.collectionFollows,
+          collection.id,
+        ),
+      }),
+    );
   });
 
   // Owner-only delete. Production responds 404 when the collection is
@@ -3603,10 +3632,29 @@ function serializeCollectionSummary(
   };
 }
 
+// `collectionFollows` is keyed user → {collectionId}, so a collection's
+// follower count is the number of users whose set includes it. Production
+// `toDetailResponse` counts follows for every detail endpoint, so all
+// detail serializers go through this.
+function countCollectionFollowers(
+  collectionFollows: Map<string, Map<string, string>>,
+  collectionId: string,
+): number {
+  let count = 0;
+  for (const follows of collectionFollows.values()) {
+    if (follows.has(collectionId)) count += 1;
+  }
+  return count;
+}
+
 function serializeCollectionDetail(
   collection: import("./state").MockCollection,
   viewerOwns: boolean,
-  opts: { maskOwner?: boolean; viewerIsFollowing?: boolean } = {},
+  opts: {
+    maskOwner?: boolean;
+    viewerIsFollowing?: boolean;
+    followerCount?: number;
+  } = {},
 ) {
   // Production `RouteCollectionsService.toDetailResponse` hydrates the
   // owner relation and surfaces `owner_name` on every detail response
@@ -3620,6 +3668,10 @@ function serializeCollectionDetail(
       maskOwner: opts.maskOwner,
     }),
     items: [] as unknown[],
+    // Mirrors production `toDetailResponse`. Callers inside `buildApp` (where
+    // `state` is in scope) pass the real count; defaults to 0 otherwise (e.g.
+    // a freshly created collection).
+    follower_count: opts.followerCount ?? 0,
     viewer_is_owner: viewerOwns,
     viewer_is_following: opts.viewerIsFollowing ?? false,
   };
