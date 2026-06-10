@@ -13,6 +13,7 @@ import { User } from './user.entity.js';
 @Entity('surface_readings')
 @Index('idx_surface_readings_segment', ['road_segment_id'])
 @Index('idx_surface_readings_time', ['recorded_at'])
+@Index('idx_surface_readings_user', ['user_id'])
 export class SurfaceReading {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

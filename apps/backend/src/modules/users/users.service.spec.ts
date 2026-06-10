@@ -90,6 +90,7 @@ describe('UsersService', () => {
         .fn()
         .mockImplementation(() => Promise.resolve(buildMockUser())),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      query: jest.fn(),
     };
     contactRepo = {
       find: jest.fn().mockResolvedValue([mockContact]),
@@ -520,6 +521,67 @@ describe('UsersService', () => {
       expect(result.max_lean_ride_name).toBeNull();
       expect(result.max_lean_at).toBeNull();
       expect(result.last_synced_at).toBeNull();
+    });
+  });
+
+  describe('getContribution', () => {
+    it('returns km/segments + the regional rank for a contributor', async () => {
+      (userRepo.query as jest.Mock)
+        .mockResolvedValueOnce([{ segments: 12, km: '4284.4' }])
+        .mockResolvedValueOnce([{ rank: 3, total: 40 }]);
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        home_region: 'Lombardy',
+      });
+
+      const result = await service.getContribution('user-1');
+
+      expect(result).toMatchObject({
+        km_mapped: 4284.4,
+        segments_mapped: 12,
+        home_region: 'Lombardy',
+        rank_in_region: 3,
+        region_rider_count: 40,
+        // ceil(3 / 40 * 100) = 8 → "Top 8%"
+        percentile: 8,
+      });
+      expect(userRepo.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips ranking when the rider has no home region', async () => {
+      (userRepo.query as jest.Mock).mockResolvedValueOnce([
+        { segments: 5, km: '120' },
+      ]);
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        home_region: null,
+      });
+
+      const result = await service.getContribution('user-1');
+
+      expect(result.km_mapped).toBe(120);
+      expect(result.rank_in_region).toBeNull();
+      expect(result.region_rider_count).toBeNull();
+      expect(result.percentile).toBeNull();
+      // Only the totals query ran — no rank query.
+      expect(userRepo.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips ranking when the rider has contributed nothing', async () => {
+      (userRepo.query as jest.Mock).mockResolvedValueOnce([
+        { segments: 0, km: '0' },
+      ]);
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        home_region: 'Lombardy',
+      });
+
+      const result = await service.getContribution('user-1');
+
+      expect(result.segments_mapped).toBe(0);
+      expect(result.rank_in_region).toBeNull();
+      expect(result.percentile).toBeNull();
+      expect(userRepo.query).toHaveBeenCalledTimes(1);
     });
   });
 
