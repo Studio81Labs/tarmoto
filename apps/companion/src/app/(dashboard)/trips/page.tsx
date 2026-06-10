@@ -463,7 +463,7 @@ export default function TripListPage() {
   };
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <PageHeader
           stamp={t("Trips")}
           icon={<Route size={18} strokeWidth={2} />}

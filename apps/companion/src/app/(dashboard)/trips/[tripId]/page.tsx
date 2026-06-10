@@ -172,7 +172,7 @@ export default function TripDetailPage() {
   }
   if (notFound) {
     return (
-      <div className="mx-auto max-w-2xl animate-fade-in p-7">
+      <div className="mx-auto max-w-2xl animate-fade-in p-4 md:p-7">
         <Link
           href="/trips"
           className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
@@ -194,7 +194,7 @@ export default function TripDetailPage() {
   }
   if (error || !loaded || !trip) {
     return (
-      <div className="mx-auto max-w-2xl animate-fade-in p-7">
+      <div className="mx-auto max-w-2xl animate-fade-in p-4 md:p-7">
         <Link
           href="/trips"
           className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"

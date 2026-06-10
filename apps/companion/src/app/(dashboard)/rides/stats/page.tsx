@@ -179,7 +179,7 @@ export default function StatsPage() {
   );
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-page p-7">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7">
         <StatsPageHeader />
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
@@ -190,7 +190,7 @@ export default function StatsPage() {
   }
   if (loadError) {
     return (
-      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <StatsPageHeader />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {loadError}
@@ -200,7 +200,7 @@ export default function StatsPage() {
   }
   if (rides.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-page animate-fade-in p-7">
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <StatsPageHeader />
         <RidesEmptyState
           icon={<BarChart3 size={18} strokeWidth={2} />}
