@@ -44,17 +44,22 @@ export const fetchSharedCollection = cache(
  * Server-side fetch for the per-item preview of a public/unlisted collection —
  * the simplified route geometry plus the per-item summaries (#689) the shared
  * page renders its route rows + map from. Same `cache()` + `no-store` rationale
- * as `fetchSharedCollection`. Returns an empty `{ routes: [] }` on any
- * non-200 (the detail fetch is the source of truth for not-found), so a
- * transient preview hiccup degrades to "no routes traced" rather than a crash.
+ * as `fetchSharedCollection`.
+ *
+ * Returns `null` on ANY non-2xx so the caller can distinguish "preview failed"
+ * from "collection genuinely has no routes". The detail fetch is the source of
+ * truth for not-found/private, so if it succeeded but this errors (e.g. a
+ * transient 500), the page must NOT collapse a populated collection into the
+ * "no routes added" empty state — it shows a degraded "couldn't load routes"
+ * notice instead.
  */
 export const fetchSharedCollectionPreview = cache(
-  async (slug: string): Promise<RouteCollectionPreviewResponse> => {
+  async (slug: string): Promise<RouteCollectionPreviewResponse | null> => {
     const res = await fetch(
       `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}/preview`,
       { cache: "no-store" },
     );
-    if (!res.ok) return { routes: [] };
+    if (!res.ok) return null;
     return (await res.json()) as RouteCollectionPreviewResponse;
   },
 );

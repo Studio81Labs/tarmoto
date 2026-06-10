@@ -75,17 +75,24 @@ export default async function SharedCollectionPage({
   ]);
   if (!detail) notFound();
 
-  // Preview carries the per-item summaries (#689); keep collection (position)
-  // order. Fall back to the bare detail items (geometry-less) if the preview
-  // call degraded, so the rows still render names from… nothing — in that
-  // case `preview.routes` is empty and we show the count-only header.
-  const routes = [...preview.routes].sort((a, b) => a.position - b.position);
+  // Preview carries the per-item summaries (#689), one entry per item; keep
+  // collection (position) order. `preview === null` means the preview fetch
+  // itself failed (the detail fetch is the source of truth for not-found), so
+  // we distinguish that from a genuinely empty collection below.
+  const previewFailed = preview === null && detail.item_count > 0;
+  const routes = preview
+    ? [...preview.routes].sort((a, b) => a.position - b.position)
+    : [];
   const ownerName = detail.owner_name || "";
   const ownerInitials = initials(ownerName) || "T";
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
-  // Riding days = trip day counts (rides carry `num_days: null`), matching the
-  // owner detail page's "Riding days" rollup.
-  const ridingDays = routes.reduce((sum, r) => sum + (r.num_days ?? 0), 0);
+  // Riding days = trip day counts; a recorded ride (`num_days: null`) counts as
+  // one day, matching the per-row "1 day" label so a ride-only collection
+  // doesn't report "0 RIDING DAYS".
+  const ridingDays = routes.reduce(
+    (sum, r) => sum + (r.num_days ?? (r.kind === "ride" ? 1 : 0)),
+    0,
+  );
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -175,7 +182,16 @@ export default async function SharedCollectionPage({
             </Mono>
           )}
         </div>
-        {routes.length === 0 ? (
+        {previewFailed ? (
+          <div
+            role="alert"
+            className="rounded-[14px] border border-quality-q1/30 bg-quality-q1/10 p-6 text-center text-sm text-quality-q1"
+          >
+            {t(
+              "Couldn't load the routes in this collection right now. Try refreshing in a moment.",
+            )}
+          </div>
+        ) : routes.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-line bg-cream p-10 text-center text-sm text-fg-dim">
             <RouteIcon
               size={36}
