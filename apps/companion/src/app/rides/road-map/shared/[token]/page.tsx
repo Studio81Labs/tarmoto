@@ -87,12 +87,12 @@ export default async function SharedRoadMapPage({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[980px] flex-1 px-7 pb-16 pt-8">
+      <main className="mx-auto w-full max-w-[980px] flex-1 px-7 pb-8 pt-8">
         {/* hero */}
         <section className="mb-6 rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <Stamp className="text-accent">{t("Personal road map")}</Stamp>
+              <Stamp tone="accent">{t("Personal road map")}</Stamp>
               <h1 className="mt-2 font-sans text-[40px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
                 {share.title}
               </h1>
@@ -184,7 +184,7 @@ export default async function SharedRoadMapPage({
         {/* conversion banner */}
         <div className="flex flex-wrap items-center justify-between gap-5 rounded-[14px] bg-ink p-[26px] text-cream">
           <div className="min-w-0">
-            <Stamp className="text-accent">{t("Every road you ride")}</Stamp>
+            <Stamp tone="accent">{t("Every road you ride")}</Stamp>
             <div className="mt-1.5 text-[20px] font-extrabold">
               {t("Start your own road map")}
             </div>
