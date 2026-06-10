@@ -548,14 +548,18 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        // Fixed to the viewport just past the rail's right edge: the AppShell
-        // is `fixed inset-0` with the sidebar at left:0, so `left = aside width
+        "fixed z-50 rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
+        // Phone widths: the rail still renders at full width, so anchor the
+        // panel as a bottom sheet inset from both edges instead of starting at
+        // `aside + 10px` (which would run a 360px panel off a 390px screen).
+        "inset-x-3 bottom-3 w-auto",
+        // sm+ : fixed just past the rail's right edge. The AppShell is
+        // `fixed inset-0` with the sidebar at left:0, so `left = aside width
         // (232 / 72) + 10px gap` places the panel reliably regardless of where
-        // the bell sits inside the rail. Bottom-aligned at 80px to match the
-        // v2 design. (Still a DOM child of the bell's ref, so click-outside
-        // and Escape continue to work.)
-        "fixed bottom-20 z-50 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
-        collapsed ? "left-[82px]" : "left-[242px]",
+        // the bell sits inside the rail. Bottom-aligned at 80px to match v2.
+        // (Still a DOM child of the bell's ref, so click-outside / Escape work.)
+        "sm:inset-x-auto sm:bottom-20 sm:w-[360px]",
+        collapsed ? "sm:left-[82px]" : "sm:left-[242px]",
       )}
     >
       <div className="mb-3.5 flex items-start justify-between gap-3">
