@@ -217,19 +217,17 @@ export default async function SharedCollectionPage({
         />
       </main>
 
-      {/* footer */}
+      {/* footer — brand line only. The header carries the public "Open in
+          Tarmoto" entry and the auth-aware CTA block above the footer gives the
+          owner a "manage from dashboard" link, so a second footer CTA would
+          either duplicate the header or (when pointed at the protected
+          dashboard) send anonymous share recipients to a login wall. */}
       <footer className="border-t border-line bg-paper">
-        <div className="mx-auto flex max-w-[980px] flex-wrap items-center justify-between gap-4 px-7 py-[22px]">
+        <div className="mx-auto flex max-w-[980px] items-center px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
             {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
             {new Date().getUTCFullYear()}
           </Mono>
-          <Link
-            href="/community/collections"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
-          >
-            {t("Manage in dashboard")}
-          </Link>
         </div>
       </footer>
     </div>
