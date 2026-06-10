@@ -548,14 +548,14 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        // Anchored to the right of the rail, bottom-aligned to the bell —
-        // matching the v2 design's `left: 240px` placement. `left-full` lands
-        // at the bell wrapper's right edge; the margin clears the remaining
-        // rail padding + a ~10px gap so the panel fully escapes the sidebar.
-        // The collapsed rail centres the bell (its wrapper shrinks to the
-        // button, sitting further inside), so it needs a larger offset.
-        "absolute bottom-0 left-full z-50 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
-        collapsed ? "ml-8" : "ml-6",
+        // Fixed to the viewport just past the rail's right edge: the AppShell
+        // is `fixed inset-0` with the sidebar at left:0, so `left = aside width
+        // (232 / 72) + 10px gap` places the panel reliably regardless of where
+        // the bell sits inside the rail. Bottom-aligned at 80px to match the
+        // v2 design. (Still a DOM child of the bell's ref, so click-outside
+        // and Escape continue to work.)
+        "fixed bottom-20 z-50 w-[360px] rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
+        collapsed ? "left-[82px]" : "left-[242px]",
       )}
     >
       <div className="mb-3.5 flex items-start justify-between gap-3">
