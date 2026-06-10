@@ -184,7 +184,12 @@ export default async function SharedRoadMapPage({
         {/* conversion banner */}
         <div className="flex flex-wrap items-center justify-between gap-5 rounded-[14px] bg-ink p-[26px] text-cream">
           <div className="min-w-0">
-            <Stamp tone="accent">{t("Every road you ride")}</Stamp>
+            {/* Brand coral (#E05A3C). `Stamp`'s tones don't include coral, and
+                the only coral token is the quality scale's `q1` (flagged
+                "avoid" for non-quality use), so spell the stamp out here. */}
+            <span className="font-mono text-[11px] font-bold uppercase leading-none tracking-[1.6px] text-[#E05A3C]">
+              {t("Every road you ride")}
+            </span>
             <div className="mt-1.5 text-[20px] font-extrabold">
               {t("Start your own road map")}
             </div>
