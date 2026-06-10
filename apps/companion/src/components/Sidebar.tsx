@@ -7,7 +7,6 @@ import { useSession, signOut } from "next-auth/react";
 import {
   BarChart3,
   Bell,
-  CheckCheck,
   ChevronLeft,
   ChevronRight,
   History,
@@ -17,7 +16,6 @@ import {
   Map as MapIcon,
   Route,
   Settings,
-  Settings2,
   Trophy,
   Users,
   WifiOff,
@@ -25,6 +23,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
+import { formatRelativeTime } from "@/lib/utils";
 import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
@@ -549,73 +548,98 @@ function NotificationsDropdown({
   return (
     <div
       className={clsx(
-        "absolute z-50 mb-2 w-80 overflow-hidden rounded-[14px] border border-line-strong bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
-        collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0",
+        "fixed z-50 rounded-[14px] border border-line-strong bg-cream p-[18px] shadow-[0_24px_60px_rgba(14,14,16,0.25)]",
+        // Phone widths: the rail still renders at full width, so anchor the
+        // panel as a bottom sheet inset from both edges instead of starting at
+        // `aside + 10px` (which would run a 360px panel off a 390px screen).
+        "inset-x-3 bottom-3 w-auto",
+        // sm+ : fixed just past the rail's right edge. The AppShell is
+        // `fixed inset-0` with the sidebar at left:0, so `left = aside width
+        // (232 / 72) + 10px gap` places the panel reliably regardless of where
+        // the bell sits inside the rail. Bottom-aligned at 80px to match v2.
+        // (Still a DOM child of the bell's ref, so click-outside / Escape work.)
+        "sm:inset-x-auto sm:bottom-20 sm:w-[360px]",
+        collapsed ? "sm:left-[82px]" : "sm:left-[242px]",
       )}
     >
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <Stamp>{t("Notifications")}</Stamp>
-        <div className="flex items-center gap-1">
-          {items.length > 0 && (
-            <button
-              type="button"
-              onClick={onMarkAllRead}
-              className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink disabled:opacity-40"
-              aria-label={t("Mark all read")}
-              disabled={unreadCount === 0}
-            >
-              <CheckCheck size={14} />
-            </button>
-          )}
-          <Link
-            href="/settings/notifications"
-            onClick={onClose}
-            className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink"
-            aria-label={t("Notification settings")}
-          >
-            <Settings2 size={14} />
-          </Link>
+      <div className="mb-3.5 flex items-start justify-between gap-3">
+        <div>
+          <Stamp>{t("Inbox")}</Stamp>
+          <div className="mt-0.5 text-[16px] font-extrabold text-ink">
+            {t("Notifications")}
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("Close")}
+          className="-mr-1 text-[22px] leading-none text-ink/40 transition hover:text-ink"
+        >
+          ×
+        </button>
       </div>
+
       {loading && items.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-ink/55">
+        <div className="rounded-[10px] border border-dashed border-line px-4 py-10 text-center text-sm text-fg-dim">
           {t("Loading notifications")}
         </div>
       ) : error ? (
-        <div className="px-4 py-10 text-center text-sm text-ink/55">
+        <div className="rounded-[10px] border border-dashed border-line px-4 py-10 text-center text-sm text-quality-q1">
           {t("Could not load notifications")}
         </div>
       ) : items.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-ink/55">
-          {t("No new notifications")}
+        <div className="rounded-[10px] border border-dashed border-line px-6 py-10 text-center">
+          <Bell
+            size={22}
+            className="mx-auto mb-2.5 text-fg-mute"
+            aria-hidden="true"
+          />
+          <div className="text-[15px] font-bold text-ink">
+            {t("You're all caught up")}
+          </div>
+          <p className="mt-1.5 text-[12px] leading-relaxed text-fg-dim">
+            {t(
+              "Hazard alerts, ride milestones, and community activity will land here.",
+            )}
+          </p>
         </div>
       ) : (
-        <div className="max-h-96 overflow-y-auto py-1">
+        <div className="flex max-h-[380px] flex-col gap-2 overflow-y-auto">
           {items.map((note) => (
             <Link
               key={note.id}
               href={hrefForNotification(note)}
               onClick={() => onMarkRead(note)}
-              className="block border-b border-ink/10 px-4 py-3 text-left transition last:border-b-0 hover:bg-paper"
+              className="flex items-start gap-2.5 rounded-[10px] border border-line bg-paper p-3 text-left transition hover:border-line-strong"
               aria-label={note.title}
             >
-              <div className="flex items-start gap-2">
-                {!note.read_at && (
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+              <span
+                className={clsx(
+                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                  note.read_at ? "bg-ink/40" : "bg-accent",
                 )}
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-ink">
-                    {note.title}
-                  </div>
-                  <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-ink/60">
-                    {note.body}
-                  </div>
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-bold text-ink">
+                  {note.title}
+                </div>
+                <div className="mt-1 text-[11px] text-fg-dim">
+                  {note.body} · {formatRelativeTime(note.created_at)}
                 </div>
               </div>
             </Link>
           ))}
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={onMarkAllRead}
+        disabled={unreadCount === 0}
+        className="mt-3 w-full rounded-lg border border-line py-2.5 text-center text-[12px] font-bold text-fg-dim transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-dim"
+      >
+        {t("Mark all as read")}
+      </button>
     </div>
   );
 }
