@@ -424,7 +424,7 @@ export class RouteCollectionsService {
       throw new NotFoundException('Collection not found');
     }
 
-    return this.buildItemPreviews(collection.id);
+    return this.buildItemPreviews(collection.id, collection.owner_id);
   }
 
   /**
@@ -442,7 +442,7 @@ export class RouteCollectionsService {
       // `getOwned`.
       throw new NotFoundException('Collection not found');
     }
-    return this.buildItemPreviews(collection.id);
+    return this.buildItemPreviews(collection.id, collection.owner_id);
   }
 
   /**
@@ -453,6 +453,7 @@ export class RouteCollectionsService {
    */
   private async buildItemPreviews(
     collectionId: string,
+    ownerId: string,
   ): Promise<RouteCollectionPreviewResponseDto> {
     const items = await this.loadItems(collectionId);
     if (items.length === 0) {
@@ -468,21 +469,59 @@ export class RouteCollectionsService {
 
     type TripDayRow = { trip_id: string; geometry: string | null };
     type RideRow = { id: string; geometry: string | null };
+    // Numeric aggregates come back as strings over the pg wire protocol.
+    type TripMetaRow = {
+      id: string;
+      title: string | null;
+      num_days: number;
+      status: string;
+      distance_km: string | null;
+      quality_avg: string | null;
+    };
+    type RideMetaRow = {
+      id: string;
+      name: string | null;
+      status: string;
+      distance_km: number | null;
+      avg_road_quality: number | null;
+    };
 
     // Batch each kind into a single SQL round-trip. Ordering at this layer
     // doesn't matter — the controller emits items in the collection's
     // canonical position order; we just need a lookup keyed by trip/ride id.
-    const [tripRows, rideRows] = await Promise.all([
+    // The `*MetaRows` queries mirror the trip-summary rollups (distance =
+    // SUM of day distances; quality = distance-weighted average, NULL-filtered)
+    // so a non-owner viewer can render the route rows without the viewer's own
+    // trip/ride cache.
+    //
+    // Every query is scoped to the collection owner. `route_collection_items`
+    // `trip_id` / `ride_id` are unconstrained UUIDs and `addItem` doesn't
+    // verify route accessibility, so a crafted/stale item could reference a
+    // route the owner can't see. Scope to what the owner is *allowed to see*,
+    // matching the picker (`TripsService.list` / `useUserTrips`):
+    //  - trips: a `trip_members` row for the owner — this covers both trips
+    //    they own AND collaborator trips they joined (the create flow inserts
+    //    the owner as a member), so legitimately-added collaborator trips keep
+    //    rendering instead of looking deleted.
+    //  - rides: `rides.user_id` — rides have no membership/sharing, so the
+    //    owner can only ever add their own.
+    // A route the owner can't access falls through to the empty-geometry /
+    // null-summary "missing item" shape.
+    const [tripRows, rideRows, tripMetaRows, rideMetaRows] = await Promise.all([
       tripIds.length === 0
         ? Promise.resolve<TripDayRow[]>([])
         : this.dataSource.query<TripDayRow[]>(
-            `SELECT trip_id,
-                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
-             FROM trip_days
-             WHERE trip_id = ANY($2::uuid[])
-               AND route_geom IS NOT NULL
-             ORDER BY trip_id, day_number`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds],
+            `SELECT d.trip_id,
+                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, $1)) AS geometry
+             FROM trip_days d
+             WHERE d.trip_id = ANY($2::uuid[])
+               AND EXISTS (
+                 SELECT 1 FROM trip_members tm
+                 WHERE tm.trip_id = d.trip_id AND tm.user_id = $3
+               )
+               AND d.route_geom IS NOT NULL
+             ORDER BY d.trip_id, d.day_number`,
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds, ownerId],
           ),
       rideIds.length === 0
         ? Promise.resolve<RideRow[]>([])
@@ -491,10 +530,48 @@ export class RouteCollectionsService {
                     ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
              FROM rides
              WHERE id = ANY($2::uuid[])
+               AND user_id = $3
                AND route_geom IS NOT NULL`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds],
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds, ownerId],
+          ),
+      tripIds.length === 0
+        ? Promise.resolve<TripMetaRow[]>([])
+        : this.dataSource.query<TripMetaRow[]>(
+            `SELECT t.id, t.title, t.num_days, t.status,
+                    SUM(d.distance_km) AS distance_km,
+                    CASE
+                      WHEN SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) > 0
+                      THEN SUM(d.avg_quality * d.distance_km)
+                           / SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL)
+                      ELSE AVG(d.avg_quality)
+                    END AS quality_avg
+             FROM trips t
+             LEFT JOIN trip_days d ON d.trip_id = t.id
+             WHERE t.id = ANY($1::uuid[])
+               AND EXISTS (
+                 SELECT 1 FROM trip_members tm
+                 WHERE tm.trip_id = t.id AND tm.user_id = $2
+               )
+             GROUP BY t.id`,
+            [tripIds, ownerId],
+          ),
+      rideIds.length === 0
+        ? Promise.resolve<RideMetaRow[]>([])
+        : this.dataSource.query<RideMetaRow[]>(
+            `SELECT id, name, status, distance_km, avg_road_quality
+             FROM rides
+             WHERE id = ANY($1::uuid[])
+               AND user_id = $2`,
+            [rideIds, ownerId],
           ),
     ]);
+
+    const tripMetaById = new Map<string, TripMetaRow>(
+      tripMetaRows.map((r) => [r.id, r]),
+    );
+    const rideMetaById = new Map<string, RideMetaRow>(
+      rideMetaRows.map((r) => [r.id, r]),
+    );
 
     const linesByTripId = new Map<string, number[][][]>();
     for (const row of tripRows) {
@@ -520,11 +597,28 @@ export class RouteCollectionsService {
       const lines = isRide
         ? (linesByRideId.get(item.ride_id!) ?? [])
         : (linesByTripId.get(item.trip_id!) ?? []);
+      const tripMeta = isRide ? undefined : tripMetaById.get(item.trip_id!);
+      const rideMeta = isRide ? rideMetaById.get(item.ride_id!) : undefined;
       return {
         item_id: item.id,
         position: item.position,
         kind: isRide ? 'ride' : 'trip',
         lines,
+        title: rideMeta ? rideMeta.name : (tripMeta?.title ?? null),
+        // A ride is a single recorded day — `num_days` stays null so the
+        // client renders "1 day" without the server inventing a count.
+        num_days: tripMeta?.num_days ?? null,
+        distance_km: rideMeta
+          ? rideMeta.distance_km
+          : tripMeta?.distance_km != null
+            ? Number(tripMeta.distance_km)
+            : null,
+        status: rideMeta ? rideMeta.status : (tripMeta?.status ?? null),
+        quality_avg: rideMeta
+          ? rideMeta.avg_road_quality
+          : tripMeta?.quality_avg != null
+            ? Number(tripMeta.quality_avg)
+            : null,
       };
     });
 

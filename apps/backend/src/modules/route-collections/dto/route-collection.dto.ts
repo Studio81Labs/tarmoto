@@ -314,6 +314,44 @@ export class RouteCollectionPreviewItemDto {
       'Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry.',
   })
   lines!: number[][][];
+
+  // Per-item summary fields — let a non-owner (public shared page / member
+  // discover view) render the route rows without the viewer's own trip/ride
+  // cache. All `null` when the underlying trip/ride was deleted.
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Trip title or ride name. `null` for a deleted item.',
+  })
+  title!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Trip day count. `null` for rides (a ride is a single recorded day) and deleted items.',
+  })
+  num_days!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Total distance in km. Trips: sum of the day distances. Rides: the recorded distance. `null` when unknown.',
+  })
+  distance_km!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Trip status (planned / completed / …) or ride status (completed / active). `null` for a deleted item.',
+  })
+  status!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Average road quality (0–5). Trips: distance-weighted across days. Rides: the recorded average. `null` when unknown.',
+  })
+  quality_avg!: number | null;
 }
 
 export class RouteCollectionPreviewResponseDto {

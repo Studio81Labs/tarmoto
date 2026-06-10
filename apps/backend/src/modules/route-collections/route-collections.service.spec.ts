@@ -868,43 +868,104 @@ describe('RouteCollectionsService', () => {
               [14.2, 50.15],
             ]),
           },
+        ])
+        // Trip metadata: tripA distance-weighted quality, tripB no quality.
+        .mockResolvedValueOnce([
+          {
+            id: tripA,
+            title: 'Trip A',
+            num_days: 2,
+            status: 'planned',
+            distance_km: '120',
+            quality_avg: '4.2',
+          },
+          {
+            id: tripB,
+            title: 'Trip B',
+            num_days: 1,
+            status: 'completed',
+            distance_km: '60',
+            quality_avg: null,
+          },
+        ])
+        // Ride metadata.
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            name: 'Ride A',
+            status: 'completed',
+            distance_km: 45,
+            avg_road_quality: 3.5,
+          },
         ]);
 
       const result = await service.getPreviewBySlug('abcDEF12345');
       expect(result.routes).toHaveLength(3);
 
-      // Items remain in collection (position) order.
+      // Items remain in collection (position) order, now carrying the per-item
+      // summary fields a non-owner viewer renders.
       expect(result.routes[0]).toMatchObject({
         item_id: 'item-trip-a',
         kind: 'trip',
         position: 0,
+        title: 'Trip A',
+        num_days: 2,
+        distance_km: 120,
+        status: 'planned',
+        quality_avg: 4.2,
       });
       expect(result.routes[0]?.lines).toHaveLength(2);
       expect(result.routes[1]).toMatchObject({
         item_id: 'item-ride-a',
         kind: 'ride',
         position: 1,
+        title: 'Ride A',
+        num_days: null,
+        distance_km: 45,
+        status: 'completed',
+        quality_avg: 3.5,
       });
       expect(result.routes[1]?.lines).toHaveLength(1);
       expect(result.routes[2]).toMatchObject({
         item_id: 'item-trip-b',
         kind: 'trip',
         position: 2,
+        title: 'Trip B',
+        distance_km: 60,
+        quality_avg: null,
       });
       expect(result.routes[2]?.lines).toHaveLength(1);
 
-      // Two queries — one per kind — regardless of how many items.
-      expect(queryMock).toHaveBeenCalledTimes(2);
-      // Trip query targets trip_days; ride query targets rides. Use the SQL
-      // text rather than positional args so refactors that re-order params
-      // don't silently invalidate the assertion.
+      // Four queries: geometry + metadata, one each per kind.
+      expect(queryMock).toHaveBeenCalledTimes(4);
+      // Use the SQL text rather than positional args so refactors that re-order
+      // params don't silently invalidate the assertion.
       const calls = queryMock.mock.calls.map((c) => c[0] as string);
       expect(calls.some((sql) => /FROM\s+trip_days/i.test(sql))).toBe(true);
       expect(calls.some((sql) => /FROM\s+rides/i.test(sql))).toBe(true);
-      // Both queries must apply the simplification — that's the perf lever
-      // for 20+ item collections (the issue's acceptance criterion).
+      // The geometry queries must apply the simplification — that's the perf
+      // lever for 20+ item collections (the issue's acceptance criterion).
       expect(
-        calls.every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
+        calls
+          .filter((sql) => /ST_AsGeoJSON/.test(sql))
+          .every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
+      ).toBe(true);
+      // Owner-scoped so a route the owner can't access can't leak. Trips scope
+      // via a `trip_members` membership check (covers owner + collaborator
+      // trips the picker can add); rides via `user_id` (no ride sharing).
+      const tripQueries = calls.filter((sql) =>
+        /trip_days|FROM\s+trips/i.test(sql),
+      );
+      const rideQueries = calls.filter((sql) => /FROM\s+rides/i.test(sql));
+      expect(tripQueries).toHaveLength(2);
+      expect(rideQueries).toHaveLength(2);
+      expect(tripQueries.every((sql) => /trip_members/i.test(sql))).toBe(true);
+      expect(rideQueries.every((sql) => /user_id\s*=/.test(sql))).toBe(true);
+      // The owner id is threaded into each query's params.
+      expect(
+        queryMock.mock.calls.every((c) =>
+          (c[1] as unknown[]).includes(ownerId),
+        ),
       ).toBe(true);
     });
 
