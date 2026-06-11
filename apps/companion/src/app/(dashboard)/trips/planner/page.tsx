@@ -1618,7 +1618,7 @@ export default function TripPlannerPage() {
 
                 <div className="space-y-3 border-t border-line pt-2">
                   <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                    <MapPin size={14} className="text-fg-dim" />
+                    <MapPin size={14} className="text-accent" />
                     {t("Route builder")}
                   </div>
                   {selectedDay ? (

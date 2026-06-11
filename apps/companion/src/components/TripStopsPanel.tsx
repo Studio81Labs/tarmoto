@@ -60,12 +60,12 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
   }, [hydratePreferences]);
   if (!trip) {
     return (
-      <div className="space-y-3 pt-2 border-t border-slate-800">
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
-          <BedDouble size={14} className="text-slate-500" />
+      <div className="space-y-3 pt-2 border-t border-line">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <BedDouble size={14} className="text-accent" />
           {t("Trip stops & stays ")}
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-mute">
           {t(
             "Load or import a trip to start finding overnight stays and route-side stops. ",
           )}
@@ -74,17 +74,17 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
     );
   }
   return (
-    <div className="space-y-3 pt-2 border-t border-slate-800">
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
-        <BedDouble size={14} className="text-slate-500" />
+    <div className="space-y-3 pt-2 border-t border-line">
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <BedDouble size={14} className="text-accent" />
         {t("Trip stops & stays ")}
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+      <div className="grid gap-3 rounded-xl border border-line bg-paper p-3">
         <div>
           <label
             htmlFor="trip-stops-rating"
-            className="block text-xs text-slate-500 mb-1"
+            className="block text-xs text-fg-mute mb-1"
           >
             {t("Minimum stay rating ")}
           </label>
@@ -96,7 +96,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                 event.target.value ? Number(event.target.value) : undefined,
               )
             }
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-accent focus:outline-none"
+            className="w-full rounded-lg border border-line-strong bg-cream px-3 py-2 text-sm text-ink transition focus:border-accent focus:outline-none"
           >
             <option value="">{t("Any")}</option>
             <option value="3">{t("3 stars or better")}</option>
@@ -106,12 +106,12 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
         </div>
 
         <div>
-          <p className="mb-2 text-xs text-slate-500">{t("POI types")}</p>
+          <p className="mb-2 text-xs text-fg-mute">{t("POI types")}</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {DEFAULT_POI_KINDS.map((kind) => (
               <label
                 key={kind}
-                className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-slate-300"
+                className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim"
               >
                 <input
                   type="checkbox"
@@ -124,7 +124,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                         : [...current, kind],
                     )
                   }
-                  className="rounded border-slate-600 bg-slate-800 text-accent focus:ring-accent"
+                  className="rounded border-line-strong bg-cream text-accent focus:ring-accent"
                 />
                 {POI_LABELS[kind]}
               </label>
@@ -133,9 +133,9 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
         </div>
       </div>
 
-      {error ? <p className="text-xs text-amber-300">{error}</p> : null}
+      {error ? <p className="text-xs text-amber-600">{error}</p> : null}
       {loading ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-mute">
           {t("Loading stop suggestions\u2026")}
         </p>
       ) : (
@@ -143,15 +143,15 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
           {days.map((day, dayIndex) => (
             <section
               key={day.dayNumber}
-              className="rounded-xl border border-slate-800 bg-slate-900/50 p-3"
+              className="rounded-xl border border-line bg-paper p-3"
             >
               <div className="mb-3">
-                <h4 className="text-sm font-semibold text-slate-100">
+                <h4 className="text-sm font-semibold text-ink">
                   {t("Day ")}
                   {day.dayNumber}
                   {day.title ? ` · ${day.title}` : ""}
                 </h4>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-fg-mute">
                   {t("Overnight stays ")}
                   {day.endLabel ? ` near ${day.endLabel}` : " near the day end"}
                 </p>
@@ -159,7 +159,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
 
               <div className="space-y-2">
                 {day.accommodations.length === 0 ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-fg-mute">
                     {t("No overnight stays matched the current filters. ")}
                   </p>
                 ) : (
@@ -188,18 +188,18 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                 )}
               </div>
 
-              <div className="mt-4 border-t border-slate-800 pt-3">
-                <p className="text-xs text-slate-500 mb-2">
+              <div className="mt-4 border-t border-line pt-3">
+                <p className="text-xs text-fg-mute mb-2">
                   {t("Along the route")}
                 </p>
                 {!day.routeAvailable ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-fg-mute">
                     {t(
                       "Add at least two waypoints to surface along-route stops. ",
                     )}
                   </p>
                 ) : day.pois.length === 0 ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-fg-mute">
                     {t("No route-side stops matched the current POI filters. ")}
                   </p>
                 ) : (
@@ -213,7 +213,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                           detail={`${formatDistance(poi.distance_along_route_km, unitSystem)} into the day · ${formatDistance(poi.distance_from_route_km, unitSystem)} off route`}
                           hint={poi.hint}
                           badge={
-                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-cream px-2 py-0.5 text-[11px] text-fg-dim">
                               <Icon size={11} />
                               {POI_BADGES[poi.kind]}
                             </span>
@@ -266,16 +266,14 @@ function StopRow({
   onAdd: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-paper p-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-slate-100">{label}</p>
+          <p className="text-sm font-medium text-ink">{label}</p>
           {badge}
         </div>
-        <p className="text-xs text-slate-400">{detail}</p>
-        {hint ? (
-          <p className="text-xs text-slate-500 truncate">{hint}</p>
-        ) : null}
+        <p className="text-xs text-fg-dim">{detail}</p>
+        {hint ? <p className="text-xs text-fg-mute truncate">{hint}</p> : null}
       </div>
 
       <button
@@ -285,7 +283,7 @@ function StopRow({
         onClick={onAdd}
         className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
           added
-            ? "cursor-not-allowed bg-emerald-500/10 text-emerald-300"
+            ? "cursor-not-allowed bg-[#1f8a5b]/10 text-[#1f8a5b]"
             : "bg-accent text-ink hover:brightness-95"
         }`}
       >
