@@ -1521,38 +1521,82 @@ export default function TripPlannerPage() {
                   >
                     {t("Daily km target")}
                   </label>
-                  <input
-                    id="trip-planner-daily-km"
-                    type="number"
-                    min={100}
-                    max={500}
-                    step={25}
-                    value={dailyKmTarget}
-                    onChange={(event) =>
-                      setDailyKmTarget(
-                        clampNumberInput(event.target.value, 100, 500, 250),
-                      )
-                    }
-                    className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink transition focus:border-accent focus:outline-none"
-                  />
+                  <div className="flex items-stretch overflow-hidden rounded-lg border border-line-strong bg-paper transition focus-within:border-accent">
+                    <input
+                      id="trip-planner-daily-km"
+                      type="number"
+                      min={100}
+                      max={500}
+                      step={25}
+                      value={dailyKmTarget}
+                      onChange={(event) =>
+                        setDailyKmTarget(
+                          clampNumberInput(event.target.value, 100, 500, 250),
+                        )
+                      }
+                      className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                    {/* Visible steppers mirroring the design. The number input
+                        keeps its native step semantics for keyboard/AT users,
+                        so these are decorative duplicates (aria-hidden, not
+                        tab-focusable). */}
+                    <div className="flex flex-col border-l border-line">
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        onClick={() =>
+                          setDailyKmTarget(
+                            clampNumberInput(
+                              String(dailyKmTarget + 25),
+                              100,
+                              500,
+                              250,
+                            ),
+                          )
+                        }
+                        className="flex flex-1 items-center px-2.5 text-[8px] text-fg-mute transition hover:bg-cream hover:text-ink"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        onClick={() =>
+                          setDailyKmTarget(
+                            clampNumberInput(
+                              String(dailyKmTarget - 25),
+                              100,
+                              500,
+                              250,
+                            ),
+                          )
+                        }
+                        className="flex flex-1 items-center border-t border-line px-2.5 text-[8px] text-fg-mute transition hover:bg-cream hover:text-ink"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
                   <p className="mb-2 block text-xs text-fg-dim">
                     {t("Surface preference")}
                   </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                     {SURFACE_OPTIONS.map((surface) => (
                       <label
                         key={surface.value}
-                        className="flex items-center gap-2 rounded-lg border border-line bg-cream/70 px-3 py-2 text-sm text-ink"
+                        className="flex cursor-pointer items-center gap-2.5 py-1 text-[13px] font-semibold text-ink"
                       >
                         <input
                           type="checkbox"
                           aria-label={surface.label}
                           checked={surfacePreference.includes(surface.value)}
                           onChange={() => handleSurfaceToggle(surface.value)}
-                          className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
+                          className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
                         />
                         {surface.label}
                       </label>
@@ -1583,34 +1627,34 @@ export default function TripPlannerPage() {
                 </div>
 
                 <div className="space-y-2 pt-2">
-                  <label className="flex items-center gap-2 text-sm text-fg-dim">
+                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
                     <input
                       type="checkbox"
                       checked={avoidHighways}
                       onChange={(event) =>
                         setAvoidHighways(event.target.checked)
                       }
-                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
+                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
                     />
                     {t("Avoid highways")}
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-fg-dim">
+                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
                     <input
                       type="checkbox"
                       checked={avoidTolls}
                       onChange={(event) => setAvoidTolls(event.target.checked)}
-                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
+                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
                     />
                     {t("Avoid tolls")}
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-fg-dim">
+                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
                     <input
                       type="checkbox"
                       checked={avoidUnpaved}
                       onChange={(event) =>
                         setAvoidUnpaved(event.target.checked)
                       }
-                      className="rounded border-line-strong bg-paper text-accent focus:ring-accent"
+                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
                     />
                     {t("Avoid unpaved roads")}
                   </label>
