@@ -5,6 +5,7 @@ export {
   type ButtonSize,
 } from "./Button";
 export { Toggle, type ToggleProps } from "./Toggle";
+export { Checkbox, type CheckboxProps } from "./Checkbox";
 export {
   SegmentedControl,
   type SegmentedControlProps,
