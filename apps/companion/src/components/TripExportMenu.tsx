@@ -21,6 +21,7 @@ import {
   tripFileName,
   tripToGpx,
 } from "@/lib/trip-export";
+import { Button } from "@tarmoto/ui";
 interface TripExportMenuProps {
   trip: Trip | null;
   /**
@@ -187,23 +188,23 @@ export function TripExportMenu({
   }
   return (
     <div className="relative" ref={menuRef}>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         onClick={() => !disabled && setOpen((o) => !o)}
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        leftIcon={<Download size={14} />}
+        rightIcon={<ChevronDown size={12} className="opacity-70" />}
       >
-        <Download size={14} />
         {t("Export ")}
-        <ChevronDown size={12} className="opacity-70" />
-      </button>
+      </Button>
 
       {open && !disabled && (
         <div
           role="menu"
-          className="absolute left-0 mt-2 w-60 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/40 z-30 overflow-hidden animate-fade-in"
+          className="animate-fade-in absolute left-0 z-30 mt-2 w-60 overflow-hidden rounded-xl border border-line-strong bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.16)]"
         >
           <MenuItem
             icon={<FileDown size={14} />}
@@ -256,7 +257,7 @@ export function TripExportMenu({
           className={`absolute left-0 top-full mt-12 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs whitespace-nowrap z-30 ${
             feedback.kind === "ok"
               ? "bg-accent/10 text-accent"
-              : "bg-red-500/10 text-red-300"
+              : "bg-quality-q1/10 text-quality-q1"
           }`}
         >
           {feedback.kind === "ok" && <Check size={12} />}
@@ -285,14 +286,12 @@ function MenuItem({
       role="menuitem"
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
+      className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span className="mt-0.5 text-accent">{icon}</span>
       <span className="flex-1 min-w-0">
         <span className="block font-medium">{label}</span>
-        <span className="block text-[11px] text-slate-500 truncate">
-          {hint}
-        </span>
+        <span className="block truncate text-[11px] text-fg-dim">{hint}</span>
       </span>
     </button>
   );
