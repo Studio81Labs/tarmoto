@@ -144,21 +144,21 @@ export function TripCollaborateModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="trip-collaborate-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/40 flex flex-col">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-6">
+      <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl border border-line bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.25)] flex flex-col">
+        <div className="flex items-start justify-between gap-4 border-b border-line p-6">
           <div>
             <h2
               id="trip-collaborate-title"
-              className="text-lg font-semibold text-white"
+              className="text-lg font-semibold text-ink"
             >
               {t("Collaborate on this trip ")}
             </h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-fg-dim">
               {t(
                 "Share a group link, gather route suggestions from your riders, and track the activity log. ",
               )}
@@ -168,7 +168,7 @@ export function TripCollaborateModal({
             type="button"
             onClick={onClose}
             aria-label={t("Close dialog")}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            className="rounded-lg p-1.5 text-fg-dim hover:bg-paper hover:text-ink transition"
           >
             <X size={16} />
           </button>
@@ -177,7 +177,7 @@ export function TripCollaborateModal({
         <nav
           role="tablist"
           aria-label={t("Collaboration tabs")}
-          className="flex border-b border-slate-800 bg-slate-950/40"
+          className="flex border-b border-line bg-paper/60"
         >
           {(
             [
@@ -204,8 +204,8 @@ export function TripCollaborateModal({
               className={
                 "px-4 py-2.5 text-sm font-medium border-b-2 transition " +
                 (tab === id
-                  ? "border-accent text-white"
-                  : "border-transparent text-slate-400 hover:text-slate-200")
+                  ? "border-accent text-ink"
+                  : "border-transparent text-fg-dim hover:text-ink")
               }
             >
               {label}
@@ -251,7 +251,7 @@ export function TripCollaborateModal({
           {error && (
             <p
               role="alert"
-              className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+              className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
             >
               {error}
             </p>
@@ -282,14 +282,14 @@ function InviteTab({
 }) {
   if (!trip) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
         {t("Generate or load a trip first to create an invite link. ")}
       </p>
     );
   }
   if (!canCreateInviteLink) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
         {t("Only trip owners and admins can create invite links. ")}
       </p>
     );
@@ -318,21 +318,21 @@ function InviteTab({
   }
   return (
     <div className="space-y-3">
-      <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+      <label className="block text-xs font-medium uppercase tracking-wide text-fg-mute">
         {t("Invite link ")}
       </label>
-      <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+      <div className="flex items-stretch overflow-hidden rounded-lg border border-line bg-paper">
         <input
           readOnly
           value={inviteUrl ?? ""}
           aria-label={t("Shareable invite URL")}
-          className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-200 outline-none"
+          className="flex-1 bg-transparent px-3 py-2 text-sm text-ink outline-none"
           onFocus={(event) => event.currentTarget.select()}
         />
         <button
           type="button"
           onClick={onCopy}
-          className="flex items-center gap-1.5 border-l border-slate-800 px-3 text-sm text-slate-300 hover:bg-slate-800 transition"
+          className="flex items-center gap-1.5 border-l border-line px-3 text-sm text-fg-dim hover:bg-paper transition"
         >
           {copied ? (
             <>
@@ -347,7 +347,7 @@ function InviteTab({
           )}
         </button>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-fg-mute">
         {t(
           "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
         )}
@@ -502,12 +502,12 @@ function SuggestionsTab({
         // land here with `trip === null` and see the hint below — they
         // can still view + vote on existing suggestions via the list
         // further down.
-        <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+        <section className="space-y-2 rounded-lg border border-line bg-paper p-4">
+          <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
             <MessageSquarePlus size={14} className="text-accent" />
             {t("Propose an alternative ")}
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-fg-dim">
             {t(
               "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
             )}
@@ -519,7 +519,7 @@ function SuggestionsTab({
             onChange={(e) => setTitle(e.target.value)}
             aria-label={t("Suggestion title")}
             maxLength={200}
-            className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full rounded-md bg-cream border border-line px-3 py-2 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <textarea
             placeholder={t("Optional context \u2014 why this route?")}
@@ -528,7 +528,7 @@ function SuggestionsTab({
             aria-label={t("Suggestion description")}
             rows={2}
             maxLength={2000}
-            className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full resize-none rounded-md bg-cream border border-line px-3 py-2 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <button
             type="button"
@@ -547,7 +547,7 @@ function SuggestionsTab({
           </button>
         </section>
       ) : (
-        <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+        <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
           {t(
             "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ",
           )}
@@ -555,9 +555,7 @@ function SuggestionsTab({
       )}
 
       {loading && (
-        <p className="text-sm text-slate-500">
-          {t("Loading suggestions\u2026")}
-        </p>
+        <p className="text-sm text-fg-mute">{t("Loading suggestions\u2026")}</p>
       )}
 
       {externalError && (
@@ -566,14 +564,14 @@ function SuggestionsTab({
         // an ambiguous "No suggestions yet" message.
         <p
           role="alert"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
         >
           {externalError}
         </p>
       )}
 
       {suggestions.length === 0 && !loading && !externalError && (
-        <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+        <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
           {t(
             "No suggestions yet \u2014 be the first to propose a route change. ",
           )}
@@ -601,7 +599,7 @@ function SuggestionsTab({
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
         >
           {error}
         </p>
@@ -630,23 +628,23 @@ function SuggestionCard({
       className={
         "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
         (suggestion.status === "accepted"
-          ? "bg-emerald-500/20 text-emerald-300"
+          ? "bg-emerald-500/15 text-emerald-700"
           : suggestion.status === "rejected"
-            ? "bg-red-500/20 text-red-300"
-            : "bg-slate-700/60 text-slate-300")
+            ? "bg-red-500/15 text-red-700"
+            : "bg-paper text-fg-dim")
       }
     >
       {suggestion.status}
     </span>
   );
   return (
-    <li className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+    <li className="rounded-lg border border-line bg-paper p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-white truncate">
+          <h4 className="text-sm font-semibold text-ink truncate">
             {suggestion.title}
           </h4>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-fg-mute">
             {t("by ")}
             {suggestion.suggester_display_name}
           </p>
@@ -654,7 +652,7 @@ function SuggestionCard({
         {statusBadge}
       </div>
       {suggestion.description && (
-        <p className="mt-2 text-sm text-slate-300 whitespace-pre-wrap">
+        <p className="mt-2 text-sm text-fg-dim whitespace-pre-wrap">
           {suggestion.description}
         </p>
       )}
@@ -670,7 +668,7 @@ function SuggestionCard({
               "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
               (suggestion.caller_vote === "up"
                 ? "border-accent/50 bg-accent/10 text-accent"
-                : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600")
+                : "border-line bg-cream text-fg-dim hover:border-line-strong")
             }
           >
             <ThumbsUp size={12} /> {suggestion.up_votes}
@@ -684,8 +682,8 @@ function SuggestionCard({
             className={
               "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
               (suggestion.caller_vote === "down"
-                ? "border-red-500/50 bg-red-500/10 text-red-300"
-                : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600")
+                ? "border-red-500/50 bg-red-500/10 text-red-700"
+                : "border-line bg-cream text-fg-dim hover:border-line-strong")
             }
           >
             <ThumbsDown size={12} /> {suggestion.down_votes}
@@ -697,14 +695,14 @@ function SuggestionCard({
               <button
                 type="button"
                 onClick={() => onResolve("accept")}
-                className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+                className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-500/15"
               >
                 {t("Accept ")}
               </button>
               <button
                 type="button"
                 onClick={() => onResolve("reject")}
-                className="rounded-md bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/20"
+                className="rounded-md bg-red-500/10 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-500/15"
               >
                 {t("Reject ")}
               </button>
@@ -715,7 +713,7 @@ function SuggestionCard({
               type="button"
               onClick={onDelete}
               aria-label={t("Delete suggestion")}
-              className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+              className="rounded-md bg-paper px-2 py-1 text-xs text-fg-dim hover:bg-paper hover:text-ink"
             >
               <Trash2 size={12} />
             </button>
@@ -798,7 +796,7 @@ function ActivityTab({
     );
   }
   if (loading)
-    return <p className="text-sm text-slate-500">{t("Loading\u2026")}</p>;
+    return <p className="text-sm text-fg-mute">{t("Loading\u2026")}</p>;
   // Render the API error BEFORE the empty-state check so a failed fetch
   // surfaces as an actionable alert rather than a misleading "No
   // activity yet" message when auth/network/server issues prevent the
@@ -807,7 +805,7 @@ function ActivityTab({
     return (
       <p
         role="alert"
-        className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+        className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
       >
         {error}
       </p>
@@ -815,7 +813,7 @@ function ActivityTab({
   }
   if (entries.length === 0) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
         {t(
           "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
         )}
@@ -828,7 +826,7 @@ function ActivityTab({
         {entries.map((entry) => (
           <li
             key={entry.id}
-            className="rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-200"
+            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink"
           >
             <div className="flex items-center justify-between gap-3">
               <span className="font-medium">
@@ -836,12 +834,12 @@ function ActivityTab({
               </span>
               <time
                 dateTime={entry.created_at}
-                className="text-xs text-slate-500"
+                className="text-xs text-fg-mute"
               >
                 {formatRelativeTime(entry.created_at)}
               </time>
             </div>
-            <p className="mt-0.5 text-xs text-slate-400">
+            <p className="mt-0.5 text-xs text-fg-dim">
               {describeActivity(entry)}
             </p>
           </li>
@@ -865,7 +863,7 @@ function PromoteTripCTA({
   const [error, setError] = useState<string | null>(null);
   if (!trip) {
     return (
-      <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
         {t("Generate or load a trip first to enable collaboration. ")}
       </p>
     );
@@ -892,10 +890,10 @@ function PromoteTripCTA({
     }
   };
   return (
-    <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+    <div className="space-y-3 rounded-lg border border-line bg-paper p-4">
       <div>
-        <h3 className="text-sm font-semibold text-white">{headline}</h3>
-        <p className="mt-1 text-xs text-slate-400">{body}</p>
+        <h3 className="text-sm font-semibold text-ink">{headline}</h3>
+        <p className="mt-1 text-xs text-fg-dim">{body}</p>
       </div>
       <button
         type="button"
@@ -915,7 +913,7 @@ function PromoteTripCTA({
       {error && (
         <p
           role="alert"
-          className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
         >
           {error}
         </p>
