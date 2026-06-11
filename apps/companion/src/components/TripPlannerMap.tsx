@@ -944,6 +944,9 @@ function TripPlannerMapContent({
       showQuality={showQuality}
       showSurface={showSurface}
       onReady={handleReady}
+      // v2 planner renders on a cream basemap (grey roads) regardless of the
+      // viewer's scheme, matching the design.
+      forceColorScheme="light"
     >
       <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
@@ -972,7 +975,7 @@ function TripPlannerMapContent({
             aria-label="Fit map to the whole route"
             onClick={fitMapToTrip}
             disabled={!ready || !tripBounds}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`${CREAM_PILL} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             <Maximize2 size={14} />
             {t("Fit to route ")}
@@ -983,7 +986,7 @@ function TripPlannerMapContent({
           <button
             type="button"
             onClick={() => drawRef.current?.cancel()}
-            className="flex items-center gap-1.5 rounded-lg border border-accent bg-accent/20 px-3 py-2 text-sm text-accent transition hover:bg-accent/30"
+            className={`${PILL_BASE} self-start border-accent bg-cream text-accent hover:bg-paper`}
           >
             <X size={14} />
             {t("Cancel drawing ")}
@@ -993,7 +996,7 @@ function TripPlannerMapContent({
             type="button"
             onClick={() => drawRef.current?.start()}
             disabled={!ready}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+            className={`${INK_PILL} self-start disabled:cursor-wait disabled:opacity-60`}
           >
             <Square size={14} />
             {drawnRegion ? t("Redraw region ") : t("Draw region ")}
@@ -1004,14 +1007,14 @@ function TripPlannerMapContent({
           <button
             type="button"
             onClick={() => drawRef.current?.clearDrawn()}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+            className={`${CREAM_PILL} self-start`}
           >
             <X size={12} />
             {t("Clear region ")}
           </button>
         ) : null}
 
-        <div className="rounded-lg border border-slate-700 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 shadow-sm">
+        <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
           {drawMode === "drawing" ? (
             <>
               {t(
@@ -1034,25 +1037,25 @@ function TripPlannerMapContent({
         </div>
       </div>
 
-      <div className="absolute right-3 top-3 z-10 w-72 rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-lg backdrop-blur-sm">
-        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+      <div className="absolute right-3 top-3 z-10 w-72 rounded-[14px] bg-ink p-4 text-cream shadow-[0_14px_36px_rgba(14,14,16,0.28)]">
+        <div className="flex items-center gap-2 text-sm font-semibold text-cream">
           <Route size={16} className="text-accent" />
           {t("Planner map ")}
         </div>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-cream/90">
           {trip
             ? `${trip.days.length} day${trip.days.length === 1 ? "" : "s"} · ${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
             : "Load the demo trip or import GPX/KML to see your route on the map."}
         </p>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-cream/55">
           {t(
             "Generated routes use backend road geometry from the start waypoint and planner parameters. ",
           )}
         </p>
 
-        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
+        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <div className="flex items-center gap-2 text-sm font-semibold text-cream">
               <Sparkles size={14} className="text-accent" />
               {t("Fun Zones")}
             </div>
@@ -1064,11 +1067,11 @@ function TripPlannerMapContent({
           </div>
 
           {!drawnRegion ? (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-cream/55">
               {t("Draw a region to discover Fun Zones.")}
             </p>
           ) : funZonesLoading && funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-cream/55">
               {t("Loading Fun Zones…")}
             </p>
           ) : funZonesError ? (
@@ -1083,7 +1086,7 @@ function TripPlannerMapContent({
               </button>
             </div>
           ) : funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-cream/55">
               {t("No Fun Zones in this region yet. Try a larger area.")}
             </p>
           ) : (
@@ -1098,15 +1101,15 @@ function TripPlannerMapContent({
                     className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                       active
                         ? "border-accent bg-accent/10"
-                        : "border-slate-800 bg-slate-950/70 hover:border-slate-700"
+                        : "border-cream/[0.12] bg-cream/[0.05] hover:border-cream/25"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-slate-100">
+                        <p className="truncate text-xs font-medium text-cream">
                           {index + 1}. {zone.name ?? fallbackZoneName(zone)}
                         </p>
-                        <p className="mt-1 text-[11px] text-slate-400">
+                        <p className="mt-1 text-[11px] text-cream/60">
                           {zone.road_count}
                           {t(" roads")}
                           {zone.total_curve_km != null
@@ -1114,7 +1117,7 @@ function TripPlannerMapContent({
                             : ""}
                         </p>
                         {zone.best_season ? (
-                          <p className="mt-1 text-[11px] text-slate-500">
+                          <p className="mt-1 text-[11px] text-cream/55">
                             {zone.best_season}
                           </p>
                         ) : null}
@@ -1128,7 +1131,7 @@ function TripPlannerMapContent({
                 );
               })}
               {funZones.length > 3 ? (
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-cream/55">
                   {t("+ {count} more in this region", {
                     count: funZones.length - 3,
                   })}
@@ -1138,20 +1141,20 @@ function TripPlannerMapContent({
           )}
 
           {selectedFunZone ? (
-            <div className="mt-3 border-t border-slate-800 pt-3">
+            <div className="mt-3 border-t border-cream/[0.12] pt-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-slate-200">
+                <p className="text-xs font-semibold text-cream/90">
                   {selectedFunZone.name ?? fallbackZoneName(selectedFunZone)}
                 </p>
                 <button
                   type="button"
                   onClick={() => setSelectedFunZoneId(null)}
-                  className="text-[11px] text-slate-500 hover:text-slate-300"
+                  className="text-[11px] text-cream/55 hover:text-cream/80"
                 >
                   {t("Clear")}
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-cream/55">
                 {selectedFunZone.composite_score.toFixed(1)}
                 {t(" score")}
                 {selectedFunZone.avg_quality != null
@@ -1159,7 +1162,7 @@ function TripPlannerMapContent({
                   : ""}
               </p>
               {selectedFunZoneLoading ? (
-                <p className="mt-2 text-[11px] text-slate-500">
+                <p className="mt-2 text-[11px] text-cream/55">
                   {t("Loading top roads…")}
                 </p>
               ) : selectedFunZoneError ? (
@@ -1168,7 +1171,7 @@ function TripPlannerMapContent({
                 </p>
               ) : selectedFunZoneDetail?.top_roads.length ? (
                 <div className="mt-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cream/55">
                     {t("Top roads")}
                   </p>
                   <ul className="mt-1 space-y-1">
@@ -1177,14 +1180,14 @@ function TripPlannerMapContent({
                       .map((road: FunZoneDetail["top_roads"][number]) => (
                         <li
                           key={road.id}
-                          className="flex items-center justify-between gap-2 text-[11px] text-slate-400"
+                          className="flex items-center justify-between gap-2 text-[11px] text-cream/60"
                         >
                           <span className="truncate">
                             {road.road_name ??
                               road.road_number ??
                               t("Unnamed road")}
                           </span>
-                          <span className="shrink-0 text-slate-500">
+                          <span className="shrink-0 text-cream/55">
                             {(road.length_m / 1000).toFixed(1)}
                             {t(" km")}
                           </span>
@@ -1197,15 +1200,15 @@ function TripPlannerMapContent({
           ) : null}
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-cream">
             <AlertTriangle size={14} className="text-amber-300" />
             {t("Conditions for ")}
             {activeMonthLabel}
           </div>
 
           {conditionsLoading ? (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-cream/55">
               {t("Loading passes and closures\u2026 ")}
             </p>
           ) : (
@@ -1227,7 +1230,7 @@ function TripPlannerMapContent({
 
               {highlightedClosures.length > 0 ? (
                 <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
                     <AlertTriangle size={12} />
                     {t("Closures ")}
                   </div>
@@ -1240,15 +1243,15 @@ function TripPlannerMapContent({
                       return (
                         <li
                           key={closure.id}
-                          className="rounded-lg border border-slate-800 bg-slate-950/70 p-2"
+                          className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
                         >
-                          <p className="text-xs font-medium text-slate-100">
+                          <p className="text-xs font-medium text-cream">
                             {closure.title}
                           </p>
-                          <p className="mt-1 text-[11px] text-slate-400">
+                          <p className="mt-1 text-[11px] text-cream/60">
                             {reasonLabel(closure.reason)}
                           </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
+                          <p className="mt-1 text-[11px] text-cream/55">
                             {formatClosureWindow(closure)}
                           </p>
                           {detourKm != null ? (
@@ -1267,7 +1270,7 @@ function TripPlannerMapContent({
 
               {highlightedPasses.length > 0 ? (
                 <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
                     <Mountain size={12} />
                     {t("Passes ")}
                   </div>
@@ -1275,12 +1278,12 @@ function TripPlannerMapContent({
                     {highlightedPasses.slice(0, 2).map((pass) => (
                       <li
                         key={pass.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/70 p-2"
+                        className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
                       >
-                        <p className="text-xs font-medium text-slate-100">
+                        <p className="text-xs font-medium text-cream">
                           {pass.name}
                         </p>
-                        <p className="mt-1 text-[11px] text-slate-400">
+                        <p className="mt-1 text-[11px] text-cream/60">
                           {t("{status} · {elevation} m", {
                             status: statusLabel(pass.status),
                             elevation: pass.elevation_m.toLocaleString(),
@@ -1298,12 +1301,18 @@ function TripPlannerMapContent({
     </MapCanvas>
   );
 }
+// v2 map-overlay pills. The design floats cream/translucent pills over the
+// cream basemap (with a soft shadow + blur), reserving solid ink for the
+// primary "Draw region" action.
+const PILL_BASE =
+  "flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition";
+const CREAM_PILL = `${PILL_BASE} border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink`;
+const INK_PILL = `${PILL_BASE} border-ink bg-ink text-cream hover:bg-ink/90`;
+
 function toggleClassName(active: boolean): string {
-  return `flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition ${
-    active
-      ? "border-accent bg-accent/15 text-accent"
-      : "border-slate-700 bg-slate-900/90 text-slate-300 hover:bg-slate-800"
-  }`;
+  return active
+    ? `${PILL_BASE} border-accent bg-cream text-accent`
+    : CREAM_PILL;
 }
 function fallbackZoneName(zone: FunZoneListItem): string {
   const points = zone.boundary as unknown as Array<{
@@ -1371,7 +1380,9 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       type: "line",
       source: ROUTE_SOURCE,
       paint: {
-        "line-color": "#F8FAFC",
+        // Ink route on the cream basemap (was near-white #F8FAFC, tuned for the
+        // old dark map and invisible on cream).
+        "line-color": "#0E0E10",
         "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 6],
         "line-opacity": 0.9,
       },
@@ -1392,7 +1403,8 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       type: "line",
       source: SEGMENT_HIGHLIGHT_SOURCE,
       paint: {
-        "line-color": "#0ED3CF",
+        // Accent glow for the clicked segment (was cyan on the old dark map).
+        "line-color": "#FF6A1A",
         "line-width": [
           "interpolate",
           ["linear"],
@@ -1415,7 +1427,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       type: "line",
       source: SEGMENT_HIGHLIGHT_SOURCE,
       paint: {
-        "line-color": "#0ED3CF",
+        "line-color": "#FF6A1A",
         "line-width": ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 7],
         "line-opacity": 1,
       },
@@ -1468,9 +1480,11 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "text-anchor": "top",
       },
       paint: {
-        "text-color": "#E2E8F0",
-        "text-halo-color": "#020617",
-        "text-halo-width": 1,
+        // Ink label with a cream halo for legibility on the cream basemap
+        // (was light text + dark halo for the old dark map).
+        "text-color": "#0E0E10",
+        "text-halo-color": "#F5EFE6",
+        "text-halo-width": 1.4,
       },
     });
   }
