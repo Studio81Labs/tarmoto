@@ -24,9 +24,9 @@ interface PassesPanelProps {
 }
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
 const STATUS_DOT_CLASS: Record<PassStatus, string> = {
-  open: "bg-emerald-400",
-  closed: "bg-rose-400",
-  unknown: "bg-slate-400",
+  open: "bg-[#1f8a5b]",
+  closed: "bg-quality-q1",
+  unknown: "bg-ink/40",
 };
 const STATUS_LABEL: Record<PassStatus, string> = {
   open: "Open",
@@ -142,16 +142,16 @@ function PassesPanelBody({
   const hasRouteWarnings = routeClosedCount > 0 || routeUnknownCount > 0;
   const routeSummary = buildRouteSummary(routeClosedCount, routeUnknownCount);
   return (
-    <div className="space-y-3 pt-2 border-t border-slate-800">
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
-        <Mountain size={14} className="text-slate-500" />
+    <div className="space-y-3 pt-2 border-t border-line">
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <Mountain size={14} className="text-accent" />
         {t("Seasonal passes ")}
       </div>
 
       <div>
         <label
           htmlFor="passes-month"
-          className="block text-xs text-slate-500 mb-1"
+          className="block text-xs text-fg-mute mb-1"
         >
           {t("Travel month ")}
         </label>
@@ -160,7 +160,7 @@ function PassesPanelBody({
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
           disabled={isReadOnlyControlled}
-          className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-accent transition"
+          className="w-full px-3 py-2 rounded-lg bg-cream border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
         >
           {MONTH_NAMES.map((name, idx) => (
             <option key={name} value={idx + 1}>
@@ -173,27 +173,27 @@ function PassesPanelBody({
       <Legend />
 
       {showRouteWarnings && (
-        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-dim">
             <Route size={12} />
             {t("Route warnings ")}
           </div>
 
           {routes.length === 0 ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-mute">
               {t(
                 "Import or generate a route to check mountain pass crossings. ",
               )}
             </p>
           ) : routeLoading ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-mute">
               {t("Checking route passes\u2026")}
             </p>
           ) : hasRouteWarnings ? (
             <>
-              <p className="text-xs text-slate-300">{routeSummary}</p>
+              <p className="text-xs text-fg-dim">{routeSummary}</p>
               {routeError && (
-                <p className="text-xs text-amber-300">{routeError}</p>
+                <p className="text-xs text-amber-600">{routeError}</p>
               )}
               <ul className="space-y-1.5">
                 {routePasses
@@ -205,9 +205,9 @@ function PassesPanelBody({
               </ul>
             </>
           ) : routeError ? (
-            <p className="text-xs text-rose-400">{routeError}</p>
+            <p className="text-xs text-quality-q1">{routeError}</p>
           ) : (
-            <p className="text-xs text-emerald-400">
+            <p className="text-xs text-[#1f8a5b]">
               {t("No closed or unknown passes intersect the current trip. ")}
             </p>
           )}
@@ -215,27 +215,27 @@ function PassesPanelBody({
       )}
 
       {error ? (
-        <p className="text-xs text-rose-400">{error}</p>
+        <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-slate-500">{t("Loading passes\u2026")}</p>
+        <p className="text-xs text-fg-mute">{t("Loading passes\u2026")}</p>
       ) : counts.total === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-mute">
           {t("No mountain passes seeded yet.")}
         </p>
       ) : (
         <>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-fg-dim">
             {t("In ")}
             {monthLabel(month)}:{" "}
-            <span className="text-rose-400">
+            <span className="text-quality-q1">
               {t("{count} closed", { count: counts.closed })}
             </span>
             {" • "}
-            <span className="text-slate-300">
+            <span className="text-fg-dim">
               {t("{count} unknown", { count: counts.unknown })}
             </span>
             {" • "}
-            <span className="text-emerald-400">
+            <span className="text-[#1f8a5b]">
               {t("{count} open", { count: counts.open })}
             </span>
           </p>
@@ -257,7 +257,7 @@ function Legend() {
     <div
       role="list"
       aria-label={t("Pass status legend")}
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim"
     >
       {STATUS_DISPLAY_ORDER.map((status) => (
         <span
@@ -283,8 +283,8 @@ function PassRow({ pass }: { pass: MountainPass }) {
         className={`mt-1 inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[pass.status]}`}
       />
       <span className="flex-1 min-w-0">
-        <span className="text-slate-200 truncate block">{pass.name}</span>
-        <span className="text-slate-500">
+        <span className="text-ink truncate block">{pass.name}</span>
+        <span className="text-fg-mute">
           {pass.elevation_m.toLocaleString()}
           {t("m ")}
           {pass.region ? ` · ${pass.region}` : ""}

@@ -14,9 +14,9 @@ import { monthLabel } from "@/lib/passes-summary";
 import { formatDistance } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
-  full: "text-rose-400",
-  partial: "text-amber-300",
-  advisory: "text-sky-300",
+  full: "text-quality-q1",
+  partial: "text-amber-600",
+  advisory: "text-sky-700",
 };
 const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
   full: "Full closure",
@@ -136,13 +136,13 @@ function ClosuresPanelBody({
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);
   return (
-    <div className="space-y-3 pt-2 border-t border-slate-800">
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
-        <AlertTriangle size={14} className="text-slate-500" />
+    <div className="space-y-3 pt-2 border-t border-line">
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <AlertTriangle size={14} className="text-accent" />
         {t("Closures & roadworks ")}
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-fg-mute">
         {t("Previewing {month} conditions on {previewDay}.", {
           month: monthText || "this month",
           previewDay,
@@ -150,23 +150,23 @@ function ClosuresPanelBody({
       </p>
 
       {showRouteWarnings && (
-        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-dim">
             <Route size={12} />
             {t("Route warnings ")}
           </div>
 
           {routes.length === 0 ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-mute">
               {t("Import or generate a route to check crossings. ")}
             </p>
           ) : routeLoading ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-fg-mute">
               {t("Checking route crossings\u2026")}
             </p>
           ) : hasRouteClosures ? (
             <>
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-fg-dim">
                 {t("Current trip crosses {count} active {closureLabel}.", {
                   count: routeCounts.total,
                   closureLabel:
@@ -174,7 +174,7 @@ function ClosuresPanelBody({
                 })}
               </p>
               {hasRouteFailure && (
-                <p className="text-xs text-amber-300">{routeError}</p>
+                <p className="text-xs text-amber-600">{routeError}</p>
               )}
               <ul className="space-y-2">
                 {routeClosures.slice(0, 3).map((closure) => (
@@ -188,9 +188,9 @@ function ClosuresPanelBody({
               </ul>
             </>
           ) : hasRouteFailure ? (
-            <p className="text-xs text-rose-400">{routeError}</p>
+            <p className="text-xs text-quality-q1">{routeError}</p>
           ) : routeCounts.total === 0 ? (
-            <p className="text-xs text-emerald-400">
+            <p className="text-xs text-[#1f8a5b]">
               {t("No active closures intersect the current trip. ")}
             </p>
           ) : null}
@@ -198,25 +198,25 @@ function ClosuresPanelBody({
       )}
 
       {error ? (
-        <p className="text-xs text-rose-400">{error}</p>
+        <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-slate-500">{t("Loading closures\u2026")}</p>
+        <p className="text-xs text-fg-mute">{t("Loading closures\u2026")}</p>
       ) : counts.total === 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-mute">
           {t("No active closures for this month yet. ")}
         </p>
       ) : (
         <>
-          <p className="text-xs text-slate-400">
-            <span className="text-rose-400">
+          <p className="text-xs text-fg-dim">
+            <span className="text-quality-q1">
               {t("{count} full", { count: counts.full })}
             </span>
             {" • "}
-            <span className="text-amber-300">
+            <span className="text-amber-600">
               {t("{count} partial", { count: counts.partial })}
             </span>
             {" • "}
-            <span className="text-sky-300">
+            <span className="text-sky-700">
               {t("{count} advisory", { count: counts.advisory })}
             </span>
           </p>
@@ -247,11 +247,11 @@ function ClosureRow({
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
   return (
-    <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+    <li className="rounded-xl border border-line bg-paper p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-100">{closure.title}</p>
-          <p className="text-xs text-slate-500">
+          <p className="text-sm font-medium text-ink">{closure.title}</p>
+          <p className="text-xs text-fg-mute">
             {REASON_LABEL[closure.reason]}
             {closure.region ? ` · ${closure.region}` : ""}
           </p>
@@ -263,19 +263,17 @@ function ClosureRow({
         </span>
       </div>
 
-      <p className="mt-1 text-xs text-slate-400">
-        {formatClosureWindow(closure)}
-      </p>
+      <p className="mt-1 text-xs text-fg-dim">{formatClosureWindow(closure)}</p>
 
       {detourKm != null && (
-        <p className="mt-2 text-xs text-cyan-300">
+        <p className="mt-2 text-xs text-sky-700">
           {t("Detour available \u00B7 approx. ")}
           {formatDistance(detourKm, units)}
         </p>
       )}
 
       {!compact && closure.notes && (
-        <p className="mt-2 text-xs text-slate-400">{closure.notes}</p>
+        <p className="mt-2 text-xs text-fg-dim">{closure.notes}</p>
       )}
     </li>
   );
