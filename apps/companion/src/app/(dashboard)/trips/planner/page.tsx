@@ -3,7 +3,7 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@tarmoto/ui";
+import { Button, Checkbox } from "@tarmoto/ui";
 import { useTripStore } from "@/stores/trip";
 import {
   ArrowLeft,
@@ -1587,19 +1587,14 @@ export default function TripPlannerPage() {
                   </p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                     {SURFACE_OPTIONS.map((surface) => (
-                      <label
+                      <Checkbox
                         key={surface.value}
-                        className="flex cursor-pointer items-center gap-2.5 py-1 text-[13px] font-semibold text-ink"
-                      >
-                        <input
-                          type="checkbox"
-                          aria-label={surface.label}
-                          checked={surfacePreference.includes(surface.value)}
-                          onChange={() => handleSurfaceToggle(surface.value)}
-                          className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
-                        />
-                        {surface.label}
-                      </label>
+                        checked={surfacePreference.includes(surface.value)}
+                        onChange={() => handleSurfaceToggle(surface.value)}
+                        label={surface.label}
+                        ariaLabel={surface.label}
+                        className="py-1"
+                      />
                     ))}
                   </div>
                 </div>
@@ -1626,38 +1621,22 @@ export default function TripPlannerPage() {
                   </select>
                 </div>
 
-                <div className="space-y-2 pt-2">
-                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
-                    <input
-                      type="checkbox"
-                      checked={avoidHighways}
-                      onChange={(event) =>
-                        setAvoidHighways(event.target.checked)
-                      }
-                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
-                    />
-                    {t("Avoid highways")}
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
-                    <input
-                      type="checkbox"
-                      checked={avoidTolls}
-                      onChange={(event) => setAvoidTolls(event.target.checked)}
-                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
-                    />
-                    {t("Avoid tolls")}
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
-                    <input
-                      type="checkbox"
-                      checked={avoidUnpaved}
-                      onChange={(event) =>
-                        setAvoidUnpaved(event.target.checked)
-                      }
-                      className="h-[18px] w-[18px] shrink-0 rounded-[5px] accent-accent"
-                    />
-                    {t("Avoid unpaved roads")}
-                  </label>
+                <div className="flex flex-col items-start gap-2 pt-2">
+                  <Checkbox
+                    checked={avoidHighways}
+                    onChange={setAvoidHighways}
+                    label={t("Avoid highways")}
+                  />
+                  <Checkbox
+                    checked={avoidTolls}
+                    onChange={setAvoidTolls}
+                    label={t("Avoid tolls")}
+                  />
+                  <Checkbox
+                    checked={avoidUnpaved}
+                    onChange={setAvoidUnpaved}
+                    label={t("Avoid unpaved roads")}
+                  />
                 </div>
 
                 <div className="space-y-3 border-t border-line pt-2">
