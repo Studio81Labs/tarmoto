@@ -32,6 +32,7 @@ import { usePasses } from "@/hooks/usePasses";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
@@ -160,7 +161,6 @@ export default function TripPlannerPage() {
   const [plannerRegion, setPlannerRegion] = useState<RegionDrawBbox | null>(
     null,
   );
-  const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
   >([]);
@@ -422,7 +422,6 @@ export default function TripPlannerPage() {
     }
     setSaving(true);
     try {
-      setGenerationError(null);
       const p = plannerParams;
       // Prefer a known serverTripId from collaboration/deep links. Promoted
       // drafts keep local in-memory ids, but their suggestions and activity
@@ -430,7 +429,7 @@ export default function TripPlannerPage() {
       const existingTripId = resolveExistingTripId(serverTripId, displayedTrip);
       const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
       if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
-        setGenerationError(
+        toast.error(
           "Imported routes need at least two route points before saving.",
         );
         setSaving(false);
@@ -460,7 +459,7 @@ export default function TripPlannerPage() {
         p.surfacePreference.length > 0 &&
         generationSurfaces(p).length === 0
       ) {
-        setGenerationError(
+        toast.error(
           "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
         );
         setSaving(false);
@@ -470,7 +469,7 @@ export default function TripPlannerPage() {
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
       if (!startWp) {
-        setGenerationError("Add a start waypoint before saving this trip.");
+        toast.error("Add a start waypoint before saving this trip.");
         setSaving(false);
         return;
       }
@@ -523,7 +522,7 @@ export default function TripPlannerPage() {
       }
       router.push(`/trips/${tripId}`);
     } catch (err) {
-      setGenerationError("Could not save this trip. Please try again.");
+      toast.error("Could not save this trip. Please try again.");
       console.warn("Failed to save trip", err);
       setSaving(false);
     }
@@ -561,7 +560,6 @@ export default function TripPlannerPage() {
     [openImport],
   );
   const handleSurfaceToggle = useCallback((surface: SurfaceType) => {
-    setGenerationError(null);
     setSurfacePreference((current) => {
       if (current.includes(surface)) {
         return current.length === 1
@@ -712,12 +710,11 @@ export default function TripPlannerPage() {
       plannerParams,
     );
     if (validationError) {
-      setGenerationError(validationError);
+      toast.error(validationError);
       return;
     }
     const requestToken = requestTokenRef.current + 1;
     requestTokenRef.current = requestToken;
-    setGenerationError(null);
     generationLockRef.current = true;
     setGenerating(true);
     let createdTripId: string | null = null;
@@ -804,7 +801,7 @@ export default function TripPlannerPage() {
       if (createdTripId) {
         await cleanupCreatedTrip(createdTripId);
       }
-      setGenerationError("Could not generate itinerary options right now.");
+      toast.error("Could not generate itinerary options right now.");
     } finally {
       if (requestTokenRef.current === requestToken) {
         generationLockRef.current = false;
@@ -824,7 +821,6 @@ export default function TripPlannerPage() {
   const handleSelectOption = useCallback(
     async (option: GeneratedTripOption) => {
       if (generationLockRef.current) return;
-      setGenerationError(null);
       if (option.selected || !serverTripId) {
         setSelectedOptionId(option.id);
         setActiveTrip(option.trip);
@@ -840,7 +836,7 @@ export default function TripPlannerPage() {
       const latestTrip = activeTripRef.current;
       const startWaypoint = findStartWaypoint(latestTrip);
       if (!latestTrip || !startWaypoint) {
-        setGenerationError("Add a start waypoint before selecting this route.");
+        toast.error("Add a start waypoint before selecting this route.");
         return;
       }
       const requestToken = requestTokenRef.current + 1;
@@ -881,9 +877,7 @@ export default function TripPlannerPage() {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        setGenerationError(
-          "Could not select this route option. Please try again.",
-        );
+        toast.error("Could not select this route option. Please try again.");
       } finally {
         if (requestTokenRef.current === requestToken) {
           generationLockRef.current = false;
@@ -983,89 +977,77 @@ export default function TripPlannerPage() {
           assert `toBeVisible()` on text inside these cards, which a
           floating absolute overlay made unreliable under the grid
           layout. */}
-      {(generatedOptions.length > 0 || generationError) && (
+      {generatedOptions.length > 0 && (
         <div className="border-b border-line bg-paper/80 px-4 py-3">
-          {generationError ? (
-            <p
-              role="alert"
-              className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400"
-            >
-              {generationError}
-            </p>
-          ) : null}
-          {generatedOptions.length > 0 && (
-            <div
-              className={`grid gap-3 lg:grid-cols-3 ${generationError ? "mt-3" : ""}`}
-            >
-              {generatedOptions.map((option) => {
-                const totalDistance = option.trip.days.reduce(
-                  (sum, day) => sum + day.distanceKm,
-                  0,
-                );
-                const totalDuration = option.trip.days.reduce(
-                  (sum, day) => sum + day.durationMinutes,
-                  0,
-                );
-                const averageQuality =
-                  option.trip.days.length > 0
-                    ? option.trip.days.reduce(
-                        (sum, day) => sum + day.avgQuality,
-                        0,
-                      ) / option.trip.days.length
-                    : 0;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => handleSelectOption(option)}
-                    disabled={isGenerating}
-                    className={`rounded-[14px] border px-4 py-3 text-left transition ${
-                      option.id === selectedOptionId
-                        ? "border-accent bg-accent/10"
-                        : "border-line bg-cream/60 hover:border-line-strong"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-ink">
-                          {option.label}
-                        </p>
-                        <p className="mt-1 text-xs text-fg-dim">
-                          {option.summary}
-                        </p>
-                      </div>
-                      {option.id === selectedOptionId && (
-                        <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
-                          {t("Active")}
-                        </span>
-                      )}
+          <div className="grid gap-3 lg:grid-cols-3">
+            {generatedOptions.map((option) => {
+              const totalDistance = option.trip.days.reduce(
+                (sum, day) => sum + day.distanceKm,
+                0,
+              );
+              const totalDuration = option.trip.days.reduce(
+                (sum, day) => sum + day.durationMinutes,
+                0,
+              );
+              const averageQuality =
+                option.trip.days.length > 0
+                  ? option.trip.days.reduce(
+                      (sum, day) => sum + day.avgQuality,
+                      0,
+                    ) / option.trip.days.length
+                  : 0;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelectOption(option)}
+                  disabled={isGenerating}
+                  className={`rounded-[14px] border px-4 py-3 text-left transition ${
+                    option.id === selectedOptionId
+                      ? "border-accent bg-accent/10"
+                      : "border-line bg-cream/60 hover:border-line-strong"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-ink">
+                        {option.label}
+                      </p>
+                      <p className="mt-1 text-xs text-fg-dim">
+                        {option.summary}
+                      </p>
                     </div>
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
-                      <div className="rounded-lg bg-paper/70 px-2 py-2">
-                        <p className="text-fg-dim">{t("Distance")}</p>
-                        <p className="mt-1 font-medium text-ink">
-                          {Math.round(totalDistance)}
-                          {t("km ")}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-paper/70 px-2 py-2">
-                        <p className="text-fg-dim">{t("Ride time")}</p>
-                        <p className="mt-1 font-medium text-ink">
-                          {formatDuration(totalDuration)}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-paper/70 px-2 py-2">
-                        <p className="text-fg-dim">{t("Avg quality")}</p>
-                        <p className="mt-1 font-medium text-ink">
-                          {averageQuality.toFixed(1)}/5
-                        </p>
-                      </div>
+                    {option.id === selectedOptionId && (
+                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
+                        {t("Active")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
+                    <div className="rounded-lg bg-paper/70 px-2 py-2">
+                      <p className="text-fg-dim">{t("Distance")}</p>
+                      <p className="mt-1 font-medium text-ink">
+                        {Math.round(totalDistance)}
+                        {t("km ")}
+                      </p>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    <div className="rounded-lg bg-paper/70 px-2 py-2">
+                      <p className="text-fg-dim">{t("Ride time")}</p>
+                      <p className="mt-1 font-medium text-ink">
+                        {formatDuration(totalDuration)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-paper/70 px-2 py-2">
+                      <p className="text-fg-dim">{t("Avg quality")}</p>
+                      <p className="mt-1 font-medium text-ink">
+                        {averageQuality.toFixed(1)}/5
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

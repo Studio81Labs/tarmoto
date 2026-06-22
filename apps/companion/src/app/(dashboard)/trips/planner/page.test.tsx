@@ -6,6 +6,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import TripPlannerPage from "./page";
+import { ToastHost } from "@/components/ToastHost";
+import { useToastStore } from "@/stores/toast";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
@@ -356,6 +358,7 @@ describe("TripPlannerPage", () => {
     // Each test starts on the bare planner URL so URL hydration can't bleed
     // between cases.
     window.history.replaceState({}, "", "/trips/planner");
+    useToastStore.getState().dismissAll();
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
@@ -713,7 +716,12 @@ describe("TripPlannerPage", () => {
     tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
     storeState.activeTrip = activeTrip;
 
-    render(<TripPlannerPage />);
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
@@ -1068,7 +1076,12 @@ describe("TripPlannerPage", () => {
       },
     };
 
-    render(<TripPlannerPage />);
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -1092,7 +1105,12 @@ describe("TripPlannerPage", () => {
       ],
     };
 
-    render(<TripPlannerPage />);
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

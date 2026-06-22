@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { usePathname } from "next/navigation";
 import { NetworkStatusProvider } from "./NetworkStatusProvider";
+import { ToastHost } from "./ToastHost";
 
 const AuthenticatedAppProviders = dynamic(() =>
   import("./AuthenticatedAppProviders").then(
@@ -28,6 +29,7 @@ export function AppProviders({
     <I18nProvider locale={locale}>
       <NetworkStatusProvider />
       <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
+      <ToastHost />
     </I18nProvider>
   );
 }
