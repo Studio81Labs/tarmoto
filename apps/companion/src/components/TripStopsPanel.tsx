@@ -106,26 +106,22 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
 
         <div>
           <p className="mb-2 text-xs text-fg-mute">{t("POI types")}</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
             {DEFAULT_POI_KINDS.map((kind) => (
-              <div
+              <Checkbox
                 key={kind}
-                className="rounded-lg border border-line bg-paper px-3 py-2"
-              >
-                <Checkbox
-                  checked={poiKinds.includes(kind)}
-                  onChange={() =>
-                    setPoiKinds((current) =>
-                      current.includes(kind)
-                        ? current.filter((value) => value !== kind)
-                        : [...current, kind],
-                    )
-                  }
-                  label={POI_LABELS[kind]}
-                  ariaLabel={POI_LABELS[kind]}
-                  className="w-full"
-                />
-              </div>
+                checked={poiKinds.includes(kind)}
+                onChange={() =>
+                  setPoiKinds((current) =>
+                    current.includes(kind)
+                      ? current.filter((value) => value !== kind)
+                      : [...current, kind],
+                  )
+                }
+                label={POI_LABELS[kind]}
+                ariaLabel={POI_LABELS[kind]}
+                className="py-1"
+              />
             ))}
           </div>
         </div>

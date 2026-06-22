@@ -1661,7 +1661,6 @@ export default function TripPlannerPage() {
             variant="accent"
             size="lg"
             block
-            uppercase
             className="mt-[18px]"
             loading={isGenerating}
             onClick={handleGenerate}
