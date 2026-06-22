@@ -81,7 +81,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
         {t("Trip stops & stays ")}
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-line bg-paper p-3">
+      <div className="grid gap-3">
         <div>
           <label
             htmlFor="trip-stops-rating"
