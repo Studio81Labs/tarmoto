@@ -1659,6 +1659,7 @@ export default function TripPlannerPage() {
               first-time and re-run flows without conditional text. */}
           <Button
             variant="accent"
+            size="lg"
             block
             uppercase
             className="mt-[18px]"
