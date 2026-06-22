@@ -1528,6 +1528,7 @@ export default function TripPlannerPage() {
                     step={25}
                     value={dailyKmTarget}
                     onChange={setDailyKmTarget}
+                    tone="cream"
                   />
                 </div>
 
@@ -1560,6 +1561,7 @@ export default function TripPlannerPage() {
                     id="trip-planner-min-quality"
                     value={minQuality}
                     onChange={(value) => setMinQuality(Number(value))}
+                    tone="cream"
                   >
                     <option value="1">{t("Any condition")}</option>
                     <option value="2">{t("Fair or better")}</option>
