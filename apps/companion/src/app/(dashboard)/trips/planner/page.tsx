@@ -1661,7 +1661,7 @@ export default function TripPlannerPage() {
             variant="accent"
             size="lg"
             block
-            className="mt-[18px] rounded-[10px]!"
+            className="mt-[18px] shrink-0"
             loading={isGenerating}
             onClick={handleGenerate}
           >
