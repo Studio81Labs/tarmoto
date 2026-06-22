@@ -24,6 +24,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
 import { Button, Card, Mono, Stamp } from "@tarmoto/ui";
+import { toast } from "@/lib/toast";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -67,7 +68,6 @@ export default function RouteCollectionsPage() {
       }
     | null
   >(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RouteCollectionView | null>(
     null,
   );
@@ -77,11 +77,10 @@ export default function RouteCollectionsPage() {
     const collection = unfollowTarget;
     if (!collection) return;
     setUnfollowTarget(null);
-    setActionError(null);
     try {
       await unfollowCollection(collection.id);
     } catch (err) {
-      setActionError(
+      toast.error(
         err instanceof Error ? err.message : "Failed to unfollow collection",
       );
     }
@@ -92,7 +91,6 @@ export default function RouteCollectionsPage() {
   // feedback that anything went wrong.
   const submitModal = async (input: CollectionInputForm) => {
     if (!modal) return;
-    setActionError(null);
     if (modal.mode === "create") {
       await createCollection({
         title: input.title.trim(),
@@ -112,11 +110,10 @@ export default function RouteCollectionsPage() {
     const collection = deleteTarget;
     if (!collection) return;
     setDeleteTarget(null);
-    setActionError(null);
     try {
       await removeCollection(collection.id);
     } catch (err) {
-      setActionError(
+      toast.error(
         err instanceof Error ? err.message : "Failed to delete collection",
       );
     }
@@ -164,15 +161,6 @@ export default function RouteCollectionsPage() {
       }
     >
       {migration && <MigrationBanner migration={migration} />}
-
-      {actionError && (
-        <div
-          role="alert"
-          className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
-        >
-          {actionError}
-        </div>
-      )}
 
       <Toolbar search={search} onSearch={setSearch} />
 
@@ -617,9 +605,8 @@ function CollectionModal({
     try {
       await onSubmit({ title, description, visibility });
     } catch (err) {
-      // Render the error inline so it's visible above the modal overlay.
-      // The page's own actionError banner sits behind us — a parent-level
-      // setState wouldn't paint until the modal closed.
+      // Render the error inline inside the modal form so it's visible above
+      // the modal overlay and stays put while the user fixes their input.
       setError(
         err instanceof Error ? err.message : "Failed to save collection",
       );

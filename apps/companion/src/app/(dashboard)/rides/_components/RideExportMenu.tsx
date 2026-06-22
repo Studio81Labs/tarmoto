@@ -3,13 +3,14 @@ import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@tarmoto/ui";
+import { toast } from "@/lib/toast";
 import type { RideExportFormat } from "@/lib/ride-export";
 
 /**
  * "Export" trigger + CSV/GPX dropdown, shared by the All-rides header
  * (bulk export of the filtered set) and the ride-detail header (one ride).
- * The caller supplies `onExport`; the menu owns its open / busy / error
- * state and outside-click dismissal.
+ * The caller supplies `onExport`; the menu owns its open / busy state and
+ * outside-click dismissal, and surfaces failures via a toast.
  */
 export function RideExportMenu({
   onExport,
@@ -18,7 +19,6 @@ export function RideExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RideExportFormat | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,12 +33,13 @@ export function RideExportMenu({
   async function handleExport(format: RideExportFormat) {
     if (busy) return;
     setBusy(format);
-    setError(null);
     try {
       await onExport(format);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
+      toast.error(t("Export failed"), {
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setBusy(null);
     }
@@ -82,16 +83,6 @@ export function RideExportMenu({
             {t("GPX (tracks) ")}
           </button>
         </div>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="absolute right-0 top-full mt-2 whitespace-nowrap text-xs text-red-400"
-        >
-          {t("Export failed: ")}
-          {error}
-        </p>
       )}
     </div>
   );

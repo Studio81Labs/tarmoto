@@ -7,8 +7,10 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { RoadReviewsPanel } from "./RoadReviewsPanel";
+import { ToastHost } from "./ToastHost";
 import { roadsApi, type RoadReview } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { useToastStore } from "@/stores/toast";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -81,6 +83,7 @@ describe("RoadReviewsPanel", () => {
   const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
   beforeEach(() => {
+    useToastStore.getState().dismissAll();
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
@@ -1059,7 +1062,12 @@ describe("RoadReviewsPanel", () => {
       new Error("Cannot vote on your own review"),
     );
 
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    render(
+      <>
+        <RoadReviewsPanel segmentId={firstSegmentId} />
+        <ToastHost />
+      </>,
+    );
 
     await screen.findByText("John Rider");
 

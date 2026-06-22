@@ -24,6 +24,7 @@ import {
   type MetricTileProps,
 } from "@tarmoto/ui";
 import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -99,7 +100,6 @@ export default function RideDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
@@ -143,8 +143,7 @@ export default function RideDetailPage() {
     if (typeof window === "undefined") return;
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
+      toast.success(t("Link copied"));
     } catch {
       // Clipboard can reject on insecure origins; fail silently.
     }
@@ -381,9 +380,9 @@ export default function RideDetailPage() {
                 uppercase
                 leftIcon={<Share2 size={14} />}
                 onClick={handleShare}
-                title={shareCopied ? t("Link copied") : t("Copy share link")}
+                title={t("Copy share link")}
               >
-                {shareCopied ? t("Copied") : t("Share")}
+                {t("Share")}
               </Button>
               <RideExportMenu
                 onExport={(format) => downloadRideExport(ride.id, format)}

@@ -2,7 +2,6 @@
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
-  Check,
   ChevronDown,
   Download,
   FileDown,
@@ -13,6 +12,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { ApiError, tripSharesApi } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
 import {
   TRIP_PRINT_STORAGE_KEY,
@@ -38,10 +38,6 @@ interface TripExportMenuProps {
    */
   context?: "saved-trip" | "planner";
 }
-type Feedback = {
-  kind: "ok" | "err";
-  message: string;
-} | null;
 /**
  * Export menu for a planned trip (US-39): GPX download, shareable link,
  * mobile deep-link handoff with token, printable summary, and a one-click
@@ -56,7 +52,6 @@ export function TripExportMenu({
   context = "saved-trip",
 }: TripExportMenuProps) {
   const [open, setOpen] = useState(false);
-  const [feedback, setFeedback] = useState<Feedback>(null);
   const [pushPending, setPushPending] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -75,14 +70,10 @@ export function TripExportMenu({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
-  useEffect(() => {
-    if (!feedback) return;
-    const id = window.setTimeout(() => setFeedback(null), 2500);
-    return () => window.clearTimeout(id);
-  }, [feedback]);
   const disabled = !trip;
   function show(kind: "ok" | "err", message: string) {
-    setFeedback({ kind, message });
+    if (kind === "ok") toast.success(message);
+    else toast.error(message);
     setOpen(false);
   }
   function handleGpx() {
@@ -116,7 +107,6 @@ export function TripExportMenu({
   async function handlePushMobile() {
     if (!trip || pushPending) return;
     setPushPending(true);
-    setFeedback(null);
     try {
       // Mint a fresh share token for every push so revoking one device
       // doesn't kill another rider's import. The mobile app fetches the
@@ -247,21 +237,6 @@ export function TripExportMenu({
             hint="Turn list with waypoints"
             onClick={handlePrint}
           />
-        </div>
-      )}
-
-      {feedback && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`absolute left-0 top-full mt-12 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs whitespace-nowrap z-30 ${
-            feedback.kind === "ok"
-              ? "bg-accent/10 text-accent"
-              : "bg-quality-q1/10 text-quality-q1"
-          }`}
-        >
-          {feedback.kind === "ok" && <Check size={12} />}
-          {feedback.message}
         </div>
       )}
     </div>

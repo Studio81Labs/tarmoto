@@ -26,6 +26,7 @@ import {
   type RoadReview,
   type UpsertRoadReviewInput,
 } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import { formatRelativeTime } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 const MAX_REVIEW_PHOTOS = 5;
@@ -813,7 +814,6 @@ function ReviewCard({
   onChange: (next: Partial<RoadReview>) => void;
 }) {
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
-  const [voteError, setVoteError] = useState<string | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
@@ -824,17 +824,15 @@ function ReviewCard({
       my_vote: review.my_vote,
     };
     setPendingVote(isHelpful ? "up" : "down");
-    setVoteError(null);
     onChange(applyVoteDelta(review, wasSame ? null : isHelpful));
     try {
       const { data } = wasSame
         ? await roadsApi.clearReviewVote(review.id)
         : await roadsApi.voteOnReview(review.id, isHelpful);
       onChange(data);
-      setVoteError(null);
     } catch (err) {
       onChange(previous);
-      setVoteError(
+      toast.error(
         err instanceof Error ? err.message : "Could not submit vote.",
       );
     } finally {
@@ -927,12 +925,6 @@ function ReviewCard({
             onClick={() => submitVote(false)}
           />
         </div>
-      )}
-
-      {voteError && (
-        <p className="mt-2 text-xs text-rose-300" role="alert">
-          {voteError}
-        </p>
       )}
     </article>
   );

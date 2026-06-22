@@ -49,6 +49,7 @@ import {
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
 import { Button, MiniRouteSvg, PageHeader } from "@tarmoto/ui";
+import { toast } from "@/lib/toast";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -109,7 +110,6 @@ export default function TripListPage() {
   >(null);
   const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
-  const [migrationToast, setMigrationToast] = useState<string | null>(null);
   const markBusy = (id: string) => {
     setBusyTripIds((prev) => {
       const next = new Set(prev);
@@ -197,7 +197,7 @@ export default function TripListPage() {
           const refreshed = await tripFoldersApi.list();
           if (cancelled) return;
           setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
-          setMigrationToast(
+          toast.success(
             result.succeeded === 1
               ? "Moved 1 folder to your Tarmoto account."
               : `Moved ${result.succeeded} folders to your Tarmoto account.`,
@@ -490,20 +490,6 @@ export default function TripListPage() {
               aria-label={t("Dismiss error")}
               onClick={() => setErrorBanner(null)}
               className="text-red-400 hover:text-ink"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-
-        {migrationToast && (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
-            <span>{migrationToast}</span>
-            <button
-              type="button"
-              aria-label={t("Dismiss notice")}
-              onClick={() => setMigrationToast(null)}
-              className="text-accent hover:text-ink"
             >
               <X size={14} />
             </button>

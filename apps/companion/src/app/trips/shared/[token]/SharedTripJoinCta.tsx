@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, Route } from "lucide-react";
+import { Loader2, Route } from "lucide-react";
 import { tripSharesApi } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 
 interface SharedTripJoinCtaProps {
@@ -22,7 +23,6 @@ export function SharedTripJoinCta({
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const [joining, setJoining] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const callbackUrl = useMemo(
     () => `/trips/shared/${encodeURIComponent(token)}`,
     [token],
@@ -69,15 +69,17 @@ export function SharedTripJoinCta({
   const handleJoin = async () => {
     if (!authReady || joining) return;
     setJoining(true);
-    setError(null);
     try {
       const { data } = await tripSharesApi.joinByToken(token);
       router.push(data.planner_url);
     } catch (err) {
-      setError(
+      // Persist (no auto-dismiss): the guidance asks the user to take an
+      // out-of-band action (get a fresh link), so it shouldn't time out.
+      toast.error(
         err instanceof Error
           ? err.message
           : "Could not join this shared trip. Ask the owner for a fresh link.",
+        { durationMs: null },
       );
     } finally {
       setJoining(false);
@@ -104,15 +106,6 @@ export function SharedTripJoinCta({
         )}
         Join trip
       </button>
-      {error ? (
-        <p
-          role="alert"
-          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
-        >
-          <AlertTriangle size={14} />
-          {error}
-        </p>
-      ) : null}
     </section>
   );
 }
