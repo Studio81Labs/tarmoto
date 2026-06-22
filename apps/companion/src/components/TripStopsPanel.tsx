@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { BedDouble, Camera, Coffee, Fuel, UtensilsCrossed } from "lucide-react";
+import { Select } from "@tarmoto/ui";
 import { useTripStops } from "@/hooks/useTripStops";
 import {
   buildSuggestionWaypoint,
@@ -88,21 +89,19 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
           >
             {t("Minimum stay rating ")}
           </label>
-          <select
+          <Select
             id="trip-stops-rating"
             value={minAccommodationStars ?? ""}
-            onChange={(event) =>
-              setMinAccommodationStars(
-                event.target.value ? Number(event.target.value) : undefined,
-              )
+            onChange={(value) =>
+              setMinAccommodationStars(value ? Number(value) : undefined)
             }
-            className="w-full rounded-lg border border-line-strong bg-cream px-3 py-2 text-sm text-ink transition focus:border-accent focus:outline-none"
+            tone="cream"
           >
             <option value="">{t("Any")}</option>
             <option value="3">{t("3 stars or better")}</option>
             <option value="4">{t("4 stars or better")}</option>
             <option value="5">{t("5 stars only")}</option>
-          </select>
+          </Select>
         </div>
 
         <div>

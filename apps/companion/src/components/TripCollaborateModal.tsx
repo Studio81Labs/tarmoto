@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
+import { Input, Textarea } from "@tarmoto/ui";
 type Tab = "invite" | "suggestions" | "activity";
 interface TripCollaborateModalProps {
   open: boolean;
@@ -512,23 +513,22 @@ function SuggestionsTab({
               "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
             )}
           </p>
-          <input
-            type="text"
+          <Input
+            tone="cream"
             placeholder={t("Short title (e.g. 'Scenic loop via Passo Giau')")}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            aria-label={t("Suggestion title")}
+            onChange={setTitle}
+            ariaLabel={t("Suggestion title")}
             maxLength={200}
-            className="w-full rounded-md bg-cream border border-line px-3 py-2 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:ring-1 focus:ring-accent"
           />
-          <textarea
+          <Textarea
+            tone="cream"
             placeholder={t("Optional context \u2014 why this route?")}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            aria-label={t("Suggestion description")}
+            onChange={setDescription}
+            ariaLabel={t("Suggestion description")}
             rows={2}
             maxLength={2000}
-            className="w-full resize-none rounded-md bg-cream border border-line px-3 py-2 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <button
             type="button"

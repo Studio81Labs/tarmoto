@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Mountain, Route } from "lucide-react";
+import { Select } from "@tarmoto/ui";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import {
   MONTH_NAMES,
@@ -155,19 +156,19 @@ function PassesPanelBody({
         >
           {t("Travel month ")}
         </label>
-        <select
+        <Select
           id="passes-month"
           value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
+          onChange={(value) => setMonth(Number(value))}
           disabled={isReadOnlyControlled}
-          className="w-full px-3 py-2 rounded-lg bg-cream border border-line-strong text-ink text-sm focus:outline-none focus:border-accent transition"
+          tone="cream"
         >
           {MONTH_NAMES.map((name, idx) => (
             <option key={name} value={idx + 1}>
               {name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <Legend />

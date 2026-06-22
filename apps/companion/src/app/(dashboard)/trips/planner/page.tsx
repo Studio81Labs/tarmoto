@@ -3,7 +3,7 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Checkbox } from "@tarmoto/ui";
+import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
 import { useTripStore } from "@/stores/trip";
 import {
   ArrowLeft,
@@ -1521,64 +1521,15 @@ export default function TripPlannerPage() {
                   >
                     {t("Daily km target")}
                   </label>
-                  <div className="flex items-stretch overflow-hidden rounded-lg border border-line-strong bg-paper transition focus-within:border-accent">
-                    <input
-                      id="trip-planner-daily-km"
-                      type="number"
-                      min={100}
-                      max={500}
-                      step={25}
-                      value={dailyKmTarget}
-                      onChange={(event) =>
-                        setDailyKmTarget(
-                          clampNumberInput(event.target.value, 100, 500, 250),
-                        )
-                      }
-                      className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    />
-                    {/* Visible steppers mirroring the design. The number input
-                        keeps its native step semantics for keyboard/AT users,
-                        so these are decorative duplicates (aria-hidden, not
-                        tab-focusable). */}
-                    <div className="flex flex-col border-l border-line">
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        aria-hidden="true"
-                        onClick={() =>
-                          setDailyKmTarget(
-                            clampNumberInput(
-                              String(dailyKmTarget + 25),
-                              100,
-                              500,
-                              250,
-                            ),
-                          )
-                        }
-                        className="flex flex-1 items-center px-2.5 text-[8px] text-fg-mute transition hover:bg-cream hover:text-ink"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        aria-hidden="true"
-                        onClick={() =>
-                          setDailyKmTarget(
-                            clampNumberInput(
-                              String(dailyKmTarget - 25),
-                              100,
-                              500,
-                              250,
-                            ),
-                          )
-                        }
-                        className="flex flex-1 items-center border-t border-line px-2.5 text-[8px] text-fg-mute transition hover:bg-cream hover:text-ink"
-                      >
-                        ▼
-                      </button>
-                    </div>
-                  </div>
+                  <NumberField
+                    id="trip-planner-daily-km"
+                    min={100}
+                    max={500}
+                    step={25}
+                    value={dailyKmTarget}
+                    onChange={setDailyKmTarget}
+                    tone="cream"
+                  />
                 </div>
 
                 <div>
@@ -1606,19 +1557,17 @@ export default function TripPlannerPage() {
                   >
                     {t("Minimum road quality")}
                   </label>
-                  <select
+                  <Select
                     id="trip-planner-min-quality"
                     value={minQuality}
-                    onChange={(event) =>
-                      setMinQuality(Number(event.target.value))
-                    }
-                    className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink transition focus:border-accent focus:outline-none"
+                    onChange={(value) => setMinQuality(Number(value))}
+                    tone="cream"
                   >
                     <option value="1">{t("Any condition")}</option>
                     <option value="2">{t("Fair or better")}</option>
                     <option value="3">{t("Good or better")}</option>
                     <option value="4">{t("Excellent only")}</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="flex flex-col items-start gap-2 pt-2">
