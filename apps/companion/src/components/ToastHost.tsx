@@ -6,9 +6,9 @@ import { useToastStore, type ToastRecord } from "@/stores/toast";
 
 /**
  * Single mount point for the global toast queue (rendered in `AppProviders`).
- * Stacks toasts bottom-right on desktop, full-width along the bottom on
- * mobile. The container is click-through (`pointer-events-none`) so it never
- * blocks the UI behind it; individual toasts re-enable pointer events.
+ * Stacks toasts top-right on desktop, full-width along the top on mobile. The
+ * container is click-through (`pointer-events-none`) so it never blocks the UI
+ * behind it; individual toasts re-enable pointer events.
  */
 export function ToastHost() {
   const toasts = useToastStore((state) => state.toasts);
@@ -17,7 +17,7 @@ export function ToastHost() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-3 bottom-3 z-[100] flex flex-col gap-2 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[360px]">
+    <div className="pointer-events-none fixed inset-x-3 top-3 z-[100] flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[360px]">
       {toasts.map((record) => (
         <ToastItem
           key={record.id}
@@ -45,7 +45,7 @@ function ToastItem({
   }, [record.id, record.durationMs]);
 
   return (
-    <div className="animate-slide-up pointer-events-auto">
+    <div className="animate-slide-in-right pointer-events-auto">
       <Toast
         intent={record.intent}
         title={record.title}
