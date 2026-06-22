@@ -7,6 +7,9 @@ export {
 export { Toggle, type ToggleProps } from "./Toggle";
 export { Checkbox, type CheckboxProps } from "./Checkbox";
 export { Select, type SelectProps } from "./Select";
+export { Input, type InputProps } from "./Input";
+export { Textarea, type TextareaProps } from "./Textarea";
+export { NumberField, type NumberFieldProps } from "./NumberField";
 export {
   SegmentedControl,
   type SegmentedControlProps,
