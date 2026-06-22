@@ -1659,9 +1659,9 @@ export default function TripPlannerPage() {
               first-time and re-run flows without conditional text. */}
           <Button
             variant="accent"
+            size="md"
             block
-            uppercase
-            className="mt-[18px]"
+            className="mt-[18px] shrink-0"
             loading={isGenerating}
             onClick={handleGenerate}
           >

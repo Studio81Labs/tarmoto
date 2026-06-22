@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { BedDouble, Camera, Coffee, Fuel, UtensilsCrossed } from "lucide-react";
-import { Select } from "@tarmoto/ui";
+import { Checkbox, Select } from "@tarmoto/ui";
 import { useTripStops } from "@/hooks/useTripStops";
 import {
   buildSuggestionWaypoint,
@@ -81,7 +81,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
         {t("Trip stops & stays ")}
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-line bg-paper p-3">
+      <div className="grid gap-3">
         <div>
           <label
             htmlFor="trip-stops-rating"
@@ -106,27 +106,22 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
 
         <div>
           <p className="mb-2 text-xs text-fg-mute">{t("POI types")}</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
             {DEFAULT_POI_KINDS.map((kind) => (
-              <label
+              <Checkbox
                 key={kind}
-                className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim"
-              >
-                <input
-                  type="checkbox"
-                  aria-label={POI_LABELS[kind]}
-                  checked={poiKinds.includes(kind)}
-                  onChange={() =>
-                    setPoiKinds((current) =>
-                      current.includes(kind)
-                        ? current.filter((value) => value !== kind)
-                        : [...current, kind],
-                    )
-                  }
-                  className="rounded border-line-strong bg-cream text-accent focus:ring-accent"
-                />
-                {POI_LABELS[kind]}
-              </label>
+                checked={poiKinds.includes(kind)}
+                onChange={() =>
+                  setPoiKinds((current) =>
+                    current.includes(kind)
+                      ? current.filter((value) => value !== kind)
+                      : [...current, kind],
+                  )
+                }
+                label={POI_LABELS[kind]}
+                ariaLabel={POI_LABELS[kind]}
+                className="py-1"
+              />
             ))}
           </div>
         </div>
