@@ -3,7 +3,7 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Checkbox } from "@tarmoto/ui";
+import { Button, Checkbox, Select } from "@tarmoto/ui";
 import { useTripStore } from "@/stores/trip";
 import {
   ArrowLeft,
@@ -1606,19 +1606,16 @@ export default function TripPlannerPage() {
                   >
                     {t("Minimum road quality")}
                   </label>
-                  <select
+                  <Select
                     id="trip-planner-min-quality"
                     value={minQuality}
-                    onChange={(event) =>
-                      setMinQuality(Number(event.target.value))
-                    }
-                    className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink transition focus:border-accent focus:outline-none"
+                    onChange={(value) => setMinQuality(Number(value))}
                   >
                     <option value="1">{t("Any condition")}</option>
                     <option value="2">{t("Fair or better")}</option>
                     <option value="3">{t("Good or better")}</option>
                     <option value="4">{t("Excellent only")}</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="flex flex-col items-start gap-2 pt-2">
