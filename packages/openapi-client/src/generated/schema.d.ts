@@ -4519,6 +4519,8 @@ export interface components {
       /** @description The ride owner's display name. */
       rider_name: string;
       rider_avatar_url: string | null;
+      /** @description Public share token, when the ride is publicly shared. Build the no-auth share link as `/rides/shared/{share_token}`; null when the ride has no public share. */
+      share_token: string | null;
     };
     TripFolderResponseDto: {
       id: string;

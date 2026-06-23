@@ -80,6 +80,7 @@ interface RideDetail {
   rider_id: string;
   rider_name: string;
   rider_avatar_url: string | null;
+  share_token: string | null;
 }
 
 // Lean buckets the backend reports (US-19). The v2 "Time spent leaning" chart
@@ -150,8 +151,14 @@ export default function RideDetailPage() {
 
   async function handleShare() {
     if (typeof window === "undefined") return;
+    // Copy the public, no-auth share link (/rides/shared/:token) so a logged-
+    // out recipient can open the ride — not the auth-gated dashboard URL.
+    // Falls back to the current URL only if the ride has no public share.
+    const shareUrl = ride?.share_token
+      ? `${window.location.origin}/rides/shared/${ride.share_token}`
+      : window.location.href;
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       toast.success(t("Link copied"));
     } catch {
       // Clipboard can reject on insecure origins; fail silently.

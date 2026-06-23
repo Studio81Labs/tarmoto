@@ -76,6 +76,7 @@ function ride(overrides: Record<string, unknown> = {}) {
     rider_id: "rider-1",
     rider_name: "John Rider",
     rider_avatar_url: null,
+    share_token: "tok-public",
     ...overrides,
   };
 }
@@ -205,6 +206,29 @@ describe("RideDetailPage", () => {
     fireEvent.click(exportTrigger);
     expect(screen.getByRole("menuitem", { name: /CSV/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /GPX/i })).toBeInTheDocument();
+  });
+
+  it("Share copies the public no-auth share link, not the dashboard URL", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride(),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Share/i }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        expect.stringContaining("/rides/shared/tok-public"),
+      ),
+    );
+    // It must not copy the auth-gated dashboard URL.
+    expect(writeText).not.toHaveBeenCalledWith(
+      expect.stringContaining("/rides/ride-1"),
+    );
   });
 
   it("renders read-only for a community ride viewed by a non-owner", async () => {

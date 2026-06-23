@@ -149,6 +149,13 @@ export class RideDetailDto extends RideSummaryDto {
 
   @ApiProperty({ nullable: true })
   rider_avatar_url!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Public share token, when the ride is publicly shared. Build the no-auth share link as `/rides/shared/{share_token}`; null when the ride has no public share.',
+  })
+  share_token!: string | null;
 }
 
 export class RideListResponseDto {

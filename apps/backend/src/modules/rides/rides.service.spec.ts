@@ -717,19 +717,23 @@ describe('RidesService', () => {
       expect(result.segments).toEqual([]);
     });
 
-    it('returns viewer_is_owner=true + attribution for the owner, no share lookup', async () => {
+    it('returns viewer_is_owner=true + attribution + share token for the owner', async () => {
       rideRepo.findOne!.mockResolvedValueOnce({
         ...mockRide,
         user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
       } as unknown as Ride);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        share_token: 'tok-abc',
+      } as never);
 
       const result = await service.getDetail('user-1', 'ride-1');
 
       expect(result.viewer_is_owner).toBe(true);
       expect(result.rider_id).toBe('user-1');
       expect(result.rider_name).toBe('Owner');
-      // Ownership short-circuits the public-share/privacy lookups.
-      expect(sharedRideRepo.findOne).not.toHaveBeenCalled();
+      expect(result.share_token).toBe('tok-abc');
+      // The share is read for the token, but ownership skips the privacy gate.
+      expect(privacy.loadPreferences).not.toHaveBeenCalled();
     });
 
     it('lets a non-owner view a publicly shared, non-private ride', async () => {
@@ -737,15 +741,18 @@ describe('RidesService', () => {
         ...mockRide,
         user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
       } as unknown as Ride);
-      sharedRideRepo.findOne!.mockResolvedValueOnce({ id: 'sr-1' } as never);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        share_token: 'tok-xyz',
+      } as never);
 
       const result = await service.getDetail('viewer-2', 'ride-1');
 
       expect(result.viewer_is_owner).toBe(false);
       expect(result.rider_id).toBe('user-1');
+      expect(result.share_token).toBe('tok-xyz');
       expect(sharedRideRepo.findOne).toHaveBeenCalledWith({
         where: { ride_id: 'ride-1', is_public: true },
-        select: ['id'],
+        select: ['share_token'],
       });
     });
 
@@ -766,7 +773,9 @@ describe('RidesService', () => {
         ...mockRide,
         user: { id: 'user-1', display_name: 'Owner' },
       } as unknown as Ride);
-      sharedRideRepo.findOne!.mockResolvedValueOnce({ id: 'sr-1' } as never);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        share_token: 'tok-xyz',
+      } as never);
       privacy.loadPreferences.mockResolvedValueOnce({
         ...DEFAULT_PRIVACY_PREFERENCES,
         profile_visibility: 'private',

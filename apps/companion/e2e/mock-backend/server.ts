@@ -3084,21 +3084,30 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
+    // Resolve the public share for both the access gate and the share token.
+    // `rideShares` is keyed by token, so the entry's key *is* the share token.
+    const publicShareEntry = [...state.rideShares.entries()].find(
+      ([, s]) => s.ride_id === ride.id && s.is_public,
+    );
     if (ride.user_id !== session.user_id) {
       // Non-owners may view a ride only when its owner publicly shared it and
       // isn't private — mirrors the relaxed backend + community-feed gate.
-      const publicShare = [...state.rideShares.values()].some(
-        (s) => s.ride_id === ride.id && s.is_public,
-      );
       const ownerPrivate =
         state.privacy.get(ride.user_id)?.profile_visibility === "private";
-      if (!publicShare || ownerPrivate) {
+      if (!publicShareEntry || ownerPrivate) {
         res.status(404).json({ message: "not-found" });
         return;
       }
     }
     const owner = state.users.get(ride.user_id);
-    res.json(serializeRideDetail(ride, session.user_id, owner));
+    res.json(
+      serializeRideDetail(
+        ride,
+        session.user_id,
+        owner,
+        publicShareEntry?.[0] ?? null,
+      ),
+    );
   });
 
   // Export: `downloadRideExport` calls `/api/v1/rides/:rideId/csv` or
@@ -3618,6 +3627,7 @@ function serializeRideDetail(
   ride: import("./state").MockRide,
   viewerId: string,
   owner: { display_name: string; avatar_url: string | null } | undefined,
+  shareToken: string | null,
 ) {
   return {
     id: ride.id,
@@ -3644,6 +3654,7 @@ function serializeRideDetail(
     rider_id: ride.user_id,
     rider_name: owner?.display_name ?? "",
     rider_avatar_url: owner?.avatar_url ?? null,
+    share_token: shareToken,
   };
 }
 
