@@ -975,6 +975,12 @@ function TripPlannerMapContent({
             aria-label="Fit map to the whole route"
             onClick={fitMapToTrip}
             disabled={!ready || !tripBounds}
+            // `ready` reflects the maplibre load, which only happens in the
+            // browser, so this control's disabled state is inherently
+            // client-only. On a real load it's `false` on both SSR and the
+            // first client render; the attribute only diverges when Fast
+            // Refresh preserves a loaded map across an HMR re-render.
+            suppressHydrationWarning
             className={`${CREAM_PILL} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             <Maximize2 size={14} />
@@ -996,6 +1002,8 @@ function TripPlannerMapContent({
             type="button"
             onClick={() => drawRef.current?.start()}
             disabled={!ready}
+            // Client-only disabled state — see the "Fit to route" note above.
+            suppressHydrationWarning
             className={`${INK_PILL} self-start disabled:cursor-wait disabled:opacity-60`}
           >
             <Square size={14} />
