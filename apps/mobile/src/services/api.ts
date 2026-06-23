@@ -342,11 +342,7 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/profile", {
       params: { path: { userId } },
     });
-    // Cast to the canonical shared shape: the committed openapi-client schema
-    // lags the backend (regenerating it churns ~20k unrelated lines), and the
-    // backend `PublicProfileDto implements PublicProfile` guarantees the wire
-    // shape. Mirrors the companion's `fetchPublicProfile`.
-    return unwrap(result, "Failed to load profile") as PublicProfile;
+    return unwrap(result, "Failed to load profile");
   }
 
   async followUser(userId: string): Promise<void> {

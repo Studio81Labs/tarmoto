@@ -3583,6 +3583,8 @@ export interface components {
       shared_ride_count: number;
       /** @description Viewer's follow state on the target. Null when the viewer is the target. */
       is_following: boolean | null;
+      /** @description Whether the target follows the viewer back (drives the "Follows you" badge). Null when the viewer is the target. */
+      follows_you: boolean | null;
       /** @description True when the viewer is the target. */
       is_self: boolean;
     };
