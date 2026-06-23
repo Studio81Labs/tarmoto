@@ -98,7 +98,7 @@ export async function fetchPublicProfile(
       result.response?.status ?? 0,
     );
   }
-  return result.data as PublicProfile;
+  return result.data;
 }
 
 /**

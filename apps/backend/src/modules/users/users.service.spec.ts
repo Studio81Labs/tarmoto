@@ -208,8 +208,23 @@ describe('UsersService', () => {
         total_distance_km: 0,
         shared_ride_count: 0,
         is_following: true,
+        follows_you: false,
         is_self: false,
       });
+    });
+
+    it('returns follows_you=true when the target follows the viewer back', async () => {
+      userFollowRepo.count!.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      // First findOne is the viewer→target edge (is_following), second is the
+      // target→viewer edge (follows_you).
+      userFollowRepo
+        .findOne!.mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ follower_id: 'user-1' } as UserFollow);
+
+      const result = await service.getPublicProfile('viewer-1', 'user-1');
+
+      expect(result.is_following).toBe(false);
+      expect(result.follows_you).toBe(true);
     });
 
     it('surfaces lifetime distance and public-share count', async () => {
@@ -245,8 +260,9 @@ describe('UsersService', () => {
       const result = await service.getPublicProfile('user-1', 'user-1');
 
       expect(result.is_following).toBeNull();
+      expect(result.follows_you).toBeNull();
       expect(result.is_self).toBe(true);
-      // Self check short-circuits the follow lookup so we don't waste a query.
+      // Self check short-circuits both follow lookups so we don't waste queries.
       expect(userFollowRepo.findOne).not.toHaveBeenCalled();
     });
 

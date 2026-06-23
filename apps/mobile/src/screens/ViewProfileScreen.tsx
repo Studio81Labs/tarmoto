@@ -196,6 +196,11 @@ export default function ViewProfileScreen() {
           size={88}
         />
         <Text style={styles.displayName}>{profile.display_name}</Text>
+        {profile.follows_you === true ? (
+          <View style={styles.followsYouBadge}>
+            <Text style={styles.followsYouBadgeText}>Follows you</Text>
+          </View>
+        ) : null}
         <Text style={styles.metaLine}>
           {formatJoinedLabel(profile.created_at)}
         </Text>
@@ -350,6 +355,19 @@ const styles = StyleSheet.create({
     fontSize: fontSize.h2,
     fontWeight: fontWeight.bold,
     marginTop: spacing.sm,
+  },
+  followsYouBadge: {
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: borderRadius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 2,
+  },
+  followsYouBadgeText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
   },
   metaLine: {
     color: colors.textSecondary,

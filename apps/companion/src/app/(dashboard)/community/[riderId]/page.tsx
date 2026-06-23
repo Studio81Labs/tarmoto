@@ -238,7 +238,14 @@ function Header({
         </div>
 
         <div className="min-w-0 flex-1">
-          <Stamp tone="accent">{t("Rider")}</Stamp>
+          <div className="flex items-center gap-2">
+            <Stamp tone="accent">{t("Rider")}</Stamp>
+            {profile.follows_you === true && (
+              <span className="inline-flex items-center rounded-full border border-line-strong bg-paper px-2.5 py-0.5 text-[11px] font-semibold text-fg-dim">
+                {t("Follows you")}
+              </span>
+            )}
+          </div>
           <h1 className="mt-1 truncate text-[28px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink md:text-[34px]">
             {profile.display_name}
           </h1>

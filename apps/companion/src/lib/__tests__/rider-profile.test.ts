@@ -115,6 +115,7 @@ describe("fetchPublicProfile", () => {
       follower_count: 12,
       following_count: 7,
       is_following: false,
+      follows_you: false,
       is_self: false,
     };
   }

@@ -99,6 +99,7 @@ function buildProfile(overrides: Record<string, unknown> = {}) {
     total_distance_km: 4200,
     shared_ride_count: 2,
     is_following: false,
+    follows_you: false,
     is_self: false,
     ...overrides,
   };
@@ -130,6 +131,19 @@ describe("ViewProfileScreen", () => {
     expect(screen.getByText("3")).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
     expect(screen.getByLabelText("Follow rider")).toBeTruthy();
+    // No incoming follow on the default fixture → no badge.
+    expect(screen.queryByText("Follows you")).toBeNull();
+  });
+
+  it("shows the 'Follows you' badge when the rider follows the viewer back", async () => {
+    mockedApi.getPublicProfile.mockResolvedValue(
+      buildProfile({ follows_you: true }),
+    );
+
+    render(<ViewProfileScreen />);
+
+    expect(await screen.findByText("Other Rider")).toBeTruthy();
+    expect(screen.getByText("Follows you")).toBeTruthy();
   });
 
   it("optimistically toggles to Following and bumps the follower count, then resolves", async () => {

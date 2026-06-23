@@ -387,6 +387,24 @@ export function buildApp(): Express {
     res.json({ ok: true });
   });
 
+  // Seed a follow edge (follower → following) so tests can exercise
+  // relationship-dependent UI (e.g. the "Follows you" badge) without
+  // driving the follow flow from a second authenticated session.
+  app.post("/__test__/seed-follow", (req, res) => {
+    const { follower_id, following_id } = req.body ?? {};
+    if (!follower_id || !following_id) {
+      res.status(400).json({ message: "missing-fields" });
+      return;
+    }
+    let following = state.userFollows.get(String(follower_id));
+    if (!following) {
+      following = new Map<string, string>();
+      state.userFollows.set(String(follower_id), following);
+    }
+    following.set(String(following_id), new Date().toISOString());
+    res.json({ ok: true });
+  });
+
   // Allow tests to switch a user's subscription state without driving
   // a full Stripe checkout — Stripe is mocked and never actually called.
   app.post("/__test__/set-subscription", (req, res) => {
@@ -2673,6 +2691,11 @@ export function buildApp(): Express {
       const viewerFollowsTarget = isSelf
         ? null
         : (state.userFollows.get(session.user_id)?.has(target.id) ?? false);
+      // Reverse edge (target → viewer) for the "Follows you" badge; null for
+      // self, mirroring `is_following`.
+      const targetFollowsViewer = isSelf
+        ? null
+        : (state.userFollows.get(target.id)?.has(session.user_id) ?? false);
       // Lifetime distance over the rider's completed rides (Distance tile).
       let totalDistanceKm = 0;
       for (const ride of state.rides.values()) {
@@ -2699,6 +2722,7 @@ export function buildApp(): Express {
         total_distance_km: Math.round(totalDistanceKm),
         shared_ride_count: sharedRideCount,
         is_following: viewerFollowsTarget,
+        follows_you: targetFollowsViewer,
         is_self: isSelf,
       });
     },
