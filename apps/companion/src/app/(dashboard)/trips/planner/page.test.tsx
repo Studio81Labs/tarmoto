@@ -884,6 +884,24 @@ describe("TripPlannerPage", () => {
     generateDeferred.resolve?.({ data: buildGenerationResponse() });
   });
 
+  it("drops a lingering saved trip and its parameters when opened as create-new (no tripId)", async () => {
+    // A persisted (UUID) trip left in the store from a prior edit, carrying
+    // non-default parameters. Mounting `/trips/planner` with no `?tripId=`
+    // is the create-new entry point, so it must reset to a blank canvas AND
+    // default controls — not inherit the dropped trip's settings.
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-555555555555",
+      parameters: { ...activeTrip.parameters, days: 9, dailyKmTarget: 400 },
+    };
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(null));
+    expect(screen.getByLabelText("Number of days")).toHaveValue(3);
+    expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
+  });
+
   it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     // A saved trip in the planner is reached via `?tripId=` (the edit flow);

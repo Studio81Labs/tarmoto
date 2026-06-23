@@ -293,6 +293,13 @@ export default function TripPlannerPage() {
     // the canvas starts blank; an in-memory draft (`planner-*`/`imported-*`)
     // is the rider's working state and is left intact.
     if (activeTrip && UUID_RE.test(activeTrip.id)) {
+      // Mark the stale trip as already control-synced first. The
+      // `activeTrip`→controls effect below runs later in this same mount
+      // while `activeTrip` is still the stale value; without this it would
+      // copy the dropped trip's days/km/road/surface/avoid into the controls
+      // (and then the URL) before the null update lands, so the new-trip
+      // canvas would blank but inherit the last trip's settings.
+      syncedControlsTripIdRef.current = activeTrip.id;
       setActiveTrip(null);
     }
     // Mount-only reconciliation against the initial URL. The `activeTrip`
