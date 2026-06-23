@@ -151,7 +151,7 @@ function SharedRideRow({
 
   return (
     <Link
-      href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+      href={`/community/rides/${encodeURIComponent(ride.id)}`}
       className="flex flex-col gap-3 border-b border-line px-5 py-3 transition last:border-b-0 hover:bg-paper md:grid md:grid-cols-[64px_1fr_110px_110px_92px_80px] md:items-center md:gap-4"
     >
       <div className="h-[42px] w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-paper">

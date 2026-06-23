@@ -450,16 +450,25 @@ export class RidesService {
     // no-auth link; a non-owner is gated on `is_public` (the feed visibility).
     const share = await this.sharedRideRepo.findOne({
       where: { ride_id: rideId },
-      select: ['share_token', 'is_public'],
+      select: ['id', 'share_token', 'is_public'],
     });
     if (!isOwner) {
-      // Non-owners may view a ride only when its owner has publicly shared it
-      // AND their profile isn't private — exactly the visibility the community
-      // feed enforces. Anything else 404s so we never leak a ride's existence.
+      // Non-owners may view a ride only when its owner has publicly shared it,
+      // isn't private, and isn't mid-deletion — exactly the visibility the
+      // community feed and token read path enforce (`user.deleted_at IS NULL`).
+      // Anything else 404s so we never leak a ride's existence.
       const ownerPrefs = await this.privacy.loadPreferences(ride.user_id);
-      if (!share?.is_public || ownerPrefs.profile_visibility === 'private') {
+      if (
+        !share?.is_public ||
+        ownerPrefs.profile_visibility === 'private' ||
+        ride.user?.deleted_at != null
+      ) {
         throw new NotFoundException('Ride not found');
       }
+      // Count the visit like the token read path does, so the community
+      // popularity sort/filter stay accurate now that the feed card links
+      // here instead of `/rides/shared/:token`.
+      await this.sharedRideRepo.increment({ id: share.id }, 'view_count', 1);
     }
 
     // Load stats and segments in parallel

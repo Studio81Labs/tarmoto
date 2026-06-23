@@ -86,6 +86,7 @@ describe('RidesService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((data) => data),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      increment: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     bikeRepo = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -735,6 +736,8 @@ describe('RidesService', () => {
       // Owner gets the token regardless of is_public, and skips the privacy gate.
       expect(result.share_token).toBe('tok-abc');
       expect(privacy.loadPreferences).not.toHaveBeenCalled();
+      // The owner viewing their own ride must not inflate the share view count.
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
     });
 
     it('lets a non-owner view a publicly shared, non-private ride', async () => {
@@ -743,6 +746,7 @@ describe('RidesService', () => {
         user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
       } as unknown as Ride);
       sharedRideRepo.findOne!.mockResolvedValueOnce({
+        id: 'sr-1',
         share_token: 'tok-xyz',
         is_public: true,
       } as never);
@@ -754,8 +758,35 @@ describe('RidesService', () => {
       expect(result.share_token).toBe('tok-xyz');
       expect(sharedRideRepo.findOne).toHaveBeenCalledWith({
         where: { ride_id: 'ride-1' },
-        select: ['share_token', 'is_public'],
+        select: ['id', 'share_token', 'is_public'],
       });
+      // A non-owner visit counts as a shared-ride view (popularity metrics).
+      expect(sharedRideRepo.increment).toHaveBeenCalledWith(
+        { id: 'sr-1' },
+        'view_count',
+        1,
+      );
+    });
+
+    it('404s for a non-owner when the ride owner is mid-deletion', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        user: {
+          id: 'user-1',
+          display_name: 'Owner',
+          deleted_at: new Date('2026-04-30T10:00:00Z'),
+        },
+      } as unknown as Ride);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        id: 'sr-1',
+        share_token: 'tok-xyz',
+        is_public: true,
+      } as never);
+
+      await expect(service.getDetail('viewer-2', 'ride-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
     });
 
     it('404s for a non-owner when the share is link-only (not public)', async () => {

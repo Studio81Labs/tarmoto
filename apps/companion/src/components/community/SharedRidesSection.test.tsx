@@ -51,7 +51,7 @@ describe("SharedRidesSection", () => {
     fetchMock.mockReset();
   });
 
-  it("renders the rider's shared rides with distance, duration, view count and a link to the public share", async () => {
+  it("renders the rider's shared rides with distance, duration, view count and a link to the ride detail", async () => {
     fetchMock.mockResolvedValueOnce(payload([ride()]));
 
     render(
@@ -74,7 +74,9 @@ describe("SharedRidesSection", () => {
     expect(screen.getByText("1h 30m")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     const link = screen.getByRole("link");
-    expect(link).toHaveAttribute("href", "/rides/shared/tok-1");
+    // Opens the full ride detail under the community route (consistent with
+    // the feed), not the standalone public share page.
+    expect(link).toHaveAttribute("href", "/community/rides/ride-1");
   });
 
   it("treats a 404 as 'no rides to show' and renders the third-person empty hint", async () => {

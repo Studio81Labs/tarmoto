@@ -104,6 +104,10 @@ export default function RideDetailPage() {
   // the nav context stays consistent regardless of who owns the ride.
   const pathname = usePathname();
   const fromCommunity = pathname?.startsWith("/community/") ?? false;
+  const backHref = fromCommunity ? "/community/feed" : "/rides";
+  const backLabel = fromCommunity
+    ? t("Community · Feed")
+    : t("Ride History · All rides");
   const { format } = useNumberFormat();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const [ride, setRide] = useState<RideDetail | null>(null);
@@ -223,7 +227,7 @@ export default function RideDetailPage() {
 
   if (loading) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading ride… ")}
@@ -233,7 +237,7 @@ export default function RideDetailPage() {
   }
   if (notFound) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <Card padded={false} className="p-10 text-center">
           <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
           <p className="text-sm text-fg-dim">
@@ -247,7 +251,7 @@ export default function RideDetailPage() {
   }
   if (error || !ride) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {error ?? "Could not load ride"}
         </div>
@@ -316,13 +320,11 @@ export default function RideDetailPage() {
       header={
         <>
           <Link
-            href={fromCommunity ? "/community/feed" : "/rides"}
+            href={backHref}
             className="inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
           >
             <ArrowLeft size={14} />
-            {fromCommunity
-              ? t("Community · Feed")
-              : t("Ride History · All rides")}
+            {backLabel}
           </Link>
 
           <div className="mt-3.5 mb-[22px] flex items-end justify-between gap-6">
@@ -589,19 +591,23 @@ export default function RideDetailPage() {
 function PageShell({
   children,
   header,
+  backHref = "/rides",
+  backLabel = t("Ride History · All rides"),
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       {header ?? (
         <Link
-          href="/rides"
+          href={backHref}
           className="mb-6 inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
-          {t("Ride History · All rides")}
+          {backLabel}
         </Link>
       )}
       {children}

@@ -265,6 +265,21 @@ describe("RideDetailPage", () => {
     );
   });
 
+  it("keeps the community back link on the not-found state under /community/rides", async () => {
+    routePathname = "/community/rides/ride-1";
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: null,
+      error: undefined,
+      response: { status: 404 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    expect(
+      await screen.findByRole("link", { name: /Community · Feed/i }),
+    ).toHaveAttribute("href", "/community/feed");
+  });
+
   it("renders read-only for a community ride viewed by a non-owner", async () => {
     // Opened under the community route, so the back link returns to the feed.
     routePathname = "/community/rides/ride-1";
