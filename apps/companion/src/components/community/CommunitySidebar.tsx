@@ -1,6 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
@@ -140,13 +141,18 @@ function LeaderboardCard({
             >
               #{e.rank}
             </Mono>
-            <span
-              className={`flex-1 truncate text-[13px] ${
-                e.isMe ? "font-bold" : "font-medium"
-              }`}
-            >
-              {e.isMe ? t("You") : e.displayName}
-            </span>
+            {e.isMe ? (
+              <span className="flex-1 truncate text-[13px] font-bold">
+                {t("You")}
+              </span>
+            ) : (
+              <Link
+                href={`/community/${encodeURIComponent(e.userId)}`}
+                className="flex-1 truncate text-[13px] font-medium transition-colors hover:text-accent"
+              >
+                {e.displayName}
+              </Link>
+            )}
             <Mono
               className={`text-[11px] ${
                 e.isMe ? "text-fg-on-dark-mute" : "text-fg-dim"
@@ -194,18 +200,24 @@ function SuggestionRow({ rider }: { rider: SuggestedRider }) {
 
   return (
     <li className="flex items-center gap-2.5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F0A03C] text-[13px] font-extrabold text-ink">
-        {initial}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-bold text-ink">
-          {rider.display_name}
+      <Link
+        href={`/community/${encodeURIComponent(rider.id)}`}
+        className="group flex min-w-0 flex-1 items-center gap-2.5"
+        aria-label={t("View {name}'s profile", { name: rider.display_name })}
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F0A03C] text-[13px] font-extrabold text-ink">
+          {initial}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-bold text-ink transition-colors group-hover:text-accent">
+            {rider.display_name}
+          </div>
+          <Mono className="text-[10px] uppercase text-fg-mute">
+            {rider.home_region ? `${rider.home_region} · ` : ""}
+            {t("{count} rides", { count: rider.ride_count })}
+          </Mono>
         </div>
-        <Mono className="text-[10px] uppercase text-fg-mute">
-          {rider.home_region ? `${rider.home_region} · ` : ""}
-          {t("{count} rides", { count: rider.ride_count })}
-        </Mono>
-      </div>
+      </Link>
       <Button
         variant="secondary"
         size="sm"
