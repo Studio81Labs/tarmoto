@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Heart, Plus } from "lucide-react";
 import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import {
   formatKmValue,
@@ -22,10 +23,18 @@ import {
  */
 export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const router = useRouter();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);
   const tier = scoreToQualityTier(ride.avg_road_quality);
   const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
   const title = ride.name?.trim() || formatShortDate(ride.started_at);
+  // Your own rides open the full owner detail (same as ride history); other
+  // riders' detail is owner-scoped (404), so theirs stays on the public
+  // shared-ride view.
+  const rideHref =
+    currentUserId != null && ride.rider_id === currentUserId
+      ? `/rides/${encodeURIComponent(ride.id)}`
+      : `/rides/shared/${encodeURIComponent(ride.share_token)}`;
 
   const [liked, setLiked] = useState(ride.viewer_has_liked);
   const [likeCount, setLikeCount] = useState(ride.like_count);
@@ -67,7 +76,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   return (
     <article className="grid grid-cols-1 gap-[18px] rounded-[14px] border border-line bg-cream p-4 md:grid-cols-[200px_1fr]">
       <Link
-        href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+        href={rideHref}
         className="block h-[150px] overflow-hidden rounded-[10px] bg-paper"
         aria-label={`${title} route preview`}
       >
@@ -97,7 +106,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
       <div className="flex min-w-0 flex-col">
         <div className="flex items-start justify-between gap-3">
           <Link
-            href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+            href={rideHref}
             className="truncate text-[18px] font-extrabold tracking-[-0.2px] text-ink transition hover:text-accent"
           >
             {title}

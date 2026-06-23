@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { CommunityRideCard } from "./CommunityRideCard";
 import type { CommunityRide } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 vi.mock("next/navigation", async () => {
   const actual =
@@ -38,6 +39,16 @@ function ride(overrides: Partial<CommunityRide> = {}): CommunityRide {
 }
 
 describe("CommunityRideCard", () => {
+  beforeEach(() => {
+    // Default: a different viewer (or none), so another rider's card links
+    // to the public shared-ride view.
+    useAuthStore.setState({
+      user: { id: "viewer-9" } as never,
+      isAuthenticated: true,
+      accessToken: "tok",
+    });
+  });
+
   it("renders the title, author, caption, quality and engagement stats", () => {
     render(<CommunityRideCard ride={ride()} />);
 
@@ -56,6 +67,23 @@ describe("CommunityRideCard", () => {
     expect(
       screen.getByRole("button", { name: /add to trips/i }),
     ).toBeInTheDocument();
+  });
+
+  it("links the viewer's own ride to the owner ride detail, not the share view", () => {
+    useAuthStore.setState({
+      user: { id: "rider-1" } as never,
+      isAuthenticated: true,
+      accessToken: "tok",
+    });
+
+    render(<CommunityRideCard ride={ride()} />);
+
+    expect(
+      screen.getByRole("link", { name: "Three Passes Sunday" }),
+    ).toHaveAttribute("href", "/rides/ride-1");
+    expect(
+      screen.getByRole("link", { name: "Three Passes Sunday route preview" }),
+    ).toHaveAttribute("href", "/rides/ride-1");
   });
 
   it("falls back to the ride date when there is no name, and shows no-preview", () => {
