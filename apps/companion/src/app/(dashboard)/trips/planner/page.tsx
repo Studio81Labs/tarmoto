@@ -278,10 +278,34 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("tripId");
-    // Skip the no-op null→null setState on first mount so we don't
-    // burn an extra render cycle through the planner's downstream
-    // data hooks (useClosures/usePasses).
-    if (fromUrl) setServerTripId(fromUrl);
+    if (fromUrl) {
+      // Skip the no-op null→null setState path so we don't burn an extra
+      // render cycle through the planner's downstream data hooks
+      // (useClosures/usePasses).
+      setServerTripId(fromUrl);
+      return;
+    }
+    // No `?tripId=` is the "new trip" entry point. `activeTrip` lives in a
+    // shared store with no unmount cleanup, so a saved trip opened/edited
+    // earlier in the session lingers and create-new would otherwise reopen
+    // that stale route. Drop a lingering *persisted* trip (UUID id) so the
+    // canvas starts blank, regardless of how the rider reached the planner
+    // (a CTA, a bookmark, or the address bar). An in-memory draft
+    // (`planner-*`/`imported-*`) is the rider's working state — and survives
+    // a round-trip out to the trip list and back — so it's left intact.
+    if (activeTrip && UUID_RE.test(activeTrip.id)) {
+      // Mark the stale trip as already control-synced first. The
+      // `activeTrip`→controls effect below runs later in this same mount
+      // while `activeTrip` is still the stale value; without this it would
+      // copy the dropped trip's days/km/road/surface/avoid into the controls
+      // (and then the URL) before the null update lands, so the new-trip
+      // canvas would blank but inherit the last trip's settings.
+      syncedControlsTripIdRef.current = activeTrip.id;
+      setActiveTrip(null);
+    }
+    // Mount-only reconciliation against the initial URL. The `activeTrip`
+    // snapshot read here is intentionally the mount-time value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (!serverTripId) {
