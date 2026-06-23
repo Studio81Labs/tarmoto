@@ -26,6 +26,11 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const tier = scoreToQualityTier(ride.avg_road_quality);
   const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
   const title = ride.name?.trim() || formatShortDate(ride.started_at);
+  // Open the ride detail under the community route so the Community nav item
+  // stays active and the back link returns to the feed. It renders the same
+  // detail view as ride history; `GET /rides/:id` serves publicly-shared rides
+  // to non-owners, so this works for every community ride, not just your own.
+  const rideHref = `/community/rides/${encodeURIComponent(ride.id)}`;
 
   const [liked, setLiked] = useState(ride.viewer_has_liked);
   const [likeCount, setLikeCount] = useState(ride.like_count);
@@ -67,7 +72,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   return (
     <article className="grid grid-cols-1 gap-[18px] rounded-[14px] border border-line bg-cream p-4 md:grid-cols-[200px_1fr]">
       <Link
-        href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+        href={rideHref}
         className="block h-[150px] overflow-hidden rounded-[10px] bg-paper"
         aria-label={`${title} route preview`}
       >
@@ -97,7 +102,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
       <div className="flex min-w-0 flex-col">
         <div className="flex items-start justify-between gap-3">
           <Link
-            href={`/rides/shared/${encodeURIComponent(ride.share_token)}`}
+            href={rideHref}
             className="truncate text-[18px] font-extrabold tracking-[-0.2px] text-ink transition hover:text-accent"
           >
             {title}

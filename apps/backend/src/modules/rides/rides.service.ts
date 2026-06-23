@@ -437,10 +437,38 @@ export class RidesService {
 
   async getDetail(userId: string, rideId: string): Promise<RideDetailDto> {
     const ride = await this.rideRepo.findOne({
-      where: { id: rideId, user_id: userId },
+      where: { id: rideId },
+      relations: { user: true },
     });
     if (!ride) {
       throw new NotFoundException('Ride not found');
+    }
+
+    const isOwner = ride.user_id === userId;
+    // Resolve the ride's share (one row per ride). The owner gets its token
+    // even for a link-only (non-public) share so they can copy a working
+    // no-auth link; a non-owner is gated on `is_public` (the feed visibility).
+    const share = await this.sharedRideRepo.findOne({
+      where: { ride_id: rideId },
+      select: ['id', 'share_token', 'is_public'],
+    });
+    if (!isOwner) {
+      // Non-owners may view a ride only when its owner has publicly shared it,
+      // isn't private, and isn't mid-deletion — exactly the visibility the
+      // community feed and token read path enforce (`user.deleted_at IS NULL`).
+      // Anything else 404s so we never leak a ride's existence.
+      const ownerPrefs = await this.privacy.loadPreferences(ride.user_id);
+      if (
+        !share?.is_public ||
+        ownerPrefs.profile_visibility === 'private' ||
+        ride.user?.deleted_at != null
+      ) {
+        throw new NotFoundException('Ride not found');
+      }
+      // Count the visit like the token read path does, so the community
+      // popularity sort/filter stay accurate now that the feed card links
+      // here instead of `/rides/shared/:token`.
+      await this.sharedRideRepo.increment({ id: share.id }, 'view_count', 1);
     }
 
     // Load stats and segments in parallel
@@ -505,6 +533,11 @@ export class RidesService {
         speed_max: s.speed_max,
         lean_angle_max: s.lean_angle_max,
       })),
+      viewer_is_owner: isOwner,
+      rider_id: ride.user_id,
+      rider_name: ride.user?.display_name ?? '',
+      rider_avatar_url: ride.user?.avatar_url ?? null,
+      share_token: share?.share_token ?? null,
     };
   }
 

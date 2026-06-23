@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
 let routeRideId = "ride-1";
+let routePathname = "/rides/ride-1";
 
 const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
   <div data-testid="ride-route-map">{props.label ?? "Ride route map"}</div>
@@ -11,6 +12,7 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
+  usePathname: () => routePathname,
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -21,6 +23,7 @@ vi.mock("@/lib/api", async () => {
       ...actual.api,
       GET: vi.fn(),
       PATCH: vi.fn(),
+      POST: vi.fn(),
     },
   };
 });
@@ -70,6 +73,11 @@ function ride(overrides: Record<string, unknown> = {}) {
         lean_angle_max: 31,
       },
     ],
+    viewer_is_owner: true,
+    rider_id: "rider-1",
+    rider_name: "John Rider",
+    rider_avatar_url: null,
+    share_token: "tok-public",
     ...overrides,
   };
 }
@@ -77,9 +85,11 @@ function ride(overrides: Record<string, unknown> = {}) {
 describe("RideDetailPage", () => {
   beforeEach(() => {
     routeRideId = "ride-1";
+    routePathname = "/rides/ride-1";
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
+    vi.mocked(api.POST).mockReset();
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -103,6 +113,12 @@ describe("RideDetailPage", () => {
     expect(
       await screen.findByRole("link", { name: /Ride History · All rides/i }),
     ).toHaveAttribute("href", "/rides");
+
+    // The byline shows for every ride, including your own, and links to the
+    // rider's community profile.
+    expect(
+      screen.getByRole("link", { name: /by John Rider/i }),
+    ).toHaveAttribute("href", "/community/rider-1");
 
     // Route map gets the geometry.
     expect(screen.getByTestId("ride-route-map")).toBeInTheDocument();
@@ -192,6 +208,109 @@ describe("RideDetailPage", () => {
     fireEvent.click(exportTrigger);
     expect(screen.getByRole("menuitem", { name: /CSV/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /GPX/i })).toBeInTheDocument();
+  });
+
+  it("Share copies the public no-auth share link, not the dashboard URL", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride(),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Share/i }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        expect.stringContaining("/rides/shared/tok-public"),
+      ),
+    );
+    // It must not copy the auth-gated dashboard URL.
+    expect(writeText).not.toHaveBeenCalledWith(
+      expect.stringContaining("/rides/ride-1"),
+    );
+  });
+
+  it("Share creates a link-only share when the owner's ride isn't shared yet", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({ share_token: null }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+    vi.mocked(api.POST).mockResolvedValueOnce({
+      data: { share_token: "tok-new" },
+      error: undefined,
+    } as unknown as Awaited<ReturnType<typeof api.POST>>);
+
+    render(<RideDetailPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Share/i }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.POST)).toHaveBeenCalledWith(
+        "/api/v1/rides/{rideId}/share",
+        expect.objectContaining({
+          params: { path: { rideId: "ride-1" } },
+          body: { is_public: false },
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        expect.stringContaining("/rides/shared/tok-new"),
+      ),
+    );
+  });
+
+  it("keeps the community back link on the not-found state under /community/rides", async () => {
+    routePathname = "/community/rides/ride-1";
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: null,
+      error: undefined,
+      response: { status: 404 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    expect(
+      await screen.findByRole("link", { name: /Community · Feed/i }),
+    ).toHaveAttribute("href", "/community/feed");
+  });
+
+  it("renders read-only for a community ride viewed by a non-owner", async () => {
+    // Opened under the community route, so the back link returns to the feed.
+    routePathname = "/community/rides/ride-1";
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({
+        name: "Stelvio loop",
+        viewer_is_owner: false,
+        rider_id: "owner-7",
+        rider_name: "Matteo Ferri",
+      }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    expect(await screen.findByText("Stelvio loop")).toBeInTheDocument();
+    // Owner-only actions are hidden; sharing the link stays available.
+    expect(
+      screen.queryByRole("button", { name: "Rename ride" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Compare/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Share/i })).toBeInTheDocument();
+    // Attribution links to the owner's profile; back link goes to the feed.
+    expect(screen.getByRole("link", { name: /Matteo Ferri/i })).toHaveAttribute(
+      "href",
+      "/community/owner-7",
+    );
+    expect(
+      screen.getByRole("link", { name: /Community · Feed/i }),
+    ).toHaveAttribute("href", "/community/feed");
   });
 
   it("degrades unbacked sections without GPS or lean samples", async () => {

@@ -3080,11 +3080,35 @@ export function buildApp(): Express {
   app.get("/api/v1/rides/:rideId", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const ride = state.rides.get(param(req, "rideId"));
-    if (!ride || ride.user_id !== session.user_id) {
+    if (!ride) {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    res.json(serializeRideDetail(ride));
+    // Resolve the ride's share (one per ride). `rideShares` is keyed by token,
+    // so the entry's key *is* the share token. The owner gets it regardless of
+    // is_public; a non-owner is gated on is_public.
+    const shareEntry = [...state.rideShares.entries()].find(
+      ([, s]) => s.ride_id === ride.id,
+    );
+    if (ride.user_id !== session.user_id) {
+      // Non-owners may view a ride only when its owner publicly shared it and
+      // isn't private — mirrors the relaxed backend + community-feed gate.
+      const ownerPrivate =
+        state.privacy.get(ride.user_id)?.profile_visibility === "private";
+      if (!shareEntry?.[1].is_public || ownerPrivate) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+    }
+    const owner = state.users.get(ride.user_id);
+    res.json(
+      serializeRideDetail(
+        ride,
+        session.user_id,
+        owner,
+        shareEntry?.[0] ?? null,
+      ),
+    );
   });
 
   // Export: `downloadRideExport` calls `/api/v1/rides/:rideId/csv` or
@@ -3600,7 +3624,12 @@ function serializeRideSummary(ride: import("./state").MockRide) {
   };
 }
 
-function serializeRideDetail(ride: import("./state").MockRide) {
+function serializeRideDetail(
+  ride: import("./state").MockRide,
+  viewerId: string,
+  owner: { display_name: string; avatar_url: string | null } | undefined,
+  shareToken: string | null,
+) {
   return {
     id: ride.id,
     // `name` is inherited from the summary contract (RideSummaryDto); the
@@ -3622,6 +3651,11 @@ function serializeRideDetail(ride: import("./state").MockRide) {
     fuel_estimate_l: ride.fuel_estimate_l,
     route_geometry: ride.route_geometry,
     segments: ride.segments,
+    viewer_is_owner: ride.user_id === viewerId,
+    rider_id: ride.user_id,
+    rider_name: owner?.display_name ?? "",
+    rider_avatar_url: owner?.avatar_url ?? null,
+    share_token: shareToken,
   };
 }
 

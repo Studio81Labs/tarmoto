@@ -38,12 +38,17 @@ function ride(overrides: Partial<CommunityRide> = {}): CommunityRide {
 }
 
 describe("CommunityRideCard", () => {
-  it("renders the title, author, caption, quality and engagement stats", () => {
+  it("links the ride to the full ride detail page, and the author to their profile", () => {
     render(<CommunityRideCard ride={ride()} />);
 
+    // Both the title and the route-preview thumbnail open the ride detail
+    // under the community route — publicly-shared rides are viewable there.
     expect(
       screen.getByRole("link", { name: "Three Passes Sunday" }),
-    ).toHaveAttribute("href", "/rides/shared/token-1");
+    ).toHaveAttribute("href", "/community/rides/ride-1");
+    expect(
+      screen.getByRole("link", { name: "Three Passes Sunday route preview" }),
+    ).toHaveAttribute("href", "/community/rides/ride-1");
     expect(screen.getByRole("link", { name: /john rider/i })).toHaveAttribute(
       "href",
       "/community/rider-1",

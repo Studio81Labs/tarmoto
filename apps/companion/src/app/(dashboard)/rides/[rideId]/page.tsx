@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -76,6 +76,11 @@ interface RideDetail {
   fuel_estimate_l: number | null;
   route_geometry: Array<{ lat: number; lng: number }> | null;
   segments: RideSegment[];
+  viewer_is_owner: boolean;
+  rider_id: string;
+  rider_name: string;
+  rider_avatar_url: string | null;
+  share_token: string | null;
 }
 
 // Lean buckets the backend reports (US-19). The v2 "Time spent leaning" chart
@@ -94,6 +99,15 @@ const LEAN_BUCKETS: Array<{
 
 export default function RideDetailPage() {
   const { rideId } = useParams<{ rideId: string }>();
+  // The same detail view is mounted under `/rides/:id` (ride history) and
+  // `/community/rides/:id` (community). Drive the back link from the route so
+  // the nav context stays consistent regardless of who owns the ride.
+  const pathname = usePathname();
+  const fromCommunity = pathname?.startsWith("/community/") ?? false;
+  const backHref = fromCommunity ? "/community/feed" : "/rides";
+  const backLabel = fromCommunity
+    ? t("Community · Feed")
+    : t("Ride History · All rides");
   const { format } = useNumberFormat();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const [ride, setRide] = useState<RideDetail | null>(null);
@@ -140,9 +154,34 @@ export default function RideDetailPage() {
   }, [rideId, authReady]);
 
   async function handleShare() {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !ride) return;
+    // Copy the public, no-auth share link (/rides/shared/:token) so a logged-
+    // out recipient can open the ride — never the auth-gated dashboard URL.
+    let token = ride.share_token;
+    if (!token && ride.viewer_is_owner) {
+      // The owner hasn't shared this ride yet. Create a link-only share (not
+      // published to the community feed) so they still get a working link —
+      // the token resolves regardless of `is_public`.
+      try {
+        const { data } = await api.POST("/api/v1/rides/{rideId}/share", {
+          params: { path: { rideId: ride.id } },
+          body: { is_public: false },
+        } as never);
+        token =
+          (data as { share_token?: string } | undefined)?.share_token ?? null;
+        if (token) {
+          const created = token;
+          setRide((r) => (r ? { ...r, share_token: created } : r));
+        }
+      } catch {
+        // Fall through to the dashboard-URL fallback below.
+      }
+    }
+    const shareUrl = token
+      ? `${window.location.origin}/rides/shared/${token}`
+      : window.location.href;
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       toast.success(t("Link copied"));
     } catch {
       // Clipboard can reject on insecure origins; fail silently.
@@ -188,7 +227,7 @@ export default function RideDetailPage() {
 
   if (loading) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <div className="flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading ride… ")}
@@ -198,12 +237,12 @@ export default function RideDetailPage() {
   }
   if (notFound) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <Card padded={false} className="p-10 text-center">
           <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
           <p className="text-sm text-fg-dim">
             {t(
-              "This ride may have been deleted or doesn't belong to your account. ",
+              "This ride may have been deleted, or it isn't shared publicly. ",
             )}
           </p>
         </Card>
@@ -212,7 +251,7 @@ export default function RideDetailPage() {
   }
   if (error || !ride) {
     return (
-      <PageShell>
+      <PageShell backHref={backHref} backLabel={backLabel}>
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
           {error ?? "Could not load ride"}
         </div>
@@ -281,11 +320,11 @@ export default function RideDetailPage() {
       header={
         <>
           <Link
-            href="/rides"
+            href={backHref}
             className="inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
           >
             <ArrowLeft size={14} />
-            {t("Ride History · All rides")}
+            {backLabel}
           </Link>
 
           <div className="mt-3.5 mb-[22px] flex items-end justify-between gap-6">
@@ -298,6 +337,13 @@ export default function RideDetailPage() {
                 <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
                   {startedDate}
                 </Mono>
+                <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
+                <Link
+                  href={`/community/${encodeURIComponent(ride.rider_id)}`}
+                  className="font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
+                >
+                  {t("by {name}", { name: ride.rider_name })}
+                </Link>
               </div>
 
               {renaming ? (
@@ -340,18 +386,20 @@ export default function RideDetailPage() {
                     {rideName}
                   </h1>
                   {avgTier != null && <QualityBars q={avgTier} size={8} />}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenameDraft(ride.name ?? "");
-                      setRenameError(null);
-                      setRenaming(true);
-                    }}
-                    aria-label={t("Rename ride")}
-                    className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-                  >
-                    <Pencil size={14} />
-                  </button>
+                  {ride.viewer_is_owner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameDraft(ride.name ?? "");
+                        setRenameError(null);
+                        setRenaming(true);
+                      }}
+                      aria-label={t("Rename ride")}
+                      className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
                 </div>
               )}
               {renameError && (
@@ -360,21 +408,23 @@ export default function RideDetailPage() {
             </div>
 
             <div className="flex flex-shrink-0 gap-2">
-              <Button
-                variant="secondary"
-                uppercase
-                leftIcon={<Scale size={16} />}
-                renderLink={({ className, children }) => (
-                  <Link
-                    href={`/rides/compare?a=${ride.id}`}
-                    className={className}
-                  >
-                    {children}
-                  </Link>
-                )}
-              >
-                {t("Compare")}
-              </Button>
+              {ride.viewer_is_owner && (
+                <Button
+                  variant="secondary"
+                  uppercase
+                  leftIcon={<Scale size={16} />}
+                  renderLink={({ className, children }) => (
+                    <Link
+                      href={`/rides/compare?a=${ride.id}`}
+                      className={className}
+                    >
+                      {children}
+                    </Link>
+                  )}
+                >
+                  {t("Compare")}
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 uppercase
@@ -384,9 +434,11 @@ export default function RideDetailPage() {
               >
                 {t("Share")}
               </Button>
-              <RideExportMenu
-                onExport={(format) => downloadRideExport(ride.id, format)}
-              />
+              {ride.viewer_is_owner && (
+                <RideExportMenu
+                  onExport={(format) => downloadRideExport(ride.id, format)}
+                />
+              )}
             </div>
           </div>
         </>
@@ -539,19 +591,23 @@ export default function RideDetailPage() {
 function PageShell({
   children,
   header,
+  backHref = "/rides",
+  backLabel = t("Ride History · All rides"),
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       {header ?? (
         <Link
-          href="/rides"
+          href={backHref}
           className="mb-6 inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
-          {t("Ride History · All rides")}
+          {backLabel}
         </Link>
       )}
       {children}
