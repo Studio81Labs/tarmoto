@@ -278,10 +278,26 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("tripId");
-    // Skip the no-op null→null setState on first mount so we don't
-    // burn an extra render cycle through the planner's downstream
-    // data hooks (useClosures/usePasses).
-    if (fromUrl) setServerTripId(fromUrl);
+    if (fromUrl) {
+      // Skip the no-op null→null setState path so we don't burn an extra
+      // render cycle through the planner's downstream data hooks
+      // (useClosures/usePasses).
+      setServerTripId(fromUrl);
+      return;
+    }
+    // No `?tripId=` is the "new trip" entry point. `activeTrip` lives in a
+    // shared store with no unmount cleanup, so a saved trip opened/edited
+    // earlier in the session lingers and create-new would otherwise reopen
+    // that stale route — even on a direct navigation that doesn't pass
+    // through a browsing hub. Drop a lingering *persisted* trip (UUID id) so
+    // the canvas starts blank; an in-memory draft (`planner-*`/`imported-*`)
+    // is the rider's working state and is left intact.
+    if (activeTrip && UUID_RE.test(activeTrip.id)) {
+      setActiveTrip(null);
+    }
+    // Mount-only reconciliation against the initial URL. The `activeTrip`
+    // snapshot read here is intentionally the mount-time value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (!serverTripId) {

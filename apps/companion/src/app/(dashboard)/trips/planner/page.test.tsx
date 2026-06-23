@@ -886,6 +886,13 @@ describe("TripPlannerPage", () => {
 
   it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
+    // A saved trip in the planner is reached via `?tripId=` (the edit flow);
+    // without it the mount-time reset would treat this as create-new.
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
     storeState.activeTrip = {
       ...activeTrip,
       id: serverTripId,
@@ -1242,6 +1249,13 @@ describe("TripPlannerPage", () => {
 
   it("updates server-loaded trips from the current controls without regenerating existing route geometry", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
+    // A server-loaded trip in the planner is reached via `?tripId=` (the edit
+    // flow); without it the mount-time reset would treat this as create-new.
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
     tripsApiUpdateMock.mockResolvedValueOnce({
       data: { id: serverTripId },
     } as never);
