@@ -309,17 +309,13 @@ export default function RideDetailPage() {
                 <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
                   {startedDate}
                 </Mono>
-                {!ride.viewer_is_owner && (
-                  <>
-                    <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
-                    <Link
-                      href={`/community/${encodeURIComponent(ride.rider_id)}`}
-                      className="font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
-                    >
-                      {t("by {name}", { name: ride.rider_name })}
-                    </Link>
-                  </>
-                )}
+                <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
+                <Link
+                  href={`/community/${encodeURIComponent(ride.rider_id)}`}
+                  className="font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
+                >
+                  {t("by {name}", { name: ride.rider_name })}
+                </Link>
               </div>
 
               {renaming ? (

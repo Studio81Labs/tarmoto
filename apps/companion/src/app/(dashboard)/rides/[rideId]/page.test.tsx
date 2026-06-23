@@ -111,6 +111,12 @@ describe("RideDetailPage", () => {
       await screen.findByRole("link", { name: /Ride History · All rides/i }),
     ).toHaveAttribute("href", "/rides");
 
+    // The byline shows for every ride, including your own, and links to the
+    // rider's community profile.
+    expect(
+      screen.getByRole("link", { name: /by John Rider/i }),
+    ).toHaveAttribute("href", "/community/rider-1");
+
     // Route map gets the geometry.
     expect(screen.getByTestId("ride-route-map")).toBeInTheDocument();
     expect(mockedRideRouteMap).toHaveBeenCalledWith(
