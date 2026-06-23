@@ -42,13 +42,13 @@ describe("CommunityRideCard", () => {
     render(<CommunityRideCard ride={ride()} />);
 
     // Both the title and the route-preview thumbnail open the ride detail
-    // (`/rides/:id`) — publicly-shared rides are viewable there by anyone.
+    // under the community route — publicly-shared rides are viewable there.
     expect(
       screen.getByRole("link", { name: "Three Passes Sunday" }),
-    ).toHaveAttribute("href", "/rides/ride-1");
+    ).toHaveAttribute("href", "/community/rides/ride-1");
     expect(
       screen.getByRole("link", { name: "Three Passes Sunday route preview" }),
-    ).toHaveAttribute("href", "/rides/ride-1");
+    ).toHaveAttribute("href", "/community/rides/ride-1");
     expect(screen.getByRole("link", { name: /john rider/i })).toHaveAttribute(
       "href",
       "/community/rider-1",

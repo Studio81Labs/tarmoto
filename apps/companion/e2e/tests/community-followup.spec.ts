@@ -221,7 +221,7 @@ test.describe("community follow-up flows", () => {
     const ride = await mockApi.seedRide(owner, { name: "Stelvio Loop" });
     await mockApi.seedRideShare(ride.id, { is_public: true });
 
-    await page.goto(`/rides/${ride.id}`);
+    await page.goto(`/community/rides/${ride.id}`);
 
     await expect(
       page.getByRole("heading", { level: 1, name: /stelvio loop/i }),

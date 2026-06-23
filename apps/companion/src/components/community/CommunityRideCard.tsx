@@ -26,10 +26,11 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const tier = scoreToQualityTier(ride.avg_road_quality);
   const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
   const title = ride.name?.trim() || formatShortDate(ride.started_at);
-  // Open the full ride detail page (same as ride history). `GET /rides/:id`
-  // serves publicly-shared rides to non-owners too, so this works for every
-  // community ride, not just your own.
-  const rideHref = `/rides/${encodeURIComponent(ride.id)}`;
+  // Open the ride detail under the community route so the Community nav item
+  // stays active and the back link returns to the feed. It renders the same
+  // detail view as ride history; `GET /rides/:id` serves publicly-shared rides
+  // to non-owners, so this works for every community ride, not just your own.
+  const rideHref = `/community/rides/${encodeURIComponent(ride.id)}`;
 
   const [liked, setLiked] = useState(ride.viewer_has_liked);
   const [likeCount, setLikeCount] = useState(ride.like_count);

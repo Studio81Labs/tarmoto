@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -98,6 +98,11 @@ const LEAN_BUCKETS: Array<{
 
 export default function RideDetailPage() {
   const { rideId } = useParams<{ rideId: string }>();
+  // The same detail view is mounted under `/rides/:id` (ride history) and
+  // `/community/rides/:id` (community). Drive the back link from the route so
+  // the nav context stays consistent regardless of who owns the ride.
+  const pathname = usePathname();
+  const fromCommunity = pathname?.startsWith("/community/") ?? false;
   const { format } = useNumberFormat();
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const [ride, setRide] = useState<RideDetail | null>(null);
@@ -285,13 +290,13 @@ export default function RideDetailPage() {
       header={
         <>
           <Link
-            href={ride.viewer_is_owner ? "/rides" : "/community/feed"}
+            href={fromCommunity ? "/community/feed" : "/rides"}
             className="inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
           >
             <ArrowLeft size={14} />
-            {ride.viewer_is_owner
-              ? t("Ride History · All rides")
-              : t("Community · Feed")}
+            {fromCommunity
+              ? t("Community · Feed")
+              : t("Ride History · All rides")}
           </Link>
 
           <div className="mt-3.5 mb-[22px] flex items-end justify-between gap-6">

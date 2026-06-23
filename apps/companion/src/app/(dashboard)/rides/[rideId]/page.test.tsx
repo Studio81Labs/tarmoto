@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
 let routeRideId = "ride-1";
+let routePathname = "/rides/ride-1";
 
 const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
   <div data-testid="ride-route-map">{props.label ?? "Ride route map"}</div>
@@ -11,6 +12,7 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
+  usePathname: () => routePathname,
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -81,6 +83,7 @@ function ride(overrides: Record<string, unknown> = {}) {
 describe("RideDetailPage", () => {
   beforeEach(() => {
     routeRideId = "ride-1";
+    routePathname = "/rides/ride-1";
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
@@ -199,6 +202,8 @@ describe("RideDetailPage", () => {
   });
 
   it("renders read-only for a community ride viewed by a non-owner", async () => {
+    // Opened under the community route, so the back link returns to the feed.
+    routePathname = "/community/rides/ride-1";
     vi.mocked(api.GET).mockResolvedValueOnce({
       data: ride({
         name: "Stelvio loop",
