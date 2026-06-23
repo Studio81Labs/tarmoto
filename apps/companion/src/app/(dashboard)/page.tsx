@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useClearStaleActiveTrip } from "@/hooks/useClearStaleActiveTrip";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
 import {
@@ -64,6 +65,9 @@ const QUICK_ACTIONS = [
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
+  // A "Plan a trip" CTA here opens a fresh planner, so drop any trip lingering
+  // in the planner store from an earlier open/edit (see the hook's docs).
+  useClearStaleActiveTrip();
   const { trips, loading, error: tripsError } = useUserTrips();
   const {
     rides: recentRides,

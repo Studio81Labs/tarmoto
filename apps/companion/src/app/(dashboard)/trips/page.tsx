@@ -28,6 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { USER_TRIPS_QUERY_KEY } from "@/hooks/useUserTrips";
+import { useClearStaleActiveTrip } from "@/hooks/useClearStaleActiveTrip";
 import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
@@ -80,6 +81,9 @@ export default function TripListPage() {
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const queryClient = useQueryClient();
+  // Opening the trips list means we're no longer editing a specific trip, so
+  // drop any trip lingering in the planner store. Keeps "Create trip" blank.
+  useClearStaleActiveTrip();
   // After any optimistic mutation that touches the persisted list,
   // drop the React Query cache for `useUserTrips`. `removeQueries`
   // (not `invalidateQueries`) — invalidation leaves the stale data
