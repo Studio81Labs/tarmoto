@@ -288,10 +288,11 @@ export default function TripPlannerPage() {
     // No `?tripId=` is the "new trip" entry point. `activeTrip` lives in a
     // shared store with no unmount cleanup, so a saved trip opened/edited
     // earlier in the session lingers and create-new would otherwise reopen
-    // that stale route — even on a direct navigation that doesn't pass
-    // through a browsing hub. Drop a lingering *persisted* trip (UUID id) so
-    // the canvas starts blank; an in-memory draft (`planner-*`/`imported-*`)
-    // is the rider's working state and is left intact.
+    // that stale route. Drop a lingering *persisted* trip (UUID id) so the
+    // canvas starts blank, regardless of how the rider reached the planner
+    // (a CTA, a bookmark, or the address bar). An in-memory draft
+    // (`planner-*`/`imported-*`) is the rider's working state — and survives
+    // a round-trip out to the trip list and back — so it's left intact.
     if (activeTrip && UUID_RE.test(activeTrip.id)) {
       // Mark the stale trip as already control-synced first. The
       // `activeTrip`→controls effect below runs later in this same mount
