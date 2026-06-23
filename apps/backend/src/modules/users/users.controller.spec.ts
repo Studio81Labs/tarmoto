@@ -51,6 +51,7 @@ describe('UsersController', () => {
     follower_count: 4,
     following_count: 2,
     is_following: false,
+    follows_you: false,
     is_self: false,
   };
 

@@ -36,6 +36,11 @@ export interface PublicProfile {
   shared_ride_count: number;
   /** Viewer's follow state on the target. Null when the viewer is the target. */
   is_following: boolean | null;
+  /**
+   * Whether the target follows the viewer back — drives the "Follows you"
+   * badge. Null when the viewer is the target (the relationship is undefined).
+   */
+  follows_you: boolean | null;
   /** True when the viewer is the target. */
   is_self: boolean;
 }

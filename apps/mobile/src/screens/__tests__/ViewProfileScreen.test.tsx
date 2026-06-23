@@ -99,6 +99,7 @@ function buildProfile(overrides: Record<string, unknown> = {}) {
     total_distance_km: 4200,
     shared_ride_count: 2,
     is_following: false,
+    follows_you: false,
     is_self: false,
     ...overrides,
   };

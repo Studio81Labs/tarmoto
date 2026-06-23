@@ -158,6 +158,7 @@ describe("ProfileScreen", () => {
       total_distance_km: 1234,
       shared_ride_count: 3,
       is_following: null,
+      follows_you: null,
       is_self: true,
     });
     mockedApi.listUserBadges.mockResolvedValue([

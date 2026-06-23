@@ -58,6 +58,13 @@ export class PublicProfileDto implements PublicProfile {
   })
   is_following!: boolean | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Whether the target follows the viewer back (drives the "Follows you" badge). Null when the viewer is the target.',
+  })
+  follows_you!: boolean | null;
+
   @ApiProperty({ description: 'True when the viewer is the target.' })
   is_self!: boolean;
 }

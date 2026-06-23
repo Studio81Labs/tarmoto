@@ -393,6 +393,7 @@ export class UsersService {
       followerCount,
       followingCount,
       isFollowingRow,
+      followsViewerRow,
       distanceRow,
       sharedRideCount,
     ] = await Promise.all([
@@ -402,6 +403,14 @@ export class UsersService {
         ? Promise.resolve(null)
         : this.userFollowRepo.findOne({
             where: { follower_id: viewerId, following_id: userId },
+            select: ['follower_id'],
+          }),
+      // Reverse edge: does the target follow the viewer back? Drives the
+      // "Follows you" badge on the viewer's side.
+      isSelf
+        ? Promise.resolve(null)
+        : this.userFollowRepo.findOne({
+            where: { follower_id: userId, following_id: viewerId },
             select: ['follower_id'],
           }),
       // Lifetime distance over completed rides (the "Distance" hero tile).
@@ -430,6 +439,7 @@ export class UsersService {
       total_distance_km: Math.round(parseFloat(distanceRow?.km ?? '0')),
       shared_ride_count: sharedRideCount,
       is_following: isSelf ? null : isFollowingRow != null,
+      follows_you: isSelf ? null : followsViewerRow != null,
       is_self: isSelf,
     };
   }
