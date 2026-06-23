@@ -25,6 +25,28 @@ test.describe("community follow-up flows", () => {
     await expect(
       page.getByRole("button", { name: /^follow$/i }),
     ).toHaveAttribute("aria-pressed", "false");
+    // A freshly seeded rider doesn't follow the viewer, so no badge.
+    await expect(page.getByText("Follows you")).toHaveCount(0);
+  });
+
+  // T38b — "Follows you" badge: when the target rider follows the
+  // signed-in viewer back, the profile header surfaces the incoming-
+  // follow affordance (driven by the `follows_you` wire field).
+  test("T38b: /community/[riderId] shows the 'Follows you' badge for an incoming follow", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    const target = await mockApi.seedUser({ displayName: "Mutual Rider" });
+    // Target → viewer follow edge.
+    await mockApi.seedFollow(target.id, user.id);
+
+    await page.goto(`/community/${target.id}`);
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /mutual rider/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Follows you")).toBeVisible();
   });
 
   // T46 — Profile stats + shared rides: the v2 rider profile surfaces

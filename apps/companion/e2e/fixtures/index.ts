@@ -62,6 +62,8 @@ export interface MockApi {
     tier: "free" | "premium" | "pro",
   ): Promise<void>;
   addTripMember(tripId: string, userId: string): Promise<void>;
+  /** Seed a follow edge so `followerId` follows `followingId`. */
+  seedFollow(followerId: string, followingId: string): Promise<void>;
   createTrip(
     user: SeededUser,
     payload: { title: string; num_days?: number },
@@ -128,6 +130,16 @@ function buildMockApi(api: APIRequestContext): MockApi {
         accessToken: body.access_token,
         refreshToken: body.refresh_token,
       };
+    },
+    async seedFollow(followerId, followingId) {
+      const res = await api.post(`${MOCK_BACKEND_URL}/__test__/seed-follow`, {
+        data: { follower_id: followerId, following_id: followingId },
+      });
+      if (!res.ok()) {
+        throw new Error(
+          `seed-follow failed: ${res.status()} ${await res.text()}`,
+        );
+      }
     },
     async setSubscription(userId, tier) {
       await api.post(`${MOCK_BACKEND_URL}/__test__/set-subscription`, {
