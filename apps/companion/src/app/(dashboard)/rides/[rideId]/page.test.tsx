@@ -23,6 +23,7 @@ vi.mock("@/lib/api", async () => {
       ...actual.api,
       GET: vi.fn(),
       PATCH: vi.fn(),
+      POST: vi.fn(),
     },
   };
 });
@@ -88,6 +89,7 @@ describe("RideDetailPage", () => {
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
+    vi.mocked(api.POST).mockReset();
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -228,6 +230,38 @@ describe("RideDetailPage", () => {
     // It must not copy the auth-gated dashboard URL.
     expect(writeText).not.toHaveBeenCalledWith(
       expect.stringContaining("/rides/ride-1"),
+    );
+  });
+
+  it("Share creates a link-only share when the owner's ride isn't shared yet", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({ share_token: null }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+    vi.mocked(api.POST).mockResolvedValueOnce({
+      data: { share_token: "tok-new" },
+      error: undefined,
+    } as unknown as Awaited<ReturnType<typeof api.POST>>);
+
+    render(<RideDetailPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Share/i }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.POST)).toHaveBeenCalledWith(
+        "/api/v1/rides/{rideId}/share",
+        expect.objectContaining({
+          params: { path: { rideId: "ride-1" } },
+          body: { is_public: false },
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        expect.stringContaining("/rides/shared/tok-new"),
+      ),
     );
   });
 

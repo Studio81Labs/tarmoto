@@ -445,18 +445,19 @@ export class RidesService {
     }
 
     const isOwner = ride.user_id === userId;
-    // Always resolve the public share: non-owners need it for the access gate,
-    // and every viewer needs its token to build the no-auth share link.
-    const publicShare = await this.sharedRideRepo.findOne({
-      where: { ride_id: rideId, is_public: true },
-      select: ['share_token'],
+    // Resolve the ride's share (one row per ride). The owner gets its token
+    // even for a link-only (non-public) share so they can copy a working
+    // no-auth link; a non-owner is gated on `is_public` (the feed visibility).
+    const share = await this.sharedRideRepo.findOne({
+      where: { ride_id: rideId },
+      select: ['share_token', 'is_public'],
     });
     if (!isOwner) {
       // Non-owners may view a ride only when its owner has publicly shared it
       // AND their profile isn't private — exactly the visibility the community
       // feed enforces. Anything else 404s so we never leak a ride's existence.
       const ownerPrefs = await this.privacy.loadPreferences(ride.user_id);
-      if (!publicShare || ownerPrefs.profile_visibility === 'private') {
+      if (!share?.is_public || ownerPrefs.profile_visibility === 'private') {
         throw new NotFoundException('Ride not found');
       }
     }
@@ -527,7 +528,7 @@ export class RidesService {
       rider_id: ride.user_id,
       rider_name: ride.user?.display_name ?? '',
       rider_avatar_url: ride.user?.avatar_url ?? null,
-      share_token: publicShare?.share_token ?? null,
+      share_token: share?.share_token ?? null,
     };
   }
 

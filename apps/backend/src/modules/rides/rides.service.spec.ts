@@ -717,13 +717,14 @@ describe('RidesService', () => {
       expect(result.segments).toEqual([]);
     });
 
-    it('returns viewer_is_owner=true + attribution + share token for the owner', async () => {
+    it('returns the owner a share token even for a link-only (non-public) share', async () => {
       rideRepo.findOne!.mockResolvedValueOnce({
         ...mockRide,
         user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
       } as unknown as Ride);
       sharedRideRepo.findOne!.mockResolvedValueOnce({
         share_token: 'tok-abc',
+        is_public: false,
       } as never);
 
       const result = await service.getDetail('user-1', 'ride-1');
@@ -731,8 +732,8 @@ describe('RidesService', () => {
       expect(result.viewer_is_owner).toBe(true);
       expect(result.rider_id).toBe('user-1');
       expect(result.rider_name).toBe('Owner');
+      // Owner gets the token regardless of is_public, and skips the privacy gate.
       expect(result.share_token).toBe('tok-abc');
-      // The share is read for the token, but ownership skips the privacy gate.
       expect(privacy.loadPreferences).not.toHaveBeenCalled();
     });
 
@@ -743,6 +744,7 @@ describe('RidesService', () => {
       } as unknown as Ride);
       sharedRideRepo.findOne!.mockResolvedValueOnce({
         share_token: 'tok-xyz',
+        is_public: true,
       } as never);
 
       const result = await service.getDetail('viewer-2', 'ride-1');
@@ -751,17 +753,20 @@ describe('RidesService', () => {
       expect(result.rider_id).toBe('user-1');
       expect(result.share_token).toBe('tok-xyz');
       expect(sharedRideRepo.findOne).toHaveBeenCalledWith({
-        where: { ride_id: 'ride-1', is_public: true },
-        select: ['share_token'],
+        where: { ride_id: 'ride-1' },
+        select: ['share_token', 'is_public'],
       });
     });
 
-    it('404s for a non-owner when the ride is not publicly shared', async () => {
+    it('404s for a non-owner when the share is link-only (not public)', async () => {
       rideRepo.findOne!.mockResolvedValueOnce({
         ...mockRide,
         user: { id: 'user-1', display_name: 'Owner' },
       } as unknown as Ride);
-      sharedRideRepo.findOne!.mockResolvedValueOnce(null);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        share_token: 'tok-private',
+        is_public: false,
+      } as never);
 
       await expect(service.getDetail('viewer-2', 'ride-1')).rejects.toThrow(
         NotFoundException,
@@ -775,6 +780,7 @@ describe('RidesService', () => {
       } as unknown as Ride);
       sharedRideRepo.findOne!.mockResolvedValueOnce({
         share_token: 'tok-xyz',
+        is_public: true,
       } as never);
       privacy.loadPreferences.mockResolvedValueOnce({
         ...DEFAULT_PRIVACY_PREFERENCES,

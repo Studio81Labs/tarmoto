@@ -150,12 +150,31 @@ export default function RideDetailPage() {
   }, [rideId, authReady]);
 
   async function handleShare() {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !ride) return;
     // Copy the public, no-auth share link (/rides/shared/:token) so a logged-
-    // out recipient can open the ride — not the auth-gated dashboard URL.
-    // Falls back to the current URL only if the ride has no public share.
-    const shareUrl = ride?.share_token
-      ? `${window.location.origin}/rides/shared/${ride.share_token}`
+    // out recipient can open the ride — never the auth-gated dashboard URL.
+    let token = ride.share_token;
+    if (!token && ride.viewer_is_owner) {
+      // The owner hasn't shared this ride yet. Create a link-only share (not
+      // published to the community feed) so they still get a working link —
+      // the token resolves regardless of `is_public`.
+      try {
+        const { data } = await api.POST("/api/v1/rides/{rideId}/share", {
+          params: { path: { rideId: ride.id } },
+          body: { is_public: false },
+        } as never);
+        token =
+          (data as { share_token?: string } | undefined)?.share_token ?? null;
+        if (token) {
+          const created = token;
+          setRide((r) => (r ? { ...r, share_token: created } : r));
+        }
+      } catch {
+        // Fall through to the dashboard-URL fallback below.
+      }
+    }
+    const shareUrl = token
+      ? `${window.location.origin}/rides/shared/${token}`
       : window.location.href;
     try {
       await navigator.clipboard.writeText(shareUrl);
