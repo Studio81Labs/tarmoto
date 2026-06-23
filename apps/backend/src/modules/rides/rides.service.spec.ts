@@ -716,6 +716,66 @@ describe('RidesService', () => {
       expect(result.route_geometry).toBeNull();
       expect(result.segments).toEqual([]);
     });
+
+    it('returns viewer_is_owner=true + attribution for the owner, no share lookup', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
+      } as unknown as Ride);
+
+      const result = await service.getDetail('user-1', 'ride-1');
+
+      expect(result.viewer_is_owner).toBe(true);
+      expect(result.rider_id).toBe('user-1');
+      expect(result.rider_name).toBe('Owner');
+      // Ownership short-circuits the public-share/privacy lookups.
+      expect(sharedRideRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('lets a non-owner view a publicly shared, non-private ride', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
+      } as unknown as Ride);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({ id: 'sr-1' } as never);
+
+      const result = await service.getDetail('viewer-2', 'ride-1');
+
+      expect(result.viewer_is_owner).toBe(false);
+      expect(result.rider_id).toBe('user-1');
+      expect(sharedRideRepo.findOne).toHaveBeenCalledWith({
+        where: { ride_id: 'ride-1', is_public: true },
+        select: ['id'],
+      });
+    });
+
+    it('404s for a non-owner when the ride is not publicly shared', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        user: { id: 'user-1', display_name: 'Owner' },
+      } as unknown as Ride);
+      sharedRideRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.getDetail('viewer-2', 'ride-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('404s for a non-owner when the ride owner is private', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        user: { id: 'user-1', display_name: 'Owner' },
+      } as unknown as Ride);
+      sharedRideRepo.findOne!.mockResolvedValueOnce({ id: 'sr-1' } as never);
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      await expect(service.getDetail('viewer-2', 'ride-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('rename', () => {

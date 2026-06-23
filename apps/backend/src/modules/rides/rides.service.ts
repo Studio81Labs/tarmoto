@@ -437,10 +437,28 @@ export class RidesService {
 
   async getDetail(userId: string, rideId: string): Promise<RideDetailDto> {
     const ride = await this.rideRepo.findOne({
-      where: { id: rideId, user_id: userId },
+      where: { id: rideId },
+      relations: { user: true },
     });
     if (!ride) {
       throw new NotFoundException('Ride not found');
+    }
+
+    const isOwner = ride.user_id === userId;
+    if (!isOwner) {
+      // Non-owners may view a ride only when its owner has publicly shared it
+      // AND their profile isn't private — exactly the visibility the community
+      // feed enforces. Anything else 404s so we never leak a ride's existence.
+      const [publicShare, ownerPrefs] = await Promise.all([
+        this.sharedRideRepo.findOne({
+          where: { ride_id: rideId, is_public: true },
+          select: ['id'],
+        }),
+        this.privacy.loadPreferences(ride.user_id),
+      ]);
+      if (!publicShare || ownerPrefs.profile_visibility === 'private') {
+        throw new NotFoundException('Ride not found');
+      }
     }
 
     // Load stats and segments in parallel
@@ -505,6 +523,10 @@ export class RidesService {
         speed_max: s.speed_max,
         lean_angle_max: s.lean_angle_max,
       })),
+      viewer_is_owner: isOwner,
+      rider_id: ride.user_id,
+      rider_name: ride.user?.display_name ?? '',
+      rider_avatar_url: ride.user?.avatar_url ?? null,
     };
   }
 

@@ -134,6 +134,21 @@ export class RideDetailDto extends RideSummaryDto {
 
   @ApiProperty({ type: [RideSegmentDto] })
   segments!: RideSegmentDto[];
+
+  @ApiProperty({
+    description:
+      'True when the requester owns this ride. Non-owners may only fetch a ride that its owner has publicly shared (the community-feed visibility); the client hides owner-only actions (rename, export, compare) when false.',
+  })
+  viewer_is_owner!: boolean;
+
+  @ApiProperty({ description: "The ride owner's id (for attribution)." })
+  rider_id!: string;
+
+  @ApiProperty({ description: "The ride owner's display name." })
+  rider_name!: string;
+
+  @ApiProperty({ nullable: true })
+  rider_avatar_url!: string | null;
 }
 
 export class RideListResponseDto {

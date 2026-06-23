@@ -70,6 +70,10 @@ function ride(overrides: Record<string, unknown> = {}) {
         lean_angle_max: 31,
       },
     ],
+    viewer_is_owner: true,
+    rider_id: "rider-1",
+    rider_name: "John Rider",
+    rider_avatar_url: null,
     ...overrides,
   };
 }
@@ -192,6 +196,37 @@ describe("RideDetailPage", () => {
     fireEvent.click(exportTrigger);
     expect(screen.getByRole("menuitem", { name: /CSV/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /GPX/i })).toBeInTheDocument();
+  });
+
+  it("renders read-only for a community ride viewed by a non-owner", async () => {
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({
+        name: "Stelvio loop",
+        viewer_is_owner: false,
+        rider_id: "owner-7",
+        rider_name: "Matteo Ferri",
+      }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    expect(await screen.findByText("Stelvio loop")).toBeInTheDocument();
+    // Owner-only actions are hidden; sharing the link stays available.
+    expect(
+      screen.queryByRole("button", { name: "Rename ride" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Compare/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Share/i })).toBeInTheDocument();
+    // Attribution links to the owner's profile; back link goes to the feed.
+    expect(screen.getByRole("link", { name: /Matteo Ferri/i })).toHaveAttribute(
+      "href",
+      "/community/owner-7",
+    );
+    expect(
+      screen.getByRole("link", { name: /Community · Feed/i }),
+    ).toHaveAttribute("href", "/community/feed");
   });
 
   it("degrades unbacked sections without GPS or lean samples", async () => {

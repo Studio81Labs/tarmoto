@@ -4512,6 +4512,13 @@ export interface components {
       lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
       fuel_estimate_l: number | null;
       segments: components["schemas"]["RideSegmentDto"][];
+      /** @description True when the requester owns this ride. Non-owners may only fetch a ride that its owner has publicly shared (the community-feed visibility); the client hides owner-only actions (rename, export, compare) when false. */
+      viewer_is_owner: boolean;
+      /** @description The ride owner's id (for attribution). */
+      rider_id: string;
+      /** @description The ride owner's display name. */
+      rider_name: string;
+      rider_avatar_url: string | null;
     };
     TripFolderResponseDto: {
       id: string;

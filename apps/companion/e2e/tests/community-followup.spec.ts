@@ -209,4 +209,32 @@ test.describe("community follow-up flows", () => {
       page.getByRole("heading", { level: 1, name: /clone test route/i }),
     ).toBeVisible({ timeout: 10_000 });
   });
+
+  // A publicly-shared community ride opens the real ride detail page
+  // (/rides/:id) for a non-owner — read-only (no rename/compare/export),
+  // with owner attribution and a back link to the community feed.
+  test("T47: a community ride opens the read-only ride detail for non-owners", async ({
+    authedPage: page,
+    mockApi,
+  }) => {
+    const owner = await mockApi.seedUser({ displayName: "Trail Owner" });
+    const ride = await mockApi.seedRide(owner, { name: "Stelvio Loop" });
+    await mockApi.seedRideShare(ride.id, { is_public: true });
+
+    await page.goto(`/rides/${ride.id}`);
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /stelvio loop/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Rename ride" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("link", { name: /Compare/i })).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /Trail Owner/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Community · Feed/i }),
+    ).toBeVisible();
+  });
 });

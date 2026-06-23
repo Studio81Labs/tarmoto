@@ -76,6 +76,10 @@ interface RideDetail {
   fuel_estimate_l: number | null;
   route_geometry: Array<{ lat: number; lng: number }> | null;
   segments: RideSegment[];
+  viewer_is_owner: boolean;
+  rider_id: string;
+  rider_name: string;
+  rider_avatar_url: string | null;
 }
 
 // Lean buckets the backend reports (US-19). The v2 "Time spent leaning" chart
@@ -203,7 +207,7 @@ export default function RideDetailPage() {
           <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
           <p className="text-sm text-fg-dim">
             {t(
-              "This ride may have been deleted or doesn't belong to your account. ",
+              "This ride may have been deleted, or it isn't shared publicly. ",
             )}
           </p>
         </Card>
@@ -281,11 +285,13 @@ export default function RideDetailPage() {
       header={
         <>
           <Link
-            href="/rides"
+            href={ride.viewer_is_owner ? "/rides" : "/community/feed"}
             className="inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
           >
             <ArrowLeft size={14} />
-            {t("Ride History · All rides")}
+            {ride.viewer_is_owner
+              ? t("Ride History · All rides")
+              : t("Community · Feed")}
           </Link>
 
           <div className="mt-3.5 mb-[22px] flex items-end justify-between gap-6">
@@ -298,6 +304,17 @@ export default function RideDetailPage() {
                 <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
                   {startedDate}
                 </Mono>
+                {!ride.viewer_is_owner && (
+                  <>
+                    <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
+                    <Link
+                      href={`/community/${encodeURIComponent(ride.rider_id)}`}
+                      className="font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
+                    >
+                      {t("by {name}", { name: ride.rider_name })}
+                    </Link>
+                  </>
+                )}
               </div>
 
               {renaming ? (
@@ -340,18 +357,20 @@ export default function RideDetailPage() {
                     {rideName}
                   </h1>
                   {avgTier != null && <QualityBars q={avgTier} size={8} />}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenameDraft(ride.name ?? "");
-                      setRenameError(null);
-                      setRenaming(true);
-                    }}
-                    aria-label={t("Rename ride")}
-                    className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-                  >
-                    <Pencil size={14} />
-                  </button>
+                  {ride.viewer_is_owner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameDraft(ride.name ?? "");
+                        setRenameError(null);
+                        setRenaming(true);
+                      }}
+                      aria-label={t("Rename ride")}
+                      className="rounded-lg p-1.5 text-fg-mute opacity-100 transition hover:bg-paper-2 hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
                 </div>
               )}
               {renameError && (
@@ -360,21 +379,23 @@ export default function RideDetailPage() {
             </div>
 
             <div className="flex flex-shrink-0 gap-2">
-              <Button
-                variant="secondary"
-                uppercase
-                leftIcon={<Scale size={16} />}
-                renderLink={({ className, children }) => (
-                  <Link
-                    href={`/rides/compare?a=${ride.id}`}
-                    className={className}
-                  >
-                    {children}
-                  </Link>
-                )}
-              >
-                {t("Compare")}
-              </Button>
+              {ride.viewer_is_owner && (
+                <Button
+                  variant="secondary"
+                  uppercase
+                  leftIcon={<Scale size={16} />}
+                  renderLink={({ className, children }) => (
+                    <Link
+                      href={`/rides/compare?a=${ride.id}`}
+                      className={className}
+                    >
+                      {children}
+                    </Link>
+                  )}
+                >
+                  {t("Compare")}
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 uppercase
@@ -384,9 +405,11 @@ export default function RideDetailPage() {
               >
                 {t("Share")}
               </Button>
-              <RideExportMenu
-                onExport={(format) => downloadRideExport(ride.id, format)}
-              />
+              {ride.viewer_is_owner && (
+                <RideExportMenu
+                  onExport={(format) => downloadRideExport(ride.id, format)}
+                />
+              )}
             </div>
           </div>
         </>

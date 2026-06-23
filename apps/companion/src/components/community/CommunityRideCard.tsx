@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Heart, Plus } from "lucide-react";
 import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
-import { useAuthStore } from "@/stores/auth";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import {
   formatKmValue,
@@ -23,18 +22,14 @@ import {
  */
 export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const router = useRouter();
-  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);
   const tier = scoreToQualityTier(ride.avg_road_quality);
   const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
   const title = ride.name?.trim() || formatShortDate(ride.started_at);
-  // Your own rides open the full owner detail (same as ride history); other
-  // riders' detail is owner-scoped (404), so theirs stays on the public
-  // shared-ride view.
-  const rideHref =
-    currentUserId != null && ride.rider_id === currentUserId
-      ? `/rides/${encodeURIComponent(ride.id)}`
-      : `/rides/shared/${encodeURIComponent(ride.share_token)}`;
+  // Open the full ride detail page (same as ride history). `GET /rides/:id`
+  // serves publicly-shared rides to non-owners too, so this works for every
+  // community ride, not just your own.
+  const rideHref = `/rides/${encodeURIComponent(ride.id)}`;
 
   const [liked, setLiked] = useState(ride.viewer_has_liked);
   const [likeCount, setLikeCount] = useState(ride.like_count);
