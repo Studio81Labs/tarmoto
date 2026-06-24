@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  Check,
   Crosshair,
   Loader2,
   Map as MapIcon,
@@ -30,6 +29,7 @@ import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import type { UnitSystem } from "@tarmoto/shared";
 import { explorationApi, mapSharesApi } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import type {
   ExplorationStats,
   RiddenSegmentMeta,
@@ -75,25 +75,6 @@ const FALLBACK_CENTER = {
   label: "",
 };
 const INITIAL_MAP_ZOOM = 8;
-type ShareState =
-  | {
-      kind: "idle";
-    }
-  | {
-      kind: "creating";
-    }
-  | {
-      kind: "copied";
-      url: string;
-    }
-  | {
-      kind: "shared";
-      url: string;
-    }
-  | {
-      kind: "error";
-      message: string;
-    };
 export default function RoadMapPage() {
   // `useTimeWindow` (below) reads `?window=` via useSearchParams, which needs
   // a Suspense boundary for Next.js static prerender (mirrors the All-rides
@@ -121,11 +102,10 @@ function RoadMapPageInner() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
-  const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
+  const [sharing, setSharing] = useState(false);
   // Track the auto-reset timer so back-to-back share clicks don't let a
   // stale timer stomp over the next call's `{ kind: "creating" }` state
   // (which would re-enable the button mid-flight).
-  const shareResetTimerRef = useRef<number | null>(null);
   const mapRef = useRef<PersonalRoadMapHandle>(null);
   // Preferences are hydrated from localStorage on the client; during SSR the
   // store still returns the metric default so the server-rendered markup
@@ -252,57 +232,24 @@ function RoadMapPageInner() {
       mapRef.current?.flyTo({ lat, lng });
     });
   }, [requestUserLocation]);
-  // Schedule a single auto-reset back to "idle". Always cancels any
-  // pending timer first so back-to-back share attempts don't have a
-  // stale timer fire mid-flight and stomp over `{ kind: "creating" }`.
-  const scheduleShareReset = useCallback((delayMs: number) => {
-    if (shareResetTimerRef.current !== null) {
-      window.clearTimeout(shareResetTimerRef.current);
-    }
-    shareResetTimerRef.current = window.setTimeout(() => {
-      shareResetTimerRef.current = null;
-      setShareState({ kind: "idle" });
-    }, delayMs);
-  }, []);
-  // Cancel any in-flight reset on unmount so we don't `setState` after
-  // the page has been torn down.
-  useEffect(() => {
-    return () => {
-      if (shareResetTimerRef.current !== null) {
-        window.clearTimeout(shareResetTimerRef.current);
-        shareResetTimerRef.current = null;
-      }
-    };
-  }, []);
   const handleShare = useCallback(async () => {
     if (!stats) return;
-    // Cancel any pending reset BEFORE we touch shareState so a leftover
-    // timer can't flip us back to "idle" while a fresh request is in
-    // flight (cursor: stale timeout reset).
-    if (shareResetTimerRef.current !== null) {
-      window.clearTimeout(shareResetTimerRef.current);
-      shareResetTimerRef.current = null;
-    }
-    // Capability check first: if neither Web Share nor the async
-    // Clipboard API is available, the user has no way to retrieve the
-    // generated URL. Bail BEFORE persisting so we don't orphan rows in
-    // map_shares for browsers we can't deliver to (the previous flow
-    // would POST and then surface "Sharing is not supported").
+    // Capability check first: if neither Web Share nor the async Clipboard
+    // API is available, the user has no way to retrieve the generated URL.
+    // Bail BEFORE persisting so we don't orphan rows in map_shares for
+    // browsers we can't deliver to.
     const canWebShare =
       typeof navigator !== "undefined" && typeof navigator.share === "function";
     const canClipboard =
       typeof navigator !== "undefined" &&
       Boolean(navigator.clipboard?.writeText);
     if (!canWebShare && !canClipboard) {
-      setShareState({
-        kind: "error",
-        message:
-          "Your browser doesn't support sharing or clipboard access — try a different browser.",
-      });
-      scheduleShareReset(3500);
+      toast.error(
+        "Your browser doesn't support sharing or clipboard access — try a different browser.",
+      );
       return;
     }
-    setShareState({ kind: "creating" });
+    setSharing(true);
     let createdShareId: string | null = null;
     try {
       const snapshot = buildMapShareSnapshot({
@@ -337,53 +284,38 @@ function RoadMapPageInner() {
         canWebShare &&
         (!navigator.canShare || navigator.canShare(shareData))
       ) {
+        // The native share sheet is its own confirmation — no toast needed.
         await navigator.share(shareData);
-        setShareState({ kind: "shared", url: fullUrl });
       } else if (canClipboard) {
         await navigator.clipboard.writeText(fullUrl);
-        setShareState({ kind: "copied", url: fullUrl });
+        toast.success(t("Link copied"));
       } else {
-        // Defensive: capability check above already guarantees one path
-        // is available, but if `canShare` rejects the payload we still
-        // need a fallback rather than silently doing nothing.
+        // Defensive: the capability check above guarantees one path is
+        // available, but if `canShare` rejects the payload we still need a
+        // fallback rather than silently doing nothing.
         throw new Error("Sharing is not supported");
       }
-      // Delivery succeeded — clear the rollback marker so the catch
-      // branch below doesn't revoke a share the user actually used.
+      // Delivery succeeded — clear the rollback marker so the catch branch
+      // below doesn't revoke a share the user actually used.
       createdShareId = null;
     } catch (err) {
       // Roll back the share row whenever post-create delivery fails
-      // (cancelled Web Share, denied clipboard write, unsupported
-      // canShare, etc.). Without this, repeated cancellations would
-      // accumulate orphaned `map_shares` rows.
+      // (cancelled Web Share, denied clipboard write, etc.) so repeated
+      // cancellations don't accumulate orphaned `map_shares` rows.
       if (createdShareId) {
-        // Best-effort cleanup: if the revoke itself fails we still want
-        // to surface the original delivery error to the user, not the
-        // cleanup error.
         void mapSharesApi.revoke(createdShareId).catch(() => undefined);
       }
       // A user-cancelled Web Share rejects with AbortError on iOS Safari —
-      // treat that as idle (the user explicitly opted out) rather than as
-      // an error toast.
-      if (err instanceof Error && err.name === "AbortError") {
-        setShareState({ kind: "idle" });
-        return;
-      }
-      setShareState({
-        kind: "error",
-        message:
+      // the user opted out, so no error toast.
+      if (!(err instanceof Error && err.name === "AbortError")) {
+        toast.error(
           err instanceof Error ? err.message : "Could not generate share link",
-      });
+        );
+      }
+    } finally {
+      setSharing(false);
     }
-    scheduleShareReset(3500);
-  }, [
-    stats,
-    period,
-    filteredRidden,
-    center.lat,
-    center.lng,
-    scheduleShareReset,
-  ]);
+  }, [stats, period, filteredRidden, center.lat, center.lng]);
   if (loading) {
     return (
       <RidesScaffold fill>
@@ -419,20 +351,6 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
-  // Keep the button width stable while the share link is being created
-  // (an async POST): the spinner — Button `loading` — covers the in-flight
-  // state instead of swapping in a wide "Creating link…" label that would
-  // expand the button and snap back. The label only ever reads "Share"
-  // or, on success, "Copied" / "Shared", mirroring the ride-detail share
-  // button. Errors surface on the button's `title` (and auto-reset).
-  const shareSucceeded =
-    shareState.kind === "copied" || shareState.kind === "shared";
-  const shareLabel =
-    shareState.kind === "copied"
-      ? t("Copied")
-      : shareState.kind === "shared"
-        ? t("Shared")
-        : t("Share");
   // `formatDistance` carries the metric/imperial conversion + decimal rule;
   // take its number for the tile (so the shared formatter applies locale
   // grouping) and its unit for the tile's small slot.
@@ -453,14 +371,11 @@ function RoadMapPageInner() {
           <Button
             variant="secondary"
             uppercase
-            loading={shareState.kind === "creating"}
+            loading={sharing}
             onClick={handleShare}
-            title={shareState.kind === "error" ? shareState.message : undefined}
-            leftIcon={
-              shareSucceeded ? <Check size={14} /> : <Share2 size={14} />
-            }
+            leftIcon={<Share2 size={14} />}
           >
-            {shareLabel}
+            {t("Share")}
           </Button>
         </div>
       }
