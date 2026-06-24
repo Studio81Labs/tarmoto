@@ -23,6 +23,7 @@ import {
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
 import { Input, Textarea } from "@tarmoto/ui";
+import { UserAvatar } from "@/components/UserAvatar";
 type Tab = "invite" | "suggestions" | "activity";
 interface TripCollaborateModalProps {
   open: boolean;
@@ -644,7 +645,12 @@ function SuggestionCard({
           <h4 className="text-sm font-semibold text-ink truncate">
             {suggestion.title}
           </h4>
-          <p className="text-xs text-fg-mute">
+          <p className="flex items-center gap-1.5 text-xs text-fg-mute">
+            <UserAvatar
+              name={suggestion.suggester_display_name}
+              size={16}
+              fontSize={8}
+            />
             {t("by ")}
             {suggestion.suggester_display_name}
           </p>
@@ -829,8 +835,19 @@ function ActivityTab({
             className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink"
           >
             <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">
-                {entry.actor_name ?? "System"}
+              <span className="flex items-center gap-1.5 font-medium">
+                {entry.actor_name ? (
+                  <>
+                    <UserAvatar
+                      name={entry.actor_name}
+                      size={16}
+                      fontSize={8}
+                    />
+                    {entry.actor_name}
+                  </>
+                ) : (
+                  "System"
+                )}
               </span>
               <time
                 dateTime={entry.created_at}

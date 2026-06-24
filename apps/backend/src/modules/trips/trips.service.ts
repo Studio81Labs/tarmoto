@@ -15,6 +15,7 @@ import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
+import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import { EmailService } from '../email/email.service.js';
@@ -29,6 +30,7 @@ import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
+  PublicTripDetailDto,
   TripDayDto,
   TripDetailDto,
   TripMemberDto,
@@ -71,6 +73,8 @@ export class TripsService {
     private readonly folderRepo: Repository<TripFolder>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(RouteCollectionItem)
+    private readonly collectionItemRepo: Repository<RouteCollectionItem>,
     private readonly events: EventsGateway,
     private readonly activity: TripActivityService,
     private readonly tripShares: TripSharesService,
@@ -1004,6 +1008,63 @@ export class TripsService {
     return this.toDetail(trip, aggById.get(trip.id));
   }
 
+  /**
+   * Read-only trip detail for the community surface (`GET /community/trips/:id`).
+   * Unlike {@link getDetail}, this does NOT require trip membership — it is the
+   * ONLY path by which a non-member can read a trip, and it is deliberately
+   * narrow: a trip has no per-trip public flag (sharing is otherwise
+   * token-only), so the sole non-member grant is "this trip is an item in a
+   * discoverable (public/unlisted) collection". A member (e.g. the owner
+   * reaching their own trip from a private collection) is always allowed.
+   *
+   * The response masks owner-only fields ({@link PublicTripDetailDto} omits the
+   * invite code and the member roster) so following a collection link can never
+   * leak the join secret or rider identities.
+   */
+  async getPublicDetail(
+    viewerId: string | null,
+    tripId: string,
+  ): Promise<PublicTripDetailDto> {
+    // Hydrate the trip up-front (no membership join) so we can both
+    // authorize on the in-memory roster and build the response from one read.
+    const trip = await this.tripRepo
+      .createQueryBuilder('trip')
+      .leftJoinAndSelect('trip.members', 'm')
+      .leftJoinAndSelect('m.user', 'mu')
+      .leftJoinAndSelect('trip.days', 'd')
+      .leftJoinAndSelect('d.waypoints', 'w')
+      .where('trip.id = :tripId', { tripId })
+      .addOrderBy('d.day_number', 'ASC')
+      .addOrderBy('w.sequence', 'ASC')
+      .getOne();
+
+    // Fold "no such trip" and "not visible to you" into the same 404 so the
+    // endpoint can't be used to enumerate trip ids — mirrors getDetail.
+    if (!trip) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const isMember =
+      viewerId != null &&
+      (trip.members ?? []).some((m) => m.user_id === viewerId);
+    if (!isMember) {
+      const exposed = await this.collectionItemRepo
+        .createQueryBuilder('item')
+        .innerJoin('item.collection', 'c')
+        .where('item.trip_id = :tripId', { tripId })
+        .andWhere('c.visibility IN (:...visibilities)', {
+          visibilities: ['public', 'unlisted'],
+        })
+        .getExists();
+      if (!exposed) {
+        throw new NotFoundException('Trip not found');
+      }
+    }
+
+    const aggById = await this.computeTripAggregates([trip.id]);
+    return this.toPublicDetail(trip, aggById.get(trip.id));
+  }
+
   async join(
     userId: string,
     tripId: string,
@@ -1146,6 +1207,48 @@ export class TripsService {
       invite_code: trip.invite_code,
       members,
       days,
+    };
+  }
+
+  /**
+   * Map a hydrated trip to the masked, read-only {@link PublicTripDetailDto}.
+   * Derives the owner's display name from the loaded roster but drops the
+   * roster and invite code from the response (see the DTO for why).
+   */
+  private toPublicDetail(
+    trip: Trip,
+    agg?: {
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+    },
+  ): PublicTripDetailDto {
+    // Reuse the owner mapper for the day/waypoint mapping, then copy fields
+    // into the public shape with an explicit ALLOW-LIST. An allow-list (rather
+    // than spread-and-delete) means a sensitive field added to TripDetailDto
+    // later can't silently leak through this non-member surface — it simply
+    // won't be carried over until someone consciously adds it here.
+    const detail = this.toDetail(trip, agg);
+    const owner = detail.members.find((m) => m.role === 'owner');
+    return {
+      id: detail.id,
+      owner_id: detail.owner_id,
+      owner_name: owner?.display_name ?? null,
+      title: detail.title,
+      region: detail.region,
+      num_days: detail.num_days,
+      status: detail.status,
+      member_count: detail.member_count,
+      folder_id: detail.folder_id,
+      created_at: detail.created_at,
+      distance_km: detail.distance_km,
+      quality_avg: detail.quality_avg,
+      passes_count: detail.passes_count,
+      daily_km_min: detail.daily_km_min,
+      daily_km_max: detail.daily_km_max,
+      min_quality: detail.min_quality,
+      road_preference: detail.road_preference,
+      days: detail.days,
     };
   }
 }

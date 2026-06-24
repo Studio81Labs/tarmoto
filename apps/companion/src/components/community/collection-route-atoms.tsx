@@ -1,3 +1,5 @@
+import Link from "next/link";
+import clsx from "clsx";
 import { Route as RouteIcon } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
 import { t } from "@/i18n";
@@ -101,19 +103,28 @@ export function StatusPill({ status }: { status: string }) {
 }
 
 /**
- * One read-only collection route row (numbered, non-interactive). Rendered from
- * the per-item preview summaries (#689) so it works for any viewer — the public
- * shared page and the in-app member discover view both use it. `author` is the
- * collection owner (every item belongs to them).
+ * One collection route row (numbered), rendered from the per-item preview
+ * summaries (#689) so it works for any viewer — the public shared page and the
+ * in-app member discover view both use it. `author` is the collection owner
+ * (every item belongs to them).
+ *
+ * `linkable` opts the row into deep-linking to the item's detail view
+ * (`/community/rides/:id` or `/community/trips/:id`, both under the dashboard
+ * shell). It defaults to OFF so the anonymous public shared page keeps its
+ * read-only rows — those destinations require the app shell and would bounce a
+ * logged-out reader to sign-in. A row with no resolvable `target_id` (deleted
+ * item) stays non-interactive even when `linkable`.
  */
 export function CollectionRouteRow({
   route,
   index,
   author,
+  linkable = false,
 }: {
   route: RouteCollectionPreviewItem;
   index: number;
   author: string;
+  linkable?: boolean;
 }) {
   const isRide = route.kind === "ride";
   const daysLabel =
@@ -125,8 +136,19 @@ export function CollectionRouteRow({
         ? t("1 day")
         : null;
   const metaParts = [daysLabel, author || null].filter(Boolean);
-  return (
-    <li className="grid grid-cols-[32px_64px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-cream p-3.5 sm:grid-cols-[32px_64px_minmax(0,1fr)_82px_96px_auto] sm:gap-3.5">
+
+  const href =
+    linkable && route.target_id
+      ? isRide
+        ? `/community/rides/${encodeURIComponent(route.target_id)}`
+        : `/community/trips/${encodeURIComponent(route.target_id)}`
+      : null;
+
+  const rowClass =
+    "grid grid-cols-[32px_64px_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-line bg-cream p-3.5 sm:grid-cols-[32px_64px_minmax(0,1fr)_82px_96px_auto] sm:gap-3.5";
+
+  const cells = (
+    <>
       <Mono className="text-center text-[16px] font-extrabold text-fg-mute">
         {index}
       </Mono>
@@ -163,6 +185,24 @@ export function CollectionRouteRow({
           <QualityBars q={route.quality_avg} size={5} />
         )}
       </div>
+    </>
+  );
+
+  return (
+    <li>
+      {href ? (
+        <Link
+          href={href}
+          className={clsx(
+            rowClass,
+            "transition hover:border-line-strong hover:bg-paper",
+          )}
+        >
+          {cells}
+        </Link>
+      ) : (
+        <div className={rowClass}>{cells}</div>
+      )}
     </li>
   );
 }

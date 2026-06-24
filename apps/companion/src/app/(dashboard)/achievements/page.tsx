@@ -31,7 +31,8 @@ import {
   SegmentedControl,
   Stamp,
 } from "@tarmoto/ui";
-import { initialsFromName } from "@/lib/rider-profile";
+import Link from "next/link";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   activeChallenges,
   challengeProgress,
@@ -1040,18 +1041,18 @@ function RegionalLeaderboardRow({
 }) {
   const isMe = entry.isMe;
   const topThree = entry.rank >= 1 && entry.rank <= 3;
-  const initials = initialsFromName(entry.displayName);
-  const avatarColor = avatarColorFor(entry.displayName);
   return (
-    <div
+    <Link
+      href={`/community/${encodeURIComponent(entry.userId)}`}
       role="row"
+      aria-label={isMe ? t("View your profile") : entry.displayName}
       className={clsx(
-        "grid grid-cols-[60px_1fr_120px] items-center px-5 py-3 text-[13px]",
+        "grid grid-cols-[60px_1fr_120px] items-center px-5 py-3 text-[13px] transition",
         isMe
-          ? "bg-ink text-cream"
+          ? "bg-ink text-cream hover:bg-ink/90"
           : zebra
-            ? "bg-ink/[0.02] text-ink"
-            : "bg-transparent text-ink",
+            ? "bg-ink/[0.02] text-ink hover:bg-ink/[0.05]"
+            : "bg-transparent text-ink hover:bg-ink/[0.04]",
         outsideTop && "border-t border-line-strong/60",
       )}
     >
@@ -1065,15 +1066,12 @@ function RegionalLeaderboardRow({
         #{entry.rank}
       </span>
       <div role="cell" className="flex items-center gap-2.5 min-w-0">
-        <span
-          aria-hidden="true"
-          className={clsx(
-            "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold text-ink",
-            isMe ? "bg-accent" : avatarColor,
-          )}
-        >
-          {initials}
-        </span>
+        <UserAvatar
+          name={entry.displayName}
+          size={26}
+          fontSize={11}
+          accent={isMe}
+        />
         <span
           className={clsx(
             "truncate",
@@ -1097,27 +1095,8 @@ function RegionalLeaderboardRow({
       >
         {Math.round(entry.value).toLocaleString()} {unit}
       </span>
-    </div>
+    </Link>
   );
-}
-/**
- * Deterministic palette pick from rider display name. The spec leaderboard
- * avatars cycle through a small warm/cool palette so back-to-back rows feel
- * distinct without relying on real avatar uploads. The hash is intentionally
- * trivial — collisions are fine, the goal is visual variety not identity.
- */
-function avatarColorFor(name: string): string {
-  const palette = [
-    "bg-[#E05A3C]",
-    "bg-[#F0A03C]",
-    "bg-[#E8D66A]",
-    "bg-[#C7D36A]",
-    "bg-[#6FD38A]",
-  ];
-  let h = 0;
-  for (let i = 0; i < name.length; i += 1)
-    h = (h * 31 + name.charCodeAt(i)) | 0;
-  return palette[Math.abs(h) % palette.length] ?? palette[0]!;
 }
 // ── Milestone ──
 function MilestoneCard({ progress }: { progress: MilestoneProgress }) {

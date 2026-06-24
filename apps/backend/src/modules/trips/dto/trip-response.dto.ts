@@ -212,3 +212,42 @@ export class TripDetailDto extends TripSummaryDto {
   @ApiProperty({ type: [TripDayDto] })
   days!: TripDayDto[];
 }
+
+/**
+ * Read-only trip detail served to a NON-member through the community surface
+ * (`GET /community/trips/:id`), used when a trip is exposed via a discoverable
+ * (public/unlisted) collection. Deliberately a sibling of {@link TripDetailDto},
+ * NOT a subclass, so the sensitive owner-only fields can never leak by
+ * inheritance:
+ *  - `invite_code` is omitted — it is the join secret; exposing it would let any
+ *    viewer silently become a trip member.
+ *  - the `members[]` roster is omitted — non-members get the aggregate
+ *    `member_count` and the owner's display name only, not rider identities.
+ *
+ * Everything else (route geometry, day breakdown, planning metadata) mirrors
+ * the owner view so the read-only page renders the same map + day list.
+ */
+export class PublicTripDetailDto extends TripSummaryDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Display name of the trip owner. `null` when the owner's account is " +
+      'soft-deleted or otherwise unresolved.',
+  })
+  owner_name!: string | null;
+
+  @ApiProperty()
+  daily_km_min!: number;
+
+  @ApiProperty()
+  daily_km_max!: number;
+
+  @ApiProperty()
+  min_quality!: number;
+
+  @ApiProperty({ enum: TRIP_ROAD_PREFERENCES })
+  road_preference!: TripRoadPreference;
+
+  @ApiProperty({ type: [TripDayDto] })
+  days!: TripDayDto[];
+}

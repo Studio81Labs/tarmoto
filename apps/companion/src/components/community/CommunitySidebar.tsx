@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import {
   fetchActiveChallengeCard,
@@ -141,6 +142,12 @@ function LeaderboardCard({
             >
               #{e.rank}
             </Mono>
+            <UserAvatar
+              name={e.displayName}
+              size={22}
+              fontSize={10}
+              accent={e.isMe}
+            />
             {e.isMe ? (
               <span className="flex-1 truncate text-[13px] font-bold">
                 {t("You")}
@@ -183,7 +190,6 @@ function SuggestionsCard({ riders }: { riders: SuggestedRider[] }) {
 function SuggestionRow({ rider }: { rider: SuggestedRider }) {
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const initial = rider.display_name.trim().charAt(0).toUpperCase() || "R";
 
   const follow = async () => {
     if (busy || following) return;
@@ -205,9 +211,7 @@ function SuggestionRow({ rider }: { rider: SuggestedRider }) {
         className="group flex min-w-0 flex-1 items-center gap-2.5"
         aria-label={t("View {name}'s profile", { name: rider.display_name })}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F0A03C] text-[13px] font-extrabold text-ink">
-          {initial}
-        </span>
+        <UserAvatar name={rider.display_name} size={32} fontSize={13} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-bold text-ink transition-colors group-hover:text-accent">
             {rider.display_name}

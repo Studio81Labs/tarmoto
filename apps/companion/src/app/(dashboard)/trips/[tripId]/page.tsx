@@ -28,6 +28,7 @@ import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
+import { UserAvatar } from "@/components/UserAvatar";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
@@ -676,12 +677,7 @@ function MemberRow({ member }: { member: TripDetailMember }) {
     member.role === "owner" ? Crown : member.role === "admin" ? Shield : User;
   return (
     <li className="flex items-center gap-3 rounded-lg border border-line bg-cream/60 p-2.5">
-      <div
-        aria-hidden
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-paper text-xs font-semibold text-ink"
-      >
-        {member.display_name.charAt(0).toUpperCase()}
-      </div>
+      <UserAvatar name={member.display_name} size={32} fontSize={12} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-ink">{member.display_name}</p>
         <p className="text-[10px] text-fg-dim">

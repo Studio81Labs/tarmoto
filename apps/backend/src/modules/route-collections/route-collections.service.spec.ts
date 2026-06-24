@@ -907,6 +907,8 @@ describe('RouteCollectionsService', () => {
       expect(result.routes[0]).toMatchObject({
         item_id: 'item-trip-a',
         kind: 'trip',
+        // `target_id` is the underlying trip/ride id the client deep-links to.
+        target_id: tripA,
         position: 0,
         title: 'Trip A',
         num_days: 2,
@@ -918,6 +920,7 @@ describe('RouteCollectionsService', () => {
       expect(result.routes[1]).toMatchObject({
         item_id: 'item-ride-a',
         kind: 'ride',
+        target_id: rideA,
         position: 1,
         title: 'Ride A',
         num_days: null,
@@ -929,6 +932,7 @@ describe('RouteCollectionsService', () => {
       expect(result.routes[2]).toMatchObject({
         item_id: 'item-trip-b',
         kind: 'trip',
+        target_id: tripB,
         position: 2,
         title: 'Trip B',
         distance_km: 60,

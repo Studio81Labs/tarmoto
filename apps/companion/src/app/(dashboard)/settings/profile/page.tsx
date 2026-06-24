@@ -10,6 +10,7 @@ import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import { Button, Card, Stamp } from "@tarmoto/ui";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { UserAvatar } from "@/components/UserAvatar";
 import { Copy, Smartphone, User } from "lucide-react";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -298,28 +299,18 @@ export default function ProfilePage() {
       <Card padded={false} className="space-y-4 p-6">
         {/* Spec avatar hero row: 72 px circle + name/email/joined + `Change avatar` pill */}
         <div className="mb-2 flex items-center gap-[18px]">
-          {previewAvatarUrl ? (
-            // Browser-native <img>: avatar URLs come from arbitrary providers
-            // (social login, etc.), so we'd need to enumerate every domain in
-            // next.config.ts to use next/image — not practical here.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewAvatarUrl}
-              alt={
-                displayName
-                  ? t("{name}'s profile photo", { name: displayName })
-                  : t("Your profile photo")
-              }
-              className="h-[72px] w-[72px] rounded-full object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-accent text-[28px] font-extrabold text-ink"
-            >
-              {displayName[0]?.toUpperCase() ?? "T"}
-            </div>
-          )}
+          <UserAvatar
+            avatarUrl={previewAvatarUrl}
+            name={displayName || t("Rider")}
+            alt={
+              displayName
+                ? t("{name}'s profile photo", { name: displayName })
+                : t("Your profile photo")
+            }
+            size={72}
+            fontSize={28}
+            accent
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[18px] font-extrabold text-ink">
               {displayName || t("Your profile")}

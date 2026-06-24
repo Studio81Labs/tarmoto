@@ -1262,6 +1262,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/community/trips/{tripId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read-only trip detail for a non-member, when the trip is exposed via a discoverable collection. Masks the invite code and member roster. */
+    get: operations["CommunityTripsController_getPublicDetail"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/trips/{tripId}/suggestions": {
     parameters: {
       query?: never;
@@ -3929,6 +3946,34 @@ export interface components {
       /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
       status: string;
     };
+    PublicTripDetailDto: {
+      id: string;
+      /** @description US-37 — owner uuid surfaced on the summary so the companion can decide whether to carry the source folder forward when duplicating (folders are private per-user; only the owner of the source can preserve filing without 404-ing the create). */
+      owner_id: string;
+      title: string;
+      region: string | null;
+      num_days: number;
+      /** @enum {string} */
+      status: "draft" | "planned" | "active" | "completed";
+      member_count: number;
+      /** @description US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips. */
+      folder_id: string | null;
+      created_at: string;
+      /** @description Total planned distance (km) = SUM of the trip days’ `distance_km`. `null` when no day has a recorded distance. */
+      distance_km: number | null;
+      /** @description Distance-weighted average road quality (0–5) across the trip days. `null` when no day has a recorded quality. */
+      quality_avg: number | null;
+      /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
+      passes_count: number | null;
+      /** @description Display name of the trip owner. `null` when the owner's account is soft-deleted or otherwise unresolved. */
+      owner_name: string | null;
+      daily_km_min: number;
+      daily_km_max: number;
+      min_quality: number;
+      /** @enum {string} */
+      road_preference: "curvy" | "scenic" | "fast" | "mixed";
+      days: components["schemas"]["TripDayDto"][];
+    };
     SuggestionDto: {
       id: string;
       trip_id: string;
@@ -4338,6 +4383,8 @@ export interface components {
       position: number;
       /** @enum {string} */
       kind: "trip" | "ride";
+      /** @description UUID of the underlying entity this item points at — a planner trip when `kind` is `trip`, a recorded ride when `kind` is `ride`. Combined with `kind` the client builds the detail link (`/community/trips/:id` or `/community/rides/:id`). Always set (each item references exactly one of trip/ride by DB CHECK); may point at a since-deleted entity, in which case `lines` is empty and the detail link 404s gracefully. */
+      target_id: string | null;
       /** @description Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry. */
       lines: number[][][];
       /** @description Trip title or ride name. `null` for a deleted item. */
@@ -5204,6 +5251,8 @@ export type SchemaJoinTripDto = components["schemas"]["JoinTripDto"];
 export type SchemaInviteTripDto = components["schemas"]["InviteTripDto"];
 export type SchemaInviteTripResponseDto =
   components["schemas"]["InviteTripResponseDto"];
+export type SchemaPublicTripDetailDto =
+  components["schemas"]["PublicTripDetailDto"];
 export type SchemaSuggestionDto = components["schemas"]["SuggestionDto"];
 export type SchemaCreateSuggestionDto =
   components["schemas"]["CreateSuggestionDto"];
@@ -7528,6 +7577,34 @@ export interface operations {
         content?: never;
       };
       /** @description Trip not found or not owned */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  CommunityTripsController_getPublicDetail: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PublicTripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not publicly visible */
       404: {
         headers: {
           [name: string]: unknown;

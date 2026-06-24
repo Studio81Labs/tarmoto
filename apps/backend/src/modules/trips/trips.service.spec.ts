@@ -17,6 +17,7 @@ import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
+import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
@@ -90,10 +91,11 @@ type QbMock = {
   addOrderBy: jest.Mock;
   getMany: jest.Mock;
   getOne: jest.Mock;
+  getExists: jest.Mock;
 };
 
 function makeQbMock(
-  returns: { getMany?: Trip[]; getOne?: Trip | null } = {},
+  returns: { getMany?: Trip[]; getOne?: Trip | null; getExists?: boolean } = {},
 ): QbMock {
   const qb = {} as QbMock;
   const chainables = [
@@ -110,6 +112,7 @@ function makeQbMock(
   }
   qb.getMany = jest.fn().mockResolvedValue(returns.getMany ?? []);
   qb.getOne = jest.fn().mockResolvedValue(returns.getOne ?? null);
+  qb.getExists = jest.fn().mockResolvedValue(returns.getExists ?? false);
   return qb;
 }
 
@@ -157,6 +160,7 @@ describe('TripsService', () => {
   let transactionMock: jest.Mock;
   let userRepo: jest.Mocked<Repository<User>>;
   let folderRepo: jest.Mocked<Repository<TripFolder>>;
+  let collectionItemRepo: jest.Mocked<Repository<RouteCollectionItem>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
@@ -239,6 +243,12 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<TripFolder>>;
 
+    // Defaults to "not exposed" so existing tests that never touch the
+    // community read path are unaffected; getPublicDetail tests override.
+    collectionItemRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
+    } as unknown as jest.Mocked<Repository<RouteCollectionItem>>;
+
     events = { emitToTrip: jest.fn() };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
     tripShares = { findActiveByToken: jest.fn() };
@@ -258,6 +268,10 @@ describe('TripsService', () => {
         { provide: getRepositoryToken(TripDay), useValue: tripDayRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: getRepositoryToken(TripFolder), useValue: folderRepo },
+        {
+          provide: getRepositoryToken(RouteCollectionItem),
+          useValue: collectionItemRepo,
+        },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: EventsGateway, useValue: events },
         { provide: TripActivityService, useValue: activity },
@@ -1416,6 +1430,64 @@ describe('TripsService', () => {
       await expect(service.getDetail(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getPublicDetail', () => {
+    /** Wire the collection-exposure existence check to resolve `exposed`. */
+    function mockExposed(exposed: boolean): QbMock {
+      const qb = makeQbMock({ getExists: exposed });
+      collectionItemRepo.createQueryBuilder.mockReturnValue(qb as never);
+      return qb;
+    }
+
+    it('returns masked detail (no invite_code/members) when the trip is exposed via a discoverable collection', async () => {
+      mockGetDetailReturns(makeOwnedTrip());
+      const itemQb = mockExposed(true);
+
+      // OTHER_ID is not a member — access is granted purely by the collection.
+      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
+
+      expect(result).not.toHaveProperty('invite_code');
+      expect(result).not.toHaveProperty('members');
+      // Owner display name is surfaced from the loaded roster.
+      expect(result.owner_name).toBe('Adam');
+      expect(result.member_count).toBe(1);
+      expect(result.id).toBe(TRIP_ID);
+      // The exposure check is scoped to public/unlisted collections only.
+      expect(itemQb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('visibility'),
+        expect.objectContaining({ visibilities: ['public', 'unlisted'] }),
+      );
+    });
+
+    it('allows a member without consulting collection visibility', async () => {
+      mockGetDetailReturns(makeOwnedTrip());
+
+      const result = await service.getPublicDetail(OWNER_ID, TRIP_ID);
+
+      expect(result.owner_name).toBe('Adam');
+      // A member short-circuits the collection exposure query entirely.
+      expect(collectionItemRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('404s when the trip is in no discoverable collection and the viewer is not a member', async () => {
+      mockGetDetailReturns(makeOwnedTrip());
+      mockExposed(false);
+
+      await expect(
+        service.getPublicDetail(OTHER_ID, TRIP_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('404s when the trip does not exist (anonymous viewer)', async () => {
+      mockGetDetailReturns(null);
+
+      await expect(
+        service.getPublicDetail(null, TRIP_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // No point checking collection exposure for a trip that doesn't exist.
+      expect(collectionItemRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 

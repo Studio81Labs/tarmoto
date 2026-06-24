@@ -300,6 +300,18 @@ export class RouteCollectionPreviewItemDto {
   kind!: 'trip' | 'ride';
 
   @ApiProperty({
+    nullable: true,
+    description:
+      'UUID of the underlying entity this item points at — a planner trip ' +
+      'when `kind` is `trip`, a recorded ride when `kind` is `ride`. Combined ' +
+      'with `kind` the client builds the detail link (`/community/trips/:id` ' +
+      'or `/community/rides/:id`). Always set (each item references exactly ' +
+      'one of trip/ride by DB CHECK); may point at a since-deleted entity, in ' +
+      'which case `lines` is empty and the detail link 404s gracefully.',
+  })
+  target_id!: string | null;
+
+  @ApiProperty({
     type: 'array',
     items: {
       type: 'array',

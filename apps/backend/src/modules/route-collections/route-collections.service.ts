@@ -603,6 +603,13 @@ export class RouteCollectionsService {
         item_id: item.id,
         position: item.position,
         kind: isRide ? 'ride' : 'trip',
+        // Underlying trip/ride id so the client can deep-link to the detail
+        // view. Stays in sync with `lines`/metadata: a deleted item keeps its
+        // row (position preserved) but its trip/ride id is whatever the item
+        // still references — `null` is impossible here since the item row
+        // always carries exactly one of trip_id/ride_id (DB CHECK), so a
+        // present id with empty lines just means the target was deleted.
+        target_id: isRide ? item.ride_id : item.trip_id,
         lines,
         title: rideMeta ? rideMeta.name : (tripMeta?.title ?? null),
         // A ride is a single recorded day — `num_days` stays null so the

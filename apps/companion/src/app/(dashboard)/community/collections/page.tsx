@@ -19,12 +19,12 @@ import {
   Route as RouteIcon,
   Search,
   Trash2,
-  User,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
 import { Button, Card, Mono, Stamp } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
+import { UserAvatar } from "@/components/UserAvatar";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -527,8 +527,8 @@ function FollowedCollectionCard({
             </span>
           </span>
           {collection.ownerName && (
-            <span className="inline-flex items-center gap-1 text-fg-dim">
-              <User size={13} />
+            <span className="inline-flex items-center gap-1.5 text-fg-dim">
+              <UserAvatar name={collection.ownerName} size={18} fontSize={9} />
               <span className="truncate">{collection.ownerName}</span>
             </span>
           )}
