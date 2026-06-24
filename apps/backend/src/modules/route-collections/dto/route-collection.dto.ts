@@ -306,9 +306,10 @@ export class RouteCollectionPreviewItemDto {
       'client builds the detail link (`/community/trips/:id` or ' +
       '`/community/rides/:id`). `null` when the route is not openable by a ' +
       'non-owner, so the client must not link it: a missing/deleted trip or ' +
-      'ride, or a ride that is not publicly shared (its detail page 404s a ' +
-      'non-owner). A trip is openable whenever the collection owner can see ' +
-      'it (collection-scoped access).',
+      'ride, or a ride that is not publicly shared or whose owner keeps a ' +
+      'private profile (its detail page 404s a non-owner in either case). A ' +
+      'trip is openable whenever the collection owner can see it ' +
+      '(collection-scoped access).',
   })
   target_id!: string | null;
 

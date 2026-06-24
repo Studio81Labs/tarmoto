@@ -1515,6 +1515,33 @@ describe('TripsService', () => {
       expect(privacy.loadPrivateUserIds).toHaveBeenCalledWith([OWNER_ID]);
     });
 
+    it('masks owner id + name when the trip owner is soft-deleted, even with a public profile', async () => {
+      // A live collaborator can expose a trip whose OWNER is mid-deletion; the
+      // exposure join only proves the collection owner is live, so the trip
+      // owner's soft-delete is checked here. Privacy stays empty (public).
+      mockGetDetailReturns(
+        makeOwnedTrip({
+          members: [
+            {
+              id: 'm-1',
+              trip_id: TRIP_ID,
+              user_id: OWNER_ID,
+              role: 'owner',
+              joined_at: NOW,
+              user: { display_name: 'Adam', deleted_at: NOW },
+            } as unknown as TripMember,
+          ],
+        }),
+      );
+      mockExposed(true);
+
+      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
+
+      expect(result.owner_id).toBeNull();
+      expect(result.owner_name).toBeNull();
+      expect(result.id).toBe(TRIP_ID);
+    });
+
     it('404s when the trip is in no discoverable collection and the viewer is not a member', async () => {
       mockGetDetailReturns(makeOwnedTrip());
       mockExposed(false);

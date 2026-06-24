@@ -1085,18 +1085,28 @@ export class TripsService {
       }
     }
 
-    // Mask the owner's identity for a non-member when the owner keeps a private
-    // profile, mirroring the collection API (#279 / #501). Otherwise the
-    // discover→trip link would recover a rider identity the collection
-    // deliberately hid. Members (incl. the owner) always see it.
-    const ownerIsPrivate = isMember
-      ? false
-      : (await this.privacy.loadPrivateUserIds([trip.owner_id])).has(
-          trip.owner_id,
-        );
+    // Mask the owner's identity when it must not be surfaced:
+    //  - the owner's account is soft-deleted (deletion grace window) — masked
+    //    for everyone, matching the public DTO contract and how the rides/
+    //    collection read paths hide deleted owners. The exposure join only
+    //    proves the COLLECTION owner is live; a collaborator can expose a trip
+    //    whose OWNER is mid-deletion, so we check the trip owner here.
+    //  - the owner keeps a private profile and the viewer is not a member —
+    //    mirroring the collection API (#279 / #501) so the discover→trip link
+    //    can't recover an identity the collection deliberately hid.
+    const ownerMember = (trip.members ?? []).find(
+      (m) => m.user_id === trip.owner_id,
+    );
+    const ownerIsDeleted = ownerMember?.user?.deleted_at != null;
+    const ownerIsPrivate =
+      !isMember &&
+      (await this.privacy.loadPrivateUserIds([trip.owner_id])).has(
+        trip.owner_id,
+      );
+    const maskOwner = ownerIsDeleted || ownerIsPrivate;
 
     const aggById = await this.computeTripAggregates([trip.id]);
-    return this.toPublicDetail(trip, aggById.get(trip.id), ownerIsPrivate);
+    return this.toPublicDetail(trip, aggById.get(trip.id), maskOwner);
   }
 
   async join(

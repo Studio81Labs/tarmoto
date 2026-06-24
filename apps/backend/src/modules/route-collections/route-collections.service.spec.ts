@@ -1026,6 +1026,55 @@ describe('RouteCollectionsService', () => {
       expect(result.routes[0]?.lines).toHaveLength(1);
     });
 
+    it('leaves target_id null for a public ride when the owner keeps a private profile (non-clickable)', async () => {
+      const items = [
+        {
+          id: 'item-ride-pub',
+          collection_id: collectionId,
+          trip_id: null,
+          ride_id: rideA,
+          position: 0,
+          created_at: new Date(),
+        },
+      ];
+
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
+      // Even a publicly-shared ride must not be linked when its owner is
+      // private — `RidesService.getDetail` 404s every non-owner in that case.
+      privateUserIds = new Set([ownerId]);
+      queryMock
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            geometry: lineStringJson([
+              [14, 50],
+              [14.1, 50.1],
+            ]),
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            name: 'Public Ride',
+            status: 'completed',
+            distance_km: 30,
+            avg_road_quality: 3.0,
+            is_public: true,
+          },
+        ]);
+
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result.routes[0]).toMatchObject({
+        item_id: 'item-ride-pub',
+        kind: 'ride',
+        target_id: null,
+      });
+    });
+
     it('returns empty lines for items whose underlying trip/ride has been deleted', async () => {
       const items = [
         {
