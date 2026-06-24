@@ -102,7 +102,10 @@ function RoadMapPageInner() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
-  const [sharing, setSharing] = useState(false);
+  // In-flight guard (a ref, not state) so the button looks identical to the
+  // ride-detail / community Share — no loading/label multistate — while still
+  // ignoring a double-click that would POST a second map_shares row.
+  const sharingRef = useRef(false);
   // Track the auto-reset timer so back-to-back share clicks don't let a
   // stale timer stomp over the next call's `{ kind: "creating" }` state
   // (which would re-enable the button mid-flight).
@@ -233,7 +236,7 @@ function RoadMapPageInner() {
     });
   }, [requestUserLocation]);
   const handleShare = useCallback(async () => {
-    if (!stats) return;
+    if (!stats || sharingRef.current) return;
     // Capability check first: if neither Web Share nor the async Clipboard
     // API is available, the user has no way to retrieve the generated URL.
     // Bail BEFORE persisting so we don't orphan rows in map_shares for
@@ -249,7 +252,7 @@ function RoadMapPageInner() {
       );
       return;
     }
-    setSharing(true);
+    sharingRef.current = true;
     let createdShareId: string | null = null;
     try {
       const snapshot = buildMapShareSnapshot({
@@ -313,7 +316,7 @@ function RoadMapPageInner() {
         );
       }
     } finally {
-      setSharing(false);
+      sharingRef.current = false;
     }
   }, [stats, period, filteredRidden, center.lat, center.lng]);
   if (loading) {
@@ -371,7 +374,6 @@ function RoadMapPageInner() {
           <Button
             variant="secondary"
             uppercase
-            loading={sharing}
             onClick={handleShare}
             leftIcon={<Share2 size={14} />}
           >
