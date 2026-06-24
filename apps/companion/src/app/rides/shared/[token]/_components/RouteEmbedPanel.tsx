@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Code2, Copy, MousePointerClick, Eye } from "lucide-react";
+import { Card, Stamp } from "@tarmoto/ui";
 import {
   buildRideIframeCode,
   formatRideEmbedStat,
@@ -59,44 +60,44 @@ export function RouteEmbedPanel({
     }
   }
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-            <Code2 size={14} />
-            {t("Embed route ")}
+    <Card className="p-[26px]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-transparent px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.2px] text-accent">
+            <Code2 size={13} />
+            {t("Embed route")}
           </div>
-          <h2 className="mt-3 text-lg font-semibold">
-            {t("Share this ride as a route widget ")}
+          <h2 className="mt-3 text-[22px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("Share this ride as a route widget")}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+          <p className="mt-1.5 max-w-[560px] text-[13.5px] leading-[1.55] text-fg-dim">
             {t(
-              "Publish a branded ride preview with route stats, Tarmoto attribution, and a link back to the full shared ride page. ",
+              "Publish a branded ride preview with route stats, Tarmoto attribution, and a link back to the full shared ride page.",
             )}
           </p>
         </div>
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-accent/90"
+          className="inline-flex flex-shrink-0 items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-accent/90"
         >
-          {copyState === "copied" ? <Check size={16} /> : <Copy size={16} />}
-          {t("Copy embed code ")}
+          {copyState === "copied" ? <Check size={15} /> : <Copy size={15} />}
+          {t("Copy embed code")}
         </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
-          <Eye size={14} className="text-accent" />
+      <div className="mt-[18px] flex flex-wrap gap-2">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
+          <Eye size={13} className="text-accent" />
           {formatRideEmbedStat(views, "view")}
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
-          <MousePointerClick size={14} className="text-accent" />
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
+          <MousePointerClick size={13} className="text-accent" />
           {formatRideEmbedStat(clicks, "click")}
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-[18px] grid grid-cols-1 gap-3 sm:grid-cols-2">
         {VARIANTS.map((option) => {
           const active = option.value === variant;
           return (
@@ -105,14 +106,20 @@ export function RouteEmbedPanel({
               type="button"
               aria-label={option.label}
               onClick={() => setVariant(option.value)}
-              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+              className={`rounded-xl border-[1.5px] px-4 py-3.5 text-left transition ${
                 active
-                  ? "border-accent bg-accent/10 text-white"
-                  : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                  ? "border-accent bg-accent/[0.06]"
+                  : "border-line-strong bg-cream hover:border-fg-mute"
               }`}
             >
-              <span className="block font-medium">{option.label}</span>
-              <span className="mt-0.5 block text-xs text-slate-400">
+              <span
+                className={`block text-sm font-extrabold ${
+                  active ? "text-accent" : "text-ink"
+                }`}
+              >
+                {option.label}
+              </span>
+              <span className="mt-0.5 block text-xs leading-[1.45] text-fg-dim">
                 {option.description}
               </span>
             </button>
@@ -120,35 +127,30 @@ export function RouteEmbedPanel({
         })}
       </div>
 
-      <div className="mt-4">
-        <label
-          htmlFor="ride-embed-code"
-          className="mb-2 block text-sm font-medium text-slate-300"
-        >
-          {t("Embed code ")}
-        </label>
-        <textarea
-          id="ride-embed-code"
-          aria-label={t("Embed code")}
-          readOnly
-          value={snippet}
-          rows={7}
-          className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs text-slate-200 focus:outline-none"
-        />
-      </div>
+      <Stamp as="div" className="mb-2 mt-5">
+        {t("Embed code")}
+      </Stamp>
+      <textarea
+        id="ride-embed-code"
+        aria-label={t("Embed code")}
+        readOnly
+        value={snippet}
+        rows={7}
+        className="w-full rounded-xl border border-ink bg-ink px-5 py-[18px] font-mono text-[12.5px] leading-[1.65] text-cream/90 focus:outline-none"
+      />
 
       {copyState === "copied" && (
-        <p className="mt-3 text-sm text-emerald-300">
+        <p className="mt-3 text-sm font-semibold text-accent">
           {t("Embed code copied")}
         </p>
       )}
       {copyState === "error" && (
-        <p className="mt-3 text-sm text-rose-300">
+        <p className="mt-3 text-sm text-red-500">
           {t(
             "Could not copy automatically. Select the code and copy it manually. ",
           )}
         </p>
       )}
-    </section>
+    </Card>
   );
 }
