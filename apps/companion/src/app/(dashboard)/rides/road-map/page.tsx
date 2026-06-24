@@ -28,8 +28,8 @@ import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import type { UnitSystem } from "@tarmoto/shared";
-import { explorationApi, mapSharesApi } from "@/lib/api";
-import { toast } from "@/lib/toast";
+import { explorationApi } from "@/lib/api";
+import { shareRoadMap } from "@/lib/road-map-share";
 import type {
   ExplorationStats,
   RiddenSegmentMeta,
@@ -236,24 +236,11 @@ function RoadMapPageInner() {
     });
   }, [requestUserLocation]);
   const handleShare = useCallback(async () => {
+    // Ref guard (not state) ignores a quick double-click without changing the
+    // button's appearance — feedback is the toast inside `shareRoadMap`, so the
+    // button stays visually identical to the community / ride-detail Share.
     if (!stats || sharingRef.current) return;
-    // Capability check first: if neither Web Share nor the async Clipboard
-    // API is available, the user has no way to retrieve the generated URL.
-    // Bail BEFORE persisting so we don't orphan rows in map_shares for
-    // browsers we can't deliver to.
-    const canWebShare =
-      typeof navigator !== "undefined" && typeof navigator.share === "function";
-    const canClipboard =
-      typeof navigator !== "undefined" &&
-      Boolean(navigator.clipboard?.writeText);
-    if (!canWebShare && !canClipboard) {
-      toast.error(
-        "Your browser doesn't support sharing or clipboard access — try a different browser.",
-      );
-      return;
-    }
     sharingRef.current = true;
-    let createdShareId: string | null = null;
     try {
       const snapshot = buildMapShareSnapshot({
         stats,
@@ -265,56 +252,12 @@ function RoadMapPageInner() {
           zoom: INITIAL_MAP_ZOOM,
         },
       });
-      const title = "My Tarmoto road map";
-      const { data } = await mapSharesApi.create({
-        title,
-        // The DTO accepts an opaque JSON object — narrow the typed snapshot
-        // shape to the API contract here so the rest of the function keeps
-        // its real types.
-        snapshot: snapshot as unknown as Record<string, unknown>,
-      });
-      createdShareId = data.id;
-      const fullUrl =
-        typeof window !== "undefined"
-          ? new URL(data.share_url, window.location.origin).toString()
-          : data.share_url;
-      const shareData: ShareData = {
-        title,
-        text: "Check out the roads I've ridden on Tarmoto.",
-        url: fullUrl,
-      };
-      if (
-        canWebShare &&
-        (!navigator.canShare || navigator.canShare(shareData))
-      ) {
-        // The native share sheet is its own confirmation — no toast needed.
-        await navigator.share(shareData);
-      } else if (canClipboard) {
-        await navigator.clipboard.writeText(fullUrl);
-        toast.success(t("Link copied"));
-      } else {
-        // Defensive: the capability check above guarantees one path is
-        // available, but if `canShare` rejects the payload we still need a
-        // fallback rather than silently doing nothing.
-        throw new Error("Sharing is not supported");
-      }
-      // Delivery succeeded — clear the rollback marker so the catch branch
-      // below doesn't revoke a share the user actually used.
-      createdShareId = null;
-    } catch (err) {
-      // Roll back the share row whenever post-create delivery fails
-      // (cancelled Web Share, denied clipboard write, etc.) so repeated
-      // cancellations don't accumulate orphaned `map_shares` rows.
-      if (createdShareId) {
-        void mapSharesApi.revoke(createdShareId).catch(() => undefined);
-      }
-      // A user-cancelled Web Share rejects with AbortError on iOS Safari —
-      // the user opted out, so no error toast.
-      if (!(err instanceof Error && err.name === "AbortError")) {
-        toast.error(
-          err instanceof Error ? err.message : "Could not generate share link",
-        );
-      }
+      // The DTO accepts an opaque JSON object — narrow the typed snapshot shape
+      // to the API contract at the boundary.
+      await shareRoadMap(
+        "My Tarmoto road map",
+        snapshot as unknown as Record<string, unknown>,
+      );
     } finally {
       sharingRef.current = false;
     }
