@@ -484,6 +484,11 @@ export class RouteCollectionsService {
       status: string;
       distance_km: number | null;
       avg_road_quality: number | null;
+      // Whether the ride has a public `shared_rides` row. Drives whether the
+      // client may deep-link the row: `/community/rides/:id` 404s a non-owner
+      // unless the ride is publicly shared, so a non-public ride stays
+      // non-clickable instead of linking to a dead end.
+      is_public: boolean;
     };
 
     // Batch each kind into a single SQL round-trip. Ordering at this layer
@@ -558,10 +563,12 @@ export class RouteCollectionsService {
       rideIds.length === 0
         ? Promise.resolve<RideMetaRow[]>([])
         : this.dataSource.query<RideMetaRow[]>(
-            `SELECT id, name, status, distance_km, avg_road_quality
-             FROM rides
-             WHERE id = ANY($1::uuid[])
-               AND user_id = $2`,
+            `SELECT r.id, r.name, r.status, r.distance_km, r.avg_road_quality,
+                    COALESCE(sr.is_public, false) AS is_public
+             FROM rides r
+             LEFT JOIN shared_rides sr ON sr.ride_id = r.id
+             WHERE r.id = ANY($1::uuid[])
+               AND r.user_id = $2`,
             [rideIds, ownerId],
           ),
     ]);
@@ -603,13 +610,20 @@ export class RouteCollectionsService {
         item_id: item.id,
         position: item.position,
         kind: isRide ? 'ride' : 'trip',
-        // Underlying trip/ride id so the client can deep-link to the detail
-        // view. Stays in sync with `lines`/metadata: a deleted item keeps its
-        // row (position preserved) but its trip/ride id is whatever the item
-        // still references — `null` is impossible here since the item row
-        // always carries exactly one of trip_id/ride_id (DB CHECK), so a
-        // present id with empty lines just means the target was deleted.
-        target_id: isRide ? item.ride_id : item.trip_id,
+        // The id a NON-owner can actually open this route at — or `null` when
+        // they can't, so the client never links to a dead end:
+        //  - trip: linkable when the owner is a member (`tripMeta` present);
+        //    `/community/trips/:id` grants the same collection-scoped access.
+        //  - ride: linkable only when publicly shared (`is_public`);
+        //    `/community/rides/:id` 404s a non-owner for a private ride.
+        // A missing/deleted route (no meta) is `null` → non-clickable.
+        target_id: isRide
+          ? rideMeta?.is_public
+            ? item.ride_id
+            : null
+          : tripMeta
+            ? item.trip_id
+            : null,
         lines,
         title: rideMeta ? rideMeta.name : (tripMeta?.title ?? null),
         // A ride is a single recorded day — `num_days` stays null so the

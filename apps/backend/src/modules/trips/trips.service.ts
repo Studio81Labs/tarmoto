@@ -1061,10 +1061,19 @@ export class TripsService {
       const exposed = await this.collectionItemRepo
         .createQueryBuilder('item')
         .innerJoin('item.collection', 'c')
+        // The collection OWNER must be a member of the trip (addItem doesn't
+        // verify trip access) AND their account must be live — the collection
+        // read paths 404 a soft-deleted owner's collections during the deletion
+        // grace window, so a stale link must not keep exposing the trip.
         .innerJoin(
           TripMember,
           'tm',
           'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
+        )
+        .innerJoin(
+          User,
+          'owner',
+          'owner.id = c.owner_id AND owner.deleted_at IS NULL',
         )
         .where('item.trip_id = :tripId', { tripId })
         .andWhere('c.visibility IN (:...visibilities)', {

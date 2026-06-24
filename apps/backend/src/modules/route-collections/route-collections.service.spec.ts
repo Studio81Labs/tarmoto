@@ -888,7 +888,7 @@ describe('RouteCollectionsService', () => {
             quality_avg: null,
           },
         ])
-        // Ride metadata.
+        // Ride metadata. `is_public: true` → the ride is deep-linkable.
         .mockResolvedValueOnce([
           {
             id: rideA,
@@ -896,6 +896,7 @@ describe('RouteCollectionsService', () => {
             status: 'completed',
             distance_km: 45,
             avg_road_quality: 3.5,
+            is_public: true,
           },
         ]);
 
@@ -971,6 +972,58 @@ describe('RouteCollectionsService', () => {
           (c[1] as unknown[]).includes(ownerId),
         ),
       ).toBe(true);
+    });
+
+    it('leaves target_id null for a ride that is not publicly shared (non-clickable)', async () => {
+      const items = [
+        {
+          id: 'item-ride-private',
+          collection_id: collectionId,
+          trip_id: null,
+          ride_id: rideA,
+          position: 0,
+          created_at: new Date(),
+        },
+      ];
+
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
+      // Ride geometry, then ride metadata with `is_public: false`.
+      queryMock
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            geometry: lineStringJson([
+              [14, 50],
+              [14.1, 50.1],
+            ]),
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            name: 'Private Ride',
+            status: 'completed',
+            distance_km: 30,
+            avg_road_quality: 3.0,
+            is_public: false,
+          },
+        ]);
+
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result.routes).toHaveLength(1);
+      // The row still renders (title + geometry) but must not be deep-linked —
+      // `/community/rides/:id` would 404 a non-owner for a non-public ride.
+      expect(result.routes[0]).toMatchObject({
+        item_id: 'item-ride-private',
+        kind: 'ride',
+        title: 'Private Ride',
+        target_id: null,
+      });
+      expect(result.routes[0]?.lines).toHaveLength(1);
     });
 
     it('returns empty lines for items whose underlying trip/ride has been deleted', async () => {

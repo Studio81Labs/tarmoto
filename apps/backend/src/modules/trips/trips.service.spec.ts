@@ -1473,11 +1473,18 @@ describe('TripsService', () => {
         expect.objectContaining({ visibilities: ['public', 'unlisted'] }),
       );
       // ...AND requires the collection owner to be a member of the trip, so an
-      // arbitrary private trip_id parked in a public collection can't leak.
+      // arbitrary private trip_id parked in a public collection can't leak...
       expect(itemQb.innerJoin).toHaveBeenCalledWith(
         TripMember,
         'tm',
         'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
+      );
+      // ...AND that the collection owner's account is live (a soft-deleted
+      // owner's collections 404, so a stale link must stop exposing the trip).
+      expect(itemQb.innerJoin).toHaveBeenCalledWith(
+        User,
+        'owner',
+        'owner.id = c.owner_id AND owner.deleted_at IS NULL',
       );
     });
 

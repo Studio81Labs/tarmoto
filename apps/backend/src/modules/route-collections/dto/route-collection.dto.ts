@@ -302,12 +302,13 @@ export class RouteCollectionPreviewItemDto {
   @ApiProperty({
     nullable: true,
     description:
-      'UUID of the underlying entity this item points at — a planner trip ' +
-      'when `kind` is `trip`, a recorded ride when `kind` is `ride`. Combined ' +
-      'with `kind` the client builds the detail link (`/community/trips/:id` ' +
-      'or `/community/rides/:id`). Always set (each item references exactly ' +
-      'one of trip/ride by DB CHECK); may point at a since-deleted entity, in ' +
-      'which case `lines` is empty and the detail link 404s gracefully.',
+      'UUID a NON-owner can open this route at — combined with `kind` the ' +
+      'client builds the detail link (`/community/trips/:id` or ' +
+      '`/community/rides/:id`). `null` when the route is not openable by a ' +
+      'non-owner, so the client must not link it: a missing/deleted trip or ' +
+      'ride, or a ride that is not publicly shared (its detail page 404s a ' +
+      'non-owner). A trip is openable whenever the collection owner can see ' +
+      'it (collection-scoped access).',
   })
   target_id!: string | null;
 
