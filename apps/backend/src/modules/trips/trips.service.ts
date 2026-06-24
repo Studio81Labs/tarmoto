@@ -22,6 +22,7 @@ import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
@@ -80,6 +81,7 @@ export class TripsService {
     private readonly tripShares: TripSharesService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -1048,9 +1050,22 @@ export class TripsService {
       viewerId != null &&
       (trip.members ?? []).some((m) => m.user_id === viewerId);
     if (!isMember) {
+      // The trip must be an item in a discoverable (public/unlisted) collection
+      // AND the COLLECTION OWNER must be a member of that trip. `addItem` only
+      // checks collection ownership + UUID shape — it does NOT verify the owner
+      // has access to the trip_id they stored — so without this membership
+      // predicate a rider could park an arbitrary private trip_id in their own
+      // public collection and read its full geometry/waypoints here. The
+      // preview builder enforces the same trip_members scoping for exactly this
+      // reason; we mirror it.
       const exposed = await this.collectionItemRepo
         .createQueryBuilder('item')
         .innerJoin('item.collection', 'c')
+        .innerJoin(
+          TripMember,
+          'tm',
+          'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
+        )
         .where('item.trip_id = :tripId', { tripId })
         .andWhere('c.visibility IN (:...visibilities)', {
           visibilities: ['public', 'unlisted'],
@@ -1061,8 +1076,18 @@ export class TripsService {
       }
     }
 
+    // Mask the owner's identity for a non-member when the owner keeps a private
+    // profile, mirroring the collection API (#279 / #501). Otherwise the
+    // discover→trip link would recover a rider identity the collection
+    // deliberately hid. Members (incl. the owner) always see it.
+    const ownerIsPrivate = isMember
+      ? false
+      : (await this.privacy.loadPrivateUserIds([trip.owner_id])).has(
+          trip.owner_id,
+        );
+
     const aggById = await this.computeTripAggregates([trip.id]);
-    return this.toPublicDetail(trip, aggById.get(trip.id));
+    return this.toPublicDetail(trip, aggById.get(trip.id), ownerIsPrivate);
   }
 
   async join(
@@ -1213,33 +1238,38 @@ export class TripsService {
   /**
    * Map a hydrated trip to the masked, read-only {@link PublicTripDetailDto}.
    * Derives the owner's display name from the loaded roster but drops the
-   * roster and invite code from the response (see the DTO for why).
+   * roster and invite code from the response (see the DTO for why). When
+   * `ownerIsPrivate` is set, the owner id + name are masked to `null`.
    */
   private toPublicDetail(
     trip: Trip,
-    agg?: {
-      distance_km: number | null;
-      quality_avg: number | null;
-      passes_count: number | null;
-    },
+    agg:
+      | {
+          distance_km: number | null;
+          quality_avg: number | null;
+          passes_count: number | null;
+        }
+      | undefined,
+    ownerIsPrivate: boolean,
   ): PublicTripDetailDto {
     // Reuse the owner mapper for the day/waypoint mapping, then copy fields
     // into the public shape with an explicit ALLOW-LIST. An allow-list (rather
     // than spread-and-delete) means a sensitive field added to TripDetailDto
     // later can't silently leak through this non-member surface — it simply
-    // won't be carried over until someone consciously adds it here.
+    // won't be carried over until someone consciously adds it here. (Note
+    // `folder_id` is intentionally NOT carried over — it's the owner's private
+    // filing folder.)
     const detail = this.toDetail(trip, agg);
     const owner = detail.members.find((m) => m.role === 'owner');
     return {
       id: detail.id,
-      owner_id: detail.owner_id,
-      owner_name: owner?.display_name ?? null,
+      owner_id: ownerIsPrivate ? null : detail.owner_id,
+      owner_name: ownerIsPrivate ? null : (owner?.display_name ?? null),
       title: detail.title,
       region: detail.region,
       num_days: detail.num_days,
       status: detail.status,
       member_count: detail.member_count,
-      folder_id: detail.folder_id,
       created_at: detail.created_at,
       distance_km: detail.distance_km,
       quality_avg: detail.quality_avg,

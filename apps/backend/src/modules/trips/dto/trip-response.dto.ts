@@ -216,25 +216,68 @@ export class TripDetailDto extends TripSummaryDto {
 /**
  * Read-only trip detail served to a NON-member through the community surface
  * (`GET /community/trips/:id`), used when a trip is exposed via a discoverable
- * (public/unlisted) collection. Deliberately a sibling of {@link TripDetailDto},
- * NOT a subclass, so the sensitive owner-only fields can never leak by
- * inheritance:
- *  - `invite_code` is omitted — it is the join secret; exposing it would let any
- *    viewer silently become a trip member.
- *  - the `members[]` roster is omitted — non-members get the aggregate
- *    `member_count` and the owner's display name only, not rider identities.
+ * (public/unlisted) collection. Deliberately a STANDALONE class (not a subclass
+ * of {@link TripSummaryDto}/{@link TripDetailDto}) so sensitive owner-only
+ * fields can never leak by inheritance — only the fields listed here are ever
+ * sent. Notably excluded:
+ *  - `invite_code` — the join secret; exposing it would let any viewer silently
+ *    become a trip member.
+ *  - the `members[]` roster — non-members get the aggregate `member_count` and
+ *    (when permitted) the owner's name only, not rider identities.
+ *  - `folder_id` — the owner's private filing folder.
  *
- * Everything else (route geometry, day breakdown, planning metadata) mirrors
- * the owner view so the read-only page renders the same map + day list.
+ * Owner identity (`owner_id` / `owner_name`) is masked to `null` for a viewer
+ * who is not a trip member when the owner has `profile_visibility = 'private'`,
+ * mirroring how the collection API hides the owner (#279 / #501) — otherwise the
+ * discover→trip link would recover a deliberately-hidden rider identity.
  */
-export class PublicTripDetailDto extends TripSummaryDto {
+export class PublicTripDetailDto {
+  @ApiProperty()
+  id!: string;
+
   @ApiProperty({
     nullable: true,
     description:
-      "Display name of the trip owner. `null` when the owner's account is " +
-      'soft-deleted or otherwise unresolved.',
+      'UUID of the trip owner. `null` when the owner keeps a private profile ' +
+      'and the viewer is not a trip member (masked so the id can’t be ' +
+      'cross-referenced to recover their identity).',
+  })
+  owner_id!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Display name of the trip owner. `null` when masked for a private-profile ' +
+      "owner, or when the owner's account is soft-deleted / unresolved.",
   })
   owner_name!: string | null;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty({ nullable: true })
+  region!: string | null;
+
+  @ApiProperty()
+  num_days!: number;
+
+  @ApiProperty({ enum: TRIP_STATUSES })
+  status!: TripStatus;
+
+  @ApiProperty()
+  member_count!: number;
+
+  @ApiProperty()
+  created_at!: string;
+
+  @ApiProperty({ nullable: true })
+  distance_km!: number | null;
+
+  @ApiProperty({ nullable: true })
+  quality_avg!: number | null;
+
+  @ApiProperty({ nullable: true })
+  passes_count!: number | null;
 
   @ApiProperty()
   daily_km_min!: number;

@@ -23,6 +23,7 @@ import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -166,6 +167,9 @@ describe('TripsService', () => {
   let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
   let email: jest.Mocked<Pick<EmailService, 'sendTripInvite'>>;
   let config: jest.Mocked<Pick<ConfigService, 'get'>>;
+  let privacy: jest.Mocked<
+    Pick<PrivacyPreferencesService, 'loadPrivateUserIds'>
+  >;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -252,6 +256,11 @@ describe('TripsService', () => {
     events = { emitToTrip: jest.fn() };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
     tripShares = { findActiveByToken: jest.fn() };
+    // Default: nobody is private, so owner identity is unmasked unless a test
+    // opts in by returning a Set containing the owner id.
+    privacy = {
+      loadPrivateUserIds: jest.fn().mockResolvedValue(new Set<string>()),
+    };
     email = { sendTripInvite: jest.fn().mockResolvedValue(null) };
     config = {
       get: jest.fn((key: string) =>
@@ -278,6 +287,7 @@ describe('TripsService', () => {
         { provide: TripSharesService, useValue: tripShares },
         { provide: EmailService, useValue: email },
         { provide: ConfigService, useValue: config },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -1450,25 +1460,52 @@ describe('TripsService', () => {
 
       expect(result).not.toHaveProperty('invite_code');
       expect(result).not.toHaveProperty('members');
+      // Owner-private fields that must never reach a non-member surface.
+      expect(result).not.toHaveProperty('folder_id');
       // Owner display name is surfaced from the loaded roster.
       expect(result.owner_name).toBe('Adam');
+      expect(result.owner_id).toBe(OWNER_ID);
       expect(result.member_count).toBe(1);
       expect(result.id).toBe(TRIP_ID);
-      // The exposure check is scoped to public/unlisted collections only.
+      // The exposure check is scoped to public/unlisted collections only...
       expect(itemQb.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('visibility'),
         expect.objectContaining({ visibilities: ['public', 'unlisted'] }),
       );
+      // ...AND requires the collection owner to be a member of the trip, so an
+      // arbitrary private trip_id parked in a public collection can't leak.
+      expect(itemQb.innerJoin).toHaveBeenCalledWith(
+        TripMember,
+        'tm',
+        'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
+      );
     });
 
-    it('allows a member without consulting collection visibility', async () => {
+    it('allows a member without consulting collection visibility or owner privacy', async () => {
       mockGetDetailReturns(makeOwnedTrip());
 
       const result = await service.getPublicDetail(OWNER_ID, TRIP_ID);
 
       expect(result.owner_name).toBe('Adam');
-      // A member short-circuits the collection exposure query entirely.
+      // A member short-circuits the collection exposure query entirely...
       expect(collectionItemRepo.createQueryBuilder).not.toHaveBeenCalled();
+      // ...and never masks the owner (no privacy lookup needed).
+      expect(privacy.loadPrivateUserIds).not.toHaveBeenCalled();
+    });
+
+    it('masks owner id + name for a non-member when the owner keeps a private profile', async () => {
+      mockGetDetailReturns(makeOwnedTrip());
+      mockExposed(true);
+      privacy.loadPrivateUserIds.mockResolvedValueOnce(new Set([OWNER_ID]));
+
+      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
+
+      // Identity is hidden, matching how the collection API masks a private
+      // owner — the rest of the trip (days/geometry) still renders.
+      expect(result.owner_id).toBeNull();
+      expect(result.owner_name).toBeNull();
+      expect(result.id).toBe(TRIP_ID);
+      expect(privacy.loadPrivateUserIds).toHaveBeenCalledWith([OWNER_ID]);
     });
 
     it('404s when the trip is in no discoverable collection and the viewer is not a member', async () => {

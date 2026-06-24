@@ -3948,25 +3948,20 @@ export interface components {
     };
     PublicTripDetailDto: {
       id: string;
-      /** @description US-37 — owner uuid surfaced on the summary so the companion can decide whether to carry the source folder forward when duplicating (folders are private per-user; only the owner of the source can preserve filing without 404-ing the create). */
-      owner_id: string;
+      /** @description UUID of the trip owner. `null` when the owner keeps a private profile and the viewer is not a trip member (masked so the id can’t be cross-referenced to recover their identity). */
+      owner_id: string | null;
+      /** @description Display name of the trip owner. `null` when masked for a private-profile owner, or when the owner's account is soft-deleted / unresolved. */
+      owner_name: string | null;
       title: string;
       region: string | null;
       num_days: number;
       /** @enum {string} */
       status: "draft" | "planned" | "active" | "completed";
       member_count: number;
-      /** @description US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips. */
-      folder_id: string | null;
       created_at: string;
-      /** @description Total planned distance (km) = SUM of the trip days’ `distance_km`. `null` when no day has a recorded distance. */
       distance_km: number | null;
-      /** @description Distance-weighted average road quality (0–5) across the trip days. `null` when no day has a recorded quality. */
       quality_avg: number | null;
-      /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
       passes_count: number | null;
-      /** @description Display name of the trip owner. `null` when the owner's account is soft-deleted or otherwise unresolved. */
-      owner_name: string | null;
       daily_km_min: number;
       daily_km_max: number;
       min_quality: number;
