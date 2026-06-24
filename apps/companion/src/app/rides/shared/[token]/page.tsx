@@ -117,9 +117,9 @@ export default async function SharedRidePage({
 
         {/* Route preview */}
         <Card className="mb-6 p-6">
-          <div className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          <h2 className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
             {t("Route preview")}
-          </div>
+          </h2>
           <p className="mt-1 text-[13.5px] text-fg-dim">
             {t("Snapshot of the shared route and its current ride metrics.")}
           </p>
