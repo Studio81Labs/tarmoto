@@ -62,16 +62,19 @@
 
 ## WEB-EPIC 4: Community Hub (P2)
 
-| #   | Scenario          | Steps                                            | Expected Result                                    |
-| --- | ----------------- | ------------------------------------------------ | -------------------------------------------------- |
-| T37 | Community feed    | Navigate to `/community`                         | Feed of shared routes/rides, filterable            |
-| T38 | Rider profile     | Click rider > `/community/[id]`                  | Profile with rides, roads discovered, badges       |
-| T39 | Collections list  | Navigate to `/community/collections`             | Browse curated collections (empty state if none)   |
-| T40 | Collection detail | Click collection > `/community/collections/[id]` | Collection with route previews, follow button      |
-| T41 | Shared collection | Open `/community/collections/shared/[slug]`      | Public view, no auth required                      |
-| T42 | Create collection | Build route, Save as Collection                  | Collection appears in profile and community feed   |
-| T43 | Delete collection | Delete from collection detail                    | App-styled confirmation dialog, collection removed |
-| T44 | Gamification      | Navigate to `/gamification`                      | Badges, challenges, leaderboard, progress          |
+| #    | Scenario                   | Steps                                                                                       | Expected Result                                                                                                                                             |
+| ---- | -------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T37  | Community feed             | Navigate to `/community`                                                                    | Feed of shared routes/rides, filterable                                                                                                                     |
+| T38  | Rider profile              | Click rider > `/community/[id]`                                                             | Profile with rides, roads discovered, badges                                                                                                                |
+| T39  | Collections list           | Navigate to `/community/collections`                                                        | Browse curated collections (empty state if none)                                                                                                            |
+| T40  | Collection detail          | Click collection > `/community/collections/[id]`                                            | Collection with route previews, follow button                                                                                                               |
+| T41  | Shared collection          | Open `/community/collections/shared/[slug]`                                                 | Public view, no auth required                                                                                                                               |
+| T42  | Create collection          | Build route, Save as Collection                                                             | Collection appears in profile and community feed                                                                                                            |
+| T43  | Delete collection          | Delete from collection detail                                                               | App-styled confirmation dialog, collection removed                                                                                                          |
+| T44  | Gamification               | Navigate to `/gamification`                                                                 | Badges, challenges, leaderboard, progress                                                                                                                   |
+| T44a | Discover collection links  | On `/community/collections/discover/[slug]`, click the owner chip and a ride/trip route row | Owner opens `/community/[id]`; a ride opens `/community/rides/[id]`, a trip opens `/community/trips/[id]`                                                   |
+| T44b | Community trip detail      | Open a trip route from a discoverable collection                                            | Read-only trip view (map + day itinerary); invite code and member roster are NOT shown; 404 page when the trip is not exposed via a discoverable collection |
+| T44c | Regional leaderboard links | On `/achievements`, click a rider row in "Regional leaderboards"                            | Opens that rider's `/community/[id]` profile; avatars match the community feed's initials avatar                                                            |
 
 ## WEB-EPIC 5: Account & Settings (P1)
 

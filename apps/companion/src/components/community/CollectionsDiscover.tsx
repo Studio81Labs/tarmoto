@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Mono, Stamp } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   fetchCollectionMosaic,
   fetchDiscoverCollections,
@@ -80,7 +81,6 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
     };
   }, [collection.slug]);
 
-  const initial = collection.owner_name?.trim().charAt(0).toUpperCase() || "?";
   // Six mosaic cells; fill with route previews where available.
   const cells = Array.from({ length: 6 }, (_, i) => lines[i] ?? null);
 
@@ -118,9 +118,11 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
               {collection.title}
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-dim">
-              <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#E05A3C] text-[9px] font-extrabold text-ink">
-                {initial}
-              </span>
+              <UserAvatar
+                name={collection.owner_name ?? ""}
+                size={18}
+                fontSize={9}
+              />
               <span>{collection.owner_name ?? t("Anonymous")}</span>
             </div>
           </div>

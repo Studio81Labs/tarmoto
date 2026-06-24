@@ -298,6 +298,25 @@ export const tripsApi = {
     ),
 };
 
+// ── Community trip endpoints (read-only, non-member view) ──
+// Mirrors the way community ride detail reuses the ride read path. Backend
+// gates visibility to trips exposed via a discoverable collection and masks
+// the invite code + member roster (see PublicTripDetailDto).
+export type PublicTripDetailResponse = JsonResponse<
+  "/api/v1/community/trips/{tripId}",
+  "get",
+  200
+>;
+
+export const communityTripsApi = {
+  getPublic: (tripId: string) =>
+    openApiData<PublicTripDetailResponse>(
+      api.GET("/api/v1/community/trips/{tripId}", {
+        params: { path: { tripId } },
+      }),
+    ),
+};
+
 // ── Trip folders (US-37: rider-owned folders that sync across devices) ──
 
 export interface TripFolderResponse {
@@ -641,6 +660,13 @@ export interface RouteCollectionPreviewItem {
   item_id: string;
   position: number;
   kind: "trip" | "ride";
+  /**
+   * UUID of the underlying trip (kind="trip") or ride (kind="ride"). Combined
+   * with `kind` the client deep-links to the detail view (`/community/trips/:id`
+   * or `/community/rides/:id`). Always set; may point at a since-deleted entity,
+   * in which case `lines` is empty and the link 404s gracefully.
+   */
+  target_id: string | null;
   /** Each entry is a polyline as an array of [lng, lat] pairs (GeoJSON LineString). */
   lines: number[][][];
   // Per-item summary fields so a non-owner viewer — the public shared page and

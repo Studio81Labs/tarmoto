@@ -10,13 +10,16 @@ import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { AccountModule } from '../account/account.module.js';
 import { CommuteModule } from '../commute/index.js';
 import { EmailModule } from '../email/email.module.js';
 import { EventsModule } from '../events/events.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripSharesModule } from '../trip-shares/trip-shares.module.js';
 import { TripsController } from './trips.controller.js';
+import { CommunityTripsController } from './community-trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { TripCollabController } from './trip-collab.controller.js';
@@ -34,12 +37,16 @@ import { TripCollabService } from './trip-collab.service.js';
       TripSuggestionVote,
       TripMessage,
       RoadSegment,
+      RouteCollectionItem,
       User,
     ]),
     ConfigModule,
     EmailModule,
     EventsModule,
     TripActivityModule,
+    // AccountModule re-exports PrivacyPreferencesService so the community trip
+    // read can mask a private-profile owner's identity (#279 / #501).
+    AccountModule,
     // TripSharesModule re-exports TripSharesService so `POST /trips/
     // from-share` (#357) can read the snapshot stored under a share
     // token without bumping its public view counter.
@@ -49,7 +56,11 @@ import { TripCollabService } from './trip-collab.service.js';
     // re-registering the provider here.
     CommuteModule,
   ],
-  controllers: [TripsController, TripCollabController],
+  controllers: [
+    TripsController,
+    CommunityTripsController,
+    TripCollabController,
+  ],
   providers: [TripsService, TripGeneratorService, TripCollabService],
   exports: [TripsService, TripGeneratorService, TripCollabService],
 })

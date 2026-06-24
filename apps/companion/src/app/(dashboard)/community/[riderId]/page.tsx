@@ -21,12 +21,12 @@ import {
   followRider,
   formatCount,
   formatJoinedLabel,
-  initialsFromName,
   RiderProfileNotFoundError,
   unfollowRider,
   type PublicProfile,
   type UserBadge,
 } from "@/lib/rider-profile";
+import { UserAvatar } from "@/components/UserAvatar";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
 
 // Medal colours for earned-badge tiers. Keyed by the lowercase tier the
@@ -218,23 +218,17 @@ function Header({
   followError,
   onToggleFollow,
 }: HeaderProps) {
-  const initials = initialsFromName(profile.display_name);
   return (
     <div className="mb-4 rounded-[14px] border border-line bg-cream p-5 md:p-[26px]">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
         <div className="shrink-0">
-          {profile.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatar_url}
-              alt={profile.display_name}
-              className="h-[88px] w-[88px] rounded-full border-2 border-ink object-cover"
-            />
-          ) : (
-            <div className="flex h-[88px] w-[88px] items-center justify-center rounded-full border-2 border-ink bg-accent text-[32px] font-extrabold text-ink">
-              {initials}
-            </div>
-          )}
+          <UserAvatar
+            avatarUrl={profile.avatar_url}
+            name={profile.display_name}
+            size={88}
+            fontSize={32}
+            className="border-2 border-ink"
+          />
         </div>
 
         <div className="min-w-0 flex-1">

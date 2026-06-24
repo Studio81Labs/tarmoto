@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Heart, Plus } from "lucide-react";
 import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
+import { UserAvatar } from "@/components/UserAvatar";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import {
   formatKmValue,
@@ -24,7 +25,6 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const router = useRouter();
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);
   const tier = scoreToQualityTier(ride.avg_road_quality);
-  const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
   const title = ride.name?.trim() || formatShortDate(ride.started_at);
   // Open the ride detail under the community route so the Community nav item
   // stays active and the back link returns to the feed. It renders the same
@@ -118,9 +118,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           href={`/community/${encodeURIComponent(ride.rider_id)}`}
           className="mt-1.5 flex items-center gap-2 text-xs text-fg-dim transition hover:text-ink"
         >
-          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-[#E05A3C] text-[11px] font-extrabold text-ink">
-            {riderInitial}
-          </span>
+          <UserAvatar name={ride.rider_name} size={22} fontSize={11} />
           <span className="font-semibold text-ink">{ride.rider_name}</span>
           <span className="text-fg-mute">·</span>
           <span>{formatRideType(ride.ride_type)}</span>

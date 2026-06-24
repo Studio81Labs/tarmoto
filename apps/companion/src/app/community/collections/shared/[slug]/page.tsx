@@ -14,6 +14,7 @@ import {
   fetchSharedCollectionPreview,
 } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import { UserAvatar } from "@/components/UserAvatar";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { formatRelativeTime } from "@/lib/utils";
@@ -48,17 +49,6 @@ export async function generateMetadata({
   };
 }
 
-/** Two-letter initials for the owner avatar. Empty string → no avatar. */
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-}
-
 export default async function SharedCollectionPage({
   params,
 }: {
@@ -80,7 +70,6 @@ export default async function SharedCollectionPage({
     ? [...preview.routes].sort((a, b) => a.position - b.position)
     : [];
   const ownerName = detail.owner_name || "";
-  const ownerInitials = initials(ownerName) || "T";
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   // Riding days = trip day counts; a recorded ride (`num_days: null`) counts as
   // one day, matching the per-row "1 day" label so a ride-only collection
@@ -144,9 +133,7 @@ export default async function SharedCollectionPage({
           <div className="mt-[18px] flex flex-wrap gap-2.5">
             {ownerName && (
               <MetaChip>
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accent text-[9px] font-extrabold text-ink">
-                  {ownerInitials}
-                </span>
+                <UserAvatar name={ownerName} size={18} fontSize={9} />
                 {ownerName}
               </MetaChip>
             )}

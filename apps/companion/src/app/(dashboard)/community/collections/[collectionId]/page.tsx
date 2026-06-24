@@ -51,6 +51,7 @@ import {
   type RouteCollectionVisibility,
 } from "@/lib/api";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   RouteThumb,
   StatusPill,
@@ -425,9 +426,12 @@ export default function CollectionDetailPage() {
             />
             <span className="text-fg-mute">·</span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-extrabold text-ink">
-                {(user?.displayName ?? "Y").trim().charAt(0).toUpperCase()}
-              </span>
+              <UserAvatar
+                name={user?.displayName ?? t("Rider")}
+                size={20}
+                fontSize={10}
+                accent
+              />
               {t("You")}
             </span>
             <span className="text-fg-mute">·</span>

@@ -484,6 +484,11 @@ export class RouteCollectionsService {
       status: string;
       distance_km: number | null;
       avg_road_quality: number | null;
+      // Whether the ride has a public `shared_rides` row. Drives whether the
+      // client may deep-link the row: `/community/rides/:id` 404s a non-owner
+      // unless the ride is publicly shared, so a non-public ride stays
+      // non-clickable instead of linking to a dead end.
+      is_public: boolean;
     };
 
     // Batch each kind into a single SQL round-trip. Ordering at this layer
@@ -558,10 +563,12 @@ export class RouteCollectionsService {
       rideIds.length === 0
         ? Promise.resolve<RideMetaRow[]>([])
         : this.dataSource.query<RideMetaRow[]>(
-            `SELECT id, name, status, distance_km, avg_road_quality
-             FROM rides
-             WHERE id = ANY($1::uuid[])
-               AND user_id = $2`,
+            `SELECT r.id, r.name, r.status, r.distance_km, r.avg_road_quality,
+                    COALESCE(sr.is_public, false) AS is_public
+             FROM rides r
+             LEFT JOIN shared_rides sr ON sr.ride_id = r.id
+             WHERE r.id = ANY($1::uuid[])
+               AND r.user_id = $2`,
             [rideIds, ownerId],
           ),
     ]);
@@ -592,6 +599,17 @@ export class RouteCollectionsService {
       linesByRideId.set(row.id, [coords]);
     }
 
+    // A ride is openable by a non-owner only when its detail page would serve
+    // them: `RidesService.getDetail` 404s every non-owner when the ride owner
+    // keeps a private profile. All collection rides belong to the collection
+    // owner, so one lookup decides ride linkability for the whole collection.
+    // (Soft-deleted owners can't reach here — getBySlug/getPreviewBySlug 404
+    // their collections first.) Trips are unaffected: the community trip read
+    // serves them regardless and masks a private owner.
+    const ownerIsPrivate =
+      rideIds.length > 0 &&
+      (await this.privacy.loadPrivateUserIds([ownerId])).has(ownerId);
+
     const routes: RouteCollectionPreviewItemDto[] = items.map((item) => {
       const isRide = item.ride_id != null;
       const lines = isRide
@@ -603,6 +621,20 @@ export class RouteCollectionsService {
         item_id: item.id,
         position: item.position,
         kind: isRide ? 'ride' : 'trip',
+        // The id a NON-owner can actually open this route at — or `null` when
+        // they can't, so the client never links to a dead end:
+        //  - trip: linkable when the owner is a member (`tripMeta` present);
+        //    `/community/trips/:id` grants the same collection-scoped access.
+        //  - ride: linkable only when publicly shared AND the owner's profile
+        //    isn't private — `/community/rides/:id` 404s a non-owner otherwise.
+        // A missing/deleted route (no meta) is `null` → non-clickable.
+        target_id: isRide
+          ? rideMeta?.is_public && !ownerIsPrivate
+            ? item.ride_id
+            : null
+          : tripMeta
+            ? item.trip_id
+            : null,
         lines,
         title: rideMeta ? rideMeta.name : (tripMeta?.title ?? null),
         // A ride is a single recorded day — `num_days` stays null so the

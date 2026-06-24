@@ -1262,6 +1262,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/community/trips/{tripId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read-only trip detail for a non-member, when the trip is exposed via a discoverable collection. Masks the invite code and member roster. */
+    get: operations["CommunityTripsController_getPublicDetail"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/trips/{tripId}/suggestions": {
     parameters: {
       query?: never;
@@ -3929,6 +3946,29 @@ export interface components {
       /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
       status: string;
     };
+    PublicTripDetailDto: {
+      id: string;
+      /** @description UUID of the trip owner. `null` when the owner keeps a private profile and the viewer is not a trip member (masked so the id can’t be cross-referenced to recover their identity). */
+      owner_id: string | null;
+      /** @description Display name of the trip owner. `null` when masked for a private-profile owner, or when the owner's account is soft-deleted / unresolved. */
+      owner_name: string | null;
+      title: string;
+      region: string | null;
+      num_days: number;
+      /** @enum {string} */
+      status: "draft" | "planned" | "active" | "completed";
+      member_count: number;
+      created_at: string;
+      distance_km: number | null;
+      quality_avg: number | null;
+      passes_count: number | null;
+      daily_km_min: number;
+      daily_km_max: number;
+      min_quality: number;
+      /** @enum {string} */
+      road_preference: "curvy" | "scenic" | "fast" | "mixed";
+      days: components["schemas"]["TripDayDto"][];
+    };
     SuggestionDto: {
       id: string;
       trip_id: string;
@@ -4338,6 +4378,8 @@ export interface components {
       position: number;
       /** @enum {string} */
       kind: "trip" | "ride";
+      /** @description UUID a NON-owner can open this route at — combined with `kind` the client builds the detail link (`/community/trips/:id` or `/community/rides/:id`). `null` when the route is not openable by a non-owner, so the client must not link it: a missing/deleted trip or ride, or a ride that is not publicly shared or whose owner keeps a private profile (its detail page 404s a non-owner in either case). A trip is openable whenever the collection owner can see it (collection-scoped access). */
+      target_id: string | null;
       /** @description Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry. */
       lines: number[][][];
       /** @description Trip title or ride name. `null` for a deleted item. */
@@ -5204,6 +5246,8 @@ export type SchemaJoinTripDto = components["schemas"]["JoinTripDto"];
 export type SchemaInviteTripDto = components["schemas"]["InviteTripDto"];
 export type SchemaInviteTripResponseDto =
   components["schemas"]["InviteTripResponseDto"];
+export type SchemaPublicTripDetailDto =
+  components["schemas"]["PublicTripDetailDto"];
 export type SchemaSuggestionDto = components["schemas"]["SuggestionDto"];
 export type SchemaCreateSuggestionDto =
   components["schemas"]["CreateSuggestionDto"];
@@ -7528,6 +7572,34 @@ export interface operations {
         content?: never;
       };
       /** @description Trip not found or not owned */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  CommunityTripsController_getPublicDetail: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PublicTripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not publicly visible */
       404: {
         headers: {
           [name: string]: unknown;

@@ -26,6 +26,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import { usePreferencesStore } from "@/stores/preferences";
 import {
@@ -340,8 +341,14 @@ export default function RideDetailPage() {
                 <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
                 <Link
                   href={`/community/${encodeURIComponent(ride.rider_id)}`}
-                  className="font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
+                  className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
                 >
+                  <UserAvatar
+                    name={ride.rider_name}
+                    avatarUrl={ride.rider_avatar_url}
+                    size={18}
+                    fontSize={9}
+                  />
                   {t("by {name}", { name: ride.rider_name })}
                 </Link>
               </div>

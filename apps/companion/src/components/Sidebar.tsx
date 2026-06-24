@@ -24,6 +24,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { formatRelativeTime } from "@/lib/utils";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
 import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
@@ -752,7 +753,6 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
   const { data: session } = useSession();
   const user = session?.user;
   const { open, close, toggle, ref } = useDropdown();
-  const initial = user?.displayName?.[0]?.toUpperCase() ?? "T";
 
   const handleLogout = () => {
     close();
@@ -777,9 +777,12 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
           collapsed ? "h-9 w-9 justify-center p-0" : "gap-2.5 px-2 py-1.5",
         )}
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-ink">
-          {initial}
-        </span>
+        <UserAvatar
+          name={user?.displayName ?? t("Rider")}
+          size={28}
+          fontSize={13}
+          accent
+        />
         {!collapsed && (
           <span className="min-w-0 flex-1 text-left leading-none">
             <span className="block truncate text-[12px] font-bold text-cream">

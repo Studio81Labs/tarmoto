@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArrowUpRight, Eye, MapPin, Route as RouteIcon } from "lucide-react";
 import { MetricTile, Mono, Stamp } from "@tarmoto/ui";
+import { UserAvatar } from "@/components/UserAvatar";
 import { fetchSharedMap } from "@/lib/map-share";
 import {
   parseMapShareSnapshot,
@@ -25,19 +26,6 @@ export async function generateMetadata(): Promise<Metadata> {
     // every share ever generated. Match the trip-shares policy.
     robots: { index: false, follow: false },
   };
-}
-
-/** Two-letter initials for the owner avatar. */
-function initials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]!.toUpperCase())
-      .join("") || "T"
-  );
 }
 
 export default async function SharedRoadMapPage({
@@ -108,9 +96,7 @@ export default async function SharedRoadMapPage({
           <div className="mt-[18px] flex flex-wrap gap-2.5">
             {ownerName && (
               <MetaChip>
-                <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-accent text-[9px] font-extrabold text-ink">
-                  {initials(ownerName)}
-                </span>
+                <UserAvatar name={ownerName} size={18} fontSize={9} />
                 {ownerName}
               </MetaChip>
             )}

@@ -14,6 +14,7 @@ import {
   type RouteCollectionPreviewItem,
 } from "@/lib/api";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import { UserAvatar } from "@/components/UserAvatar";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
@@ -148,7 +149,6 @@ export default function DiscoverCollectionPage() {
   const { routes } = load;
   const ownerName = detail!.owner_name || "";
   const author = ownerName || (detail!.viewer_is_owner ? t("You") : "");
-  const ownerInitial = (ownerName || "T").trim().charAt(0).toUpperCase();
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   const ridingDays = routes.reduce(
     (sum, r) => sum + (r.num_days ?? (r.kind === "ride" ? 1 : 0)),
@@ -169,12 +169,20 @@ export default function DiscoverCollectionPage() {
             {ownerName && (
               <>
                 <span className="text-fg-mute">·</span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-extrabold text-ink">
-                    {ownerInitial}
+                {detail!.owner_id ? (
+                  <Link
+                    href={`/community/${encodeURIComponent(detail!.owner_id)}`}
+                    className="inline-flex items-center gap-1.5 transition hover:text-ink"
+                  >
+                    <UserAvatar name={ownerName} size={20} fontSize={10} />
+                    {ownerName}
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <UserAvatar name={ownerName} size={20} fontSize={10} />
+                    {ownerName}
                   </span>
-                  {ownerName}
-                </span>
+                )}
               </>
             )}
             <span className="text-fg-mute">·</span>
@@ -263,6 +271,7 @@ export default function DiscoverCollectionPage() {
               route={route}
               index={idx + 1}
               author={author}
+              linkable
             />
           ))}
         </ul>
