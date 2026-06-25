@@ -210,7 +210,7 @@ describe("RoadReviewsPanel", () => {
     render(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
     await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+      "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
     );
 
     expect(
@@ -697,7 +697,7 @@ describe("RoadReviewsPanel", () => {
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Still good, but a few rough patches now." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -719,7 +719,7 @@ describe("RoadReviewsPanel", () => {
     );
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
   });
@@ -764,7 +764,7 @@ describe("RoadReviewsPanel", () => {
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Edited pavement report." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -885,7 +885,7 @@ describe("RoadReviewsPanel", () => {
 
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -946,7 +946,7 @@ describe("RoadReviewsPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
     expect(
-      screen.getByRole("button", { name: "Save review" }),
+      screen.getByRole("button", { name: "Save changes" }),
     ).toBeInTheDocument();
 
     await act(async () => {
@@ -954,11 +954,11 @@ describe("RoadReviewsPanel", () => {
     });
 
     expect(
-      screen.queryByRole("button", { name: "Save review" }),
+      screen.queryByRole("button", { name: "Save changes" }),
     ).not.toBeInTheDocument();
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
   });
@@ -990,7 +990,7 @@ describe("RoadReviewsPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove photo 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -1208,12 +1208,17 @@ describe("RoadReviewsPanel", () => {
       });
     });
 
-    expect(
-      await screen.findByText("Comes back after navigation"),
-    ).toBeInTheDocument();
+    // The editor stays open (now in edit mode) with the user's newer draft
+    // preserved...
     expect(screen.getByLabelText("Comment")).toHaveValue(
       "New draft should stay put",
     );
+    // ...and the returned review is retained in state. The list is hidden while
+    // the editor is open, so close it to confirm the review is still there.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      await screen.findByText("Comes back after navigation"),
+    ).toBeInTheDocument();
   });
 
   it("switches a returned draft into edit mode after a delayed create establishes ownership", async () => {
@@ -1292,13 +1297,13 @@ describe("RoadReviewsPanel", () => {
     });
 
     expect(
-      await screen.findByRole("button", { name: "Save review" }),
+      await screen.findByRole("button", { name: "Save changes" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Comment")).toHaveValue(
       "Refined after the delayed create",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {

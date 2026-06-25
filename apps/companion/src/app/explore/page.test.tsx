@@ -309,11 +309,8 @@ describe("ExplorerPage", () => {
     expect(
       screen.getByText(/loose gravel after the bend/i),
     ).toBeInTheDocument();
-    expect(
-      screen.getByTestId(
-        "segment-trend-chart-11111111-2222-4333-8444-555555555111",
-      ),
-    ).toBeInTheDocument();
+    // The explore segment panel no longer embeds the quality-trend chart
+    // (removed in the cream redesign — it stays on the dark trip-planner card).
     expect(
       screen.getByText(
         "Reviews panel for 11111111-2222-4333-8444-555555555111",
