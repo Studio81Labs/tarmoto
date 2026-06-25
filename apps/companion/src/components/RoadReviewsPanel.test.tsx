@@ -125,6 +125,35 @@ describe("RoadReviewsPanel", () => {
     expect(screen.getByText("2 reviews")).toBeInTheDocument();
   });
 
+  it("reports the live count on load but not on a failed load", async () => {
+    const onCountChange = vi.fn();
+    getReviewsMock.mockResolvedValueOnce({
+      data: [review({ id: "review-1" }), review({ id: "review-2" })],
+    });
+
+    const { unmount } = render(
+      <RoadReviewsPanel
+        segmentId={firstSegmentId}
+        onCountChange={onCountChange}
+      />,
+    );
+    await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(2));
+    unmount();
+
+    // A failed load must NOT publish 0 — the parent keeps its own count so a
+    // road with reviews doesn't flash "0 reviews" behind the error.
+    onCountChange.mockClear();
+    getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+    render(
+      <RoadReviewsPanel
+        segmentId={firstSegmentId}
+        onCountChange={onCountChange}
+      />,
+    );
+    expect(await screen.findByText("Reviews boom")).toBeInTheDocument();
+    expect(onCountChange).not.toHaveBeenCalled();
+  });
+
   it("renders the reviewer byline as a profile link for other riders (#335)", async () => {
     getReviewsMock.mockResolvedValueOnce({
       data: [

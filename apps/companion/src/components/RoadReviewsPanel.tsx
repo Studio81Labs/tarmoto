@@ -230,9 +230,11 @@ export function RoadReviewsPanel({
   );
   // Surface the live count once a load settles and after every mutation, so a
   // parent-rendered count tracks create/delete instead of the stale fetch value.
+  // Skip on a failed load: the catch clears `reviews` to [], and reporting 0
+  // would wrongly blank a header that still has the segment's real count.
   useEffect(() => {
-    if (canLoadReviews && !loading) onCountChange?.(reviews.length);
-  }, [reviews, loading, canLoadReviews, onCountChange]);
+    if (canLoadReviews && !loading && !error) onCountChange?.(reviews.length);
+  }, [reviews, loading, error, canLoadReviews, onCountChange]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
       current.map((review) =>
