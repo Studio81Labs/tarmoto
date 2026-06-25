@@ -121,10 +121,17 @@ export function RoadReviewsPanel({
   segmentId,
   tone = "dark",
   hideHeader = false,
+  onCountChange,
 }: {
   segmentId: string;
   tone?: ReviewsTone;
   hideHeader?: boolean;
+  /**
+   * Reports the live review count whenever it changes (load, create, delete),
+   * so a parent that renders the count out-of-band (e.g. the explore sidebar
+   * header) stays in sync with the panel's local state.
+   */
+  onCountChange?: (count: number) => void;
 }) {
   const tc = reviewToneClasses(tone);
   const canLoadReviews = isUuid(segmentId);
@@ -221,6 +228,11 @@ export function RoadReviewsPanel({
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
   );
+  // Surface the live count once a load settles and after every mutation, so a
+  // parent-rendered count tracks create/delete instead of the stale fetch value.
+  useEffect(() => {
+    if (canLoadReviews && !loading) onCountChange?.(reviews.length);
+  }, [reviews, loading, canLoadReviews, onCountChange]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
       current.map((review) =>

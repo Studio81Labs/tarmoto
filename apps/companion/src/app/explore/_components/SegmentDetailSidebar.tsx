@@ -1,7 +1,7 @@
 "use client";
 
 import { t } from "@/i18n";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -12,9 +12,11 @@ import {
   X,
 } from "lucide-react";
 import { Mono, Stamp } from "@tarmoto/ui";
+import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
 import type { RoadSegmentDetailResponse } from "@/lib/api";
 import type { HazardType, QualityTier } from "@/lib/types";
+import type { QualityPoint } from "@/lib/segment-trend";
 import {
   HAZARD_CONFIG,
   QUALITY_CONFIG,
@@ -88,7 +90,9 @@ export function SegmentDetailSidebar({
       )}
 
       {state.status === "ready" && (
-        <SegmentDetailContent segment={state.segment} />
+        // Key by id so the per-segment local state (e.g. the live review count)
+        // re-initialises when the viewer switches to a different segment.
+        <SegmentDetailContent key={state.segment.id} segment={state.segment} />
       )}
     </aside>
   );
@@ -105,6 +109,12 @@ function SegmentDetailContent({
   const currentTier: QualityTier | null = score > 0 ? scoreToTier(score) : null;
   const tier = currentTier ? QUALITY_CONFIG[currentTier] : null;
   const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
+  const qualityHistory = trendPoints(segment.quality_history);
+  const regionalHistory = trendPoints(segment.regional_quality_history);
+  const hasTrend = qualityHistory.length > 1;
+  // Track the count locally so it reflects the viewer's own create/delete,
+  // which RoadReviewsPanel applies to its own state below.
+  const [reviewCount, setReviewCount] = useState(segment.review_count);
   const confidence = clampPercent(segment.confidence);
 
   useEffect(() => {
@@ -223,6 +233,22 @@ function SegmentDetailContent({
         </div>
       </div>
 
+      {hasTrend && (
+        <>
+          <Divider />
+          {/* Quality trend (US-45) */}
+          <div>
+            <Stamp className="mb-3 block">{t("Quality trend")}</Stamp>
+            <SegmentTrendChart
+              segmentId={segment.id}
+              history={qualityHistory}
+              regionalHistory={regionalHistory}
+              tone="cream"
+            />
+          </div>
+        </>
+      )}
+
       <Divider />
 
       {/* Active hazards */}
@@ -287,13 +313,18 @@ function SegmentDetailContent({
         <div className="flex items-center justify-between gap-3">
           <Stamp>{t("Reviews & photos")}</Stamp>
           <Mono className="text-[11px] text-fg-mute">
-            {segment.review_count === 1
+            {reviewCount === 1
               ? t("1 review")
-              : t("{count} reviews", { count: segment.review_count })}
+              : t("{count} reviews", { count: reviewCount })}
           </Mono>
         </div>
         <div className="mt-3.5">
-          <RoadReviewsPanel segmentId={segment.id} tone="cream" hideHeader />
+          <RoadReviewsPanel
+            segmentId={segment.id}
+            tone="cream"
+            hideHeader
+            onCountChange={setReviewCount}
+          />
         </div>
       </div>
     </div>
@@ -397,4 +428,13 @@ function formatSurface(surface: string): string {
   return surface
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function trendPoints(points: RoadSegmentDetailResponse["quality_history"]) {
+  return points.map(
+    (point): QualityPoint => ({
+      date: point.month,
+      score: Number(point.score),
+    }),
+  );
 }
