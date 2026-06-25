@@ -125,6 +125,35 @@ describe("RoadReviewsPanel", () => {
     expect(screen.getByText("2 reviews")).toBeInTheDocument();
   });
 
+  it("reports the live count on load but not on a failed load", async () => {
+    const onCountChange = vi.fn();
+    getReviewsMock.mockResolvedValueOnce({
+      data: [review({ id: "review-1" }), review({ id: "review-2" })],
+    });
+
+    const { unmount } = render(
+      <RoadReviewsPanel
+        segmentId={firstSegmentId}
+        onCountChange={onCountChange}
+      />,
+    );
+    await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(2));
+    unmount();
+
+    // A failed load must NOT publish 0 — the parent keeps its own count so a
+    // road with reviews doesn't flash "0 reviews" behind the error.
+    onCountChange.mockClear();
+    getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+    render(
+      <RoadReviewsPanel
+        segmentId={firstSegmentId}
+        onCountChange={onCountChange}
+      />,
+    );
+    expect(await screen.findByText("Reviews boom")).toBeInTheDocument();
+    expect(onCountChange).not.toHaveBeenCalled();
+  });
+
   it("renders the reviewer byline as a profile link for other riders (#335)", async () => {
     getReviewsMock.mockResolvedValueOnce({
       data: [
@@ -210,7 +239,7 @@ describe("RoadReviewsPanel", () => {
     render(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
     await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+      "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
     );
 
     expect(
@@ -697,7 +726,7 @@ describe("RoadReviewsPanel", () => {
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Still good, but a few rough patches now." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -719,7 +748,7 @@ describe("RoadReviewsPanel", () => {
     );
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
   });
@@ -764,7 +793,7 @@ describe("RoadReviewsPanel", () => {
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Edited pavement report." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -885,7 +914,7 @@ describe("RoadReviewsPanel", () => {
 
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -946,7 +975,7 @@ describe("RoadReviewsPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
     expect(
-      screen.getByRole("button", { name: "Save review" }),
+      screen.getByRole("button", { name: "Save changes" }),
     ).toBeInTheDocument();
 
     await act(async () => {
@@ -954,11 +983,11 @@ describe("RoadReviewsPanel", () => {
     });
 
     expect(
-      screen.queryByRole("button", { name: "Save review" }),
+      screen.queryByRole("button", { name: "Save changes" }),
     ).not.toBeInTheDocument();
     expect(
       await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+        "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
   });
@@ -990,7 +1019,7 @@ describe("RoadReviewsPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove photo 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
@@ -1208,12 +1237,17 @@ describe("RoadReviewsPanel", () => {
       });
     });
 
-    expect(
-      await screen.findByText("Comes back after navigation"),
-    ).toBeInTheDocument();
+    // The editor stays open (now in edit mode) with the user's newer draft
+    // preserved...
     expect(screen.getByLabelText("Comment")).toHaveValue(
       "New draft should stay put",
     );
+    // ...and the returned review is retained in state. The list is hidden while
+    // the editor is open, so close it to confirm the review is still there.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      await screen.findByText("Comes back after navigation"),
+    ).toBeInTheDocument();
   });
 
   it("switches a returned draft into edit mode after a delayed create establishes ownership", async () => {
@@ -1292,13 +1326,13 @@ describe("RoadReviewsPanel", () => {
     });
 
     expect(
-      await screen.findByRole("button", { name: "Save review" }),
+      await screen.findByRole("button", { name: "Save changes" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Comment")).toHaveValue(
       "Refined after the delayed create",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {

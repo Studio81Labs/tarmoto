@@ -49,7 +49,91 @@ const EMPTY_REVIEW_DRAFT: ReviewDraft = {
   bikeModel: "",
   photoUrls: [],
 };
-export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
+
+export type ReviewsTone = "dark" | "cream";
+
+/**
+ * Theme class sets so this panel can render on the dark trip-planner card
+ * (`RoadPreviewCard`) and the cream explore segment sidebar from one component.
+ * Defaults to `dark` so the existing planner usage is untouched.
+ */
+function reviewToneClasses(tone: ReviewsTone) {
+  const cream = tone === "cream";
+  return {
+    cream,
+    textPrimary: cream ? "text-ink" : "text-white",
+    textBody: cream ? "text-fg-dim" : "text-slate-300",
+    textMute: cream ? "text-fg-mute" : "text-slate-500",
+    hover: cream ? "hover:text-ink" : "hover:text-white",
+    star: cream ? "text-amber-600" : "text-amber-300",
+    infoBox: cream
+      ? "border border-dashed border-line-strong bg-paper text-fg-mute"
+      : "border border-slate-800 bg-slate-950/40 text-slate-500",
+    loadingBox: cream
+      ? "border border-line bg-paper text-fg-dim"
+      : "border border-slate-800 bg-slate-950/60 text-slate-400",
+    outlineBtn: cream
+      ? "border-line-strong text-ink hover:bg-paper"
+      : "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white",
+    editorCard: cream
+      ? "border-line bg-paper"
+      : "border-slate-800 bg-slate-950/60",
+    input: cream
+      ? "border-line-strong bg-cream text-ink placeholder:text-fg-mute focus:border-accent"
+      : "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-accent",
+    reviewCard: cream
+      ? "border-line bg-cream"
+      : "border-slate-800 bg-slate-950/50",
+    chipInactive: cream
+      ? "border-line-strong text-fg-dim hover:border-ink hover:text-ink"
+      : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white",
+    // Selected rating chips use the brand accent (not amber) per the spec.
+    ratingActive: cream
+      ? "border-accent bg-accent/15 text-ink"
+      : "border-accent bg-accent/15 text-white",
+    label: cream ? "text-fg-mute" : "text-slate-400",
+    dashedUpload: cream
+      ? "border-line-strong bg-cream hover:border-ink"
+      : "border-slate-700 bg-slate-950/40 hover:border-slate-500",
+    divider: cream ? "bg-line" : "bg-slate-800",
+    photoTile: cream ? "border-line bg-paper" : "border-slate-800 bg-slate-900",
+  };
+}
+
+/** Mono all-caps field label used inside the review editor. */
+function FieldLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`block font-mono text-[10px] font-bold uppercase tracking-[1.6px] ${className ?? ""}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function RoadReviewsPanel({
+  segmentId,
+  tone = "dark",
+  hideHeader = false,
+  onCountChange,
+}: {
+  segmentId: string;
+  tone?: ReviewsTone;
+  hideHeader?: boolean;
+  /**
+   * Reports the live review count whenever it changes (load, create, delete),
+   * so a parent that renders the count out-of-band (e.g. the explore sidebar
+   * header) stays in sync with the panel's local state.
+   */
+  onCountChange?: (count: number) => void;
+}) {
+  const tc = reviewToneClasses(tone);
   const canLoadReviews = isUuid(segmentId);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const viewerId = useAuthStore((state) => state.user?.id ?? null);
@@ -144,6 +228,13 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
   );
+  // Surface the live count once a load settles and after every mutation, so a
+  // parent-rendered count tracks create/delete instead of the stale fetch value.
+  // Skip on a failed load: the catch clears `reviews` to [], and reporting 0
+  // would wrongly blank a header that still has the segment's real count.
+  useEffect(() => {
+    if (canLoadReviews && !loading && !error) onCountChange?.(reviews.length);
+  }, [reviews, loading, error, canLoadReviews, onCountChange]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
       current.map((review) =>
@@ -355,26 +446,32 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   };
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-slate-500">
-            {t("Road reviews ")}
-          </p>
-          {!loading && canLoadReviews && (
-            <p className="text-sm text-slate-300">
-              {reviews.length === 1 ? "1 review" : `${reviews.length} reviews`}
+      {!hideHeader && (
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p
+              className={`text-[11px] uppercase tracking-wider ${tc.textMute}`}
+            >
+              {t("Road reviews ")}
+            </p>
+            {!loading && canLoadReviews && (
+              <p className={`text-sm ${tc.textBody}`}>
+                {reviews.length === 1
+                  ? "1 review"
+                  : `${reviews.length} reviews`}
+              </p>
+            )}
+          </div>
+          {!loading && averageRating != null && (
+            <p className={`text-sm font-medium ${tc.star}`}>
+              {t("{rating} ★ average", { rating: averageRating.toFixed(1) })}
             </p>
           )}
         </div>
-        {!loading && averageRating != null && (
-          <p className="text-sm font-medium text-amber-300">
-            {t("{rating} ★ average", { rating: averageRating.toFixed(1) })}
-          </p>
-        )}
-      </div>
+      )}
 
-      {canLoadReviews && !loading && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+      {canLoadReviews && !loading && !editorMode && (
+        <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
           {isAuthenticated ? (
             myReview ? (
               <>
@@ -382,27 +479,49 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
                   type="button"
                   onClick={openEdit}
                   disabled={submitting}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className={
+                    tc.cream
+                      ? `inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`
+                      : `inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`
+                  }
                   aria-label={t("Edit your review")}
                 >
-                  <Pencil size={12} />
-                  {t("Edit your review ")}
+                  <Pencil size={tc.cream ? 13 : 12} />
+                  {tc.cream ? t("Edit ") : t("Edit your review ")}
                 </button>
                 <button
                   type="button"
                   onClick={handleDeleteReview}
                   disabled={submitting}
-                  className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 px-3 py-1.5 text-xs text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={
+                    tc.cream
+                      ? "inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-rose-500/40 px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-rose-600 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      : "inline-flex items-center gap-1 rounded-full border border-rose-500/30 px-3 py-1.5 text-xs text-rose-500 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  }
                   aria-label={t("Delete your review")}
                 >
                   {submitting && editorMode === null ? (
-                    <Loader2 size={12} className="animate-spin" />
+                    <Loader2
+                      size={tc.cream ? 13 : 12}
+                      className="animate-spin"
+                    />
                   ) : (
-                    <Trash2 size={12} />
+                    <Trash2 size={tc.cream ? 13 : 12} />
                   )}
-                  {t("Delete your review ")}
+                  {tc.cream ? t("Delete ") : t("Delete your review ")}
                 </button>
               </>
+            ) : tc.cream ? (
+              <button
+                type="button"
+                onClick={openCreate}
+                disabled={submitting}
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
+                aria-label={t("Write a review for this road")}
+              >
+                <Pencil size={13} />
+                {t("Write a review ")}
+              </button>
             ) : (
               <button
                 type="button"
@@ -416,7 +535,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
               </button>
             )
           ) : (
-            <p className="text-xs text-slate-500">
+            <p className={`text-xs ${tc.textMute}`}>
               {t("Sign in to rate this road and share your feedback. ")}
             </p>
           )}
@@ -426,6 +545,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       {editorMode && (
         <ReviewEditor
           mode={editorMode}
+          tone={tone}
           remainingPhotoSlots={Math.max(
             0,
             MAX_REVIEW_PHOTOS - draft.photoUrls.length,
@@ -470,38 +590,47 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         </div>
       )}
 
-      {!canLoadReviews ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-4 text-xs text-slate-500">
-          {t(
-            "Community reviews become available when this segment maps to a saved Tarmoto road. ",
-          )}
-        </div>
-      ) : loading ? (
-        <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
-          <Loader2 size={14} className="animate-spin" />
-          {t("Loading reviews\u2026 ")}
-        </div>
-      ) : error ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
-          {error}
-        </div>
-      ) : reviews.length === 0 ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-4 text-xs text-slate-500">
-          {t(
-            "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road. ",
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {reviews.map((review) => (
-            <ReviewCard
-              key={review.id}
-              review={review}
-              onChange={(next) => patchReview(review.id, next)}
-            />
-          ))}
-        </div>
-      )}
+      {/* Hide the review list while the editor is open — the form replaces it. */}
+      {!editorMode &&
+        (!canLoadReviews ? (
+          <div
+            className={`rounded-xl px-3 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+          >
+            {t(
+              "Community reviews become available when this segment maps to a saved Tarmoto road. ",
+            )}
+          </div>
+        ) : loading ? (
+          <div
+            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tc.loadingBox}`}
+          >
+            <Loader2 size={14} className="animate-spin" />
+            {t("Loading reviews\u2026 ")}
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-500">
+            {error}
+          </div>
+        ) : reviews.length === 0 ? (
+          <div
+            className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+          >
+            {t(
+              "No reviews yet. Riders see community feedback here as soon as someone rates this road. ",
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {reviews.map((review) => (
+              <ReviewCard
+                key={review.id}
+                review={review}
+                tone={tone}
+                onChange={(next) => patchReview(review.id, next)}
+              />
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
@@ -532,6 +661,7 @@ function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {
 }
 function ReviewEditor({
   mode,
+  tone,
   remainingPhotoSlots,
   draft,
   disabled,
@@ -545,6 +675,7 @@ function ReviewEditor({
   onSubmit,
 }: {
   mode: "create" | "edit";
+  tone: ReviewsTone;
   remainingPhotoSlots: number;
   draft: ReviewDraft;
   disabled: boolean;
@@ -557,6 +688,7 @@ function ReviewEditor({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const tc = reviewToneClasses(tone);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
   const [uploading, setUploading] = useState(false);
@@ -607,173 +739,171 @@ function ReviewEditor({
     }
   };
   return (
-    <section className="mb-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-white">
-            {mode === "create" ? "Write a review" : "Edit your review"}
-          </p>
-          <p className="text-xs text-slate-500">
-            {t("Rate this road and add quick notes for the next rider. ")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={disabled}
-            className="rounded-lg px-3 py-1.5 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {t("Cancel ")}
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={disabled || uploading}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {disabled ? <Loader2 size={12} className="animate-spin" /> : null}
-            {mode === "create" ? "Submit review" : "Save review"}
-          </button>
+    <section className={`mb-3 rounded-xl border p-4 ${tc.editorCard}`}>
+      <p className={`text-[15px] font-bold ${tc.textPrimary}`}>
+        {mode === "create" ? "Write a review" : "Edit your review"}
+      </p>
+      <p className={`mt-0.5 text-xs ${tc.textBody}`}>
+        {t("Rate this road and add quick notes for the next rider. ")}
+      </p>
+
+      {/* Rating — cumulative star fill up to the chosen score */}
+      <div className="mt-4">
+        <FieldLabel className={tc.label}>{t("Your rating")}</FieldLabel>
+        <div className="mt-2 grid grid-cols-5 gap-2">
+          {[1, 2, 3, 4, 5].map((rating) => {
+            const active = rating <= draft.rating;
+            return (
+              <button
+                key={rating}
+                type="button"
+                aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
+                aria-pressed={draft.rating === rating}
+                disabled={disabled}
+                onClick={() => onRatingChange(rating)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-[10px] border py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  active ? tc.ratingActive : tc.chipInactive
+                }`}
+              >
+                <Star
+                  size={13}
+                  className={active ? "fill-accent text-accent" : ""}
+                />
+                <span>{rating}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {[1, 2, 3, 4, 5].map((rating) => {
-          const active = draft.rating === rating;
-          return (
-            <button
-              key={rating}
-              type="button"
-              aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
-              aria-pressed={active}
-              disabled={disabled}
-              onClick={() => onRatingChange(rating)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
-                active
-                  ? "border-amber-300/60 bg-amber-300/10 text-amber-200"
-                  : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
-              } disabled:cursor-not-allowed disabled:opacity-60`}
-            >
-              <Star size={12} className={active ? "fill-current" : ""} />
-              <span>{rating}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Comment */}
+      <label className="mt-3 block">
+        <FieldLabel className={tc.label}>{t("Comment")}</FieldLabel>
+        <textarea
+          value={draft.comment}
+          onChange={(event) => onCommentChange(event.target.value)}
+          disabled={disabled}
+          maxLength={REVIEW_COMMENT_MAX_LENGTH}
+          rows={4}
+          aria-label={t("Comment")}
+          placeholder={t("What should other riders know about this road?")}
+          className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${tc.input}`}
+        />
+        <span className={`mt-1 block text-right text-[11px] ${tc.textMute}`}>
+          {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
+        </span>
+      </label>
 
-      <div className="mt-3 space-y-3">
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-400">
-            {t("Comment ")}
-          </span>
-          <textarea
-            value={draft.comment}
-            onChange={(event) => onCommentChange(event.target.value)}
-            disabled={disabled}
-            maxLength={REVIEW_COMMENT_MAX_LENGTH}
-            rows={4}
-            aria-label={t("Comment")}
-            placeholder={t("What should other riders know about this road?")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          <span className="mt-1 block text-right text-[11px] text-slate-500">
-            {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
-          </span>
-        </label>
+      {/* Bike model */}
+      <label className="mt-3 block">
+        <FieldLabel className={tc.label}>{t("Bike model")}</FieldLabel>
+        <input
+          type="text"
+          value={draft.bikeModel}
+          onChange={(event) => onBikeModelChange(event.target.value)}
+          disabled={disabled}
+          maxLength={100}
+          aria-label={t("Bike model")}
+          placeholder={t("Optional")}
+          className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${tc.input}`}
+        />
+      </label>
 
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-400">
-            {t("Bike model ")}
-          </span>
-          <input
-            type="text"
-            value={draft.bikeModel}
-            onChange={(event) => onBikeModelChange(event.target.value)}
-            disabled={disabled}
-            maxLength={100}
-            aria-label={t("Bike model")}
-            placeholder={t("Optional")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </label>
-
-        <div>
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <p className="text-xs font-medium text-slate-400">{t("Photos")}</p>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={photoInputDisabled}
-              className="inline-flex items-center gap-1 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={t("Upload review photos")}
-            >
-              {uploading ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Upload size={12} />
-              )}
-              {t("Upload photos ")}
-            </button>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPTED_PHOTO_MIME_TYPES.join(",")}
-            multiple
-            disabled={photoInputDisabled}
-            onChange={handleSelectFiles}
-            aria-label={t("Select review photos")}
-            className="sr-only"
-          />
-          {draft.photoUrls.length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              {draft.photoUrls.map((photo, index) => (
-                <div
-                  key={`${photo}-${index}`}
-                  className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-slate-800 bg-slate-900"
+      {/* Photos */}
+      <div className="mt-3">
+        <FieldLabel className={tc.label}>{t("Photos")}</FieldLabel>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_PHOTO_MIME_TYPES.join(",")}
+          multiple
+          disabled={photoInputDisabled}
+          onChange={handleSelectFiles}
+          aria-label={t("Select review photos")}
+          className="sr-only"
+        />
+        {draft.photoUrls.length > 0 && (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {draft.photoUrls.map((photo, index) => (
+              <div
+                key={`${photo}-${index}`}
+                className={`group relative aspect-[4/3] overflow-hidden rounded-lg border ${tc.photoTile}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo}
+                  alt={`Review photo ${index + 1}`}
+                  className="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => onRemovePhoto(index)}
+                  disabled={disabled || uploading}
+                  className="absolute right-1 top-1 rounded-full bg-ink/80 p-1 text-cream transition hover:bg-rose-500/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label={`Remove photo ${index + 1}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo}
-                    alt={`Review photo ${index + 1}`}
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => onRemovePhoto(index)}
-                    disabled={disabled || uploading}
-                    className="absolute right-1 top-1 rounded-full bg-slate-950/80 p-1 text-slate-300 transition hover:bg-rose-500/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label={`Remove photo ${index + 1}`}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={photoInputDisabled}
+          aria-label={t("Upload review photos")}
+          className={`mt-2 flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-5 text-center transition disabled:cursor-not-allowed disabled:opacity-50 ${tc.dashedUpload}`}
+        >
+          {uploading ? (
+            <Loader2 size={16} className="animate-spin text-accent" />
+          ) : (
+            <Upload size={16} className="text-accent" />
           )}
-          <p className="mt-1 text-[11px] text-slate-500">
-            {t(
-              "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
-              {
-                count: MAX_REVIEW_PHOTOS,
-                sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
-              },
-            )}
+          <span className="text-[13px] font-bold text-accent">
+            {t("Upload photos ")}
+          </span>
+          <span className={`text-[11px] ${tc.textMute}`}>
+            {t("Up to {count} · JPEG, PNG, or WebP · max {sizeMb} MB each", {
+              count: MAX_REVIEW_PHOTOS,
+              sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
+            })}
+          </span>
+        </button>
+        {uploadError && (
+          <p className="mt-1 text-xs text-rose-500" role="alert">
+            {uploadError}
           </p>
-          {uploadError && (
-            <p className="mt-1 text-xs text-rose-300" role="alert">
-              {uploadError}
-            </p>
-          )}
-        </div>
+        )}
       </div>
 
       {error && (
-        <p className="mt-3 text-xs text-rose-300" role="alert">
+        <p className="mt-3 text-xs text-rose-500" role="alert">
           {error}
         </p>
       )}
+
+      {/* Footer actions */}
+      <div className={`my-4 h-px w-full ${tc.divider}`} />
+      <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={disabled}
+          className={`rounded-[10px] border px-5 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
+        >
+          {t("Cancel ")}
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={disabled || uploading}
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {disabled ? <Loader2 size={13} className="animate-spin" /> : null}
+          {mode === "create" ? "Submit review" : "Save changes"}
+        </button>
+      </div>
     </section>
   );
 }
@@ -808,11 +938,14 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
+  tone,
   onChange,
 }: {
   review: RoadReview;
+  tone: ReviewsTone;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
+  const tc = reviewToneClasses(tone);
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
   const submitVote = async (isHelpful: boolean) => {
@@ -840,35 +973,52 @@ function ReviewCard({
     }
   };
   return (
-    <article className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+    <article className={`rounded-xl border p-3 ${tc.reviewCard}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {review.user_id && !review.is_mine ? (
             <Link
               href={`/community/${encodeURIComponent(review.user_id)}`}
-              className="text-sm font-medium text-white transition hover:text-accent"
+              className={`text-sm font-medium transition hover:text-accent ${tc.textPrimary}`}
             >
               {review.user_display_name}
             </Link>
           ) : (
-            <p className="text-sm font-medium text-white">
+            <p className={`text-sm font-medium ${tc.textPrimary}`}>
               {review.user_display_name}
             </p>
           )}
-          <p className="text-xs text-slate-500">
+          <p className={`text-xs ${tc.textMute}`}>
             {formatRelativeTime(review.created_at)}
           </p>
         </div>
-        <p className="shrink-0 text-sm font-medium text-amber-300">
-          {"★".repeat(Math.max(1, Math.min(5, Math.round(review.rating))))}
-        </p>
+        <div
+          className="flex shrink-0 items-center gap-0.5"
+          aria-label={`${Math.round(review.rating)} out of 5`}
+        >
+          {[1, 2, 3, 4, 5].map((n) => {
+            const filled = n <= Math.round(review.rating);
+            return (
+              <Star
+                key={n}
+                size={14}
+                aria-hidden="true"
+                className={
+                  filled ? "fill-accent text-accent" : "text-accent/30"
+                }
+              />
+            );
+          })}
+        </div>
       </div>
 
       {review.comment && (
-        <p className="mt-2 text-sm text-slate-300">{review.comment}</p>
+        <p className={`mt-2 text-sm ${tc.textBody}`}>{review.comment}</p>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      <div
+        className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${tc.textMute}`}
+      >
         {review.bike_model && <span>{review.bike_model}</span>}
         {photos.length > 0 && (
           <span className="inline-flex items-center gap-1">
@@ -895,7 +1045,9 @@ function ReviewCard({
       )}
 
       {review.is_mine ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div
+          className={`mt-3 flex flex-wrap items-center gap-2 text-xs ${tc.textMute}`}
+        >
           <span>{t("This is your review.")}</span>
         </div>
       ) : (
@@ -909,6 +1061,7 @@ function ReviewCard({
             count={review.helpful_count}
             active={review.my_vote === true}
             pending={pendingVote === "up"}
+            inactiveClass={tc.chipInactive}
             icon={<ThumbsUp size={12} />}
             onClick={() => submitVote(true)}
           />
@@ -921,6 +1074,7 @@ function ReviewCard({
             count={review.not_helpful_count}
             active={review.my_vote === false}
             pending={pendingVote === "down"}
+            inactiveClass={tc.chipInactive}
             icon={<ThumbsDown size={12} />}
             onClick={() => submitVote(false)}
           />
@@ -934,6 +1088,7 @@ function VoteButton({
   count,
   active,
   pending,
+  inactiveClass,
   icon,
   onClick,
 }: {
@@ -941,6 +1096,7 @@ function VoteButton({
   count: number;
   active: boolean;
   pending: boolean;
+  inactiveClass: string;
   icon: ReactNode;
   onClick: () => void;
 }) {
@@ -951,11 +1107,9 @@ function VoteButton({
       aria-pressed={active}
       disabled={pending}
       onClick={onClick}
-      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
-        active
-          ? "border-accent/60 bg-accent/10 text-accent"
-          : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
-      } disabled:cursor-not-allowed disabled:opacity-60`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        active ? "border-accent/60 bg-accent/10 text-accent" : inactiveClass
+      }`}
     >
       {icon}
       <span>{count}</span>

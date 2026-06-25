@@ -1,29 +1,30 @@
 "use client";
 
 import { t } from "@/i18n";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
+  Activity,
   AlertTriangle,
   Clock,
   Gauge,
   Loader2,
-  Route,
-  Star,
   Users,
   X,
 } from "lucide-react";
+import { Mono, Stamp } from "@tarmoto/ui";
 import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
 import type { RoadSegmentDetailResponse } from "@/lib/api";
-import type { HazardType } from "@/lib/types";
+import type { HazardType, QualityTier } from "@/lib/types";
+import type { QualityPoint } from "@/lib/segment-trend";
 import {
   HAZARD_CONFIG,
   QUALITY_CONFIG,
+  formatDate,
   formatDistanceFromMeters,
   formatRelativeTime,
   scoreToTier,
 } from "@/lib/utils";
-import type { QualityPoint } from "@/lib/segment-trend";
 import { usePreferencesStore } from "@/stores/preferences";
 
 export type SegmentDetailPanelState =
@@ -48,26 +49,17 @@ export function SegmentDetailSidebar({
     <aside
       role="dialog"
       aria-label={t("Road segment details")}
-      className="absolute inset-x-0 bottom-0 z-20 max-h-[78%] overflow-y-auto border-t border-line bg-paper/95 shadow-2xl backdrop-blur md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0"
+      className="absolute inset-x-0 bottom-0 z-20 flex max-h-[78%] flex-col border-t border-line bg-cream shadow-2xl md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0"
     >
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-paper/95 px-4 py-3 backdrop-blur">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wider text-fg-dim">
-            {t("Road segment ")}
-          </p>
-          <h2 className="truncate text-base font-semibold text-ink">
-            {state.status === "ready"
-              ? segmentTitle(state.segment)
-              : t("Segment details")}
-          </h2>
-        </div>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
+        <Stamp>{t("Road segment")}</Stamp>
         <button
           type="button"
           onClick={onClose}
           aria-label={t("Close segment details")}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line text-fg-dim transition hover:border-line-strong hover:text-ink"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line-strong text-fg-dim transition hover:border-ink hover:text-ink"
         >
-          <X size={16} />
+          <X size={15} />
         </button>
       </div>
 
@@ -98,7 +90,9 @@ export function SegmentDetailSidebar({
       )}
 
       {state.status === "ready" && (
-        <SegmentDetailContent segment={state.segment} />
+        // Key by id so the per-segment local state (e.g. the live review count)
+        // re-initialises when the viewer switches to a different segment.
+        <SegmentDetailContent key={state.segment.id} segment={state.segment} />
       )}
     </aside>
   );
@@ -112,119 +106,165 @@ function SegmentDetailContent({
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const score = segment.quality_score ?? 0;
-  const tier = score > 0 ? QUALITY_CONFIG[scoreToTier(score)] : null;
+  const currentTier: QualityTier | null = score > 0 ? scoreToTier(score) : null;
+  const tier = currentTier ? QUALITY_CONFIG[currentTier] : null;
+  const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
   const qualityHistory = trendPoints(segment.quality_history);
   const regionalHistory = trendPoints(segment.regional_quality_history);
   const hasTrend = qualityHistory.length > 1;
+  // Track the count locally so it reflects the viewer's own create/delete,
+  // which RoadReviewsPanel applies to its own state below.
+  const [reviewCount, setReviewCount] = useState(segment.review_count);
+  const confidence = clampPercent(segment.confidence);
 
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
 
   return (
-    <div className="space-y-5 px-4 py-4 text-sm text-ink">
-      <section className="rounded-lg border border-line bg-cream p-4">
-        <div className="flex items-start gap-3">
-          <div
-            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-lg text-lg font-extrabold text-ink ${
-              tier?.bg ?? "bg-paper"
-            }`}
-          >
-            {segment.quality_score == null ? "N/A" : score.toFixed(1)}
+    <div className="flex flex-col gap-[18px] overflow-y-auto p-5 text-sm text-ink">
+      {/* Identity */}
+      <div className="flex items-center gap-3.5">
+        <div
+          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-[22px] font-extrabold tracking-[-0.5px] text-ink ${
+            tier?.bg ?? "bg-paper"
+          }`}
+        >
+          {segment.quality_score == null ? "N/A" : score.toFixed(1)}
+        </div>
+        <div className="min-w-0">
+          <div className="truncate font-sans text-[20px] font-extrabold leading-[1.1] tracking-[-0.5px] text-ink">
+            {segmentTitle(segment)}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold text-ink">
-              {segmentTitle(segment)}
-            </p>
-            <p className="text-xs text-fg-dim">
-              {segment.road_number ? `${segment.road_number} · ` : ""}
-              {formatDistanceFromMeters(segment.length_m, unitSystem)}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <Pill>{tier?.label ?? t("Unknown quality")}</Pill>
-              <Pill>{formatSurface(segment.surface_type)}</Pill>
-            </div>
+          <Mono className="mt-1 block text-[11px] text-fg-mute">
+            {segment.road_number ? `${segment.road_number} · ` : ""}
+            {formatDistanceFromMeters(segment.length_m, unitSystem)}
+          </Mono>
+          <div className="mt-[9px] flex flex-wrap gap-1.5">
+            <Pill>{tier?.label ?? t("Unrated")}</Pill>
+            <Pill>{formatSurface(segment.surface_type)}</Pill>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section className="grid grid-cols-2 gap-2">
+      {/* Metric grid */}
+      <div className="grid grid-cols-2 gap-2.5">
         <Metric
           icon={<Gauge size={14} />}
           label={t("Confidence")}
-          value={`${segment.confidence}%`}
+          value={`${confidence}%`}
+          caption={confidenceCaption(confidence)}
         />
         <Metric
-          icon={<Route size={14} />}
+          icon={<Activity size={14} />}
           label={t("Rider passes")}
-          value={`${segment.reading_count} ${
-            segment.reading_count === 1 ? "pass" : "passes"
-          }`}
+          value={String(segment.reading_count)}
+          caption={passLabel}
         />
         <Metric
           icon={<Users size={14} />}
           label={t("Recent riders")}
-          value={`${segment.riders_per_month}/month`}
+          value={String(segment.riders_per_month)}
+          caption={t("per month")}
         />
         <Metric
           icon={<Clock size={14} />}
           label={t("Last updated")}
-          value={formatRelativeTime(segment.last_updated)}
+          value={formatDate(segment.last_updated)}
         />
-      </section>
+      </div>
 
-      <section className="rounded-lg border border-line bg-cream p-4">
-        <p className="mb-3 text-[11px] uppercase tracking-wider text-fg-dim">
-          {t("Quality mix ")}
-        </p>
-        <div className="space-y-2">
-          {QUALITY_BREAKDOWN_ROWS.map((row) => (
-            <div key={row.key}>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="text-fg-dim">{row.label}</span>
-                <span className="tabular-nums text-ink">
-                  {segment.quality_breakdown[row.key]}%
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-paper">
-                <div
-                  className={`h-1.5 rounded-full ${row.bg}`}
-                  style={{ width: `${segment.quality_breakdown[row.key]}%` }}
-                />
-              </div>
-            </div>
-          ))}
+      {/* Confidence bar */}
+      <div>
+        <div className="mb-[7px] flex items-baseline justify-between gap-3">
+          <Stamp>{t("Confidence")}</Stamp>
+          <Mono className="text-[11px] text-fg-dim">
+            {confidence}% · {segment.reading_count} {passLabel}
+          </Mono>
         </div>
-      </section>
+        <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
+          <div
+            className="h-full rounded-full bg-accent"
+            style={{ width: `${confidence}%` }}
+          />
+        </div>
+      </div>
+
+      <Divider />
+
+      {/* Quality mix */}
+      <div>
+        <Stamp className="mb-3 block">{t("Quality mix")}</Stamp>
+        <div className="flex flex-col gap-2.5">
+          {QUALITY_BREAKDOWN_ROWS.map((row) => {
+            const pct = clampPercent(segment.quality_breakdown[row.key]);
+            const active = row.tier === currentTier;
+            return (
+              <div key={row.key} className="flex items-center gap-3">
+                <div className="flex w-[92px] shrink-0 items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className={`h-[9px] w-[9px] rounded-full ${row.bg}`}
+                  />
+                  <span
+                    className={`text-[12.5px] font-semibold ${
+                      active ? "text-ink" : "text-fg-mute"
+                    }`}
+                  >
+                    {row.label}
+                  </span>
+                </div>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-2">
+                  <div
+                    className={`h-full rounded-full ${row.bg}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <Mono
+                  className={`w-[34px] text-right text-[11px] font-semibold ${
+                    active ? "text-fg-dim" : "text-fg-mute"
+                  }`}
+                >
+                  {pct}%
+                </Mono>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {hasTrend && (
-        <section className="rounded-lg border border-line bg-cream p-4">
-          <p className="mb-3 text-[11px] uppercase tracking-wider text-fg-dim">
-            {t("Quality trend ")}
-          </p>
-          <SegmentTrendChart
-            segmentId={segment.id}
-            history={qualityHistory}
-            regionalHistory={regionalHistory}
-          />
-        </section>
+        <>
+          <Divider />
+          {/* Quality trend (US-45) */}
+          <div>
+            <Stamp className="mb-3 block">{t("Quality trend")}</Stamp>
+            <SegmentTrendChart
+              segmentId={segment.id}
+              history={qualityHistory}
+              regionalHistory={regionalHistory}
+              tone="cream"
+            />
+          </div>
+        </>
       )}
 
-      <section className="rounded-lg border border-line bg-cream p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-[11px] uppercase tracking-wider text-fg-dim">
-            {t("Active hazards ")}
-          </p>
-          <span className="text-xs text-fg-dim">
+      <Divider />
+
+      {/* Active hazards */}
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <Stamp>{t("Active hazards")}</Stamp>
+          <Mono className="text-[13px] font-bold text-fg-mute">
             {segment.active_hazard_count}
-          </span>
+          </Mono>
         </div>
         {segment.active_hazards.length === 0 ? (
-          <p className="text-xs text-fg-dim">
+          <p className="mt-2 text-[12.5px] text-fg-dim">
             {t("No active hazards on this segment. ")}
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="mt-3 space-y-3">
             {segment.active_hazards.map((hazard) => {
               const config =
                 HAZARD_CONFIG[hazard.hazard_type as HazardType] ??
@@ -264,44 +304,66 @@ function SegmentDetailContent({
             })}
           </ul>
         )}
-      </section>
+      </div>
 
-      <section className="rounded-lg border border-line bg-cream p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-fg-dim">
-              {t("Reviews and photos ")}
-            </p>
-            <p className="text-xs text-fg-dim">
-              {segment.review_count === 1
-                ? "1 public review"
-                : `${segment.review_count} public reviews`}
-            </p>
-          </div>
-          {segment.avg_review_rating != null && (
-            <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-300">
-              <Star size={14} />
-              {segment.avg_review_rating.toFixed(1)}
-            </span>
-          )}
+      <Divider />
+
+      {/* Reviews & photos */}
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <Stamp>{t("Reviews & photos")}</Stamp>
+          <Mono className="text-[11px] text-fg-mute">
+            {reviewCount === 1
+              ? t("1 review")
+              : t("{count} reviews", { count: reviewCount })}
+          </Mono>
         </div>
-        <RoadReviewsPanel segmentId={segment.id} />
-      </section>
+        <div className="mt-3.5">
+          <RoadReviewsPanel
+            segmentId={segment.id}
+            tone="cream"
+            hideHeader
+            onCountChange={setReviewCount}
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
 const QUALITY_BREAKDOWN_ROWS = [
-  { key: "excellent", label: "Excellent", bg: QUALITY_CONFIG.excellent.bg },
-  { key: "good", label: "Good", bg: QUALITY_CONFIG.good.bg },
-  { key: "fair", label: "Fair", bg: QUALITY_CONFIG.fair.bg },
-  { key: "poor", label: "Poor", bg: QUALITY_CONFIG.poor.bg },
+  {
+    key: "excellent",
+    label: "Excellent",
+    tier: "excellent",
+    bg: QUALITY_CONFIG.excellent.bg,
+  },
+  { key: "good", label: "Good", tier: "good", bg: QUALITY_CONFIG.good.bg },
+  { key: "fair", label: "Fair", tier: "fair", bg: QUALITY_CONFIG.fair.bg },
+  { key: "poor", label: "Poor", tier: "poor", bg: QUALITY_CONFIG.poor.bg },
   {
     key: "very_poor",
     label: "Very poor",
+    tier: "very-poor",
     bg: QUALITY_CONFIG["very-poor"].bg,
   },
 ] as const;
+
+function Divider() {
+  return <div aria-hidden="true" className="h-px w-full bg-line" />;
+}
+
+/** Short qualitative caption for the confidence metric tile. */
+function confidenceCaption(confidence: number): string {
+  if (confidence < 40) return t("Needs more passes");
+  if (confidence < 75) return t("Building confidence");
+  return t("Well established");
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
 
 function StatusBlock({
   icon,
@@ -313,7 +375,7 @@ function StatusBlock({
   body: string;
 }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-6 text-sm text-ink">
+    <div className="flex items-start gap-3 px-5 py-6 text-sm text-ink">
       <div className="mt-0.5 text-accent">{icon}</div>
       <div>
         <p className="font-medium text-ink">{title}</p>
@@ -327,25 +389,32 @@ function Metric({
   icon,
   label,
   value,
+  caption,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
+  caption?: string;
 }) {
   return (
-    <div className="rounded-lg border border-line bg-cream p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-fg-dim">
+    <div className="rounded-xl border border-line bg-paper px-3.5 py-3">
+      <div className="flex items-center gap-1.5 text-fg-mute">
         {icon}
-        <p className="text-[10px] uppercase tracking-wider">{label}</p>
+        <Stamp className="text-[10px] text-fg-mute">{label}</Stamp>
       </div>
-      <p className="text-sm font-medium text-ink">{value}</p>
+      <div className="mt-[7px] text-[19px] font-extrabold tracking-[-0.4px] text-ink">
+        {value}
+      </div>
+      {caption && (
+        <div className="mt-px text-[11px] text-fg-mute">{caption}</div>
+      )}
     </div>
   );
 }
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full border border-line-strong px-2 py-1 text-ink">
+    <span className="inline-flex items-center rounded-full border border-line-strong px-2.5 py-[5px] text-[11px] font-bold text-fg-dim">
       {children}
     </span>
   );
