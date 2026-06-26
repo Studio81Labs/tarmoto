@@ -1202,16 +1202,22 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(state.routeDirty).toBe(true);
   });
 
-  it("removeDay renumbers days contiguously and keeps a linked boundary consistent", () => {
-    seedOneDay();
-    useTripStore.getState().addDay();
-    // Add a third day seeded from day 2 (which has no end yet, so just a linked start).
-    useTripStore.getState().addDay();
+  it("removeDay (middle) renumbers, clamps, and re-seeds the new day 2's linked start from day 1's end", () => {
+    // Build a 3-day trip where every day has a real start + end so the
+    // overnight boundary actually cascades on removal.
+    seedOneDay(); // day 1: start (1,1) → end (2,2)
+    useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 end (20,20)
+    useTripStore.getState().addDay(); // day 3: linked start seeded from (20,20)
+    useTripStore.setState({ selectedDayIndex: 2 });
+    useTripStore.getState().placeWaypoint({ lat: 30, lng: 30 }, "set-end"); // day 3 end (30,30)
 
     const beforeRemove = useTripStore.getState().activeTrip!;
     expect(beforeRemove.days).toHaveLength(3);
+    expect(beforeRemove.days[2]!.startLinked).toBe(true);
 
-    // Remove day at index 1 (the middle day).
+    // Remove the MIDDLE day (index 1, the (?,?)→(20,20) day).
     useTripStore.getState().removeDay(1);
 
     const state = useTripStore.getState();
@@ -1222,9 +1228,63 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(trip.days[0]!.dayNumber).toBe(1);
     expect(trip.days[1]!.dayNumber).toBe(2);
 
+    // The new day 2 was the old day 3 (linked) — its start must re-seed to the
+    // new predecessor's (old day 1) END location (2,2), not the removed day's end.
+    expect(trip.days[1]!.startLinked).toBe(true);
+    const newDay2Start = trip.days[1]!.waypoints.find(
+      (w) => w.type === "start",
+    );
+    expect(newDay2Start!.location).toEqual({ lat: 2, lng: 2 });
+
     // selectedDayIndex must be clamped to the new length.
     expect(state.selectedDayIndex).toBeLessThan(2);
     expect(state.routeDirty).toBe(true);
+  });
+
+  it("removeDay(0) clears the dangling link on the new first day", () => {
+    seedOneDay();
+    useTripStore.getState().addDay(); // day 2 startLinked=true
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+
+    // Remove day 0 — the old day 2 becomes day 1 with no predecessor.
+    useTripStore.getState().removeDay(0);
+
+    const trip = useTripStore.getState().activeTrip!;
+    expect(trip.days).toHaveLength(1);
+    expect(trip.days[0]!.startLinked).toBe(false);
+  });
+
+  it("setWaypointType promoting a via→start on day 2 breaks the link and stops mirroring", () => {
+    seedOneDay(); // day 1: start (1,1) → end (2,2)
+    useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
+
+    // Add a via on day 2, then promote it to start via setWaypointType.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "add-via");
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().setWaypointType(via.id, "start");
+
+    // Link must be broken.
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+
+    // Editing day 1's end must NOT move day 2's (now manual) start.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    useTripStore.getState().placeWaypoint({ lat: 7, lng: 7 }, "set-end");
+
+    const day2Starts = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.filter((w) => w.type === "start");
+    // The promoted via (9,9) is the start; it stayed put.
+    expect(
+      day2Starts.some((w) => w.location.lat === 9 && w.location.lng === 9),
+    ).toBe(true);
+    expect(
+      day2Starts.some((w) => w.location.lat === 7 && w.location.lng === 7),
+    ).toBe(false);
   });
 
   it("removeDay is a no-op when only 1 day remains", () => {

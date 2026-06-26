@@ -385,6 +385,46 @@ function syncLinkedStart(
   return { days: updated, stale: markDayStale(staleDays, next.dayNumber) };
 }
 
+/**
+ * Shared post-commit boilerplate for the context-menu mutations
+ * (`placeWaypoint` / `setWaypointType` / `removeWaypointById`). Takes the
+ * `commitTripChange` result (already confirmed `!== state`), marks the edited
+ * day `idx` stale, runs `syncLinkedStart` to mirror the edited end into the next
+ * linked day, and returns the `{ activeTrip, routeDirty, stalePreviewDays }`
+ * slice to spread over the committed result. The single `committed` cast lives
+ * here so the three callers don't each repeat it.
+ */
+function applyPostCommitSync(
+  committed:
+    | Partial<TripState & TripStoreHistory>
+    | (TripState & TripStoreHistory),
+  state: TripState & TripStoreHistory,
+  idx: number,
+): {
+  activeTrip: Trip | null | undefined;
+  routeDirty: true;
+  stalePreviewDays: number[];
+} {
+  const committedTrip = (committed as { activeTrip?: Trip | null }).activeTrip;
+  const updatedDays = committedTrip?.days ?? [];
+  const staleAfterCommit = markDayStale(
+    state.stalePreviewDays,
+    updatedDays[idx]?.dayNumber ?? 1,
+  );
+  const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
+    updatedDays,
+    idx,
+    staleAfterCommit,
+  );
+  return {
+    activeTrip: committedTrip
+      ? { ...committedTrip, days: syncedDays }
+      : committedTrip,
+    routeDirty: true,
+    stalePreviewDays: syncedStale,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const useTripStore = create<TripState & TripStoreHistory>(
@@ -768,27 +808,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // After writing days[idx], sync the linked start on the next day if applicable.
         // Use state.activeTrip (pre-commit) to determine if this was a draft creation.
         const idx = state.activeTrip === null ? 0 : state.selectedDayIndex;
-        const committedActiveTrip = (committed as { activeTrip?: Trip | null })
-          .activeTrip;
-        const updatedDays = committedActiveTrip?.days ?? [];
-        const staleAfterCommit = markDayStale(
-          state.stalePreviewDays,
-          updatedDays[idx]?.dayNumber ?? 1,
-        );
-        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
-          updatedDays,
-          idx,
-          staleAfterCommit,
-        );
-
-        return {
-          ...committed,
-          activeTrip: committedActiveTrip
-            ? { ...committedActiveTrip, days: syncedDays }
-            : committedActiveTrip,
-          routeDirty: true,
-          stalePreviewDays: syncedStale,
-        };
+        return { ...committed, ...applyPostCommitSync(committed, state, idx) };
       }),
 
     setWaypointType: (waypointId, type) =>
@@ -805,8 +825,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const waypoints = [...day.waypoints];
           waypoints[waypointIndex] = { ...waypoints[waypointIndex]!, type };
           const days = [...activeTrip.days];
+          // Promoting a waypoint to `start` on a non-first day is a manual
+          // start override — break the overnight link so a later edit to the
+          // predecessor's end doesn't silently overwrite the rider's choice
+          // (same semantics as placeWaypoint's `breakLink`).
+          const breakLink = type === "start" && idx >= 1;
           days[idx] = updatePlannerDayRoute(
-            day,
+            breakLink ? { ...day, startLinked: false } : day,
             waypoints,
             activeTrip.parameters,
           );
@@ -819,26 +844,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
         if (committed === state) return state;
 
-        const idx = state.selectedDayIndex;
-        const committedTrip = (committed as { activeTrip?: Trip | null })
-          .activeTrip;
-        const updatedDays = committedTrip?.days ?? [];
-        const staleAfterCommit = markDayStale(
-          state.stalePreviewDays,
-          updatedDays[idx]?.dayNumber ?? 1,
-        );
-        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
-          updatedDays,
-          idx,
-          staleAfterCommit,
-        );
         return {
           ...committed,
-          activeTrip: committedTrip
-            ? { ...committedTrip, days: syncedDays }
-            : committedTrip,
-          routeDirty: true,
-          stalePreviewDays: syncedStale,
+          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
         };
       }),
 
@@ -864,26 +872,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
         if (committed === state) return state;
 
-        const idx = state.selectedDayIndex;
-        const committedTrip = (committed as { activeTrip?: Trip | null })
-          .activeTrip;
-        const updatedDays = committedTrip?.days ?? [];
-        const staleAfterCommit = markDayStale(
-          state.stalePreviewDays,
-          updatedDays[idx]?.dayNumber ?? 1,
-        );
-        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
-          updatedDays,
-          idx,
-          staleAfterCommit,
-        );
         return {
           ...committed,
-          activeTrip: committedTrip
-            ? { ...committedTrip, days: syncedDays }
-            : committedTrip,
-          routeDirty: true,
-          stalePreviewDays: syncedStale,
+          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
         };
       }),
 
@@ -972,6 +963,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const days = trip.days
           .filter((_, i) => i !== index)
           .map((d, i) => ({ ...d, dayNumber: i + 1 })); // renumber contiguously
+        // The new first day has no predecessor to mirror — a dangling
+        // `startLinked` would let a future cascade re-seed from nothing, so
+        // clear it. (Covers the index===0 removal case the boundary re-eval
+        // below skips.)
+        if (days[0]?.startLinked) {
+          days[0] = { ...days[0], startLinked: false };
+        }
         const stale = state.stalePreviewDays;
         // re-evaluate the boundary at `index`: if the day now at `index` is linked, re-seed from its new predecessor
         let result = { days, stale };
