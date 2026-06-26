@@ -193,6 +193,9 @@ export default function TripPlannerPage() {
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const routeDirty = useTripStore((s) => s.routeDirty);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
+  const setDraftPlannerParameters = useTripStore(
+    (s) => s.setDraftPlannerParameters,
+  );
   // Stable selector identity — the store fn is recreated each call, but
   // we select the *day 0 waypoints array* so useMemo below only fires
   // when the waypoints array actually changes (reference equality).
@@ -447,6 +450,13 @@ export default function TripPlannerPage() {
       surfacePreference,
     ],
   );
+
+  // Mirror the current planner controls into the store so the map's
+  // context-menu placement seeds a brand-new draft with these parameters
+  // (days/km/avoid options) rather than store defaults.
+  useEffect(() => {
+    setDraftPlannerParameters(plannerParams);
+  }, [plannerParams, setDraftPlannerParameters]);
   const closureRoutes = useMemo(
     () => buildTripClosureRoutes(displayedTrip),
     [displayedTrip],

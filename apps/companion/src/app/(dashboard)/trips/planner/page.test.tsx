@@ -13,7 +13,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
-import type { Trip, TripSummary, Waypoint } from "@/lib/types";
+import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 
 const { mockPush } = vi.hoisted(() => ({
@@ -266,6 +266,8 @@ type TripStoreSnapshot = {
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
   markRouteDirty: () => void;
+  draftPlannerParameters: TripParameters | null;
+  setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
@@ -405,6 +407,7 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
+      draftPlannerParameters: null,
       focusedSegmentId: null,
       hoveredSegmentId: null,
       undoStack: [],
@@ -413,6 +416,7 @@ describe("TripPlannerPage", () => {
       setActiveTrip,
       setGenerating,
       markRouteDirty: vi.fn(),
+      setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       addWaypoint: vi.fn(),

@@ -132,6 +132,14 @@ interface TripState {
    */
   routeDirty: boolean;
 
+  /**
+   * The planner controls' current parameters, mirrored from the page so the
+   * map's context-menu `placeWaypoint` can seed a brand-new draft with the
+   * rider's chosen days/km/avoid options instead of store defaults. Null until
+   * the planner page syncs it.
+   */
+  draftPlannerParameters: TripParameters | null;
+
   // Sidebar focus state consumed by the map layer (#79) and the
   // RoadPreviewCard components in the planner sidebar (US-33).
   focusedSegmentId: string | null;
@@ -142,6 +150,8 @@ interface TripState {
   setGenerating: (generating: boolean) => void;
   /** Set routeDirty to true. Called by user-facing controls that change routing inputs. */
   markRouteDirty: () => void;
+  /** Mirror the planner controls' parameters for context-menu draft creation. */
+  setDraftPlannerParameters: (parameters: TripParameters) => void;
 
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
@@ -179,6 +189,7 @@ interface TripState {
   placeWaypoint: (
     coords: { lat: number; lng: number },
     action: PlacementActionId,
+    parameters?: TripParameters,
   ) => void;
 
   /**
@@ -311,6 +322,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
+    draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
     undoStack: [],
@@ -333,13 +345,15 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       }),
     setGenerating: (isGenerating) => set({ isGenerating }),
     markRouteDirty: () => set({ routeDirty: true }),
+    setDraftPlannerParameters: (parameters) =>
+      set({ draftPlannerParameters: parameters }),
 
     focusSegment: (segmentId) => set({ focusedSegmentId: segmentId }),
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
 
     addWaypoint: (dayIndex, waypoint) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -355,7 +369,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        // Adding a waypoint (e.g. a suggested overnight stay from
+        // TripStopsPanel) is a route edit — mark dirty so Save route enables.
+        routeDirty: true,
+      })),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
       set((state) => ({
@@ -555,11 +572,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
-    placeWaypoint: (coords, action) =>
+    placeWaypoint: (coords, action, parameters) =>
       set((state) => ({
         ...commitTripChange(state, (activeTrip) => {
           const baseTrip =
-            activeTrip ?? createPlannerDraftTrip(new Date().toISOString());
+            activeTrip ??
+            createPlannerDraftTrip(new Date().toISOString(), parameters);
           const days = ensurePlannerDays(baseTrip.days, 1);
           const day = days[0]!;
           const waypoints = [...day.waypoints];
@@ -602,9 +620,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           }
 
           days[0] = { ...day, waypoints };
+          // Keep the trip's parameters in sync with the planner controls the
+          // rider set before this first placement (mirrors appendPlannerWaypoint)
+          // so creating the draft here doesn't reset days/km/avoid options.
+          const nextParameters = parameters
+            ? mergePlannerParameters(
+                baseTrip.parameters,
+                parameters,
+                days.length,
+              )
+            : baseTrip.parameters;
           return {
             ...baseTrip,
             days,
+            parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
         }),

@@ -379,7 +379,13 @@ const TripPlannerMapContent = forwardRef<
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {
       if (!contextMenu) return;
-      placeWaypoint(contextMenu.coords, actionId);
+      // Seed a brand-new draft with the planner controls the rider configured
+      // (mirrored into the store by the planner page) instead of store defaults.
+      placeWaypoint(
+        contextMenu.coords,
+        actionId,
+        useTripStore.getState().draftPlannerParameters ?? undefined,
+      );
       closeContextMenu();
     },
     [contextMenu, placeWaypoint, closeContextMenu],

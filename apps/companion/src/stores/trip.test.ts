@@ -737,4 +737,37 @@ describe("useTripStore routeDirty flag", () => {
     });
     expect(useTripStore.getState().routeDirty).toBe(true);
   });
+
+  it("addWaypoint marks the draft dirty so suggested stays can be saved", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().addWaypoint(0, {
+      id: "stay-1",
+      type: "accommodation",
+      name: "Mountain inn",
+      location: { lat: 3, lng: 3 },
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("placeWaypoint seeds a new draft with the passed planner parameters", () => {
+    useTripStore.getState().resetForTest?.();
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start", {
+      days: 1,
+      dailyKmTarget: 400,
+      roadPreference: "scenic",
+      surfacePreference: [],
+      avoidHighways: false,
+      avoidTolls: true,
+      avoidUnpaved: false,
+      minQuality: 3,
+    });
+    const params = useTripStore.getState().activeTrip!.parameters;
+    // The rider's controls flow into the new draft instead of store defaults.
+    expect(params.roadPreference).toBe("scenic");
+    expect(params.avoidTolls).toBe(true);
+    expect(params.dailyKmTarget).toBe(400);
+  });
 });
