@@ -187,13 +187,15 @@ interface TripState {
   routingWaypoints: () => { lat: number; lng: number }[];
 
   /**
-   * Ordered typed waypoints for the save payload.
+   * Ordered typed waypoints for the save payload. Types are mapped to the
+   * canonical backend vocabulary (LOCAL_TO_BACKEND_WAYPOINT_TYPE), so
+   * `rest` → `"food"` and `accommodation` → `"hotel"`.
    */
   saveWaypoints: () => {
     lat: number;
     lng: number;
     name?: string;
-    type: Waypoint["type"];
+    type: BackendWaypointType;
   }[];
 
   /**
@@ -227,14 +229,51 @@ function activePlannerRoutingWaypoints(
   }));
 }
 
+/**
+ * Canonical waypoint type vocabulary expected by PUT /trips/:id/route
+ * (SaveRouteWaypointDto.type). Mirrors the backend enum.
+ */
+export type BackendWaypointType =
+  | "start"
+  | "via"
+  | "end"
+  | "fuel"
+  | "food"
+  | "coffee"
+  | "hotel"
+  | "photo";
+
+/**
+ * Maps the companion's local waypoint type vocabulary to the canonical backend
+ * vocabulary expected by PUT /trips/:id/route (SaveRouteWaypointDto.type).
+ *
+ * This is the inverse of WAYPOINT_TYPE_MAP in trip-from-detail.ts:
+ *   food → rest, coffee → rest, hotel → accommodation (inbound)
+ * So on the way out we choose the canonical representative for each collapsed
+ * local type: rest → food (the canonical for the food/coffee pair),
+ * accommodation → hotel.
+ */
+const LOCAL_TO_BACKEND_WAYPOINT_TYPE: Record<
+  Waypoint["type"],
+  BackendWaypointType
+> = {
+  start: "start",
+  via: "via",
+  end: "end",
+  fuel: "fuel",
+  photo: "photo",
+  rest: "food",
+  accommodation: "hotel",
+};
+
 function activePlannerSaveWaypoints(
   waypoints: Waypoint[],
-): { lat: number; lng: number; name?: string; type: Waypoint["type"] }[] {
+): { lat: number; lng: number; name?: string; type: BackendWaypointType }[] {
   return waypoints.map((w) => ({
     lat: w.location.lat,
     lng: w.location.lng,
     name: w.name,
-    type: w.type,
+    type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
 }
 

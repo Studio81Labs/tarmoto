@@ -10,7 +10,7 @@ import { ToastHost } from "@/components/ToastHost";
 import { useToastStore } from "@/stores/toast";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
-import { useTripStore } from "@/stores/trip";
+import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import type { Trip, TripSummary, Waypoint } from "@/lib/types";
@@ -295,7 +295,7 @@ type TripStoreSnapshot = {
     lat: number;
     lng: number;
     name?: string;
-    type: Waypoint["type"];
+    type: BackendWaypointType;
   }[];
   applyRouteResult: (result: unknown) => void;
   resetForTest: () => void;
@@ -428,13 +428,13 @@ describe("TripPlannerPage", () => {
           lat: 46.47,
           lng: 10.37,
           name: "Bormio",
-          type: "start" as Waypoint["type"],
+          type: "start" as BackendWaypointType,
         },
         {
           lat: 46.61,
           lng: 10.57,
           name: "Prato allo Stelvio",
-          type: "end" as Waypoint["type"],
+          type: "end" as BackendWaypointType,
         },
       ]),
       applyRouteResult: vi.fn(),

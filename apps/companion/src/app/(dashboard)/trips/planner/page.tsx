@@ -628,19 +628,26 @@ export default function TripPlannerPage() {
       return;
     }
     setSavingRoute(true);
+    let createdTripId: string | null = null;
     try {
       let tripId = existingTripId;
       if (!tripId) {
         // No server trip yet — create metadata first (same pattern as
         // handleSave) so we have a backend id to PUT the route against.
-        const basePayload = currentTrip
-          ? buildTripMetadataPayload(currentTrip, plannerParams)
-          : buildTripMetadataPayload(
-              { name: "New Trip" } as Parameters<
-                typeof buildTripMetadataPayload
-              >[0],
-              plannerParams,
-            );
+        // Override num_days to 1: the manual route save only persists day 1,
+        // so the trip metadata must reflect that — not the plannerParams.days
+        // default (3) which would leave 3-day metadata with one TripDay.
+        const basePayload = {
+          ...(currentTrip
+            ? buildTripMetadataPayload(currentTrip, plannerParams)
+            : buildTripMetadataPayload(
+                { name: "New Trip" } as Parameters<
+                  typeof buildTripMetadataPayload
+                >[0],
+                plannerParams,
+              )),
+          num_days: 1,
+        };
         const { data: created } = await tripsApi.create(basePayload);
         tripId =
           (
@@ -649,6 +656,7 @@ export default function TripPlannerPage() {
             }
           ).id ?? null;
         if (!tripId) throw new Error("Trip creation did not return an id");
+        createdTripId = tripId;
       }
       const routeWaypoints = wps.map((wp) => ({
         lat: wp.lat,
@@ -670,6 +678,12 @@ export default function TripPlannerPage() {
       }
       toast.success(t("Route saved"));
     } catch {
+      // If we just created a new server trip but the route save failed,
+      // delete the empty trip so it doesn't linger in the rider's library.
+      // Mirrors the cleanup pattern in handleSave.
+      if (createdTripId) {
+        await cleanupCreatedTrip(createdTripId);
+      }
       toast.error(t("Could not save the route. Please try again."));
     } finally {
       setSavingRoute(false);

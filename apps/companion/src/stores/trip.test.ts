@@ -525,6 +525,39 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect("name" in saved[3]!).toBe(true);
   });
 
+  it("saveWaypoints maps local rest→food and accommodation→hotel to canonical backend types", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+
+    // Insert a rest stop (local type) — should serialize as "food"
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "rest-1",
+      type: "rest",
+      name: "Cafe",
+      location: { lat: 2, lng: 2 },
+    });
+    // Insert an accommodation stop (local type) — should serialize as "hotel"
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "hotel-1",
+      type: "accommodation",
+      name: "Overnight hotel",
+      location: { lat: 3, lng: 3 },
+    });
+
+    const saved = useTripStore.getState().saveWaypoints();
+    // Ordering: start → rest → accommodation → end
+    expect(saved).toHaveLength(4);
+    expect(saved[0]!.type).toBe("start");
+    // Local "rest" maps to canonical "food"
+    expect(saved[1]!.type).toBe("food");
+    expect(saved[1]!.name).toBe("Cafe");
+    // Local "accommodation" maps to canonical "hotel"
+    expect(saved[2]!.type).toBe("hotel");
+    expect(saved[2]!.name).toBe("Overnight hotel");
+    expect(saved[3]!.type).toBe("end");
+  });
+
   it("removeWaypointById removes a via and leaves start and end intact", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
