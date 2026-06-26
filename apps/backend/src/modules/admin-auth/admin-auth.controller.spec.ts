@@ -15,6 +15,7 @@ import { AdminAuthController } from './admin-auth.controller.js';
 import { AdminAuthService } from './admin-auth.service.js';
 import { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 import {
+  ADMIN_CLIENT_COOKIE,
   ADMIN_REFRESH_COOKIE,
   ADMIN_SSO_STATE_COOKIE,
 } from './admin-auth.constants.js';
@@ -29,6 +30,23 @@ function mockResponse(): Response {
     json: jest.fn().mockReturnThis(),
     redirect: jest.fn(),
   } as unknown as Response;
+}
+
+/** A minimal AdminSessionTokens stub that includes clientNonce. */
+function makeTokens(overrides: Record<string, unknown> = {}) {
+  return {
+    accessToken: 'a',
+    refreshToken: 'r',
+    clientNonce: 'nonce-hex-abc',
+    user: {
+      id: 'a1',
+      email: 'ops@tarmoto.app',
+      role: 'admin',
+      status: 'active',
+    },
+    expiresIn: 540,
+    ...overrides,
+  };
 }
 
 describe('AdminAuthController', () => {
@@ -59,18 +77,8 @@ describe('AdminAuthController', () => {
     jest.clearAllMocks();
   });
 
-  it('logs in, sets cookies, and stamps the audit actor on the request', async () => {
-    (service.loginWithPassword as jest.Mock).mockResolvedValue({
-      accessToken: 'a',
-      refreshToken: 'r',
-      user: {
-        id: 'a1',
-        email: 'ops@tarmoto.app',
-        role: 'admin',
-        status: 'active',
-      },
-      expiresIn: 540,
-    });
+  it('logs in, sets auth + client cookies, and stamps the audit actor on the request', async () => {
+    (service.loginWithPassword as jest.Mock).mockResolvedValue(makeTokens());
     const req = { headers: {} } as unknown as Request;
     const res = mockResponse();
     const body = await controller.login(
@@ -85,6 +93,19 @@ describe('AdminAuthController', () => {
     );
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.setHeader).toHaveBeenCalled();
+    // The client nonce cookie must appear in at least one Set-Cookie call.
+    const allSetHeaderCalls = (res.setHeader as jest.Mock).mock.calls as [
+      string,
+      string | string[],
+    ][];
+    const allCookieValues = allSetHeaderCalls
+      .filter(([name]) => name === 'Set-Cookie')
+
+      .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+      .join('\n');
+    expect(allCookieValues).toContain(ADMIN_CLIENT_COOKIE);
+    expect(allCookieValues).toContain('nonce-hex-abc');
+
     expect(body).toEqual({
       user: {
         id: 'a1',
@@ -100,30 +121,56 @@ describe('AdminAuthController', () => {
     });
   });
 
-  it('refresh stamps the audit actor on the request after successful token rotation', async () => {
-    (service.refresh as jest.Mock).mockResolvedValue({
-      accessToken: 'a2',
-      refreshToken: 'r2',
-      user: {
-        id: 'a1',
-        email: 'ops@tarmoto.app',
-        role: 'support',
-        status: 'active',
+  it('refresh reads client nonce cookie, passes it to service.refresh, re-affirms cookie, and stamps audit actor', async () => {
+    (service.refresh as jest.Mock).mockResolvedValue(
+      makeTokens({ clientNonce: 'nonce-hex-abc' }),
+    );
+    const req = {
+      headers: {
+        cookie: `${ADMIN_REFRESH_COOKIE}=raw-refresh; ${ADMIN_CLIENT_COOKIE}=nonce-hex-abc`,
       },
-      expiresIn: 540,
+    } as unknown as Request;
+    const res = mockResponse();
+    await controller.refresh(req, res);
+
+    // service.refresh must receive both the raw refresh token AND the client nonce.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.refresh).toHaveBeenCalledWith(
+      'raw-refresh',
+      'nonce-hex-abc',
+    );
+
+    // The client nonce cookie must be re-affirmed in the response.
+    const allSetHeaderCalls = (res.setHeader as jest.Mock).mock.calls as [
+      string,
+      string | string[],
+    ][];
+    const allCookieValues = allSetHeaderCalls
+      .filter(([name]) => name === 'Set-Cookie')
+
+      .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+      .join('\n');
+    expect(allCookieValues).toContain(ADMIN_CLIENT_COOKIE);
+
+    expect(getAdminAuditActor(req)).toEqual({
+      admin_user_id: 'a1',
+      admin_role: 'admin',
     });
+  });
+
+  it('refresh passes null client nonce when client cookie is absent', async () => {
+    (service.refresh as jest.Mock).mockResolvedValue(makeTokens());
     const req = {
       headers: { cookie: `${ADMIN_REFRESH_COOKIE}=raw-refresh` },
     } as unknown as Request;
     const res = mockResponse();
     await controller.refresh(req, res);
-    expect(getAdminAuditActor(req)).toEqual({
-      admin_user_id: 'a1',
-      admin_role: 'support',
-    });
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.refresh).toHaveBeenCalledWith('raw-refresh', null);
   });
 
-  it('logout stamps the audit actor when revoke returns an actor', async () => {
+  it('logout stamps the audit actor when revoke returns an actor, and clears client cookie', async () => {
     (service.revoke as jest.Mock).mockResolvedValue({
       admin_user_id: 'a1',
       admin_role: 'admin',
@@ -139,6 +186,19 @@ describe('AdminAuthController', () => {
       admin_user_id: 'a1',
       admin_role: 'admin',
     });
+
+    // Client cookie must be cleared (Max-Age=0).
+    const allSetHeaderCalls = (res.setHeader as jest.Mock).mock.calls as [
+      string,
+      string | string[],
+    ][];
+    const allCookieValues = allSetHeaderCalls
+      .filter(([name]) => name === 'Set-Cookie')
+
+      .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+      .join('\n');
+    expect(allCookieValues).toContain(ADMIN_CLIENT_COOKIE);
+    expect(allCookieValues).toContain('Max-Age=0');
   });
 
   it('logout does not stamp an actor when revoke returns null (token not found)', async () => {
@@ -217,7 +277,7 @@ describe('AdminAuthController', () => {
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
-  it('successful SSO callback redirects to / and records an audit row with event_key admin.auth.sso_login', async () => {
+  it('successful SSO callback sets client cookie, redirects to /, and records an audit row', async () => {
     const adminUser = {
       id: 'a1',
       email: 'ops@tarmoto.app',
@@ -231,17 +291,9 @@ describe('AdminAuthController', () => {
       email: 'ops@tarmoto.app',
     });
     (service.findOrProvisionSsoUser as jest.Mock).mockResolvedValue(adminUser);
-    (service.createSession as jest.Mock).mockResolvedValue({
-      accessToken: 'at',
-      refreshToken: 'rt',
-      user: {
-        id: 'a1',
-        email: 'ops@tarmoto.app',
-        role: 'admin',
-        status: 'active',
-      },
-      expiresIn: 540,
-    });
+    (service.createSession as jest.Mock).mockResolvedValue(
+      makeTokens({ clientNonce: 'sso-nonce-xyz' }),
+    );
 
     const callbackPath = '/api/v1/admin/auth/sso/github/callback';
     const req = {
@@ -257,6 +309,19 @@ describe('AdminAuthController', () => {
     // Successful login redirects to the app root.
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.redirect).toHaveBeenCalledWith('/');
+
+    // Client nonce cookie must be set.
+    const allSetHeaderCalls = (res.setHeader as jest.Mock).mock.calls as [
+      string,
+      string | string[],
+    ][];
+    const allCookieValues = allSetHeaderCalls
+      .filter(([name]) => name === 'Set-Cookie')
+
+      .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+      .join('\n');
+    expect(allCookieValues).toContain(ADMIN_CLIENT_COOKIE);
+    expect(allCookieValues).toContain('sso-nonce-xyz');
 
     // An audit row must be recorded for the SSO login (GET bypasses the
     // AdminAuditInterceptor which only fires on mutating requests).

@@ -126,6 +126,8 @@ describe('AdminAuthService.loginWithPassword', () => {
       status: 'active',
     });
     expect(typeof result.accessToken).toBe('string');
+    expect(typeof result.clientNonce).toBe('string');
+    expect(result.clientNonce.length).toBeGreaterThan(0);
     expect(refreshTokens.save).toHaveBeenCalled();
     const savedHash = (
       refreshTokens.save as jest.Mock<unknown, [{ token_hash: string }]>
@@ -160,6 +162,50 @@ describe('AdminAuthService.loginWithPassword', () => {
 });
 
 // ---------------------------------------------------------------------------
+// createSession
+// ---------------------------------------------------------------------------
+
+describe('AdminAuthService.createSession', () => {
+  it('stores a client_nonce on the session row and returns it in the tokens', async () => {
+    const adminUser = {
+      id: 'a1',
+      email: 'ops@tarmoto.app',
+      role: 'admin',
+      status: 'active',
+      password_hash: null,
+    };
+    const savedSession = { id: 'sess-nonce-1' };
+    const users = repoMock({ findOne: jest.fn().mockResolvedValue(adminUser) });
+    const sessions = repoMock({
+      save: jest.fn().mockResolvedValue(savedSession),
+    });
+    const refreshTokens = repoMock();
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      noopDataSource,
+    );
+
+    const result = await service.createSession('a1');
+
+    // clientNonce must be a non-empty hex string.
+    expect(typeof result.clientNonce).toBe('string');
+    expect(result.clientNonce.length).toBeGreaterThan(0);
+
+    // The saved session row must carry the client_nonce.
+    const saveCalls = (
+      sessions.save as jest.Mock<unknown, [{ client_nonce: string }]>
+    ).mock.calls;
+    expect(saveCalls.length).toBeGreaterThan(0);
+    expect(saveCalls[0][0].client_nonce).toBe(result.clientNonce);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // refresh
 // ---------------------------------------------------------------------------
 
@@ -168,6 +214,7 @@ describe('AdminAuthService.refresh', () => {
   const userId = 'u1';
   const storedTokenId = 'tok1';
   const newTokenId = 'tok2';
+  const clientNonce = 'matching-nonce-hex-abc123';
 
   const adminUser = {
     id: userId,
@@ -182,9 +229,10 @@ describe('AdminAuthService.refresh', () => {
     admin_user_id: userId,
     revoked_at: null,
     expires_at: new Date(Date.now() + 3_600_000),
+    client_nonce: clientNonce,
   };
 
-  it('(a) rotates a valid token: claim succeeds, old token revoked and linked to new token, session bumped', async () => {
+  it('(a) rotates a valid token: claim succeeds, old token revoked and linked to new token, session bumped, tokens include clientNonce', async () => {
     const rawToken = 'valid_raw_token';
     const tokenHash = hashRefreshToken(rawToken);
     const storedToken = {
@@ -229,11 +277,13 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
-    const result = await service.refresh(rawToken);
+    const result = await service.refresh(rawToken, clientNonce);
 
     expect(result.user.id).toBe(userId);
     expect(typeof result.accessToken).toBe('string');
     expect(typeof result.refreshToken).toBe('string');
+    // Returned tokens must carry the session's client nonce.
+    expect(result.clientNonce).toBe(clientNonce);
 
     // Claim call: conditional revoke gated on revoked_at IS NULL.
     expect(rtManagerRepo.update).toHaveBeenCalledWith(
@@ -262,63 +312,7 @@ describe('AdminAuthService.refresh', () => {
     );
   });
 
-  it('(d) in-tx concurrent loser (affected: 0) — benign race: throws 401, family NOT revoked, no token minted', async () => {
-    const rawToken = 'valid_raw_token_concurrent';
-    const tokenHash = hashRefreshToken(rawToken);
-    const storedToken = {
-      id: storedTokenId,
-      session_id: sessionId,
-      token_hash: tokenHash,
-      revoked_at: null,
-      expires_at: new Date(Date.now() + 3_600_000),
-    };
-
-    // Outside-transaction repo mocks (pre-transaction lookups pass normally).
-    const refreshTokens = repoMock({
-      findOne: jest.fn().mockResolvedValue(storedToken),
-    });
-    const sessions = repoMock({
-      findOne: jest.fn().mockResolvedValue(activeSession),
-    });
-    const users = repoMock({
-      findOne: jest.fn().mockResolvedValue(adminUser),
-    });
-
-    // Inside-transaction mocks: claim returns affected: 0 (losing tab in a concurrent race).
-    const rtManagerRepo = {
-      create: jest.fn((v: unknown) => v),
-      save: jest.fn(),
-      update: jest.fn().mockResolvedValue({ affected: 0 }),
-    };
-    const sessManagerRepo = {
-      update: jest.fn(),
-    };
-
-    const manager = makeManagerMock(rtManagerRepo, sessManagerRepo);
-    const dataSource = makeDataSource(manager);
-
-    const service = new AdminAuthService(
-      jwt,
-      config,
-      users as never,
-      sessions as never,
-      refreshTokens as never,
-      dataSource,
-    );
-
-    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-
-    // Benign race: the winning tab's new token is already in the shared cookie jar.
-    // The losing tab must NOT revoke the session family.
-    expect(sessManagerRepo.update).not.toHaveBeenCalled();
-
-    // No new token must be minted — the loser must not issue tokens.
-    expect(rtManagerRepo.save).not.toHaveBeenCalled();
-  });
-
-  it('(b) revoked token triggers chain-revocation and throws UnauthorizedException', async () => {
+  it('(b) revoked token with missing client nonce — genuine reuse: chain-revokes and throws 401', async () => {
     const rawToken = 'already_revoked_token';
     const tokenHash = hashRefreshToken(rawToken);
     const revokedToken = {
@@ -334,6 +328,8 @@ describe('AdminAuthService.refresh', () => {
       update: jest.fn(),
     });
     const sessions = repoMock({
+      // findOne returns undefined — no nonce available
+      findOne: jest.fn().mockResolvedValue(undefined),
       update: jest.fn(),
     });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
@@ -347,6 +343,7 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
+    // No client nonce presented (e.g., cookie absent)
     await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -413,25 +410,207 @@ describe('AdminAuthService.refresh', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('(e) pre-tx revoked token that was RECENTLY rotated (replaced_by_token_id set, revoked within leeway) — benign: throws 401, family NOT revoked', async () => {
-    const rawToken = 'recently_rotated_token';
+  it('(d) in-tx claim-loser with matching nonce (same jar) — benign race: throws 401, family NOT revoked, no token minted', async () => {
+    const rawToken = 'valid_raw_token_concurrent';
     const tokenHash = hashRefreshToken(rawToken);
-    const recentlyRotatedToken = {
+    const storedToken = {
       id: storedTokenId,
       session_id: sessionId,
       token_hash: tokenHash,
-      // Revoked just now (within the 10s leeway) and has a replacement:
-      // another tab won the rotation race moments ago.
-      revoked_at: new Date(),
-      replaced_by_token_id: 'winner-tok-id',
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    // Outside-transaction repo mocks (pre-transaction lookups pass normally).
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+    });
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(adminUser),
+    });
+
+    // Inside-transaction mocks: claim returns affected: 0 (losing tab in a concurrent race).
+    const rtManagerRepo = {
+      create: jest.fn((v: unknown) => v),
+      save: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const sessManagerRepo = {
+      update: jest.fn(),
+    };
+
+    const manager = makeManagerMock(rtManagerRepo, sessManagerRepo);
+    const dataSource = makeDataSource(manager);
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // Present the matching nonce — same browser jar as the winning tab.
+    await expect(service.refresh(rawToken, clientNonce)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Benign race: the winning tab's new token is already in the shared cookie jar.
+    // The losing tab must NOT revoke the session family.
+    expect(sessManagerRepo.update).not.toHaveBeenCalled();
+
+    expect(sessions.update).not.toHaveBeenCalled();
+
+    // No new token must be minted — the loser must not issue tokens.
+    expect(rtManagerRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('(d2) in-tx claim-loser with mismatched nonce — genuine reuse: throws 401 and revokes family', async () => {
+    const rawToken = 'valid_raw_token_concurrent_evil';
+    const tokenHash = hashRefreshToken(rawToken);
+    const storedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: null,
       expires_at: new Date(Date.now() + 3_600_000),
     };
 
     const refreshTokens = repoMock({
-      findOne: jest.fn().mockResolvedValue(recentlyRotatedToken),
+      findOne: jest.fn().mockResolvedValue(storedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({ update: jest.fn() });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(adminUser),
+    });
+
+    // claim returns affected: 0 — someone else claimed first.
+    const rtManagerRepo = {
+      create: jest.fn((v: unknown) => v),
+      save: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const sessManagerRepo = { update: jest.fn() };
+
+    const manager = makeManagerMock(rtManagerRepo, sessManagerRepo);
+    const dataSource = makeDataSource(manager);
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // Present a DIFFERENT nonce — foreign jar / potential theft.
+    await expect(
+      service.refresh(rawToken, 'foreign-nonce-xyz'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    // Genuine reuse: session family must be revoked via the outer injected repos.
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    expect(refreshTokens.update).toHaveBeenCalledWith(
+      { session_id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+  });
+
+  it('(d3) in-tx claim-loser with absent nonce — genuine reuse: throws 401 and revokes family', async () => {
+    const rawToken = 'valid_raw_token_no_nonce';
+    const tokenHash = hashRefreshToken(rawToken);
+    const storedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(adminUser),
+    });
+
+    const rtManagerRepo = {
+      create: jest.fn((v: unknown) => v),
+      save: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const sessManagerRepo = { update: jest.fn() };
+
+    const manager = makeManagerMock(rtManagerRepo, sessManagerRepo);
+    const dataSource = makeDataSource(manager);
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // No nonce presented at all — foreign caller.
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+  });
+
+  it('(e) pre-tx revoked token with MATCHING client nonce — same browser jar: throws 401, family NOT revoked', async () => {
+    const rawToken = 'revoked_token_matching_nonce';
+    const tokenHash = hashRefreshToken(rawToken);
+    const revokedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: new Date(), // previously consumed
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const sessionWithNonce = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+      client_nonce: clientNonce,
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(revokedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(sessionWithNonce),
+      update: jest.fn(),
+    });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
 
     const service = new AdminAuthService(
@@ -443,35 +622,45 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
-    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+    // Present the matching nonce — same browser jar (e.g., sibling tab).
+    await expect(service.refresh(rawToken, clientNonce)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
 
-    // Benign concurrent rotation — the session family must stay alive.
+    // Benign: same browser jar — the session family must stay alive.
     expect(sessions.update).not.toHaveBeenCalled();
     expect(refreshTokens.update).not.toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('(f) pre-tx revoked token rotated LONG ago (replaced_by_token_id set, revoked_at > leeway) — genuine reuse: chain-revokes and throws 401', async () => {
-    const rawToken = 'stale_rotated_token';
+  it('(f) pre-tx revoked token with MISMATCHED client nonce — foreign jar: chain-revokes and throws 401', async () => {
+    const rawToken = 'revoked_token_wrong_nonce';
     const tokenHash = hashRefreshToken(rawToken);
-    const staleRotatedToken = {
+    const revokedToken = {
       id: storedTokenId,
       session_id: sessionId,
       token_hash: tokenHash,
-      // Revoked more than 10 seconds ago: outside the benign-race window.
-      revoked_at: new Date(Date.now() - 15_000),
-      replaced_by_token_id: 'old-winner-tok-id',
+      revoked_at: new Date(Date.now() - 30_000), // revoked 30 seconds ago
       expires_at: new Date(Date.now() + 3_600_000),
     };
 
+    const sessionWithNonce = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+      client_nonce: clientNonce,
+    };
+
     const refreshTokens = repoMock({
-      findOne: jest.fn().mockResolvedValue(staleRotatedToken),
+      findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({ update: jest.fn() });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(sessionWithNonce),
+      update: jest.fn(),
+    });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
 
     const service = new AdminAuthService(
@@ -483,11 +672,12 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
-    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    // Present a DIFFERENT nonce — foreign jar, genuine replay.
+    await expect(
+      service.refresh(rawToken, 'foreign-nonce-different'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
 
-    // Genuine replay after the leeway: must revoke the session family.
+    // Genuine replay: must revoke the session family.
     expect(sessions.update).toHaveBeenCalledWith(
       { id: sessionId, revoked_at: IsNull() },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
@@ -495,6 +685,59 @@ describe('AdminAuthService.refresh', () => {
     );
     expect(refreshTokens.update).toHaveBeenCalledWith(
       { session_id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('(g) pre-tx revoked token with absent nonce (cookie missing) — foreign jar: chain-revokes and throws 401', async () => {
+    const rawToken = 'revoked_token_no_nonce';
+    const tokenHash = hashRefreshToken(rawToken);
+    const revokedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: new Date(),
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const sessionWithNonce = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+      client_nonce: clientNonce,
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(revokedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(sessionWithNonce),
+      update: jest.fn(),
+    });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // No nonce at all — call without presentedClientNonce.
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Must revoke because nonce is absent.
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );

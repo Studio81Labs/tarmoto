@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import {
   ADMIN_ACCESS_COOKIE,
   ADMIN_ACCESS_TOKEN_SECONDS,
+  ADMIN_CLIENT_COOKIE,
+  ADMIN_CLIENT_COOKIE_SECONDS,
   ADMIN_REFRESH_COOKIE,
   ADMIN_REFRESH_TOKEN_SECONDS,
   ADMIN_SSO_STATE_COOKIE,
@@ -66,6 +68,36 @@ export function clearAdminAuthCookies(
       secure,
     });
   }
+}
+
+// Stable, non-rotated per-session nonce cookie. Set once at login / SSO and
+// re-affirmed (same value, same Max-Age) on every successful token rotation.
+// Cleared on logout alongside the auth cookies.
+export function setAdminClientCookie(
+  response: Response,
+  nonce: string,
+  secure: boolean,
+): void {
+  appendCookie(response, ADMIN_CLIENT_COOKIE, nonce, {
+    httpOnly: true,
+    maxAgeSeconds: ADMIN_CLIENT_COOKIE_SECONDS,
+    path: '/',
+    sameSite: 'Lax',
+    secure,
+  });
+}
+
+export function clearAdminClientCookie(
+  response: Response,
+  secure: boolean,
+): void {
+  appendCookie(response, ADMIN_CLIENT_COOKIE, '', {
+    httpOnly: true,
+    maxAgeSeconds: 0,
+    path: '/',
+    sameSite: 'Lax',
+    secure,
+  });
 }
 
 // Use Path=/ so the browser sends the SSO state cookie back on the real

@@ -24,6 +24,9 @@ export class AdminSession {
   @Column({ type: 'timestamptz', nullable: true })
   last_seen_at!: Date | null;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  client_nonce!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 }

@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AdminUser, type AdminRole } from '../../entities/admin-user.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
@@ -10,7 +11,6 @@ import {
   ADMIN_ACCESS_TOKEN_SCOPE,
   ADMIN_ACCESS_TOKEN_SECONDS,
   ADMIN_REFRESH_TOKEN_SECONDS,
-  REFRESH_REUSE_LEEWAY_MS,
 } from './admin-auth.constants.js';
 import { resolveAdminSessionSecret } from './admin-session-secret.js';
 import {
@@ -29,6 +29,7 @@ export interface AdminUserView {
 export interface AdminSessionTokens {
   accessToken: string;
   refreshToken: string;
+  clientNonce: string;
   user: AdminUserView;
   expiresIn: number;
 }
@@ -87,18 +88,23 @@ export class AdminAuthService {
     const user = await this.findActiveById(adminUserId);
     if (!user) throw new UnauthorizedException('Invalid admin');
 
+    const clientNonce = randomBytes(16).toString('hex');
     const now = Date.now();
     const session = await this.sessions.save(
       this.sessions.create({
         admin_user_id: user.id,
         expires_at: new Date(now + ADMIN_REFRESH_TOKEN_SECONDS * 1000),
         last_seen_at: new Date(now),
+        client_nonce: clientNonce,
       }),
     );
-    return (await this.issueTokens(user, session.id)).tokens;
+    return (await this.issueTokens(user, session.id, clientNonce)).tokens;
   }
 
-  async refresh(rawRefreshToken: string): Promise<AdminSessionTokens> {
+  async refresh(
+    rawRefreshToken: string,
+    presentedClientNonce?: string | null,
+  ): Promise<AdminSessionTokens> {
     const tokenHash = hashRefreshToken(rawRefreshToken);
     const stored = await this.refreshTokens.findOne({
       where: { token_hash: tokenHash },
@@ -107,19 +113,23 @@ export class AdminAuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
     if (stored.revoked_at) {
-      // Token was previously revoked. Distinguish a benign concurrent rotation
-      // from genuine token reuse (theft or replay).
-      const nowMs = Date.now();
-      const revokedRecently =
-        nowMs - stored.revoked_at.getTime() <= REFRESH_REUSE_LEEWAY_MS;
-      if (stored.replaced_by_token_id != null && revokedRecently) {
-        // Benign concurrent rotation: a winning tab already rotated this token
-        // within the leeway window. The new token is already in the shared
-        // cookie jar — do NOT revoke the session family.
+      // Token was previously consumed. Use the client nonce to distinguish a
+      // benign sibling-tab replay (same browser jar) from genuine token reuse
+      // (theft or replay from a foreign jar).
+      const session = await this.sessions.findOne({
+        where: { id: stored.session_id },
+      });
+      if (
+        presentedClientNonce &&
+        session?.client_nonce &&
+        presentedClientNonce === session.client_nonce
+      ) {
+        // BENIGN: same browser jar — the winning tab already rotated this
+        // token. Do NOT revoke the session family.
         throw new UnauthorizedException('Invalid refresh token');
       }
-      // Genuine reuse: token was explicitly revoked (logout / admin action) or
-      // was replayed after the leeway expired. Revoke the whole session chain.
+      // GENUINE REUSE: different jar, missing nonce, or no nonce on record.
+      // Revoke the whole session family to contain potential theft.
       await this.revokeSession(stored.session_id);
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -141,9 +151,9 @@ export class AdminAuthService {
     // Atomically claim the old token first (conditional on revoked_at IS NULL).
     // This serializes concurrent refresh requests: the first writer sets revoked_at
     // and its UPDATE matches 1 row; the second's UPDATE matches 0 rows and is
-    // detected as reuse, triggering full session-family revocation.
+    // detected as reuse, triggering the jar-based check below.
     type TxnOutcome =
-      | { reuse: true }
+      | { reuse: true; revoke: boolean }
       | { reuse: false; tokens: AdminSessionTokens };
 
     const outcome = await this.dataSource.transaction<TxnOutcome>(
@@ -159,16 +169,24 @@ export class AdminAuthService {
         );
 
         if (claim.affected !== 1) {
-          // Loser of a benign concurrent rotation: the winning tab claimed the
-          // token microseconds before us. The pre-transaction guard already
-          // passed (token was not revoked at read time), so this is a benign
-          // race — not a genuine replay. The winner's new token is already in
-          // the shared cookie jar; do NOT revoke the session family.
-          return { reuse: true as const };
+          // Claim-loser of a concurrent rotation. Apply the same jar-based
+          // check: if the presented nonce matches the session's stored nonce
+          // it's the same browser jar (benign sibling tab) — do not revoke;
+          // otherwise treat as genuine reuse and revoke the session family.
+          const isbenign =
+            !!presentedClientNonce &&
+            !!session.client_nonce &&
+            presentedClientNonce === session.client_nonce;
+          return { reuse: true as const, revoke: !isbenign };
         }
 
         // Step 2: Mint the replacement token.
-        const result = await this.issueTokens(user, session.id, manager);
+        const result = await this.issueTokens(
+          user,
+          session.id,
+          session.client_nonce ?? '',
+          manager,
+        );
 
         // Step 3: Link old token to its replacement.
         await refreshRepo.update(
@@ -184,6 +202,9 @@ export class AdminAuthService {
     );
 
     if (outcome.reuse) {
+      if (outcome.revoke) {
+        await this.revokeSession(stored.session_id);
+      }
       throw new UnauthorizedException('Invalid refresh token');
     }
     return outcome.tokens;
@@ -266,6 +287,7 @@ export class AdminAuthService {
   private async issueTokens(
     user: AdminUser,
     sessionId: string,
+    clientNonce: string,
     manager?: EntityManager,
   ): Promise<{
     tokens: AdminSessionTokens;
@@ -292,6 +314,7 @@ export class AdminAuthService {
       tokens: {
         accessToken,
         refreshToken: rawRefreshToken,
+        clientNonce,
         user: serializeAdminUser(user),
         expiresIn: ADMIN_ACCESS_TOKEN_SECONDS,
       },

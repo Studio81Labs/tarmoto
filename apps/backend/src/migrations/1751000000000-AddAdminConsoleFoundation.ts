@@ -28,6 +28,7 @@ export class AddAdminConsoleFoundation1751000000000 implements MigrationInterfac
         expires_at TIMESTAMPTZ NOT NULL,
         revoked_at TIMESTAMPTZ,
         last_seen_at TIMESTAMPTZ,
+        client_nonce VARCHAR(64),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX idx_admin_sessions_user ON admin_sessions (admin_user_id);

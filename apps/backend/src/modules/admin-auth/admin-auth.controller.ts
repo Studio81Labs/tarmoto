@@ -22,14 +22,17 @@ import {
   AdminMeResponseDto,
 } from './dto/admin-auth.dto.js';
 import {
+  ADMIN_CLIENT_COOKIE,
   ADMIN_REFRESH_COOKIE,
   ADMIN_SSO_STATE_COOKIE,
 } from './admin-auth.constants.js';
 import {
   clearAdminAuthCookies,
+  clearAdminClientCookie,
   clearAdminSsoStateCookie,
   readCookie,
   setAdminAuthCookies,
+  setAdminClientCookie,
   setAdminSsoStateCookie,
 } from './admin-auth.cookies.js';
 import {
@@ -88,6 +91,7 @@ export class AdminAuthController {
       tokens.refreshToken,
       this.secure,
     );
+    setAdminClientCookie(res, tokens.clientNonce, this.secure);
     return { user: tokens.user, expiresIn: tokens.expiresIn };
   }
 
@@ -100,7 +104,8 @@ export class AdminAuthController {
   ): Promise<AdminAuthSessionResponseDto> {
     const raw = readCookie(req, ADMIN_REFRESH_COOKIE);
     if (!raw) throw new UnauthorizedException('Missing refresh token');
-    const tokens = await this.service.refresh(raw);
+    const clientNonce = readCookie(req, ADMIN_CLIENT_COOKIE);
+    const tokens = await this.service.refresh(raw, clientNonce);
     setAdminAuditActor(req, {
       admin_user_id: tokens.user.id,
       admin_role: tokens.user.role,
@@ -111,6 +116,7 @@ export class AdminAuthController {
       tokens.refreshToken,
       this.secure,
     );
+    setAdminClientCookie(res, tokens.clientNonce, this.secure);
     return { user: tokens.user, expiresIn: tokens.expiresIn };
   }
 
@@ -142,6 +148,7 @@ export class AdminAuthController {
       }
     }
     clearAdminAuthCookies(res, this.secure);
+    clearAdminClientCookie(res, this.secure);
   }
 
   @Get('sso/github/start')
@@ -180,6 +187,7 @@ export class AdminAuthController {
         tokens.refreshToken,
         this.secure,
       );
+      setAdminClientCookie(res, tokens.clientNonce, this.secure);
       // The audit interceptor skips GET requests, so record the SSO login
       // explicitly. record() is best-effort and never throws.
       void this.audit.record({
