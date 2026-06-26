@@ -4,15 +4,17 @@
 
 **Goal:** Make the single-day trip planner produce a real, road-snapped route that updates live as the rider places/drags/edits waypoints, with point placement via a right-click/long-press menu and a map that never yanks the view.
 
-**Architecture:** A self-hosted OSRM (Docker) serves real road routing. The backend gains a stateless `POST /routing/route` (OSRM multi-via + PostGIS road-quality enrichment) used for the live preview, and a `PUT /trips/:id/route` that re-routes from waypoints and persists the day. The frontend replaces synthetic client-side geometry with debounced calls to `/routing/route`, swaps tap-to-drop for a context menu, and stops auto-fitting the map during edits.
+**Architecture:** A self-hosted **Valhalla** (Docker) serves real road routing. The backend gains a stateless `POST /routing/route` (Valhalla multi-via + PostGIS road-quality enrichment) used for the live preview, and a `PUT /trips/:id/route` that re-routes from waypoints and persists the day. The frontend replaces synthetic client-side geometry with debounced calls to `/routing/route`, swaps tap-to-drop for a context menu, and stops auto-fitting the map during edits.
 
-**Tech Stack:** NestJS 11 + TypeORM + PostGIS (backend), Next.js + MapLibre GL + Zustand (companion), OSRM (`osrm/osrm-backend` Docker), Vitest (companion) / Jest (backend).
+**Tech Stack:** NestJS 11 + TypeORM + PostGIS (backend), Next.js + MapLibre GL + Zustand (companion), **Valhalla** (`ghcr.io/gis-ops/docker-valhalla/valhalla` Docker), Vitest (companion) / Jest (backend).
+
+> **Engine note:** the self-hosted engine is **Valhalla** (chosen over OSRM for per-request dynamic costing, which makes the later curvy phase a request-time knob — no graph rebuild). The `RoutingProvider` interface abstracts it; only Tasks 1–2 are engine-specific, the rest is unchanged.
 
 ## Global Constraints
 
 - Node 24+, pnpm workspaces. TypeScript strict mode everywhere.
 - Backend serves **metric only** (km, metres, deg C, km/h); clients convert for display.
-- App-owned env vars use the `TARMOTO_` prefix. Routing engine URL is `TARMOTO_OSRM_BASE_URL` (already read by `OsrmProvider`).
+- App-owned env vars use the `TARMOTO_` prefix. Routing engine URL is `TARMOTO_VALHALLA_BASE_URL` (Valhalla `/route` JSON API; default `http://localhost:8002`). NOTE: commit _type_ must be from the repo commitlint enum (feat/fix/chore/docs/refactor/test/...) — `infra` is a valid _scope_, not a type; use `chore(infra): …`, not `infra(...): …`.
 - Domain enums (surface types, waypoint types) live in `@tarmoto/shared`.
 - Backend entities in `apps/backend/src/entities/`; feature modules in `apps/backend/src/modules/`.
 - Conventional commits, scope required. Valid scopes: `backend`, `companion`, `infra`, `docs`, `openapi`, `cross`, etc. Commit header ≤ 100 chars; commit-msg footer (`Co-Authored-By`) must have a leading blank line.
@@ -25,15 +27,14 @@
 
 **Infra**
 
-- Create: `infra/osrm/prepare.sh` — download + MLD-build a Geofabrik extract.
-- Create: `infra/osrm/README.md` — runbook.
-- Modify: `infra/docker/docker-compose.yml` — add `osrm` service.
-- Modify: `.gitignore` — ignore `infra/osrm/data/`.
+- Create: `infra/valhalla/README.md` — runbook (the gis-ops image self-builds tiles on first start).
+- Modify: `infra/docker/docker-compose.yml` — add `valhalla` service.
+- Modify: `.gitignore` — ignore `infra/valhalla/custom_files/`.
 
 **Backend**
 
 - Modify: `apps/backend/src/modules/commute/routing-provider.interface.ts` — add `route()` to the interface + `RouteResult` type.
-- Modify: `apps/backend/src/modules/commute/providers/osrm.provider.ts` — implement `route()`.
+- Create: `apps/backend/src/modules/commute/providers/valhalla.provider.ts` — implement the full `RoutingProvider` (`route()` + `getAlternatives()` + `version`) against Valhalla; bound as `ROUTING_PROVIDER` (replaces `OsrmProvider`).
 - Create: `apps/backend/src/modules/routing/route-enrichment.service.ts` — `RouteEnrichmentService.aggregate(geometry)` (extracted from the generator).
 - Modify: `apps/backend/src/modules/trips/trip-generator.service.ts` — delegate enrichment to `RouteEnrichmentService`.
 - Create: `apps/backend/src/modules/routing/routing.module.ts`
@@ -63,136 +64,136 @@
 
 ---
 
-## Task 1: Self-hosted OSRM (Docker) + prepare script + runbook
+## Task 1: Self-hosted Valhalla (Docker) + runbook
 
 **Files:**
 
-- Create: `infra/osrm/prepare.sh`
-- Create: `infra/osrm/README.md`
+- Create: `infra/valhalla/README.md`
 - Modify: `infra/docker/docker-compose.yml`
 - Modify: `.gitignore`
 
 **Interfaces:**
 
-- Produces: a reachable OSRM at `http://localhost:5000` answering `GET /route/v1/driving/{lng,lat;lng,lat}?overview=full&geometries=geojson`. Backend consumes via `TARMOTO_OSRM_BASE_URL=http://localhost:5000`.
+- Produces: a reachable Valhalla at `http://localhost:8002` answering `POST /route` (JSON). Backend consumes via `TARMOTO_VALHALLA_BASE_URL=http://localhost:8002`.
 
-This task has no automated test (it provisions infra); verification is a documented manual `curl`.
+No automated test (it provisions infra). The gis-ops Valhalla image **self-builds tiles on first container start** from `tile_urls`, so there's no build script — the first `docker compose up valhalla` downloads the extract and builds tiles into the `custom_files` volume (slow, one-time), then serves. Verification is a documented manual `curl` the human runs.
 
-- [ ] **Step 1: Add the prepare script**
+- [ ] **Step 1: Add the Valhalla service to the compose stack**
 
-Create `infra/osrm/prepare.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Download a Geofabrik extract and build OSRM's MLD data into ./data.
-# Usage: REGION_URL=... ./prepare.sh   (defaults to Czech Republic)
-set -euo pipefail
-
-REGION_URL="${REGION_URL:-https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf}"
-DATA_DIR="$(cd "$(dirname "$0")" && pwd)/data"
-PBF="$DATA_DIR/region.osm.pbf"
-OSRM_IMAGE="osrm/osrm-backend:v5.27.1"
-
-mkdir -p "$DATA_DIR"
-echo "==> Downloading extract: $REGION_URL"
-curl -L --fail -o "$PBF" "$REGION_URL"
-
-echo "==> osrm-extract (car profile)"
-docker run --rm -v "$DATA_DIR:/data" "$OSRM_IMAGE" \
-  osrm-extract -p /opt/car.lua /data/region.osm.pbf
-echo "==> osrm-partition"
-docker run --rm -v "$DATA_DIR:/data" "$OSRM_IMAGE" \
-  osrm-partition /data/region.osrm
-echo "==> osrm-customize"
-docker run --rm -v "$DATA_DIR:/data" "$OSRM_IMAGE" \
-  osrm-customize /data/region.osrm
-echo "==> Done. Start the server with: docker compose -f infra/docker/docker-compose.yml up osrm"
-```
-
-- [ ] **Step 2: Add the OSRM service to the compose stack**
-
-In `infra/docker/docker-compose.yml`, add a service (match the file's existing indentation/version):
+In `infra/docker/docker-compose.yml`, add a service (match the file's existing top-level `services:` indentation/style):
 
 ```yaml
-osrm:
-  image: osrm/osrm-backend:v5.27.1
-  command: osrm-routed --algorithm mld /data/region.osrm
+valhalla:
+  image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
   ports:
-    - "5000:5000"
+    - "8002:8002"
   volumes:
-    - ../osrm/data:/data
+    - ../valhalla/custom_files:/custom_files
+  environment:
+    # First start downloads this extract + builds tiles into the volume;
+    # later starts reuse the built tiles.
+    tile_urls: https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+    use_tiles_ignore_pbf: "True"
+    build_elevation: "False"
+    build_admins: "True"
+    build_time_zones: "False"
+    server_threads: "2"
   restart: unless-stopped
 ```
 
-- [ ] **Step 3: Ignore the build artifacts**
+- [ ] **Step 2: Ignore the build artifacts**
 
 Append to `.gitignore`:
 
 ```
-# Self-hosted OSRM data (large; built locally via infra/osrm/prepare.sh)
-infra/osrm/data/
+# Self-hosted Valhalla tiles + extract (large; built on first container start)
+infra/valhalla/custom_files/
 ```
 
-- [ ] **Step 4: Write the runbook**
+- [ ] **Step 3: Write the runbook**
 
-Create `infra/osrm/README.md`:
+Create `infra/valhalla/README.md`:
 
 ```markdown
-# Self-hosted OSRM (route planner routing engine)
+# Self-hosted Valhalla (route planner routing engine)
 
-The route planner routes against a local OSRM instead of the public demo
-(rate-limited, unreliable). Car profile, Czech-Republic extract by default.
+The route planner routes against a local Valhalla (OSS) instead of a public
+demo. Chosen for per-request dynamic costing (motorcycle / curvy later, no
+rebuild). Czech-Republic extract by default.
 
-## One-time build
+## Build + run (first start builds tiles — slow, one-time)
 
-    chmod +x infra/osrm/prepare.sh
-    infra/osrm/prepare.sh          # downloads + builds into infra/osrm/data (git-ignored)
+    docker compose -f infra/docker/docker-compose.yml up valhalla
+    # first run downloads the extract + builds tiles into infra/valhalla/custom_files
+    # (git-ignored); subsequent runs reuse them.
 
-For a larger region:
-REGION_URL=https://download.geofabrik.de/europe/dach-latest.osm.pbf infra/osrm/prepare.sh
-
-## Run
-
-    docker compose -f infra/docker/docker-compose.yml up osrm
+For a larger region, change `tile_urls` in the compose service (e.g.
+`https://download.geofabrik.de/europe/dach-latest.osm.pbf`) and delete
+`infra/valhalla/custom_files` to force a rebuild.
 
 ## Point the backend at it
 
     # apps/backend/.env
-    TARMOTO_OSRM_BASE_URL=http://localhost:5000
+    TARMOTO_VALHALLA_BASE_URL=http://localhost:8002
 
 ## Verify
 
-    curl "http://localhost:5000/route/v1/driving/14.42,50.08;14.50,50.10?overview=full&geometries=geojson"
-    # -> {"code":"Ok","routes":[{...}]}
+    curl -s http://localhost:8002/route \
+      -H 'Content-Type: application/json' \
+      --data '{"locations":[{"lat":50.08,"lon":14.42},{"lat":50.10,"lon":14.50}],"costing":"auto","directions_options":{"units":"kilometers"}}'
+    # -> {"trip":{"legs":[{"shape":"...","summary":{...}}],"summary":{...},"status":0}}
+
+## Coolify (production)
+
+Run the same image as a service with a persistent volume mounted at
+`/custom_files` and the same `tile_urls` env. First boot builds tiles into the
+volume; set `TARMOTO_VALHALLA_BASE_URL` on the backend to the service URL.
 ```
 
-- [ ] **Step 5: Manual verification + commit**
+- [ ] **Step 4: Validate + commit**
 
-Run `chmod +x infra/osrm/prepare.sh && infra/osrm/prepare.sh` then `docker compose -f infra/docker/docker-compose.yml up -d osrm`, then the verify `curl`. Expected: JSON `"code":"Ok"`.
+Validate the compose YAML parses (`python3 -c "import yaml; yaml.safe_load(open('infra/docker/docker-compose.yml'))"`, or `docker compose -f infra/docker/docker-compose.yml config` if Docker is present — do NOT start containers / build tiles here; that's the human's step).
 
 ```bash
-git add infra/osrm/prepare.sh infra/osrm/README.md infra/docker/docker-compose.yml .gitignore
-git commit -m "infra(routing): self-hosted OSRM service + build script for the planner"
+git add infra/valhalla/README.md infra/docker/docker-compose.yml .gitignore
+git commit -m "chore(infra): self-hosted Valhalla routing service for the planner"
 ```
 
 ---
 
-## Task 2: OSRM provider `route()` (multi-via)
+## Task 2: Valhalla routing provider (route + getAlternatives)
 
 **Files:**
 
-- Modify: `apps/backend/src/modules/commute/routing-provider.interface.ts`
-- Modify: `apps/backend/src/modules/commute/providers/osrm.provider.ts`
-- Test: `apps/backend/src/modules/commute/providers/osrm.provider.spec.ts` (create if absent)
+- Modify: `apps/backend/src/modules/commute/routing-provider.interface.ts` (add `RouteResult` + `route()`)
+- Create: `apps/backend/src/modules/commute/providers/valhalla.provider.ts`
+- Create: `apps/backend/src/modules/commute/providers/valhalla.provider.spec.ts`
+- Modify: the commute module that binds `ROUTING_PROVIDER` — bind `ValhallaProvider` instead of `OsrmProvider`. Find it: `grep -rn "ROUTING_PROVIDER" apps/backend/src/modules/commute`. Leave `OsrmProvider` in place (unused fallback impl).
 
 **Interfaces:**
 
-- Produces: `RoutingProvider.route(waypoints, options?) => Promise<RouteResult | null>` where
-  `RouteResult = { distance_km: number; duration_min: number; geometry: Array<{lat:number;lng:number}> }`
-  and `waypoints: ReadonlyArray<{lat:number;lng:number}>` (length ≥ 2). Returns `null` when OSRM can't route (code ≠ `Ok` / HTTP error). `options` reuses the existing `RoutingOptions` (`avoidHighways`, `avoidTolls`).
-- Consumes: nothing new.
+- Produces: `class ValhallaProvider implements RoutingProvider` with:
+  - `version = 'valhalla-v1'`
+  - `route(waypoints, options?) => Promise<RouteResult | null>` — `RouteResult = { distance_km; duration_min; geometry: {lat;lng}[] }`; `null` on engine error / no trip.
+  - `getAlternatives(originLat, originLng, destLat, destLng, maxAlternatives, options?) => Promise<RouteAlternative[]>` — the same contract `OsrmProvider` had (the trip generator + commute consume it via `ROUTING_PROVIDER`).
+- Consumes: `ConfigService` (`TARMOTO_VALHALLA_BASE_URL`, default `http://localhost:8002`), `RoutingOptions` (`avoidHighways`, `avoidTolls`, `includePrimary`).
 
-- [ ] **Step 1: Add the `RouteResult` type + `route()` to the interface**
+### Valhalla API shape (reference)
+
+- `POST {base}/route`, JSON body:
+  ```jsonc
+  {
+    "locations": [{ "lat": 50.08, "lon": 14.42 }, ...],   // lon, not lng
+    "costing": "auto",
+    "directions_options": { "units": "kilometers" },
+    "costing_options": { "auto": { "use_highways": 0, "use_tolls": 0 } } // only when avoiding
+    // "alternates": N   // top-level, only for getAlternatives
+  }
+  ```
+- Response: `{ "trip": { "legs": [{ "shape": "<encoded polyline precision 6>", "summary": { "length": <km>, "time": <s> } }], "summary": { "length", "time" } }, "alternates"?: [{ "trip": {...} }] }`. Non-200 / `{error}` = failure.
+- Geometry is an **encoded polyline at precision 1e6** (not 1e5). Distance = `trip.summary.length` (km). Duration = `trip.summary.time` seconds → minutes.
+
+- [ ] **Step 1: Add `RouteResult` + `route()` to the interface**
 
 In `routing-provider.interface.ts` add:
 
@@ -205,13 +206,12 @@ export interface RouteResult {
 }
 ```
 
-and inside `interface RoutingProvider { ... }` add:
+and inside `interface RoutingProvider { ... }`:
 
 ```ts
   /**
-   * Road-snapped route through `waypoints` in order (the OSRM `/route`
-   * service with N coordinates). Returns `null` when the engine cannot
-   * route (e.g. an isolated point). Reuses `RoutingOptions` avoidance.
+   * Road-snapped route through `waypoints` in order. Returns `null` when the
+   * engine cannot route (e.g. an isolated point). Reuses `RoutingOptions`.
    */
   route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
@@ -221,87 +221,103 @@ and inside `interface RoutingProvider { ... }` add:
 
 - [ ] **Step 2: Write the failing test**
 
-Create/extend `apps/backend/src/modules/commute/providers/osrm.provider.spec.ts`:
+Create `valhalla.provider.spec.ts`:
 
 ```ts
 import { ConfigService } from "@nestjs/config";
-import { OsrmProvider } from "./osrm.provider.js";
+import { ValhallaProvider } from "./valhalla.provider.js";
 
-function provider(): OsrmProvider {
+function provider(): ValhallaProvider {
   const config = {
     get: (k: string) =>
-      k === "TARMOTO_OSRM_BASE_URL" ? "http://osrm.test" : undefined,
+      k === "TARMOTO_VALHALLA_BASE_URL" ? "http://valhalla.test" : undefined,
   } as unknown as ConfigService;
-  return new OsrmProvider(config);
+  return new ValhallaProvider(config);
 }
 
-describe("OsrmProvider.route", () => {
+// Encode helper so the test owns its polyline-6 fixture.
+function encodePolyline6(points: Array<[number, number]>): string {
+  let lastLat = 0,
+    lastLng = 0,
+    out = "";
+  const enc = (v: number) => {
+    let sgn = v << 1;
+    if (v < 0) sgn = ~sgn;
+    let s = "";
+    while (sgn >= 0x20) {
+      s += String.fromCharCode((0x20 | (sgn & 0x1f)) + 63);
+      sgn >>>= 5;
+    }
+    s += String.fromCharCode(sgn + 63);
+    return s;
+  };
+  for (const [lat, lng] of points) {
+    const la = Math.round(lat * 1e6),
+      ln = Math.round(lng * 1e6);
+    out += enc(la - lastLat) + enc(ln - lastLng);
+    lastLat = la;
+    lastLng = ln;
+  }
+  return out;
+}
+
+describe("ValhallaProvider.route", () => {
   const fetchMock = jest.fn();
   beforeEach(() => {
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
   });
 
-  it("routes through all waypoints in order and maps the geometry", async () => {
+  it("POSTs locations (lon) + decodes the leg shape", async () => {
+    const shape = encodePolyline6([
+      [50.08, 14.42],
+      [50.1, 14.5],
+    ]);
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        code: "Ok",
-        routes: [
-          {
-            distance: 88900,
-            duration: 7440,
-            geometry: {
-              coordinates: [
-                [14.42, 50.08],
-                [14.5, 50.1],
-              ],
-            },
-          },
-        ],
+        trip: {
+          legs: [{ shape, summary: { length: 88.9, time: 7440 } }],
+          summary: { length: 88.9, time: 7440 },
+        },
       }),
     });
 
     const result = await provider().route([
       { lat: 50.08, lng: 14.42 },
-      { lat: 50.09, lng: 14.46 },
       { lat: 50.1, lng: 14.5 },
     ]);
 
-    const url = fetchMock.mock.calls[0][0] as string;
-    // all three coords, lng,lat order, semicolon-joined:
-    expect(url).toContain(
-      "/route/v1/driving/14.42,50.08;14.46,50.09;14.5,50.1",
-    );
-    expect(url).toContain("overview=full");
-    expect(url).toContain("geometries=geojson");
-    expect(result).toEqual({
-      distance_km: 88.9,
-      duration_min: 124,
-      geometry: [
-        { lat: 50.08, lng: 14.42 },
-        { lat: 50.1, lng: 14.5 },
-      ],
-    });
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe("http://valhalla.test/route");
+    const body = JSON.parse((opts as RequestInit).body as string);
+    expect(body.locations).toEqual([
+      { lat: 50.08, lon: 14.42 },
+      { lat: 50.1, lon: 14.5 },
+    ]);
+    expect(body.costing).toBe("auto");
+    expect(result!.distance_km).toBe(88.9);
+    expect(result!.duration_min).toBe(124);
+    expect(result!.geometry[0].lat).toBeCloseTo(50.08, 5);
+    expect(result!.geometry.at(-1)!.lng).toBeCloseTo(14.5, 5);
   });
 
-  it("passes exclude=motorway when avoidHighways is set", async () => {
+  it("sets use_highways=0 when avoidHighways is set", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        code: "Ok",
-        routes: [
-          {
-            distance: 1000,
-            duration: 60,
-            geometry: {
-              coordinates: [
+        trip: {
+          legs: [
+            {
+              shape: encodePolyline6([
                 [0, 0],
                 [1, 1],
-              ],
+              ]),
+              summary: { length: 1, time: 60 },
             },
-          },
-        ],
+          ],
+          summary: { length: 1, time: 60 },
+        },
       }),
     });
     await provider().route(
@@ -309,80 +325,246 @@ describe("OsrmProvider.route", () => {
         { lat: 0, lng: 0 },
         { lat: 1, lng: 1 },
       ],
-      {
-        avoidHighways: true,
-      },
+      { avoidHighways: true },
     );
-    expect(fetchMock.mock.calls[0][0]).toContain("exclude=motorway");
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(body.costing_options.auto.use_highways).toBe(0);
   });
 
-  it("returns null when OSRM cannot route", async () => {
+  it("returns null when Valhalla cannot route", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error: "No path" }),
+    });
+    expect(
+      await provider().route([
+        { lat: 0, lng: 0 },
+        { lat: 9, lng: 9 },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("ValhallaProvider.getAlternatives", () => {
+  const fetchMock = jest.fn();
+  beforeEach(() => {
+    fetchMock.mockReset();
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  it("returns primary + alternates when includePrimary", async () => {
+    const shape = encodePolyline6([
+      [0, 0],
+      [1, 1],
+    ]);
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ code: "NoRoute", routes: [] }),
+      json: async () => ({
+        trip: {
+          legs: [{ shape, summary: { length: 10, time: 600 } }],
+          summary: { length: 10, time: 600 },
+        },
+        alternates: [
+          {
+            trip: {
+              legs: [{ shape, summary: { length: 12, time: 700 } }],
+              summary: { length: 12, time: 700 },
+            },
+          },
+        ],
+      }),
     });
-    const result = await provider().route([
-      { lat: 0, lng: 0 },
-      { lat: 9, lng: 9 },
-    ]);
-    expect(result).toBeNull();
+    const alts = await provider().getAlternatives(0, 0, 1, 1, 3, {
+      includePrimary: true,
+    });
+    expect(alts.map((a) => a.distance_km)).toEqual([10, 12]);
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(body.alternates).toBe(2); // maxAlternatives - 1 extras
   });
 });
 ```
 
 - [ ] **Step 3: Run the test (expect FAIL)**
 
-Run: `cd apps/backend && pnpm exec jest osrm.provider -t "route" -v`
-Expected: FAIL — `provider().route is not a function`.
+Run: `cd apps/backend && pnpm exec jest valhalla.provider -v`
+Expected: FAIL — cannot find `valhalla.provider`.
 
-- [ ] **Step 4: Implement `route()`**
+- [ ] **Step 4: Implement `ValhallaProvider`**
 
-Add to `OsrmProvider` (import `RouteResult` in the `import type { ... }` line):
+Create `valhalla.provider.ts`:
 
 ```ts
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type {
+  RouteAlternative,
+  RouteResult,
+  RoutingOptions,
+  RoutingProvider,
+} from "../routing-provider.interface.js";
+
+interface ValhallaLeg {
+  shape: string;
+  summary: { length: number; time: number };
+}
+interface ValhallaTrip {
+  legs: ValhallaLeg[];
+  summary: { length: number; time: number };
+}
+interface ValhallaResponse {
+  trip?: ValhallaTrip;
+  alternates?: Array<{ trip: ValhallaTrip }>;
+}
+
+/** Decode a Google-encoded polyline at precision 1e6 (Valhalla default). */
+function decodePolyline6(encoded: string): Array<{ lat: number; lng: number }> {
+  const out: Array<{ lat: number; lng: number }> = [];
+  let i = 0,
+    lat = 0,
+    lng = 0;
+  const next = () => {
+    let shift = 0,
+      result = 0,
+      b: number;
+    do {
+      b = encoded.charCodeAt(i++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    return result & 1 ? ~(result >> 1) : result >> 1;
+  };
+  while (i < encoded.length) {
+    lat += next();
+    lng += next();
+    out.push({ lat: lat / 1e6, lng: lng / 1e6 });
+  }
+  return out;
+}
+
+@Injectable()
+export class ValhallaProvider implements RoutingProvider {
+  private readonly logger = new Logger(ValhallaProvider.name);
+  private readonly baseUrl: string;
+  readonly version = "valhalla-v1";
+
+  constructor(config: ConfigService) {
+    this.baseUrl =
+      config.get<string>("TARMOTO_VALHALLA_BASE_URL") ??
+      "http://localhost:8002";
+  }
+
+  private body(
+    locations: ReadonlyArray<{ lat: number; lng: number }>,
+    options?: RoutingOptions,
+    alternates?: number,
+  ): string {
+    const costing: Record<string, number> = {};
+    if (options?.avoidHighways) costing.use_highways = 0;
+    if (options?.avoidTolls) costing.use_tolls = 0;
+    return JSON.stringify({
+      locations: locations.map((w) => ({ lat: w.lat, lon: w.lng })),
+      costing: "auto",
+      directions_options: { units: "kilometers" },
+      ...(Object.keys(costing).length
+        ? { costing_options: { auto: costing } }
+        : {}),
+      ...(alternates && alternates > 0 ? { alternates } : {}),
+    });
+  }
+
+  private async post(body: string): Promise<ValhallaResponse | null> {
+    const res = await fetch(`${this.baseUrl}/route`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (!res.ok) {
+      this.logger.error(
+        `Valhalla route failed: ${res.status} ${res.statusText}`,
+      );
+      return null;
+    }
+    return (await res.json()) as ValhallaResponse;
+  }
+
+  private tripToResult(trip: ValhallaTrip): RouteResult {
+    const geometry: Array<{ lat: number; lng: number }> = [];
+    trip.legs.forEach((leg, idx) => {
+      const pts = decodePolyline6(leg.shape);
+      // Drop the duplicate join vertex shared with the previous leg.
+      geometry.push(...(idx === 0 ? pts : pts.slice(1)));
+    });
+    return {
+      distance_km: Math.round(trip.summary.length * 100) / 100,
+      duration_min: Math.round(trip.summary.time / 60),
+      geometry,
+    };
+  }
+
   async route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options?: RoutingOptions,
   ): Promise<RouteResult | null> {
     if (waypoints.length < 2) return null;
-    const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
-    const queryParts: string[] = ['overview=full', 'geometries=geojson'];
-    const exclude: string[] = [];
-    if (options?.avoidHighways) exclude.push('motorway');
-    if (options?.avoidTolls) exclude.push('toll');
-    if (exclude.length > 0) queryParts.push(`exclude=${exclude.join(',')}`);
-    const url = `${this.baseUrl}/route/v1/driving/${coords}?${queryParts.join('&')}`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      this.logger.error(
-        `OSRM route failed: ${response.status} ${response.statusText}`,
-      );
-      return null;
-    }
-    const data = (await response.json()) as OsrmResponse;
-    if (data.code !== 'Ok' || !data.routes?.length) return null;
-    const r = data.routes[0];
-    return {
-      distance_km: Math.round((r.distance / 1000) * 100) / 100,
-      duration_min: Math.round(r.duration / 60),
-      geometry: r.geometry.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
-    };
+    const data = await this.post(this.body(waypoints, options));
+    if (!data?.trip?.legs?.length) return null;
+    return this.tripToResult(data.trip);
   }
+
+  async getAlternatives(
+    originLat: number,
+    originLng: number,
+    destLat: number,
+    destLng: number,
+    maxAlternatives: number,
+    options?: RoutingOptions,
+  ): Promise<RouteAlternative[]> {
+    const includePrimary = options?.includePrimary === true;
+    const extras = includePrimary
+      ? Math.max(0, maxAlternatives - 1)
+      : maxAlternatives;
+    const data = await this.post(
+      this.body(
+        [
+          { lat: originLat, lng: originLng },
+          { lat: destLat, lng: destLng },
+        ],
+        options,
+        extras,
+      ),
+    );
+    if (!data?.trip) return [];
+    const trips: ValhallaTrip[] = [
+      ...(includePrimary ? [data.trip] : []),
+      ...(data.alternates ?? []).map((a) => a.trip),
+    ];
+    return trips.slice(0, maxAlternatives).map((t) => this.tripToResult(t));
+  }
+}
 ```
 
-- [ ] **Step 5: Run the test (expect PASS)**
+(`RouteResult` and `RouteAlternative` share the same field shape, so `tripToResult` serves both.)
 
-Run: `cd apps/backend && pnpm exec jest osrm.provider -v`
-Expected: PASS.
+- [ ] **Step 5: Bind `ValhallaProvider` as `ROUTING_PROVIDER`**
 
-- [ ] **Step 6: Commit**
+In the commute module that provides `ROUTING_PROVIDER`, change the provider class (`useClass: OsrmProvider` or the factory) to `ValhallaProvider` and add `ValhallaProvider` to the providers list. Leave `OsrmProvider` in place. The generator + commute now route via Valhalla through the unchanged interface; their unit tests mock the provider, so they are unaffected. The `version` bump to `valhalla-v1` invalidates the commute primary-route polyline cache (#361) — those polylines re-resolve on next read, which is the version field's intended behaviour.
+
+- [ ] **Step 6: Run tests (expect PASS) + build**
+
+Run: `cd apps/backend && pnpm exec jest valhalla.provider commute trip-generator -v && pnpm build`
+Expected: PASS + clean build (existing commute/generator specs still green — they mock the provider).
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add apps/backend/src/modules/commute/routing-provider.interface.ts \
-        apps/backend/src/modules/commute/providers/osrm.provider.ts \
-        apps/backend/src/modules/commute/providers/osrm.provider.spec.ts
-git commit -m "feat(backend): add multi-via route() to the OSRM routing provider"
+git add apps/backend/src/modules/commute
+git commit -m "feat(backend): Valhalla routing provider (multi-via route + alternatives)"
 ```
 
 ---
@@ -603,7 +785,7 @@ describe("RoutingService.route", () => {
   const provider = {
     route: jest.fn(),
     getAlternatives: jest.fn(),
-    version: "osrm-v1",
+    version: "valhalla-v1",
   };
   const enrichment = { aggregate: jest.fn() };
   const service = new RoutingService(provider as never, enrichment as never);
@@ -1469,7 +1651,7 @@ Under the trip-planner section add rows:
 | Tx | Add a via | With start+end set, right-click a road → "Add via here" | The route threads through the new point and re-snaps to roads |
 | Tx | Drag to re-route | Drag a waypoint pin | The route recomputes live (debounced) and stays on roads |
 | Tx | Save | Click Save with a valid start→end | Trip persists; reopening shows the same road route, framed once |
-| Tx | OSRM down | Stop the OSRM container, edit a waypoint | Non-blocking error; last route kept; no crash |
+| Tx | Engine down | Stop the Valhalla container, edit a waypoint | Non-blocking error; last route kept; no crash |
 ```
 
 - [ ] **Step 2: Commit**
@@ -1483,7 +1665,7 @@ git commit -m "docs(companion): manual test scenarios for the live route planner
 
 ## Self-review notes
 
-- **Spec coverage:** §1 interaction → Tasks 7,9,10; §2 live routing → Tasks 2,4,6,8,9,11; §3 OSRM infra → Task 1; §4 persistence/save/hide-Generate → Tasks 5,9,11; retire synthetic → Task 12; §5 edge cases → Tasks 2 (null route), 4/5 (502), 8 (debounce/cancel), 10 (no auto-fit), 11 (save gating + toast); §6 testing → tests in Tasks 2–9,12 + docs Task 13.
+- **Spec coverage:** §1 interaction → Tasks 7,9,10; §2 live routing → Tasks 2,4,6,8,9,11; §3 Valhalla infra → Task 1; §4 persistence/save/hide-Generate → Tasks 5,9,11; retire synthetic → Task 12; §5 edge cases → Tasks 2 (null route), 4/5 (502), 8 (debounce/cancel), 10 (no auto-fit), 11 (save gating + toast); §6 testing → tests in Tasks 2–9,12 + docs Task 13.
 - **Types consistent across tasks:** `RouteResult` (Task 2) → `RoutingProvider.route` (Tasks 4,5); `RouteMetrics` (Task 3) → `RouteEnrichmentService.aggregate` (Tasks 4,5); `RouteResponse`/`RouteRequestBody` (Task 6) → hook (Task 8) → `applyRouteResult` (Task 9); `PlacementActionId` (Task 7) → `placeWaypoint` (Task 9) → map (Task 10).
 - **No multi-day / curvy / auto-gen** anywhere — deferred per spec.
 

@@ -4,6 +4,19 @@
 - **Status:** Approved design, pending implementation plan
 - **Scope:** Phase 1 of a larger Calimoto-inspired route-planner rework
 
+> **Update (2026-06-26): routing engine = self-hosted Valhalla, not OSRM.**
+> After the design was approved we switched the self-hosted engine from OSRM to
+> **Valhalla** (both OSS). Reason: Valhalla's per-request **dynamic costing**
+> (motorcycle profile, `use_hills`, avoid options, curvy weighting) makes the
+> later Calimoto curvy phase a request-time knob instead of a graph rebuild, so
+> we avoid re-platforming. The `RoutingProvider` interface already abstracts the
+> engine, so only the Docker service (Section 3) and the provider implementation
+> (Section 2) change; endpoints, enrichment, and the entire frontend are
+> unchanged. The env var is `TARMOTO_VALHALLA_BASE_URL` (Valhalla `/route` JSON
+> API, default port 8002). Where this doc says "OSRM" below, read "Valhalla" —
+> the binding behaviour (multi-via routing + a road-snapped polyline) is the
+> same. The authoritative task-level detail is in the implementation plan.
+
 ## Problem
 
 The trip planner does not produce a usable route. Three concrete failures:
