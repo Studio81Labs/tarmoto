@@ -1,4 +1,5 @@
 import { useTripStore } from "./trip";
+import type { RouteResponse } from "@/lib/api";
 import type { TripParameters } from "@/lib/types";
 
 describe("useTripStore planner editing", () => {
@@ -399,5 +400,42 @@ describe("useTripStore planner editing", () => {
 
     expect(useTripStore.getState().undoStack).toHaveLength(50);
     expect(useTripStore.getState().canUndo).toBe(true);
+  });
+});
+
+describe("useTripStore server-driven route geometry (Task 9)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("places start then end then via in routing order", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 2, lng: 2 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("applyRouteResult writes geometry + distance to the active day", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end");
+    s.applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 2, lng: 2 },
+      ],
+      distance_km: 12.3,
+      duration_min: 20,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 100,
+      surface_mix: {},
+    } as never as RouteResponse);
+    const day = useTripStore.getState().activeTrip!.days[0];
+    expect(day!.distanceKm).toBe(12.3);
+    expect(day!.routeGeometry?.coordinates.length).toBe(2);
   });
 });

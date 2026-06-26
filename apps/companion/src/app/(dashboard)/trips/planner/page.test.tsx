@@ -13,7 +13,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
-import type { Trip, TripSummary } from "@/lib/types";
+import type { Trip, TripSummary, Waypoint } from "@/lib/types";
 
 const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -310,6 +310,18 @@ type TripStoreSnapshot = {
   ) => void;
   undo: () => void;
   redo: () => void;
+  placeWaypoint: (coords: { lat: number; lng: number }, action: string) => void;
+  setWaypointType: (waypointId: string, type: Waypoint["type"]) => void;
+  removeWaypointById: (waypointId: string) => void;
+  routingWaypoints: () => { lat: number; lng: number }[];
+  saveWaypoints: () => {
+    lat: number;
+    lng: number;
+    name?: string;
+    type: Waypoint["type"];
+  }[];
+  applyRouteResult: (result: unknown) => void;
+  resetForTest: () => void;
 };
 
 describe("TripPlannerPage", () => {
@@ -427,6 +439,13 @@ describe("TripPlannerPage", () => {
       reorderWaypoints: vi.fn(),
       undo: vi.fn(),
       redo: vi.fn(),
+      placeWaypoint: vi.fn(),
+      setWaypointType: vi.fn(),
+      removeWaypointById: vi.fn(),
+      routingWaypoints: vi.fn(() => []),
+      saveWaypoints: vi.fn(() => []),
+      applyRouteResult: vi.fn(),
+      resetForTest: vi.fn(),
     };
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
     useClosuresMock.mockReturnValue(closuresData);
