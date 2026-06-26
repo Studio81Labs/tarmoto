@@ -1089,7 +1089,7 @@ function clearDayStale(staleDays: number[], dayNumber: number): number[] {
 function updatePlannerDayRoute(
   day: Trip["days"][number],
   waypoints: Waypoint[],
-  _parameters: Trip["parameters"],
+  _parameters?: Trip["parameters"],
 ) {
   // Geometry is driven exclusively by applyRouteResult (live routing hook).
   // We never synthesize geometry here — just update the waypoint list and
