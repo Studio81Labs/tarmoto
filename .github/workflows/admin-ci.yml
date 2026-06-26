@@ -1,0 +1,62 @@
+name: Admin CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "apps/backend/**"
+      - "packages/**"
+      - ".github/workflows/admin-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "apps/backend/**"
+      - "packages/**"
+      - ".github/workflows/admin-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm shared:build
+
+      - name: Generate OpenAPI client
+        # Admin imports from @tarmoto/openapi, whose types.ts is
+        # generated from the backend's swagger spec (both types.ts and
+        # openapi.yaml are gitignored). Without this step the admin
+        # typecheck fails with "Cannot find module './types.js'".
+        run: pnpm openapi:gen
+
+      - name: Typecheck
+        run: pnpm --filter @tarmoto/admin typecheck
+
+      - name: Test
+        run: pnpm --filter @tarmoto/admin test
+
+      - name: Build
+        run: pnpm --filter @tarmoto/admin build
