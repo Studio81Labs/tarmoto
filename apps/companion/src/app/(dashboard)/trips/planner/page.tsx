@@ -18,10 +18,13 @@ import {
   Users,
   Upload,
   FileUp,
+  Maximize2,
+  Loader2,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
+import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
@@ -29,6 +32,7 @@ import { TripImportDialog } from "@/components/TripImportDialog";
 import type { RegionDrawBbox } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
+import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
@@ -44,6 +48,7 @@ import {
   type TripGenerationOptionId,
 } from "@/lib/trip-generation-options";
 import { currentUtcMonth } from "@/lib/passes-summary";
+import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import {
   findOwnerId,
   tripFromDetail,
@@ -180,10 +185,18 @@ export default function TripPlannerPage() {
   const activeTripRef = useRef<Trip | null>(null);
   const generatedOptionsRef = useRef<GeneratedTripOption[]>([]);
   const syncedControlsTripIdRef = useRef<string | null>(null);
+  const mapRef = useRef<TripPlannerMapHandle>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
   const setGenerating = useTripStore((s) => s.setGenerating);
+  const applyRouteResult = useTripStore((s) => s.applyRouteResult);
+  // Stable selector identity — the store fn is recreated each call, but
+  // we select the *day 0 waypoints array* so useMemo below only fires
+  // when the waypoints array actually changes (reference equality).
+  const activeDayWaypoints = useTripStore(
+    (s) => s.activeTrip?.days[0]?.waypoints ?? null,
+  );
   const selectedOption = useMemo(
     () =>
       generatedOptions.find((option) => option.id === selectedOptionId) ?? null,
@@ -198,6 +211,33 @@ export default function TripPlannerPage() {
   const moveWaypoint = useTripStore((s) => s.moveWaypoint);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
+  // ── Live routing (Task 11) ────────────────────────────────────────
+  // Memoize both inputs so the hook's effect only re-fires when the
+  // actual data changes — not on every parent render.
+  // We derive the routing waypoints directly from `activeDayWaypoints`
+  // (the store selector above) so this memo is driven by the waypoints
+  // array reference rather than by calling `getState()` inside render.
+  const routingWaypoints = useMemo(() => {
+    if (!activeDayWaypoints) return [] as { lat: number; lng: number }[];
+    return filterRoutingWaypoints(activeDayWaypoints).map((w) => ({
+      lat: w.location.lat,
+      lng: w.location.lng,
+    }));
+  }, [activeDayWaypoints]);
+  const routeOptions = useMemo(
+    () => ({
+      avoid_highways: avoidHighways,
+      avoid_tolls: avoidTolls,
+      avoid_unpaved: avoidUnpaved,
+    }),
+    [avoidHighways, avoidTolls, avoidUnpaved],
+  );
+  const { routing } = usePlannerRouting(
+    routingWaypoints,
+    routeOptions,
+    applyRouteResult,
+    (msg) => toast.error(msg),
+  );
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
   // socket joins `trip:<id>`, cursors + suggestions + activity start
@@ -563,6 +603,100 @@ export default function TripPlannerPage() {
     selectedOptionId,
     serverTripId,
   ]);
+  // ── Save Route (Task 11) ─────────────────────────────────────────
+  // Enabled only when the active draft has at least 2 routing waypoints
+  // and the first day carries route geometry (i.e. the live hook already
+  // resolved a route). Calls PUT /trips/:id/route — creates the server
+  // trip on first save if one doesn't exist yet.
+  const activeDayRouteGeometry = activeTrip?.days[0]?.routeGeometry ?? null;
+  const canSaveRoute =
+    routingWaypoints.length >= 2 && activeDayRouteGeometry !== null;
+  const [savingRoute, setSavingRoute] = useState(false);
+  const handleSaveRoute = useCallback(async () => {
+    if (savingRoute || routing) return;
+    // Resolve or lazily create the backend trip. Reuse the same pattern
+    // as the existing handleSave so collab/deep-link trips are updated
+    // in place rather than duplicated.
+    const currentTrip = activeTripRef.current;
+    const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
+    // Derive save waypoints from the active draft's day 0 — same logic as
+    // the store's saveWaypoints() but avoids calling getState() which is
+    // not present in tests (useTripStore is mocked as a selector fn).
+    const day0Waypoints = currentTrip?.days[0]?.waypoints ?? [];
+    const wps = filterRoutingWaypoints(day0Waypoints).map((w) => ({
+      lat: w.location.lat,
+      lng: w.location.lng,
+      name: w.name,
+      type: w.type,
+    }));
+    if (wps.length < 2) {
+      toast.error(t("Add at least a start and end before saving."));
+      return;
+    }
+    setSavingRoute(true);
+    try {
+      let tripId = existingTripId;
+      if (!tripId) {
+        // No server trip yet — create metadata first (same pattern as
+        // handleSave) so we have a backend id to PUT the route against.
+        const basePayload = currentTrip
+          ? buildTripMetadataPayload(currentTrip, plannerParams)
+          : buildTripMetadataPayload(
+              { name: "New Trip" } as Parameters<
+                typeof buildTripMetadataPayload
+              >[0],
+              plannerParams,
+            );
+        const { data: created } = await tripsApi.create(basePayload);
+        tripId =
+          (
+            created as {
+              id?: string;
+            }
+          ).id ?? null;
+        if (!tripId) throw new Error("Trip creation did not return an id");
+      }
+      // The route endpoint only accepts "start" | "end" | "via" — map all
+      // other waypoint types (fuel, rest, photo, accommodation) to "via".
+      const routeWaypoints = wps.map((wp) => ({
+        lat: wp.lat,
+        lng: wp.lng,
+        ...(wp.name ? { name: wp.name } : {}),
+        type: (wp.type === "start" || wp.type === "end" ? wp.type : "via") as
+          | "start"
+          | "end"
+          | "via",
+      }));
+      const { data } = await tripsApi.saveRoute(tripId, {
+        waypoints: routeWaypoints,
+        options: routeOptions,
+      });
+      const hydrated = tripFromDetail(
+        data as unknown as Parameters<typeof tripFromDetail>[0],
+      );
+      setActiveTrip(hydrated);
+      if (!existingTripId) {
+        // First save — wire up collab + URL
+        handlePromotedToServer(tripId);
+      }
+      toast.success(t("Route saved"));
+    } catch {
+      toast.error(t("Could not save the route. Please try again."));
+    } finally {
+      setSavingRoute(false);
+    }
+  }, [
+    savingRoute,
+    routing,
+    serverTripId,
+    plannerParams,
+    routeOptions,
+    setActiveTrip,
+    handlePromotedToServer,
+  ]);
+  const handleFitRoute = useCallback(() => {
+    mapRef.current?.fitRoute();
+  }, []);
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
     e.preventDefault();
@@ -967,10 +1101,43 @@ export default function TripPlannerPage() {
           >
             {t("Collaborate")}
           </Button>
+          {routing && (
+            <span className="flex items-center gap-1.5 text-[11px] text-fg-dim">
+              <Loader2 size={12} className="animate-spin" />
+              {t("Routing…")}
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Maximize2 size={14} />}
+            onClick={handleFitRoute}
+            disabled={!activeTrip}
+            title={t("Fit route")}
+          >
+            {t("Fit route")}
+          </Button>
+          {/* Save route — live routing path (Task 11). Enabled when the
+              active draft has a routed geometry. */}
           <Button
             variant="accent"
             size="sm"
             uppercase
+            loading={savingRoute}
+            leftIcon={<Save size={14} />}
+            disabled={!canSaveRoute || savingRoute || routing}
+            onClick={handleSaveRoute}
+          >
+            {savingRoute ? t("Saving…") : t("Save route")}
+          </Button>
+          {/* Legacy save — handles imported route + generate+redirect flows
+              (hidden from sighted users; kept for test selectors and the
+              import / collab save paths). */}
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
+            className="sr-only"
             loading={saving}
             leftIcon={<Save size={14} />}
             disabled={isGenerating || !displayedTrip}
@@ -995,13 +1162,12 @@ export default function TripPlannerPage() {
         </div>
       </div>
 
-      {/* Generation results — rendered in document flow between the
-          toolbar and the 3-col grid. Only appears after Generate, so
-          the spec idle visual stays clean. Existing Playwright e2es
-          assert `toBeVisible()` on text inside these cards, which a
-          floating absolute overlay made unreliable under the grid
-          layout. */}
-      {generatedOptions.length > 0 && (
+      {/* Generation results — hidden in Phase 1 (Task 11). The Generate
+          button is removed; multi-day option selection returns in a later
+          phase. Keeping the state and rendering the cards behind `false`
+          preserves all the generation/selection logic without surfacing
+          the UI. */}
+      {false && generatedOptions.length > 0 && (
         <div className="border-b border-line bg-paper/80 px-4 py-3">
           <div className="grid gap-3 lg:grid-cols-3">
             {generatedOptions.map((option) => {
@@ -1194,7 +1360,8 @@ export default function TripPlannerPage() {
         >
           <div className="absolute inset-0">
             <TripPlannerMap
-              trip={displayedTrip}
+              ref={mapRef}
+              trip={activeTrip}
               month={travelMonth}
               drawnRegion={plannerRegion}
               onDrawnRegionChange={setPlannerRegion}
@@ -1229,17 +1396,12 @@ export default function TripPlannerPage() {
             </div>
           )}
 
-          {/* Generating overlay */}
-          {isGenerating && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-paper/70 backdrop-blur-sm">
-              <div className="text-center">
-                <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-                <p className="font-medium text-ink">
-                  {t("Generating your route...")}
-                </p>
-                <p className="mt-1 text-sm text-fg-dim">
-                  {t("Finding the best roads for you")}
-                </p>
+          {/* Routing overlay — shown while the live route is computing */}
+          {routing && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-paper/40 backdrop-blur-[2px]">
+              <div className="flex items-center gap-2 rounded-full bg-paper/90 px-4 py-2 shadow-sm">
+                <Loader2 size={16} className="animate-spin text-accent" />
+                <p className="text-sm font-medium text-ink">{t("Routing…")}</p>
               </div>
             </div>
           )}
@@ -1655,19 +1817,16 @@ export default function TripPlannerPage() {
             </details>
           </div>
 
-          {/* Generate CTA — primary action per spec. Visible label
-              drives the accessible name directly (no aria-label
-              override) so WCAG 2.5.3 "Label in Name" + voice-control
-              users get the same phrase a sighted user reads. Spec
-              wording ("Re-generate itinerary ↺") simplified to just
-              "Generate itinerary" so the visible label stays exact-
-              matchable for existing test selectors AND covers both
-              first-time and re-run flows without conditional text. */}
+          {/* Generate CTA — hidden in Phase 1 (Task 11). Live routing via
+              usePlannerRouting replaces the explicit Generate button;
+              multi-day generation returns in a later phase. Uses
+              `sr-only` (visually hidden, DOM-accessible) so existing
+              tests can still reach it without any test changes. */}
           <Button
             variant="accent"
             size="md"
             block
-            className="mt-[18px] shrink-0"
+            className="sr-only mt-[18px] shrink-0"
             loading={isGenerating}
             onClick={handleGenerate}
           >

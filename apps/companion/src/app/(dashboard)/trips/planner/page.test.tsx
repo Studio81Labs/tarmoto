@@ -55,7 +55,13 @@ vi.mock("@/lib/api", () => ({
     importRoute: vi.fn(),
     replaceImportedRoute: vi.fn(),
     generate: vi.fn(),
+    saveRoute: vi.fn(),
   },
+}));
+
+// Prevent the live-routing hook from firing real API calls in unit tests.
+vi.mock("@/hooks/usePlannerRouting", () => ({
+  usePlannerRouting: vi.fn(() => ({ routing: false })),
 }));
 
 vi.mock("@/lib/closures-summary", async () => {
@@ -587,6 +593,9 @@ describe("TripPlannerPage", () => {
   });
 
   it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {
+    // Phase 1 (Task 11): Generate button is visually hidden (sr-only);
+    // option cards are hidden too. Test verifies the backend calls and
+    // store updates — UI assertions replaced with DOM-absent checks.
     tripsApiGenerateMock.mockResolvedValueOnce({
       data: buildGenerationResponse(),
     } as never);
@@ -643,8 +652,9 @@ describe("TripPlannerPage", () => {
       }),
     );
     expect(setGenerating).toHaveBeenLastCalledWith(false);
-    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
-    expect(screen.getByText("Fastest backend")).toBeInTheDocument();
+    // Option cards are hidden in Phase 1 — assert they are NOT visible.
+    expect(screen.queryByText("Scenic backend")).not.toBeInTheDocument();
+    expect(screen.queryByText("Fastest backend")).not.toBeInTheDocument();
   });
 
   it("passes the drawn planner region bbox into trip generation", async () => {
@@ -699,11 +709,13 @@ describe("TripPlannerPage", () => {
   });
 
   it("persists a newly selected backend option before showing it as active", async () => {
-    tripsApiGenerateMock
-      .mockResolvedValueOnce({ data: buildGenerationResponse() } as never)
-      .mockResolvedValueOnce({
-        data: buildGenerationResponse("fastest"),
-      } as never);
+    // Phase 1 (Task 11): Option cards are hidden — the option-selection
+    // UI no longer exists. This test verifies that the generate backend
+    // call still wires up correctly; the option-selection re-generate path
+    // will return in a later phase.
+    tripsApiGenerateMock.mockResolvedValueOnce({
+      data: buildGenerationResponse(),
+    } as never);
     storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
@@ -711,24 +723,14 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Fastest backend/i })),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
-
-    await waitFor(() =>
-      expect(tripsApiGenerateMock).toHaveBeenLastCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          option: "fastest",
-        }),
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
       ),
     );
-    expect(setActiveTrip).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        name: "Fastest backend",
-      }),
-    );
+    // Option card buttons are hidden — confirm they don't appear.
+    expect(
+      screen.queryByRole("button", { name: /Fastest backend/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a backend generation error without falling back to demo options", async () => {
@@ -753,6 +755,9 @@ describe("TripPlannerPage", () => {
   });
 
   it("shows a stable average-quality value for empty generated options", async () => {
+    // Phase 1 (Task 11): Option cards (including quality display) are
+    // hidden. This test verifies the generate call completes without
+    // NaN issues by checking store updates rather than card text.
     tripsApiGenerateMock.mockResolvedValueOnce({
       data: {
         ...buildGenerationResponse(),
@@ -780,38 +785,28 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("heading", { level: 1, name: "Empty option" }),
-      ).toBeInTheDocument(),
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Empty option" }),
+      ),
     );
-    expect(screen.getByText("0.0/5")).toBeInTheDocument();
+    // Option card text is hidden; verify NaN is still never rendered.
     expect(screen.queryByText("NaN")).not.toBeInTheDocument();
   });
 
   it("saves the selected generated option to the backend", async () => {
+    // Phase 1 (Task 11): Option card selection UI is hidden; the test
+    // verifies the generate → save flow through the backend without the
+    // option-card click (option-select re-generate returns in a later phase).
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Fastest backend/i })),
-    );
-
-    tripsApiGenerateMock.mockResolvedValueOnce({
-      data: buildGenerationResponse("fastest"),
-    } as never);
-    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
-
-    await waitFor(() =>
-      expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          option: "fastest",
-        }),
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
       ),
     );
-
     tripsApiGenerateMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -922,6 +917,9 @@ describe("TripPlannerPage", () => {
   });
 
   it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
+    // Phase 1 (Task 11): Option card text is hidden; verify the generate
+    // completes without deleting the backend trip (the stale-result guard
+    // must not fire when the update echo replaces the same trip object).
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     // A saved trip in the planner is reached via `?tripId=` (the edit flow);
     // without it the mount-time reset would treat this as create-new.
@@ -953,18 +951,24 @@ describe("TripPlannerPage", () => {
         expect.objectContaining({ name: "Best backend" }),
       ),
     );
-    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
+    // Option cards are hidden in Phase 1 — confirm "Scenic backend" card text is absent.
+    expect(screen.queryByText("Scenic backend")).not.toBeInTheDocument();
     expect(tripsApiDeleteMock).not.toHaveBeenCalled();
   });
 
   it("regenerates the selected backend option when planner controls change before saving", async () => {
+    // Phase 1 (Task 11): Option cards are hidden; test verifies that the
+    // backend regenerates when planner controls change before saving —
+    // option-button interaction is replaced by direct store-state verification.
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Best backend/i })),
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
     );
 
     tripsApiGenerateMock.mockClear();
@@ -1036,13 +1040,17 @@ describe("TripPlannerPage", () => {
   });
 
   it("does not expose day-scoped regeneration for backend-generated options", async () => {
+    // Phase 1 (Task 11): Option cards are hidden; test verifies that no
+    // day-scoped regeneration button exists after generate completes.
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Best backend/i })),
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
     );
 
     expect(
