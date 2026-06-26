@@ -3,6 +3,7 @@ import {
   buildTripPlannerRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
+  DAY_COLORS,
   getTripPlannerBounds,
 } from "../trip-planner-map";
 
@@ -197,6 +198,76 @@ describe("buildTripPlannerRouteCollection", () => {
     );
 
     expect(collection.features).toHaveLength(0);
+  });
+
+  it("emits one route feature per day with a stable color and selected flag", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 1);
+
+    expect(collection.features).toHaveLength(2);
+
+    const day1 = collection.features[0]!;
+    expect(day1.properties.dayNumber).toBe(1);
+    expect(day1.properties.color).toBe(DAY_COLORS[0]);
+    expect(day1.properties.selected).toBe(true);
+
+    const day2 = collection.features[1]!;
+    expect(day2.properties.dayNumber).toBe(2);
+    expect(day2.properties.color).toBe(DAY_COLORS[1]);
+    expect(day2.properties.selected).toBe(false);
+  });
+
+  it("marks every day as selected when no selectedDayNumber is provided", () => {
+    const collection = buildTripPlannerRouteCollection(trip());
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0]!.properties.selected).toBe(true);
+    expect(collection.features[1]!.properties.selected).toBe(true);
+  });
+
+  it("emits only the selected day when focusSelectedDay is true", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 2, true);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]!.properties.dayNumber).toBe(2);
+    expect(collection.features[0]!.properties.selected).toBe(true);
+  });
+
+  it("emits all days when focusSelectedDay is false", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 1, false);
+
+    expect(collection.features).toHaveLength(2);
+  });
+
+  it("cycles colors when a trip has more days than DAY_COLORS", () => {
+    const manyDayTrip = trip({
+      days: Array.from({ length: DAY_COLORS.length + 1 }, (_, i) => ({
+        dayNumber: i + 1,
+        title: `Day ${i + 1}`,
+        distanceKm: 100,
+        durationMinutes: 120,
+        elevationGain: 400,
+        avgQuality: 4,
+        waypoints: [
+          {
+            id: `start-${i + 1}`,
+            name: "Start",
+            location: { lng: 14 + i * 0.1, lat: 50 },
+            type: "start" as const,
+          },
+          {
+            id: `end-${i + 1}`,
+            name: "End",
+            location: { lng: 14 + i * 0.1 + 0.05, lat: 50.1 },
+            type: "end" as const,
+          },
+        ],
+      })),
+    });
+
+    const collection = buildTripPlannerRouteCollection(manyDayTrip);
+    const lastFeature = collection.features[DAY_COLORS.length]!;
+    // Day (DAY_COLORS.length + 1) wraps back to index 0
+    expect(lastFeature.properties.color).toBe(DAY_COLORS[0]);
   });
 });
 

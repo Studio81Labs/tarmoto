@@ -123,6 +123,11 @@ interface TripPlannerMapProps {
     location: { lng: number; lat: number },
   ) => void;
   selectedDayNumber?: number;
+  /**
+   * When true, only the selected day's route is rendered on the map.
+   * When false (default), all days are shown color-coded.
+   */
+  focusSelectedDay?: boolean;
   /** Live cursors from other collaborators keyed by user id. */
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   /**
@@ -162,6 +167,7 @@ export const TripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -182,6 +188,7 @@ export const TripPlannerMap = forwardRef<
         onAddWaypoint={onAddWaypoint}
         onMoveWaypoint={onMoveWaypoint}
         selectedDayNumber={selectedDayNumber}
+        focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
         onCursorMove={onCursorMove}
@@ -199,6 +206,7 @@ export const TripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
+      focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
@@ -220,6 +228,7 @@ const FetchedTripPlannerMap = forwardRef<
       location: { lng: number; lat: number },
     ) => void;
     selectedDayNumber?: number;
+    focusSelectedDay?: boolean;
     collaboratorCursors?: Map<string, CollaboratorCursor>;
     suggestions?: TripSuggestion[];
     onCursorMove?: (lat: number, lng: number) => void;
@@ -234,6 +243,7 @@ const FetchedTripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -256,6 +266,7 @@ const FetchedTripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
+      focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
@@ -279,6 +290,7 @@ const TripPlannerMapContent = forwardRef<
       location: { lng: number; lat: number },
     ) => void;
     selectedDayNumber?: number;
+    focusSelectedDay?: boolean;
     collaboratorCursors?: Map<string, CollaboratorCursor>;
     suggestions?: TripSuggestion[];
     onCursorMove?: (lat: number, lng: number) => void;
@@ -295,6 +307,7 @@ const TripPlannerMapContent = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -398,8 +411,13 @@ const TripPlannerMapContent = forwardRef<
   );
   // ─────────────────────────────────────────────────────────────────────────
   const routeCollection = useMemo(
-    () => buildTripPlannerRouteCollection(trip),
-    [trip],
+    () =>
+      buildTripPlannerRouteCollection(
+        trip,
+        selectedDayNumber,
+        focusSelectedDay,
+      ),
+    [trip, selectedDayNumber, focusSelectedDay],
   );
   const waypointCollection = useMemo(
     () => buildTripPlannerWaypointCollection(trip),
@@ -1574,11 +1592,17 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       type: "line",
       source: ROUTE_SOURCE,
       paint: {
-        // Ink route on the cream basemap (was near-white #F8FAFC, tuned for the
-        // old dark map and invisible on cream).
-        "line-color": "#0E0E10",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 6],
-        "line-opacity": 0.9,
+        // Each day's route carries its own stable color from DAY_COLORS.
+        "line-color": ["get", "color"],
+        // Selected day is rendered wider and fully opaque; non-selected days are
+        // thinner and dimmed so the focused day is always visually dominant.
+        "line-width": [
+          "case",
+          ["get", "selected"],
+          ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 7],
+          ["interpolate", ["linear"], ["zoom"], 6, 1.5, 10, 3, 14, 4],
+        ],
+        "line-opacity": ["case", ["get", "selected"], 1, 0.45],
       },
     });
   }

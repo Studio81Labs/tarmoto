@@ -1922,4 +1922,68 @@ describe("TripPlannerMap", () => {
       screen.getByText("No route closures or pass warnings for this month."),
     ).toBeInTheDocument();
   });
+
+  it("passes N day features to the route source for a multi-day trip", async () => {
+    const multiDayTrip: Trip = {
+      ...trip(),
+      num_days: 2,
+      days: [
+        {
+          ...trip().days[0]!,
+          dayNumber: 1,
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [14.7, 50.25],
+              [14.82, 50.3],
+              [14.95, 50.36],
+            ],
+          },
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Louny",
+              location: { lng: 14.71, lat: 50.24 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <TripPlannerMap trip={multiDayTrip} month={7} selectedDayNumber={1} />,
+    );
+
+    // Wait for the sync effect (triggered after ready=true) to push the
+    // route collection to the mock source — the route source receives 2
+    // addSource calls: one empty from ensurePlannerLayers and one with
+    // the real data from the syncGeoJsonSource effect.
+    await waitFor(() => {
+      const routeSourceCalls = mockMap.addSource.mock.calls.filter(
+        ([sourceId]) => sourceId === "trip-planner-route",
+      );
+      const features = routeSourceCalls
+        .map(
+          (call) =>
+            (call[1] as { data: { features: unknown[] } }).data.features,
+        )
+        .find((f) => f.length > 0);
+      expect(features).toHaveLength(2);
+    });
+  });
 });

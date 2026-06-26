@@ -4,11 +4,28 @@ import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 
 export type PlannerBbox = [number, number, number, number];
 
+/**
+ * Distinct, readable hex colors for each trip day's route line on the cream
+ * basemap. Cycled via `(dayNumber - 1) % DAY_COLORS.length` so trips with
+ * more than 7 days reuse the palette from the beginning.
+ */
+export const DAY_COLORS = [
+  "#2563EB", // blue-600
+  "#16A34A", // green-600
+  "#DC2626", // red-600
+  "#9333EA", // purple-600
+  "#EA580C", // orange-600
+  "#0891B2", // cyan-700
+  "#CA8A04", // yellow-600
+] as const;
+
 type RouteProperties = {
   dayNumber: number;
   title: string;
   distanceKm: number;
   pointCount: number;
+  color: string;
+  selected: boolean;
 };
 
 type WaypointProperties = {
@@ -26,13 +43,25 @@ type SegmentHighlightProperties = {
 
 export function buildTripPlannerRouteCollection(
   trip: Trip | null,
+  selectedDayNumber?: number,
+  focusSelectedDay?: boolean,
 ): FeatureCollection<LineString, RouteProperties> {
   if (!trip) return emptyLineCollection();
 
   const features = trip.days
     .map((day) => {
+      // When focusSelectedDay is active, skip every day except the selected one.
+      if (focusSelectedDay && day.dayNumber !== selectedDayNumber) return null;
+
       const coordinates = getDayRouteCoordinates(day);
       if (coordinates.length < 2) return null;
+
+      const color = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length]!;
+      const selected =
+        selectedDayNumber !== undefined
+          ? day.dayNumber === selectedDayNumber
+          : true;
+
       const feature: Feature<LineString, RouteProperties> = {
         type: "Feature",
         properties: {
@@ -40,6 +69,8 @@ export function buildTripPlannerRouteCollection(
           title: day.title ?? `Day ${day.dayNumber}`,
           distanceKm: day.distanceKm,
           pointCount: coordinates.length,
+          color,
+          selected,
         },
         geometry: {
           type: "LineString",

@@ -188,6 +188,9 @@ export default function TripPlannerPage() {
   // The map's per-trip-id auto-fit suppresses these by design to
   // preserve user zoom/pan during waypoint edits (#559).
   const [fitRouteToken, setFitRouteToken] = useState(0);
+  // When true, the map renders only the selected day's route so the rider
+  // can focus on a single leg without other days' colors cluttering the view.
+  const [focusSelectedDay, setFocusSelectedDay] = useState(false);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -1409,6 +1412,7 @@ export default function TripPlannerPage() {
               closuresData={closuresData}
               passesData={passesData}
               selectedDayNumber={selectedDay?.dayNumber ?? 1}
+              focusSelectedDay={focusSelectedDay}
               onAddWaypoint={(location) =>
                 appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
               }
@@ -1420,6 +1424,32 @@ export default function TripPlannerPage() {
               onCursorMove={serverTripId ? collabSession.emitCursor : undefined}
               fitRouteToken={fitRouteToken}
             />
+            {/* Focus-day toggle — only meaningful when there are multiple
+                days to distinguish. Hidden on a single-day trip to keep
+                the map chrome minimal. */}
+            {activeTrip && activeTrip.days.length > 1 && (
+              <div className="absolute bottom-4 right-4 z-20">
+                <button
+                  type="button"
+                  aria-pressed={focusSelectedDay}
+                  aria-label={
+                    focusSelectedDay
+                      ? t("Show all days")
+                      : t("Focus selected day")
+                  }
+                  onClick={() => setFocusSelectedDay((v) => !v)}
+                  className={`flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition ${
+                    focusSelectedDay
+                      ? "border-ink bg-ink text-cream"
+                      : "border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink"
+                  }`}
+                >
+                  {focusSelectedDay
+                    ? t("Show all days")
+                    : t("Focus selected day")}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Drop overlay */}
