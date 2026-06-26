@@ -8,13 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Crosshair,
-  Loader2,
-  Map as MapIcon,
-  MapPin,
-  Share2,
-} from "lucide-react";
+import { Crosshair, Loader2, Map as MapIcon, Share2 } from "lucide-react";
 import {
   Alert,
   Button,
@@ -52,6 +46,7 @@ import {
   PersonalRoadMap,
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
+import { RoadSegmentPopover } from "./_components/RoadSegmentPopover";
 /**
  * Personal road map (US-50).
  *
@@ -102,6 +97,10 @@ function RoadMapPageInner() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  // The ridden segment whose detail popover is open (clicked on the map).
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
+    null,
+  );
   // In-flight guard (a ref, not state) so the button looks identical to the
   // ride-detail / community Share — no loading/label multistate — while still
   // ignoring a double-click that would POST a second map_shares row.
@@ -183,6 +182,15 @@ function RoadMapPageInner() {
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
+  );
+  // Resolve the open popover against the period-filtered set so a segment that
+  // drops out of the active window (or hasn't loaded) closes itself.
+  const selectedSegment = useMemo(
+    () =>
+      selectedSegmentId
+        ? (filteredRidden.find((s) => s.id === selectedSegmentId) ?? null)
+        : null,
+    [selectedSegmentId, filteredRidden],
   );
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
@@ -335,8 +343,16 @@ function RoadMapPageInner() {
               zoom: INITIAL_MAP_ZOOM,
             }}
             ridden={filteredRidden}
+            onSegmentSelect={setSelectedSegmentId}
           />
           <MapLegend riddenCount={filteredRidden.length} />
+          {selectedSegment && (
+            <RoadSegmentPopover
+              segment={selectedSegment}
+              unitSystem={unitSystem}
+              onClose={() => setSelectedSegmentId(null)}
+            />
+          )}
           <button
             type="button"
             onClick={handleCenterOnMe}
@@ -559,8 +575,8 @@ function MapLegend({ riddenCount }: MapLegendProps) {
         {t("Unridden ")}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
-        <MapPin size={10} />
-        {t("Hover a highlighted road for ride details ")}
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+        {t("Click a ridden road for ride details ")}
       </div>
     </div>
   );
