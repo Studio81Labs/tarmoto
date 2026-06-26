@@ -37,11 +37,33 @@ describe("adminFetchWithRefresh", () => {
     );
   });
 
-  it("dispatches the expiry event when refresh fails", async () => {
+  it("recovers from a benign concurrent-refresh race (first refresh 401, second refresh 200)", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response("", { status: 401 }))
-      .mockResolvedValueOnce(new Response("", { status: 401 })); // refresh fails
+      .mockResolvedValueOnce(new Response("", { status: 401 })) // original
+      .mockResolvedValueOnce(new Response("", { status: 401 })) // first refresh fails (race loser)
+      .mockResolvedValueOnce(new Response("", { status: 201 })) // second refresh succeeds (rotated cookie)
+      .mockResolvedValueOnce(new Response("{}", { status: 200 })); // replay
+    vi.stubGlobal("fetch", fetchMock);
+    const handler = vi.fn();
+    window.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handler);
+    const res = await adminFetchWithRefresh("/api/v1/admin/metrics", {});
+    window.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handler);
+    expect(res.status).toBe(200);
+    expect(handler).not.toHaveBeenCalled();
+    const refreshCalls = fetchMock.mock.calls.filter(
+      (args) => args[0] === "/api/v1/admin/auth/refresh",
+    );
+    expect(refreshCalls).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("dispatches the expiry event only when both refresh attempts fail", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("", { status: 401 })) // original
+      .mockResolvedValueOnce(new Response("", { status: 401 })) // first refresh fails
+      .mockResolvedValueOnce(new Response("", { status: 401 })); // second refresh also fails
     vi.stubGlobal("fetch", fetchMock);
     const handler = vi.fn();
     window.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handler);
@@ -49,6 +71,10 @@ describe("adminFetchWithRefresh", () => {
     window.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handler);
     expect(res.status).toBe(401);
     expect(handler).toHaveBeenCalledTimes(1);
+    const refreshCalls = fetchMock.mock.calls.filter(
+      (args) => args[0] === "/api/v1/admin/auth/refresh",
+    );
+    expect(refreshCalls).toHaveLength(2);
   });
 
   it.each([

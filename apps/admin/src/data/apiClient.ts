@@ -48,7 +48,10 @@ export async function adminFetchWithRefresh(
     return response;
   }
 
-  const refreshed = await refreshOnce();
+  let refreshed = await refreshOnce();
+  if (!refreshed) {
+    refreshed = await refreshOnce();
+  }
   if (!refreshed) {
     window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
     return response;
