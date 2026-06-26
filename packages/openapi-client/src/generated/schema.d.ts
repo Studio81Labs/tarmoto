@@ -3910,9 +3910,10 @@ export interface components {
         | "via"
         | "end"
         | "fuel"
-        | "rest"
-        | "photo"
-        | "accommodation";
+        | "food"
+        | "coffee"
+        | "hotel"
+        | "photo";
     };
     RouteOptionsDto: {
       avoid_highways?: boolean;

@@ -2168,6 +2168,9 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
+      // day-1 row exists — scoped suggestion unscoping uses its id
+      manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
+
       routingProvider.route.mockResolvedValueOnce({
         distance_km: 88.9,
         duration_min: 124,
@@ -2201,10 +2204,10 @@ describe('TripsService', () => {
       expect(enrichment.aggregate).toHaveBeenCalled();
       // transaction ran
       expect(transactionMock).toHaveBeenCalledTimes(1);
-      // day-1 suggestions NULLed before the delete (Fix 4a).
+      // day-1 suggestions NULLed before the delete, scoped to day-1's id.
       expect(manager.update).toHaveBeenCalledWith(
         TripSuggestion,
-        { trip_id: TRIP_ID },
+        { trip_day_id: 'd-1' },
         { trip_day_id: null },
       );
       // day 1 persisted with the server-side geometry
@@ -2262,6 +2265,9 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
+      // day-1 row present (no existing day-1 in this scenario is fine too)
+      manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
+
       routingProvider.route.mockResolvedValueOnce({
         distance_km: 120,
         duration_min: 90,
@@ -2301,6 +2307,57 @@ describe('TripsService', () => {
       });
       expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'fuel' });
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
+    });
+
+    it('does NOT null the trip_day_id of day-2+ suggestions when only day 1 is replaced', async () => {
+      // On a multi-day trip, saving day 1 must only decouple suggestions
+      // attached to day 1's row — day-2 suggestions must keep their
+      // trip_day_id so collaborators don't lose their day context.
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      // day-1 row is present with a specific id.
+      const DAY1_ID = 'dd-day1-0001';
+      manager.findOne.mockResolvedValueOnce({ id: DAY1_ID });
+
+      routingProvider.route.mockResolvedValueOnce({
+        distance_km: 88.9,
+        duration_min: 90,
+        geometry: [
+          { lat: 46.5, lng: 10.5 },
+          { lat: 46.6, lng: 10.6 },
+        ],
+      });
+      mockEnrichment();
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        waypoints: [
+          { lat: 46.5, lng: 10.5, type: 'start' },
+          { lat: 46.6, lng: 10.6, type: 'end' },
+        ],
+      });
+
+      // The suggestion update must be scoped to day-1's id ONLY.
+      expect(manager.update).toHaveBeenCalledWith(
+        TripSuggestion,
+        { trip_day_id: DAY1_ID },
+        { trip_day_id: null },
+      );
+      // It must NOT have been called with the broad trip-level predicate
+      // that would wipe all suggestions on the trip.
+      const broadCall = manager.update.mock.calls.find(
+        ([, where]: [unknown, Record<string, unknown>]) =>
+          where !== null &&
+          typeof where === 'object' &&
+          'trip_id' in where &&
+          where.trip_id === TRIP_ID &&
+          !('status' in where),
+      );
+      expect(broadCall).toBeUndefined();
     });
 
     it('rejects a non-member with NotFoundException (404)', async () => {

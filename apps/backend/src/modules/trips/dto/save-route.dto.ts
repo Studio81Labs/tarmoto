@@ -11,17 +11,19 @@ import {
 } from 'class-validator';
 import { LatLngDto, RouteOptionsDto } from '../../routing/dto/route.dto.js';
 
-// Full waypoint type set accepted by the backend. Mirrors BUILT_WAYPOINT_TYPES
-// in trips.service.ts so stops added by the rider (fuel, rest, photo,
-// accommodation) survive a manual-route save.
+// Canonical waypoint type set accepted by the backend — must match
+// TRIP_WAYPOINT_TYPES in trip-response.dto.ts so save and detail
+// round-trip without loss. The companion maps its local types before
+// posting (food/coffee instead of rest, hotel instead of accommodation).
 const SAVE_ROUTE_WAYPOINT_TYPES = [
   'start',
   'via',
   'end',
   'fuel',
-  'rest',
+  'food',
+  'coffee',
+  'hotel',
   'photo',
-  'accommodation',
 ] as const;
 type SaveRouteWaypointType = (typeof SAVE_ROUTE_WAYPOINT_TYPES)[number];
 

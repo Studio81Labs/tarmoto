@@ -145,6 +145,22 @@ describe('ValhallaProvider.route', () => {
     ).toBeNull();
   });
 
+  it('returns null when Valhalla returns a 200 with invalid JSON (does not throw 500)', async () => {
+    // Simulate a truncated/malformed response body: fetch resolves ok but
+    // json() rejects. Must resolve to null, not propagate the parse error.
+    const badResponse = new Response('not-json{{{', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    fetchMock.mockResolvedValueOnce(badResponse);
+    expect(
+      await makeProvider().route([
+        { lat: 0, lng: 0 },
+        { lat: 9, lng: 9 },
+      ]),
+    ).toBeNull();
+  });
+
   it('concatenates multi-leg geometry and drops the shared join vertex', async () => {
     // Leg 1: A -> B. Leg 2: B -> C.
     // B appears as the last point of leg 1 AND the first point of leg 2.

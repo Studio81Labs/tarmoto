@@ -96,7 +96,14 @@ export class ValhallaProvider implements RoutingProvider {
       );
       return null;
     }
-    return (await res.json()) as ValhallaResponse;
+    try {
+      return (await res.json()) as ValhallaResponse;
+    } catch (err: unknown) {
+      this.logger.error(
+        `Valhalla returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   private tripToResult(trip: ValhallaTrip): RouteResult {

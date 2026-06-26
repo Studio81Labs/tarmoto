@@ -1008,7 +1008,7 @@ export class TripsService {
     if (!member) throw new NotFoundException('Trip not found');
 
     // 2. Road-snap from routing waypoints only (start/via/end) — non-routing
-    //    stops (fuel, rest, photo, accommodation) are persisted as waypoints
+    //    stops (fuel, food, coffee, hotel, photo) are persisted as waypoints
     //    but do not affect the road geometry. Never trust client geometry.
     const routingWaypoints = dto.waypoints.filter((w) =>
       ['start', 'via', 'end'].includes(w.type),
@@ -1037,11 +1037,19 @@ export class TripsService {
       // open collaboration suggestions survive the cascade. Without this,
       // deleting the TripDay cascades to TripSuggestion rows (onDelete:
       // CASCADE) and permanently removes in-flight suggestions.
-      await manager.update(
-        TripSuggestion,
-        { trip_id: tripId },
-        { trip_day_id: null },
-      );
+      //
+      // Scope the NULL-out to only day-1's suggestions — day-2+ suggestions
+      // must keep their trip_day_id intact because only day 1 is being replaced.
+      const existingDay1 = await manager.findOne(TripDay, {
+        where: { trip_id: tripId, day_number: 1 },
+      });
+      if (existingDay1) {
+        await manager.update(
+          TripSuggestion,
+          { trip_day_id: existingDay1.id },
+          { trip_day_id: null },
+        );
+      }
 
       // Delete day 1 only — leave other days untouched.
       await manager.delete(TripDay, { trip_id: tripId, day_number: 1 });
@@ -1068,7 +1076,7 @@ export class TripsService {
       const savedDay = await manager.save(day);
 
       // Persist ALL submitted waypoints (including non-routing stops such as
-      // fuel, rest, photo, accommodation) in submission order so riders don't
+      // fuel, food, coffee, hotel, photo) in submission order so riders don't
       // lose stops they placed before hitting Save. The routing geometry above
       // was computed from the start/via/end subset only.
       // Location uses `latLngToPoint` — the same helper the generator and
