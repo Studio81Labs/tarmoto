@@ -1,73 +1,9 @@
 import { test, expect } from "../fixtures";
 
 test.describe("trip planner", () => {
-  test("loading the demo trip and generating options shows three route cards", async ({
-    authedPage: page,
-  }) => {
-    await page.goto("/trips/planner");
-
-    // Empty canvas: the "Load demo trip" CTA is only rendered when there
-    // is no active trip yet.
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-
-    await expect(
-      page.getByRole("heading", { name: /alps loop/i }).first(),
-    ).toBeVisible({ timeout: 5_000 });
-
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
-
-    // Three preset itineraries appear (best-fit / scenic / fastest).
-    await expect(page.getByText(/Distance/i).first()).toBeVisible();
-    const options = page.locator(
-      'button:has-text("Distance"):has-text("Avg quality")',
-    );
-    await expect(options).toHaveCount(3);
-  });
-
-  test("selecting a generated option flips the Active badge", async ({
-    authedPage: page,
-  }) => {
-    await page.goto("/trips/planner");
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
-
-    const options = page.locator(
-      'button:has-text("Distance"):has-text("Avg quality")',
-    );
-    await expect(options).toHaveCount(3);
-
-    // The first option starts active. Pick the third one and verify the
-    // Active badge moves with the selection.
-    await options.nth(2).click();
-    await expect(options.nth(2).getByText(/^Active$/)).toBeVisible();
-    await expect(options.nth(0).getByText(/^Active$/)).toBeHidden();
-  });
-
-  test("adjusting trip parameters before generation produces options that respect the input", async ({
-    authedPage: page,
-  }) => {
-    await page.goto("/trips/planner");
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-
-    // Bump the day count and daily target so the backend mock builds
-    // a larger generated geometry set from the submitted controls.
-    const daysInput = page.locator("#trip-planner-days");
-    await daysInput.fill("5");
-    await daysInput.blur();
-    const dailyKmInput = page.locator("#trip-planner-daily-km");
-    await dailyKmInput.fill("300");
-    await dailyKmInput.blur();
-
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
-
-    // Just assert the panel re-renders with three options — option detail
-    // assertions belong in unit tests for the local generator.
-    const options = page.locator(
-      'button:has-text("Distance"):has-text("Avg quality")',
-    );
-    await expect(options).toHaveCount(3);
-    await expect(options.first()).toContainText("1500km");
-  });
+  // NOTE: "Generate itinerary" flow (button + option cards + old "Save" button)
+  // was removed in Phase-1. The three tests that drove that UI have been
+  // deleted. See the commit message for details.
 
   test("restoring a planner region surfaces Fun Zones and top roads", async ({
     authedPage: page,
@@ -84,38 +20,97 @@ test.describe("trip planner", () => {
     await expect(page.getByText("Mock Ridge Road")).toBeVisible();
   });
 
-  test("saving a backend-generated trip lets us reopen the same route detail", async ({
+  // Manual-flow: seed a trip that already has day-1 route geometry and open
+  // it via `?tripId=`. The dirty-gate suppresses live routing on open (the
+  // existing geometry is preserved), so the "Save route" button is enabled
+  // immediately. Clicking it calls PUT /trips/:id/route and shows the
+  // success toast.
+  test("seeded route renders and Save route persists via the manual flow", async ({
     authedPage: page,
+    mockApi,
+    user,
   }) => {
-    await page.goto("/trips/planner");
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
+    const trip = await mockApi.seedTrip(user, {
+      title: "Alps loop",
+      route_geometry: [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.55, lng: 10.45 },
+        { lat: 46.63, lng: 10.52 },
+      ],
+      waypoints: [
+        { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
+        { lat: 46.63, lng: 10.52, name: "Finish", type: "end" },
+      ],
+      distance_km: 125,
+    });
 
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("tripId"), {
-        timeout: 10_000,
-      })
-      .not.toBeNull();
-    const tripId = new URL(page.url()).searchParams.get("tripId")!;
-    expect(tripId).toMatch(/^[0-9a-f-]{30,}$/i);
+    await page.goto(`/trips/planner?tripId=${trip.id}`);
 
-    await page.getByRole("button", { name: /^Save$/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/trips/${tripId}$`));
-    await expect(page.getByText(/250\.0 km/).first()).toBeVisible({
+    // Wait for the map to be visible — proves the planner loaded the trip.
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible({
       timeout: 10_000,
     });
 
-    // Reopen via the trip list, which verifies the persisted backend
-    // geometry/detail is what the detail page reads after navigation.
+    // The trip name from the seed appears in the left-panel header.
+    await expect(
+      page.getByRole("heading", { name: /alps loop/i }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // "Save route" is enabled: the trip already has geometry and ≥2 waypoints.
+    const saveRouteBtn = page.getByRole("button", { name: /save route/i });
+    await expect(saveRouteBtn).toBeEnabled({ timeout: 5_000 });
+    await saveRouteBtn.click();
+
+    // The success toast fires after the PUT /trips/:id/route resolves.
+    await expect(page.getByText(/route saved/i)).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  // Reopen flow: seed a trip → open planner → click Save route → navigate to
+  // /trips → click back in → verify the route detail is still present.
+  test("saving a route lets us reopen the same trip detail", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    const trip = await mockApi.seedTrip(user, {
+      title: "Alps loop",
+      route_geometry: [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.55, lng: 10.45 },
+        { lat: 46.63, lng: 10.52 },
+      ],
+      waypoints: [
+        { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
+        { lat: 46.63, lng: 10.52, name: "Finish", type: "end" },
+      ],
+      distance_km: 125,
+    });
+
+    await page.goto(`/trips/planner?tripId=${trip.id}`);
+
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Save the route — this calls PUT /trips/:id/route on the existing trip.
+    const saveRouteBtn = page.getByRole("button", { name: /save route/i });
+    await expect(saveRouteBtn).toBeEnabled({ timeout: 5_000 });
+    await saveRouteBtn.click();
+    await expect(page.getByText(/route saved/i)).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // After saving, navigate to the trip list and reopen the trip.
     await page.goto("/trips");
     const tripCard = page.getByRole("link", { name: /alps loop/i }).first();
     await expect(tripCard).toBeVisible({ timeout: 10_000 });
     await tripCard.click();
-    await expect(page).toHaveURL(new RegExp(`/trips/${tripId}$`));
+    await expect(page).toHaveURL(new RegExp(`/trips/${trip.id}$`));
     await expect(
       page.getByRole("heading", { name: /alps loop/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/250\.0 km/).first()).toBeVisible();
   });
 
   // T4 (segment sidebar) is **blocked at e2e**.

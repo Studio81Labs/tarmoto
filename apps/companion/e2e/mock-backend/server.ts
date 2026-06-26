@@ -587,6 +587,93 @@ export function buildApp(): Express {
     res.status(201).json({ id });
   });
 
+  // Seed a full trip (with optional route geometry on day 1) so e2e tests
+  // can open a trip via `?tripId=` without driving the context-menu flow.
+  // The route snapshot is stored in `trip.snapshot.days` exactly as the
+  // `/generate` endpoint does, so `serializeTripDetail` → `tripFromDetail`
+  // picks it up immediately. The auth token is required (mirrors the real
+  // POST /trips gate) so the seeded trip is owned by a real user.
+  app.post("/__test__/seed-trip", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const body = req.body ?? {};
+    const id = String(body.id ?? randomUUID());
+    const now = new Date().toISOString();
+    // Build optional day-1 route geometry from the request body. If
+    // `route_geometry` is supplied we embed a day-1 TripDay snapshot that
+    // `serializedTripDays` will hand back to `tripFromDetail`.
+    const routeGeometry: Array<{ lat: number; lng: number }> = Array.isArray(
+      body.route_geometry,
+    )
+      ? body.route_geometry
+      : [];
+    const waypoints: Array<{
+      id: string;
+      sequence: number;
+      lat: number;
+      lng: number;
+      name: string | null;
+      waypoint_type: string;
+      road_segment_id: null;
+      notes: null;
+      duration_min: null;
+    }> = Array.isArray(body.waypoints)
+      ? (
+          body.waypoints as Array<{
+            lat: number;
+            lng: number;
+            name?: string | null;
+            type?: string;
+          }>
+        ).map((wp, i) => ({
+          id: `seeded-wp-${id}-${i}`,
+          sequence: i,
+          lat: Number(wp.lat),
+          lng: Number(wp.lng),
+          name: wp.name ?? null,
+          waypoint_type: wp.type ?? (i === 0 ? "start" : "end"),
+          road_segment_id: null,
+          notes: null,
+          duration_min: null,
+        }))
+      : [];
+    const hasRoute = routeGeometry.length >= 2;
+    const distanceKm = hasRoute ? Number(body.distance_km ?? 125) : 0;
+    const day1 = hasRoute
+      ? {
+          id: `seeded-day-${id}-1`,
+          day_number: 1,
+          title: "Day 1",
+          distance_km: distanceKm,
+          avg_quality: 4.2,
+          elevation_gain: Math.round(distanceKm * 6),
+          elevation_loss: Math.round(distanceKm * 4),
+          curviness_score: 74,
+          scenic_score: 80,
+          estimated_time_min: Math.round(distanceKm * 1.2),
+          route_geometry: routeGeometry,
+          waypoints,
+        }
+      : null;
+    const trip: import("./state").MockTrip = {
+      id,
+      owner_id: session.user_id,
+      title: String(body.title ?? "Seeded trip"),
+      num_days: 1,
+      daily_km_min: 100,
+      daily_km_max: 300,
+      min_quality: 3,
+      road_preference: "mixed",
+      status: "planned" as const,
+      members: [session.user_id],
+      snapshot: day1 ? { days: [day1] } : {},
+      created_at: now,
+      updated_at: now,
+    };
+    state.trips.set(id, trip);
+    pushActivity(id, session.user_id, "trip_updated", {});
+    res.status(201).json(serializeTripDetail(trip));
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -984,6 +1071,164 @@ export function buildApp(): Express {
         selected_option: selected,
         options,
       });
+    },
+  );
+
+  // ── Routing ───────────────────────────────────────────────────────
+  // POST /routing/route — live road-snapped preview. The planner's
+  // `usePlannerRouting` hook calls this on every waypoint edit with ≥2
+  // routing waypoints. The mock returns a deterministic geometry that
+  // spans the submitted waypoints so the map can draw a polyline and the
+  // "Save route" button can enable. Shape matches `RouteResponseDto`.
+  app.post("/api/v1/routing/route", requireAuth, (req: AuthedRequest, res) => {
+    const waypoints = (req.body?.waypoints ?? []) as Array<{
+      lat: number;
+      lng: number;
+    }>;
+    if (waypoints.length < 2) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "waypoints must have at least 2 points",
+      });
+      return;
+    }
+    // Build a simple interpolated geometry spanning all waypoints.
+    const geometry: Array<{ lat: number; lng: number }> = [];
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const a = waypoints[i]!;
+      const b = waypoints[i + 1]!;
+      geometry.push(a);
+      // Add two midpoints per leg so the polyline has shape.
+      geometry.push({
+        lat: a.lat + (b.lat - a.lat) * 0.33,
+        lng: a.lng + (b.lng - a.lng) * 0.33,
+      });
+      geometry.push({
+        lat: a.lat + (b.lat - a.lat) * 0.67,
+        lng: a.lng + (b.lng - a.lng) * 0.67,
+      });
+    }
+    geometry.push(waypoints[waypoints.length - 1]!);
+    // Rough distance: equirectangular approximation.
+    let distanceKm = 0;
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const a = waypoints[i]!;
+      const b = waypoints[i + 1]!;
+      const dlat = (b.lat - a.lat) * 111;
+      const dlng =
+        (b.lng - a.lng) *
+        111 *
+        Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+      distanceKm += Math.hypot(dlat, dlng);
+    }
+    distanceKm = Math.round(distanceKm * 10) / 10;
+    res.status(201).json({
+      geometry,
+      distance_km: distanceKm,
+      duration_min: Math.round(distanceKm * 1.2),
+      avg_quality: 4.2,
+      curviness_score: 74,
+      elevation_gain_m: Math.round(distanceKm * 6),
+      surface_mix: { asphalt: 1 },
+    });
+  });
+
+  // PUT /trips/:tripId/route — saves the manual live-route to an existing
+  // trip. Mirrors `TripsController.saveRoute`: accepts `{ waypoints,
+  // options? }`, re-routes (mock: derives geometry from waypoints), stores
+  // day 1, and returns the updated trip detail. 404 for unknown trip or
+  // non-member caller.
+  app.put(
+    "/api/v1/trips/:tripId/route",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const tripId = param(req, "tripId");
+      const trip = state.trips.get(tripId);
+      if (
+        !trip ||
+        (trip.owner_id !== session.user_id &&
+          !trip.members.includes(session.user_id))
+      ) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      const waypoints = (req.body?.waypoints ?? []) as Array<{
+        lat: number;
+        lng: number;
+        name?: string | null;
+        type?: string;
+      }>;
+      if (waypoints.length < 2) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "waypoints must have at least 2 points",
+        });
+        return;
+      }
+      // Build route geometry spanning the waypoints.
+      const geometry: Array<{ lat: number; lng: number }> = [];
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const a = waypoints[i]!;
+        const b = waypoints[i + 1]!;
+        geometry.push({ lat: a.lat, lng: a.lng });
+        geometry.push({
+          lat: a.lat + (b.lat - a.lat) * 0.5,
+          lng: a.lng + (b.lng - a.lng) * 0.5,
+        });
+      }
+      geometry.push({
+        lat: waypoints[waypoints.length - 1]!.lat,
+        lng: waypoints[waypoints.length - 1]!.lng,
+      });
+      let distanceKm = 0;
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const a = waypoints[i]!;
+        const b = waypoints[i + 1]!;
+        const dlat = (b.lat - a.lat) * 111;
+        const dlng =
+          (b.lng - a.lng) *
+          111 *
+          Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+        distanceKm += Math.hypot(dlat, dlng);
+      }
+      distanceKm = Math.round(distanceKm * 10) / 10;
+      const day1 = {
+        id: `route-day-${tripId}-1`,
+        day_number: 1,
+        title: "Day 1",
+        distance_km: distanceKm,
+        avg_quality: 4.2,
+        elevation_gain: Math.round(distanceKm * 6),
+        elevation_loss: Math.round(distanceKm * 4),
+        curviness_score: 74,
+        scenic_score: 80,
+        estimated_time_min: Math.round(distanceKm * 1.2),
+        route_geometry: geometry,
+        waypoints: waypoints.map((wp, i) => ({
+          id: `route-wp-${tripId}-${i}`,
+          sequence: i,
+          lat: Number(wp.lat),
+          lng: Number(wp.lng),
+          name: wp.name ?? null,
+          waypoint_type: wp.type ?? (i === 0 ? "start" : "end"),
+          road_segment_id: null,
+          notes: null,
+          duration_min: null,
+        })),
+      };
+      const updated: import("./state").MockTrip = {
+        ...trip,
+        num_days: 1,
+        status: "planned" as const,
+        snapshot: { ...trip.snapshot, days: [day1] },
+        updated_at: new Date().toISOString(),
+      };
+      state.trips.set(tripId, updated);
+      pushActivity(tripId, session.user_id, "trip_updated", {});
+      res.json(serializeTripDetail(updated));
     },
   );
 
