@@ -311,6 +311,12 @@ const TripPlannerMapContent = forwardRef<
   // when the user opens a trip; further "show me the whole route"
   // intent is served by the explicit Fit-to-route button below.
   const fittedTripIdRef = useRef<string | null>(null);
+  // Tracks trips we first saw WITHOUT a framable route — i.e. drafts the
+  // user is building from scratch (placing the first point creates a brand
+  // new `trip.id`). We must never auto-fit these, or the initial point would
+  // rip the rider's zoom back out. Only a trip first seen WITH a real route
+  // (an existing trip loaded via `?tripId=`) gets the one-shot frame.
+  const builtTripIdRef = useRef<string | null>(null);
   // Set true on `mousedown`/`touchstart` over a waypoint so the synthetic
   // `click` MapLibre fires for tap-without-drag (the pointer never moved
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
@@ -480,6 +486,7 @@ const TripPlannerMapContent = forwardRef<
     // immediate refit, ripping the user's zoom/pan away.
     if (!trip) {
       fittedTripIdRef.current = null;
+      builtTripIdRef.current = null;
     }
   }, [trip]);
   useEffect(() => {
@@ -733,9 +740,14 @@ const TripPlannerMapContent = forwardRef<
         lng: roundCoordinate(event.lngLat.lng),
         lat: roundCoordinate(event.lngLat.lat),
       };
+      // Position the menu with viewport coordinates (the DOM event's
+      // clientX/Y) and `position: fixed` so it lands under the cursor
+      // regardless of where the map container sits on the page. `event.point`
+      // is canvas-relative, which only matches when the overlay's positioned
+      // ancestor is the canvas origin — it isn't here, so it drifted.
       setContextMenu({
-        x: event.point.x,
-        y: event.point.y,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
         coords: snapped,
       });
     };
@@ -751,6 +763,9 @@ const TripPlannerMapContent = forwardRef<
       if (!touch) return;
       const savedPoint = { x: event.point.x, y: event.point.y };
       const savedLngLat = { lng: event.lngLat.lng, lat: event.lngLat.lat };
+      // Viewport coords for the menu position (see onContextMenu); savedPoint
+      // (canvas-relative) is still used for hit-testing and road snapping.
+      const savedClient = { x: touch.clientX, y: touch.clientY };
       longPressTimer = setTimeout(() => {
         if (touchMoved) return;
         if (drawRef.current?.hitTest(savedPoint)) return;
@@ -759,8 +774,8 @@ const TripPlannerMapContent = forwardRef<
           lat: roundCoordinate(savedLngLat.lat),
         };
         setContextMenu({
-          x: savedPoint.x,
-          y: savedPoint.y,
+          x: savedClient.x,
+          y: savedClient.y,
           coords: snapped,
         });
       }, LONG_PRESS_MS);
@@ -1017,13 +1032,26 @@ const TripPlannerMapContent = forwardRef<
   }, [tripBounds]);
 
   useEffect(() => {
-    // One-shot auto-fit per trip: only the first time we see a
-    // given `trip.id` do we frame the route. Subsequent waypoint
-    // edits keep the user's chosen zoom/pan; the Fit-to-route
-    // button below is the explicit opt-in.
+    // One-shot auto-fit per trip, but ONLY for a trip we first see with a
+    // real (multi-point) route — i.e. an existing trip loaded into the
+    // planner. A trip first seen empty or as a single point is a draft the
+    // rider is building; we record it and never auto-fit, so placing the
+    // first waypoint (which mints a new `trip.id`) doesn't rip their zoom
+    // back out. Either way the explicit Fit-to-route button reframes on demand.
     const map = handleRef.current?.map;
-    if (!map || !ready || !trip || !tripBounds) return;
+    if (!map || !ready || !trip) return;
     if (fittedTripIdRef.current === trip.id) return;
+    if (builtTripIdRef.current === trip.id) return;
+    // Framable = the bounds span an area (>1 distinct point). A loaded trip
+    // arrives fully hydrated (geometry present at first sight), so its bounds
+    // already have area; a fresh draft's first point has none.
+    const framable =
+      !!tripBounds &&
+      (tripBounds[2] - tripBounds[0] > 0 || tripBounds[3] - tripBounds[1] > 0);
+    if (!framable) {
+      builtTripIdRef.current = trip.id;
+      return;
+    }
     fittedTripIdRef.current = trip.id;
     fitMapToTrip();
   }, [ready, trip, tripBounds, fitMapToTrip]);
@@ -1431,7 +1459,7 @@ const TripPlannerMapContent = forwardRef<
         <div
           role="menu"
           aria-label={t("Place waypoint")}
-          className="absolute z-30 min-w-[160px] overflow-hidden rounded-xl border border-line bg-cream shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+          className="fixed z-30 min-w-[160px] overflow-hidden rounded-xl border border-line bg-cream shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <ul className="py-1">

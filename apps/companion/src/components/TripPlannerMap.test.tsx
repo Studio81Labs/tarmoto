@@ -308,6 +308,9 @@ describe("TripPlannerMap", () => {
         preventDefault: vi.fn(),
         point: { x: 180, y: 140 },
         lngLat: { lng: 14.435, lat: 50.106 },
+        // Real MapLibre MapMouseEvent carries the DOM event; the menu is
+        // positioned from its viewport clientX/clientY.
+        originalEvent: { clientX: 180, clientY: 140 },
       });
     });
 
