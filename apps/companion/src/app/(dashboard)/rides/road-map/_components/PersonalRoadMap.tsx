@@ -26,7 +26,6 @@ import {
   indexRiddenSegments,
   type RiddenSegment,
 } from "@/lib/road-map-layer";
-import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
@@ -58,6 +57,12 @@ interface Props {
    * roads read against the light basemap.
    */
   dimColor?: string;
+  /**
+   * Called when the rider clicks a ridden segment (with its id) or clicks
+   * empty map / an unridden road (with `null`). Drives the detail popover the
+   * page renders in the map corner. Omit on the read-only share page.
+   */
+  onSegmentSelect?: (segmentId: string | null) => void;
 }
 
 /**
@@ -72,19 +77,24 @@ interface Props {
  */
 export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
   function PersonalRoadMap(
-    { initialCenter, ridden, forceColorScheme, dimColor },
+    { initialCenter, ridden, forceColorScheme, dimColor, onSegmentSelect },
     ref,
   ) {
     const canvasRef = useRef<MapCanvasHandle>(null);
     const mapRef = useRef<MapLibreMap | null>(null);
     const [ready, setReady] = useState(false);
-    const popupRef = useRef<maplibregl.Popup | null>(null);
 
     const indexedRidden = useMemo(() => indexRiddenSegments(ridden), [ridden]);
     const indexedRiddenRef = useRef(indexedRidden);
     useEffect(() => {
       indexedRiddenRef.current = indexedRidden;
     }, [indexedRidden]);
+    // Read the latest callback from a ref so the click handler (bound once on
+    // map load) doesn't need re-binding when the prop identity changes.
+    const onSegmentSelectRef = useRef(onSegmentSelect);
+    useEffect(() => {
+      onSegmentSelectRef.current = onSegmentSelect;
+    }, [onSegmentSelect]);
 
     useImperativeHandle(ref, () => ({
       flyTo: ({ lat, lng, zoom }) => {
@@ -153,61 +163,48 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
           beforeId,
         );
 
-        // Hover/click popups — bind to the cyan layer. The layer paints
-        // every quality feature (unridden ones at opacity 0 via
-        // feature-state) so MapLibre still hit-tests their geometry; the
-        // `meta` lookup below distinguishes ridden hover targets from
-        // transparent ones, and dismisses the popup when the cursor is
-        // over the latter so it doesn't linger from a previous ridden
-        // hover.
-        const dismissPopup = () => {
-          if (popupRef.current) {
-            popupRef.current.remove();
-            popupRef.current = null;
-          }
-          map.getCanvas().style.cursor = "";
-        };
-
+        // Hit-testing binds to the cyan layer, which paints every quality
+        // feature (unridden ones at opacity 0 via feature-state) so MapLibre
+        // still hit-tests their geometry; the `meta` lookup distinguishes
+        // ridden targets from transparent ones.
+        //
+        // Hover: only a *ridden* segment shows the pointer cursor — clicking
+        // it opens the detail popover the page renders in the map corner.
         const handlePointerMove = (
           ev: MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
         ) => {
-          const feature = ev.features?.[0];
-          if (!feature) {
-            dismissPopup();
-            return;
-          }
-          const id = feature.id;
-          const meta =
-            typeof id === "string" ? indexedRiddenRef.current.get(id) : null;
-          if (!meta) {
-            // Transparent feature (unridden) under the cursor — clear any
-            // popup left over from a ridden segment we just moved off of.
-            dismissPopup();
-            return;
-          }
-
-          const html = renderPopupHtml(meta);
-          if (popupRef.current) {
-            popupRef.current.setLngLat(ev.lngLat).setHTML(html);
-          } else {
-            popupRef.current = new maplibregl.Popup({
-              closeButton: false,
-              closeOnClick: false,
-              offset: 10,
-            })
-              .setLngLat(ev.lngLat)
-              .setHTML(html)
-              .addTo(map);
-          }
-          map.getCanvas().style.cursor = "pointer";
+          const id = ev.features?.[0]?.id;
+          const isRidden =
+            typeof id === "string" && indexedRiddenRef.current.has(id);
+          map.getCanvas().style.cursor = isRidden ? "pointer" : "";
         };
 
         const handlePointerLeave = () => {
-          dismissPopup();
+          map.getCanvas().style.cursor = "";
         };
 
         map.on("mousemove", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerMove);
         map.on("mouseleave", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerLeave);
+
+        // Click anywhere: select the first ridden segment under the point, or
+        // deselect (close the popover) when the click misses every ridden road.
+        const handleMapClick = (ev: MapMouseEvent) => {
+          const select = onSegmentSelectRef.current;
+          if (!select) return;
+          const hits = map.queryRenderedFeatures(ev.point, {
+            layers: [ROAD_MAP_RIDDEN_LAYER_ID],
+          });
+          for (const feature of hits) {
+            const id = feature.id;
+            if (typeof id === "string" && indexedRiddenRef.current.has(id)) {
+              select(id);
+              return;
+            }
+          }
+          select(null);
+        };
+
+        map.on("click", handleMapClick);
 
         setReady(true);
         // `dimColor` is read when the dim layer is added on map load; it's a
@@ -233,17 +230,6 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       }
     }, [ready, ridden]);
 
-    // Tear-down popup on unmount so a stray reference doesn't leak after
-    // the map has been removed by MapCanvas's own cleanup.
-    useEffect(() => {
-      return () => {
-        if (popupRef.current) {
-          popupRef.current.remove();
-          popupRef.current = null;
-        }
-      };
-    }, []);
-
     return (
       <MapCanvas
         ref={canvasRef}
@@ -257,44 +243,3 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     );
   },
 );
-
-function renderPopupHtml(seg: RiddenSegment): string {
-  const date = new Date(seg.last_ridden_at);
-  const dateLabel = Number.isNaN(date.getTime())
-    ? "Unknown"
-    : date.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-
-  const tier =
-    seg.last_quality_score != null ? scoreToTier(seg.last_quality_score) : null;
-  const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
-
-  const qualityRow = tierInfo
-    ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-         <span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:${tierInfo.hex};"></span>
-         <span>${escapeHtml(tierInfo.label)} · ${seg.last_quality_score?.toFixed(1)}</span>
-       </div>`
-    : `<div style="margin-top:4px;color:#94a3b8;">No quality reading</div>`;
-
-  const rides = seg.ride_count;
-  const ridesLabel = `${rides} ride${rides === 1 ? "" : "s"}`;
-
-  return `
-    <div style="font: 12px/1.4 system-ui, sans-serif; color:#e2e8f0; min-width:160px;">
-      <div style="font-weight:600;color:white;">Last ridden ${escapeHtml(dateLabel)}</div>
-      ${qualityRow}
-      <div style="margin-top:4px;color:#94a3b8;">${ridesLabel}</div>
-    </div>
-  `;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
