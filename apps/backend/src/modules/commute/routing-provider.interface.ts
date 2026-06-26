@@ -1,4 +1,13 @@
 /**
+ * A single road-snapped route through an ordered list of waypoints.
+ */
+export interface RouteResult {
+  distance_km: number;
+  duration_min: number;
+  geometry: Array<{ lat: number; lng: number }>;
+}
+
+/**
  * A single route alternative from a routing engine.
  */
 export interface RouteAlternative {
@@ -49,6 +58,15 @@ export interface RoutingProvider {
    * `osrm-v1`, `graphhopper-v2`) — callers compare by string equality.
    */
   readonly version: string;
+
+  /**
+   * Road-snapped route through `waypoints` in order. Returns `null` when the
+   * engine cannot route (e.g. an isolated point). Reuses `RoutingOptions`.
+   */
+  route(
+    waypoints: ReadonlyArray<{ lat: number; lng: number }>,
+    options?: RoutingOptions,
+  ): Promise<RouteResult | null>;
 
   /**
    * Get alternative routes between two points.

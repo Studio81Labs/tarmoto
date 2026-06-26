@@ -43,6 +43,7 @@ import { JobsModule } from './modules/jobs/index.js';
 import { PushModule } from './modules/push/index.js';
 import { StorageModule } from './modules/storage/index.js';
 import { ModelEvalModule } from './modules/model-eval/index.js';
+import { RoutingModule } from './modules/routing/routing.module.js';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { ModelEvalModule } from './modules/model-eval/index.js';
     GeocodeModule,
     ClosuresModule,
     PushModule,
+    RoutingModule,
   ],
   controllers: [AppController],
   // Global APP_GUARD throttles every route by `(ip, user_id)` instead

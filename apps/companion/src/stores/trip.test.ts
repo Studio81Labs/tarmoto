@@ -1,4 +1,5 @@
 import { useTripStore } from "./trip";
+import type { RouteResponse } from "@/lib/api";
 import type { TripParameters } from "@/lib/types";
 
 describe("useTripStore planner editing", () => {
@@ -6,36 +7,34 @@ describe("useTripStore planner editing", () => {
     useTripStore.setState(useTripStore.getInitialState());
   });
 
-  it("creates a draft trip from map clicks and recalculates route metrics in real time", () => {
+  it("creates a draft trip from map clicks and accumulates waypoints in the correct order", () => {
     const store = useTripStore.getState();
 
     store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
     store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
 
-    const firstSolvedDay = useTripStore.getState().activeTrip?.days[0];
-    expect(firstSolvedDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
+    const firstDay = useTripStore.getState().activeTrip?.days[0];
+    expect(firstDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "end",
     ]);
-    expect(firstSolvedDay?.routeGeometry?.coordinates.length).toBeGreaterThan(
-      2,
-    );
-    expect(firstSolvedDay?.distanceKm).toBeGreaterThan(0);
-    expect(firstSolvedDay?.durationMinutes).toBeGreaterThan(0);
-
-    const twoPointDistance = firstSolvedDay?.distanceKm ?? 0;
+    // Geometry is now driven exclusively by applyRouteResult (live routing
+    // hook). appendPlannerWaypoint no longer synthesises geometry.
+    expect(firstDay?.routeGeometry).toBeUndefined();
+    expect(firstDay?.distanceKm).toBe(0);
 
     useTripStore
       .getState()
       .appendPlannerWaypoint(0, { lng: 14.52, lat: 50.24 });
 
-    const rebuiltDay = useTripStore.getState().activeTrip?.days[0];
-    expect(rebuiltDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
+    const updatedDay = useTripStore.getState().activeTrip?.days[0];
+    expect(updatedDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "via",
       "end",
     ]);
-    expect(rebuiltDay?.distanceKm).toBeGreaterThan(twoPointDistance);
+    // Still no geometry until the live routing hook calls applyRouteResult.
+    expect(updatedDay?.routeGeometry).toBeUndefined();
   });
 
   it("lets riders undo the very first draft-creation click sequence", () => {
@@ -55,7 +54,7 @@ describe("useTripStore planner editing", () => {
     );
   });
 
-  it("uses the current planner parameters when map clicks create and rebuild a draft", () => {
+  it("uses the current planner parameters when map clicks create and extend a draft", () => {
     const store = useTripStore.getState();
     const parameters: TripParameters = {
       days: 2,
@@ -73,9 +72,13 @@ describe("useTripStore planner editing", () => {
 
     const activeTrip = useTripStore.getState().activeTrip;
     expect(activeTrip?.parameters).toEqual(parameters);
-    expect(activeTrip?.days[0]?.routeGeometry?.coordinates).toEqual([
-      [14.41, 50.08],
-      [14.61, 50.19],
+    // Geometry is driven by applyRouteResult (live routing hook) — not
+    // synthesised by appendPlannerWaypoint regardless of roadPreference.
+    expect(activeTrip?.days[0]?.routeGeometry).toBeUndefined();
+    // Waypoints were appended in the correct start/end order.
+    expect(activeTrip?.days[0]?.waypoints.map((w) => w.type)).toEqual([
+      "start",
+      "end",
     ]);
   });
 
@@ -175,7 +178,7 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().hoveredSegmentId).toBeNull();
   });
 
-  it("moves an existing routing waypoint and rebuilds the day route geometry", () => {
+  it("moves an existing routing waypoint and updates its position without re-synthesising geometry", () => {
     const store = useTripStore.getState();
 
     store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
@@ -185,21 +188,24 @@ describe("useTripStore planner editing", () => {
     const startWaypoint = beforeMove?.waypoints[0];
     expect(startWaypoint?.type).toBe("start");
     expect(startWaypoint?.id).toBeDefined();
-    const beforeGeometry = beforeMove?.routeGeometry?.coordinates ?? [];
-    expect(beforeGeometry.length).toBeGreaterThan(0);
+    // No synthetic geometry; it starts undefined and only applyRouteResult
+    // sets it.
+    expect(beforeMove?.routeGeometry).toBeUndefined();
 
     useTripStore
       .getState()
       .moveWaypoint(0, startWaypoint!.id, { lng: 14.5, lat: 50.12 });
 
     const afterMove = useTripStore.getState().activeTrip?.days[0];
+    // The waypoint position was updated.
     expect(afterMove?.waypoints[0]?.location).toEqual({
       lng: 14.5,
       lat: 50.12,
     });
     expect(afterMove?.waypoints[0]?.id).toBe(startWaypoint!.id);
-    expect(afterMove?.routeGeometry?.coordinates).not.toEqual(beforeGeometry);
-    expect(afterMove?.routeGeometry?.coordinates[0]).toEqual([14.5, 50.12]);
+    // Geometry is left untouched (still undefined) — the live routing hook
+    // will call applyRouteResult once the server responds.
+    expect(afterMove?.routeGeometry).toBeUndefined();
     expect(useTripStore.getState().canUndo).toBe(true);
 
     useTripStore.getState().undo();
@@ -399,5 +405,448 @@ describe("useTripStore planner editing", () => {
 
     expect(useTripStore.getState().undoStack).toHaveLength(50);
     expect(useTripStore.getState().canUndo).toBe(true);
+  });
+});
+
+describe("useTripStore server-driven route geometry (Task 9)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("places start then end then via in routing order", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 2, lng: 2 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("applyRouteResult writes geometry + distance to the active day", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end");
+    s.applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 2, lng: 2 },
+      ],
+      distance_km: 12.3,
+      duration_min: 20,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 100,
+      surface_mix: {},
+    } as never as RouteResponse);
+    const day = useTripStore.getState().activeTrip!.days[0];
+    expect(day!.distanceKm).toBe(12.3);
+    expect(day!.routeGeometry?.coordinates.length).toBe(2);
+  });
+
+  it("set-new-start replaces the existing start, never duplicates it", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+
+    // Replace start with a new location
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-new-start");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const starts = waypoints.filter((w) => w.type === "start");
+    expect(starts).toHaveLength(1);
+    expect(starts[0]!.location).toEqual({ lat: 9, lng: 9 });
+
+    // routingWaypoints() reflects the updated start
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 9, lng: 9 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("set-new-end replaces the existing end, never duplicates it", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+
+    // Replace end with a new location
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-new-end");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const ends = waypoints.filter((w) => w.type === "end");
+    expect(ends).toHaveLength(1);
+    expect(ends[0]!.location).toEqual({ lat: 9, lng: 9 });
+
+    // routingWaypoints() reflects the updated end
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 9, lng: 9 },
+    ]);
+  });
+
+  it("saveWaypoints returns ordered {lat,lng,name?,type} for ALL waypoints including stops", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    // Insert a fuel stop before end — non-routing stop must appear in save payload.
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      type: "fuel",
+      name: "Gas station",
+      location: { lat: 2.5, lng: 2.5 },
+    });
+
+    const saved = useTripStore.getState().saveWaypoints();
+    expect(saved).toHaveLength(4);
+
+    // Correct ordering: start → via → fuel → end
+    expect(saved[0]!.type).toBe("start");
+    expect(saved[0]!.lat).toBe(1);
+    expect(saved[0]!.lng).toBe(1);
+
+    expect(saved[1]!.type).toBe("via");
+    expect(saved[1]!.lat).toBe(2);
+    expect(saved[1]!.lng).toBe(2);
+
+    expect(saved[2]!.type).toBe("fuel");
+    expect(saved[2]!.lat).toBe(2.5);
+    expect(saved[2]!.lng).toBe(2.5);
+    expect(saved[2]!.name).toBe("Gas station");
+
+    expect(saved[3]!.type).toBe("end");
+    expect(saved[3]!.lat).toBe(3);
+    expect(saved[3]!.lng).toBe(3);
+
+    // name field is present on each entry (may be undefined for via)
+    expect("name" in saved[0]!).toBe(true);
+    expect("name" in saved[1]!).toBe(true);
+    expect("name" in saved[2]!).toBe(true);
+    expect("name" in saved[3]!).toBe(true);
+  });
+
+  it("saveWaypoints maps local rest→food and accommodation→hotel to canonical backend types", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+
+    // Insert a rest stop (local type) — should serialize as "food"
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "rest-1",
+      type: "rest",
+      name: "Cafe",
+      location: { lat: 2, lng: 2 },
+    });
+    // Insert an accommodation stop (local type) — should serialize as "hotel"
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "hotel-1",
+      type: "accommodation",
+      name: "Overnight hotel",
+      location: { lat: 3, lng: 3 },
+    });
+
+    const saved = useTripStore.getState().saveWaypoints();
+    // Ordering: start → rest → accommodation → end
+    expect(saved).toHaveLength(4);
+    expect(saved[0]!.type).toBe("start");
+    // Local "rest" maps to canonical "food"
+    expect(saved[1]!.type).toBe("food");
+    expect(saved[1]!.name).toBe("Cafe");
+    // Local "accommodation" maps to canonical "hotel"
+    expect(saved[2]!.type).toBe("hotel");
+    expect(saved[2]!.name).toBe("Overnight hotel");
+    expect(saved[3]!.type).toBe("end");
+  });
+
+  it("removeWaypointById removes a via and leaves start and end intact", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const via = waypoints.find((w) => w.type === "via")!;
+    expect(via).toBeDefined();
+
+    useTripStore.getState().removeWaypointById(via.id);
+
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after.find((w) => w.id === via.id)).toBeUndefined();
+    expect(after.filter((w) => w.type === "start")).toHaveLength(1);
+    expect(after.filter((w) => w.type === "end")).toHaveLength(1);
+
+    // routingWaypoints is now just start → end
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("setWaypointType changes the type of a waypoint on day 0", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const via = waypoints.find((w) => w.type === "via")!;
+    expect(via).toBeDefined();
+
+    useTripStore.getState().setWaypointType(via.id, "accommodation");
+
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const updated = after.find((w) => w.id === via.id)!;
+    expect(updated.type).toBe("accommodation");
+
+    // start and end types must be unchanged
+    expect(after.find((w) => w.type === "start")).toBeDefined();
+    expect(after.find((w) => w.type === "end")).toBeDefined();
+  });
+});
+
+describe("useTripStore routeDirty flag", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("starts as false and is reset to false by setActiveTrip", () => {
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    // Set to true via a mutation, then reset via setActiveTrip
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("markRouteDirty sets routeDirty to true", () => {
+    expect(useTripStore.getState().routeDirty).toBe(false);
+    useTripStore.getState().markRouteDirty();
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("appendPlannerWaypoint sets routeDirty true", () => {
+    useTripStore
+      .getState()
+      .appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("placeWaypoint sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("removeWaypointById sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    // Reset dirty to test specifically the removeWaypointById action
+    useTripStore.setState({ routeDirty: false });
+
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().removeWaypointById(via.id);
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("reorderWaypoints sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().reorderWaypoints(0, 1, 2);
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("setWaypointType sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    useTripStore.setState({ routeDirty: false });
+
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().setWaypointType(via.id, "fuel");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("moveWaypoint sets routeDirty true on an actual location change", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1.5, lng: 1.5 });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("moveWaypoint does NOT set routeDirty when location is unchanged (no-op)", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    // Same location — no-op
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1, lng: 1 });
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("setActiveTrip resets routeDirty to false even when called with a non-null trip", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    const fakeTrip = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(fakeTrip);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("undo back to the loaded route clears routeDirty", () => {
+    // Build a route, then treat it as a freshly-loaded (clean) baseline.
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    const loaded = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(loaded);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    // Edit → dirty.
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "add-via");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    // Undo back to the loaded route → routeDirty restored to false.
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      type: "fuel",
+      name: "Gas",
+      location: { lat: 2, lng: 2 },
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("addWaypoint marks the draft dirty so suggested stays can be saved", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().addWaypoint(0, {
+      id: "stay-1",
+      type: "accommodation",
+      name: "Mountain inn",
+      location: { lat: 3, lng: 3 },
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("placeWaypoint seeds a new draft with the passed planner parameters", () => {
+    useTripStore.getState().resetForTest?.();
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start", {
+      days: 1,
+      dailyKmTarget: 400,
+      roadPreference: "scenic",
+      surfacePreference: [],
+      avoidHighways: false,
+      avoidTolls: true,
+      avoidUnpaved: false,
+      minQuality: 3,
+    });
+    const params = useTripStore.getState().activeTrip!.parameters;
+    // The rider's controls flow into the new draft instead of store defaults.
+    expect(params.roadPreference).toBe("scenic");
+    expect(params.avoidTolls).toBe(true);
+    expect(params.dailyKmTarget).toBe(400);
+  });
+
+  it("clears stale route geometry when an edit drops below 2 routing waypoints", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    // Simulate the live hook writing a real route.
+    s.applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 5, lng: 5 },
+      ],
+      distance_km: 12.3,
+      duration_min: 20,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 100,
+      surface_mix: {},
+    } as never);
+    expect(
+      useTripStore.getState().activeTrip!.days[0]!.routeGeometry,
+    ).toBeDefined();
+
+    // Remove the end → only the start remains → no longer routable → the stale
+    // route geometry + stats are cleared (the live hook won't recompute them).
+    const end = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!;
+    useTripStore.getState().removeWaypointById(end.id);
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    expect(day.routeGeometry).toBeUndefined();
+    expect(day.distanceKm).toBe(0);
+  });
+
+  it("marks the preview stale on edit and fresh after applyRouteResult", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    // An edit leaves the preview stale until a fresh route lands.
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
+
+    useTripStore.getState().applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 5, lng: 5 },
+      ],
+      distance_km: 5,
+      duration_min: 10,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 50,
+      surface_mix: {},
+    } as never);
+    expect(useTripStore.getState().routePreviewStale).toBe(false);
+
+    // A subsequent edit makes it stale again.
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
+  });
+
+  it("moveWaypoint marks the preview stale on a real move but not a no-op", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routePreviewStale: false });
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+
+    // No-op move (same location) → preview stays fresh.
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1, lng: 1 });
+    expect(useTripStore.getState().routePreviewStale).toBe(false);
+
+    // Real move → preview goes stale until the live hook reroutes.
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 2, lng: 2 });
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
   });
 });

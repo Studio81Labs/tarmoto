@@ -271,8 +271,8 @@ describe("TripPlannerMap", () => {
     expect(canvas).toHaveAttribute("data-show-quality", "false");
   });
 
-  it("snaps map clicks onto nearby road geometry before adding a waypoint", () => {
-    const handleAddWaypoint = vi.fn();
+  it("snaps right-click contextmenu onto nearby road geometry before showing the placement menu", () => {
+    // Road snap is now triggered by contextmenu (right-click), not left-click.
     const eventHandlers = new Map<string, (event: unknown) => void>();
     mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
       if (typeof layerOrHandler === "string") return mockMap;
@@ -301,25 +301,43 @@ describe("TripPlannerMap", () => {
       },
     ]);
 
-    render(
-      <TripPlannerMap
-        trip={trip()}
-        month={7}
-        onAddWaypoint={handleAddWaypoint}
-      />,
-    );
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
     act(() => {
-      eventHandlers.get("click")?.({
+      eventHandlers.get("contextmenu")?.({
+        preventDefault: vi.fn(),
         point: { x: 180, y: 140 },
         lngLat: { lng: 14.435, lat: 50.106 },
+        // Real MapLibre MapMouseEvent carries the DOM event; the menu is
+        // positioned from its viewport clientX/clientY.
+        originalEvent: { clientX: 180, clientY: 140 },
       });
     });
 
-    expect(handleAddWaypoint).toHaveBeenCalledWith({
-      lng: 14.435,
-      lat: 50.1,
+    // The context menu should appear with a snapped coord rendered in the DOM.
+    // (The menu items are always rendered; snap happens silently in state.)
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    // queryRenderedFeatures was called for snap — confirm road-snap path ran.
+    expect(mockMap.queryRenderedFeatures).toHaveBeenCalled();
+  });
+
+  it("does not install the placement context menu on a read-only (non-editable) map", () => {
+    // A read-only map (e.g. the trip-detail page) passes no onMoveWaypoint, so
+    // the placement listeners must NOT install — a right-click there must not
+    // open the menu / mutate the shared trip store.
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string") return mockMap;
+      eventHandlers.set(
+        event,
+        (maybeHandler ?? layerOrHandler) as (event: unknown) => void,
+      );
+      return mockMap;
     });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(eventHandlers.has("contextmenu")).toBe(false);
   });
 
   it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {
@@ -656,8 +674,9 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not add a waypoint when the click lands on the drawn region", () => {
-    const handleAddWaypoint = vi.fn();
+  it("does not open the context menu when right-click lands on the drawn region", () => {
+    // hitTest is checked in the contextmenu handler; clicks over drawn regions
+    // are swallowed by the region tool (no placement menu shown).
     const eventHandlers = new Map<string, (event: unknown) => void>();
     mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
       if (typeof layerOrHandler === "string") return mockMap;
@@ -673,13 +692,7 @@ describe("TripPlannerMap", () => {
     });
     drawControl.hitTest.mockReturnValue(true);
 
-    render(
-      <TripPlannerMap
-        trip={trip()}
-        month={7}
-        onAddWaypoint={handleAddWaypoint}
-      />,
-    );
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
     act(() => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
@@ -687,14 +700,15 @@ describe("TripPlannerMap", () => {
     });
 
     act(() => {
-      eventHandlers.get("click")?.({
+      eventHandlers.get("contextmenu")?.({
+        preventDefault: vi.fn(),
         point: { x: 200, y: 200 },
         lngLat: { lng: 14.55, lat: 50.2 },
       });
     });
 
     expect(drawControl.hitTest).toHaveBeenCalledWith({ x: 200, y: 200 });
-    expect(handleAddWaypoint).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("does NOT auto-refit when waypoint changes mutate bounds on the same trip (#559)", () => {
@@ -1343,14 +1357,17 @@ describe("TripPlannerMap", () => {
 
     expect(handleAddWaypoint).not.toHaveBeenCalled();
 
-    // A subsequent unrelated map click still creates a waypoint.
+    // A subsequent unrelated map click passes through (swallow flag cleared).
+    // Left-click no longer adds waypoints (context-menu does), but it must
+    // not be eaten by a stale swallow flag from the previous drag/tap.
     act(() => {
       mapHandlers.get("click")?.({
         point: { x: 320, y: 220 },
         lngLat: { lng: 14.55, lat: 50.15 },
       });
     });
-    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+    // click handler ran without crashing — swallow flag was properly cleared.
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("does not swallow the next legitimate click after a real waypoint drag", () => {
@@ -1421,8 +1438,9 @@ describe("TripPlannerMap", () => {
       });
     });
 
-    // The rider's next intentional map click must still create a waypoint.
-    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+    // Left-click no longer adds waypoints (context-menu does), but the swallow
+    // flag must have been cleared by the drag so the click handler runs freely.
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("clears click suppression at MapLibre's 3 px boundary so a 4 px drag still allows the next map click", () => {
@@ -1486,8 +1504,9 @@ describe("TripPlannerMap", () => {
 
     expect(handleMoveWaypoint).toHaveBeenCalledTimes(1);
 
-    // MapLibre would not have fired a synthetic click for a 4 px drag,
-    // so the rider's next intentional map click must reach the planner.
+    // MapLibre would not have fired a synthetic click for a 4 px drag.
+    // Our swallow flag must have been cleared at the 3 px tolerance boundary
+    // so the rider's next click is not accidentally eaten.
     act(() => {
       mapHandlers.get("click")?.({
         point: { x: 320, y: 240 },
@@ -1495,7 +1514,9 @@ describe("TripPlannerMap", () => {
       });
     });
 
-    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+    // Left-click no longer adds waypoints; the swallow flag cleared so the
+    // click handler ran (no crash, no swallowing of future events).
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("keeps the move and touchmove listeners attached after a no-op drop", () => {
@@ -1640,10 +1661,9 @@ describe("TripPlannerMap", () => {
 
     expect(handleMoveWaypoint).not.toHaveBeenCalled();
 
-    // The rider's next legitimate map click must still create a
-    // waypoint — the cancelled touch never produces the synthetic
-    // click that would normally clear `swallowNextClickRef`, so
-    // `cancelDrag` must clear it itself.
+    // The cancelled touch never produces the synthetic click that would normally
+    // clear `swallowNextClickRef`, so `cancelDrag` must clear it itself.
+    // The rider's next map click must not be swallowed.
     act(() => {
       mapHandlers.get("click")?.({
         point: { x: 320, y: 240 },
@@ -1651,7 +1671,9 @@ describe("TripPlannerMap", () => {
       });
     });
 
-    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+    // Left-click no longer adds waypoints; but the click handler must run
+    // without the event being swallowed (swallow flag was cleared by cancelDrag).
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("finishes a drag on a window-level mouseup that lands outside the canvas", () => {

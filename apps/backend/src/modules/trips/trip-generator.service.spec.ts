@@ -12,6 +12,7 @@ import { ROUTING_PROVIDER } from '../commute/routing-provider.interface.js';
 import type { RouteAlternative } from '../commute/routing-provider.interface.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 
 const USER_ID = '00000000-0000-0000-0000-000000000001';
 const TRIP_ID = '11111111-1111-1111-1111-111111111111';
@@ -173,6 +174,7 @@ describe('TripGeneratorService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripGeneratorService,
+        RouteEnrichmentService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: DataSource, useValue: dataSource },

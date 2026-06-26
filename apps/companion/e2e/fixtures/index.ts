@@ -95,6 +95,26 @@ export interface MockApi {
       | "event"
       | "other";
   }): Promise<{ id: string }>;
+  /**
+   * Seed a trip that already has a routed day-1 geometry so the planner
+   * opens it via `?tripId=` without firing live routing (dirty-gate:
+   * existing geometry suppresses the routing hook until an edit).
+   */
+  seedTrip(
+    user: SeededUser,
+    opts?: {
+      id?: string;
+      title?: string;
+      route_geometry?: Array<{ lat: number; lng: number }>;
+      waypoints?: Array<{
+        lat: number;
+        lng: number;
+        name?: string | null;
+        type?: string;
+      }>;
+      distance_km?: number;
+    },
+  ): Promise<{ id: string; title: string }>;
 }
 
 function buildMockApi(api: APIRequestContext): MockApi {
@@ -214,6 +234,33 @@ function buildMockApi(api: APIRequestContext): MockApi {
         );
       }
       return (await res.json()) as { id: string };
+    },
+    async seedTrip(user, opts = {}) {
+      // Default route geometry: two well-separated points spanning the
+      // same region as the demo-trip so closure + passes tests work.
+      const defaultGeometry = [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.55, lng: 10.45 },
+        { lat: 46.63, lng: 10.52 },
+      ];
+      const defaultWaypoints = [
+        { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
+        { lat: 46.63, lng: 10.52, name: "Finish", type: "end" },
+      ];
+      const res = await api.post(`${MOCK_BACKEND_URL}/__test__/seed-trip`, {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
+        data: {
+          id: opts.id,
+          title: opts.title ?? "Seeded route",
+          route_geometry: opts.route_geometry ?? defaultGeometry,
+          waypoints: opts.waypoints ?? defaultWaypoints,
+          distance_km: opts.distance_km ?? 125,
+        },
+      });
+      if (!res.ok()) {
+        throw new Error(`seedTrip failed: ${res.status()} ${await res.text()}`);
+      }
+      return (await res.json()) as { id: string; title: string };
     },
   };
 }

@@ -10,10 +10,11 @@ import { ToastHost } from "@/components/ToastHost";
 import { useToastStore } from "@/stores/toast";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
-import { useTripStore } from "@/stores/trip";
+import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
-import type { Trip, TripSummary } from "@/lib/types";
+import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
+import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 
 const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -39,7 +40,9 @@ vi.mock("@/hooks/usePasses", () => ({
 }));
 
 vi.mock("@/stores/trip", () => ({
-  useTripStore: vi.fn(),
+  useTripStore: Object.assign(vi.fn(), {
+    getState: vi.fn(),
+  }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -55,7 +58,13 @@ vi.mock("@/lib/api", () => ({
     importRoute: vi.fn(),
     replaceImportedRoute: vi.fn(),
     generate: vi.fn(),
+    saveRoute: vi.fn(),
   },
+}));
+
+// Prevent the live-routing hook from firing real API calls in unit tests.
+vi.mock("@/hooks/usePlannerRouting", () => ({
+  usePlannerRouting: vi.fn(() => ({ routing: false })),
 }));
 
 vi.mock("@/lib/closures-summary", async () => {
@@ -241,38 +250,6 @@ function buildTripDetail(
   };
 }
 
-function buildGenerationResponse(selected = "best-fit") {
-  const option = (id: string, label: string, title: string) => ({
-    id,
-    label,
-    summary: `${label} from backend`,
-    total_distance_km: id === "fastest" ? 220 : id === "scenic" ? 284 : 251,
-    total_duration_min: id === "fastest" ? 240 : id === "scenic" ? 330 : 288,
-    avg_quality: id === "fastest" ? 3.9 : id === "scenic" ? 4.7 : 4.4,
-    avg_curviness: id === "fastest" ? 62 : id === "scenic" ? 88 : 74,
-    avg_scenic: id === "fastest" ? 64 : id === "scenic" ? 92 : 81,
-    selected: id === selected,
-    days: buildTripDetail(title).days,
-  });
-
-  const selectedLabel =
-    selected === "fastest"
-      ? "Fastest backend"
-      : selected === "scenic"
-        ? "Scenic backend"
-        : "Best backend";
-
-  return {
-    trip: buildTripDetail(selectedLabel),
-    selected_option: selected,
-    options: [
-      option("best-fit", "Best backend", "Best backend"),
-      option("scenic", "Scenic backend", "Scenic backend"),
-      option("fastest", "Fastest backend", "Fastest backend"),
-    ],
-  };
-}
-
 type TripStoreSnapshot = {
   trips: TripSummary[];
   tripsOwnerId: string | null;
@@ -280,13 +257,18 @@ type TripStoreSnapshot = {
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  routeDirty: boolean;
+  routePreviewStale: boolean;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
-  undoStack: Array<Trip | null>;
-  redoStack: Array<Trip | null>;
+  undoStack: Array<{ trip: Trip | null; dirty: boolean }>;
+  redoStack: Array<{ trip: Trip | null; dirty: boolean }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
+  markRouteDirty: () => void;
+  draftPlannerParameters: TripParameters | null;
+  setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
@@ -310,21 +292,34 @@ type TripStoreSnapshot = {
   ) => void;
   undo: () => void;
   redo: () => void;
+  placeWaypoint: (coords: { lat: number; lng: number }, action: string) => void;
+  setWaypointType: (waypointId: string, type: Waypoint["type"]) => void;
+  removeWaypointById: (waypointId: string) => void;
+  routingWaypoints: () => { lat: number; lng: number }[];
+  saveWaypoints: () => {
+    lat: number;
+    lng: number;
+    name?: string;
+    type: BackendWaypointType;
+  }[];
+  applyRouteResult: (result: unknown) => void;
+  resetForTest: () => void;
 };
 
 describe("TripPlannerPage", () => {
   const useClosuresMock = vi.mocked(useClosures);
   const usePassesMock = vi.mocked(usePasses);
   const useTripStoreMock = vi.mocked(useTripStore);
+  const usePlannerRoutingMock = vi.mocked(usePlannerRouting);
   const tripsApiCreateMock = vi.mocked(tripsApi.create);
   const tripsApiDeleteMock = vi.mocked(tripsApi.delete);
-  const tripsApiGenerateMock = vi.mocked(tripsApi.generate);
   const tripsApiGetMock = vi.mocked(tripsApi.get);
   const tripsApiImportRouteMock = vi.mocked(tripsApi.importRoute);
   const tripsApiReplaceImportedRouteMock = vi.mocked(
     tripsApi.replaceImportedRoute,
   );
   const tripsApiUpdateMock = vi.mocked(tripsApi.update);
+  const tripsApiSaveRouteMock = vi.mocked(tripsApi.saveRoute);
 
   const closuresData: ClosuresQueryResult = {
     closures: [],
@@ -373,20 +368,18 @@ describe("TripPlannerPage", () => {
     setGenerating.mockReset();
     useClosuresMock.mockReset();
     usePassesMock.mockReset();
+    usePlannerRoutingMock.mockReset();
     tripsApiCreateMock.mockReset();
     tripsApiDeleteMock.mockReset();
-    tripsApiGenerateMock.mockReset();
     tripsApiGetMock.mockReset();
     tripsApiImportRouteMock.mockReset();
     tripsApiReplaceImportedRouteMock.mockReset();
     tripsApiUpdateMock.mockReset();
+    tripsApiSaveRouteMock.mockReset();
     tripsApiCreateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
     } as never);
     tripsApiDeleteMock.mockResolvedValue({ data: undefined } as never);
-    tripsApiGenerateMock.mockResolvedValue({
-      data: buildGenerationResponse(),
-    } as never);
     tripsApiGetMock.mockResolvedValue({ data: {} } as never);
     tripsApiImportRouteMock.mockResolvedValue({
       data: { id: "imported-server-trip-1" },
@@ -397,6 +390,10 @@ describe("TripPlannerPage", () => {
     tripsApiUpdateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
     } as never);
+    tripsApiSaveRouteMock.mockResolvedValue({
+      data: buildTripDetail("Saved route"),
+    } as never);
+    usePlannerRoutingMock.mockReturnValue({ routing: false });
     setActiveTrip.mockImplementation((trip) => {
       storeState.activeTrip = trip;
     });
@@ -410,6 +407,9 @@ describe("TripPlannerPage", () => {
       isGenerating: false,
       canUndo: false,
       canRedo: false,
+      routeDirty: false,
+      routePreviewStale: false,
+      draftPlannerParameters: null,
       focusedSegmentId: null,
       hoveredSegmentId: null,
       undoStack: [],
@@ -417,6 +417,8 @@ describe("TripPlannerPage", () => {
       setTrips: vi.fn(),
       setActiveTrip,
       setGenerating,
+      markRouteDirty: vi.fn(),
+      setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       addWaypoint: vi.fn(),
@@ -427,8 +429,31 @@ describe("TripPlannerPage", () => {
       reorderWaypoints: vi.fn(),
       undo: vi.fn(),
       redo: vi.fn(),
+      placeWaypoint: vi.fn(),
+      setWaypointType: vi.fn(),
+      removeWaypointById: vi.fn(),
+      routingWaypoints: vi.fn(() => []),
+      saveWaypoints: vi.fn(() => [
+        {
+          lat: 46.47,
+          lng: 10.37,
+          name: "Bormio",
+          type: "start" as BackendWaypointType,
+        },
+        {
+          lat: 46.61,
+          lng: 10.57,
+          name: "Prato allo Stelvio",
+          type: "end" as BackendWaypointType,
+        },
+      ]),
+      applyRouteResult: vi.fn(),
+      resetForTest: vi.fn(),
     };
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
+    // Wire getState so handleSaveRoute's useTripStore.getState().saveWaypoints()
+    // returns the same storeState that the selector-based hook reads.
+    vi.mocked(useTripStore).getState = vi.fn(() => storeState as never);
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
   });
@@ -567,100 +592,6 @@ describe("TripPlannerPage", () => {
     );
   });
 
-  it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {
-    tripsApiGenerateMock.mockResolvedValueOnce({
-      data: buildGenerationResponse(),
-    } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    fireEvent.change(screen.getByLabelText("Number of days"), {
-      target: { value: "4" },
-    });
-    fireEvent.change(screen.getByLabelText("Daily km target"), {
-      target: { value: "320" },
-    });
-    fireEvent.click(screen.getByLabelText("Gravel"));
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Best fit",
-          num_days: 4,
-          daily_km_min: 320,
-          daily_km_max: 320,
-        }),
-      ),
-    );
-    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-      "server-trip-1",
-      expect.objectContaining({
-        start_location: { lat: 46.47, lng: 10.37 },
-        avoid_highways: true,
-        avoid_tolls: false,
-        avoid_unpaved: true,
-        surfaces: ["asphalt"],
-      }),
-    );
-    expect(setGenerating).toHaveBeenNthCalledWith(1, true);
-    expect(setActiveTrip).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "server-trip-1",
-        name: "Best backend",
-        days: [
-          expect.objectContaining({
-            routeGeometry: {
-              type: "LineString",
-              coordinates: [
-                [10.37, 46.47],
-                [10.45, 46.52],
-                [10.57, 46.61],
-              ],
-            },
-          }),
-        ],
-      }),
-    );
-    expect(setGenerating).toHaveBeenLastCalledWith(false);
-    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
-    expect(screen.getByText("Fastest backend")).toBeInTheDocument();
-  });
-
-  it("passes the drawn planner region bbox into trip generation", async () => {
-    tripsApiGenerateMock.mockResolvedValueOnce({
-      data: buildGenerationResponse(),
-    } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
-      | {
-          onDrawnRegionChange?: (
-            bbox: [number, number, number, number] | null,
-          ) => void;
-        }
-      | undefined;
-
-    await act(async () => {
-      latestMapProps?.onDrawnRegionChange?.([10.3, 46.45, 10.6, 46.7]);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          bbox: "10.3,46.45,10.6,46.7",
-        }),
-      ),
-    );
-    expect(window.location.search).toContain("bbox=10.3%2C46.45%2C10.6%2C46.7");
-  });
-
   it("restores the drawn planner region from the URL", async () => {
     window.history.replaceState(
       {},
@@ -677,211 +608,6 @@ describe("TripPlannerPage", () => {
         }),
       ),
     );
-  });
-
-  it("persists a newly selected backend option before showing it as active", async () => {
-    tripsApiGenerateMock
-      .mockResolvedValueOnce({ data: buildGenerationResponse() } as never)
-      .mockResolvedValueOnce({
-        data: buildGenerationResponse("fastest"),
-      } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Fastest backend/i })),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
-
-    await waitFor(() =>
-      expect(tripsApiGenerateMock).toHaveBeenLastCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          option: "fastest",
-        }),
-      ),
-    );
-    expect(setActiveTrip).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        name: "Fastest backend",
-      }),
-    );
-  });
-
-  it("shows a backend generation error without falling back to demo options", async () => {
-    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
-    storeState.activeTrip = activeTrip;
-
-    render(
-      <>
-        <TripPlannerPage />
-        <ToastHost />
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    expect(
-      await screen.findByText(
-        "Could not generate itinerary options right now.",
-      ),
-    ).toBeInTheDocument();
-    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
-  });
-
-  it("shows a stable average-quality value for empty generated options", async () => {
-    tripsApiGenerateMock.mockResolvedValueOnce({
-      data: {
-        ...buildGenerationResponse(),
-        trip: buildTripDetail("Empty option", { days: [] }),
-        options: [
-          {
-            id: "best-fit",
-            label: "Empty option",
-            summary: "No generated days",
-            total_distance_km: 0,
-            total_duration_min: 0,
-            avg_quality: 0,
-            avg_curviness: 0,
-            avg_scenic: 0,
-            selected: true,
-            days: [],
-          },
-        ],
-      },
-    } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("heading", { level: 1, name: "Empty option" }),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByText("0.0/5")).toBeInTheDocument();
-    expect(screen.queryByText("NaN")).not.toBeInTheDocument();
-  });
-
-  it("saves the selected generated option to the backend", async () => {
-    storeState.activeTrip = activeTrip;
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Fastest backend/i })),
-    );
-
-    tripsApiGenerateMock.mockResolvedValueOnce({
-      data: buildGenerationResponse("fastest"),
-    } as never);
-    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
-
-    await waitFor(() =>
-      expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          option: "fastest",
-        }),
-      ),
-    );
-
-    tripsApiGenerateMock.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
-    );
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps request-only generation filters live after installing the generated backend trip", async () => {
-    storeState.activeTrip = activeTrip;
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
-    fireEvent.click(screen.getByLabelText("Gravel"));
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(setActiveTrip).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: "Best backend",
-          parameters: expect.objectContaining({
-            surfacePreference: ["asphalt", "gravel"],
-            avoidHighways: false,
-            avoidUnpaved: true,
-          }),
-        }),
-      ),
-    );
-    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
-    expect(screen.getByLabelText("Gravel")).toBeChecked();
-
-    tripsApiGenerateMock.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
-    );
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
-  });
-
-  it("cleans up a newly created backend trip when generation results go stale", async () => {
-    storeState.activeTrip = activeTrip;
-    const { rerender } = render(<TripPlannerPage />);
-    tripsApiGenerateMock.mockImplementationOnce(async () => {
-      storeState.activeTrip = buildTrip("Edited while generating");
-      rerender(<TripPlannerPage />);
-      return { data: buildGenerationResponse() } as never;
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
-    );
-    expect(setActiveTrip).not.toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Best backend" }),
-    );
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("keeps Save disabled while backend generation is in flight", async () => {
-    storeState.activeTrip = activeTrip;
-    const generateDeferred: {
-      resolve?: (value: {
-        data: ReturnType<typeof buildGenerationResponse>;
-      }) => void;
-    } = {};
-    tripsApiGenerateMock.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          generateDeferred.resolve = resolve;
-        }) as never,
-    );
-
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() => expect(tripsApiCreateMock).toHaveBeenCalledTimes(1));
-    rerender(<TripPlannerPage />);
-
-    const saveButton = screen.getByRole("button", { name: "Save" });
-    expect(saveButton).toBeDisabled();
-
-    fireEvent.click(saveButton);
-    expect(tripsApiCreateMock).toHaveBeenCalledTimes(1);
-
-    generateDeferred.resolve?.({ data: buildGenerationResponse() });
   });
 
   it("drops a lingering saved trip and its parameters when opened as create-new (no tripId)", async () => {
@@ -902,149 +628,6 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
   });
 
-  it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
-    const serverTripId = "11111111-2222-4333-8444-555555555555";
-    // A saved trip in the planner is reached via `?tripId=` (the edit flow);
-    // without it the mount-time reset would treat this as create-new.
-    window.history.replaceState(
-      {},
-      "",
-      `/trips/planner?tripId=${serverTripId}`,
-    );
-    storeState.activeTrip = {
-      ...activeTrip,
-      id: serverTripId,
-      name: "Saved route",
-    };
-    const { rerender } = render(<TripPlannerPage />);
-    tripsApiUpdateMock.mockImplementationOnce(async () => {
-      storeState.activeTrip = {
-        ...activeTrip,
-        id: serverTripId,
-        name: "Saved route",
-      };
-      rerender(<TripPlannerPage />);
-      return { data: { id: serverTripId } } as never;
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(setActiveTrip).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Best backend" }),
-      ),
-    );
-    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
-    expect(tripsApiDeleteMock).not.toHaveBeenCalled();
-  });
-
-  it("regenerates the selected backend option when planner controls change before saving", async () => {
-    storeState.activeTrip = activeTrip;
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Best backend/i })),
-    );
-
-    tripsApiGenerateMock.mockClear();
-    fireEvent.change(screen.getByLabelText("Number of days"), {
-      target: { value: "4" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
-        "server-trip-1",
-        expect.objectContaining({
-          num_days: 4,
-        }),
-      ),
-    );
-    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-      "server-trip-1",
-      expect.objectContaining({
-        option: "best-fit",
-      }),
-    );
-    expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
-  });
-
-  it("does not regenerate when only unsupported waypoint anchors change before saving", async () => {
-    storeState.activeTrip = activeTrip;
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(setActiveTrip).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Best backend" }),
-      ),
-    );
-    const generatedTrip = setActiveTrip.mock.calls.at(-1)?.[0];
-    expect(generatedTrip).not.toBeNull();
-    storeState.activeTrip = {
-      ...(generatedTrip as Trip),
-      days: (generatedTrip as Trip).days.map((day) =>
-        day.dayNumber === 1
-          ? {
-              ...day,
-              waypoints: day.waypoints.map((waypoint) =>
-                waypoint.type === "end"
-                  ? {
-                      ...waypoint,
-                      location: {
-                        lng: waypoint.location.lng + 0.1,
-                        lat: waypoint.location.lat + 0.1,
-                      },
-                    }
-                  : waypoint,
-              ),
-            }
-          : day,
-      ),
-    };
-    rerender(<TripPlannerPage />);
-
-    tripsApiGenerateMock.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
-    );
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
-  });
-
-  it("does not expose day-scoped regeneration for backend-generated options", async () => {
-    storeState.activeTrip = activeTrip;
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Best backend/i })),
-    );
-
-    expect(
-      screen.queryByRole("button", { name: /Regenerate day 1/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("deletes a newly created metadata-only trip when route generation fails", async () => {
-    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
-    );
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
   it("sends a valid daily-km band when saving a short daily target", async () => {
     storeState.activeTrip = {
       ...activeTrip,
@@ -1056,7 +639,7 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
@@ -1079,7 +662,7 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
@@ -1108,7 +691,7 @@ describe("TripPlannerPage", () => {
       </>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     expect(
       await screen.findByText(
@@ -1116,7 +699,6 @@ describe("TripPlannerPage", () => {
       ),
     ).toBeInTheDocument();
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
   it("does not save or redirect when the trip has no start waypoint", async () => {
@@ -1137,13 +719,12 @@ describe("TripPlannerPage", () => {
       </>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     expect(
       await screen.findByText("Add a start waypoint before saving this trip."),
     ).toBeInTheDocument();
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
   });
 
@@ -1190,7 +771,7 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiImportRouteMock).toHaveBeenCalledWith({
@@ -1209,7 +790,6 @@ describe("TripPlannerPage", () => {
       }),
     );
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith("/trips/imported-server-trip-1");
   });
 
@@ -1244,7 +824,7 @@ describe("TripPlannerPage", () => {
       latestModalProps?.onPromoted?.(promotedTripId);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiReplaceImportedRouteMock).toHaveBeenCalledWith(
@@ -1261,7 +841,6 @@ describe("TripPlannerPage", () => {
     );
     expect(tripsApiImportRouteMock).not.toHaveBeenCalled();
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
   });
 
@@ -1299,7 +878,7 @@ describe("TripPlannerPage", () => {
     });
     fireEvent.click(screen.getByLabelText("Avoid highways"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiUpdateMock).toHaveBeenCalledWith(
@@ -1314,28 +893,7 @@ describe("TripPlannerPage", () => {
         }),
       ),
     );
-    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith(`/trips/${serverTripId}`);
-  });
-
-  it("keeps the save button disabled after successful save while navigation is pending", async () => {
-    storeState.activeTrip = activeTrip;
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() =>
-      expect(setActiveTrip).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Best backend" }),
-      ),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
-    );
-    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {
@@ -1563,7 +1121,7 @@ describe("TripPlannerPage", () => {
       latestModalProps?.onPromoted?.(promotedTripId);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     await waitFor(() =>
       expect(tripsApiUpdateMock).toHaveBeenCalledWith(
@@ -1572,10 +1130,233 @@ describe("TripPlannerPage", () => {
       ),
     );
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
-      promotedTripId,
-      expect.objectContaining({ option: undefined }),
-    );
     expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
+  });
+
+  // ── Save route (Task 11) ─────────────────────────────────────────────
+
+  it("disables Save route when fewer than 2 routing waypoints exist", () => {
+    // No activeTrip → activeDayWaypoints is null → routingWaypoints is []
+    storeState.activeTrip = null;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("disables Save route when the active day has no route geometry yet", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          // Two waypoints present but routing hasn't resolved geometry yet
+          routeGeometry: null as never,
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("enables Save route when waypoints + geometry are present AND the draft is dirty", () => {
+    // activeTrip fixture has 2 waypoints + routeGeometry
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true; // rider has edited the route
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Save route" }),
+    ).not.toBeDisabled();
+  });
+
+  it("disables Save route while the preview is stale (mid routing debounce)", () => {
+    // Edited (routeDirty) with geometry present, but routePreviewStale=true →
+    // the displayed geometry is from the pre-edit waypoints; Save must wait.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    storeState.routePreviewStale = true;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("disables Save route on an unedited loaded trip (routeDirty false) so a no-op save can't reroute", () => {
+    // Loaded trip with geometry + waypoints but no edits yet.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("disables Save route when there is a start + via but no end waypoint", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "wp-1",
+              name: "Start",
+              type: "start",
+              location: { lng: 10.37, lat: 46.47 },
+            },
+            {
+              id: "wp-2",
+              name: "Via",
+              type: "via",
+              location: { lng: 10.5, lat: 46.55 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("calls tripsApi.saveRoute with store waypoints, creates trip on first save, and shows success toast", async () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Best fit" }),
+      ),
+    );
+    expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        waypoints: expect.arrayContaining([
+          expect.objectContaining({ lat: 46.47, lng: 10.37, type: "start" }),
+          expect.objectContaining({ lat: 46.61, lng: 10.57, type: "end" }),
+        ]),
+        options: expect.objectContaining({
+          avoid_highways: true,
+          avoid_tolls: false,
+          avoid_unpaved: true,
+        }),
+      }),
+    );
+    expect(setActiveTrip).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "server-trip-1" }),
+    );
+    expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("uses the existing server trip id on subsequent Save route calls without creating a duplicate", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    storeState.activeTrip = { ...activeTrip, id: serverTripId };
+    storeState.routeDirty = true;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
+        serverTripId,
+        expect.any(Object),
+      ),
+    );
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("shows an error toast when saveRoute fails", async () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    tripsApiSaveRouteMock.mockRejectedValueOnce(new Error("network error"));
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    expect(
+      await screen.findByText("Could not save the route. Please try again."),
+    ).toBeInTheDocument();
+  });
+
+  // ── Live routing gate (routeDirty fix) ──────────────────────────────
+
+  it("does NOT call usePlannerRouting with enabled=true when a trip WITH geometry is opened and routeDirty is false", () => {
+    // Simulate opening an existing saved trip that already has geometry.
+    // routeDirty is false (default), activeDayRouteGeometry is non-null.
+    storeState.activeTrip = activeTrip; // has routeGeometry
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    // usePlannerRouting should have been called with enabled=false
+    // (liveRouteEnabled = routeDirty || !activeDayRouteGeometry = false || false = false)
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    // The 5th argument is `enabled`
+    expect(lastCall?.[4]).toBe(false);
+  });
+
+  it("calls usePlannerRouting with enabled=true when routeDirty is true", () => {
+    storeState.activeTrip = activeTrip; // has routeGeometry
+    storeState.routeDirty = true; // rider has edited
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall?.[4]).toBe(true);
+  });
+
+  it("calls usePlannerRouting with enabled=true when the active day has no geometry yet (fresh draft)", () => {
+    // A fresh draft has waypoints but no geometry yet
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [{ ...activeTrip.days[0]!, routeGeometry: null as never }],
+    };
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    // liveRouteEnabled = false || !null = false || true = true
+    expect(lastCall?.[4]).toBe(true);
+  });
+
+  it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
   });
 });

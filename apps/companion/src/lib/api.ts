@@ -219,6 +219,7 @@ export type InviteTripResponse = JsonResponse<
   "post",
   202
 >;
+export type SaveRouteBody = JsonRequest<"/api/v1/trips/{tripId}/route", "put">;
 
 export const tripsApi = {
   list: (params?: ListTripsQuery) =>
@@ -296,6 +297,16 @@ export const tripsApi = {
         body: message ? { email, message } : { email },
       }),
     ),
+  // PUT /trips/:tripId/route — any trip member may submit waypoints;
+  // the server re-routes via Valhalla, enriches via PostGIS, and
+  // replaces day 1 atomically. Returns the full updated trip detail.
+  saveRoute: (tripId: string, body: SaveRouteBody) =>
+    openApiData<TripDetailResponse>(
+      api.PUT("/api/v1/trips/{tripId}/route", {
+        params: { path: { tripId } },
+        body,
+      }),
+    ),
 };
 
 // ── Community trip endpoints (read-only, non-member view) ──
@@ -314,6 +325,21 @@ export const communityTripsApi = {
       api.GET("/api/v1/community/trips/{tripId}", {
         params: { path: { tripId } },
       }),
+    ),
+};
+
+// ── Routing endpoint (generated OpenAPI contract) ──
+export type RouteRequestBody = JsonRequest<"/api/v1/routing/route", "post">;
+export type RouteResponse = JsonResponse<"/api/v1/routing/route", "post", 201>;
+
+export const routingApi = {
+  // POST /routing/route — road-snapped live preview through waypoints.
+  // Accepts an optional AbortSignal via `init` so the live-planner hook
+  // can cancel in-flight requests when waypoints change before the
+  // previous response arrives.
+  route: (body: RouteRequestBody, init?: { signal?: AbortSignal }) =>
+    openApiData<RouteResponse>(
+      api.POST("/api/v1/routing/route", { body, ...init }),
     ),
 };
 

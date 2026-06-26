@@ -76,6 +76,33 @@ services:
       timeout: 5s
       retries: 5
 
+  valhalla:
+    container_name: tarmoto-valhalla
+    # Opt-in profile: a plain `docker compose up -d` (e.g. `pnpm db:up`) skips
+    # this service so a DB boot never triggers the heavy first-run PBF download +
+    # tile build. Start it explicitly with `--profile routing up valhalla` (or
+    # by naming the service: `up valhalla`).
+    profiles: ["routing"]
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../valhalla/custom_files:/custom_files
+    environment:
+      # First start downloads this extract + builds tiles into the volume;
+      # later starts reuse them automatically (the image stores the pbf hash
+      # and skips the rebuild when the data is unchanged).
+      tile_urls: https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+      # Must be False so the FIRST run actually builds tiles from the pbf.
+      # (True = "ignore the pbf, load existing tiles" — which crash-loops on an
+      # empty volume because there are no tiles yet.)
+      use_tiles_ignore_pbf: "False"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      server_threads: "2"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

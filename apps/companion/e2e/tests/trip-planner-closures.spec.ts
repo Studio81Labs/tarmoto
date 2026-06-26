@@ -2,15 +2,20 @@ import { test, expect } from "../fixtures";
 
 test.describe("trip planner — closures (T13)", () => {
   // T13 — Closures visible: with a seeded closure overlapping the
-  // demo trip's region, opening the planner + generating an
-  // itinerary should surface the closures panel's route-warnings
-  // copy. `useClosures` fires `POST /closures/check-route` once the
-  // trip has days; the mock reports every seeded closure as
+  // trip route, opening the planner with a seeded trip (which already
+  // has day-1 route geometry) should surface the closures panel's
+  // route-warnings copy. `useClosures` fires `POST /closures/check-route`
+  // once the trip has days; the mock reports every seeded closure as
   // crossing the route, so the panel renders the "Current trip
   // crosses 1 active closure" line.
+  //
+  // We seed a trip WITH existing route geometry so the dirty-gate
+  // keeps the live-routing hook idle on open — no routing call needed
+  // to establish the trip days that trigger the closures check.
   test("T13: a seeded closure surfaces on the planner's route-warnings panel", async ({
     authedPage: page,
     mockApi,
+    user,
   }) => {
     await mockApi.seedClosure({
       title: "Stelvio Pass closed",
@@ -18,23 +23,31 @@ test.describe("trip planner — closures (T13)", () => {
       reason: "roadworks",
     });
 
-    await page.goto("/trips/planner");
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
+    const trip = await mockApi.seedTrip(user, {
+      title: "Alpine route",
+      route_geometry: [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.48, lng: 10.39 },
+        { lat: 46.55, lng: 10.45 },
+      ],
+      waypoints: [
+        { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
+        { lat: 46.55, lng: 10.45, name: "Finish", type: "end" },
+      ],
+      distance_km: 20,
+    });
 
-    // Wait for the URL to acquire a tripId (proves the planner has
-    // a generated trip). Closures-panel rendering keys off the
-    // post-generate trip having days.
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("tripId"), {
-        timeout: 10_000,
-      })
-      .not.toBeNull();
+    await page.goto(`/trips/planner?tripId=${trip.id}`);
+
+    // Wait for the map — confirms the planner has loaded the trip.
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     // The closures panel renders "Current trip crosses {count}
     // active {label}" once `useClosures.checkRoute` resolves with a
     // non-empty list. The mock reports the seeded closure for any
-    // non-empty route, so a successful generate guarantees this
+    // non-empty route, so a successful trip load guarantees this
     // copy lands. Use a substring match (the i18n `t()` swap might
     // adjust punctuation; the number + "closure" anchor is stable).
     await expect(
