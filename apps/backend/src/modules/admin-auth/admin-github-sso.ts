@@ -63,9 +63,13 @@ export async function exchangeGithubCode(
     verified: boolean;
   }>;
   const primary =
-    emails.find((e) => e.primary && e.verified)?.email ?? user.email;
-  if (!user.id || !primary) {
+    emails.find((e) => e.primary && e.verified)?.email ??
+    emails.find((e) => e.verified)?.email;
+  if (!user.id) {
     throw new UnauthorizedException('GitHub profile missing id/email');
+  }
+  if (!primary) {
+    throw new UnauthorizedException('GitHub account has no verified email');
   }
   return { subject: String(user.id), email: primary };
 }

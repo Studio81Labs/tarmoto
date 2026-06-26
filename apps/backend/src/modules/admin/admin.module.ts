@@ -6,6 +6,7 @@ import { AdminSession } from '../../entities/admin-session.entity.js';
 import { AdminAuditLog } from '../../entities/admin-audit-log.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
+import { Ride } from '../../entities/ride.entity.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -22,6 +23,7 @@ import { AdminMetricsService } from './admin-metrics.service.js';
       AdminAuditLog,
       User,
       RoadClosure,
+      Ride,
     ]),
   ],
   controllers: [AdminMetricsController],
