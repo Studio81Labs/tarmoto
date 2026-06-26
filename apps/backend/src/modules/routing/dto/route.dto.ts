@@ -24,11 +24,20 @@ export class RouteOptionsDto {
   @IsOptional()
   @IsBoolean()
   avoid_tolls?: boolean;
-  @ApiProperty({ required: false })
+  @ApiProperty({
+    required: false,
+    description:
+      'Reserved — accepted but not yet applied to live routing (phase 1).',
+  })
   @IsOptional()
   @IsBoolean()
   avoid_unpaved?: boolean;
-  @ApiProperty({ required: false, type: [String] })
+  @ApiProperty({
+    required: false,
+    type: [String],
+    description:
+      'Reserved — accepted but not yet applied to live routing (phase 1).',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

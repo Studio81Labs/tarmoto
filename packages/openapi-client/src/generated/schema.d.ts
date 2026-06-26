@@ -4179,7 +4179,9 @@ export interface components {
     RouteOptionsDto: {
       avoid_highways?: boolean;
       avoid_tolls?: boolean;
+      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
       avoid_unpaved?: boolean;
+      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
       surfaces?: string[];
     };
     RouteRequestDto: {
