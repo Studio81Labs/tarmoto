@@ -1120,6 +1120,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/trips/{tripId}/route": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Persist a manually-built route (server re-routes from waypoints)
+     * @description Any trip member may call this. The server ignores client geometry and re-routes through the supplied waypoints via Valhalla, enriches the result via PostGIS, then replaces day 1 atomically. Returns the full updated trip detail. 502 when the routing engine cannot find a road route between the supplied points.
+     */
+    put: operations["TripsController_saveRoute"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/trips/{tripId}/import": {
     parameters: {
       query?: never;
@@ -3880,6 +3900,25 @@ export interface components {
       geometry: components["schemas"]["ImportTripPointDto"][];
       waypoints?: components["schemas"]["ImportTripWaypointDto"][];
     };
+    SaveRouteWaypointDto: {
+      lat: number;
+      lng: number;
+      name?: string | null;
+      /** @enum {string} */
+      type: "start" | "via" | "end";
+    };
+    RouteOptionsDto: {
+      avoid_highways?: boolean;
+      avoid_tolls?: boolean;
+      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
+      avoid_unpaved?: boolean;
+      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
+      surfaces?: string[];
+    };
+    SaveRouteDto: {
+      waypoints: components["schemas"]["SaveRouteWaypointDto"][];
+      options?: components["schemas"]["RouteOptionsDto"];
+    };
     FromShareTripDto: {
       /** @description The 32-char hex share token returned by `POST /trip-shares` and consumed by the `tarmoto://trips/import?token=...` deep link. */
       share_token: string;
@@ -4175,14 +4214,6 @@ export interface components {
       daily_breakdown: components["schemas"]["DailyBreakdownDto"][];
       /** @description Totals for the equivalent prior window (e.g. last week vs this week). */
       previous_period: components["schemas"]["CommuteStatsPeriodDto"];
-    };
-    RouteOptionsDto: {
-      avoid_highways?: boolean;
-      avoid_tolls?: boolean;
-      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
-      avoid_unpaved?: boolean;
-      /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
-      surfaces?: string[];
     };
     RouteRequestDto: {
       waypoints: components["schemas"]["LatLngDto"][];
@@ -5275,6 +5306,10 @@ export type SchemaImportTripPointDto =
 export type SchemaImportTripWaypointDto =
   components["schemas"]["ImportTripWaypointDto"];
 export type SchemaImportTripDto = components["schemas"]["ImportTripDto"];
+export type SchemaSaveRouteWaypointDto =
+  components["schemas"]["SaveRouteWaypointDto"];
+export type SchemaRouteOptionsDto = components["schemas"]["RouteOptionsDto"];
+export type SchemaSaveRouteDto = components["schemas"]["SaveRouteDto"];
 export type SchemaFromShareTripDto = components["schemas"]["FromShareTripDto"];
 export type SchemaUpdateTripDto = components["schemas"]["UpdateTripDto"];
 export type SchemaGenerateTripDto = components["schemas"]["GenerateTripDto"];
@@ -5325,7 +5360,6 @@ export type SchemaCommuteStatsPeriodDto =
   components["schemas"]["CommuteStatsPeriodDto"];
 export type SchemaCommuteStatsResponseDto =
   components["schemas"]["CommuteStatsResponseDto"];
-export type SchemaRouteOptionsDto = components["schemas"]["RouteOptionsDto"];
 export type SchemaRouteRequestDto = components["schemas"]["RouteRequestDto"];
 export type SchemaRouteResponseDto = components["schemas"]["RouteResponseDto"];
 export type SchemaCalibrationDto = components["schemas"]["CalibrationDto"];
@@ -7333,6 +7367,45 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["TripDetailDto"];
         };
+      };
+    };
+  };
+  TripsController_saveRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tripId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SaveRouteDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TripDetailDto"];
+        };
+      };
+      /** @description Trip not found or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No road route between these points */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

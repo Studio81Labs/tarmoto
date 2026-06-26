@@ -1,6 +1,8 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -23,12 +25,18 @@ import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import {
+  ROUTING_PROVIDER,
+  type RoutingProvider,
+} from '../commute/routing-provider.interface.js';
+import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
+import { SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   PublicTripDetailDto,
@@ -82,6 +90,9 @@ export class TripsService {
     private readonly email: EmailService,
     private readonly config: ConfigService,
     private readonly privacy: PrivacyPreferencesService,
+    @Inject(ROUTING_PROVIDER)
+    private readonly routingProvider: RoutingProvider,
+    private readonly enrichment: RouteEnrichmentService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -969,6 +980,99 @@ export class TripsService {
         },
       ]),
     );
+  }
+
+  /**
+   * US-road-route: persist a manually-built road route for day 1.
+   *
+   * The endpoint is the single source of truth — client geometry is never
+   * trusted. We accept ordered waypoints, re-route them server-side via
+   * the configured routing provider (Valhalla), enrich the result via
+   * PostGIS, then replace day 1 in a transaction.
+   *
+   * Any trip member may call this (not just owner/admin) because the
+   * route-building flow is collaborative — all members can contribute a
+   * day plan. Privilege-checking is done by verifying membership only;
+   * no role filter is applied here.
+   */
+  async saveManualRoute(
+    userId: string,
+    tripId: string,
+    dto: SaveRouteDto,
+  ): Promise<TripDetailDto> {
+    // 1. Membership gate: fold "no such trip" and "not a member" into
+    //    the same 404 so the endpoint can't enumerate trip ids.
+    const member = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!member) throw new NotFoundException('Trip not found');
+
+    // 2. Road-snap + enrich server-side — never trust client geometry.
+    const route = await this.routingProvider.route(
+      dto.waypoints.map((w) => ({ lat: w.lat, lng: w.lng })),
+      {
+        avoidHighways: dto.options?.avoid_highways,
+        avoidTolls: dto.options?.avoid_tolls,
+      },
+    );
+    if (!route)
+      throw new BadGatewayException('No road route between these points');
+
+    const m = await this.enrichment.aggregate(route.geometry);
+
+    // 3. Persist day 1 + its waypoints in a single transaction.
+    //    Mirrors TripGeneratorService.persistSelected: delete existing
+    //    day 1, insert a fresh TripDay + TripWaypoint rows. We use
+    //    `dataSource.transaction` via the tripRepo manager (the same
+    //    pattern the generator uses) so the geometry object form matches
+    //    what TypeORM + the PostGIS column type expect.
+    await this.tripRepo.manager.transaction(async (manager) => {
+      // Delete day 1 only — leave other days untouched.
+      await manager.delete(TripDay, { trip_id: tripId, day_number: 1 });
+
+      // Persist day 1 — column form mirrors generator's `persistSelected`
+      // (lines 567-587 of trip-generator.service.ts): route_geom as a
+      // GeoJSON object `{ type, coordinates }` in [lng, lat] order;
+      // estimated_time as `'N minutes'` interval string.
+      const day = manager.create(TripDay, {
+        trip_id: tripId,
+        day_number: 1,
+        distance_km: Number(route.distance_km.toFixed(2)),
+        estimated_time: `${Math.round(route.duration_min)} minutes`,
+        avg_quality: m.avgQuality,
+        curviness_score: m.curvinessScore,
+        scenic_score: m.scenicScore,
+        elevation_gain: Math.round(m.elevationGain),
+        elevation_loss: Math.round(m.elevationLoss),
+        route_geom: {
+          type: 'LineString',
+          coordinates: route.geometry.map((p) => [p.lng, p.lat]),
+        },
+      });
+      const savedDay = await manager.save(day);
+
+      // Persist the client-supplied waypoints in order (sequence 0..n-1).
+      // Location uses `latLngToPoint` — the same helper the generator and
+      // importFromRoute use for `trip_waypoints.location`.
+      const waypointRows = dto.waypoints.map((w, idx) =>
+        manager.create(TripWaypoint, {
+          trip_day_id: savedDay.id,
+          sequence: idx,
+          location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+          name: w.name ?? null,
+          waypoint_type: w.type,
+        }),
+      );
+      if (waypointRows.length > 0) {
+        await manager.save(waypointRows);
+      }
+
+      // Flip trip status to planned (it was likely draft before
+      // a route was saved). Mirrors the generator's status update.
+      await manager.update(Trip, { id: tripId }, { status: 'planned' });
+    });
+
+    return this.getDetail(userId, tripId);
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {

@@ -30,6 +30,7 @@ import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
+import { SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import { TripDetailDto, TripSummaryDto } from './dto/trip-response.dto.js';
 import { GenerateTripDto } from './dto/generate-trip.dto.js';
@@ -81,6 +82,30 @@ export class TripsController {
     @Body() dto: ImportTripDto,
   ): Promise<TripDetailDto> {
     return this.tripsService.importFromRoute(req.user!.userId, dto);
+  }
+
+  @Put(':tripId/route')
+  @ApiOperation({
+    summary: 'Persist a manually-built route (server re-routes from waypoints)',
+    description:
+      'Any trip member may call this. The server ignores client geometry and ' +
+      're-routes through the supplied waypoints via Valhalla, enriches the ' +
+      'result via PostGIS, then replaces day 1 atomically. Returns the full ' +
+      'updated trip detail. 502 when the routing engine cannot find a road ' +
+      'route between the supplied points.',
+  })
+  @ApiResponse({ status: 200, type: TripDetailDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  @ApiResponse({
+    status: 502,
+    description: 'No road route between these points',
+  })
+  async saveRoute(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: SaveRouteDto,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.saveManualRoute(req.user!.userId, tripId, dto);
   }
 
   @Put(':tripId/import')

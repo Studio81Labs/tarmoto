@@ -5,6 +5,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   NotFoundException,
@@ -24,6 +25,8 @@ import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { ROUTING_PROVIDER } from '../commute/routing-provider.interface.js';
+import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -170,6 +173,12 @@ describe('TripsService', () => {
   let privacy: jest.Mocked<
     Pick<PrivacyPreferencesService, 'loadPrivateUserIds'>
   >;
+  let routingProvider: {
+    route: jest.Mock;
+    getAlternatives: jest.Mock;
+    version: string;
+  };
+  let enrichment: { aggregate: jest.Mock };
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -270,6 +279,24 @@ describe('TripsService', () => {
       ),
     } as unknown as jest.Mocked<Pick<ConfigService, 'get'>>;
 
+    routingProvider = {
+      version: 'valhalla-v1',
+      route: jest.fn().mockResolvedValue(null),
+      getAlternatives: jest.fn().mockResolvedValue([]),
+    };
+
+    enrichment = {
+      aggregate: jest.fn().mockResolvedValue({
+        avgQuality: null,
+        curvinessScore: null,
+        scenicScore: null,
+        elevationGain: 0,
+        elevationLoss: 0,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
@@ -288,6 +315,8 @@ describe('TripsService', () => {
         { provide: EmailService, useValue: email },
         { provide: ConfigService, useValue: config },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: ROUTING_PROVIDER, useValue: routingProvider },
+        { provide: RouteEnrichmentService, useValue: enrichment },
       ],
     }).compile();
 
@@ -2114,6 +2143,123 @@ describe('TripsService', () => {
       // outlive the trip and persist someone else's email forever.
       expect(JSON.stringify(payload)).not.toContain('private.address');
       expect(JSON.stringify(payload)).not.toContain('plus');
+    });
+  });
+
+  describe('saveManualRoute', () => {
+    it('re-routes from waypoints, persists day 1 + waypoints, returns detail', async () => {
+      // membership gate passes (caller is a member)
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      routingProvider.route.mockResolvedValueOnce({
+        distance_km: 88.9,
+        duration_min: 124,
+        geometry: [
+          { lat: 50.08, lng: 14.42 },
+          { lat: 50.1, lng: 14.5 },
+        ],
+      });
+      enrichment.aggregate.mockResolvedValueOnce({
+        avgQuality: 4,
+        curvinessScore: 6,
+        scenicScore: 3,
+        elevationGain: 540,
+        elevationLoss: 540,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      });
+      // post-save reload via getDetail
+      mockGetDetailReturns(makeOwnedTrip());
+
+      const result = await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        waypoints: [
+          { lat: 50.08, lng: 14.42, type: 'start' },
+          { lat: 50.1, lng: 14.5, type: 'end' },
+        ],
+      });
+
+      expect(routingProvider.route).toHaveBeenCalledWith(
+        [
+          { lat: 50.08, lng: 14.42 },
+          { lat: 50.1, lng: 14.5 },
+        ],
+        expect.objectContaining({
+          avoidHighways: undefined,
+          avoidTolls: undefined,
+        }),
+      );
+      expect(enrichment.aggregate).toHaveBeenCalled();
+      // transaction ran
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      // day 1 persisted with the server-side geometry
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'route_geom' in b);
+      expect(dayBodies).toHaveLength(1);
+      expect(dayBodies[0]).toMatchObject({
+        day_number: 1,
+        distance_km: 88.9,
+        estimated_time: '124 minutes',
+        elevation_gain: 540,
+        elevation_loss: 540,
+      });
+      const geom = dayBodies[0].route_geom as {
+        type: string;
+        coordinates: number[][];
+      };
+      expect(geom.type).toBe('LineString');
+      expect(geom.coordinates[0]).toEqual([14.42, 50.08]);
+      // waypoints persisted
+      const wpBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      expect(wpBodies).toHaveLength(2);
+      expect(wpBodies[0]).toMatchObject({
+        sequence: 0,
+        waypoint_type: 'start',
+      });
+      expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'end' });
+      expect(result.id).toBe(TRIP_ID);
+    });
+
+    it('rejects a non-member with NotFoundException (404)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.saveManualRoute(OTHER_ID, TRIP_ID, {
+          waypoints: [
+            { lat: 0, lng: 0, type: 'start' },
+            { lat: 1, lng: 1, type: 'end' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(routingProvider.route).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws BadGatewayException when the routing provider returns null', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      routingProvider.route.mockResolvedValueOnce(null);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          waypoints: [
+            { lat: 0, lng: 0, type: 'start' },
+            { lat: 1, lng: 1, type: 'end' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+
+      expect(transactionMock).not.toHaveBeenCalled();
     });
   });
 
