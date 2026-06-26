@@ -1,8 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { AdminUser, type AdminRole } from '../../entities/admin-user.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
 import { AdminRefreshToken } from '../../entities/admin-refresh-token.entity.js';
@@ -52,6 +52,8 @@ export class AdminAuthService {
     private readonly sessions: Repository<AdminSession>,
     @InjectRepository(AdminRefreshToken)
     private readonly refreshTokens: Repository<AdminRefreshToken>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async loginWithPassword(
@@ -117,21 +119,29 @@ export class AdminAuthService {
     const user = await this.findActiveById(session.admin_user_id);
     if (!user) throw new UnauthorizedException('Invalid admin');
 
-    // Rotate: mint a new refresh token, mark the old one replaced+revoked.
-    const tokens = await this.issueTokens(user, session.id);
-    await this.refreshTokens.update(
-      { id: stored.id },
-      {
-        revoked_at: new Date(),
-        last_used_at: new Date(),
-        replaced_by_token_id: tokens.refreshTokenId,
-      },
-    );
-    await this.sessions.update(
-      { id: session.id },
-      { last_seen_at: new Date() },
-    );
-    return tokens.tokens;
+    // Atomically: mint new refresh token, revoke old, update session last_seen_at.
+    // Two concurrent refreshes with the same token (or a crash mid-rotation)
+    // must not leave two live tokens.
+    let tokens!: AdminSessionTokens;
+    await this.dataSource.transaction(async (manager) => {
+      const result = await this.issueTokens(user, session.id, manager);
+      const refreshRepo = manager.getRepository(AdminRefreshToken);
+      const sessionRepo = manager.getRepository(AdminSession);
+      await refreshRepo.update(
+        { id: stored.id },
+        {
+          revoked_at: new Date(),
+          last_used_at: new Date(),
+          replaced_by_token_id: result.refreshTokenId,
+        },
+      );
+      await sessionRepo.update(
+        { id: session.id },
+        { last_seen_at: new Date() },
+      );
+      tokens = result.tokens;
+    });
+    return tokens;
   }
 
   async revoke(rawRefreshToken: string): Promise<void> {
@@ -183,6 +193,7 @@ export class AdminAuthService {
   private async issueTokens(
     user: AdminUser,
     sessionId: string,
+    manager?: EntityManager,
   ): Promise<{
     tokens: AdminSessionTokens;
     refreshTokenId: string;
@@ -193,8 +204,11 @@ export class AdminAuthService {
       { secret, expiresIn: ADMIN_ACCESS_TOKEN_SECONDS },
     );
     const rawRefreshToken = generateRefreshToken();
-    const saved = await this.refreshTokens.save(
-      this.refreshTokens.create({
+    const repo = manager
+      ? manager.getRepository(AdminRefreshToken)
+      : this.refreshTokens;
+    const saved = await repo.save(
+      repo.create({
         session_id: sessionId,
         token_hash: hashRefreshToken(rawRefreshToken),
         expires_at: new Date(Date.now() + ADMIN_REFRESH_TOKEN_SECONDS * 1000),
@@ -214,11 +228,11 @@ export class AdminAuthService {
   private async revokeSession(sessionId: string): Promise<void> {
     const now = new Date();
     await this.sessions.update(
-      { id: sessionId, revoked_at: undefined },
+      { id: sessionId, revoked_at: IsNull() },
       { revoked_at: now },
     );
     await this.refreshTokens.update(
-      { session_id: sessionId, revoked_at: undefined },
+      { session_id: sessionId, revoked_at: IsNull() },
       { revoked_at: now },
     );
   }
