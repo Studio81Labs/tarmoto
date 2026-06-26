@@ -1,4 +1,7 @@
 import { create } from "zustand";
+
+/** Maximum number of days in a multi-day trip (companion mirror of the backend cap). */
+export const MAX_TRIP_DAYS = 14;
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
@@ -133,13 +136,20 @@ interface TripState {
   routeDirty: boolean;
 
   /**
-   * True from the moment a routing input changes (waypoint edit or avoid-option
-   * toggle) until the live hook writes a fresh route via applyRouteResult. The
-   * store keeps the pre-edit geometry during the routing debounce; this gates
-   * Save route so a quick click can't persist stale (un-previewed) geometry.
-   * Reset to false on load (setActiveTrip) and on applyRouteResult.
+   * Day numbers (1-based) whose route preview is stale — i.e. routing inputs
+   * changed since the last `applyRouteResult` for that day. Replaces the
+   * former boolean `routePreviewStale`. Empty means every day's preview is
+   * fresh. Reset to `[]` on `setActiveTrip`; populated per-mutation as waypoint
+   * edits are isolated to a specific day (Tasks 7–9 refine per-day targeting;
+   * in Phase 1 / Task 6 we approximate with the selected day).
    */
-  routePreviewStale: boolean;
+  stalePreviewDays: number[];
+
+  /** Index into `activeTrip.days` for the currently-selected planner day. */
+  selectedDayIndex: number;
+
+  /** Select a planner day by index. */
+  setSelectedDay: (index: number) => void;
 
   /**
    * The planner controls' current parameters, mirrored from the page so the
@@ -331,7 +341,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
-    routePreviewStale: false,
+    stalePreviewDays: [],
+    selectedDayIndex: 0,
     draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
@@ -346,7 +357,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set({
         activeTrip,
         routeDirty: false,
-        routePreviewStale: false,
+        stalePreviewDays: [],
+        selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -354,8 +366,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
       }),
+    setSelectedDay: (index) => set({ selectedDayIndex: index }),
     setGenerating: (isGenerating) => set({ isGenerating }),
-    markRouteDirty: () => set({ routeDirty: true, routePreviewStale: true }),
+    markRouteDirty: () =>
+      set((s) => ({
+        routeDirty: true,
+        // Avoid-option toggles are trip-level — mark every day stale.
+        stalePreviewDays: (s.activeTrip?.days ?? []).map((d) => d.dayNumber),
+      })),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),
 
@@ -383,7 +401,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // Adding a waypoint (e.g. a suggested overnight stay from
         // TripStopsPanel) is a route edit — mark dirty so Save route enables.
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
@@ -410,7 +431,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
@@ -440,7 +464,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
         // edit — mark dirty so they enable Save route (gated on routeDirty).
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     removeWaypoint: (dayIndex, waypointId) =>
@@ -512,7 +539,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // return the same state reference from commitTripChange). A real move
         // also makes the displayed geometry stale until the live hook reroutes.
         if (result === state) return state;
-        return { ...result, routeDirty: true, routePreviewStale: true };
+        return {
+          ...result,
+          routeDirty: true,
+          stalePreviewDays: markDayStale(
+            get().stalePreviewDays,
+            get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+          ),
+        };
       }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
@@ -539,7 +573,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     undo: () =>
@@ -556,9 +593,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Restore the dirty flag captured with this snapshot so undoing back
           // to the loaded route also clears routeDirty (re-disabling Save).
           routeDirty: previous.dirty,
-          // The restored waypoints will be re-routed by the live hook; mark the
-          // preview stale until that lands so Save can't persist old geometry.
-          routePreviewStale: true,
+          // The restored waypoints will be re-routed by the live hook; mark all
+          // days stale until the hook lands fresh geometry for each.
+          stalePreviewDays: (previous.trip?.days ?? []).map((d) => d.dayNumber),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -580,7 +617,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
-          routePreviewStale: true,
+          stalePreviewDays: (next.trip?.days ?? []).map((d) => d.dayNumber),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -658,7 +695,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     setWaypointType: (waypointId, type) =>
@@ -686,7 +726,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     removeWaypointById: (waypointId) =>
@@ -708,7 +751,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     routingWaypoints: () => {
@@ -745,10 +791,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           avgQuality: result.avg_quality ?? 0,
           elevationGain: result.elevation_gain_m,
         };
+        const dayNumber = day.dayNumber;
         return {
           ...state,
-          // Geometry now matches the current routing inputs — preview is fresh.
-          routePreviewStale: false,
+          // Geometry now matches the current routing inputs — clear this day's stale flag.
+          stalePreviewDays: clearDayStale(state.stalePreviewDays, dayNumber),
           activeTrip: {
             ...activeTrip,
             days,
@@ -766,7 +813,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
         routeDirty: false,
-        routePreviewStale: false,
+        stalePreviewDays: [],
+        selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -774,6 +822,18 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       }),
   }),
 );
+
+/**
+ * Returns true when the given day number has a stale route preview (i.e. routing
+ * inputs changed since the last `applyRouteResult` for that day). Use this
+ * instead of reading `stalePreviewDays` directly to keep the check encapsulated.
+ */
+export function isDayStale(
+  stalePreviewDays: number[],
+  dayNumber: number,
+): boolean {
+  return stalePreviewDays.includes(dayNumber);
+}
 
 export function flattenSegments(trip: Trip | null): RoutePreviewSegment[] {
   if (!trip) return [];
@@ -805,6 +865,14 @@ function commitTripChange(
     canUndo: undoStack.length > 0,
     canRedo: false,
   };
+}
+
+function markDayStale(staleDays: number[], dayNumber: number): number[] {
+  return staleDays.includes(dayNumber) ? staleDays : [...staleDays, dayNumber];
+}
+
+function clearDayStale(staleDays: number[], dayNumber: number): number[] {
+  return staleDays.filter((n) => n !== dayNumber);
 }
 
 function updatePlannerDayRoute(

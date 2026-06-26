@@ -258,7 +258,8 @@ type TripStoreSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   routeDirty: boolean;
-  routePreviewStale: boolean;
+  stalePreviewDays: number[];
+  selectedDayIndex: number;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
   undoStack: Array<{ trip: Trip | null; dirty: boolean }>;
@@ -266,6 +267,7 @@ type TripStoreSnapshot = {
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
+  setSelectedDay: (index: number) => void;
   markRouteDirty: () => void;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
@@ -408,7 +410,8 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
-      routePreviewStale: false,
+      stalePreviewDays: [],
+      selectedDayIndex: 0,
       draftPlannerParameters: null,
       focusedSegmentId: null,
       hoveredSegmentId: null,
@@ -417,6 +420,7 @@ describe("TripPlannerPage", () => {
       setTrips: vi.fn(),
       setActiveTrip,
       setGenerating,
+      setSelectedDay: vi.fn(),
       markRouteDirty: vi.fn(),
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
@@ -1174,11 +1178,11 @@ describe("TripPlannerPage", () => {
   });
 
   it("disables Save route while the preview is stale (mid routing debounce)", () => {
-    // Edited (routeDirty) with geometry present, but routePreviewStale=true →
+    // Edited (routeDirty) with geometry present, but stalePreviewDays non-empty →
     // the displayed geometry is from the pre-edit waypoints; Save must wait.
     storeState.activeTrip = activeTrip;
     storeState.routeDirty = true;
-    storeState.routePreviewStale = true;
+    storeState.stalePreviewDays = [1];
 
     render(<TripPlannerPage />);
 

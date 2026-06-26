@@ -604,6 +604,61 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
   });
 });
 
+describe("useTripStore selectedDayIndex + stalePreviewDays (Task 6)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("tracks selectedDayIndex and resets it + stale days on setActiveTrip", () => {
+    const s = useTripStore.getState();
+    s.setSelectedDay(2);
+    expect(useTripStore.getState().selectedDayIndex).toBe(2);
+
+    // Seed a 1-day trip fixture and call setActiveTrip.
+    const oneDay = {
+      id: "trip-1",
+      name: "One-day trip",
+      status: "draft" as const,
+      num_days: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      parameters: {
+        days: 1,
+        dailyKmTarget: 200,
+        roadPreference: "mixed" as const,
+        surfacePreference: ["asphalt" as const],
+        avoidHighways: true,
+        avoidTolls: false,
+        avoidUnpaved: true,
+        minQuality: 3,
+      },
+      collaborators: [],
+      days: [
+        {
+          dayNumber: 1,
+          waypoints: [],
+          distanceKm: 0,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 0,
+        },
+      ],
+    };
+    s.setActiveTrip(oneDay);
+    expect(useTripStore.getState().selectedDayIndex).toBe(0);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
+  it("markRouteDirty marks all active trip days stale", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    // Reset stale list to test markRouteDirty specifically.
+    useTripStore.setState({ stalePreviewDays: [] });
+    s.markRouteDirty();
+    // Day 1 should be marked stale (the only day in the draft).
+    expect(useTripStore.getState().stalePreviewDays).toContain(1);
+  });
+});
+
 describe("useTripStore routeDirty flag", () => {
   beforeEach(() => useTripStore.getState().resetForTest?.());
 
@@ -809,8 +864,8 @@ describe("useTripStore routeDirty flag", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    // An edit leaves the preview stale until a fresh route lands.
-    expect(useTripStore.getState().routePreviewStale).toBe(true);
+    // An edit leaves the selected day's preview stale until a fresh route lands.
+    expect(useTripStore.getState().stalePreviewDays.length).toBeGreaterThan(0);
 
     useTripStore.getState().applyRouteResult({
       geometry: [
@@ -824,11 +879,11 @@ describe("useTripStore routeDirty flag", () => {
       elevation_gain_m: 50,
       surface_mix: {},
     } as never);
-    expect(useTripStore.getState().routePreviewStale).toBe(false);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
 
     // A subsequent edit makes it stale again.
     useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
-    expect(useTripStore.getState().routePreviewStale).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays.length).toBeGreaterThan(0);
   });
 
   it("moveWaypoint marks the preview stale on a real move but not a no-op", () => {
@@ -836,17 +891,17 @@ describe("useTripStore routeDirty flag", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    useTripStore.setState({ routePreviewStale: false });
+    useTripStore.setState({ stalePreviewDays: [] });
     const start = useTripStore
       .getState()
       .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
 
     // No-op move (same location) → preview stays fresh.
     useTripStore.getState().moveWaypoint(0, start.id, { lat: 1, lng: 1 });
-    expect(useTripStore.getState().routePreviewStale).toBe(false);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
 
     // Real move → preview goes stale until the live hook reroutes.
     useTripStore.getState().moveWaypoint(0, start.id, { lat: 2, lng: 2 });
-    expect(useTripStore.getState().routePreviewStale).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays.length).toBeGreaterThan(0);
   });
 });

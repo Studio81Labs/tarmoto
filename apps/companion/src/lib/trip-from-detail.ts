@@ -70,6 +70,8 @@ export interface TripDetailDay {
   estimated_time_min: number;
   route_geometry: Array<{ lat: number; lng: number }>;
   waypoints: TripDetailWaypoint[];
+  /** True when the backend linked this day's start to the previous day's end. */
+  start_linked?: boolean;
 }
 
 export interface TripDetailWaypoint {
@@ -282,6 +284,7 @@ function mapDay(day: TripDetailDay): TripDay {
     elevationGain: day.elevation_gain ?? 0,
     avgQuality: day.avg_quality ?? 0,
     overnightStop,
+    startLinked: day.start_linked ?? false,
   };
 }
 

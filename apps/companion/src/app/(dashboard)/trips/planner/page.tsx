@@ -192,7 +192,7 @@ export default function TripPlannerPage() {
   const setGenerating = useTripStore((s) => s.setGenerating);
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const routeDirty = useTripStore((s) => s.routeDirty);
-  const routePreviewStale = useTripStore((s) => s.routePreviewStale);
+  const routePreviewStale = useTripStore((s) => s.stalePreviewDays.length > 0);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const setDraftPlannerParameters = useTripStore(
     (s) => s.setDraftPlannerParameters,
