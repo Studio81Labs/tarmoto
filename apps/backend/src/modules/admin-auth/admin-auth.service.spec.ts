@@ -312,7 +312,7 @@ describe('AdminAuthService.refresh', () => {
     );
   });
 
-  it('(b) revoked token with missing client nonce — genuine reuse: chain-revokes and throws 401', async () => {
+  it('(b) revoked token with missing client nonce — foreign jar: gate fires, chain-revokes, and throws 401', async () => {
     const rawToken = 'already_revoked_token';
     const tokenHash = hashRefreshToken(rawToken);
     const revokedToken = {
@@ -323,13 +323,22 @@ describe('AdminAuthService.refresh', () => {
       expires_at: new Date(Date.now() + 3_600_000),
     };
 
+    // Session has a stored nonce — the gate checks nonce BEFORE the revoked
+    // check, so missing nonce triggers revocation regardless of token state.
+    const sessionWithNonce = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+      client_nonce: clientNonce,
+    };
+
     const refreshTokens = repoMock({
       findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
     const sessions = repoMock({
-      // findOne returns undefined — no nonce available
-      findOne: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue(sessionWithNonce),
       update: jest.fn(),
     });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
@@ -343,7 +352,7 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
-    // No client nonce presented (e.g., cookie absent)
+    // No client nonce presented (e.g., cookie absent) — gate fires.
     await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -369,7 +378,7 @@ describe('AdminAuthService.refresh', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('(c) plain expiry (not revoked, expires_at past) — normal lifetime end: throws 401 WITHOUT chain-revocation', async () => {
+  it('(c) plain expiry (not revoked, expires_at past) with matching nonce — normal lifetime end: throws 401 WITHOUT chain-revocation', async () => {
     const rawToken = 'expired_raw_token';
     const tokenHash = hashRefreshToken(rawToken);
     const expiredToken = {
@@ -384,7 +393,9 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(expiredToken),
       update: jest.fn(),
     });
+    // Session has a nonce so the gate passes; the expiry check is what throws.
     const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
@@ -398,7 +409,8 @@ describe('AdminAuthService.refresh', () => {
       dataSource,
     );
 
-    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+    // Present the matching nonce so the gate passes; only the expiry check throws.
+    await expect(service.refresh(rawToken, clientNonce)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
 
@@ -688,6 +700,139 @@ describe('AdminAuthService.refresh', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('unknown token — not found: throws 401, nothing revoked', async () => {
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({ update: jest.fn() });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    await expect(
+      service.refresh('totally-unknown-token', clientNonce),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(sessions.update).not.toHaveBeenCalled();
+    expect(refreshTokens.update).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('(h1) still-VALID token with MISSING nonce — foreign jar steals refresh cookie: gate revokes family, throws 401, no token minted', async () => {
+    // This is the P1 hole: attacker copies only tarmoto_admin_refresh cookie
+    // (without the tarmoto_admin_client nonce) and uses the still-valid token
+    // before the legitimate browser rotates it.  The gate must fire and
+    // revoke the entire session family WITHOUT entering the transaction.
+    const rawToken = 'valid_stolen_token_no_nonce';
+    const tokenHash = hashRefreshToken(rawToken);
+    const validToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(validToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // No nonce presented — attacker does not have the nonce cookie.
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Gate fires: session family must be revoked immediately.
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    expect(refreshTokens.update).toHaveBeenCalledWith(
+      { session_id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    // No rotation transaction must be started — the attacker must not mint a token.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('(h2) still-VALID token with MISMATCHED nonce — foreign jar: gate revokes family, throws 401, no token minted', async () => {
+    const rawToken = 'valid_stolen_token_wrong_nonce';
+    const tokenHash = hashRefreshToken(rawToken);
+    const validToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(validToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    // Attacker has a nonce but it does not match the session's stored nonce.
+    await expect(
+      service.refresh(rawToken, 'attacker-wrong-nonce-xyz'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    // Gate fires: session family must be revoked immediately.
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    expect(refreshTokens.update).toHaveBeenCalledWith(
+      { session_id: sessionId, revoked_at: IsNull() },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+    // No rotation transaction must be started.
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });

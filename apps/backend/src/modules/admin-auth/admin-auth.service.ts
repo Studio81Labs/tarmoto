@@ -106,54 +106,65 @@ export class AdminAuthService {
     presentedClientNonce?: string | null,
   ): Promise<AdminSessionTokens> {
     const tokenHash = hashRefreshToken(rawRefreshToken);
+
+    // 1. Look up the stored token.
     const stored = await this.refreshTokens.findOne({
       where: { token_hash: tokenHash },
     });
     if (!stored) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    if (stored.revoked_at) {
-      // Token was previously consumed. Use the client nonce to distinguish a
-      // benign sibling-tab replay (same browser jar) from genuine token reuse
-      // (theft or replay from a foreign jar).
-      const session = await this.sessions.findOne({
-        where: { id: stored.session_id },
-      });
-      if (
-        presentedClientNonce &&
-        session?.client_nonce &&
-        presentedClientNonce === session.client_nonce
-      ) {
-        // BENIGN: same browser jar — the winning tab already rotated this
-        // token. Do NOT revoke the session family.
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-      // GENUINE REUSE: different jar, missing nonce, or no nonce on record.
-      // Revoke the whole session family to contain potential theft.
-      await this.revokeSession(stored.session_id);
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-    if (stored.expires_at <= new Date()) {
-      // Plain token expiry — normal lifetime end, not an attack.
-      // Do NOT revoke the session family; the admin simply needs to log in again.
-      throw new UnauthorizedException('Invalid refresh token');
-    }
 
+    // 2. Load the session — needed by the nonce gate regardless of token state.
     const session = await this.sessions.findOne({
       where: { id: stored.session_id },
     });
-    if (!session || session.revoked_at || session.expires_at <= new Date()) {
+
+    // 3. NONCE GATE — validate the client nonce before any claim, mint, or
+    //    benign-replay handling.  A missing session, absent nonce, or nonce
+    //    mismatch signals a foreign cookie jar (theft or replay from another
+    //    client).  Revoke the whole session family (if the session exists) and
+    //    bail out immediately.  This runs even when the token is still valid, so
+    //    an attacker who copied only the refresh cookie cannot claim or mint.
+    if (
+      !session ||
+      !presentedClientNonce ||
+      presentedClientNonce !== session.client_nonce
+    ) {
+      if (session) {
+        await this.revokeSession(session.id);
+      }
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // 4. The nonce matches — same browser jar confirmed.  Now handle the normal
+    //    token/session lifecycle in order.
+
+    if (stored.revoked_at) {
+      // Previously consumed token — benign sibling-tab replay (jar confirmed
+      // above).  Do NOT revoke the session family.
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (stored.expires_at <= new Date()) {
+      // Plain token expiry — normal lifetime end, not an attack.
+      // Do NOT revoke the session family.
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (session.revoked_at || session.expires_at <= new Date()) {
       throw new UnauthorizedException('Invalid session');
     }
+
     const user = await this.findActiveById(session.admin_user_id);
     if (!user) throw new UnauthorizedException('Invalid admin');
 
-    // Atomically claim the old token first (conditional on revoked_at IS NULL).
-    // This serializes concurrent refresh requests: the first writer sets revoked_at
-    // and its UPDATE matches 1 row; the second's UPDATE matches 0 rows and is
-    // detected as reuse, triggering the jar-based check below.
+    // 5. Atomically claim the old token (conditional on revoked_at IS NULL).
+    //    This serializes concurrent refresh requests: the first writer wins;
+    //    the second's UPDATE matches 0 rows.  The nonce gate already confirmed
+    //    the jar, so any concurrent loser is benign — no nonce re-check needed.
     type TxnOutcome =
-      | { reuse: true; revoke: boolean }
+      | { reuse: true }
       | { reuse: false; tokens: AdminSessionTokens };
 
     const outcome = await this.dataSource.transaction<TxnOutcome>(
@@ -162,25 +173,19 @@ export class AdminAuthService {
         const sessionRepo = manager.getRepository(AdminSession);
         const now = new Date();
 
-        // Step 1: Claim — conditional update gated on revoked_at IS NULL.
+        // Claim — conditional update gated on revoked_at IS NULL.
         const claim = await refreshRepo.update(
           { id: stored.id, revoked_at: IsNull() },
           { revoked_at: now, last_used_at: now },
         );
 
         if (claim.affected !== 1) {
-          // Claim-loser of a concurrent rotation. Apply the same jar-based
-          // check: if the presented nonce matches the session's stored nonce
-          // it's the same browser jar (benign sibling tab) — do not revoke;
-          // otherwise treat as genuine reuse and revoke the session family.
-          const isbenign =
-            !!presentedClientNonce &&
-            !!session.client_nonce &&
-            presentedClientNonce === session.client_nonce;
-          return { reuse: true as const, revoke: !isbenign };
+          // Claim-loser of a concurrent rotation.  Jar already matched at the
+          // gate, so this is a benign sibling tab — do not revoke.
+          return { reuse: true as const };
         }
 
-        // Step 2: Mint the replacement token.
+        // Mint the replacement token.
         const result = await this.issueTokens(
           user,
           session.id,
@@ -188,13 +193,13 @@ export class AdminAuthService {
           manager,
         );
 
-        // Step 3: Link old token to its replacement.
+        // Link old token to its replacement.
         await refreshRepo.update(
           { id: stored.id },
           { replaced_by_token_id: result.refreshTokenId },
         );
 
-        // Step 4: Bump session activity.
+        // Bump session activity.
         await sessionRepo.update({ id: session.id }, { last_seen_at: now });
 
         return { reuse: false as const, tokens: result.tokens };
@@ -202,9 +207,6 @@ export class AdminAuthService {
     );
 
     if (outcome.reuse) {
-      if (outcome.revoke) {
-        await this.revokeSession(stored.session_id);
-      }
       throw new UnauthorizedException('Invalid refresh token');
     }
     return outcome.tokens;
