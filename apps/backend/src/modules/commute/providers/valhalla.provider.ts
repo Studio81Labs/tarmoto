@@ -77,11 +77,19 @@ export class ValhallaProvider implements RoutingProvider {
   }
 
   private async post(body: string): Promise<ValhallaResponse | null> {
-    const res = await fetch(`${this.baseUrl}/route`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+    } catch (err: unknown) {
+      this.logger.error(
+        `Valhalla unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
     if (!res.ok) {
       this.logger.error(
         `Valhalla route failed: ${res.status} ${res.statusText}`,

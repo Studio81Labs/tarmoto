@@ -1007,9 +1007,14 @@ export class TripsService {
     });
     if (!member) throw new NotFoundException('Trip not found');
 
-    // 2. Road-snap + enrich server-side — never trust client geometry.
+    // 2. Road-snap from routing waypoints only (start/via/end) — non-routing
+    //    stops (fuel, rest, photo, accommodation) are persisted as waypoints
+    //    but do not affect the road geometry. Never trust client geometry.
+    const routingWaypoints = dto.waypoints.filter((w) =>
+      ['start', 'via', 'end'].includes(w.type),
+    );
     const route = await this.routingProvider.route(
-      dto.waypoints.map((w) => ({ lat: w.lat, lng: w.lng })),
+      routingWaypoints.map((w) => ({ lat: w.lat, lng: w.lng })),
       {
         avoidHighways: dto.options?.avoid_highways,
         avoidTolls: dto.options?.avoid_tolls,
@@ -1027,6 +1032,17 @@ export class TripsService {
     //    pattern the generator uses) so the geometry object form matches
     //    what TypeORM + the PostGIS column type expect.
     await this.tripRepo.manager.transaction(async (manager) => {
+      // Decouple day-1 suggestions from the day before deleting it —
+      // mirrors replaceWithImportedRoute which NULLs trip_day_id first so
+      // open collaboration suggestions survive the cascade. Without this,
+      // deleting the TripDay cascades to TripSuggestion rows (onDelete:
+      // CASCADE) and permanently removes in-flight suggestions.
+      await manager.update(
+        TripSuggestion,
+        { trip_id: tripId },
+        { trip_day_id: null },
+      );
+
       // Delete day 1 only — leave other days untouched.
       await manager.delete(TripDay, { trip_id: tripId, day_number: 1 });
 
@@ -1051,7 +1067,10 @@ export class TripsService {
       });
       const savedDay = await manager.save(day);
 
-      // Persist the client-supplied waypoints in order (sequence 0..n-1).
+      // Persist ALL submitted waypoints (including non-routing stops such as
+      // fuel, rest, photo, accommodation) in submission order so riders don't
+      // lose stops they placed before hitting Save. The routing geometry above
+      // was computed from the start/via/end subset only.
       // Location uses `latLngToPoint` — the same helper the generator and
       // importFromRoute use for `trip_waypoints.location`.
       const waypointRows = dto.waypoints.map((w, idx) =>
@@ -1076,7 +1095,13 @@ export class TripsService {
       );
     });
 
-    return this.getDetail(userId, tripId);
+    // Fetch the persisted detail once and reuse it for both the broadcast
+    // and the return value — mirrors replaceWithImportedRoute and update so
+    // collaborators watching via WebSocket see the same state the caller
+    // receives in the HTTP response.
+    const detail = await this.getDetail(userId, tripId);
+    this.events.emitToTrip(tripId, 'trip:updated', detail);
+    return detail;
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {

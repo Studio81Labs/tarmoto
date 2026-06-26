@@ -2147,7 +2147,20 @@ describe('TripsService', () => {
   });
 
   describe('saveManualRoute', () => {
-    it('re-routes from waypoints, persists day 1 + waypoints, returns detail', async () => {
+    /** Shared enrichment stub — reused across most saveManualRoute tests. */
+    function mockEnrichment() {
+      enrichment.aggregate.mockResolvedValueOnce({
+        avgQuality: 4,
+        curvinessScore: 6,
+        scenicScore: 3,
+        elevationGain: 540,
+        elevationLoss: 540,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      });
+    }
+
+    it('re-routes from routing waypoints, persists day 1 + waypoints, broadcasts + returns detail', async () => {
       // membership gate passes (caller is a member)
       memberRepo.findOne.mockResolvedValueOnce({
         trip_id: TRIP_ID,
@@ -2163,15 +2176,7 @@ describe('TripsService', () => {
           { lat: 50.1, lng: 14.5 },
         ],
       });
-      enrichment.aggregate.mockResolvedValueOnce({
-        avgQuality: 4,
-        curvinessScore: 6,
-        scenicScore: 3,
-        elevationGain: 540,
-        elevationLoss: 540,
-        hazardCount: 0,
-        surfaceMixMetres: {},
-      });
+      mockEnrichment();
       // post-save reload via getDetail
       mockGetDetailReturns(makeOwnedTrip());
 
@@ -2182,6 +2187,7 @@ describe('TripsService', () => {
         ],
       });
 
+      // Only start/via/end waypoints are passed to the router.
       expect(routingProvider.route).toHaveBeenCalledWith(
         [
           { lat: 50.08, lng: 14.42 },
@@ -2195,6 +2201,12 @@ describe('TripsService', () => {
       expect(enrichment.aggregate).toHaveBeenCalled();
       // transaction ran
       expect(transactionMock).toHaveBeenCalledTimes(1);
+      // day-1 suggestions NULLed before the delete (Fix 4a).
+      expect(manager.update).toHaveBeenCalledWith(
+        TripSuggestion,
+        { trip_id: TRIP_ID },
+        { trip_day_id: null },
+      );
       // day 1 persisted with the server-side geometry
       const dayBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
@@ -2232,7 +2244,63 @@ describe('TripsService', () => {
           updated_at: expect.any(Date),
         }),
       );
+      // broadcast to collaborators (Fix 4b)
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        expect.objectContaining({ id: TRIP_ID }),
+      );
       expect(result.id).toBe(TRIP_ID);
+    });
+
+    it('routes only from start/via/end waypoints but persists all stops', async () => {
+      // A save that includes a fuel stop: the router sees only start+end,
+      // but all three waypoints (start, fuel, end) are persisted (Fix 5).
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      routingProvider.route.mockResolvedValueOnce({
+        distance_km: 120,
+        duration_min: 90,
+        geometry: [
+          { lat: 46.5, lng: 10.5 },
+          { lat: 46.6, lng: 10.6 },
+        ],
+      });
+      mockEnrichment();
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        waypoints: [
+          { lat: 46.5, lng: 10.5, name: 'Bormio', type: 'start' },
+          { lat: 46.55, lng: 10.55, name: 'Fuel stop', type: 'fuel' },
+          { lat: 46.6, lng: 10.6, name: 'Prato', type: 'end' },
+        ],
+      });
+
+      // Router called with only start+end — NOT the fuel stop.
+      expect(routingProvider.route).toHaveBeenCalledWith(
+        [
+          { lat: 46.5, lng: 10.5 },
+          { lat: 46.6, lng: 10.6 },
+        ],
+        expect.anything(),
+      );
+
+      // All 3 waypoints persisted (start, fuel, end).
+      const wpBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      expect(wpBodies).toHaveLength(3);
+      expect(wpBodies[0]).toMatchObject({
+        sequence: 0,
+        waypoint_type: 'start',
+      });
+      expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'fuel' });
+      expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
     });
 
     it('rejects a non-member with NotFoundException (404)', async () => {

@@ -3905,7 +3905,14 @@ export interface components {
       lng: number;
       name?: string | null;
       /** @enum {string} */
-      type: "start" | "via" | "end";
+      type:
+        | "start"
+        | "via"
+        | "end"
+        | "fuel"
+        | "rest"
+        | "photo"
+        | "accommodation";
     };
     RouteOptionsDto: {
       avoid_highways?: boolean;
