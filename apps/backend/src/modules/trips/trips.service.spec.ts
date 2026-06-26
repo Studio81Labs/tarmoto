@@ -10,7 +10,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -154,6 +154,7 @@ describe('TripsService', () => {
   let manager: {
     create: jest.Mock;
     save: jest.Mock;
+    find: jest.Mock;
     findOne: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
@@ -200,6 +201,7 @@ describe('TripsService', () => {
           joined_at: NOW,
         }),
       ),
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -2168,10 +2170,10 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
-      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      // pessimistic lock read (Trip) first.
       manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
-      // day-1 row exists — scoped suggestion unscoping uses its id
-      manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
+      // find existing days — one day exists whose suggestions will be decoupled.
+      manager.find.mockResolvedValueOnce([{ id: 'd-1' }]);
 
       routingProvider.route.mockResolvedValueOnce({
         distance_km: 88.9,
@@ -2186,9 +2188,15 @@ describe('TripsService', () => {
       mockGetDetailReturns(makeOwnedTrip());
 
       const result = await service.saveManualRoute(OWNER_ID, TRIP_ID, {
-        waypoints: [
-          { lat: 50.08, lng: 14.42, type: 'start' },
-          { lat: 50.1, lng: 14.5, type: 'end' },
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 50.08, lng: 14.42, type: 'start' },
+              { lat: 50.1, lng: 14.5, type: 'end' },
+            ],
+          },
         ],
       });
 
@@ -2206,10 +2214,10 @@ describe('TripsService', () => {
       expect(enrichment.aggregate).toHaveBeenCalled();
       // transaction ran
       expect(transactionMock).toHaveBeenCalledTimes(1);
-      // day-1 suggestions NULLed before the delete, scoped to day-1's id.
+      // all existing-day suggestions NULLed before the delete (In operator).
       expect(manager.update).toHaveBeenCalledWith(
         TripSuggestion,
-        { trip_day_id: 'd-1' },
+        { trip_day_id: In(['d-1']) },
         { trip_day_id: null },
       );
       // day 1 persisted with the server-side geometry
@@ -2240,12 +2248,13 @@ describe('TripsService', () => {
         waypoint_type: 'start',
       });
       expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'end' });
-      // trip status + updated_at are bumped together
+      // trip status, num_days + updated_at are bumped together
       expect(manager.update).toHaveBeenCalledWith(
         Trip,
         { id: TRIP_ID },
         expect.objectContaining({
           status: 'planned',
+          num_days: 1,
           updated_at: expect.any(Date),
         }),
       );
@@ -2274,10 +2283,10 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
-      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      // pessimistic lock read (Trip) first.
       manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
-      // day-1 row present (no existing day-1 in this scenario is fine too)
-      manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
+      // find existing days — one day exists.
+      manager.find.mockResolvedValueOnce([{ id: 'd-1' }]);
 
       routingProvider.route.mockResolvedValueOnce({
         distance_km: 120,
@@ -2291,10 +2300,16 @@ describe('TripsService', () => {
       mockGetDetailReturns(makeOwnedTrip());
 
       await service.saveManualRoute(OWNER_ID, TRIP_ID, {
-        waypoints: [
-          { lat: 46.5, lng: 10.5, name: 'Bormio', type: 'start' },
-          { lat: 46.55, lng: 10.55, name: 'Fuel stop', type: 'fuel' },
-          { lat: 46.6, lng: 10.6, name: 'Prato', type: 'end' },
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 46.5, lng: 10.5, name: 'Bormio', type: 'start' },
+              { lat: 46.55, lng: 10.55, name: 'Fuel stop', type: 'fuel' },
+              { lat: 46.6, lng: 10.6, name: 'Prato', type: 'end' },
+            ],
+          },
         ],
       });
 
@@ -2320,21 +2335,22 @@ describe('TripsService', () => {
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
     });
 
-    it('does NOT null the trip_day_id of day-2+ suggestions when only day 1 is replaced', async () => {
-      // On a multi-day trip, saving day 1 must only decouple suggestions
-      // attached to day 1's row — day-2 suggestions must keep their
-      // trip_day_id so collaborators don't lose their day context.
+    it('decouples all existing-day suggestions via In() before replacing all days', async () => {
+      // On a multi-day trip, saving all days must decouple suggestions for
+      // every existing day before deleting them so in-flight collaboration
+      // suggestions are not permanently lost to the cascade.
       memberRepo.findOne.mockResolvedValueOnce({
         trip_id: TRIP_ID,
         user_id: OWNER_ID,
         role: 'owner',
       } as TripMember);
 
-      // day-1 row is present with a specific id.
       const DAY1_ID = 'dd-day1-0001';
-      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      const DAY2_ID = 'dd-day2-0002';
+      // pessimistic lock read (Trip) first.
       manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
-      manager.findOne.mockResolvedValueOnce({ id: DAY1_ID });
+      // Two existing days are returned by manager.find.
+      manager.find.mockResolvedValueOnce([{ id: DAY1_ID }, { id: DAY2_ID }]);
 
       routingProvider.route.mockResolvedValueOnce({
         distance_km: 88.9,
@@ -2348,29 +2364,28 @@ describe('TripsService', () => {
       mockGetDetailReturns(makeOwnedTrip());
 
       await service.saveManualRoute(OWNER_ID, TRIP_ID, {
-        waypoints: [
-          { lat: 46.5, lng: 10.5, type: 'start' },
-          { lat: 46.6, lng: 10.6, type: 'end' },
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 46.5, lng: 10.5, type: 'start' },
+              { lat: 46.6, lng: 10.6, type: 'end' },
+            ],
+          },
         ],
       });
 
-      // The suggestion update must be scoped to day-1's id ONLY.
+      // Suggestions for BOTH existing days are NULLed in one In() call.
       expect(manager.update).toHaveBeenCalledWith(
         TripSuggestion,
-        { trip_day_id: DAY1_ID },
+        { trip_day_id: In([DAY1_ID, DAY2_ID]) },
         { trip_day_id: null },
       );
-      // It must NOT have been called with the broad trip-level predicate
-      // that would wipe all suggestions on the trip.
-      const broadCall = manager.update.mock.calls.find(
-        ([, where]: [unknown, Record<string, unknown>]) =>
-          where !== null &&
-          typeof where === 'object' &&
-          'trip_id' in where &&
-          where.trip_id === TRIP_ID &&
-          !('status' in where),
-      );
-      expect(broadCall).toBeUndefined();
+      // All days deleted in one call (not day-1-only).
+      expect(manager.delete).toHaveBeenCalledWith(TripDay, {
+        trip_id: TRIP_ID,
+      });
     });
 
     it('rejects a non-member with NotFoundException (404)', async () => {
@@ -2378,9 +2393,15 @@ describe('TripsService', () => {
 
       await expect(
         service.saveManualRoute(OTHER_ID, TRIP_ID, {
-          waypoints: [
-            { lat: 0, lng: 0, type: 'start' },
-            { lat: 1, lng: 1, type: 'end' },
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 0, lng: 0, type: 'start' },
+                { lat: 1, lng: 1, type: 'end' },
+              ],
+            },
           ],
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -2399,9 +2420,15 @@ describe('TripsService', () => {
 
       await expect(
         service.saveManualRoute(OWNER_ID, TRIP_ID, {
-          waypoints: [
-            { lat: 0, lng: 0, type: 'start' },
-            { lat: 1, lng: 1, type: 'end' },
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 0, lng: 0, type: 'start' },
+                { lat: 1, lng: 1, type: 'end' },
+              ],
+            },
           ],
         }),
       ).rejects.toBeInstanceOf(BadGatewayException);
@@ -2418,9 +2445,15 @@ describe('TripsService', () => {
 
       await expect(
         service.saveManualRoute(OWNER_ID, TRIP_ID, {
-          waypoints: [
-            { lat: 0, lng: 0, type: 'start' },
-            { lat: 1, lng: 1, type: 'via' },
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 0, lng: 0, type: 'start' },
+                { lat: 1, lng: 1, type: 'via' },
+              ],
+            },
           ],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -2439,10 +2472,16 @@ describe('TripsService', () => {
 
       await expect(
         service.saveManualRoute(OWNER_ID, TRIP_ID, {
-          waypoints: [
-            { lat: 0, lng: 0, type: 'start' },
-            { lat: 1, lng: 1, type: 'start' },
-            { lat: 2, lng: 2, type: 'end' },
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 0, lng: 0, type: 'start' },
+                { lat: 1, lng: 1, type: 'start' },
+                { lat: 2, lng: 2, type: 'end' },
+              ],
+            },
           ],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -2460,15 +2499,141 @@ describe('TripsService', () => {
 
       await expect(
         service.saveManualRoute(OWNER_ID, TRIP_ID, {
-          waypoints: [
-            { lat: 1, lng: 1, type: 'end' },
-            { lat: 0, lng: 0, type: 'start' },
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 1, lng: 1, type: 'end' },
+                { lat: 0, lng: 0, type: 'start' },
+              ],
+            },
           ],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(routingProvider.route).not.toHaveBeenCalled();
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('saves a two-day route, routing + persisting each day with start_linked', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      routingProvider.route
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 0, lng: 0 },
+            { lat: 1, lng: 1 },
+          ],
+          distance_km: 10,
+          duration_min: 20,
+        })
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 1, lng: 1 },
+            { lat: 2, lng: 2 },
+          ],
+          distance_km: 12,
+          duration_min: 24,
+        });
+
+      // Enrich called twice (once per day).
+      enrichment.aggregate
+        .mockResolvedValueOnce({
+          avgQuality: 4,
+          curvinessScore: 6,
+          scenicScore: 3,
+          elevationGain: 100,
+          elevationLoss: 80,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        })
+        .mockResolvedValueOnce({
+          avgQuality: 3,
+          curvinessScore: 5,
+          scenicScore: 4,
+          elevationGain: 200,
+          elevationLoss: 150,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        });
+
+      // Transaction mocks: lock, find existing days (none), then two day saves.
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
+      manager.find.mockResolvedValueOnce([]); // no existing days to decouple
+      // save() returns a row with a stable id per call so waypoints get the right trip_day_id.
+      manager.save
+        .mockResolvedValueOnce({
+          id: 'new-day-1',
+          trip_id: TRIP_ID,
+          day_number: 1,
+        })
+        .mockResolvedValueOnce([]) // day-1 waypoints
+        .mockResolvedValueOnce({
+          id: 'new-day-2',
+          trip_id: TRIP_ID,
+          day_number: 2,
+        })
+        .mockResolvedValueOnce([]); // day-2 waypoints
+
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 0, lng: 0, type: 'start' },
+              { lat: 1, lng: 1, type: 'end' },
+            ],
+          },
+          {
+            dayNumber: 2,
+            startLinked: true,
+            waypoints: [
+              { lat: 1, lng: 1, type: 'start' },
+              { lat: 2, lng: 2, type: 'end' },
+            ],
+          },
+        ],
+      });
+
+      // Routing provider called once per day.
+      expect(routingProvider.route).toHaveBeenCalledTimes(2);
+
+      // Two TripDay rows created.
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'route_geom' in b);
+      expect(dayBodies).toHaveLength(2);
+
+      // Day 1: start_linked false, correct geometry.
+      expect(dayBodies[0]).toMatchObject({
+        day_number: 1,
+        start_linked: false,
+        distance_km: 10,
+        estimated_time: '20 minutes',
+      });
+
+      // Day 2: start_linked true.
+      expect(dayBodies[1]).toMatchObject({
+        day_number: 2,
+        start_linked: true,
+        distance_km: 12,
+        estimated_time: '24 minutes',
+      });
+
+      // Trip update includes num_days: 2.
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        expect.objectContaining({ status: 'planned', num_days: 2 }),
+      );
     });
   });
 
