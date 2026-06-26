@@ -4,6 +4,9 @@ import type { paths } from "@tarmoto/openapi-client";
 
 export const ADMIN_AUTH_EXPIRED_EVENT = "tarmoto-admin-auth-expired";
 
+const REFRESH_RETRY_DELAY_MS = 250;
+const MAX_REFRESH_RETRIES = 2;
+
 const NO_REFRESH_PATHS = [
   "/api/v1/admin/auth/login",
   "/api/v1/admin/auth/refresh",
@@ -39,6 +42,7 @@ export async function adminFetchWithRefresh(
 ): Promise<Response> {
   const url = requestUrl(input);
   const withCreds: RequestInit = { ...init, credentials: "include" };
+  const replaySource = input instanceof Request ? input.clone() : input;
   const response = await fetch(input, withCreds);
 
   if (
@@ -49,14 +53,24 @@ export async function adminFetchWithRefresh(
   }
 
   let refreshed = await refreshOnce();
-  if (!refreshed) {
+  for (
+    let attempt = 0;
+    !refreshed && attempt < MAX_REFRESH_RETRIES;
+    attempt++
+  ) {
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, REFRESH_RETRY_DELAY_MS),
+    );
     refreshed = await refreshOnce();
   }
   if (!refreshed) {
     window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
     return response;
   }
-  return fetch(input, withCreds);
+  return fetch(
+    replaySource instanceof Request ? replaySource.clone() : replaySource,
+    withCreds,
+  );
 }
 
 export const apiClient = createClient<paths>({
