@@ -2408,6 +2408,27 @@ describe('TripsService', () => {
 
       expect(transactionMock).not.toHaveBeenCalled();
     });
+
+    it('rejects a save with no end waypoint (start + via) with 400', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          waypoints: [
+            { lat: 0, lng: 0, type: 'start' },
+            { lat: 1, lng: 1, type: 'via' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Validated before any routing/transaction work.
+      expect(routingProvider.route).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('detail mapping', () => {

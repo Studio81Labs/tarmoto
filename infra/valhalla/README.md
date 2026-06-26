@@ -6,7 +6,11 @@ rebuild). Czech-Republic extract by default.
 
 ## Build + run (first start builds tiles — slow, one-time)
 
-    docker compose -f infra/docker/docker-compose.yml up valhalla
+The service is gated behind the `routing` compose profile, so a plain
+`docker compose up -d` / `pnpm db:up` does NOT start it (a DB boot won't
+trigger the heavy first-run tile build). Start it explicitly:
+
+    docker compose -f infra/docker/docker-compose.yml --profile routing up valhalla
     # first run downloads the extract + builds tiles into infra/valhalla/custom_files
     # (git-ignored); subsequent runs reuse them.
 

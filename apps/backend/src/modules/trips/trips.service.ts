@@ -1007,6 +1007,18 @@ export class TripsService {
     });
     if (!member) throw new NotFoundException('Trip not found');
 
+    // Require an explicit start AND end so the API can't persist a planned day
+    // with no finish. The frontend gates this too, but the API is the source of
+    // truth for direct/mobile clients (a start+via pair would otherwise route
+    // and persist a finish-less day).
+    const hasStart = dto.waypoints.some((w) => w.type === 'start');
+    const hasEnd = dto.waypoints.some((w) => w.type === 'end');
+    if (!hasStart || !hasEnd) {
+      throw new BadRequestException(
+        'A route must include a start and an end waypoint',
+      );
+    }
+
     // 2. Road-snap from routing waypoints only (start/via/end) — non-routing
     //    stops (fuel, food, coffee, hotel, photo) are persisted as waypoints
     //    but do not affect the road geometry. Never trust client geometry.

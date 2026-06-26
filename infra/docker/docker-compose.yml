@@ -78,6 +78,11 @@ services:
 
   valhalla:
     container_name: tarmoto-valhalla
+    # Opt-in profile: a plain `docker compose up -d` (e.g. `pnpm db:up`) skips
+    # this service so a DB boot never triggers the heavy first-run PBF download +
+    # tile build. Start it explicitly with `--profile routing up valhalla` (or
+    # by naming the service: `up valhalla`).
+    profiles: ["routing"]
     image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
     ports:
       - "8002:8002"
