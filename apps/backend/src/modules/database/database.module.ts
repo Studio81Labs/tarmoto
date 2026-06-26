@@ -55,6 +55,7 @@ import { AddInAppNotifications1717800000000 } from '../../migrations/17178000000
 import { AddHazardReportPhotoUrl1717900000000 } from '../../migrations/1717900000000-AddHazardReportPhotoUrl.js';
 import { AddCommuteRoutingEngineVersion1718000000000 } from '../../migrations/1718000000000-AddCommuteRoutingEngineVersion.js';
 import { AddCommunityEngagement1718100000000 } from '../../migrations/1718100000000-AddCommunityEngagement.js';
+import { AddAdminConsoleFoundation1751000000000 } from '../../migrations/1751000000000-AddAdminConsoleFoundation.js';
 import {
   User,
   UserContact,
@@ -105,6 +106,10 @@ import {
   Bike,
   RideTagEvent,
   ModelEvalSample,
+  AdminUser,
+  AdminSession,
+  AdminRefreshToken,
+  AdminAuditLog,
 } from '../../entities/index.js';
 
 const entities = [
@@ -157,6 +162,10 @@ const entities = [
   Bike,
   RideTagEvent,
   ModelEvalSample,
+  AdminUser,
+  AdminSession,
+  AdminRefreshToken,
+  AdminAuditLog,
 ];
 
 @Module({
@@ -234,6 +243,7 @@ const entities = [
             AddHazardReportPhotoUrl1717900000000,
             AddCommuteRoutingEngineVersion1718000000000,
             AddCommunityEngagement1718100000000,
+            AddAdminConsoleFoundation1751000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
