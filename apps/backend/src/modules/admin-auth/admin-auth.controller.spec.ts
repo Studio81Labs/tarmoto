@@ -1,14 +1,25 @@
+// jest.mock is hoisted by Jest before imports — mocking the GitHub SSO helper
+// lets us test the successful callback path without real network calls.
+jest.mock('./admin-github-sso.js', () => ({
+  exchangeGithubCode: jest.fn(),
+  buildGithubAuthorizeUrl: jest
+    .fn()
+    .mockReturnValue('https://github.com/login/oauth/authorize?mock=1'),
+}));
+
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AdminAuthController } from './admin-auth.controller.js';
 import { AdminAuthService } from './admin-auth.service.js';
+import { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 import {
   ADMIN_REFRESH_COOKIE,
   ADMIN_SSO_STATE_COOKIE,
 } from './admin-auth.constants.js';
 import { getAdminAuditActor } from '../admin/admin-audit-context.js';
+import { exchangeGithubCode } from './admin-github-sso.js';
 
 function mockResponse(): Response {
   return {
@@ -31,12 +42,17 @@ describe('AdminAuthController', () => {
     createSession: jest.fn(),
   } as unknown as jest.Mocked<AdminAuthService>;
 
+  const auditService = {
+    record: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<AdminAuditService>;
+
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [AdminAuthController],
       providers: [
         { provide: AdminAuthService, useValue: service },
         { provide: ConfigService, useValue: { get: () => 'development' } },
+        { provide: AdminAuditService, useValue: auditService },
       ],
     }).compile();
     controller = moduleRef.get(AdminAuthController);
@@ -201,6 +217,61 @@ describe('AdminAuthController', () => {
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
+  it('successful SSO callback redirects to / and records an audit row with event_key admin.auth.sso_login', async () => {
+    const adminUser = {
+      id: 'a1',
+      email: 'ops@tarmoto.app',
+      role: 'admin' as const,
+      status: 'active' as const,
+      sso_provider: 'github',
+      sso_subject: 'gh-123',
+    };
+    (exchangeGithubCode as jest.Mock).mockResolvedValue({
+      subject: 'gh-123',
+      email: 'ops@tarmoto.app',
+    });
+    (service.findOrProvisionSsoUser as jest.Mock).mockResolvedValue(adminUser);
+    (service.createSession as jest.Mock).mockResolvedValue({
+      accessToken: 'at',
+      refreshToken: 'rt',
+      user: {
+        id: 'a1',
+        email: 'ops@tarmoto.app',
+        role: 'admin',
+        status: 'active',
+      },
+      expiresIn: 540,
+    });
+
+    const callbackPath = '/api/v1/admin/auth/sso/github/callback';
+    const req = {
+      headers: {
+        cookie: `${ADMIN_SSO_STATE_COOKIE}=valid-state`,
+      },
+      originalUrl: `${callbackPath}?code=code123&state=valid-state`,
+    } as unknown as Request;
+    const res = mockResponse();
+
+    await controller.callback('code123', 'valid-state', req, res);
+
+    // Successful login redirects to the app root.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(res.redirect).toHaveBeenCalledWith('/');
+
+    // An audit row must be recorded for the SSO login (GET bypasses the
+    // AdminAuditInterceptor which only fires on mutating requests).
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.sso_login',
+        outcome: 'allowed',
+        admin_user_id: 'a1',
+        admin_role: 'admin',
+        metadata: { provider: 'github' },
+      }),
+    );
+  });
+
   it('GET config returns passwordLoginEnabled: true in dev/test', () => {
     expect(controller.getConfig()).toEqual({ passwordLoginEnabled: true });
   });
@@ -219,6 +290,7 @@ describe('AdminAuthController', () => {
             },
           },
         },
+        { provide: AdminAuditService, useValue: auditService },
       ],
     }).compile();
     const prodController = prodModule.get(AdminAuthController);
@@ -240,6 +312,7 @@ describe('AdminAuthController', () => {
             },
           },
         },
+        { provide: AdminAuditService, useValue: auditService },
       ],
     }).compile();
     const prodController = prodModule.get(AdminAuthController);
@@ -269,6 +342,7 @@ describe('AdminAuthController', () => {
             },
           },
         },
+        { provide: AdminAuditService, useValue: auditService },
       ],
     }).compile();
     const prodController = moduleRef.get(AdminAuthController);

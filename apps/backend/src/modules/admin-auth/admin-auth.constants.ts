@@ -11,3 +11,10 @@ export const ADMIN_REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 // Must match app.setGlobalPrefix(...) in main.ts. Used to normalize admin
 // route paths in the InternalGuard and audit interceptor.
 export const API_GLOBAL_PREFIX = '/api/v1';
+
+// Grace window for benign concurrent token rotations: two browser tabs sharing
+// the same refresh cookie may both POST it nearly simultaneously. If the losing
+// tab arrives here within this window and the token was cleanly rotated
+// (replaced_by_token_id is set), we treat it as benign and do NOT revoke the
+// session family. The winning tab's new token is already in the shared cookie jar.
+export const REFRESH_REUSE_LEEWAY_MS = 10_000;

@@ -39,6 +39,7 @@ import {
 import type { AdminRequest } from '../admin/internal.guard.js';
 import { isAdminPasswordLoginEnabled } from './admin-password-login.js';
 import { setAdminAuditActor } from '../admin/admin-audit-context.js';
+import { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 
 const SSO_ERROR_REDIRECT = '/?adminAuthError=sso';
 
@@ -48,6 +49,7 @@ export class AdminAuthController {
   constructor(
     private readonly service: AdminAuthService,
     private readonly config: ConfigService,
+    private readonly audit: AdminAuditService,
   ) {}
 
   private get secure(): boolean {
@@ -178,6 +180,19 @@ export class AdminAuthController {
         tokens.refreshToken,
         this.secure,
       );
+      // The audit interceptor skips GET requests, so record the SSO login
+      // explicitly. record() is best-effort and never throws.
+      void this.audit.record({
+        event_key: 'admin.auth.sso_login',
+        outcome: 'allowed',
+        method: 'GET',
+        path: (req.originalUrl ?? req.url ?? '').split('?')[0],
+        admin_user_id: user.id,
+        admin_role: user.role,
+        target_type: null,
+        target_id: null,
+        metadata: { provider: 'github' },
+      });
       res.redirect('/');
     } catch {
       res.redirect(SSO_ERROR_REDIRECT);

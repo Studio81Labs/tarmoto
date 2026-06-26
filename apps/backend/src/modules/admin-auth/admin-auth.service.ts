@@ -10,6 +10,7 @@ import {
   ADMIN_ACCESS_TOKEN_SCOPE,
   ADMIN_ACCESS_TOKEN_SECONDS,
   ADMIN_REFRESH_TOKEN_SECONDS,
+  REFRESH_REUSE_LEEWAY_MS,
 } from './admin-auth.constants.js';
 import { resolveAdminSessionSecret } from './admin-session-secret.js';
 import {
@@ -102,11 +103,29 @@ export class AdminAuthService {
     const stored = await this.refreshTokens.findOne({
       where: { token_hash: tokenHash },
     });
-    if (!stored || stored.revoked_at || stored.expires_at <= new Date()) {
-      // Reuse of a rotated/expired token: revoke the whole session chain.
-      if (stored?.session_id) {
-        await this.revokeSession(stored.session_id);
+    if (!stored) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (stored.revoked_at) {
+      // Token was previously revoked. Distinguish a benign concurrent rotation
+      // from genuine token reuse (theft or replay).
+      const nowMs = Date.now();
+      const revokedRecently =
+        nowMs - stored.revoked_at.getTime() <= REFRESH_REUSE_LEEWAY_MS;
+      if (stored.replaced_by_token_id != null && revokedRecently) {
+        // Benign concurrent rotation: a winning tab already rotated this token
+        // within the leeway window. The new token is already in the shared
+        // cookie jar — do NOT revoke the session family.
+        throw new UnauthorizedException('Invalid refresh token');
       }
+      // Genuine reuse: token was explicitly revoked (logout / admin action) or
+      // was replayed after the leeway expired. Revoke the whole session chain.
+      await this.revokeSession(stored.session_id);
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (stored.expires_at <= new Date()) {
+      // Plain token expiry — normal lifetime end, not an attack.
+      // Do NOT revoke the session family; the admin simply needs to log in again.
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -140,17 +159,11 @@ export class AdminAuthService {
         );
 
         if (claim.affected !== 1) {
-          // Loser of a concurrent race or replay of a consumed token — reuse.
-          // Revoke the whole session family inside this transaction so it persists.
-          // Do NOT throw here: a throw rolls back the transaction and loses the revoke.
-          await sessionRepo.update(
-            { id: stored.session_id, revoked_at: IsNull() },
-            { revoked_at: now },
-          );
-          await refreshRepo.update(
-            { session_id: stored.session_id, revoked_at: IsNull() },
-            { revoked_at: now },
-          );
+          // Loser of a benign concurrent rotation: the winning tab claimed the
+          // token microseconds before us. The pre-transaction guard already
+          // passed (token was not revoked at read time), so this is a benign
+          // race — not a genuine replay. The winner's new token is already in
+          // the shared cookie jar; do NOT revoke the session family.
           return { reuse: true as const };
         }
 
@@ -228,6 +241,17 @@ export class AdminAuthService {
     if (!byEmail || byEmail.status !== 'active') {
       throw new UnauthorizedException('No admin account for this identity');
     }
+    // Guard against SSO identity hijack: if this admin row is already linked to
+    // a DIFFERENT SSO identity (the first bySso lookup did not match, so the
+    // subjects differ), refuse to overwrite the existing link. A new GitHub
+    // account presenting the same verified email must not silently take over
+    // an existing linked account.
+    if (byEmail.sso_subject !== null) {
+      throw new UnauthorizedException(
+        'Admin account is linked to a different SSO identity',
+      );
+    }
+    // First-time SSO link: the admin row has no prior identity — safe to link.
     await this.users.update(
       { id: byEmail.id },
       {

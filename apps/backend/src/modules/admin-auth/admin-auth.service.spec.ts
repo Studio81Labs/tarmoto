@@ -262,7 +262,7 @@ describe('AdminAuthService.refresh', () => {
     );
   });
 
-  it('(d) concurrent claim (affected: 0): revokes session family inside transaction and throws UnauthorizedException without issuing a new token', async () => {
+  it('(d) in-tx concurrent loser (affected: 0) — benign race: throws 401, family NOT revoked, no token minted', async () => {
     const rawToken = 'valid_raw_token_concurrent';
     const tokenHash = hashRefreshToken(rawToken);
     const storedToken = {
@@ -284,7 +284,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(adminUser),
     });
 
-    // Inside-transaction mocks: claim returns affected: 0 (loser of a concurrent race).
+    // Inside-transaction mocks: claim returns affected: 0 (losing tab in a concurrent race).
     const rtManagerRepo = {
       create: jest.fn((v: unknown) => v),
       save: jest.fn(),
@@ -310,21 +310,9 @@ describe('AdminAuthService.refresh', () => {
       UnauthorizedException,
     );
 
-    // Session and all refresh tokens for the session must be revoked inside the transaction.
-    expect(sessManagerRepo.update).toHaveBeenCalledWith(
-      { id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
-        revoked_at: expect.any(Date),
-      }),
-    );
-    expect(rtManagerRepo.update).toHaveBeenCalledWith(
-      { session_id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
-        revoked_at: expect.any(Date),
-      }),
-    );
+    // Benign race: the winning tab's new token is already in the shared cookie jar.
+    // The losing tab must NOT revoke the session family.
+    expect(sessManagerRepo.update).not.toHaveBeenCalled();
 
     // No new token must be minted — the loser must not issue tokens.
     expect(rtManagerRepo.save).not.toHaveBeenCalled();
@@ -384,15 +372,15 @@ describe('AdminAuthService.refresh', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
-  it('(c) expired token triggers chain-revocation and throws UnauthorizedException', async () => {
+  it('(c) plain expiry (not revoked, expires_at past) — normal lifetime end: throws 401 WITHOUT chain-revocation', async () => {
     const rawToken = 'expired_raw_token';
     const tokenHash = hashRefreshToken(rawToken);
     const expiredToken = {
       id: storedTokenId,
       session_id: sessionId,
       token_hash: tokenHash,
-      revoked_at: null,
-      expires_at: new Date(Date.now() - 1_000), // expired
+      revoked_at: null, // NOT explicitly revoked
+      expires_at: new Date(Date.now() - 1_000), // simply expired
     };
 
     const refreshTokens = repoMock({
@@ -417,21 +405,99 @@ describe('AdminAuthService.refresh', () => {
       UnauthorizedException,
     );
 
+    // Plain expiry is not an attack — must NOT revoke the session family.
+    expect(sessions.update).not.toHaveBeenCalled();
+    expect(refreshTokens.update).not.toHaveBeenCalled();
+    // No rotation transaction should be started.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('(e) pre-tx revoked token that was RECENTLY rotated (replaced_by_token_id set, revoked within leeway) — benign: throws 401, family NOT revoked', async () => {
+    const rawToken = 'recently_rotated_token';
+    const tokenHash = hashRefreshToken(rawToken);
+    const recentlyRotatedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      // Revoked just now (within the 10s leeway) and has a replacement:
+      // another tab won the rotation race moments ago.
+      revoked_at: new Date(),
+      replaced_by_token_id: 'winner-tok-id',
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(recentlyRotatedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({ update: jest.fn() });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Benign concurrent rotation — the session family must stay alive.
+    expect(sessions.update).not.toHaveBeenCalled();
+    expect(refreshTokens.update).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('(f) pre-tx revoked token rotated LONG ago (replaced_by_token_id set, revoked_at > leeway) — genuine reuse: chain-revokes and throws 401', async () => {
+    const rawToken = 'stale_rotated_token';
+    const tokenHash = hashRefreshToken(rawToken);
+    const staleRotatedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      // Revoked more than 10 seconds ago: outside the benign-race window.
+      revoked_at: new Date(Date.now() - 15_000),
+      replaced_by_token_id: 'old-winner-tok-id',
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(staleRotatedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({ update: jest.fn() });
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Genuine replay after the leeway: must revoke the session family.
     expect(sessions.update).toHaveBeenCalledWith(
       { id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
-        revoked_at: expect.any(Date),
-      }),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
     expect(refreshTokens.update).toHaveBeenCalledWith(
       { session_id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
-        revoked_at: expect.any(Date),
-      }),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
-
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
@@ -721,5 +787,42 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
     await expect(
       service.findOrProvisionSsoUser(provider, subject, email),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('throws UnauthorizedException and does NOT update when the email row is already linked to a DIFFERENT SSO identity', async () => {
+    // The bySso lookup (provider + subject) returned null, but the byEmail row
+    // already has a sso_subject set to a different value. This means a different
+    // GitHub account is trying to claim the same verified email — deny it.
+    const alreadyLinkedUser = {
+      id: 'a4',
+      email: 'ops@tarmoto.app',
+      role: 'admin',
+      status: 'active',
+      sso_provider: 'github',
+      sso_subject: 'some_other_github_subject', // different from the presenting subject
+    };
+    const users = repoMock({
+      // bySso lookup returns null; byEmail lookup returns the conflicting row
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(alreadyLinkedUser),
+      update: jest.fn(),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+    );
+
+    await expect(
+      service.findOrProvisionSsoUser(provider, subject, email),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    // The existing SSO link must NOT be overwritten.
+    expect(users.update).not.toHaveBeenCalled();
   });
 });
