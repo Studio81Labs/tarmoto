@@ -1,6 +1,14 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   GeoJSONSource,
   Map as MapLibreMap,
@@ -46,6 +54,10 @@ import {
 } from "@/lib/trip-planner-map";
 import { useTripStore } from "@/stores/trip";
 import {
+  buildPlacementMenu,
+  type PlacementActionId,
+} from "@/lib/planner-context-menu";
+import {
   snapWaypointToRoadFeatures,
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
@@ -66,6 +78,12 @@ import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
 import { formatDistance, roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
+/** Imperative handle exposed on the TripPlannerMap ref (Task 11). */
+export interface TripPlannerMapHandle {
+  /** Fit the viewport to the current route bounds. No-op when no bounds. */
+  fitRoute: () => void;
+}
+
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
 const ROUTE_LINE = "trip-planner-route-line";
@@ -130,24 +148,31 @@ interface TripPlannerMapProps {
    */
   fitRouteToken?: number;
 }
-export function TripPlannerMap({
-  trip,
-  month,
-  drawnRegion,
-  onDrawnRegionChange,
-  closuresData,
-  passesData,
-  onAddWaypoint,
-  onMoveWaypoint,
-  selectedDayNumber,
-  collaboratorCursors,
-  suggestions,
-  onCursorMove,
-  fitRouteToken,
-}: TripPlannerMapProps) {
+export const TripPlannerMap = forwardRef<
+  TripPlannerMapHandle,
+  TripPlannerMapProps
+>(function TripPlannerMap(
+  {
+    trip,
+    month,
+    drawnRegion,
+    onDrawnRegionChange,
+    closuresData,
+    passesData,
+    onAddWaypoint,
+    onMoveWaypoint,
+    selectedDayNumber,
+    collaboratorCursors,
+    suggestions,
+    onCursorMove,
+    fitRouteToken,
+  },
+  ref,
+) {
   if (closuresData && passesData) {
     return (
       <TripPlannerMapContent
+        ref={ref}
         trip={trip}
         month={month}
         drawnRegion={drawnRegion}
@@ -166,6 +191,7 @@ export function TripPlannerMap({
   }
   return (
     <FetchedTripPlannerMap
+      ref={ref}
       trip={trip}
       month={month}
       drawnRegion={drawnRegion}
@@ -179,41 +205,48 @@ export function TripPlannerMap({
       fitRouteToken={fitRouteToken}
     />
   );
-}
-function FetchedTripPlannerMap({
-  trip,
-  month,
-  drawnRegion,
-  onDrawnRegionChange,
-  onAddWaypoint,
-  onMoveWaypoint,
-  selectedDayNumber,
-  collaboratorCursors,
-  suggestions,
-  onCursorMove,
-  fitRouteToken,
-}: {
-  trip: Trip | null;
-  month: number;
-  drawnRegion?: RegionDrawBbox | null;
-  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
-  onAddWaypoint?: (location: { lng: number; lat: number }) => void;
-  onMoveWaypoint?: (
-    dayNumber: number,
-    waypointId: string,
-    location: { lng: number; lat: number },
-  ) => void;
-  selectedDayNumber?: number;
-  collaboratorCursors?: Map<string, CollaboratorCursor>;
-  suggestions?: TripSuggestion[];
-  onCursorMove?: (lat: number, lng: number) => void;
-  fitRouteToken?: number;
-}) {
+});
+const FetchedTripPlannerMap = forwardRef<
+  TripPlannerMapHandle,
+  {
+    trip: Trip | null;
+    month: number;
+    drawnRegion?: RegionDrawBbox | null;
+    onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
+    onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+    onMoveWaypoint?: (
+      dayNumber: number,
+      waypointId: string,
+      location: { lng: number; lat: number },
+    ) => void;
+    selectedDayNumber?: number;
+    collaboratorCursors?: Map<string, CollaboratorCursor>;
+    suggestions?: TripSuggestion[];
+    onCursorMove?: (lat: number, lng: number) => void;
+    fitRouteToken?: number;
+  }
+>(function FetchedTripPlannerMap(
+  {
+    trip,
+    month,
+    drawnRegion,
+    onDrawnRegionChange,
+    onAddWaypoint,
+    onMoveWaypoint,
+    selectedDayNumber,
+    collaboratorCursors,
+    suggestions,
+    onCursorMove,
+    fitRouteToken,
+  },
+  ref,
+) {
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
   const passesData = usePasses(month, closureRoutes);
   return (
     <TripPlannerMapContent
+      ref={ref}
       trip={trip}
       month={month}
       drawnRegion={drawnRegion}
@@ -229,40 +262,46 @@ function FetchedTripPlannerMap({
       fitRouteToken={fitRouteToken}
     />
   );
-}
-function TripPlannerMapContent({
-  trip,
-  month,
-  drawnRegion: controlledDrawnRegion,
-  onDrawnRegionChange,
-  closuresData,
-  passesData,
-  onAddWaypoint,
-  onMoveWaypoint,
-  selectedDayNumber,
-  collaboratorCursors,
-  suggestions,
-  onCursorMove,
-  fitRouteToken,
-}: {
-  trip: Trip | null;
-  month: number;
-  drawnRegion?: RegionDrawBbox | null;
-  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
-  closuresData: ClosuresQueryResult;
-  passesData: PassesQueryResult;
-  onAddWaypoint?: (location: { lng: number; lat: number }) => void;
-  onMoveWaypoint?: (
-    dayNumber: number,
-    waypointId: string,
-    location: { lng: number; lat: number },
-  ) => void;
-  selectedDayNumber?: number;
-  collaboratorCursors?: Map<string, CollaboratorCursor>;
-  suggestions?: TripSuggestion[];
-  onCursorMove?: (lat: number, lng: number) => void;
-  fitRouteToken?: number;
-}) {
+});
+const TripPlannerMapContent = forwardRef<
+  TripPlannerMapHandle,
+  {
+    trip: Trip | null;
+    month: number;
+    drawnRegion?: RegionDrawBbox | null;
+    onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
+    closuresData: ClosuresQueryResult;
+    passesData: PassesQueryResult;
+    onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+    onMoveWaypoint?: (
+      dayNumber: number,
+      waypointId: string,
+      location: { lng: number; lat: number },
+    ) => void;
+    selectedDayNumber?: number;
+    collaboratorCursors?: Map<string, CollaboratorCursor>;
+    suggestions?: TripSuggestion[];
+    onCursorMove?: (lat: number, lng: number) => void;
+    fitRouteToken?: number;
+  }
+>(function TripPlannerMapContent(
+  {
+    trip,
+    month,
+    drawnRegion: controlledDrawnRegion,
+    onDrawnRegionChange,
+    closuresData,
+    passesData,
+    onAddWaypoint,
+    onMoveWaypoint,
+    selectedDayNumber,
+    collaboratorCursors,
+    suggestions,
+    onCursorMove,
+    fitRouteToken,
+  },
+  ref,
+) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   // Tracks the trip whose bounds we've already auto-fit. Keyed on
@@ -312,6 +351,34 @@ function TripPlannerMapContent({
   // Sidebar publishes the focused segment id so the map can paint the
   // matching slice of the route in a contrasting color (issue #473).
   const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
+
+  // ── Context-menu waypoint placement (Task 10) ────────────────────────────
+  // Task 9 store actions for context-menu placement.
+  const placeWaypoint = useTripStore((s) => s.placeWaypoint);
+  // Derive hasStart / hasEnd from the active planner day (day 0).
+  const activeTrip = useTripStore((s) => s.activeTrip);
+  const activeDayWaypoints = activeTrip?.days[0]?.waypoints ?? [];
+  const hasStart = activeDayWaypoints.some((w) => w.type === "start");
+  const hasEnd = activeDayWaypoints.some((w) => w.type === "end");
+
+  // Context menu state: screen position + the snapped geo coord the menu acts on.
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    coords: { lng: number; lat: number };
+  } | null>(null);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  const handleContextMenuAction = useCallback(
+    (actionId: PlacementActionId) => {
+      if (!contextMenu) return;
+      placeWaypoint(contextMenu.coords, actionId);
+      closeContextMenu();
+    },
+    [contextMenu, placeWaypoint, closeContextMenu],
+  );
+  // ─────────────────────────────────────────────────────────────────────────
   const routeCollection = useMemo(
     () => buildTripPlannerRouteCollection(trip),
     [trip],
@@ -418,40 +485,15 @@ function TripPlannerMapContent({
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-  const handleMapClick = useCallback(
-    (event: {
-      point: {
-        x: number;
-        y: number;
-      };
-      lngLat: {
-        lng: number;
-        lat: number;
-      };
-    }) => {
-      if (!onAddWaypoint || drawMode !== "idle") return;
-      // A tap-without-drag on a waypoint still fires a synthetic `click`
-      // even after we `preventDefault()` on `mousedown`; without this
-      // gate the planner would append a brand-new waypoint at the
-      // existing one's position on every short tap.
-      if (swallowNextClickRef.current) {
-        swallowNextClickRef.current = false;
-        return;
-      }
-      const map = handleRef.current?.map;
-      if (!map) return;
-      // Skip waypoint adds when the click landed on the drawn region or
-      // its edit handles — those clicks belong to the region tool.
-      if (drawRef.current?.hitTest(event.point)) return;
-      onAddWaypoint(
-        snapPointerToRoad(map, event.point, event.lngLat) ?? {
-          lng: roundCoordinate(event.lngLat.lng),
-          lat: roundCoordinate(event.lngLat.lat),
-        },
-      );
-    },
-    [drawMode, onAddWaypoint],
-  );
+  // Left-click no longer drops a waypoint — it only closes the context
+  // menu (if open) and clears the waypoint-tap swallow flag.
+  const handleMapClick = useCallback(() => {
+    if (swallowNextClickRef.current) {
+      swallowNextClickRef.current = false;
+      return;
+    }
+    closeContextMenu();
+  }, [closeContextMenu]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -668,14 +710,86 @@ function TripPlannerMapContent({
       window.removeEventListener("keydown", handleKey);
     };
   }, [drawMode, drawnRegion]);
+  // Click closes the context menu and clears the swallow flag (no longer adds waypoints).
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !onAddWaypoint) return;
+    if (!map || !ready) return;
     map.on("click", handleMapClick);
     return () => {
       map.off("click", handleMapClick);
     };
-  }, [handleMapClick, onAddWaypoint, ready]);
+  }, [handleMapClick, ready]);
+  // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || drawMode !== "idle") return;
+    const canvas = map.getCanvas();
+
+    // Desktop: contextmenu event (right-click).
+    const onContextMenu = (event: MapMouseEvent) => {
+      event.preventDefault();
+      // Don't open over the region-draw tool.
+      if (drawRef.current?.hitTest(event.point)) return;
+      const snapped = snapPointerToRoad(map, event.point, event.lngLat) ?? {
+        lng: roundCoordinate(event.lngLat.lng),
+        lat: roundCoordinate(event.lngLat.lat),
+      };
+      const rect = canvas.getBoundingClientRect();
+      setContextMenu({
+        x: event.point.x + rect.left,
+        y: event.point.y + rect.top,
+        coords: snapped,
+      });
+    };
+
+    // Touch: long-press (~500 ms) cancelled by move.
+    const LONG_PRESS_MS = 500;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let touchMoved = false;
+
+    const onTouchStart = (event: MapTouchEvent) => {
+      touchMoved = false;
+      const touch = event.originalEvent.touches[0];
+      if (!touch) return;
+      const savedPoint = { x: event.point.x, y: event.point.y };
+      const savedLngLat = { lng: event.lngLat.lng, lat: event.lngLat.lat };
+      longPressTimer = setTimeout(() => {
+        if (touchMoved) return;
+        if (drawRef.current?.hitTest(savedPoint)) return;
+        const snapped = snapPointerToRoad(map, savedPoint, savedLngLat) ?? {
+          lng: roundCoordinate(savedLngLat.lng),
+          lat: roundCoordinate(savedLngLat.lat),
+        };
+        const rect = canvas.getBoundingClientRect();
+        setContextMenu({
+          x: savedPoint.x + rect.left,
+          y: savedPoint.y + rect.top,
+          coords: snapped,
+        });
+      }, LONG_PRESS_MS);
+    };
+
+    const cancelLongPress = () => {
+      touchMoved = true;
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    map.on("contextmenu", onContextMenu);
+    map.on("touchstart", onTouchStart);
+    map.on("touchmove", cancelLongPress);
+    map.on("touchend", cancelLongPress);
+
+    return () => {
+      map.off("contextmenu", onContextMenu);
+      map.off("touchstart", onTouchStart);
+      map.off("touchmove", cancelLongPress);
+      map.off("touchend", cancelLongPress);
+      if (longPressTimer !== null) clearTimeout(longPressTimer);
+    };
+  }, [drawMode, ready]);
   // ── Waypoint dragging (#471) ──
   // MapLibre treats every gesture on the canvas as a pan unless we
   // intercept the pointer-down on the waypoint layer with
@@ -930,6 +1044,15 @@ function TripPlannerMapContent({
     if (!ready || !tripBounds) return;
     fitMapToTrip();
   }, [fitRouteToken, ready, tripBounds, fitMapToTrip]);
+  // Expose fitRoute() so Task 11 can wire a "Fit route" button to an explicit
+  // refit without depending on `fitRouteToken` or re-rendering the page.
+  useImperativeHandle(
+    ref,
+    () => ({
+      fitRoute: fitMapToTrip,
+    }),
+    [fitMapToTrip],
+  );
   useEffect(() => {
     return () => {
       drawRef.current?.destroy();
@@ -1306,9 +1429,33 @@ function TripPlannerMapContent({
           )}
         </div>
       </div>
+      {/* ── Context menu overlay (Task 10) ── */}
+      {contextMenu ? (
+        <div
+          role="menu"
+          aria-label={t("Place waypoint")}
+          className="absolute z-30 min-w-[160px] overflow-hidden rounded-xl border border-line bg-cream shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <ul className="py-1">
+            {buildPlacementMenu({ hasStart, hasEnd }).map((action) => (
+              <li key={action.id} role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full px-4 py-2.5 text-left text-sm text-ink hover:bg-paper"
+                  onClick={() => handleContextMenuAction(action.id)}
+                >
+                  {t(action.label)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </MapCanvas>
   );
-}
+});
 // v2 map-overlay pills. The design floats cream/translucent pills over the
 // cream basemap (with a soft shadow + blur), reserving solid ink for the
 // primary "Draw region" action.
