@@ -298,6 +298,96 @@ describe("buildTripPlannerWaypointCollection", () => {
     });
   });
 
+  it("suppresses a linked day's start so the shared overnight stop renders once", () => {
+    // Day 1 ends at the overnight stop; day 2 has startLinked: true and its
+    // start waypoint is at the same physical point. The builder must emit the
+    // overnight stop exactly once (as day 1's end) and omit day 2's start.
+    const overnightLng = 14.61;
+    const overnightLat = 50.19;
+    const overnightTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day one",
+          distanceKm: 120,
+          durationMinutes: 180,
+          elevationGain: 800,
+          avgQuality: 4.1,
+          waypoints: [
+            {
+              id: "start-1",
+              name: "Start",
+              location: { lng: 14.41, lat: 50.08 },
+              type: "start",
+            },
+            {
+              id: "end-1",
+              name: "Overnight stop",
+              location: { lng: overnightLng, lat: overnightLat },
+              type: "end",
+            },
+          ],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          startLinked: true,
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Overnight stop",
+              location: { lng: overnightLng, lat: overnightLat },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    });
+
+    const collection = buildTripPlannerWaypointCollection(overnightTrip);
+
+    // Naive total: 4 waypoints across 2 days. Deduped: 3 (linked start omitted).
+    expect(collection.features).toHaveLength(3);
+
+    // The overnight point must appear exactly once — as day 1's end.
+    const overnightFeatures = collection.features.filter(
+      (f) =>
+        f.geometry.coordinates[0] === overnightLng &&
+        f.geometry.coordinates[1] === overnightLat,
+    );
+    expect(overnightFeatures).toHaveLength(1);
+    expect(overnightFeatures[0]?.properties).toMatchObject({
+      dayNumber: 1,
+      waypointId: "end-1",
+      waypointType: "end",
+    });
+
+    // Day 2's linked start must be absent.
+    const linkedStart = collection.features.find(
+      (f) => f.properties.waypointId === "start-2",
+    );
+    expect(linkedStart).toBeUndefined();
+  });
+
+  it("does not suppress a non-linked day's start", () => {
+    // When startLinked is false/undefined, the start waypoint must still render.
+    const collection = buildTripPlannerWaypointCollection(trip());
+    const day2Start = collection.features.find(
+      (f) => f.properties.waypointId === "start-2",
+    );
+    expect(day2Start).toBeDefined();
+  });
+
   it("falls back to a stable label when waypoint type is an empty string", () => {
     const collection = buildTripPlannerWaypointCollection(
       trip({

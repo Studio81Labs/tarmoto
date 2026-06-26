@@ -95,7 +95,10 @@ export function buildTripPlannerWaypointCollection(
   if (!trip) return emptyPointCollection();
 
   const features = trip.days.flatMap((day) =>
-    day.waypoints.map((waypoint) => {
+    day.waypoints.flatMap((waypoint) => {
+      // Suppress the linked start: the shared overnight stop is already drawn
+      // as the previous day's end, so rendering it again here would overlap.
+      if (waypoint.type === "start" && day.startLinked) return [];
       const feature: Feature<Point, WaypointProperties> = {
         type: "Feature",
         properties: {
