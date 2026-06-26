@@ -34,12 +34,17 @@ points in the Alps region (overlapping the default closure seeding area).
   (unrelated to generate flow — no changes needed).
 - **Added** "seeded route renders and Save route persists via the manual
   flow": seeds a trip with day-1 geometry, opens via `?tripId=`, asserts
-  heading visible, asserts "Save route" enabled (dirty-gate: existing
-  geometry suppresses live routing hook), clicks Save route, asserts
+  heading visible. The dirty-gate keeps live routing idle on open, so "Save
+  route" starts **disabled** (a no-op save must not reroute canonical
+  geometry). The test then dirties the draft by toggling the "Avoid
+  highways" option (clicks the visible label — the real `<input>` is
+  `sr-only`), which calls `markRouteDirty()` → live routing fires
+  (`POST /routing/route`) → Save route enables. Clicks Save route, asserts
   "Route saved" toast.
 - **Replaced** "saving a backend-generated trip" → "saving a route lets us
-  reopen the same trip detail": same seed + open + save pattern, then
-  navigates to `/trips`, reopens the trip, asserts heading on detail page.
+  reopen the same trip detail": same seed + open + dirty-toggle + save
+  pattern, then navigates to `/trips`, reopens the trip, asserts heading on
+  detail page.
 
 ### `trip-planner-closures.spec.ts`
 
@@ -74,8 +79,19 @@ points in the Alps region (overlapping the default closure seeding area).
 `liveRouteEnabled = routeDirty || !activeDayRouteGeometry`. When a trip is
 opened via `?tripId=` and it already has day-1 route geometry, the dirty flag
 is `false` and `activeDayRouteGeometry` is set, so the live routing hook
-stays idle. This means no `POST /api/v1/routing/route` call fires on open,
-and the "Save route" button (`canSaveRoute = waypoints.length >= 2 && activeDayRouteGeometry !== null`) is enabled immediately.
+stays idle. This means no `POST /api/v1/routing/route` call fires on open —
+the seeded route renders without any routing round-trip.
+
+Crucially, "Save route" is **also** dirty-gated:
+`canSaveRoute = routingWaypoints.length >= 2 && activeDayRouteGeometry !== null && routeDirty`.
+So on a freshly-opened seeded trip the button is **disabled** until a real
+edit dirties the draft — this stops a no-op save from rerouting and
+overwriting canonical/imported geometry. The manual-flow and reopen tests
+therefore toggle an avoid option (a legitimate user edit that calls
+`markRouteDirty()`) to fire live routing and enable Save route before
+clicking it. (An earlier draft of these tests asserted Save was enabled
+immediately on open; that was validated against a branch missing the
+`a0c6f517` dirty-gate-on-Save commit and has been corrected.)
 
 ## Test results
 
@@ -93,7 +109,20 @@ Running 7 tests using 1 worker
   7 passed (25.3s)
 ```
 
-Zero retries required. Commit: `e1ce07ac`.
+Re-verified after the dirty-gate fix on the real PR HEAD (`a0c6f517`),
+running against a CI-style production build + the in-process mock backend:
+two consecutive clean runs both report **7 passed (≈12s each), zero retries**.
+
+Flakiness note: the very first test of a cold Playwright process
+("restoring a planner region…", which I did not modify) intermittently timed
+out at login / map-region load on the first cold run when the machine was
+under load (a separate `next dev` was also running). It passed deterministically
+on every warm run. This is environmental cold-start contention, not a code
+defect — CI builds the app up front (`next build && next start`), so the cold
+JIT path that caused it locally does not apply there.
+
+Commits: `e1ce07ac` (endpoints + spec rewrite), follow-up fix folds the
+dirty-toggle into both Save-route tests.
 
 ## Known side issue (not fixed here)
 
