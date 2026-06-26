@@ -1,0 +1,154 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'node:crypto';
+import type { Request, Response } from 'express';
+import { AdminAuthService, serializeAdminUser } from './admin-auth.service.js';
+import {
+  AdminAuthSessionResponseDto,
+  AdminLoginDto,
+  AdminMeResponseDto,
+} from './dto/admin-auth.dto.js';
+import {
+  ADMIN_REFRESH_COOKIE,
+  ADMIN_SSO_STATE_COOKIE,
+} from './admin-auth.constants.js';
+import {
+  clearAdminAuthCookies,
+  clearAdminSsoStateCookie,
+  readCookie,
+  setAdminAuthCookies,
+  setAdminSsoStateCookie,
+} from './admin-auth.cookies.js';
+import {
+  buildGithubAuthorizeUrl,
+  exchangeGithubCode,
+} from './admin-github-sso.js';
+import type { AdminRequest } from '../admin/internal.guard.js';
+
+const SSO_ERROR_REDIRECT = '/?adminAuthError=sso';
+
+@ApiTags('admin-auth')
+@Controller('admin/auth')
+export class AdminAuthController {
+  constructor(
+    private readonly service: AdminAuthService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private get secure(): boolean {
+    return this.config.get<string>('NODE_ENV') === 'production';
+  }
+
+  @Post('login')
+  @ApiOperation({ summary: 'Admin password login (dev / fallback)' })
+  @ApiResponse({ status: 201, type: AdminAuthSessionResponseDto })
+  async login(
+    @Body() dto: AdminLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminAuthSessionResponseDto> {
+    const tokens = await this.service.loginWithPassword(
+      dto.email,
+      dto.password,
+    );
+    setAdminAuthCookies(
+      res,
+      tokens.accessToken,
+      tokens.refreshToken,
+      this.secure,
+    );
+    return { user: tokens.user, expiresIn: tokens.expiresIn };
+  }
+
+  @Post('refresh')
+  @ApiOperation({ summary: 'Rotate the admin session tokens' })
+  @ApiResponse({ status: 201, type: AdminAuthSessionResponseDto })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AdminAuthSessionResponseDto> {
+    const raw = readCookie(req, ADMIN_REFRESH_COOKIE);
+    if (!raw) throw new UnauthorizedException('Missing refresh token');
+    const tokens = await this.service.refresh(raw);
+    setAdminAuthCookies(
+      res,
+      tokens.accessToken,
+      tokens.refreshToken,
+      this.secure,
+    );
+    return { user: tokens.user, expiresIn: tokens.expiresIn };
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'Current admin session' })
+  @ApiResponse({ status: 200, type: AdminMeResponseDto })
+  me(@Req() req: Request): AdminMeResponseDto {
+    const adminUser = (req as AdminRequest).adminUser;
+    if (!adminUser) throw new UnauthorizedException();
+    return { user: serializeAdminUser(adminUser) };
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke the admin session' })
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    const raw = readCookie(req, ADMIN_REFRESH_COOKIE);
+    if (raw) await this.service.revoke(raw);
+    clearAdminAuthCookies(res, this.secure);
+  }
+
+  @Get('sso/github/start')
+  @ApiOperation({ summary: 'Begin GitHub OAuth' })
+  start(@Res() res: Response): void {
+    const state = randomBytes(16).toString('hex');
+    setAdminSsoStateCookie(res, state, this.secure);
+    res.redirect(buildGithubAuthorizeUrl(state, this.config));
+  }
+
+  @Get('sso/github/callback')
+  @ApiOperation({ summary: 'GitHub OAuth callback' })
+  async callback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const expectedState = readCookie(req, ADMIN_SSO_STATE_COOKIE);
+      clearAdminSsoStateCookie(res, this.secure);
+      if (!code || !state || !expectedState || state !== expectedState) {
+        res.redirect(SSO_ERROR_REDIRECT);
+        return;
+      }
+      const { subject, email } = await exchangeGithubCode(code, this.config);
+      const user = await this.service.findOrProvisionSsoUser(
+        'github',
+        subject,
+        email,
+      );
+      const tokens = await this.service.createSession(user.id);
+      setAdminAuthCookies(
+        res,
+        tokens.accessToken,
+        tokens.refreshToken,
+        this.secure,
+      );
+      res.redirect('/');
+    } catch {
+      res.redirect(SSO_ERROR_REDIRECT);
+    }
+  }
+}
