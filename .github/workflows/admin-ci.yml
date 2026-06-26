@@ -52,6 +52,9 @@ jobs:
         # typecheck fails with "Cannot find module './types.js'".
         run: pnpm openapi:gen
 
+      - name: Lint
+        run: pnpm --filter @tarmoto/admin lint
+
       - name: Typecheck
         run: pnpm --filter @tarmoto/admin typecheck
 
