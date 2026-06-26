@@ -2450,6 +2450,26 @@ describe('TripsService', () => {
       expect(routingProvider.route).not.toHaveBeenCalled();
       expect(transactionMock).not.toHaveBeenCalled();
     });
+
+    it('rejects a save whose routing waypoints are out of order (end before start) with 400', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          waypoints: [
+            { lat: 1, lng: 1, type: 'end' },
+            { lat: 0, lng: 0, type: 'start' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(routingProvider.route).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('detail mapping', () => {

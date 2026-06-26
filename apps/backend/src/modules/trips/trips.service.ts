@@ -1026,6 +1026,19 @@ export class TripsService {
     const routingWaypoints = dto.waypoints.filter((w) =>
       ['start', 'via', 'end'].includes(w.type),
     );
+    // The routing subset must be ordered start ... end. The count check above
+    // allows shapes like `end, via, start` or `start, end, via`; this filter
+    // preserves submission order for Valhalla and persistence, so without an
+    // order check the saved trip could reload with the finish in the middle or
+    // at the wrong end.
+    if (
+      routingWaypoints[0]?.type !== 'start' ||
+      routingWaypoints[routingWaypoints.length - 1]?.type !== 'end'
+    ) {
+      throw new BadRequestException(
+        'Route waypoints must be ordered from start to end',
+      );
+    }
     const route = await this.routingProvider.route(
       routingWaypoints.map((w) => ({ lat: w.lat, lng: w.lng })),
       {

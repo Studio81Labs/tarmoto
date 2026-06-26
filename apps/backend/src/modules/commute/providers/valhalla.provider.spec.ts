@@ -182,6 +182,25 @@ describe('ValhallaProvider.route', () => {
     ).toBeNull();
   });
 
+  it('returns null when a Valhalla leg is missing its shape (does not throw)', async () => {
+    // Malformed 200: a leg with no string `shape`. decodePolyline6 would read
+    // `undefined.length` and throw a 500 — the provider must reject the trip.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        trip: {
+          legs: [{ summary: { length: 10, time: 600 } }],
+          summary: { length: 10, time: 600 },
+        },
+      }),
+    );
+    expect(
+      await makeProvider().route([
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ]),
+    ).toBeNull();
+  });
+
   it('concatenates multi-leg geometry and drops the shared join vertex', async () => {
     // Leg 1: A -> B. Leg 2: B -> C.
     // B appears as the last point of leg 1 AND the first point of leg 2.

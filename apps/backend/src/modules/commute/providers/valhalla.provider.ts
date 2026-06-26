@@ -107,6 +107,20 @@ export class ValhallaProvider implements RoutingProvider {
   }
 
   private tripToResult(trip: ValhallaTrip): RouteResult | null {
+    // Validate the raw trip BEFORE decoding: a malformed HTTP 200 (e.g. a leg
+    // missing a string `shape`, or a non-finite summary) would otherwise make
+    // decodePolyline6 read `undefined.length` and throw a 500 instead of
+    // following the intended no-route (null) path.
+    if (
+      !Array.isArray(trip.legs) ||
+      trip.legs.length === 0 ||
+      !trip.legs.every((leg) => typeof leg?.shape === 'string') ||
+      !trip.summary ||
+      !Number.isFinite(trip.summary.length) ||
+      !Number.isFinite(trip.summary.time)
+    ) {
+      return null;
+    }
     const geometry: Array<{ lat: number; lng: number }> = [];
     trip.legs.forEach((leg, idx) => {
       const pts = decodePolyline6(leg.shape);
