@@ -56,9 +56,14 @@ test.describe("trip planner", () => {
       page.getByRole("heading", { name: /alps loop/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // "Save route" is enabled: the trip already has geometry and ≥2 waypoints.
+    // Save route is gated on a dirty draft (so a no-op save can't reroute a
+    // loaded canonical/imported route). Toggle an avoid-routing option to mark
+    // the draft edited — the planner wires this to markRouteDirty.
+    await page.getByText(/avoid highways/i).click();
+
+    // Now "Save route" is enabled (dirty + existing geometry + ≥2 waypoints).
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
-    await expect(saveRouteBtn).toBeEnabled({ timeout: 5_000 });
+    await expect(saveRouteBtn).toBeEnabled({ timeout: 10_000 });
     await saveRouteBtn.click();
 
     // The success toast fires after the PUT /trips/:id/route resolves.
@@ -94,9 +99,13 @@ test.describe("trip planner", () => {
       timeout: 10_000,
     });
 
+    // Dirty the draft (toggle an avoid option) so Save route enables — see the
+    // manual-flow test above for why the dirty-gate exists.
+    await page.getByText(/avoid highways/i).click();
+
     // Save the route — this calls PUT /trips/:id/route on the existing trip.
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
-    await expect(saveRouteBtn).toBeEnabled({ timeout: 5_000 });
+    await expect(saveRouteBtn).toBeEnabled({ timeout: 10_000 });
     await saveRouteBtn.click();
     await expect(page.getByText(/route saved/i)).toBeVisible({
       timeout: 10_000,
