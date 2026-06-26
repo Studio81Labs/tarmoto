@@ -191,6 +191,8 @@ export default function TripPlannerPage() {
   const isGenerating = useTripStore((s) => s.isGenerating);
   const setGenerating = useTripStore((s) => s.setGenerating);
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
+  const routeDirty = useTripStore((s) => s.routeDirty);
+  const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   // Stable selector identity — the store fn is recreated each call, but
   // we select the *day 0 waypoints array* so useMemo below only fires
   // when the waypoints array actually changes (reference equality).
@@ -232,11 +234,18 @@ export default function TripPlannerPage() {
     }),
     [avoidHighways, avoidTolls, avoidUnpaved],
   );
+  // Gate live routing: only fire Valhalla when the rider has made an
+  // edit (routeDirty) OR the active day has no persisted geometry yet
+  // (a fresh draft that hasn't been routed). This prevents an existing
+  // saved trip from being silently re-routed on open before any edits.
+  const activeDayRouteGeometry = activeTrip?.days[0]?.routeGeometry ?? null;
+  const liveRouteEnabled = routeDirty || !activeDayRouteGeometry;
   const { routing } = usePlannerRouting(
     routingWaypoints,
     routeOptions,
     applyRouteResult,
     (msg) => toast.error(msg),
+    liveRouteEnabled,
   );
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
@@ -608,7 +617,6 @@ export default function TripPlannerPage() {
   // and the first day carries route geometry (i.e. the live hook already
   // resolved a route). Calls PUT /trips/:id/route — creates the server
   // trip on first save if one doesn't exist yet.
-  const activeDayRouteGeometry = activeTrip?.days[0]?.routeGeometry ?? null;
   const canSaveRoute =
     routingWaypoints.length >= 2 && activeDayRouteGeometry !== null;
   const [savingRoute, setSavingRoute] = useState(false);
@@ -730,6 +738,32 @@ export default function TripPlannerPage() {
       return [...current, surface];
     });
   }, []);
+  // Wrapped avoid-option handlers: update state AND mark route dirty so
+  // live routing fires on a loaded trip when the rider changes an option.
+  // These are ONLY called from user-facing controls (the JSX checkboxes
+  // below), NOT from the load/hydration effects — so they never mark
+  // dirty on page mount.
+  const handleAvoidHighwaysChange = useCallback(
+    (value: boolean) => {
+      setAvoidHighways(value);
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  const handleAvoidTollsChange = useCallback(
+    (value: boolean) => {
+      setAvoidTolls(value);
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  const handleAvoidUnpavedChange = useCallback(
+    (value: boolean) => {
+      setAvoidUnpaved(value);
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -1652,17 +1686,17 @@ export default function TripPlannerPage() {
                 <div className="flex flex-col items-start gap-2 pt-2">
                   <Checkbox
                     checked={avoidHighways}
-                    onChange={setAvoidHighways}
+                    onChange={handleAvoidHighwaysChange}
                     label={t("Avoid highways")}
                   />
                   <Checkbox
                     checked={avoidTolls}
-                    onChange={setAvoidTolls}
+                    onChange={handleAvoidTollsChange}
                     label={t("Avoid tolls")}
                   />
                   <Checkbox
                     checked={avoidUnpaved}
-                    onChange={setAvoidUnpaved}
+                    onChange={handleAvoidUnpavedChange}
                     label={t("Avoid unpaved roads")}
                   />
                 </div>

@@ -122,6 +122,16 @@ interface TripState {
   canUndo: boolean;
   canRedo: boolean;
 
+  /**
+   * True once the rider has edited the route since the trip was
+   * loaded. Used by the planner page to gate live routing: Valhalla
+   * is only called when the rider has made a change, OR when the
+   * active day has no persisted geometry yet (a fresh draft).
+   * Reset to false by setActiveTrip (load / replace / clear).
+   * Set to true by any action that mutates the routing inputs.
+   */
+  routeDirty: boolean;
+
   // Sidebar focus state consumed by the map layer (#79) and the
   // RoadPreviewCard components in the planner sidebar (US-33).
   focusedSegmentId: string | null;
@@ -130,6 +140,8 @@ interface TripState {
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
+  /** Set routeDirty to true. Called by user-facing controls that change routing inputs. */
+  markRouteDirty: () => void;
 
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
@@ -287,6 +299,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     isGenerating: false,
     canUndo: false,
     canRedo: false,
+    routeDirty: false,
     focusedSegmentId: null,
     hoveredSegmentId: null,
     undoStack: [],
@@ -299,6 +312,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     setActiveTrip: (activeTrip) =>
       set({
         activeTrip,
+        routeDirty: false,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -307,6 +321,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canRedo: false,
       }),
     setGenerating: (isGenerating) => set({ isGenerating }),
+    markRouteDirty: () => set({ routeDirty: true }),
 
     focusSegment: (segmentId) => set({ focusedSegmentId: segmentId }),
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
@@ -332,8 +347,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       ),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           const baseTrip =
             activeTrip ??
             createPlannerDraftTrip(new Date().toISOString(), parameters);
@@ -354,7 +369,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        routeDirty: true,
+      })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
       set((state) =>
@@ -403,8 +419,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       ),
 
     moveWaypoint: (dayIndex, waypointId, location, parameters) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const result = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -446,12 +462,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
-        }),
-      ),
+        });
+        // Only mark dirty if the move actually changed state (no-op moves
+        // return the same state reference from commitTripChange).
+        if (result === state) return state;
+        return { ...result, routeDirty: true };
+      }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -472,7 +492,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        routeDirty: true,
+      })),
 
     undo: () =>
       set((state) => {
@@ -511,8 +532,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
     placeWaypoint: (coords, action) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           const baseTrip =
             activeTrip ?? createPlannerDraftTrip(new Date().toISOString());
           const days = ensurePlannerDays(baseTrip.days, 1);
@@ -563,11 +584,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        routeDirty: true,
+      })),
 
     setWaypointType: (waypointId, type) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[0];
           if (!day) return activeTrip;
@@ -585,11 +607,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        routeDirty: true,
+      })),
 
     removeWaypointById: (waypointId) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[0];
           if (!day) return activeTrip;
@@ -604,7 +627,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        routeDirty: true,
+      })),
 
     routingWaypoints: () => {
       const { activeTrip } = get();
@@ -658,6 +682,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         isGenerating: false,
         canUndo: false,
         canRedo: false,
+        routeDirty: false,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],

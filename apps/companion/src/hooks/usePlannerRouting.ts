@@ -10,6 +10,7 @@ export function usePlannerRouting(
   options: RouteRequestBody["options"],
   onResult: (r: RouteResponse) => void,
   onError: (message: string) => void,
+  enabled = true,
 ): { routing: boolean } {
   const [routing, setRouting] = useState(false);
   const reqIdRef = useRef(0);
@@ -18,6 +19,11 @@ export function usePlannerRouting(
   cbRef.current = { onResult, onError };
 
   useEffect(() => {
+    // When disabled, do nothing — no debounce, no fetch, no routing state.
+    if (!enabled) {
+      setRouting(false);
+      return;
+    }
     if (waypoints.length < 2) {
       setRouting(false);
       return;
@@ -48,7 +54,7 @@ export function usePlannerRouting(
       clearTimeout(handle);
       controller.abort();
     };
-  }, [waypoints, options]);
+  }, [waypoints, options, enabled]);
 
   return { routing };
 }

@@ -603,3 +603,107 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(after.find((w) => w.type === "end")).toBeDefined();
   });
 });
+
+describe("useTripStore routeDirty flag", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("starts as false and is reset to false by setActiveTrip", () => {
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    // Set to true via a mutation, then reset via setActiveTrip
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("markRouteDirty sets routeDirty to true", () => {
+    expect(useTripStore.getState().routeDirty).toBe(false);
+    useTripStore.getState().markRouteDirty();
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("appendPlannerWaypoint sets routeDirty true", () => {
+    useTripStore
+      .getState()
+      .appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("placeWaypoint sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("removeWaypointById sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    // Reset dirty to test specifically the removeWaypointById action
+    useTripStore.setState({ routeDirty: false });
+
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().removeWaypointById(via.id);
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("reorderWaypoints sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().reorderWaypoints(0, 1, 2);
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("setWaypointType sets routeDirty true", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    useTripStore.setState({ routeDirty: false });
+
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().setWaypointType(via.id, "fuel");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("moveWaypoint sets routeDirty true on an actual location change", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1.5, lng: 1.5 });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+
+  it("moveWaypoint does NOT set routeDirty when location is unchanged (no-op)", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    // Same location — no-op
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1, lng: 1 });
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("setActiveTrip resets routeDirty to false even when called with a non-null trip", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    const fakeTrip = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(fakeTrip);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+});

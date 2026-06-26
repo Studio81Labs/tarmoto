@@ -40,4 +40,36 @@ describe("usePlannerRouting", () => {
     );
     expect(routeMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does NOT call routingApi.route when enabled=false, even with ≥2 waypoints", () => {
+    renderHook(() => usePlannerRouting(wp(2), {}, vi.fn(), vi.fn(), false));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(routeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns routing:false immediately when enabled=false", () => {
+    const { result } = renderHook(() =>
+      usePlannerRouting(wp(2), {}, vi.fn(), vi.fn(), false),
+    );
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.routing).toBe(false);
+  });
+
+  it("calls routingApi.route when enabled=true (default behavior unchanged)", async () => {
+    routeMock.mockResolvedValueOnce({
+      data: { geometry: [], distance_km: 10 },
+    } as never);
+    const onResult = vi.fn();
+    renderHook(() => usePlannerRouting(wp(2), {}, onResult, vi.fn(), true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    vi.useRealTimers();
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(1));
+    expect(routeMock).toHaveBeenCalledTimes(1);
+  });
 });

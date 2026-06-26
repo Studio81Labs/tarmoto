@@ -257,6 +257,7 @@ type TripStoreSnapshot = {
   isGenerating: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  routeDirty: boolean;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
   undoStack: Array<Trip | null>;
@@ -264,6 +265,7 @@ type TripStoreSnapshot = {
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
+  markRouteDirty: () => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
@@ -402,6 +404,7 @@ describe("TripPlannerPage", () => {
       isGenerating: false,
       canUndo: false,
       canRedo: false,
+      routeDirty: false,
       focusedSegmentId: null,
       hoveredSegmentId: null,
       undoStack: [],
@@ -409,6 +412,7 @@ describe("TripPlannerPage", () => {
       setTrips: vi.fn(),
       setActiveTrip,
       setGenerating,
+      markRouteDirty: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       addWaypoint: vi.fn(),
@@ -1237,5 +1241,60 @@ describe("TripPlannerPage", () => {
     expect(
       await screen.findByText("Could not save the route. Please try again."),
     ).toBeInTheDocument();
+  });
+
+  // ── Live routing gate (routeDirty fix) ──────────────────────────────
+
+  it("does NOT call usePlannerRouting with enabled=true when a trip WITH geometry is opened and routeDirty is false", () => {
+    // Simulate opening an existing saved trip that already has geometry.
+    // routeDirty is false (default), activeDayRouteGeometry is non-null.
+    storeState.activeTrip = activeTrip; // has routeGeometry
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    // usePlannerRouting should have been called with enabled=false
+    // (liveRouteEnabled = routeDirty || !activeDayRouteGeometry = false || false = false)
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    // The 5th argument is `enabled`
+    expect(lastCall?.[4]).toBe(false);
+  });
+
+  it("calls usePlannerRouting with enabled=true when routeDirty is true", () => {
+    storeState.activeTrip = activeTrip; // has routeGeometry
+    storeState.routeDirty = true; // rider has edited
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall?.[4]).toBe(true);
+  });
+
+  it("calls usePlannerRouting with enabled=true when the active day has no geometry yet (fresh draft)", () => {
+    // A fresh draft has waypoints but no geometry yet
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [{ ...activeTrip.days[0]!, routeGeometry: null as never }],
+    };
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    // liveRouteEnabled = false || !null = false || true = true
+    expect(lastCall?.[4]).toBe(true);
+  });
+
+  it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
   });
 });
