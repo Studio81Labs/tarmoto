@@ -619,7 +619,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
           }
 
-          days[0] = { ...day, waypoints };
+          days[0] = updatePlannerDayRoute(day, waypoints, baseTrip.parameters);
           // Keep the trip's parameters in sync with the planner controls the
           // rider set before this first placement (mirrors appendPlannerWaypoint)
           // so creating the draft here doesn't reset days/km/avoid options.
@@ -653,7 +653,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const waypoints = [...day.waypoints];
           waypoints[waypointIndex] = { ...waypoints[waypointIndex]!, type };
           const days = [...activeTrip.days];
-          days[0] = { ...day, waypoints };
+          days[0] = updatePlannerDayRoute(
+            day,
+            waypoints,
+            activeTrip.parameters,
+          );
           return {
             ...activeTrip,
             days,
@@ -670,10 +674,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const day = activeTrip.days[0];
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
-          days[0] = {
-            ...day,
-            waypoints: day.waypoints.filter((w) => w.id !== waypointId),
-          };
+          days[0] = updatePlannerDayRoute(
+            day,
+            day.waypoints.filter((w) => w.id !== waypointId),
+            activeTrip.parameters,
+          );
           return {
             ...activeTrip,
             days,
@@ -783,7 +788,22 @@ function updatePlannerDayRoute(
 ) {
   // Geometry is driven exclusively by applyRouteResult (live routing hook).
   // We never synthesize geometry here — just update the waypoint list and
-  // leave the existing routeGeometry in place until the hook recomputes it.
+  // leave the existing routeGeometry in place until the hook recomputes it...
+  // UNLESS the set is no longer routable (<2 routing waypoints): the live hook
+  // returns early without calling applyRouteResult, so we must clear the stale
+  // route-derived fields here or the map/sidebar keep showing the old route.
+  if (filterRoutingWaypoints(waypoints).length < 2) {
+    return {
+      ...day,
+      waypoints,
+      routeGeometry: undefined,
+      distanceKm: 0,
+      durationMinutes: 0,
+      avgQuality: 0,
+      elevationGain: 0,
+      segments: [],
+    };
+  }
   return { ...day, waypoints };
 }
 

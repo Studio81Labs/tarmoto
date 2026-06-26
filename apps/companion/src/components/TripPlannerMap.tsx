@@ -302,6 +302,12 @@ const TripPlannerMapContent = forwardRef<
   },
   ref,
 ) {
+  // The map is "editable" only when the parent wires up waypoint editing (the
+  // planner passes onMoveWaypoint; the read-only trip-detail page does not).
+  // Gate the placement context menu on this so a right-click/long-press on the
+  // detail map can't open the menu and mutate the global trip store. A boolean
+  // keeps the placement effect's deps stable despite inline-callback identity.
+  const editable = onMoveWaypoint != null;
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   // Tracks the trip whose bounds we've already auto-fit. Keyed on
@@ -735,7 +741,9 @@ const TripPlannerMapContent = forwardRef<
   // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || drawMode !== "idle") return;
+    // Only install placement listeners on an editable (planner) map — never on
+    // the read-only trip-detail map, which shares the same store.
+    if (!map || !ready || drawMode !== "idle" || !editable) return;
 
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
@@ -807,7 +815,7 @@ const TripPlannerMapContent = forwardRef<
       map.off("touchend", cancelLongPress);
       if (longPressTimer !== null) clearTimeout(longPressTimer);
     };
-  }, [drawMode, ready]);
+  }, [drawMode, ready, editable]);
   // ── Waypoint dragging (#471) ──
   // MapLibre treats every gesture on the canvas as a pan unless we
   // intercept the pointer-down on the waypoint layer with

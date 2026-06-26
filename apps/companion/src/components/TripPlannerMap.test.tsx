@@ -301,7 +301,7 @@ describe("TripPlannerMap", () => {
       },
     ]);
 
-    render(<TripPlannerMap trip={trip()} month={7} />);
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
     act(() => {
       eventHandlers.get("contextmenu")?.({
@@ -319,6 +319,25 @@ describe("TripPlannerMap", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
     // queryRenderedFeatures was called for snap — confirm road-snap path ran.
     expect(mockMap.queryRenderedFeatures).toHaveBeenCalled();
+  });
+
+  it("does not install the placement context menu on a read-only (non-editable) map", () => {
+    // A read-only map (e.g. the trip-detail page) passes no onMoveWaypoint, so
+    // the placement listeners must NOT install — a right-click there must not
+    // open the menu / mutate the shared trip store.
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string") return mockMap;
+      eventHandlers.set(
+        event,
+        (maybeHandler ?? layerOrHandler) as (event: unknown) => void,
+      );
+      return mockMap;
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(eventHandlers.has("contextmenu")).toBe(false);
   });
 
   it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {
@@ -673,7 +692,7 @@ describe("TripPlannerMap", () => {
     });
     drawControl.hitTest.mockReturnValue(true);
 
-    render(<TripPlannerMap trip={trip()} month={7} />);
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
     act(() => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);

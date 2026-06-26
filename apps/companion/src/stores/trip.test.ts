@@ -770,4 +770,37 @@ describe("useTripStore routeDirty flag", () => {
     expect(params.avoidTolls).toBe(true);
     expect(params.dailyKmTarget).toBe(400);
   });
+
+  it("clears stale route geometry when an edit drops below 2 routing waypoints", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    // Simulate the live hook writing a real route.
+    s.applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 5, lng: 5 },
+      ],
+      distance_km: 12.3,
+      duration_min: 20,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 100,
+      surface_mix: {},
+    } as never);
+    expect(
+      useTripStore.getState().activeTrip!.days[0]!.routeGeometry,
+    ).toBeDefined();
+
+    // Remove the end → only the start remains → no longer routable → the stale
+    // route geometry + stats are cleared (the live hook won't recompute them).
+    const end = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!;
+    useTripStore.getState().removeWaypointById(end.id);
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    expect(day.routeGeometry).toBeUndefined();
+    expect(day.distanceKm).toBe(0);
+  });
 });
