@@ -8,6 +8,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -19,8 +21,17 @@ import {
 export const MAX_ROUTE_WAYPOINTS = 50;
 
 export class LatLngDto {
-  @ApiProperty() @IsNumber() lat!: number;
-  @ApiProperty() @IsNumber() lng!: number;
+  @ApiProperty({ minimum: -90, maximum: 90 })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat!: number;
+
+  @ApiProperty({ minimum: -180, maximum: 180 })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng!: number;
 }
 
 export class RouteOptionsDto {

@@ -51,7 +51,26 @@ export class RouteEnrichmentService {
   async aggregate(
     geometry: ReadonlyArray<{ lat: number; lng: number }>,
   ): Promise<RouteMetrics> {
-    const wkt = geometryToWkt(geometry);
+    // Guard against degenerate/malformed geometry (snap-collapsed identical
+    // points, NaN/Inf coords, or fewer than 2 points): geometryToWkt would
+    // otherwise emit invalid WKT (`LINESTRING()` / `LINESTRING(NaN NaN)`) and
+    // the PostGIS ST_DWithin queries would 500. Degrade to empty metrics so the
+    // live-route + save paths return a clean no-enrichment result instead.
+    const finite = geometry.filter(
+      (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng),
+    );
+    if (finite.length < 2) {
+      return {
+        avgQuality: null,
+        curvinessScore: null,
+        scenicScore: null,
+        elevationGain: 0,
+        elevationLoss: 0,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      };
+    }
+    const wkt = geometryToWkt(finite);
 
     type QualityRow = {
       avg_quality: number | null;

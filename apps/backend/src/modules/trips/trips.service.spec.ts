@@ -2429,6 +2429,27 @@ describe('TripsService', () => {
       expect(routingProvider.route).not.toHaveBeenCalled();
       expect(transactionMock).not.toHaveBeenCalled();
     });
+
+    it('rejects a save with duplicate start/end waypoints with 400', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          waypoints: [
+            { lat: 0, lng: 0, type: 'start' },
+            { lat: 1, lng: 1, type: 'start' },
+            { lat: 2, lng: 2, type: 'end' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(routingProvider.route).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('detail mapping', () => {
