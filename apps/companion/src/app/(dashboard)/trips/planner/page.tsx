@@ -681,11 +681,11 @@ export default function TripPlannerPage() {
     // in place rather than duplicated.
     const currentTrip = activeTripRef.current;
     const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
-    // Use the store's saveWaypoints() to derive the canonical waypoint list.
+    // Use the store's saveDays() to derive the canonical per-day payload.
     // Calling getState() inside a click handler / useCallback is safe Zustand
     // pattern — it reads current state without subscribing to re-renders.
-    const wps = useTripStore.getState().saveWaypoints();
-    if (wps.length < 2) {
+    const days = useTripStore.getState().saveDays();
+    if (days.length === 0) {
       toast.error(t("Add at least a start and end before saving."));
       return;
     }
@@ -696,9 +696,8 @@ export default function TripPlannerPage() {
       if (!tripId) {
         // No server trip yet — create metadata first (same pattern as
         // handleSave) so we have a backend id to PUT the route against.
-        // Override num_days to 1: the manual route save only persists day 1,
-        // so the trip metadata must reflect that — not the plannerParams.days
-        // default (3) which would leave 3-day metadata with one TripDay.
+        // num_days reflects the actual non-empty day count from saveDays so
+        // the trip metadata stays consistent with the persisted day payload.
         const basePayload = {
           ...(currentTrip
             ? buildTripMetadataPayload(currentTrip, plannerParams)
@@ -708,7 +707,7 @@ export default function TripPlannerPage() {
                 >[0],
                 plannerParams,
               )),
-          num_days: 1,
+          num_days: days.length,
         };
         const { data: created } = await tripsApi.create(basePayload);
         tripId =
@@ -720,14 +719,8 @@ export default function TripPlannerPage() {
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
       }
-      const routeWaypoints = wps.map((wp) => ({
-        lat: wp.lat,
-        lng: wp.lng,
-        ...(wp.name ? { name: wp.name } : {}),
-        type: wp.type,
-      }));
       const { data } = await tripsApi.saveRoute(tripId, {
-        waypoints: routeWaypoints,
+        days,
         options: routeOptions,
       });
       const hydrated = tripFromDetail(

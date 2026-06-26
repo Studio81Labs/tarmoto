@@ -241,6 +241,22 @@ interface TripState {
   }[];
 
   /**
+   * Per-day save payload for PUT /trips/:id/route. Empty days (no waypoints)
+   * are dropped; remaining days are renumbered contiguously 1..M. Waypoint
+   * types are mapped via `LOCAL_TO_BACKEND_WAYPOINT_TYPE`.
+   */
+  saveDays: () => {
+    dayNumber: number;
+    startLinked: boolean;
+    waypoints: {
+      lat: number;
+      lng: number;
+      name?: string;
+      type: BackendWaypointType;
+    }[];
+  }[];
+
+  /**
    * Write server-side route geometry + stats into the day identified by
    * `dayNumber`. Clears that day's stale flag. The caller (live routing hook)
    * passes the day it routed so concurrent multi-day routing lands in the
@@ -892,6 +908,18 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
       return activePlannerSaveWaypoints(day.waypoints);
+    },
+
+    saveDays: () => {
+      const { activeTrip } = get();
+      if (!activeTrip) return [];
+      return activeTrip.days
+        .filter((d) => d.waypoints.length > 0) // drop empties
+        .map((d, i) => ({
+          dayNumber: i + 1, // renumber contiguously
+          startLinked: d.startLinked ?? false,
+          waypoints: activePlannerSaveWaypoints(d.waypoints),
+        }));
     },
 
     applyRouteResult: (dayNumber, result) =>

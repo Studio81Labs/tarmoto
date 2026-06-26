@@ -558,6 +558,104 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[3]!.type).toBe("end");
   });
 
+  it("saveDays drops empty days, renumbers, and maps waypoint types", () => {
+    const s = useTripStore.getState();
+    // Build a 3-day trip: day 1 has waypoints, day 2 is empty, day 3 has waypoints.
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end");
+    s.addDay(); // day 2 linked from day 1 end → has a seeded start waypoint (non-empty)
+    // Clear day 2 waypoints to make it empty
+    const tripWithEmptyDay2 = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...tripWithEmptyDay2,
+        days: [
+          tripWithEmptyDay2.days[0]!, // day 1: has start + end
+          { ...tripWithEmptyDay2.days[1]!, waypoints: [] }, // day 2: empty
+          {
+            dayNumber: 3,
+            title: "Day 3",
+            waypoints: [
+              {
+                id: "d3-start",
+                name: "Lausanne",
+                type: "start",
+                location: { lat: 46.52, lng: 6.63 },
+              },
+              {
+                id: "d3-end",
+                name: "Geneva",
+                type: "end",
+                location: { lat: 46.2, lng: 6.15 },
+              },
+            ],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+            startLinked: true,
+          },
+        ],
+      },
+    });
+
+    const result = useTripStore.getState().saveDays();
+
+    // Only 2 days should be returned (empty day 2 dropped).
+    expect(result).toHaveLength(2);
+
+    // Day numbers renumbered contiguously 1..2.
+    expect(result[0]!.dayNumber).toBe(1);
+    expect(result[1]!.dayNumber).toBe(2);
+
+    // startLinked carried through.
+    expect(result[0]!.startLinked).toBe(false); // day 1 has no startLinked (defaults false)
+    expect(result[1]!.startLinked).toBe(true); // old day 3 had startLinked=true
+
+    // Day 1 waypoints mapped correctly.
+    expect(result[0]!.waypoints).toHaveLength(2);
+    expect(result[0]!.waypoints[0]!.type).toBe("start");
+    expect(result[0]!.waypoints[1]!.type).toBe("end");
+
+    // Day 2 (old day 3) waypoints mapped correctly.
+    expect(result[1]!.waypoints).toHaveLength(2);
+    expect(result[1]!.waypoints[0]!.lat).toBe(46.52);
+    expect(result[1]!.waypoints[1]!.lat).toBe(46.2);
+  });
+
+  it("saveDays maps rest→food and accommodation→hotel types", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "rest-1",
+      type: "rest",
+      name: "Cafe",
+      location: { lat: 2, lng: 2 },
+    });
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "hotel-1",
+      type: "accommodation",
+      name: "Hotel",
+      location: { lat: 3, lng: 3 },
+    });
+
+    const result = useTripStore.getState().saveDays();
+
+    expect(result).toHaveLength(1);
+    const wps = result[0]!.waypoints;
+    const restWp = wps.find((w) => w.name === "Cafe");
+    const hotelWp = wps.find((w) => w.name === "Hotel");
+    expect(restWp!.type).toBe("food");
+    expect(hotelWp!.type).toBe("hotel");
+  });
+
+  it("saveDays returns [] when activeTrip is null", () => {
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().saveDays()).toEqual([]);
+  });
+
   it("removeWaypointById removes a via and leaves start and end intact", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

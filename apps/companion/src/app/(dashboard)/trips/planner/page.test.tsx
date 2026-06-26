@@ -308,6 +308,16 @@ type TripStoreSnapshot = {
     name?: string;
     type: BackendWaypointType;
   }[];
+  saveDays: () => {
+    dayNumber: number;
+    startLinked: boolean;
+    waypoints: {
+      lat: number;
+      lng: number;
+      name?: string;
+      type: BackendWaypointType;
+    }[];
+  }[];
   applyRouteResult: (dayNumber: number, result: unknown) => void;
   resetForTest: () => void;
 };
@@ -456,6 +466,26 @@ describe("TripPlannerPage", () => {
           lng: 10.57,
           name: "Prato allo Stelvio",
           type: "end" as BackendWaypointType,
+        },
+      ]),
+      saveDays: vi.fn(() => [
+        {
+          dayNumber: 1,
+          startLinked: false,
+          waypoints: [
+            {
+              lat: 46.47,
+              lng: 10.37,
+              name: "Bormio",
+              type: "start" as BackendWaypointType,
+            },
+            {
+              lat: 46.61,
+              lng: 10.57,
+              name: "Prato allo Stelvio",
+              type: "end" as BackendWaypointType,
+            },
+          ],
         },
       ]),
       applyRouteResult: vi.fn(),
@@ -1219,7 +1249,7 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
-  it("calls tripsApi.saveRoute with store waypoints, creates trip on first save, and shows success toast", async () => {
+  it("calls tripsApi.saveRoute with days[], creates trip on first save, and shows success toast", async () => {
     storeState.activeTrip = activeTrip;
     storeState.routeDirty = true;
 
@@ -1234,15 +1264,25 @@ describe("TripPlannerPage", () => {
 
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Best fit" }),
+        expect.objectContaining({ title: "Best fit", num_days: 1 }),
       ),
     );
     expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
       "server-trip-1",
       expect.objectContaining({
-        waypoints: expect.arrayContaining([
-          expect.objectContaining({ lat: 46.47, lng: 10.37, type: "start" }),
-          expect.objectContaining({ lat: 46.61, lng: 10.57, type: "end" }),
+        days: expect.arrayContaining([
+          expect.objectContaining({
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: expect.arrayContaining([
+              expect.objectContaining({
+                lat: 46.47,
+                lng: 10.37,
+                type: "start",
+              }),
+              expect.objectContaining({ lat: 46.61, lng: 10.57, type: "end" }),
+            ]),
+          }),
         ]),
         options: expect.objectContaining({
           avoid_highways: true,
@@ -1255,6 +1295,101 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("saves a multi-day payload with days[] and num_days from day count", async () => {
+    // Two non-empty days — saveDays() returns 2 entries.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          title: "Day 2",
+          startLinked: true,
+          waypoints: [
+            {
+              id: "wp-d2-start",
+              name: "Prato allo Stelvio",
+              type: "start",
+              location: { lng: 10.57, lat: 46.61 },
+            },
+            {
+              id: "wp-d2-end",
+              name: "Innsbruck",
+              type: "end",
+              location: { lng: 11.39, lat: 47.27 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+    // Override saveDays to return a 2-day payload.
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        startLinked: false,
+        waypoints: [
+          {
+            lat: 46.47,
+            lng: 10.37,
+            name: "Bormio",
+            type: "start" as BackendWaypointType,
+          },
+          {
+            lat: 46.61,
+            lng: 10.57,
+            name: "Prato allo Stelvio",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+      {
+        dayNumber: 2,
+        startLinked: true,
+        waypoints: [
+          {
+            lat: 46.61,
+            lng: 10.57,
+            name: "Prato allo Stelvio",
+            type: "start" as BackendWaypointType,
+          },
+          {
+            lat: 47.27,
+            lng: 11.39,
+            name: "Innsbruck",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+    ]);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ num_days: 2 }),
+      ),
+    );
+    expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        days: expect.arrayContaining([
+          expect.objectContaining({ dayNumber: 1 }),
+          expect.objectContaining({ dayNumber: 2 }),
+        ]),
+      }),
+    );
   });
 
   it("uses the existing server trip id on subsequent Save route calls without creating a duplicate", async () => {
