@@ -76,6 +76,23 @@ services:
       timeout: 5s
       retries: 5
 
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../valhalla/custom_files:/custom_files
+    environment:
+      # First start downloads this extract + builds tiles into the volume;
+      # later starts reuse the built tiles.
+      tile_urls: https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+      use_tiles_ignore_pbf: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      server_threads: "2"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

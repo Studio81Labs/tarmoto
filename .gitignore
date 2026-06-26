@@ -96,3 +96,6 @@ apps/mobile/fastlane/test_output
 # git tag / dispatch input, so committing it would just be noise.
 apps/mobile/android/fastlane/metadata/android/*/changelogs/
 _tmp/
+
+# Self-hosted Valhalla tiles + extract (large; built on first container start)
+infra/valhalla/custom_files/
