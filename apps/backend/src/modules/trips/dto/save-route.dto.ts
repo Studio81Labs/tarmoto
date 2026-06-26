@@ -4,10 +4,13 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -44,7 +47,18 @@ export class SaveRouteWaypointDto extends LatLngDto {
   type!: SaveRouteWaypointType;
 }
 
-export class SaveRouteDto {
+export const MAX_TRIP_DAYS = 14;
+
+export class SaveRouteDayDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  dayNumber!: number;
+
+  @ApiProperty()
+  @IsBoolean()
+  startLinked!: boolean;
+
   @ApiProperty({
     type: [SaveRouteWaypointDto],
     minItems: 2,
@@ -56,6 +70,20 @@ export class SaveRouteDto {
   @ValidateNested({ each: true })
   @Type(() => SaveRouteWaypointDto)
   waypoints!: SaveRouteWaypointDto[];
+}
+
+export class SaveRouteDto {
+  @ApiProperty({
+    type: [SaveRouteDayDto],
+    minItems: 1,
+    maxItems: MAX_TRIP_DAYS,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_TRIP_DAYS)
+  @ValidateNested({ each: true })
+  @Type(() => SaveRouteDayDto)
+  days!: SaveRouteDayDto[];
 
   @ApiProperty({ required: false, type: RouteOptionsDto })
   @IsOptional()
