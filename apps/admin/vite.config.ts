@@ -4,7 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3004,
+    // backend 3000, marketing 3001, companion 3002, admin 3003.
+    port: 3003,
+    strictPort: true,
     // Proxy /api/v1/* to the backend so cookies are first-party in dev.
     // Admin routes live at /api/v1/admin/... on the NestJS backend (port 3000).
     proxy: {
