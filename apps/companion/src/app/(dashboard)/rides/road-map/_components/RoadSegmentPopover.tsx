@@ -30,35 +30,39 @@ export function RoadSegmentPopover({
   unitSystem: UnitSystem;
   onClose: () => void;
 }) {
-  const [detail, setDetail] = useState<RoadSegmentDetailResponse | null>(null);
-  // Whether the detail fetch has settled (resolved or failed). Distinguishes
-  // "still loading" from "loaded but unavailable" so the name/distance fall
-  // back to a real label instead of a stuck "Loading…".
-  const [settled, setSettled] = useState(false);
+  // The fetched detail, tagged with the segment id it belongs to. Tagging (vs a
+  // plain `detail` + a separate reset effect) means a result from a previously-
+  // selected segment can never render under the current one during the first
+  // paint after a quick A→B switch — the reset would otherwise run post-paint.
+  // `data: null` = settled but unavailable (failed / aborted enrichment).
+  const [result, setResult] = useState<{
+    id: string;
+    data: RoadSegmentDetailResponse | null;
+  } | null>(null);
 
   useEffect(() => {
-    // Reset while the new segment's detail loads so we never show a stale name.
-    setDetail(null);
-    setSettled(false);
     const controller = new AbortController();
     let cancelled = false;
     roadsApi
       .getSegmentDetail(segment.id, { signal: controller.signal })
       .then(({ data }) => {
-        if (!cancelled) {
-          setDetail(data);
-          setSettled(true);
-        }
+        if (!cancelled) setResult({ id: segment.id, data });
       })
       .catch(() => {
         // Best-effort enrichment — the popover still shows the personal stats.
-        if (!cancelled) setSettled(true);
+        if (!cancelled) setResult({ id: segment.id, data: null });
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
   }, [segment.id]);
+
+  // Only use a result that matches the currently-selected segment. While a new
+  // segment's fetch is in flight this is `false`, so name/distance show the
+  // loading placeholder rather than the previous segment's values.
+  const settled = result?.id === segment.id;
+  const detail = settled ? result.data : null;
 
   const score = segment.last_quality_score;
   const tier = score != null ? scoreToTier(score) : null;
