@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type {
   RoutingProvider,
   RouteAlternative,
+  RouteResult,
   RoutingOptions,
 } from '../routing-provider.interface.js';
 
@@ -123,5 +124,40 @@ export class OsrmProvider implements RoutingProvider {
         lng: c[0],
       })),
     }));
+  }
+
+  /**
+   * Minimal interface-satisfaction stub. OsrmProvider is an unused fallback;
+   * `ValhallaProvider` is the live `ROUTING_PROVIDER`. This routes via OSRM
+   * using the same `/route/v1/driving/{coords}` URL pattern as getAlternatives.
+   */
+  async route(
+    waypoints: ReadonlyArray<{ lat: number; lng: number }>,
+    options?: RoutingOptions,
+  ): Promise<RouteResult | null> {
+    if (waypoints.length < 2) return null;
+    const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+    const queryParts: string[] = ['overview=full', 'geometries=geojson'];
+    const exclude: string[] = [];
+    if (options?.avoidHighways) exclude.push('motorway');
+    if (options?.avoidTolls) exclude.push('toll');
+    if (exclude.length > 0) queryParts.push(`exclude=${exclude.join(',')}`);
+    const url = `${this.baseUrl}/route/v1/driving/${coords}?${queryParts.join('&')}`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      this.logger.error(
+        `OSRM route failed: ${response.status} ${response.statusText}`,
+      );
+      return null;
+    }
+    const data = (await response.json()) as OsrmResponse;
+    if (data.code !== 'Ok' || !data.routes?.length) return null;
+    const r = data.routes[0];
+    return {
+      distance_km: Math.round((r.distance / 1000) * 100) / 100,
+      duration_min: Math.round(r.duration / 60),
+      geometry: r.geometry.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
+    };
   }
 }

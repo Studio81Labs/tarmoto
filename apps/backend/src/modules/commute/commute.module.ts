@@ -8,6 +8,7 @@ import { CommuteController } from './commute.controller.js';
 import { CommuteService } from './commute.service.js';
 import { ROUTING_PROVIDER } from './routing-provider.interface.js';
 import { OsrmProvider } from './providers/osrm.provider.js';
+import { ValhallaProvider } from './providers/valhalla.provider.js';
 
 /**
  * To swap the routing engine (e.g., to GraphHopper or Mapbox), change
@@ -27,12 +28,14 @@ import { OsrmProvider } from './providers/osrm.provider.js';
   controllers: [CommuteController],
   providers: [
     CommuteService,
-    { provide: ROUTING_PROVIDER, useClass: OsrmProvider },
+    OsrmProvider, // kept as unused fallback
+    ValhallaProvider,
+    { provide: ROUTING_PROVIDER, useClass: ValhallaProvider },
   ],
   // ROUTING_PROVIDER is exported so other features (e.g. the trip
   // auto-generator in `TripsModule`) can reuse the same routing engine
   // configuration without re-registering the provider in their own
-  // module — this keeps the OSRM swap-out story in one place.
+  // module — this keeps the routing swap-out story in one place.
   exports: [CommuteService, ROUTING_PROVIDER],
 })
 export class CommuteModule {}
