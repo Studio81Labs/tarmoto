@@ -9,18 +9,17 @@ import {
 import { InternalGuard } from './internal.guard.js';
 import { ADMIN_ACCESS_TOKEN_SCOPE } from '../admin-auth/admin-auth.constants.js';
 
+const SECRET = 'dev-only-admin-secret-do-not-use-in-production';
+
 const config = {
   get: (key: string) => (key === 'NODE_ENV' ? 'development' : undefined),
 } as unknown as ConfigService;
-const jwt = new JwtService({
-  secret: 'dev-only-admin-secret-do-not-use-in-production',
-});
+const jwt = new JwtService({ secret: SECRET });
 
 function contextFor(
   method: string,
   url: string,
   cookieToken?: string,
-  _requiredRoles?: string[],
 ): ExecutionContext {
   const req: Record<string, unknown> = {
     method,
@@ -85,7 +84,7 @@ describe('InternalGuard', () => {
   it('allows a valid session and sets adminUser', async () => {
     const token = await jwt.signAsync(
       { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
-      { secret: 'dev-only-admin-secret-do-not-use-in-production' },
+      { secret: SECRET },
     );
     const guard = guardWith({
       session: {
@@ -106,7 +105,7 @@ describe('InternalGuard', () => {
   it('forbids when role rank is insufficient', async () => {
     const token = await jwt.signAsync(
       { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
-      { secret: 'dev-only-admin-secret-do-not-use-in-production' },
+      { secret: SECRET },
     );
     const guard = guardWith({
       requiredRoles: ['admin'],
@@ -119,7 +118,86 @@ describe('InternalGuard', () => {
       },
     });
     await expect(
-      guard.canActivate(contextFor('GET', '/admin/admins', token, ['admin'])),
+      guard.canActivate(contextFor('GET', '/admin/admins', token)),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects a revoked session', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: new Date(),
+        expires_at: new Date(Date.now() + 100000),
+        admin_user: { id: 'a1', role: 'support', status: 'active' },
+      },
+    });
+    await expect(
+      guard.canActivate(contextFor('GET', '/admin/metrics', token)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects an expired session', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() - 1000),
+        admin_user: { id: 'a1', role: 'support', status: 'active' },
+      },
+    });
+    await expect(
+      guard.canActivate(contextFor('GET', '/admin/metrics', token)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a session whose user is disabled', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 100000),
+        admin_user: { id: 'a1', role: 'support', status: 'disabled' },
+      },
+    });
+    await expect(
+      guard.canActivate(contextFor('GET', '/admin/metrics', token)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a token with wrong scope', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: 'wrong_scope' },
+      { secret: SECRET },
+    );
+    const guard = guardWith({});
+    await expect(
+      guard.canActivate(contextFor('GET', '/admin/metrics', token)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects a token with missing sid', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({});
+    await expect(
+      guard.canActivate(contextFor('GET', '/admin/metrics', token)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
