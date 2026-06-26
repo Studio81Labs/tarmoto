@@ -1298,7 +1298,10 @@ export default function TripPlannerPage() {
               const showRelink =
                 !!activeTrip && i >= 1 && startLinked === false;
               return (
-                <div key={day.dayNumber} className="flex flex-col gap-1">
+                <div
+                  key={day.dayNumber}
+                  className="relative flex flex-col gap-1"
+                >
                   <button
                     type="button"
                     onClick={() => {
@@ -1308,13 +1311,13 @@ export default function TripPlannerPage() {
                     disabled={!activeTrip}
                     aria-pressed={isActive}
                     aria-label={`Day ${day.dayNumber}${day.title ? ` ${day.title}` : ""}`}
-                    className={`rounded-[12px] border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`rounded-[12px] border p-3 pr-9 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       isActive
                         ? "border-ink bg-ink text-cream"
                         : "border-line bg-cream text-ink hover:border-line-strong"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <div
                           className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] font-mono text-[11px] font-bold ${
@@ -1331,22 +1334,6 @@ export default function TripPlannerPage() {
                             : `${t("Day")} ${day.dayNumber}`}
                         </div>
                       </div>
-                      {/* Per-day remove button — hidden when only one day */}
-                      {!!activeTrip && activeTrip.days.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeDay(i);
-                          }}
-                          aria-label={t("Remove day {n}", { n: day.dayNumber })}
-                          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] transition hover:opacity-70 ${
-                            isActive ? "text-cream/70" : "text-fg-dim"
-                          }`}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
                     </div>
                     <div
                       className={`mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] ${
@@ -1364,6 +1351,22 @@ export default function TripPlannerPage() {
                       ) : null}
                     </div>
                   </button>
+                  {/* Per-day remove button — sibling of tab button, absolutely positioned top-right */}
+                  {!!activeTrip && activeTrip.days.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeDay(i);
+                      }}
+                      aria-label={t("Remove day {n}", { n: day.dayNumber })}
+                      className={`absolute right-2 top-2 z-10 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] transition hover:opacity-70 ${
+                        isActive ? "text-cream/70" : "text-fg-dim"
+                      }`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                   {/* "Link to previous day" — shown for days ≥1 where the
                       rider manually broke the start link */}
                   {showRelink && (
