@@ -11,22 +11,27 @@
 
 ## WEB-EPIC 1: Trip Planner (P0)
 
-| #   | Scenario                   | Steps                                               | Expected Result                                                    |
-| --- | -------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
-| T1  | Open empty planner         | Navigate to `/trips/planner`                        | Full-screen map loads with road quality heatmap, empty route state |
-| T2  | Draw region on map         | Use draw tool to outline a region                   | Fun Zone clusters appear within the region                         |
-| T3  | Build route with waypoints | Click to add 3+ waypoints on map, drag to reorder   | Route auto-adjusts through best road segments                      |
-| T4  | Segment sidebar            | Click route, expand Road Preview Card               | Quality score, curviness, elevation profile, surface type, hazards |
-| T5  | Trip parameters            | Open parameter panel, set days=3, km/day=300        | Parameters persist in URL, re-generate respects constraints        |
-| T6  | Save trip draft            | Click Save, name the trip                           | Redirects to `/trips/[id]`, appears in trips list                  |
-| T7  | Duplicate trip             | From trip detail, click Duplicate                   | New draft created with "(copy)" suffix                             |
-| T8  | Edit existing trip         | Navigate to `/trips/[id]/edit`                      | Planner loads with existing route and waypoints                    |
-| T9  | GPX import                 | Click Import, select .gpx file                      | Route overlays with road quality data merged                       |
-| T10 | GPX export                 | Click Export > GPX                                  | Downloads .gpx file with waypoints and route geometry              |
-| T11 | Share trip link            | Click Share, copy link                              | Link opens trip view for authenticated group members               |
-| T12 | Collaboration              | Open shared trip, drag waypoint, submit suggestion  | Other members see pending suggestion with accept/reject            |
-| T13 | Closures visible           | Open planner in region with known seasonal closures | Closed roads marked with icon, hover shows dates                   |
-| T14 | Print trip                 | Navigate to `/trips/[id]/print`                     | Printer-friendly layout with route summary and daily breakdown     |
+| #    | Scenario                   | Steps                                                   | Expected Result                                                    |
+| ---- | -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| T1   | Open empty planner         | Navigate to `/trips/planner`                            | Full-screen map loads with road quality heatmap, empty route state |
+| T2   | Draw region on map         | Use draw tool to outline a region                       | Fun Zone clusters appear within the region                         |
+| T3   | Build route with waypoints | Click to add 3+ waypoints on map, drag to reorder       | Route auto-adjusts through best road segments                      |
+| T4   | Segment sidebar            | Click route, expand Road Preview Card                   | Quality score, curviness, elevation profile, surface type, hazards |
+| T5   | Trip parameters            | Open parameter panel, set days=3, km/day=300            | Parameters persist in URL, re-generate respects constraints        |
+| T6   | Save trip draft            | Click Save, name the trip                               | Redirects to `/trips/[id]`, appears in trips list                  |
+| T7   | Duplicate trip             | From trip detail, click Duplicate                       | New draft created with "(copy)" suffix                             |
+| T8   | Edit existing trip         | Navigate to `/trips/[id]/edit`                          | Planner loads with existing route and waypoints                    |
+| T9   | GPX import                 | Click Import, select .gpx file                          | Route overlays with road quality data merged                       |
+| T10  | GPX export                 | Click Export > GPX                                      | Downloads .gpx file with waypoints and route geometry              |
+| T11  | Share trip link            | Click Share, copy link                                  | Link opens trip view for authenticated group members               |
+| T12  | Collaboration              | Open shared trip, drag waypoint, submit suggestion      | Other members see pending suggestion with accept/reject            |
+| T13  | Closures visible           | Open planner in region with known seasonal closures     | Closed roads marked with icon, hover shows dates                   |
+| T14  | Print trip                 | Navigate to `/trips/[id]/print`                         | Printer-friendly layout with route summary and daily breakdown     |
+| T14a | Place start/end via menu   | Right-click map → "Set start here", then "Set end here" | Road-following route appears; map keeps current zoom               |
+| T14b | Add via point              | With start+end set, right-click → "Add via here"        | Route threads through new point, re-snaps to roads                 |
+| T14c | Drag to re-route           | Drag a waypoint pin                                     | Route recomputes live (debounced), stays on roads                  |
+| T14d | Save live route            | Click Save with valid start→end route                   | Trip persists; reopening shows same road route, framed once        |
+| T14e | Engine down (Valhalla)     | Stop Valhalla, edit a waypoint                          | Non-blocking error; last route retained; no crash                  |
 
 ## WEB-EPIC 2: Road Quality Explorer (P0)
 
