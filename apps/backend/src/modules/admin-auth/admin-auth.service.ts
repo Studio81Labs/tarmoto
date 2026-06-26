@@ -1,9 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
+import { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 import { AdminUser, type AdminRole } from '../../entities/admin-user.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
 import { AdminRefreshToken } from '../../entities/admin-refresh-token.entity.js';
@@ -44,7 +49,7 @@ export function serializeAdminUser(user: AdminUser): AdminUserView {
 }
 
 @Injectable()
-export class AdminAuthService {
+export class AdminAuthService implements OnModuleInit {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
@@ -56,7 +61,14 @@ export class AdminAuthService {
     private readonly refreshTokens: Repository<AdminRefreshToken>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly audit: AdminAuditService,
   ) {}
+
+  onModuleInit(): void {
+    // Validate the session secret at boot so production deployments fail fast
+    // rather than at the first token mint.
+    resolveAdminSessionSecret(this.config);
+  }
 
   async loginWithPassword(
     email: string,
@@ -133,6 +145,19 @@ export class AdminAuthService {
     ) {
       if (session) {
         await this.revokeSession(session.id);
+        // Record a denied audit row for the theft/foreign-jar path.
+        // record() is best-effort and never throws.
+        void this.audit.record({
+          event_key: 'admin.auth.refresh',
+          outcome: 'denied',
+          method: 'POST',
+          path: '/admin/auth/refresh',
+          admin_user_id: session.admin_user_id,
+          admin_role: null,
+          target_type: 'admin_session',
+          target_id: session.id,
+          metadata: { reason: 'nonce_mismatch' },
+        });
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -245,9 +270,9 @@ export class AdminAuthService {
   async findOrProvisionSsoUser(
     provider: string,
     subject: string,
-    email: string,
+    emails: string[],
   ): Promise<AdminUser> {
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
     const bySso = await this.users.findOne({
       where: { sso_provider: provider, sso_subject: subject },
     });
@@ -258,8 +283,10 @@ export class AdminAuthService {
       return bySso;
     }
     // No open self-signup: only link SSO to a pre-seeded admin row by email.
+    // Match against ALL verified emails from the provider so an admin whose
+    // seeded address is a verified secondary email is not wrongly rejected.
     const byEmail = await this.users.findOne({
-      where: { email: normalizedEmail },
+      where: { email: In(normalizedEmails) },
     });
     if (!byEmail || byEmail.status !== 'active') {
       throw new UnauthorizedException('No admin account for this identity');

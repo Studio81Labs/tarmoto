@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe('exchangeGithubCode', () => {
-  it('(a) happy path: returns subject and primary verified email', async () => {
+  it('(a) happy path: returns subject and all verified emails, primary first', async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValueOnce(makeTokenResponse('gh-token-abc'))
@@ -54,10 +54,13 @@ describe('exchangeGithubCode', () => {
       );
 
     const result = await exchangeGithubCode('valid-code', config);
-    expect(result).toEqual({ subject: '12345', email: 'primary@example.com' });
+    expect(result).toEqual({
+      subject: '12345',
+      emails: ['primary@example.com', 'secondary@example.com'],
+    });
   });
 
-  it('falls back to any verified email when there is no primary+verified address', async () => {
+  it('returns all verified emails when there is no primary+verified address', async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValueOnce(makeTokenResponse('gh-token-xyz'))
@@ -75,7 +78,7 @@ describe('exchangeGithubCode', () => {
     const result = await exchangeGithubCode('code', config);
     expect(result).toEqual({
       subject: '99',
-      email: 'verified-nonprimary@example.com',
+      emails: ['verified-nonprimary@example.com'],
     });
   });
 

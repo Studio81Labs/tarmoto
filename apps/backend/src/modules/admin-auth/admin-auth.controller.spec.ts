@@ -288,7 +288,7 @@ describe('AdminAuthController', () => {
     };
     (exchangeGithubCode as jest.Mock).mockResolvedValue({
       subject: 'gh-123',
-      email: 'ops@tarmoto.app',
+      emails: ['ops@tarmoto.app'],
     });
     (service.findOrProvisionSsoUser as jest.Mock).mockResolvedValue(adminUser);
     (service.createSession as jest.Mock).mockResolvedValue(
@@ -413,10 +413,107 @@ describe('AdminAuthController', () => {
     const prodController = moduleRef.get(AdminAuthController);
     const res = mockResponse();
 
+    const req = { headers: {} } as unknown as Request;
     await expect(
-      prodController.login({ email: 'ops@tarmoto.app', password: 'pw' }, res),
+      prodController.login(
+        { email: 'ops@tarmoto.app', password: 'pw' },
+        req,
+        res,
+      ),
     ).rejects.toThrow(ForbiddenException);
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(productionService.loginWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('login with password-login-disabled records a denied audit row with reason password_login_disabled', async () => {
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<AdminAuditService>;
+
+    const prodModule = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        { provide: AdminAuthService, useValue: service },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => {
+              if (key === 'NODE_ENV') return 'production';
+              return undefined;
+            },
+          },
+        },
+        { provide: AdminAuditService, useValue: auditSpy },
+      ],
+    }).compile();
+    const prodController = prodModule.get(AdminAuthController);
+    const req = { headers: {} } as unknown as Request;
+    const res = mockResponse();
+
+    await expect(
+      prodController.login(
+        { email: 'ops@tarmoto.app', password: 'pw' },
+        req,
+        res,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.login',
+        outcome: 'denied',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        metadata: expect.objectContaining({
+          email: 'ops@tarmoto.app',
+          reason: 'password_login_disabled',
+        }),
+      }),
+    );
+  });
+
+  it('login with bad credentials records a denied audit row with reason invalid_credentials', async () => {
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<AdminAuditService>;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        {
+          provide: AdminAuthService,
+          useValue: {
+            ...service,
+            loginWithPassword: jest
+              .fn()
+              .mockRejectedValue(
+                new UnauthorizedException('Invalid credentials'),
+              ),
+          },
+        },
+        { provide: ConfigService, useValue: { get: () => 'development' } },
+        { provide: AdminAuditService, useValue: auditSpy },
+      ],
+    }).compile();
+    const ctrl = moduleRef.get(AdminAuthController);
+    const req = { headers: {} } as unknown as Request;
+    const res = mockResponse();
+
+    await expect(
+      ctrl.login({ email: 'bad@example.com', password: 'wrong' }, req, res),
+    ).rejects.toThrow(UnauthorizedException);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.login',
+        outcome: 'denied',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        metadata: expect.objectContaining({
+          email: 'bad@example.com',
+          reason: 'invalid_credentials',
+        }),
+      }),
+    );
   });
 });

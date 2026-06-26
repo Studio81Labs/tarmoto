@@ -21,7 +21,7 @@ export function buildGithubAuthorizeUrl(
 export async function exchangeGithubCode(
   code: string,
   config: ConfigService,
-): Promise<{ subject: string; email: string }> {
+): Promise<{ subject: string; emails: string[] }> {
   const clientId = config.get<string>('TARMOTO_ADMIN_GITHUB_CLIENT_ID');
   const clientSecret = config.get<string>('TARMOTO_ADMIN_GITHUB_CLIENT_SECRET');
   if (!clientId || !clientSecret) {
@@ -57,19 +57,25 @@ export async function exchangeGithubCode(
   });
   if (!emailsRes.ok)
     throw new UnauthorizedException('GitHub API request failed');
-  const emails = (await emailsRes.json()) as Array<{
+  const emailsList = (await emailsRes.json()) as Array<{
     email: string;
     primary: boolean;
     verified: boolean;
   }>;
-  const primary =
-    emails.find((e) => e.primary && e.verified)?.email ??
-    emails.find((e) => e.verified)?.email;
+
   if (!user.id) {
     throw new UnauthorizedException('GitHub profile missing id/email');
   }
-  if (!primary) {
+
+  // Collect all verified emails, primary first, deduped.
+  const verified = [
+    ...emailsList.filter((e) => e.primary && e.verified).map((e) => e.email),
+    ...emailsList.filter((e) => !e.primary && e.verified).map((e) => e.email),
+  ];
+  const emails = [...new Set(verified)];
+
+  if (emails.length === 0) {
     throw new UnauthorizedException('GitHub account has no verified email');
   }
-  return { subject: String(user.id), email: primary };
+  return { subject: String(user.id), emails };
 }

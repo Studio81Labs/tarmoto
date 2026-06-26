@@ -6,6 +6,7 @@ import { AdminAuthService } from './admin-auth.service.js';
 import { AdminRefreshToken } from '../../entities/admin-refresh-token.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
 import { hashAdminPassword, hashRefreshToken } from './admin-password.js';
+import type { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 
 function repoMock<T extends object>(overrides: Partial<T> = {}): T {
   return {
@@ -46,6 +47,11 @@ const noopDataSource = {
 const config = { get: () => 'development' } as unknown as ConfigService;
 const jwt = new JwtService({ secret: 'test-secret' });
 
+/** Shared no-op audit service used in tests that don't assert on audit calls. */
+const noopAudit = {
+  record: jest.fn().mockResolvedValue(undefined),
+} as unknown as AdminAuditService;
+
 // ---------------------------------------------------------------------------
 // loginWithPassword
 // ---------------------------------------------------------------------------
@@ -60,6 +66,7 @@ describe('AdminAuthService.loginWithPassword', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
       service.loginWithPassword('nobody@x.io', 'pw'),
@@ -84,6 +91,7 @@ describe('AdminAuthService.loginWithPassword', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
       service.loginWithPassword('ops@tarmoto.app', 'hunter2'),
@@ -113,6 +121,7 @@ describe('AdminAuthService.loginWithPassword', () => {
       sessions as never,
       refreshTokens as never,
       noopDataSource,
+      noopAudit,
     );
 
     const result = await service.loginWithPassword(
@@ -154,6 +163,7 @@ describe('AdminAuthService.loginWithPassword', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
       service.loginWithPassword('ops@tarmoto.app', 'hunter2'),
@@ -188,6 +198,7 @@ describe('AdminAuthService.createSession', () => {
       sessions as never,
       refreshTokens as never,
       noopDataSource,
+      noopAudit,
     );
 
     const result = await service.createSession('a1');
@@ -275,6 +286,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     const result = await service.refresh(rawToken, clientNonce);
@@ -350,6 +362,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // No client nonce presented (e.g., cookie absent) — gate fires.
@@ -407,6 +420,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Present the matching nonce so the gate passes; only the expiry check throws.
@@ -464,6 +478,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Present the matching nonce — same browser jar as the winning tab.
@@ -522,6 +537,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Present a DIFFERENT nonce — foreign jar / potential theft.
@@ -582,6 +598,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // No nonce presented at all — foreign caller.
@@ -632,6 +649,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Present the matching nonce — same browser jar (e.g., sibling tab).
@@ -682,6 +700,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Present a DIFFERENT nonce — foreign jar, genuine replay.
@@ -719,6 +738,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     await expect(
@@ -763,6 +783,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // No nonce presented — attacker does not have the nonce cookie.
@@ -814,6 +835,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // Attacker has a nonce but it does not match the session's stored nonce.
@@ -873,6 +895,7 @@ describe('AdminAuthService.refresh', () => {
       sessions as never,
       refreshTokens as never,
       dataSource,
+      noopAudit,
     );
 
     // No nonce at all — call without presentedClientNonce.
@@ -910,6 +933,7 @@ describe('AdminAuthService.revoke', () => {
       repoMock(),
       refreshTokens as never,
       noopDataSource,
+      noopAudit,
     );
     const result = await service.revoke('unknown-raw-token');
     expect(result).toBeNull();
@@ -952,6 +976,7 @@ describe('AdminAuthService.revoke', () => {
       sessions as never,
       refreshTokens as never,
       noopDataSource,
+      noopAudit,
     );
 
     const result = await service.revoke('any-raw-token');
@@ -1009,6 +1034,7 @@ describe('AdminAuthService.revoke', () => {
       sessions as never,
       refreshTokens as never,
       noopDataSource,
+      noopAudit,
     );
 
     const result = await service.revoke('any-raw-token');
@@ -1040,9 +1066,10 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
-      service.findOrProvisionSsoUser(provider, subject, email),
+      service.findOrProvisionSsoUser(provider, subject, [email]),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -1069,9 +1096,10 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
-      service.findOrProvisionSsoUser(provider, subject, email),
+      service.findOrProvisionSsoUser(provider, subject, [email]),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -1099,13 +1127,12 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
 
-    const result = await service.findOrProvisionSsoUser(
-      provider,
-      subject,
+    const result = await service.findOrProvisionSsoUser(provider, subject, [
       email,
-    );
+    ]);
     expect(result.id).toBe('a1');
 
     // Must persist the SSO link.
@@ -1138,13 +1165,12 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
 
-    const result = await service.findOrProvisionSsoUser(
-      provider,
-      subject,
+    const result = await service.findOrProvisionSsoUser(provider, subject, [
       email,
-    );
+    ]);
     expect(result.id).toBe('a2');
 
     // No re-linking: only one findOne call (the bySso lookup), no update.
@@ -1171,9 +1197,10 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
     await expect(
-      service.findOrProvisionSsoUser(provider, subject, email),
+      service.findOrProvisionSsoUser(provider, subject, [email]),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -1204,13 +1231,235 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       repoMock(),
       repoMock(),
       noopDataSource,
+      noopAudit,
     );
 
     await expect(
-      service.findOrProvisionSsoUser(provider, subject, email),
+      service.findOrProvisionSsoUser(provider, subject, [email]),
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     // The existing SSO link must NOT be overwritten.
     expect(users.update).not.toHaveBeenCalled();
+  });
+
+  it('finds an admin by a verified SECONDARY email and links SSO for the first time', async () => {
+    // The admin's seeded address is secondary@tarmoto.app.
+    // GitHub primary is unrelated; secondary@tarmoto.app is in the verified list.
+    const adminBySecondary = {
+      id: 'a5',
+      email: 'secondary@tarmoto.app',
+      role: 'super_admin',
+      status: 'active',
+      sso_provider: null,
+      sso_subject: null,
+    };
+    const users = repoMock({
+      // bySso returns null; byEmail lookup with In(['primary@github.com', 'secondary@tarmoto.app'])
+      // returns the admin matched on the secondary email.
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(adminBySecondary),
+      update: jest.fn(),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+
+    const result = await service.findOrProvisionSsoUser('github', 'gh-999', [
+      'primary@github.com',
+      'secondary@tarmoto.app',
+    ]);
+    expect(result.id).toBe('a5');
+
+    // Must link on first-time SSO match.
+    expect(users.update).toHaveBeenCalledWith(
+      { id: 'a5' },
+      expect.objectContaining({
+        sso_provider: 'github',
+        sso_subject: 'gh-999',
+      }),
+    );
+  });
+
+  it('throws UnauthorizedException when none of the verified emails matches an active admin', async () => {
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(null),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+    await expect(
+      service.findOrProvisionSsoUser('github', 'gh-unknown', [
+        'nobody@example.com',
+        'alsounknown@example.com',
+      ]),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AdminAuthService.onModuleInit
+// ---------------------------------------------------------------------------
+
+describe('AdminAuthService.onModuleInit', () => {
+  it('throws in production when TARMOTO_ADMIN_SESSION_SECRET is unset', () => {
+    const prodConfig = {
+      get: (key: string) => (key === 'NODE_ENV' ? 'production' : undefined),
+    } as unknown as ConfigService;
+    const service = new AdminAuthService(
+      jwt,
+      prodConfig,
+      repoMock(),
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+    expect(() => service.onModuleInit()).toThrow(
+      /TARMOTO_ADMIN_SESSION_SECRET/,
+    );
+  });
+
+  it('does not throw in development when secret is unset', () => {
+    const devConfig = {
+      get: (key: string) => (key === 'NODE_ENV' ? 'development' : undefined),
+    } as unknown as ConfigService;
+    const service = new AdminAuthService(
+      jwt,
+      devConfig,
+      repoMock(),
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+    expect(() => service.onModuleInit()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AdminAuthService.refresh — denied audit on nonce-mismatch revocation
+// ---------------------------------------------------------------------------
+
+describe('AdminAuthService.refresh denied audit', () => {
+  const sessionId = 'sess-audit-1';
+  const userId = 'u-audit-1';
+  const clientNonce = 'correct-nonce-abc';
+
+  const activeSession = {
+    id: sessionId,
+    admin_user_id: userId,
+    revoked_at: null,
+    expires_at: new Date(Date.now() + 3_600_000),
+    client_nonce: clientNonce,
+  };
+
+  it('records a denied audit row with reason nonce_mismatch when the nonce gate fires and revokes', async () => {
+    const rawToken = 'valid-token-for-audit-test';
+    const storedToken = {
+      id: 'tok-audit-1',
+      session_id: sessionId,
+      token_hash: hashRefreshToken(rawToken),
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as AdminAuditService;
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+      auditSpy,
+    );
+
+    // Wrong nonce triggers the gate.
+    await expect(
+      service.refresh(rawToken, 'wrong-nonce-xyz'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    // Denied audit row must be recorded with reason nonce_mismatch.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.refresh',
+        outcome: 'denied',
+        admin_user_id: userId,
+        target_type: 'admin_session',
+        target_id: sessionId,
+        metadata: { reason: 'nonce_mismatch' },
+      }),
+    );
+  });
+
+  it('does NOT record a denied audit row for benign refresh paths (plain expiry, same-jar replay)', async () => {
+    // Plain expiry — gate passes (matching nonce), but token is expired.
+    const rawToken = 'expired-token-benign';
+    const expiredToken = {
+      id: 'tok-exp-1',
+      session_id: sessionId,
+      token_hash: hashRefreshToken(rawToken),
+      revoked_at: null,
+      expires_at: new Date(Date.now() - 1_000), // expired
+    };
+
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(expiredToken),
+      update: jest.fn(),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+      update: jest.fn(),
+    });
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as AdminAuditService;
+    const dataSource = { transaction: jest.fn() } as unknown as DataSource;
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+      auditSpy,
+    );
+
+    // Matching nonce — gate passes; plain expiry path throws without revoking.
+    await expect(service.refresh(rawToken, clientNonce)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // No denied audit row must be recorded for a benign expiry.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).not.toHaveBeenCalled();
   });
 });

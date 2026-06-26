@@ -74,25 +74,48 @@ export class AdminAuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthSessionResponseDto> {
-    if (!isAdminPasswordLoginEnabled(this.config)) {
-      throw new ForbiddenException('Password login is disabled');
+    try {
+      if (!isAdminPasswordLoginEnabled(this.config)) {
+        throw new ForbiddenException('Password login is disabled');
+      }
+      const tokens = await this.service.loginWithPassword(
+        dto.email,
+        dto.password,
+      );
+      setAdminAuditActor(req, {
+        admin_user_id: tokens.user.id,
+        admin_role: tokens.user.role,
+      });
+      setAdminAuthCookies(
+        res,
+        tokens.accessToken,
+        tokens.refreshToken,
+        this.secure,
+      );
+      setAdminClientCookie(res, tokens.clientNonce, this.secure);
+      return { user: tokens.user, expiresIn: tokens.expiresIn };
+    } catch (error) {
+      // Record a denied audit row for any login failure (disabled password
+      // login or invalid credentials). record() is best-effort and never throws.
+      void this.audit.record({
+        event_key: 'admin.auth.login',
+        outcome: 'denied',
+        method: 'POST',
+        path: '/admin/auth/login',
+        admin_user_id: null,
+        admin_role: null,
+        target_type: null,
+        target_id: null,
+        metadata: {
+          email: dto.email,
+          reason:
+            error instanceof ForbiddenException
+              ? 'password_login_disabled'
+              : 'invalid_credentials',
+        },
+      });
+      throw error;
     }
-    const tokens = await this.service.loginWithPassword(
-      dto.email,
-      dto.password,
-    );
-    setAdminAuditActor(req, {
-      admin_user_id: tokens.user.id,
-      admin_role: tokens.user.role,
-    });
-    setAdminAuthCookies(
-      res,
-      tokens.accessToken,
-      tokens.refreshToken,
-      this.secure,
-    );
-    setAdminClientCookie(res, tokens.clientNonce, this.secure);
-    return { user: tokens.user, expiresIn: tokens.expiresIn };
   }
 
   @Post('refresh')
@@ -174,11 +197,11 @@ export class AdminAuthController {
         res.redirect(SSO_ERROR_REDIRECT);
         return;
       }
-      const { subject, email } = await exchangeGithubCode(code, this.config);
+      const { subject, emails } = await exchangeGithubCode(code, this.config);
       const user = await this.service.findOrProvisionSsoUser(
         'github',
         subject,
-        email,
+        emails,
       );
       const tokens = await this.service.createSession(user.id);
       setAdminAuthCookies(
