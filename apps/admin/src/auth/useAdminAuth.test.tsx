@@ -38,6 +38,7 @@ describe("useAdminAuth", () => {
     ).mockResolvedValue(null);
     const { result } = renderHook(() => useAdminAuth());
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+    expect(result.current.user).toBeNull();
   });
 
   it("drops to unauthenticated on the expiry event", async () => {
@@ -50,5 +51,49 @@ describe("useAdminAuth", () => {
       window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
     });
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+  });
+
+  it("rejects and sets error when loginWithPassword fails", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
+    (
+      adminAuthApi.loginWithPassword as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error("network failure"));
+
+    const { result } = renderHook(() => useAdminAuth());
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    let caught: unknown;
+    await act(async () => {
+      try {
+        await result.current.loginWithPassword("bad@example.com", "wrong");
+      } catch (err) {
+        caught = err;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error).toMatch(/credentials/i);
+  });
+
+  it("drives status to unauthenticated and user to null after logout", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(admin);
+    (adminAuthApi.logout as ReturnType<typeof vi.fn>).mockResolvedValue(
+      undefined,
+    );
+
+    const { result } = renderHook(() => useAdminAuth());
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(result.current.status).toBe("unauthenticated");
+    expect(result.current.user).toBeNull();
   });
 });

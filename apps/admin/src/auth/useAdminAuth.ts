@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { adminAuthApi, type AdminUserView } from "./adminAuthApi.js";
 import { ADMIN_AUTH_EXPIRED_EVENT } from "../data/apiClient.js";
 
@@ -16,6 +16,13 @@ export function useAdminAuth(): AdminAuthState {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<AdminUserView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -47,13 +54,15 @@ export function useAdminAuth(): AdminAuthState {
 
   const loginWithPassword = useCallback(
     async (email: string, password: string) => {
-      setError(null);
+      if (mountedRef.current) setError(null);
       try {
         const found = await adminAuthApi.loginWithPassword(email, password);
-        setUser(found);
-        setStatus("authenticated");
+        if (mountedRef.current) {
+          setUser(found);
+          setStatus("authenticated");
+        }
       } catch {
-        setError("Invalid credentials");
+        if (mountedRef.current) setError("Invalid credentials");
         throw new Error("Invalid credentials");
       }
     },
@@ -62,8 +71,10 @@ export function useAdminAuth(): AdminAuthState {
 
   const logout = useCallback(async () => {
     await adminAuthApi.logout();
-    setUser(null);
-    setStatus("unauthenticated");
+    if (mountedRef.current) {
+      setUser(null);
+      setStatus("unauthenticated");
+    }
   }, []);
 
   return { status, user, error, loginWithPassword, logout };

@@ -10,9 +10,13 @@ export interface AdminUserView {
 
 export const adminAuthApi = {
   async getCurrentAdmin(): Promise<AdminUserView | null> {
-    const { data, error } = await apiClient.GET("/api/v1/admin/auth/me");
-    if (error || !data) return null;
-    return data.user as AdminUserView;
+    try {
+      const { data, error } = await apiClient.GET("/api/v1/admin/auth/me");
+      if (error || !data) return null;
+      return data.user as AdminUserView;
+    } catch {
+      return null;
+    }
   },
 
   async loginWithPassword(
