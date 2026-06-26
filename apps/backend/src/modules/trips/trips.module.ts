@@ -18,13 +18,13 @@ import { EmailModule } from '../email/email.module.js';
 import { EventsModule } from '../events/events.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripSharesModule } from '../trip-shares/trip-shares.module.js';
+import { RoutingModule } from '../routing/routing.module.js';
 import { TripsController } from './trips.controller.js';
 import { CommunityTripsController } from './community-trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { TripCollabController } from './trip-collab.controller.js';
 import { TripCollabService } from './trip-collab.service.js';
-import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 
 @Module({
   imports: [
@@ -56,23 +56,16 @@ import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
     // can reuse the configured OSRM (or other) routing engine without
     // re-registering the provider here.
     CommuteModule,
+    // RoutingModule owns RouteEnrichmentService as the single instance;
+    // importing it here makes the export available to TripGeneratorService.
+    RoutingModule,
   ],
   controllers: [
     TripsController,
     CommunityTripsController,
     TripCollabController,
   ],
-  providers: [
-    TripsService,
-    TripGeneratorService,
-    TripCollabService,
-    RouteEnrichmentService,
-  ],
-  exports: [
-    TripsService,
-    TripGeneratorService,
-    TripCollabService,
-    RouteEnrichmentService,
-  ],
+  providers: [TripsService, TripGeneratorService, TripCollabService],
+  exports: [TripsService, TripGeneratorService, TripCollabService],
 })
 export class TripsModule {}

@@ -1607,6 +1607,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/routing/route": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Road-snapped route through waypoints (live planner preview) */
+    post: operations["RoutingController_route"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/sensor/upload": {
     parameters: {
       query?: never;
@@ -4159,6 +4176,27 @@ export interface components {
       /** @description Totals for the equivalent prior window (e.g. last week vs this week). */
       previous_period: components["schemas"]["CommuteStatsPeriodDto"];
     };
+    RouteOptionsDto: {
+      avoid_highways?: boolean;
+      avoid_tolls?: boolean;
+      avoid_unpaved?: boolean;
+      surfaces?: string[];
+    };
+    RouteRequestDto: {
+      waypoints: components["schemas"]["LatLngDto"][];
+      options?: components["schemas"]["RouteOptionsDto"];
+    };
+    RouteResponseDto: {
+      geometry: components["schemas"]["LatLngDto"][];
+      distance_km: number;
+      duration_min: number;
+      avg_quality: number | null;
+      curviness_score: number | null;
+      elevation_gain_m: number;
+      surface_mix: {
+        [key: string]: number;
+      };
+    };
     CalibrationDto: {
       /** @description Mean accelerometer X (m/s²) over calibration window */
       axis_mean_x: number;
@@ -5285,6 +5323,9 @@ export type SchemaCommuteStatsPeriodDto =
   components["schemas"]["CommuteStatsPeriodDto"];
 export type SchemaCommuteStatsResponseDto =
   components["schemas"]["CommuteStatsResponseDto"];
+export type SchemaRouteOptionsDto = components["schemas"]["RouteOptionsDto"];
+export type SchemaRouteRequestDto = components["schemas"]["RouteRequestDto"];
+export type SchemaRouteResponseDto = components["schemas"]["RouteResponseDto"];
 export type SchemaCalibrationDto = components["schemas"]["CalibrationDto"];
 export type SchemaSensorReadingDto = components["schemas"]["SensorReadingDto"];
 export type SchemaRideTagEventDto = components["schemas"]["RideTagEventDto"];
@@ -8238,6 +8279,36 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["CommuteStatsResponseDto"];
         };
+      };
+    };
+  };
+  RoutingController_route: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RouteRequestDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RouteResponseDto"];
+        };
+      };
+      /** @description Routing engine could not route these points */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
