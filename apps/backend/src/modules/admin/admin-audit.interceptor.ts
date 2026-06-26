@@ -59,6 +59,9 @@ export class AdminAuditService {
   }
 }
 
+// Must match the global prefix set by app.setGlobalPrefix() in main.ts.
+const API_GLOBAL_PREFIX = '/api/v1';
+
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 @Injectable()
@@ -70,7 +73,13 @@ export class AdminAuditInterceptor implements NestInterceptor {
     const method = request.method ?? 'GET';
     const path = (request.originalUrl ?? request.url ?? '').split('?')[0];
 
-    if (!path.startsWith('/admin/')) return next.handle();
+    // Strip the global prefix before deciding whether this is an admin request
+    // so that prod routes under /api/v1/admin/... are audited correctly.
+    const normalizedPath = path.startsWith(API_GLOBAL_PREFIX)
+      ? path.slice(API_GLOBAL_PREFIX.length) || '/'
+      : path;
+
+    if (!normalizedPath.startsWith('/admin/')) return next.handle();
 
     return next.handle().pipe(
       tap(() => {

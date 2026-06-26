@@ -207,4 +207,29 @@ describe('InternalGuard', () => {
       guard.canActivate(contextFor('GET', '/admin/metrics', token)),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
+
+  // --- prefixed-path tests (simulate production where setGlobalPrefix applies) ---
+
+  it('[prefixed] rejects missing token on a protected admin path — catches the prod auth bypass', async () => {
+    // This is the critical regression test: in prod, the guard sees
+    // /api/v1/admin/metrics. Without normalization it would return true (bypass).
+    const guard = guardWith({});
+    await expect(
+      guard.canActivate(contextFor('GET', '/api/v1/admin/metrics')),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('[prefixed] bypasses public auth login path with global prefix', async () => {
+    const guard = guardWith({});
+    await expect(
+      guard.canActivate(contextFor('POST', '/api/v1/admin/auth/login')),
+    ).resolves.toBe(true);
+  });
+
+  it('[prefixed] allows a non-admin prefixed path without session', async () => {
+    const guard = guardWith({});
+    await expect(
+      guard.canActivate(contextFor('GET', '/api/v1/rides')),
+    ).resolves.toBe(true);
+  });
 });

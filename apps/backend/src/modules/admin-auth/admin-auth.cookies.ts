@@ -68,7 +68,11 @@ export function clearAdminAuthCookies(
   }
 }
 
-const ADMIN_SSO_COOKIE_PATH = '/admin/auth/sso';
+// Use Path=/ so the browser sends the SSO state cookie back on the real
+// callback URL regardless of the API global prefix (e.g. /api/v1/admin/...).
+// The cookie is HttpOnly, SameSite=Lax, Secure-in-prod, and expires in 10 min,
+// holding only an opaque state nonce — Path=/ is safe for this scope.
+const ADMIN_SSO_COOKIE_PATH = '/';
 
 export function setAdminSsoStateCookie(
   response: Response,

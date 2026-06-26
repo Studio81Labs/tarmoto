@@ -29,6 +29,11 @@ export interface AdminRequest extends Request {
   adminUser?: AdminUser;
 }
 
+// Must match the global prefix set by app.setGlobalPrefix() in main.ts.
+const API_GLOBAL_PREFIX = '/api/v1';
+
+// Keys are always in bare /admin/... form; normalizePath() strips the global
+// prefix before comparison so both bare and prefixed requests match.
 const PUBLIC_ADMIN_AUTH_PATHS = new Set([
   'POST /admin/auth/login',
   'POST /admin/auth/refresh',
@@ -52,8 +57,12 @@ export class InternalGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AdminRequest>();
-    if (!this.path(request).startsWith('/admin/')) return true;
-    if (this.isPublicAdminAuthPath(request)) return true;
+    // Security decision: use the normalized (prefix-stripped) path so that
+    // routes served under /api/v1/admin/... are treated identically to bare
+    // /admin/... paths (e.g. in tests where setGlobalPrefix is not applied).
+    const normalized = this.normalizePath(request);
+    if (!normalized.startsWith('/admin/')) return true;
+    if (this.isPublicAdminAuthPath(normalized, request)) return true;
 
     await this.authenticate(request);
     this.assertRole(context, request);
@@ -132,30 +141,45 @@ export class InternalGuard implements CanActivate {
   }
 
   private deny(request: AdminRequest, reason: string): void {
+    const rawPath = this.path(request);
     this.logger.warn(
       JSON.stringify({
         event: 'admin.auth.denied',
         reason,
-        path: this.path(request),
+        path: rawPath,
       }),
     );
     void this.audit.record({
       event_key: 'admin.auth.denied',
       outcome: 'denied',
       method: request.method ?? 'UNKNOWN',
-      path: this.path(request),
+      path: rawPath,
       admin_user_id: request.adminUser?.id ?? null,
       admin_role: request.adminUser?.role ?? null,
       metadata: { reason },
     });
   }
 
+  // Returns the raw request path (may include the global prefix in production).
   private path(request: AdminRequest): string {
     return (request.originalUrl ?? request.url ?? '').split('?')[0];
   }
 
-  private isPublicAdminAuthPath(request: AdminRequest): boolean {
-    const key = `${request.method ?? 'GET'} ${this.path(request)}`;
+  // Returns the path with the global prefix stripped so security checks work
+  // consistently regardless of whether setGlobalPrefix is applied (e.g. tests
+  // do not apply it, production does).
+  private normalizePath(request: AdminRequest): string {
+    const raw = this.path(request);
+    return raw.startsWith(API_GLOBAL_PREFIX)
+      ? raw.slice(API_GLOBAL_PREFIX.length) || '/'
+      : raw;
+  }
+
+  private isPublicAdminAuthPath(
+    normalizedPath: string,
+    request: AdminRequest,
+  ): boolean {
+    const key = `${request.method ?? 'GET'} ${normalizedPath}`;
     return PUBLIC_ADMIN_AUTH_PATHS.has(key);
   }
 }
