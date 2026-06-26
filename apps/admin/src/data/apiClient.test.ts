@@ -51,14 +51,44 @@ describe("adminFetchWithRefresh", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("does not try to refresh the refresh endpoint itself", async () => {
+  it.each([
+    "/api/v1/admin/auth/refresh",
+    "/api/v1/admin/auth/login",
+    "/api/v1/admin/auth/logout",
+  ])("does not try to refresh the auth endpoint %s on 401", async (path) => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response("", { status: 401 }));
     vi.stubGlobal("fetch", fetchMock);
-    await adminFetchWithRefresh("/api/v1/admin/auth/refresh", {
-      method: "POST",
-    });
+    await adminFetchWithRefresh(path, { method: "POST" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires refresh exactly once for two concurrent 401s (dedup)", async () => {
+    const callsPerUrl: Record<string, number> = {};
+    const fetchMock = vi.fn().mockImplementation((url: string | Request) => {
+      const key = typeof url === "string" ? url : (url as Request).url;
+      callsPerUrl[key] = (callsPerUrl[key] ?? 0) + 1;
+      if (key === "/api/v1/admin/auth/refresh") {
+        return Promise.resolve(new Response("", { status: 200 }));
+      }
+      // first two calls to the real endpoint are the originals → 401; replays → 200
+      return Promise.resolve(
+        new Response("{}", { status: callsPerUrl[key] <= 2 ? 401 : 200 }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [resA, resB] = await Promise.all([
+      adminFetchWithRefresh("/api/v1/admin/metrics", {}),
+      adminFetchWithRefresh("/api/v1/admin/metrics", {}),
+    ]);
+
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    // Refresh fired exactly once — this is the core dedup property
+    expect(callsPerUrl["/api/v1/admin/auth/refresh"]).toBe(1);
+    // 2 originals + 1 refresh + 2 replays
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });

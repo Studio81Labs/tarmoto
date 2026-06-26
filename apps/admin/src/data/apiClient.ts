@@ -15,7 +15,7 @@ let inflightRefresh: Promise<boolean> | null = null;
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
   if (input instanceof URL) return input.pathname + input.search;
-  return input.url;
+  return new URL(input.url).pathname;
 }
 
 async function refreshOnce(): Promise<boolean> {
