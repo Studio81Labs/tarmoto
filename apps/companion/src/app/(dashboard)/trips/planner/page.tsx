@@ -619,16 +619,10 @@ export default function TripPlannerPage() {
     // in place rather than duplicated.
     const currentTrip = activeTripRef.current;
     const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
-    // Derive save waypoints from the active draft's day 0 — same logic as
-    // the store's saveWaypoints() but avoids calling getState() which is
-    // not present in tests (useTripStore is mocked as a selector fn).
-    const day0Waypoints = currentTrip?.days[0]?.waypoints ?? [];
-    const wps = filterRoutingWaypoints(day0Waypoints).map((w) => ({
-      lat: w.location.lat,
-      lng: w.location.lng,
-      name: w.name,
-      type: w.type,
-    }));
+    // Use the store's saveWaypoints() to derive the canonical waypoint list.
+    // Calling getState() inside a click handler / useCallback is safe Zustand
+    // pattern — it reads current state without subscribing to re-renders.
+    const wps = useTripStore.getState().saveWaypoints();
     if (wps.length < 2) {
       toast.error(t("Add at least a start and end before saving."));
       return;
@@ -1130,21 +1124,6 @@ export default function TripPlannerPage() {
           >
             {savingRoute ? t("Saving…") : t("Save route")}
           </Button>
-          {/* Legacy save — handles imported route + generate+redirect flows
-              (hidden from sighted users; kept for test selectors and the
-              import / collab save paths). */}
-          <Button
-            variant="accent"
-            size="sm"
-            uppercase
-            className="sr-only"
-            loading={saving}
-            leftIcon={<Save size={14} />}
-            disabled={isGenerating || !displayedTrip}
-            onClick={handleSave}
-          >
-            {saving ? t("Saving…") : t("Save")}
-          </Button>
           {!displayedTrip && (
             <Button
               variant="secondary"
@@ -1162,84 +1141,7 @@ export default function TripPlannerPage() {
         </div>
       </div>
 
-      {/* Generation results — hidden in Phase 1 (Task 11). The Generate
-          button is removed; multi-day option selection returns in a later
-          phase. Keeping the state and rendering the cards behind `false`
-          preserves all the generation/selection logic without surfacing
-          the UI. */}
-      {false && generatedOptions.length > 0 && (
-        <div className="border-b border-line bg-paper/80 px-4 py-3">
-          <div className="grid gap-3 lg:grid-cols-3">
-            {generatedOptions.map((option) => {
-              const totalDistance = option.trip.days.reduce(
-                (sum, day) => sum + day.distanceKm,
-                0,
-              );
-              const totalDuration = option.trip.days.reduce(
-                (sum, day) => sum + day.durationMinutes,
-                0,
-              );
-              const averageQuality =
-                option.trip.days.length > 0
-                  ? option.trip.days.reduce(
-                      (sum, day) => sum + day.avgQuality,
-                      0,
-                    ) / option.trip.days.length
-                  : 0;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => handleSelectOption(option)}
-                  disabled={isGenerating}
-                  className={`rounded-[14px] border px-4 py-3 text-left transition ${
-                    option.id === selectedOptionId
-                      ? "border-accent bg-accent/10"
-                      : "border-line bg-cream/60 hover:border-line-strong"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-ink">
-                        {option.label}
-                      </p>
-                      <p className="mt-1 text-xs text-fg-dim">
-                        {option.summary}
-                      </p>
-                    </div>
-                    {option.id === selectedOptionId && (
-                      <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium text-accent">
-                        {t("Active")}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink">
-                    <div className="rounded-lg bg-paper/70 px-2 py-2">
-                      <p className="text-fg-dim">{t("Distance")}</p>
-                      <p className="mt-1 font-medium text-ink">
-                        {Math.round(totalDistance)}
-                        {t("km ")}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-paper/70 px-2 py-2">
-                      <p className="text-fg-dim">{t("Ride time")}</p>
-                      <p className="mt-1 font-medium text-ink">
-                        {formatDuration(totalDuration)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-paper/70 px-2 py-2">
-                      <p className="text-fg-dim">{t("Avg quality")}</p>
-                      <p className="mt-1 font-medium text-ink">
-                        {averageQuality.toFixed(1)}/5
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Phase 2: multi-day option cards return here */}
 
       {/* 3-column grid — left legs, center map (+ floating footer card),
           right parameters. Spec: v2-pages.jsx Trip Planner. */}
@@ -1816,22 +1718,6 @@ export default function TripPlannerPage() {
               </div>
             </details>
           </div>
-
-          {/* Generate CTA — hidden in Phase 1 (Task 11). Live routing via
-              usePlannerRouting replaces the explicit Generate button;
-              multi-day generation returns in a later phase. Uses
-              `sr-only` (visually hidden, DOM-accessible) so existing
-              tests can still reach it without any test changes. */}
-          <Button
-            variant="accent"
-            size="md"
-            block
-            className="sr-only mt-[18px] shrink-0"
-            loading={isGenerating}
-            onClick={handleGenerate}
-          >
-            {isGenerating ? t("Generating…") : t("Generate itinerary")}
-          </Button>
         </aside>
       </div>
 
