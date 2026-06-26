@@ -43,6 +43,7 @@ vi.mock("@/stores/trip", () => ({
   useTripStore: Object.assign(vi.fn(), {
     getState: vi.fn(),
   }),
+  MAX_TRIP_DAYS: 14,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -268,6 +269,9 @@ type TripStoreSnapshot = {
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
   setSelectedDay: (index: number) => void;
+  addDay: () => void;
+  removeDay: (index: number) => void;
+  relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
@@ -304,7 +308,7 @@ type TripStoreSnapshot = {
     name?: string;
     type: BackendWaypointType;
   }[];
-  applyRouteResult: (result: unknown) => void;
+  applyRouteResult: (dayNumber: number, result: unknown) => void;
   resetForTest: () => void;
 };
 
@@ -421,6 +425,9 @@ describe("TripPlannerPage", () => {
       setActiveTrip,
       setGenerating,
       setSelectedDay: vi.fn(),
+      addDay: vi.fn(),
+      removeDay: vi.fn(),
+      relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
@@ -1309,27 +1316,40 @@ describe("TripPlannerPage", () => {
     ).toBeInTheDocument();
   });
 
-  // ── Live routing gate (routeDirty fix) ──────────────────────────────
+  // ── Live routing gate (per-day stale gate) ──────────────────────────
 
-  it("does NOT call usePlannerRouting with enabled=true when a trip WITH geometry is opened and routeDirty is false", () => {
+  it("does NOT call usePlannerRouting with enabled=true when routeDirty is false", () => {
     // Simulate opening an existing saved trip that already has geometry.
-    // routeDirty is false (default), activeDayRouteGeometry is non-null.
+    // routeDirty is false (default) — liveRouteEnabled = false && ... = false.
     storeState.activeTrip = activeTrip; // has routeGeometry
     storeState.routeDirty = false;
+    storeState.stalePreviewDays = [1];
 
     render(<TripPlannerPage />);
 
-    // usePlannerRouting should have been called with enabled=false
-    // (liveRouteEnabled = routeDirty || !activeDayRouteGeometry = false || false = false)
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // The 5th argument is `enabled`
     expect(lastCall?.[4]).toBe(false);
   });
 
-  it("calls usePlannerRouting with enabled=true when routeDirty is true", () => {
-    storeState.activeTrip = activeTrip; // has routeGeometry
-    storeState.routeDirty = true; // rider has edited
+  it("does NOT call usePlannerRouting with enabled=true when the day is not stale", () => {
+    // routeDirty=true but stalePreviewDays is empty — no day needs routing.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // day 1 is fresh
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall?.[4]).toBe(false);
+  });
+
+  it("calls usePlannerRouting with enabled=true when routeDirty and selected day is stale", () => {
+    storeState.activeTrip = activeTrip; // day 1 present
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1]; // day 1 is stale
 
     render(<TripPlannerPage />);
 
@@ -1338,20 +1358,30 @@ describe("TripPlannerPage", () => {
     expect(lastCall?.[4]).toBe(true);
   });
 
-  it("calls usePlannerRouting with enabled=true when the active day has no geometry yet (fresh draft)", () => {
-    // A fresh draft has waypoints but no geometry yet
+  it("does NOT route the selected day when a different day is stale", () => {
+    // selectedDayIndex=0 (day 1) but only day 2 is stale — day 1 is fresh.
     storeState.activeTrip = {
       ...activeTrip,
-      days: [{ ...activeTrip.days[0]!, routeGeometry: null as never }],
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [],
+          routeGeometry: undefined,
+        },
+      ],
     };
-    storeState.routeDirty = false;
+    storeState.selectedDayIndex = 0; // viewing day 1
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [2]; // only day 2 stale
 
     render(<TripPlannerPage />);
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    // liveRouteEnabled = false || !null = false || true = true
-    expect(lastCall?.[4]).toBe(true);
+    // day 1 is not in stalePreviewDays so enabled=false
+    expect(lastCall?.[4]).toBe(false);
   });
 
   it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {
@@ -1362,5 +1392,142 @@ describe("TripPlannerPage", () => {
 
     fireEvent.click(screen.getByLabelText("Avoid highways"));
     expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Task 9: Dynamic day tabs + multi-day save gate ───────────────────
+
+  it("renders one tab per trip day and switches the selected day via store", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          title: "Day 2",
+          waypoints: [],
+          routeGeometry: undefined,
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 0;
+
+    render(<TripPlannerPage />);
+
+    // Both day tabs are rendered (sidebar + floating footer each render tabs,
+    // so we check count ≥ 2 for each day label)
+    const day1Buttons = screen.getAllByRole("button", { name: /Day 1/i });
+    const day2Buttons = screen.getAllByRole("button", { name: /Day 2/i });
+    expect(day1Buttons.length).toBeGreaterThanOrEqual(1);
+    expect(day2Buttons.length).toBeGreaterThanOrEqual(1);
+
+    // Click the first Day 2 tab (sidebar) — should call store setSelectedDay(1)
+    fireEvent.click(day2Buttons[0]!);
+    expect(storeState.setSelectedDay).toHaveBeenCalledWith(1);
+  });
+
+  it("disables Save route when any day is incomplete (has waypoints but missing end)", () => {
+    // Day 1 complete, Day 2 has only a start — incomplete blocks save
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete: start + end
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [10.37, 46.47],
+              [10.57, 46.61],
+            ],
+          },
+          waypoints: [
+            {
+              id: "wp-d2-start",
+              name: "Start only",
+              type: "start",
+              location: { lng: 10.37, lat: 46.47 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("disables Save route while a day preview is stale", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1]; // day 1 is stale
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("enables Save route when all non-empty days are complete and no day is stale", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete: start + end + routeGeometry
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [],
+          distanceKm: 0,
+          routeGeometry: undefined,
+        }, // empty day — does not block save
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // all fresh
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Save route" }),
+    ).not.toBeDisabled();
+  });
+
+  it("shows Add day button and disables it at 14 days (MAX_TRIP_DAYS)", () => {
+    // Create a 14-day trip (max)
+    const days = Array.from({ length: 14 }, (_, i) => ({
+      ...activeTrip.days[0]!,
+      dayNumber: i + 1,
+      title: `Day ${i + 1}`,
+      waypoints: i === 0 ? activeTrip.days[0]!.waypoints : [],
+    }));
+    storeState.activeTrip = { ...activeTrip, days };
+
+    render(<TripPlannerPage />);
+
+    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
+    expect(addDayBtn).toBeInTheDocument();
+    expect(addDayBtn).toBeDisabled();
+
+    // With fewer days, Add day should be enabled
+    storeState.activeTrip = { ...activeTrip, days: [activeTrip.days[0]!] };
+  });
+
+  it("calls addDay when Add day button is clicked (below 14 days)", () => {
+    storeState.activeTrip = activeTrip; // 1 day
+
+    render(<TripPlannerPage />);
+
+    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
+    expect(addDayBtn).not.toBeDisabled();
+    fireEvent.click(addDayBtn);
+    expect(storeState.addDay).toHaveBeenCalledTimes(1);
   });
 });
