@@ -96,8 +96,8 @@ export function buildTripPlannerWaypointCollection(
  *
  * Segments don't carry their own line geometry; they're built as ordered,
  * equal-traveled-kilometer chunks of the day's `routeGeometry` (see
- * `trip-planner-builder` and `gpx-kml-import`, which both accumulate
- * haversine distance until each chunk hits its target). We mirror that
+ * `gpx-kml-import`, which accumulates haversine distance until each chunk
+ * hits its target). We mirror that
  * contract here by slicing the day's polyline along its cumulative
  * distance — using each segment's own `distanceKm` for the boundaries —
  * so the highlight stays aligned even when route vertices are unevenly

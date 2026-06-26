@@ -7,36 +7,34 @@ describe("useTripStore planner editing", () => {
     useTripStore.setState(useTripStore.getInitialState());
   });
 
-  it("creates a draft trip from map clicks and recalculates route metrics in real time", () => {
+  it("creates a draft trip from map clicks and accumulates waypoints in the correct order", () => {
     const store = useTripStore.getState();
 
     store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
     store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
 
-    const firstSolvedDay = useTripStore.getState().activeTrip?.days[0];
-    expect(firstSolvedDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
+    const firstDay = useTripStore.getState().activeTrip?.days[0];
+    expect(firstDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "end",
     ]);
-    expect(firstSolvedDay?.routeGeometry?.coordinates.length).toBeGreaterThan(
-      2,
-    );
-    expect(firstSolvedDay?.distanceKm).toBeGreaterThan(0);
-    expect(firstSolvedDay?.durationMinutes).toBeGreaterThan(0);
-
-    const twoPointDistance = firstSolvedDay?.distanceKm ?? 0;
+    // Geometry is now driven exclusively by applyRouteResult (live routing
+    // hook). appendPlannerWaypoint no longer synthesises geometry.
+    expect(firstDay?.routeGeometry).toBeUndefined();
+    expect(firstDay?.distanceKm).toBe(0);
 
     useTripStore
       .getState()
       .appendPlannerWaypoint(0, { lng: 14.52, lat: 50.24 });
 
-    const rebuiltDay = useTripStore.getState().activeTrip?.days[0];
-    expect(rebuiltDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
+    const updatedDay = useTripStore.getState().activeTrip?.days[0];
+    expect(updatedDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "via",
       "end",
     ]);
-    expect(rebuiltDay?.distanceKm).toBeGreaterThan(twoPointDistance);
+    // Still no geometry until the live routing hook calls applyRouteResult.
+    expect(updatedDay?.routeGeometry).toBeUndefined();
   });
 
   it("lets riders undo the very first draft-creation click sequence", () => {
@@ -56,7 +54,7 @@ describe("useTripStore planner editing", () => {
     );
   });
 
-  it("uses the current planner parameters when map clicks create and rebuild a draft", () => {
+  it("uses the current planner parameters when map clicks create and extend a draft", () => {
     const store = useTripStore.getState();
     const parameters: TripParameters = {
       days: 2,
@@ -74,9 +72,13 @@ describe("useTripStore planner editing", () => {
 
     const activeTrip = useTripStore.getState().activeTrip;
     expect(activeTrip?.parameters).toEqual(parameters);
-    expect(activeTrip?.days[0]?.routeGeometry?.coordinates).toEqual([
-      [14.41, 50.08],
-      [14.61, 50.19],
+    // Geometry is driven by applyRouteResult (live routing hook) — not
+    // synthesised by appendPlannerWaypoint regardless of roadPreference.
+    expect(activeTrip?.days[0]?.routeGeometry).toBeUndefined();
+    // Waypoints were appended in the correct start/end order.
+    expect(activeTrip?.days[0]?.waypoints.map((w) => w.type)).toEqual([
+      "start",
+      "end",
     ]);
   });
 
@@ -176,7 +178,7 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().hoveredSegmentId).toBeNull();
   });
 
-  it("moves an existing routing waypoint and rebuilds the day route geometry", () => {
+  it("moves an existing routing waypoint and updates its position without re-synthesising geometry", () => {
     const store = useTripStore.getState();
 
     store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
@@ -186,21 +188,24 @@ describe("useTripStore planner editing", () => {
     const startWaypoint = beforeMove?.waypoints[0];
     expect(startWaypoint?.type).toBe("start");
     expect(startWaypoint?.id).toBeDefined();
-    const beforeGeometry = beforeMove?.routeGeometry?.coordinates ?? [];
-    expect(beforeGeometry.length).toBeGreaterThan(0);
+    // No synthetic geometry; it starts undefined and only applyRouteResult
+    // sets it.
+    expect(beforeMove?.routeGeometry).toBeUndefined();
 
     useTripStore
       .getState()
       .moveWaypoint(0, startWaypoint!.id, { lng: 14.5, lat: 50.12 });
 
     const afterMove = useTripStore.getState().activeTrip?.days[0];
+    // The waypoint position was updated.
     expect(afterMove?.waypoints[0]?.location).toEqual({
       lng: 14.5,
       lat: 50.12,
     });
     expect(afterMove?.waypoints[0]?.id).toBe(startWaypoint!.id);
-    expect(afterMove?.routeGeometry?.coordinates).not.toEqual(beforeGeometry);
-    expect(afterMove?.routeGeometry?.coordinates[0]).toEqual([14.5, 50.12]);
+    // Geometry is left untouched (still undefined) — the live routing hook
+    // will call applyRouteResult once the server responds.
+    expect(afterMove?.routeGeometry).toBeUndefined();
     expect(useTripStore.getState().canUndo).toBe(true);
 
     useTripStore.getState().undo();

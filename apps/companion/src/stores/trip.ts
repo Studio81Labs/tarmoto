@@ -1,19 +1,104 @@
 import { create } from "zustand";
-import {
-  appendPlannerWaypointToDay,
-  createPlannerDraftTrip,
-  ensurePlannerDays,
-  rebuildPlannerDay,
-} from "@/lib/trip-planner-builder";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
 import type {
   RoutePreviewSegment,
   Trip,
+  TripDay,
+  TripParameters,
   TripSummary,
   Waypoint,
 } from "@/lib/types";
+
+// ── Draft-trip structural helpers ─────────────────────────────────────────────
+// Manage the shape and ordering of waypoints / days but produce NO synthetic
+// route geometry — geometry comes exclusively from applyRouteResult.
+
+const DEFAULT_PLANNER_PARAMETERS: TripParameters = {
+  days: 1,
+  dailyKmTarget: 250,
+  roadPreference: "mixed",
+  surfacePreference: ["asphalt"],
+  avoidHighways: true,
+  avoidTolls: false,
+  avoidUnpaved: true,
+  minQuality: 3,
+};
+
+function createEmptyPlannerDay(dayNumber: number): TripDay {
+  return {
+    dayNumber,
+    title: `Day ${dayNumber}`,
+    waypoints: [],
+    distanceKm: 0,
+    durationMinutes: 0,
+    elevationGain: 0,
+    avgQuality: 0,
+    segments: [],
+  };
+}
+
+function createPlannerDraftTrip(
+  nowIso: string,
+  parameters: TripParameters = DEFAULT_PLANNER_PARAMETERS,
+): Trip {
+  return {
+    id: `planner-${nowIso.replace(/[^0-9]/g, "").slice(0, 14)}`,
+    name: "New Trip",
+    status: "draft",
+    num_days: 1,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    parameters: { ...parameters },
+    collaborators: [{ userId: "u-owner", displayName: "You", role: "owner" }],
+    days: [createEmptyPlannerDay(1)],
+  };
+}
+
+function ensurePlannerDays(days: TripDay[], requiredCount: number): TripDay[] {
+  if (days.length >= requiredCount) return [...days];
+  const next = [...days];
+  for (let index = days.length; index < requiredCount; index++) {
+    next.push(createEmptyPlannerDay(index + 1));
+  }
+  return next;
+}
+
+function appendPlannerWaypointToDay(
+  day: TripDay,
+  location: { lng: number; lat: number },
+): TripDay {
+  const waypoints = [...day.waypoints];
+  const id = `planner-${day.dayNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const endIndex = waypoints.findIndex((w) => w.type === "end");
+
+  if (waypoints.length === 0) {
+    waypoints.push({ id, name: "Start", location, type: "start" });
+  } else if (endIndex === -1) {
+    waypoints.push({ id, name: "Finish", location, type: "end" });
+  } else {
+    const viaCount =
+      waypoints.filter(
+        (w) =>
+          w.type === "via" ||
+          w.type === "fuel" ||
+          w.type === "rest" ||
+          w.type === "photo" ||
+          w.type === "accommodation",
+      ).length + 1;
+    waypoints.splice(endIndex, 0, {
+      id,
+      name: `Via ${viaCount}`,
+      location,
+      type: "via",
+    });
+  }
+
+  return { ...day, waypoints };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface TripState {
   /**
@@ -220,10 +305,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters,
             days.length,
           );
-          days[dayIndex] = rebuildPlannerDay(
-            appendPlannerWaypointToDay(day, location),
-            nextParameters,
-          );
+          // Geometry is now driven exclusively by applyRouteResult (live
+          // routing). Just append the waypoint; do NOT synthesize geometry.
+          days[dayIndex] = appendPlannerWaypointToDay(day, location);
           return {
             ...baseTrip,
             days,
@@ -302,10 +386,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             ...previous,
             location: { lng: location.lng, lat: location.lat },
           };
-          // Mirror `appendPlannerWaypoint`: when the page passes the live
-          // sidebar `plannerParams`, fold them into the trip so the route
-          // is rebuilt with the rider's current Road preference / Minimum
-          // quality etc. instead of the previously persisted parameters.
+          // When the page passes live sidebar plannerParams, fold them
+          // into the trip so the parameters are current when the live
+          // routing hook next calls applyRouteResult.
           const nextParameters = parameters
             ? mergePlannerParameters(
                 activeTrip.parameters,
@@ -573,41 +656,12 @@ function commitTripChange(
 function updatePlannerDayRoute(
   day: Trip["days"][number],
   waypoints: Waypoint[],
-  parameters: Trip["parameters"],
+  _parameters: Trip["parameters"],
 ) {
-  return shouldPreserveExistingRoute(
-    day.waypoints,
-    waypoints,
-    day.routeGeometry,
-  )
-    ? { ...day, waypoints }
-    : rebuildPlannerDay({ ...day, waypoints }, parameters);
-}
-
-function shouldPreserveExistingRoute(
-  previousWaypoints: Waypoint[],
-  nextWaypoints: Waypoint[],
-  routeGeometry?: Trip["days"][number]["routeGeometry"],
-) {
-  if (!routeGeometry) return false;
-  // Imported/generated route lines stay authoritative unless the actual
-  // routing anchors change; suggestion stops should not rewrite them.
-  return (
-    routingWaypointSignature(previousWaypoints) ===
-    routingWaypointSignature(nextWaypoints)
-  );
-}
-
-function routingWaypointSignature(waypoints: Waypoint[]) {
-  // Include coordinates so dragging an existing waypoint (same id, new
-  // location) invalidates the cached route — without this, moveWaypoint
-  // would leave the displayed route geometry stuck on the old anchor.
-  return filterRoutingWaypoints(waypoints)
-    .map(
-      (waypoint) =>
-        `${waypoint.id}:${waypoint.location.lng},${waypoint.location.lat}`,
-    )
-    .join("|");
+  // Geometry is driven exclusively by applyRouteResult (live routing hook).
+  // We never synthesize geometry here — just update the waypoint list and
+  // leave the existing routeGeometry in place until the hook recomputes it.
+  return { ...day, waypoints };
 }
 
 function trimHistory(history: Array<Trip | null>): Array<Trip | null> {
