@@ -52,6 +52,7 @@ export class InternalGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AdminRequest>();
+    if (!this.path(request).startsWith('/admin/')) return true;
     if (this.isPublicAdminAuthPath(request)) return true;
 
     await this.authenticate(request);

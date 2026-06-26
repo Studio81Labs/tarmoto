@@ -70,6 +70,8 @@ export class AdminAuditInterceptor implements NestInterceptor {
     const method = request.method ?? 'GET';
     const path = (request.originalUrl ?? request.url ?? '').split('?')[0];
 
+    if (!path.startsWith('/admin/')) return next.handle();
+
     return next.handle().pipe(
       tap(() => {
         if (!MUTATING.has(method)) return;

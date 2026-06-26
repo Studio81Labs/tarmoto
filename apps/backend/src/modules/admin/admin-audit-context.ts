@@ -11,11 +11,13 @@ export function setAdminAuditTarget(
   request: Request,
   target: AdminAuditTarget,
 ): void {
-  (request as Record<string, unknown>)[KEY] = target;
+  (request as unknown as Record<string, unknown>)[KEY] = target;
 }
 
 export function getAdminAuditTarget(request: Request): AdminAuditTarget | null {
   return (
-    ((request as Record<string, unknown>)[KEY] as AdminAuditTarget) ?? null
+    ((request as unknown as Record<string, unknown>)[
+      KEY
+    ] as AdminAuditTarget) ?? null
   );
 }

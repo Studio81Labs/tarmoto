@@ -67,6 +67,13 @@ function guardWith(opts: {
 }
 
 describe('InternalGuard', () => {
+  it('allows a non-admin path without any session', async () => {
+    const guard = guardWith({});
+    await expect(guard.canActivate(contextFor('GET', '/rides'))).resolves.toBe(
+      true,
+    );
+  });
+
   it('bypasses public auth paths', async () => {
     const guard = guardWith({});
     await expect(
