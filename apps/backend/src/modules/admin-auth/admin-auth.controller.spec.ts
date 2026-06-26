@@ -59,10 +59,12 @@ describe('AdminAuthController', () => {
       { email: 'ops@tarmoto.app', password: 'pw' },
       res,
     );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.loginWithPassword).toHaveBeenCalledWith(
       'ops@tarmoto.app',
       'pw',
     );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.setHeader).toHaveBeenCalled();
     expect(body).toEqual({
       user: {
@@ -100,6 +102,7 @@ describe('AdminAuthController', () => {
     } as unknown as Request;
     const res = mockResponse();
     await controller.logout(req, res);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.revoke).toHaveBeenCalledWith('r');
   });
 
@@ -109,6 +112,7 @@ describe('AdminAuthController', () => {
     await expect(controller.refresh(req, res)).rejects.toThrow(
       UnauthorizedException,
     );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.refresh).not.toHaveBeenCalled();
   });
 
@@ -118,8 +122,11 @@ describe('AdminAuthController', () => {
     } as unknown as Request;
     const res = mockResponse();
     await controller.callback('code123', 'wrong-state', req, res);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
@@ -127,8 +134,11 @@ describe('AdminAuthController', () => {
     const req = { headers: {} } as unknown as Request;
     const res = mockResponse();
     await controller.callback('code123', 'some-state', req, res);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.createSession).not.toHaveBeenCalled();
   });
 });

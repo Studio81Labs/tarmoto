@@ -23,10 +23,10 @@ function makeManagerMock(
   sessionsRepo: object,
 ): object {
   return {
-    getRepository: jest.fn().mockImplementation((entity: unknown) => {
+    getRepository: jest.fn().mockImplementation((entity: unknown): object => {
       if (entity === AdminRefreshToken) return refreshTokensRepo;
       if (entity === AdminSession) return sessionsRepo;
-      return repoMock();
+      return repoMock<object>();
     }),
   };
 }
@@ -127,8 +127,9 @@ describe('AdminAuthService.loginWithPassword', () => {
     });
     expect(typeof result.accessToken).toBe('string');
     expect(refreshTokens.save).toHaveBeenCalled();
-    const savedHash = (refreshTokens.save as jest.Mock).mock.calls[0][0]
-      .token_hash;
+    const savedHash = (
+      refreshTokens.save as jest.Mock<unknown, [{ token_hash: string }]>
+    ).mock.calls[0][0].token_hash;
     // Stored hash must be the SHA-256 of the opaque token, never the raw token.
     expect(savedHash).toBe(hashRefreshToken(result.refreshToken));
   });
@@ -237,6 +238,7 @@ describe('AdminAuthService.refresh', () => {
     expect(rtManagerRepo.update).toHaveBeenCalledWith(
       { id: storedTokenId },
       expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
         revoked_at: expect.any(Date),
         replaced_by_token_id: newTokenId,
       }),
@@ -245,7 +247,10 @@ describe('AdminAuthService.refresh', () => {
     // Session last_seen_at must be bumped.
     expect(sessManagerRepo.update).toHaveBeenCalledWith(
       { id: sessionId },
-      expect.objectContaining({ last_seen_at: expect.any(Date) }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        last_seen_at: expect.any(Date),
+      }),
     );
   });
 
@@ -285,14 +290,21 @@ describe('AdminAuthService.refresh', () => {
     // Chain-revocation: sessions + refresh tokens bulk-revoked via injected repos.
     expect(sessions.update).toHaveBeenCalledWith(
       { id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({ revoked_at: expect.any(Date) }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
     );
     expect(refreshTokens.update).toHaveBeenCalledWith(
       { session_id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({ revoked_at: expect.any(Date) }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
     );
 
     // No rotation transaction should be started.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -331,13 +343,20 @@ describe('AdminAuthService.refresh', () => {
 
     expect(sessions.update).toHaveBeenCalledWith(
       { id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({ revoked_at: expect.any(Date) }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
     );
     expect(refreshTokens.update).toHaveBeenCalledWith(
       { session_id: sessionId, revoked_at: IsNull() },
-      expect.objectContaining({ revoked_at: expect.any(Date) }),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
     );
 
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 });

@@ -51,7 +51,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
       })
       .returning('id')
       .execute();
-    adminUserId = result.raw[0].id as string;
+    adminUserId = (result.raw as { id: string }[])[0].id;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
