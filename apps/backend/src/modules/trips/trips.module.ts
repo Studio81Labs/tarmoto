@@ -24,6 +24,7 @@ import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { TripCollabController } from './trip-collab.controller.js';
 import { TripCollabService } from './trip-collab.service.js';
+import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 
 @Module({
   imports: [
@@ -61,7 +62,17 @@ import { TripCollabService } from './trip-collab.service.js';
     CommunityTripsController,
     TripCollabController,
   ],
-  providers: [TripsService, TripGeneratorService, TripCollabService],
-  exports: [TripsService, TripGeneratorService, TripCollabService],
+  providers: [
+    TripsService,
+    TripGeneratorService,
+    TripCollabService,
+    RouteEnrichmentService,
+  ],
+  exports: [
+    TripsService,
+    TripGeneratorService,
+    TripCollabService,
+    RouteEnrichmentService,
+  ],
 })
 export class TripsModule {}
