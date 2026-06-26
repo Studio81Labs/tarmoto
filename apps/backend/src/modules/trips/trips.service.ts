@@ -1032,6 +1032,16 @@ export class TripsService {
     //    pattern the generator uses) so the geometry object form matches
     //    what TypeORM + the PostGIS column type expect.
     await this.tripRepo.manager.transaction(async (manager) => {
+      // Take a pessimistic row lock first so concurrent saves to the same
+      // trip serialize (last-writer-wins) — mirrors replaceWithImportedRoute.
+      // Without it, two callers can both delete + reinsert day 1 and race the
+      // `(trip_id, day_number)` unique constraint, surfacing a 500 instead.
+      const locked = await manager.findOne(Trip, {
+        where: { id: tripId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) throw new NotFoundException('Trip not found');
+
       // Decouple day-1 suggestions from the day before deleting it —
       // mirrors replaceWithImportedRoute which NULLs trip_day_id first so
       // open collaboration suggestions survive the cascade. Without this,
@@ -1109,6 +1119,11 @@ export class TripsService {
     // receives in the HTTP response.
     const detail = await this.getDetail(userId, tripId);
     this.events.emitToTrip(tripId, 'trip:updated', detail);
+    // Audit trail — mirrors update/import/generate so the Activity tab shows
+    // who changed the route on a collaborative trip.
+    await this.activity.recordSafe(tripId, userId, 'trip_updated', {
+      fields: ['manual_route'],
+    });
     return detail;
   }
 

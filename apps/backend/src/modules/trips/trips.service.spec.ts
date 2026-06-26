@@ -2168,6 +2168,8 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
+      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
       // day-1 row exists — scoped suggestion unscoping uses its id
       manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
 
@@ -2253,6 +2255,13 @@ describe('TripsService', () => {
         'trip:updated',
         expect.objectContaining({ id: TRIP_ID }),
       );
+      // Audit trail recorded for the route save (mirrors import/update/generate).
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'trip_updated',
+        expect.objectContaining({ fields: ['manual_route'] }),
+      );
       expect(result.id).toBe(TRIP_ID);
     });
 
@@ -2265,6 +2274,8 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
 
+      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
       // day-1 row present (no existing day-1 in this scenario is fine too)
       manager.findOne.mockResolvedValueOnce({ id: 'd-1' });
 
@@ -2321,6 +2332,8 @@ describe('TripsService', () => {
 
       // day-1 row is present with a specific id.
       const DAY1_ID = 'dd-day1-0001';
+      // pessimistic lock read (Trip) first, then the day-1 row (TripDay).
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
       manager.findOne.mockResolvedValueOnce({ id: DAY1_ID });
 
       routingProvider.route.mockResolvedValueOnce({
