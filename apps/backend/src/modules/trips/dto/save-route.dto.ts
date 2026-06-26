@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsIn,
@@ -9,7 +10,11 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { LatLngDto, RouteOptionsDto } from '../../routing/dto/route.dto.js';
+import {
+  LatLngDto,
+  MAX_ROUTE_WAYPOINTS,
+  RouteOptionsDto,
+} from '../../routing/dto/route.dto.js';
 
 // Canonical waypoint type set accepted by the backend — must match
 // TRIP_WAYPOINT_TYPES in trip-response.dto.ts so save and detail
@@ -40,9 +45,14 @@ export class SaveRouteWaypointDto extends LatLngDto {
 }
 
 export class SaveRouteDto {
-  @ApiProperty({ type: [SaveRouteWaypointDto], minItems: 2 })
+  @ApiProperty({
+    type: [SaveRouteWaypointDto],
+    minItems: 2,
+    maxItems: MAX_ROUTE_WAYPOINTS,
+  })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_ROUTE_WAYPOINTS)
   @ValidateNested({ each: true })
   @Type(() => SaveRouteWaypointDto)
   waypoints!: SaveRouteWaypointDto[];

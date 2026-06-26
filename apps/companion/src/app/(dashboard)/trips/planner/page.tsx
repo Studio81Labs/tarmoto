@@ -631,8 +631,17 @@ export default function TripPlannerPage() {
   // trigger the destructive reroute path (PUT /route recomputes from the
   // waypoints and would overwrite canonical/imported geometry). A fresh draft
   // and any real edit both set `routeDirty`, so those still save.
+  // A routed pair can be start+via (no finish), which would persist a day with
+  // no `end` despite the UI requiring "start and end" — gate Save on both.
+  const hasStartAndEnd = useMemo(() => {
+    const wps = activeDayWaypoints ?? [];
+    return (
+      wps.some((w) => w.type === "start") && wps.some((w) => w.type === "end")
+    );
+  }, [activeDayWaypoints]);
   const canSaveRoute =
     routingWaypoints.length >= 2 &&
+    hasStartAndEnd &&
     activeDayRouteGeometry !== null &&
     routeDirty;
   const [savingRoute, setSavingRoute] = useState(false);

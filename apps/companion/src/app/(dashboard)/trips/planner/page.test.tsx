@@ -1181,6 +1181,36 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
+  it("disables Save route when there is a start + via but no end waypoint", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "wp-1",
+              name: "Start",
+              type: "start",
+              location: { lng: 10.37, lat: 46.47 },
+            },
+            {
+              id: "wp-2",
+              name: "Via",
+              type: "via",
+              location: { lng: 10.5, lat: 46.55 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
   it("calls tripsApi.saveRoute with store waypoints, creates trip on first save, and shows success toast", async () => {
     storeState.activeTrip = activeTrip;
     storeState.routeDirty = true;

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -9,6 +10,13 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
+
+/**
+ * Upper bound on waypoints accepted by the routing + save endpoints. Caps
+ * Valhalla request size and the per-route PostGIS `ST_DWithin` enrichment
+ * work; the manual planner only ever needs a small, bounded set of points.
+ */
+export const MAX_ROUTE_WAYPOINTS = 50;
 
 export class LatLngDto {
   @ApiProperty() @IsNumber() lat!: number;
@@ -45,9 +53,14 @@ export class RouteOptionsDto {
 }
 
 export class RouteRequestDto {
-  @ApiProperty({ type: [LatLngDto], minItems: 2 })
+  @ApiProperty({
+    type: [LatLngDto],
+    minItems: 2,
+    maxItems: MAX_ROUTE_WAYPOINTS,
+  })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_ROUTE_WAYPOINTS)
   @ValidateNested({ each: true })
   @Type(() => LatLngDto)
   waypoints!: LatLngDto[];
