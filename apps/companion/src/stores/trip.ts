@@ -212,12 +212,12 @@ interface TripState {
   ) => void;
 
   /**
-   * Change the type of a waypoint on the active planner day (day 0).
+   * Change the type of a waypoint on the active planner day (selected day).
    */
   setWaypointType: (waypointId: string, type: Waypoint["type"]) => void;
 
   /**
-   * Remove a waypoint by id from the active planner day (day 0).
+   * Remove a waypoint by id from the active planner day (selected day).
    * Distinct from the existing `removeWaypoint(dayIndex, waypointId)`.
    */
   removeWaypointById: (waypointId: string) => void;
@@ -241,11 +241,12 @@ interface TripState {
   }[];
 
   /**
-   * Write server-side route geometry + stats into the active planner day.
-   * Geometry now ONLY comes from this action — synthetic rebuild is no
-   * longer invoked by the placeWaypoint path.
+   * Write server-side route geometry + stats into the day identified by
+   * `dayNumber`. Clears that day's stale flag. The caller (live routing hook)
+   * passes the day it routed so concurrent multi-day routing lands in the
+   * correct slot regardless of `selectedDayIndex` at call time.
    */
-  applyRouteResult: (result: RouteResponse) => void;
+  applyRouteResult: (dayNumber: number, result: RouteResponse) => void;
 
   /**
    * Reset to initial state — used only by tests.
@@ -632,15 +633,19 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     placeWaypoint: (coords, action, parameters) =>
       set((state) => ({
         ...commitTripChange(state, (activeTrip) => {
+          const isDraftCreation = activeTrip === null;
           const baseTrip =
             activeTrip ??
             createPlannerDraftTrip(new Date().toISOString(), parameters);
-          const days = ensurePlannerDays(baseTrip.days, 1);
-          const day = days[0]!;
+          // New drafts always start on day index 0. For an existing trip, target
+          // the currently selected day so the rider's active day receives the edit.
+          const idx = isDraftCreation ? 0 : state.selectedDayIndex;
+          const days = ensurePlannerDays(baseTrip.days, idx + 1);
+          const day = days[idx]!;
           const waypoints = [...day.waypoints];
 
           const newWaypoint: Waypoint = {
-            id: `planner-0-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `planner-${idx}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             location: { lng: coords.lng, lat: coords.lat },
             type: "via",
           };
@@ -676,7 +681,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
           }
 
-          days[0] = updatePlannerDayRoute(day, waypoints, baseTrip.parameters);
+          days[idx] = updatePlannerDayRoute(
+            day,
+            waypoints,
+            baseTrip.parameters,
+          );
           // Keep the trip's parameters in sync with the planner controls the
           // rider set before this first placement (mirrors appendPlannerWaypoint)
           // so creating the draft here doesn't reset days/km/avoid options.
@@ -705,7 +714,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set((state) => ({
         ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const day = activeTrip.days[0];
+          const idx = state.selectedDayIndex;
+          const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const waypointIndex = day.waypoints.findIndex(
             (w) => w.id === waypointId,
@@ -714,7 +724,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const waypoints = [...day.waypoints];
           waypoints[waypointIndex] = { ...waypoints[waypointIndex]!, type };
           const days = [...activeTrip.days];
-          days[0] = updatePlannerDayRoute(
+          days[idx] = updatePlannerDayRoute(
             day,
             waypoints,
             activeTrip.parameters,
@@ -736,10 +746,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set((state) => ({
         ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const day = activeTrip.days[0];
+          const idx = state.selectedDayIndex;
+          const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
-          days[0] = updatePlannerDayRoute(
+          days[idx] = updatePlannerDayRoute(
             day,
             day.waypoints.filter((w) => w.id !== waypointId),
             activeTrip.parameters,
@@ -758,29 +769,32 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       })),
 
     routingWaypoints: () => {
-      const { activeTrip } = get();
+      const { activeTrip, selectedDayIndex } = get();
       if (!activeTrip) return [];
-      const day = activeTrip.days[0];
+      const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
       return activePlannerRoutingWaypoints(day.waypoints);
     },
 
     saveWaypoints: () => {
-      const { activeTrip } = get();
+      const { activeTrip, selectedDayIndex } = get();
       if (!activeTrip) return [];
-      const day = activeTrip.days[0];
+      const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
       return activePlannerSaveWaypoints(day.waypoints);
     },
 
-    applyRouteResult: (result) =>
+    applyRouteResult: (dayNumber, result) =>
       set((state) => {
         const { activeTrip } = state;
         if (!activeTrip) return state;
-        const day = activeTrip.days[0];
-        if (!day) return state;
+        const dayIndex = activeTrip.days.findIndex(
+          (d) => d.dayNumber === dayNumber,
+        );
+        if (dayIndex < 0) return state;
+        const day = activeTrip.days[dayIndex]!;
         const days = [...activeTrip.days];
-        days[0] = {
+        days[dayIndex] = {
           ...day,
           routeGeometry: {
             type: "LineString",
@@ -791,7 +805,6 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           avgQuality: result.avg_quality ?? 0,
           elevationGain: result.elevation_gain_m,
         };
-        const dayNumber = day.dayNumber;
         return {
           ...state,
           // Geometry now matches the current routing inputs — clear this day's stale flag.

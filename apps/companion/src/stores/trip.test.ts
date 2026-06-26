@@ -427,7 +427,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     s.placeWaypoint({ lat: 2, lng: 2 }, "set-end");
-    s.applyRouteResult({
+    s.applyRouteResult(1, {
       geometry: [
         { lat: 1, lng: 1 },
         { lat: 2, lng: 2 },
@@ -657,6 +657,183 @@ describe("useTripStore selectedDayIndex + stalePreviewDays (Task 6)", () => {
     // Day 1 should be marked stale (the only day in the draft).
     expect(useTripStore.getState().stalePreviewDays).toContain(1);
   });
+
+  it("places a waypoint on the selected day, not day 0", () => {
+    const s = useTripStore.getState();
+
+    // Seed a 2-day trip with day 1 and day 2 (dayNumbers 1 and 2).
+    useTripStore.setState({
+      activeTrip: {
+        id: "trip-2day",
+        name: "Two-day trip",
+        status: "draft",
+        num_days: 2,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        parameters: {
+          days: 2,
+          dailyKmTarget: 200,
+          roadPreference: "mixed",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [],
+        days: [
+          {
+            dayNumber: 1,
+            title: "Day 1",
+            waypoints: [],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+          },
+          {
+            dayNumber: 2,
+            title: "Day 2",
+            waypoints: [],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+          },
+        ],
+      },
+      selectedDayIndex: 1,
+      stalePreviewDays: [],
+    });
+
+    // Place a start waypoint — should land on day index 1 (dayNumber 2).
+    s.placeWaypoint({ lat: 10, lng: 10 }, "set-start");
+
+    const state = useTripStore.getState();
+    const day0 = state.activeTrip!.days[0]!;
+    const day1 = state.activeTrip!.days[1]!;
+
+    // Day index 1 (dayNumber 2) should have the new waypoint.
+    expect(day1.waypoints).toHaveLength(1);
+    expect(day1.waypoints[0]!.type).toBe("start");
+    expect(day1.waypoints[0]!.location).toEqual({ lat: 10, lng: 10 });
+
+    // Day index 0 (dayNumber 1) must be untouched.
+    expect(day0.waypoints).toHaveLength(0);
+
+    // Day 2 (dayNumber 2) is now stale.
+    expect(state.stalePreviewDays).toContain(2);
+  });
+
+  it("applyRouteResult(dayNumber, result) writes geometry to the targeted day and clears its staleness", () => {
+    const s = useTripStore.getState();
+
+    // Seed a 2-day trip with day 2 pre-marked stale.
+    useTripStore.setState({
+      activeTrip: {
+        id: "trip-2day",
+        name: "Two-day trip",
+        status: "draft",
+        num_days: 2,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        parameters: {
+          days: 2,
+          dailyKmTarget: 200,
+          roadPreference: "mixed",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [],
+        days: [
+          {
+            dayNumber: 1,
+            title: "Day 1",
+            waypoints: [
+              {
+                id: "w1",
+                name: "Start",
+                location: { lat: 1, lng: 1 },
+                type: "start",
+              },
+              {
+                id: "w2",
+                name: "Finish",
+                location: { lat: 2, lng: 2 },
+                type: "end",
+              },
+            ],
+            distanceKm: 10,
+            durationMinutes: 20,
+            elevationGain: 100,
+            avgQuality: 4,
+            segments: [],
+          },
+          {
+            dayNumber: 2,
+            title: "Day 2",
+            waypoints: [
+              {
+                id: "w3",
+                name: "Start",
+                location: { lat: 5, lng: 5 },
+                type: "start",
+              },
+              {
+                id: "w4",
+                name: "Finish",
+                location: { lat: 6, lng: 6 },
+                type: "end",
+              },
+            ],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+          },
+        ],
+      },
+      stalePreviewDays: [2],
+      selectedDayIndex: 0,
+    });
+
+    // Apply a route result targeting day 2 by dayNumber.
+    s.applyRouteResult(2, {
+      geometry: [
+        { lat: 5, lng: 5 },
+        { lat: 6, lng: 6 },
+      ],
+      distance_km: 55,
+      duration_min: 70,
+      avg_quality: 4.2,
+      curviness_score: 60,
+      elevation_gain_m: 300,
+      surface_mix: {},
+    } as never as RouteResponse);
+
+    const state = useTripStore.getState();
+    const day1 = state.activeTrip!.days[0]!; // dayNumber 1
+    const day2 = state.activeTrip!.days[1]!; // dayNumber 2
+
+    // Day 2 should have the new geometry.
+    expect(day2.routeGeometry).toBeDefined();
+    expect(day2.routeGeometry?.coordinates.length).toBe(2);
+    expect(day2.distanceKm).toBe(55);
+    expect(day2.durationMinutes).toBe(70);
+
+    // Day 1 must be unchanged.
+    expect(day1.distanceKm).toBe(10);
+    expect(day1.routeGeometry).toBeUndefined();
+
+    // Day 2's staleness is cleared.
+    expect(state.stalePreviewDays).not.toContain(2);
+  });
 });
 
 describe("useTripStore routeDirty flag", () => {
@@ -832,7 +1009,7 @@ describe("useTripStore routeDirty flag", () => {
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
     // Simulate the live hook writing a real route.
-    s.applyRouteResult({
+    s.applyRouteResult(1, {
       geometry: [
         { lat: 1, lng: 1 },
         { lat: 5, lng: 5 },
@@ -867,7 +1044,7 @@ describe("useTripStore routeDirty flag", () => {
     // An edit leaves the selected day's preview stale until a fresh route lands.
     expect(useTripStore.getState().stalePreviewDays.length).toBeGreaterThan(0);
 
-    useTripStore.getState().applyRouteResult({
+    useTripStore.getState().applyRouteResult(1, {
       geometry: [
         { lat: 1, lng: 1 },
         { lat: 5, lng: 5 },
