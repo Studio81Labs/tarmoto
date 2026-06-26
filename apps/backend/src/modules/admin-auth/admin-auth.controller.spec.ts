@@ -1,9 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AdminAuthController } from './admin-auth.controller.js';
 import { AdminAuthService } from './admin-auth.service.js';
-import { ADMIN_REFRESH_COOKIE } from './admin-auth.constants.js';
+import {
+  ADMIN_REFRESH_COOKIE,
+  ADMIN_SSO_STATE_COOKIE,
+} from './admin-auth.constants.js';
 
 function mockResponse(): Response {
   return {
@@ -22,6 +26,8 @@ describe('AdminAuthController', () => {
     refresh: jest.fn(),
     revoke: jest.fn(),
     findActiveById: jest.fn(),
+    findOrProvisionSsoUser: jest.fn(),
+    createSession: jest.fn(),
   } as unknown as jest.Mocked<AdminAuthService>;
 
   beforeEach(async () => {
@@ -95,5 +101,34 @@ describe('AdminAuthController', () => {
     const res = mockResponse();
     await controller.logout(req, res);
     expect(service.revoke).toHaveBeenCalledWith('r');
+  });
+
+  it('refresh throws UnauthorizedException when refresh cookie is absent', async () => {
+    const req = { headers: { cookie: '' } } as unknown as Request;
+    const res = mockResponse();
+    await expect(controller.refresh(req, res)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(service.refresh).not.toHaveBeenCalled();
+  });
+
+  it('SSO callback with mismatched state redirects to error URL without calling service', async () => {
+    const req = {
+      headers: { cookie: `${ADMIN_SSO_STATE_COOKIE}=correct-state` },
+    } as unknown as Request;
+    const res = mockResponse();
+    await controller.callback('code123', 'wrong-state', req, res);
+    expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
+    expect(service.createSession).not.toHaveBeenCalled();
+  });
+
+  it('SSO callback with missing state cookie redirects to error URL without calling service', async () => {
+    const req = { headers: {} } as unknown as Request;
+    const res = mockResponse();
+    await controller.callback('code123', 'some-state', req, res);
+    expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
+    expect(service.createSession).not.toHaveBeenCalled();
   });
 });

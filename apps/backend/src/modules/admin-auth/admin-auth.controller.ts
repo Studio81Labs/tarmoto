@@ -101,6 +101,7 @@ export class AdminAuthController {
   @Post('logout')
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke the admin session' })
+  @ApiResponse({ status: 204, description: 'Session revoked' })
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,

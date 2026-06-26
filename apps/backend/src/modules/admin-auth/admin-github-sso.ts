@@ -6,7 +6,9 @@ export function buildGithubAuthorizeUrl(
   config: ConfigService,
 ): string {
   const clientId = config.get<string>('TARMOTO_ADMIN_GITHUB_CLIENT_ID');
-  if (!clientId) throw new UnauthorizedException('GitHub SSO not configured');
+  const clientSecret = config.get<string>('TARMOTO_ADMIN_GITHUB_CLIENT_SECRET');
+  if (!clientId || !clientSecret)
+    throw new UnauthorizedException('GitHub SSO not configured');
   const params = new URLSearchParams({
     client_id: clientId,
     scope: 'read:user user:email',
@@ -35,6 +37,8 @@ export async function exchangeGithubCode(
       code,
     }),
   });
+  if (!tokenRes.ok)
+    throw new UnauthorizedException('GitHub API request failed');
   const tokenJson = (await tokenRes.json()) as { access_token?: string };
   if (!tokenJson.access_token) {
     throw new UnauthorizedException('GitHub token exchange failed');
@@ -46,10 +50,13 @@ export async function exchangeGithubCode(
     'User-Agent': 'tarmoto-admin',
   };
   const userRes = await fetch('https://api.github.com/user', { headers });
+  if (!userRes.ok) throw new UnauthorizedException('GitHub API request failed');
   const user = (await userRes.json()) as { id?: number; email?: string };
   const emailsRes = await fetch('https://api.github.com/user/emails', {
     headers,
   });
+  if (!emailsRes.ok)
+    throw new UnauthorizedException('GitHub API request failed');
   const emails = (await emailsRes.json()) as Array<{
     email: string;
     primary: boolean;
