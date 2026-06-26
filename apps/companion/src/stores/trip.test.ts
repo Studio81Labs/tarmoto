@@ -830,4 +830,23 @@ describe("useTripStore routeDirty flag", () => {
     useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
     expect(useTripStore.getState().routePreviewStale).toBe(true);
   });
+
+  it("moveWaypoint marks the preview stale on a real move but not a no-op", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routePreviewStale: false });
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+
+    // No-op move (same location) → preview stays fresh.
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 1, lng: 1 });
+    expect(useTripStore.getState().routePreviewStale).toBe(false);
+
+    // Real move → preview goes stale until the live hook reroutes.
+    useTripStore.getState().moveWaypoint(0, start.id, { lat: 2, lng: 2 });
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
+  });
 });

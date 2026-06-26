@@ -509,9 +509,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         });
         // Only mark dirty if the move actually changed state (no-op moves
-        // return the same state reference from commitTripChange).
+        // return the same state reference from commitTripChange). A real move
+        // also makes the displayed geometry stale until the live hook reroutes.
         if (result === state) return state;
-        return { ...result, routeDirty: true };
+        return { ...result, routeDirty: true, routePreviewStale: true };
       }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
