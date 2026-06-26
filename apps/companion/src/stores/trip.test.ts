@@ -706,4 +706,35 @@ describe("useTripStore routeDirty flag", () => {
     useTripStore.getState().setActiveTrip(fakeTrip);
     expect(useTripStore.getState().routeDirty).toBe(false);
   });
+
+  it("undo back to the loaded route clears routeDirty", () => {
+    // Build a route, then treat it as a freshly-loaded (clean) baseline.
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    const loaded = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(loaded);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    // Edit → dirty.
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "add-via");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    // Undo back to the loaded route → routeDirty restored to false.
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().routeDirty).toBe(false);
+  });
+
+  it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      type: "fuel",
+      name: "Gas",
+      location: { lat: 2, lng: 2 },
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
 });

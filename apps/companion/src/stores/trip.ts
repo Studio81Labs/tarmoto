@@ -223,9 +223,20 @@ interface TripState {
   resetForTest: () => void;
 }
 
+/**
+ * One history snapshot. We capture `dirty` alongside the trip so undo/redo
+ * restore the `routeDirty` flag that was in effect at that point — otherwise
+ * undoing back to a freshly-loaded route would leave `routeDirty` stuck true
+ * and keep Save route / live routing armed against the canonical geometry.
+ */
+interface TripHistoryEntry {
+  trip: Trip | null;
+  dirty: boolean;
+}
+
 interface TripStoreHistory {
-  undoStack: Array<Trip | null>;
-  redoStack: Array<Trip | null>;
+  undoStack: Array<TripHistoryEntry>;
+  redoStack: Array<TripHistoryEntry>;
 }
 
 const MAX_HISTORY_ENTRIES = 50;
@@ -373,8 +384,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
-      set((state) =>
-        commitTripChange(state, (activeTrip) => {
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -396,7 +407,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             updatedAt: new Date().toISOString(),
           };
         }),
-      ),
+        // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
+        // edit — mark dirty so they enable Save route (gated on routeDirty).
+        routeDirty: true,
+      })),
 
     removeWaypoint: (dayIndex, waypointId) =>
       set((state) =>
@@ -498,11 +512,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     undo: () =>
       set((state) => {
         if (state.undoStack.length === 0) return state;
-        const previous = state.undoStack[state.undoStack.length - 1] ?? null;
+        const previous = state.undoStack[state.undoStack.length - 1]!;
         const undoStack = state.undoStack.slice(0, -1);
-        const redoStack = trimHistory([...state.redoStack, state.activeTrip]);
+        const redoStack = trimHistory([
+          ...state.redoStack,
+          { trip: state.activeTrip, dirty: state.routeDirty },
+        ]);
         return {
-          activeTrip: previous,
+          activeTrip: previous.trip,
+          // Restore the dirty flag captured with this snapshot so undoing back
+          // to the loaded route also clears routeDirty (re-disabling Save).
+          routeDirty: previous.dirty,
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -515,11 +535,15 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     redo: () =>
       set((state) => {
         if (state.redoStack.length === 0) return state;
-        const next = state.redoStack[state.redoStack.length - 1] ?? null;
+        const next = state.redoStack[state.redoStack.length - 1]!;
         const redoStack = state.redoStack.slice(0, -1);
-        const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
+        const undoStack = trimHistory([
+          ...state.undoStack,
+          { trip: state.activeTrip, dirty: state.routeDirty },
+        ]);
         return {
-          activeTrip: next,
+          activeTrip: next.trip,
+          routeDirty: next.dirty,
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -707,7 +731,13 @@ function commitTripChange(
 ): Partial<TripState & TripStoreHistory> | (TripState & TripStoreHistory) {
   const nextTrip = applyChange(state.activeTrip);
   if (!nextTrip || nextTrip === state.activeTrip) return state;
-  const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
+  // Snapshot the PRE-change trip + its dirty flag (the mutating actions set
+  // routeDirty:true after this returns, so `state.routeDirty` here is the
+  // value to restore on undo).
+  const undoStack = trimHistory([
+    ...state.undoStack,
+    { trip: state.activeTrip, dirty: state.routeDirty },
+  ]);
   return {
     activeTrip: nextTrip,
     undoStack,
@@ -728,7 +758,9 @@ function updatePlannerDayRoute(
   return { ...day, waypoints };
 }
 
-function trimHistory(history: Array<Trip | null>): Array<Trip | null> {
+function trimHistory(
+  history: Array<TripHistoryEntry>,
+): Array<TripHistoryEntry> {
   if (history.length <= MAX_HISTORY_ENTRIES) return history;
   return history.slice(history.length - MAX_HISTORY_ENTRIES);
 }
