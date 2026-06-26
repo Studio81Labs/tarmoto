@@ -119,29 +119,61 @@ export class AdminAuthService {
     const user = await this.findActiveById(session.admin_user_id);
     if (!user) throw new UnauthorizedException('Invalid admin');
 
-    // Atomically: mint new refresh token, revoke old, update session last_seen_at.
-    // Two concurrent refreshes with the same token (or a crash mid-rotation)
-    // must not leave two live tokens.
-    let tokens!: AdminSessionTokens;
-    await this.dataSource.transaction(async (manager) => {
-      const result = await this.issueTokens(user, session.id, manager);
-      const refreshRepo = manager.getRepository(AdminRefreshToken);
-      const sessionRepo = manager.getRepository(AdminSession);
-      await refreshRepo.update(
-        { id: stored.id },
-        {
-          revoked_at: new Date(),
-          last_used_at: new Date(),
-          replaced_by_token_id: result.refreshTokenId,
-        },
-      );
-      await sessionRepo.update(
-        { id: session.id },
-        { last_seen_at: new Date() },
-      );
-      tokens = result.tokens;
-    });
-    return tokens;
+    // Atomically claim the old token first (conditional on revoked_at IS NULL).
+    // This serializes concurrent refresh requests: the first writer sets revoked_at
+    // and its UPDATE matches 1 row; the second's UPDATE matches 0 rows and is
+    // detected as reuse, triggering full session-family revocation.
+    type TxnOutcome =
+      | { reuse: true }
+      | { reuse: false; tokens: AdminSessionTokens };
+
+    const outcome = await this.dataSource.transaction<TxnOutcome>(
+      async (manager) => {
+        const refreshRepo = manager.getRepository(AdminRefreshToken);
+        const sessionRepo = manager.getRepository(AdminSession);
+        const now = new Date();
+
+        // Step 1: Claim — conditional update gated on revoked_at IS NULL.
+        const claim = await refreshRepo.update(
+          { id: stored.id, revoked_at: IsNull() },
+          { revoked_at: now, last_used_at: now },
+        );
+
+        if (claim.affected !== 1) {
+          // Loser of a concurrent race or replay of a consumed token — reuse.
+          // Revoke the whole session family inside this transaction so it persists.
+          // Do NOT throw here: a throw rolls back the transaction and loses the revoke.
+          await sessionRepo.update(
+            { id: stored.session_id, revoked_at: IsNull() },
+            { revoked_at: now },
+          );
+          await refreshRepo.update(
+            { session_id: stored.session_id, revoked_at: IsNull() },
+            { revoked_at: now },
+          );
+          return { reuse: true as const };
+        }
+
+        // Step 2: Mint the replacement token.
+        const result = await this.issueTokens(user, session.id, manager);
+
+        // Step 3: Link old token to its replacement.
+        await refreshRepo.update(
+          { id: stored.id },
+          { replaced_by_token_id: result.refreshTokenId },
+        );
+
+        // Step 4: Bump session activity.
+        await sessionRepo.update({ id: session.id }, { last_seen_at: now });
+
+        return { reuse: false as const, tokens: result.tokens };
+      },
+    );
+
+    if (outcome.reuse) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    return outcome.tokens;
   }
 
   async revoke(rawRefreshToken: string): Promise<void> {

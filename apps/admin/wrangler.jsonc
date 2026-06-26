@@ -1,19 +1,17 @@
 {
-  // Admin SPA deployed to Cloudflare Workers as a static site.
-  // Build output lands in apps/admin/dist. In production, API calls to
-  // /api/v1/admin/* must be proxied to the backend origin (outside this Worker).
-  // A prod-proxy Worker binding or a Cloudflare origin rule is a follow-up task.
+  // Admin SPA deployed to Cloudflare Workers as a static-assets-only site.
+  // Build output lands in apps/admin/dist — no Worker script is generated.
+  // In production, API calls to /api/v1/admin/* must be proxied to the backend
+  // origin; a prod-proxy Worker binding or Cloudflare origin rule is a follow-up task.
   //
   // The default worker name here keeps `wrangler dev` / local preview working
   // without env wiring. CI should override with --name from a repo variable.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tarmoto-admin",
-  "main": "dist/_worker.js",
   "compatibility_date": "2026-04-01",
-  "compatibility_flags": ["nodejs_compat"],
   "assets": {
-    "binding": "ASSETS",
-    "directory": "dist"
+    "directory": "dist",
+    "not_found_handling": "single-page-application"
   },
   "observability": {
     "enabled": true

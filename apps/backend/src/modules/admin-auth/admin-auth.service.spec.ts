@@ -184,7 +184,7 @@ describe('AdminAuthService.refresh', () => {
     expires_at: new Date(Date.now() + 3_600_000),
   };
 
-  it('(a) rotates a valid token: old token revoked with replaced_by_token_id, new token returned', async () => {
+  it('(a) rotates a valid token: claim succeeds, old token revoked and linked to new token, session bumped', async () => {
     const rawToken = 'valid_raw_token';
     const tokenHash = hashRefreshToken(rawToken);
     const storedToken = {
@@ -206,11 +206,12 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(adminUser),
     });
 
-    // Inside-transaction repo mocks (used via manager.getRepository)
+    // Inside-transaction repo mocks (used via manager.getRepository).
+    // The first update call is the claim — must return affected: 1 so rotation proceeds.
     const rtManagerRepo = {
       create: jest.fn((v: unknown) => v),
       save: jest.fn().mockResolvedValue({ id: newTokenId }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValueOnce({ affected: 1 }),
     };
     const sessManagerRepo = {
       update: jest.fn(),
@@ -234,24 +235,99 @@ describe('AdminAuthService.refresh', () => {
     expect(typeof result.accessToken).toBe('string');
     expect(typeof result.refreshToken).toBe('string');
 
-    // Old token must be revoked and linked to the new token.
+    // Claim call: conditional revoke gated on revoked_at IS NULL.
+    expect(rtManagerRepo.update).toHaveBeenCalledWith(
+      { id: storedTokenId, revoked_at: IsNull() },
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        revoked_at: expect.any(Date),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        last_used_at: expect.any(Date),
+      }),
+    );
+
+    // Replacement-link call: sets replaced_by_token_id on the (already claimed) old row.
     expect(rtManagerRepo.update).toHaveBeenCalledWith(
       { id: storedTokenId },
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
-        revoked_at: expect.any(Date),
-        replaced_by_token_id: newTokenId,
-      }),
+      { replaced_by_token_id: newTokenId },
     );
 
     // Session last_seen_at must be bumped.
     expect(sessManagerRepo.update).toHaveBeenCalledWith(
       { id: sessionId },
       expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
         last_seen_at: expect.any(Date),
       }),
     );
+  });
+
+  it('(d) concurrent claim (affected: 0): revokes session family inside transaction and throws UnauthorizedException without issuing a new token', async () => {
+    const rawToken = 'valid_raw_token_concurrent';
+    const tokenHash = hashRefreshToken(rawToken);
+    const storedToken = {
+      id: storedTokenId,
+      session_id: sessionId,
+      token_hash: tokenHash,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    // Outside-transaction repo mocks (pre-transaction lookups pass normally).
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+    });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(activeSession),
+    });
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(adminUser),
+    });
+
+    // Inside-transaction mocks: claim returns affected: 0 (loser of a concurrent race).
+    const rtManagerRepo = {
+      create: jest.fn((v: unknown) => v),
+      save: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const sessManagerRepo = {
+      update: jest.fn(),
+    };
+
+    const manager = makeManagerMock(rtManagerRepo, sessManagerRepo);
+    const dataSource = makeDataSource(manager);
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      dataSource,
+    );
+
+    await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Session and all refresh tokens for the session must be revoked inside the transaction.
+    expect(sessManagerRepo.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        revoked_at: expect.any(Date),
+      }),
+    );
+    expect(rtManagerRepo.update).toHaveBeenCalledWith(
+      { session_id: sessionId, revoked_at: IsNull() },
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        revoked_at: expect.any(Date),
+      }),
+    );
+
+    // No new token must be minted — the loser must not issue tokens.
+    expect(rtManagerRepo.save).not.toHaveBeenCalled();
   });
 
   it('(b) revoked token triggers chain-revocation and throws UnauthorizedException', async () => {
