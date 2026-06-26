@@ -20,6 +20,12 @@ For a larger region, change `tile_urls` in the compose service (e.g.
 
 ## Point the backend at it
 
+Setting `TARMOTO_VALHALLA_BASE_URL` is what opts the backend into Valhalla. When
+it is unset, the shared routing provider (commute, trip generation, and the
+planner `/routing/route`) falls back to OSRM (public demo by default), so those
+features keep working in the default `pnpm db:up` setup without a local Valhalla.
+Set this only once the Valhalla service above is running:
+
     # apps/backend/.env
     TARMOTO_VALHALLA_BASE_URL=http://localhost:8002
 
