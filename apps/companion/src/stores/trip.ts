@@ -230,7 +230,7 @@ function activePlannerRoutingWaypoints(
 function activePlannerSaveWaypoints(
   waypoints: Waypoint[],
 ): { lat: number; lng: number; name?: string; type: Waypoint["type"] }[] {
-  return filterRoutingWaypoints(waypoints).map((w) => ({
+  return waypoints.map((w) => ({
     lat: w.location.lat,
     lng: w.location.lng,
     name: w.name,

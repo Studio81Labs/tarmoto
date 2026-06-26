@@ -484,16 +484,23 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     ]);
   });
 
-  it("saveWaypoints returns ordered {lat,lng,name?,type} for all routing waypoints", () => {
+  it("saveWaypoints returns ordered {lat,lng,name?,type} for ALL waypoints including stops", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
     s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    // Insert a fuel stop before end — non-routing stop must appear in save payload.
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      type: "fuel",
+      name: "Gas station",
+      location: { lat: 2.5, lng: 2.5 },
+    });
 
     const saved = useTripStore.getState().saveWaypoints();
-    expect(saved).toHaveLength(3);
+    expect(saved).toHaveLength(4);
 
-    // Correct ordering: start → via → end
+    // Correct ordering: start → via → fuel → end
     expect(saved[0]!.type).toBe("start");
     expect(saved[0]!.lat).toBe(1);
     expect(saved[0]!.lng).toBe(1);
@@ -502,14 +509,20 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[1]!.lat).toBe(2);
     expect(saved[1]!.lng).toBe(2);
 
-    expect(saved[2]!.type).toBe("end");
-    expect(saved[2]!.lat).toBe(3);
-    expect(saved[2]!.lng).toBe(3);
+    expect(saved[2]!.type).toBe("fuel");
+    expect(saved[2]!.lat).toBe(2.5);
+    expect(saved[2]!.lng).toBe(2.5);
+    expect(saved[2]!.name).toBe("Gas station");
+
+    expect(saved[3]!.type).toBe("end");
+    expect(saved[3]!.lat).toBe(3);
+    expect(saved[3]!.lng).toBe(3);
 
     // name field is present on each entry (may be undefined for via)
     expect("name" in saved[0]!).toBe(true);
     expect("name" in saved[1]!).toBe(true);
     expect("name" in saved[2]!).toBe(true);
+    expect("name" in saved[3]!).toBe(true);
   });
 
   it("removeWaypointById removes a via and leaves start and end intact", () => {

@@ -650,16 +650,11 @@ export default function TripPlannerPage() {
           ).id ?? null;
         if (!tripId) throw new Error("Trip creation did not return an id");
       }
-      // The route endpoint only accepts "start" | "end" | "via" — map all
-      // other waypoint types (fuel, rest, photo, accommodation) to "via".
       const routeWaypoints = wps.map((wp) => ({
         lat: wp.lat,
         lng: wp.lng,
         ...(wp.name ? { name: wp.name } : {}),
-        type: (wp.type === "start" || wp.type === "end" ? wp.type : "via") as
-          | "start"
-          | "end"
-          | "via",
+        type: wp.type,
       }));
       const { data } = await tripsApi.saveRoute(tripId, {
         waypoints: routeWaypoints,

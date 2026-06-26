@@ -723,7 +723,6 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || drawMode !== "idle") return;
-    const canvas = map.getCanvas();
 
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
@@ -734,10 +733,9 @@ const TripPlannerMapContent = forwardRef<
         lng: roundCoordinate(event.lngLat.lng),
         lat: roundCoordinate(event.lngLat.lat),
       };
-      const rect = canvas.getBoundingClientRect();
       setContextMenu({
-        x: event.point.x + rect.left,
-        y: event.point.y + rect.top,
+        x: event.point.x,
+        y: event.point.y,
         coords: snapped,
       });
     };
@@ -760,10 +758,9 @@ const TripPlannerMapContent = forwardRef<
           lng: roundCoordinate(savedLngLat.lng),
           lat: roundCoordinate(savedLngLat.lat),
         };
-        const rect = canvas.getBoundingClientRect();
         setContextMenu({
-          x: savedPoint.x + rect.left,
-          y: savedPoint.y + rect.top,
+          x: savedPoint.x,
+          y: savedPoint.y,
           coords: snapped,
         });
       }, LONG_PRESS_MS);
