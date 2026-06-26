@@ -2223,6 +2223,15 @@ describe('TripsService', () => {
         waypoint_type: 'start',
       });
       expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'end' });
+      // trip status + updated_at are bumped together
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        expect.objectContaining({
+          status: 'planned',
+          updated_at: expect.any(Date),
+        }),
+      );
       expect(result.id).toBe(TRIP_ID);
     });
 

@@ -1069,7 +1069,11 @@ export class TripsService {
 
       // Flip trip status to planned (it was likely draft before
       // a route was saved). Mirrors the generator's status update.
-      await manager.update(Trip, { id: tripId }, { status: 'planned' });
+      await manager.update(
+        Trip,
+        { id: tripId },
+        { status: 'planned', updated_at: new Date() },
+      );
     });
 
     return this.getDetail(userId, tripId);
