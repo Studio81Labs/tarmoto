@@ -438,4 +438,117 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(day!.distanceKm).toBe(12.3);
     expect(day!.routeGeometry?.coordinates.length).toBe(2);
   });
+
+  it("set-new-start replaces the existing start, never duplicates it", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+
+    // Replace start with a new location
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-new-start");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const starts = waypoints.filter((w) => w.type === "start");
+    expect(starts).toHaveLength(1);
+    expect(starts[0]!.location).toEqual({ lat: 9, lng: 9 });
+
+    // routingWaypoints() reflects the updated start
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 9, lng: 9 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("set-new-end replaces the existing end, never duplicates it", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+
+    // Replace end with a new location
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-new-end");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const ends = waypoints.filter((w) => w.type === "end");
+    expect(ends).toHaveLength(1);
+    expect(ends[0]!.location).toEqual({ lat: 9, lng: 9 });
+
+    // routingWaypoints() reflects the updated end
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 9, lng: 9 },
+    ]);
+  });
+
+  it("saveWaypoints returns ordered {lat,lng,name?,type} for all routing waypoints", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+
+    const saved = useTripStore.getState().saveWaypoints();
+    expect(saved).toHaveLength(3);
+
+    // Correct ordering: start → via → end
+    expect(saved[0]!.type).toBe("start");
+    expect(saved[0]!.lat).toBe(1);
+    expect(saved[0]!.lng).toBe(1);
+
+    expect(saved[1]!.type).toBe("via");
+    expect(saved[1]!.lat).toBe(2);
+    expect(saved[1]!.lng).toBe(2);
+
+    expect(saved[2]!.type).toBe("end");
+    expect(saved[2]!.lat).toBe(3);
+    expect(saved[2]!.lng).toBe(3);
+
+    // name field is present on each entry (may be undefined for via)
+    expect("name" in saved[0]!).toBe(true);
+    expect("name" in saved[1]!).toBe(true);
+    expect("name" in saved[2]!).toBe(true);
+  });
+
+  it("removeWaypointById removes a via and leaves start and end intact", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const via = waypoints.find((w) => w.type === "via")!;
+    expect(via).toBeDefined();
+
+    useTripStore.getState().removeWaypointById(via.id);
+
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after.find((w) => w.id === via.id)).toBeUndefined();
+    expect(after.filter((w) => w.type === "start")).toHaveLength(1);
+    expect(after.filter((w) => w.type === "end")).toHaveLength(1);
+
+    // routingWaypoints is now just start → end
+    expect(useTripStore.getState().routingWaypoints()).toEqual([
+      { lat: 1, lng: 1 },
+      { lat: 3, lng: 3 },
+    ]);
+  });
+
+  it("setWaypointType changes the type of a waypoint on day 0", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const via = waypoints.find((w) => w.type === "via")!;
+    expect(via).toBeDefined();
+
+    useTripStore.getState().setWaypointType(via.id, "accommodation");
+
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const updated = after.find((w) => w.id === via.id)!;
+    expect(updated.type).toBe("accommodation");
+
+    // start and end types must be unchanged
+    expect(after.find((w) => w.type === "start")).toBeDefined();
+    expect(after.find((w) => w.type === "end")).toBeDefined();
+  });
 });
