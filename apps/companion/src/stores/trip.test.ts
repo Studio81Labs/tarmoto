@@ -1082,3 +1082,158 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().stalePreviewDays.length).toBeGreaterThan(0);
   });
 });
+
+describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  /** Helper: build a 1-day trip with a start and end waypoint on day 1. */
+  function seedOneDay() {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "set-end");
+  }
+
+  it("addDay appends a linked day seeded from the previous end and selects it", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+
+    const state = useTripStore.getState();
+    const trip = state.activeTrip!;
+    expect(trip.days).toHaveLength(2);
+
+    const day2 = trip.days[1]!;
+    expect(day2.startLinked).toBe(true);
+    // Start of day 2 should mirror day 1's end location (lat:2, lng:2).
+    const start = day2.waypoints.find((w) => w.type === "start");
+    expect(start).toBeDefined();
+    expect(start!.location).toEqual({ lat: 2, lng: 2 });
+
+    // The new day is selected.
+    expect(state.selectedDayIndex).toBe(1);
+    expect(state.routeDirty).toBe(true);
+  });
+
+  it("addDay is capped at 14 days", () => {
+    seedOneDay();
+    // Add 13 more days (starting from 1 we already have → total 14).
+    for (let i = 0; i < 13; i++) {
+      useTripStore.getState().addDay();
+    }
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(14);
+
+    // One more addDay should be a no-op.
+    useTripStore.getState().addDay();
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(14);
+  });
+
+  it("editing day 1 end moves a linked day 2 start and marks both stale", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+
+    // Clear stale to isolate the next edit's effect.
+    useTripStore.setState({ stalePreviewDays: [] });
+
+    // Move day 1's end to a new location — day 2 is selected as index 1,
+    // so switch back to day 1 first.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+
+    const state = useTripStore.getState();
+    const trip = state.activeTrip!;
+
+    // Day 1's end should be updated.
+    const day1End = trip.days[0]!.waypoints.find((w) => w.type === "end");
+    expect(day1End!.location).toEqual({ lat: 5, lng: 5 });
+
+    // Day 2's linked start should mirror the new end.
+    const day2Start = trip.days[1]!.waypoints.find((w) => w.type === "start");
+    expect(day2Start!.location).toEqual({ lat: 5, lng: 5 });
+
+    // Both day 1 (dayNumber 1) and day 2 (dayNumber 2) should be stale.
+    expect(state.stalePreviewDays).toContain(1);
+    expect(state.stalePreviewDays).toContain(2);
+  });
+
+  it("placing a start on day 2 overrides the link (startLinked=false) and stops mirroring", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+
+    // Manually place a start on day 2 — overrides the link.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+
+    const state = useTripStore.getState();
+    const trip = state.activeTrip!;
+
+    // Day 2 must no longer be linked.
+    expect(trip.days[1]!.startLinked).toBe(false);
+
+    // Now edit day 1's end — day 2's start should NOT move.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+
+    const afterEdit = useTripStore.getState().activeTrip!;
+    const day2Start = afterEdit.days[1]!.waypoints.find(
+      (w) => w.type === "start",
+    );
+    // Still at the manually placed location, not the new day 1 end.
+    expect(day2Start!.location).toEqual({ lat: 9, lng: 9 });
+  });
+
+  it("relinkDayStart re-seeds day 2 start from day 1 end and resumes mirroring", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+
+    // Break the link by placing a manual start on day 2.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+
+    // Re-link day 2 — should re-seed from day 1's end (lat:2, lng:2).
+    useTripStore.getState().relinkDayStart(1);
+
+    const state = useTripStore.getState();
+    const trip = state.activeTrip!;
+
+    expect(trip.days[1]!.startLinked).toBe(true);
+    const day2Start = trip.days[1]!.waypoints.find((w) => w.type === "start");
+    expect(day2Start!.location).toEqual({ lat: 2, lng: 2 });
+    expect(state.routeDirty).toBe(true);
+  });
+
+  it("removeDay renumbers days contiguously and keeps a linked boundary consistent", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+    // Add a third day seeded from day 2 (which has no end yet, so just a linked start).
+    useTripStore.getState().addDay();
+
+    const beforeRemove = useTripStore.getState().activeTrip!;
+    expect(beforeRemove.days).toHaveLength(3);
+
+    // Remove day at index 1 (the middle day).
+    useTripStore.getState().removeDay(1);
+
+    const state = useTripStore.getState();
+    const trip = state.activeTrip!;
+
+    // Should now have 2 days, renumbered 1 and 2.
+    expect(trip.days).toHaveLength(2);
+    expect(trip.days[0]!.dayNumber).toBe(1);
+    expect(trip.days[1]!.dayNumber).toBe(2);
+
+    // selectedDayIndex must be clamped to the new length.
+    expect(state.selectedDayIndex).toBeLessThan(2);
+    expect(state.routeDirty).toBe(true);
+  });
+
+  it("removeDay is a no-op when only 1 day remains", () => {
+    seedOneDay();
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
+
+    useTripStore.getState().removeDay(0);
+
+    // Trip should still have 1 day.
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
+  });
+});

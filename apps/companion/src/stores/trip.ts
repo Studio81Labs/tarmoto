@@ -249,6 +249,25 @@ interface TripState {
   applyRouteResult: (dayNumber: number, result: RouteResponse) => void;
 
   /**
+   * Append a new day to the active trip (capped at MAX_TRIP_DAYS). The new
+   * day is linked to the previous day's end and is immediately selected.
+   */
+  addDay: () => void;
+
+  /**
+   * Remove the day at the given index from the active trip (min 1 day).
+   * Renumbers all remaining days contiguously and re-evaluates the boundary
+   * at the removed index so linked days stay consistent.
+   */
+  removeDay: (index: number) => void;
+
+  /**
+   * Re-link the day at `index` to the previous day's end so overnight
+   * boundaries stay in sync. index must be ≥ 1.
+   */
+  relinkDayStart: (index: number) => void;
+
+  /**
    * Reset to initial state — used only by tests.
    */
   resetForTest: () => void;
@@ -329,6 +348,41 @@ function activePlannerSaveWaypoints(
     name: w.name,
     type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
+}
+
+// ── Task 8: linked-start sync helper ─────────────────────────────────────────
+
+/**
+ * After mutating day at `idx`, if it changed its `end`, push that end into the
+ * next day's start when the next day is linked, marking both days stale.
+ * Returns `{ days, stale }` — thread the returned stale array through.
+ */
+function syncLinkedStart(
+  days: TripDay[],
+  idx: number,
+  staleDays: number[],
+): { days: TripDay[]; stale: number[] } {
+  const next = days[idx + 1];
+  if (!next || !next.startLinked) return { days, stale: staleDays };
+  const end = days[idx].waypoints.find((w) => w.type === "end");
+  const nextWaypoints = [...next.waypoints];
+  const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
+  if (!end) return { days, stale: staleDays }; // no end yet → linked start stays empty
+  const seededStart: Waypoint = {
+    id: nextWaypoints[startIdx]?.id ?? `link-${next.dayNumber}`,
+    name: "Start",
+    type: "start",
+    location: { ...end.location },
+  };
+  if (startIdx >= 0) nextWaypoints[startIdx] = seededStart;
+  else nextWaypoints.unshift(seededStart);
+  const updated = [...days];
+  updated[idx + 1] = updatePlannerDayRoute(
+    { ...next, waypoints: nextWaypoints },
+    nextWaypoints,
+    undefined,
+  );
+  return { days: updated, stale: markDayStale(staleDays, next.dayNumber) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -631,8 +685,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
     placeWaypoint: (coords, action, parameters) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           const isDraftCreation = activeTrip === null;
           const baseTrip =
             activeTrip ??
@@ -650,6 +704,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             type: "via",
           };
 
+          // Track whether we need to break the link (manual start placement on day ≥ 1)
+          let breakLink = false;
+
           if (action === "set-start" || action === "set-new-start") {
             const startIndex = waypoints.findIndex((w) => w.type === "start");
             if (startIndex >= 0) {
@@ -664,6 +721,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 name: "Start",
               });
             }
+            // Manual start placement on a non-first day breaks the overnight link.
+            if (idx >= 1) breakLink = true;
           } else if (action === "set-end" || action === "set-new-end") {
             const endIndex = waypoints.findIndex((w) => w.type === "end");
             if (endIndex >= 0) {
@@ -682,7 +741,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           }
 
           days[idx] = updatePlannerDayRoute(
-            day,
+            breakLink ? { ...day, startLinked: false } : day,
             waypoints,
             baseTrip.parameters,
           );
@@ -702,17 +761,39 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        });
+
+        if (committed === state) return state;
+
+        // After writing days[idx], sync the linked start on the next day if applicable.
+        // Use state.activeTrip (pre-commit) to determine if this was a draft creation.
+        const idx = state.activeTrip === null ? 0 : state.selectedDayIndex;
+        const committedActiveTrip = (committed as { activeTrip?: Trip | null })
+          .activeTrip;
+        const updatedDays = committedActiveTrip?.days ?? [];
+        const staleAfterCommit = markDayStale(
+          state.stalePreviewDays,
+          updatedDays[idx]?.dayNumber ?? 1,
+        );
+        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
+          updatedDays,
+          idx,
+          staleAfterCommit,
+        );
+
+        return {
+          ...committed,
+          activeTrip: committedActiveTrip
+            ? { ...committedActiveTrip, days: syncedDays }
+            : committedActiveTrip,
+          routeDirty: true,
+          stalePreviewDays: syncedStale,
+        };
+      }),
 
     setWaypointType: (waypointId, type) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const idx = state.selectedDayIndex;
           const day = activeTrip.days[idx];
@@ -734,17 +815,36 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        });
+
+        if (committed === state) return state;
+
+        const idx = state.selectedDayIndex;
+        const committedTrip = (committed as { activeTrip?: Trip | null })
+          .activeTrip;
+        const updatedDays = committedTrip?.days ?? [];
+        const staleAfterCommit = markDayStale(
+          state.stalePreviewDays,
+          updatedDays[idx]?.dayNumber ?? 1,
+        );
+        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
+          updatedDays,
+          idx,
+          staleAfterCommit,
+        );
+        return {
+          ...committed,
+          activeTrip: committedTrip
+            ? { ...committedTrip, days: syncedDays }
+            : committedTrip,
+          routeDirty: true,
+          stalePreviewDays: syncedStale,
+        };
+      }),
 
     removeWaypointById: (waypointId) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const idx = state.selectedDayIndex;
           const day = activeTrip.days[idx];
@@ -760,13 +860,32 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        });
+
+        if (committed === state) return state;
+
+        const idx = state.selectedDayIndex;
+        const committedTrip = (committed as { activeTrip?: Trip | null })
+          .activeTrip;
+        const updatedDays = committedTrip?.days ?? [];
+        const staleAfterCommit = markDayStale(
+          state.stalePreviewDays,
+          updatedDays[idx]?.dayNumber ?? 1,
+        );
+        const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
+          updatedDays,
+          idx,
+          staleAfterCommit,
+        );
+        return {
+          ...committed,
+          activeTrip: committedTrip
+            ? { ...committedTrip, days: syncedDays }
+            : committedTrip,
+          routeDirty: true,
+          stalePreviewDays: syncedStale,
+        };
+      }),
 
     routingWaypoints: () => {
       const { activeTrip, selectedDayIndex } = get();
@@ -814,6 +933,87 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           },
+        };
+      }),
+
+    addDay: () =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip) return state;
+        if (trip.days.length >= MAX_TRIP_DAYS) return state;
+        const prev = trip.days[trip.days.length - 1];
+        const newDay = createEmptyPlannerDay(prev!.dayNumber + 1);
+        newDay.startLinked = true;
+        const prevEnd = prev!.waypoints.find((w) => w.type === "end");
+        if (prevEnd)
+          newDay.waypoints = [
+            {
+              id: `link-${newDay.dayNumber}`,
+              name: "Start",
+              type: "start",
+              location: { ...prevEnd.location },
+            },
+          ];
+        return {
+          activeTrip: {
+            ...trip,
+            days: [...trip.days, newDay],
+            updatedAt: new Date().toISOString(),
+          },
+          selectedDayIndex: trip.days.length, // select the new day
+          routeDirty: true,
+        };
+      }),
+
+    removeDay: (index) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip || trip.days.length <= 1) return state; // min 1
+        const days = trip.days
+          .filter((_, i) => i !== index)
+          .map((d, i) => ({ ...d, dayNumber: i + 1 })); // renumber contiguously
+        const stale = state.stalePreviewDays;
+        // re-evaluate the boundary at `index`: if the day now at `index` is linked, re-seed from its new predecessor
+        let result = { days, stale };
+        if (index > 0 && index < days.length && days[index]!.startLinked) {
+          result = syncLinkedStart(days, index - 1, stale);
+        }
+        const selectedDayIndex = Math.min(
+          state.selectedDayIndex,
+          result.days.length - 1,
+        );
+        return {
+          activeTrip: {
+            ...trip,
+            days: result.days,
+            updatedAt: new Date().toISOString(),
+          },
+          stalePreviewDays: result.stale,
+          selectedDayIndex,
+          routeDirty: true,
+        };
+      }),
+
+    relinkDayStart: (index) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip || index < 1) return state;
+        const days = trip.days.map((d, i) =>
+          i === index ? { ...d, startLinked: true } : d,
+        );
+        const { days: synced, stale } = syncLinkedStart(
+          days,
+          index - 1,
+          state.stalePreviewDays,
+        );
+        return {
+          activeTrip: {
+            ...trip,
+            days: synced,
+            updatedAt: new Date().toISOString(),
+          },
+          stalePreviewDays: stale,
+          routeDirty: true,
         };
       }),
 
