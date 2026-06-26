@@ -9,6 +9,16 @@ export interface AdminUserView {
 }
 
 export const adminAuthApi = {
+  async getConfig(): Promise<{ passwordLoginEnabled: boolean }> {
+    try {
+      const { data, error } = await apiClient.GET("/api/v1/admin/auth/config");
+      if (error || !data) return { passwordLoginEnabled: import.meta.env.DEV };
+      return data as { passwordLoginEnabled: boolean };
+    } catch {
+      return { passwordLoginEnabled: import.meta.env.DEV };
+    }
+  },
+
   async getCurrentAdmin(): Promise<AdminUserView | null> {
     try {
       const { data, error } = await apiClient.GET("/api/v1/admin/auth/me");

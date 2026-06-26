@@ -33,6 +33,7 @@ export interface AdminRequest extends Request {
 // Keys are always in bare /admin/... form; normalizePath() strips the global
 // prefix before comparison so both bare and prefixed requests match.
 const PUBLIC_ADMIN_AUTH_PATHS = new Set([
+  'GET /admin/auth/config',
   'POST /admin/auth/login',
   'POST /admin/auth/refresh',
   'POST /admin/auth/logout',

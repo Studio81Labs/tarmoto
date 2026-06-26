@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { App } from "./App.js";
@@ -6,6 +6,7 @@ import { adminAuthApi } from "../auth/adminAuthApi.js";
 
 vi.mock("../auth/adminAuthApi.js", () => ({
   adminAuthApi: {
+    getConfig: vi.fn().mockResolvedValue({ passwordLoginEnabled: true }),
     getCurrentAdmin: vi.fn(),
     loginWithPassword: vi.fn(),
     logout: vi.fn(),
@@ -31,6 +32,12 @@ function renderApp() {
 }
 
 describe("App", () => {
+  beforeEach(() => {
+    (adminAuthApi.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      passwordLoginEnabled: true,
+    });
+  });
+
   it("shows the login screen when unauthenticated", async () => {
     (
       adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
@@ -73,5 +80,36 @@ describe("App", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("ops@tarmoto.app")).toBeInTheDocument();
+  });
+
+  it("shows password form when config resolves passwordLoginEnabled: true", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
+    (adminAuthApi.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      passwordLoginEnabled: true,
+    });
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /sign in/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("hides password form when config resolves passwordLoginEnabled: false", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
+    (adminAuthApi.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      passwordLoginEnabled: false,
+    });
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /github/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: /sign in/i })).toBeNull();
   });
 });

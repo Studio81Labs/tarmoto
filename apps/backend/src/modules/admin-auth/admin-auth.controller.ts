@@ -16,6 +16,7 @@ import { randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { AdminAuthService, serializeAdminUser } from './admin-auth.service.js';
 import {
+  AdminAuthConfigDto,
   AdminAuthSessionResponseDto,
   AdminLoginDto,
   AdminMeResponseDto,
@@ -50,6 +51,13 @@ export class AdminAuthController {
 
   private get secure(): boolean {
     return this.config.get<string>('NODE_ENV') === 'production';
+  }
+
+  @Get('config')
+  @ApiOperation({ summary: 'Public admin auth config (pre-auth)' })
+  @ApiResponse({ status: 200, type: AdminAuthConfigDto })
+  getConfig(): AdminAuthConfigDto {
+    return { passwordLoginEnabled: isAdminPasswordLoginEnabled(this.config) };
   }
 
   @Post('login')

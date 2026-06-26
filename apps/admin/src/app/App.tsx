@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { adminAuthApi } from "../auth/adminAuthApi.js";
 import { LoginScreen } from "../auth/LoginScreen.js";
@@ -6,15 +7,23 @@ import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 
-function passwordLoginEnabled(): boolean {
-  return (
-    window.__TARMOTO_ADMIN_CONFIG__?.passwordLoginEnabled ?? import.meta.env.DEV
-  );
-}
+// Priority: injected window config > fetched endpoint value > dev fallback.
+const injectedPasswordLoginEnabled =
+  window.__TARMOTO_ADMIN_CONFIG__?.passwordLoginEnabled;
 
 export function App() {
   const auth = useAdminAuth();
   const { active, navigate } = useHashRoute();
+  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState<boolean>(
+    injectedPasswordLoginEnabled ?? import.meta.env.DEV,
+  );
+
+  useEffect(() => {
+    if (injectedPasswordLoginEnabled !== undefined) return;
+    adminAuthApi.getConfig().then(({ passwordLoginEnabled: enabled }) => {
+      setPasswordLoginEnabled(enabled);
+    });
+  }, []);
 
   if (auth.status === "loading") {
     return <div className="app-loading">Loading…</div>;
@@ -32,7 +41,7 @@ export function App() {
         onPasswordLogin={auth.loginWithPassword}
         onGithubSso={adminAuthApi.startGithubSso}
         error={auth.error ?? ssoError}
-        passwordLoginEnabled={passwordLoginEnabled()}
+        passwordLoginEnabled={passwordLoginEnabled}
       />
     );
   }

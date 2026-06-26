@@ -30,3 +30,8 @@ export class AdminAuthSessionResponseDto {
 export class AdminMeResponseDto {
   @ApiProperty({ type: AdminUserViewDto }) user!: AdminUserViewDto;
 }
+
+export class AdminAuthConfigDto {
+  @ApiProperty({ description: 'Whether password login is enabled server-side' })
+  passwordLoginEnabled!: boolean;
+}

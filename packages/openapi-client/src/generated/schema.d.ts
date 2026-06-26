@@ -2803,6 +2803,23 @@ export interface paths {
     patch: operations["ClosuresController_update"];
     trace?: never;
   };
+  "/api/v1/admin/auth/config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Public admin auth config (pre-auth) */
+    get: operations["AdminAuthController_getConfig"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/admin/auth/login": {
     parameters: {
       query?: never;
@@ -5276,6 +5293,10 @@ export interface components {
       ends_at?: string | null;
       notes?: string | null;
     };
+    AdminAuthConfigDto: {
+      /** @description Whether password login is enabled server-side */
+      passwordLoginEnabled: boolean;
+    };
     AdminLoginDto: {
       email: string;
       password: string;
@@ -5656,6 +5677,8 @@ export type SchemaCheckRouteClosuresResponseDto =
   components["schemas"]["CheckRouteClosuresResponseDto"];
 export type SchemaCreateClosureDto = components["schemas"]["CreateClosureDto"];
 export type SchemaUpdateClosureDto = components["schemas"]["UpdateClosureDto"];
+export type SchemaAdminAuthConfigDto =
+  components["schemas"]["AdminAuthConfigDto"];
 export type SchemaAdminLoginDto = components["schemas"]["AdminLoginDto"];
 export type SchemaAdminUserViewDto = components["schemas"]["AdminUserViewDto"];
 export type SchemaAdminAuthSessionResponseDto =
@@ -10764,6 +10787,25 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  AdminAuthController_getConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAuthConfigDto"];
+        };
       };
     };
   };

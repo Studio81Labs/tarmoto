@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { StrictMode } from "react";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { useAdminAuth } from "./useAdminAuth.js";
 import { adminAuthApi } from "./adminAuthApi.js";
@@ -115,5 +116,26 @@ describe("useAdminAuth", () => {
     expect(result.current.status).toBe("authenticated");
     expect(result.current.user).toEqual(admin);
     expect(result.current.error).toMatch(/logout failed/i);
+  });
+
+  it("loginWithPassword updates state under StrictMode (mountedRef reset)", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
+    (
+      adminAuthApi.loginWithPassword as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(admin);
+
+    const { result } = renderHook(() => useAdminAuth(), {
+      wrapper: ({ children }) => <StrictMode>{children}</StrictMode>,
+    });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.loginWithPassword("ops@tarmoto.app", "secret");
+    });
+
+    expect(result.current.status).toBe("authenticated");
+    expect(result.current.user).toEqual(admin);
   });
 });

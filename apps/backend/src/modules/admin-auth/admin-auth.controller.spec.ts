@@ -142,6 +142,51 @@ describe('AdminAuthController', () => {
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
+  it('GET config returns passwordLoginEnabled: true in dev/test', () => {
+    expect(controller.getConfig()).toEqual({ passwordLoginEnabled: true });
+  });
+
+  it('GET config returns passwordLoginEnabled: false in production without flag', async () => {
+    const prodModule = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        { provide: AdminAuthService, useValue: service },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => {
+              if (key === 'NODE_ENV') return 'production';
+              return undefined;
+            },
+          },
+        },
+      ],
+    }).compile();
+    const prodController = prodModule.get(AdminAuthController);
+    expect(prodController.getConfig()).toEqual({ passwordLoginEnabled: false });
+  });
+
+  it('GET config returns passwordLoginEnabled: true in production with flag set', async () => {
+    const prodModule = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        { provide: AdminAuthService, useValue: service },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => {
+              if (key === 'NODE_ENV') return 'production';
+              if (key === 'TARMOTO_ADMIN_PASSWORD_LOGIN_ENABLED') return 'true';
+              return undefined;
+            },
+          },
+        },
+      ],
+    }).compile();
+    const prodController = prodModule.get(AdminAuthController);
+    expect(prodController.getConfig()).toEqual({ passwordLoginEnabled: true });
+  });
+
   it('login throws ForbiddenException and does not call service when password login is disabled', async () => {
     const productionService = {
       loginWithPassword: jest.fn(),
