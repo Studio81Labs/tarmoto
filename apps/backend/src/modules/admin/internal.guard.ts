@@ -17,6 +17,7 @@ import { AdminUser, type AdminRole } from '../../entities/admin-user.entity.js';
 import {
   ADMIN_ACCESS_COOKIE,
   ADMIN_ACCESS_TOKEN_SCOPE,
+  API_GLOBAL_PREFIX,
 } from '../admin-auth/admin-auth.constants.js';
 import type { AdminAccessTokenPayload } from '../admin-auth/admin-access-token-payload.js';
 import { ADMIN_ROLES_KEY } from '../admin-auth/admin-role.decorator.js';
@@ -28,9 +29,6 @@ import { AdminAuditService } from './admin-audit.interceptor.js';
 export interface AdminRequest extends Request {
   adminUser?: AdminUser;
 }
-
-// Must match the global prefix set by app.setGlobalPrefix() in main.ts.
-const API_GLOBAL_PREFIX = '/api/v1';
 
 // Keys are always in bare /admin/... form; normalizePath() strips the global
 // prefix before comparison so both bare and prefixed requests match.

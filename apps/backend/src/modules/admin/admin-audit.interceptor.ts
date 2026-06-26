@@ -13,6 +13,7 @@ import { AdminAuditLog } from '../../entities/admin-audit-log.entity.js';
 import type { AdminRole } from '../../entities/admin-user.entity.js';
 import type { AdminRequest } from './internal.guard.js';
 import { getAdminAuditTarget } from './admin-audit-context.js';
+import { API_GLOBAL_PREFIX } from '../admin-auth/admin-auth.constants.js';
 
 export interface AdminAuditEntry {
   event_key: string;
@@ -58,9 +59,6 @@ export class AdminAuditService {
     }
   }
 }
-
-// Must match the global prefix set by app.setGlobalPrefix() in main.ts.
-const API_GLOBAL_PREFIX = '/api/v1';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 

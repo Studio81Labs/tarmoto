@@ -12,8 +12,13 @@ import { hashAdminPassword } from '../src/modules/admin-auth/admin-password.js';
  * Admin auth + guard integration (e2e)
  *
  * Verifies the two core security properties introduced in Task 11:
- *   1. GET /admin/metrics with no session → 401 (InternalGuard rejects).
- *   2. POST /admin/auth/login + cookie → GET /admin/metrics → 200.
+ *   1. GET /api/v1/admin/metrics with no session → 401 (InternalGuard rejects).
+ *   2. POST /api/v1/admin/auth/login + cookie → GET /api/v1/admin/metrics → 200.
+ *
+ * The app is bootstrapped with the production global prefix (`api/v1`) so this
+ * test exercises the full request pipeline — routing, InternalGuard prefix
+ * normalisation, and session validation — under the same paths that production
+ * serves.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before running
  * `pnpm --filter @tarmoto/backend test:e2e`.
@@ -53,6 +58,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -65,12 +71,15 @@ describe('Admin auth + InternalGuard (e2e)', () => {
 
   afterAll(async () => {
     if (adminUserId && seedDataSource?.isInitialized) {
+      // admin_refresh_tokens cascades from admin_sessions (ON DELETE CASCADE),
+      // but delete explicitly via the join in case cascade is not set in a test
+      // DB migration edge case.
       await seedDataSource.query(
-        `DELETE FROM admin_sessions WHERE admin_user_id = $1`,
+        `DELETE FROM admin_refresh_tokens WHERE session_id IN (SELECT id FROM admin_sessions WHERE admin_user_id = $1)`,
         [adminUserId],
       );
       await seedDataSource.query(
-        `DELETE FROM admin_refresh_tokens WHERE admin_user_id = $1`,
+        `DELETE FROM admin_sessions WHERE admin_user_id = $1`,
         [adminUserId],
       );
       await seedDataSource.query(
@@ -87,13 +96,13 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     }
   }, 30_000);
 
-  it('GET /admin/metrics without a session returns 401', async () => {
-    await request(app.getHttpServer()).get('/admin/metrics').expect(401);
+  it('GET /api/v1/admin/metrics without a session returns 401', async () => {
+    await request(app.getHttpServer()).get('/api/v1/admin/metrics').expect(401);
   });
 
-  it('POST /admin/auth/login then GET /admin/metrics with the cookie returns 200', async () => {
+  it('POST /api/v1/admin/auth/login then GET /api/v1/admin/metrics with the cookie returns 200', async () => {
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
+      .post('/api/v1/admin/auth/login')
       .send({ email: E2E_ADMIN_EMAIL, password: E2E_ADMIN_PASSWORD })
       .expect(201);
 
@@ -111,7 +120,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     expect(accessCookie).toBeDefined();
 
     await request(app.getHttpServer())
-      .get('/admin/metrics')
+      .get('/api/v1/admin/metrics')
       .set('Cookie', cookieArr.join('; '))
       .expect(200);
   });

@@ -7,3 +7,7 @@ export const ADMIN_ACCESS_TOKEN_SCOPE = 'admin_access';
 // 9 minutes access, 30 days refresh.
 export const ADMIN_ACCESS_TOKEN_SECONDS = 9 * 60;
 export const ADMIN_REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
+
+// Must match app.setGlobalPrefix(...) in main.ts. Used to normalize admin
+// route paths in the InternalGuard and audit interceptor.
+export const API_GLOBAL_PREFIX = '/api/v1';
