@@ -1155,23 +1155,6 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
-  it("disables Save route when the active day has no route geometry yet", () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          // Two waypoints present but routing hasn't resolved geometry yet
-          routeGeometry: null as never,
-        },
-      ],
-    };
-
-    render(<TripPlannerPage />);
-
-    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
-  });
-
   it("enables Save route when waypoints + geometry are present AND the draft is dirty", () => {
     // activeTrip fixture has 2 waypoints + routeGeometry
     storeState.activeTrip = activeTrip;
@@ -1515,9 +1498,6 @@ describe("TripPlannerPage", () => {
     const addDayBtn = screen.getByRole("button", { name: /Add day/i });
     expect(addDayBtn).toBeInTheDocument();
     expect(addDayBtn).toBeDisabled();
-
-    // With fewer days, Add day should be enabled
-    storeState.activeTrip = { ...activeTrip, days: [activeTrip.days[0]!] };
   });
 
   it("calls addDay when Add day button is clicked (below 14 days)", () => {

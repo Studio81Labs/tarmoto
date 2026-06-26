@@ -502,7 +502,7 @@ export default function TripPlannerPage() {
   );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
-  // selectedDay is derived from store selectedDayIndex (set above in the routing section)
+  // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
   type TimelineDayLike = {
     dayNumber: number;
     title?: string;
