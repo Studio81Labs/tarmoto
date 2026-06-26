@@ -4,8 +4,9 @@ describe('AddTripDayStartLinked migration', () => {
   it('adds and drops the start_linked column', async () => {
     const queries: string[] = [];
     const qr = {
-      query: async (q: string) => {
+      query: (q: string) => {
         queries.push(q);
+        return Promise.resolve();
       },
     } as never;
     const m = new AddTripDayStartLinked1718200000000();
