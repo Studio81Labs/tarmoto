@@ -11,7 +11,7 @@ vi.mock("../data/useAdminMetrics.js", () => ({
 describe("OverviewScreen", () => {
   it("renders the metric values", () => {
     mockUseAdminMetrics.mockReturnValue({
-      data: { users: 128, activeRides: 4, featureFlags: 0, pendingClosures: 7 },
+      data: { users: 128, activeRides: 4, featureFlags: 0, closures: 7 },
       isPending: false,
       error: null,
     });
@@ -19,7 +19,7 @@ describe("OverviewScreen", () => {
     expect(screen.getByText("128")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
-    expect(screen.getByText("Pending closures")).toBeInTheDocument();
+    expect(screen.getByText("Closures")).toBeInTheDocument();
   });
 
   it("shows placeholder dashes while pending", () => {

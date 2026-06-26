@@ -10,7 +10,6 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint .",
     "worker:deploy": "pnpm build && pnpm dlx wrangler@latest deploy"
   },
   "dependencies": {

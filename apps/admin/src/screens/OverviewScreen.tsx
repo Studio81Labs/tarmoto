@@ -35,8 +35,8 @@ export function OverviewScreen() {
           value={isPending ? "—" : (data?.featureFlags ?? 0)}
         />
         <MetricCard
-          label="Pending closures"
-          value={isPending ? "—" : (data?.pendingClosures ?? 0)}
+          label="Closures"
+          value={isPending ? "—" : (data?.closures ?? 0)}
         />
       </div>
     </section>

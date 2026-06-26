@@ -30,7 +30,7 @@ function interceptorContextFor(
 }
 
 function nextOf(value: unknown): CallHandler {
-  return { handle: () => of(value) } as unknown as CallHandler;
+  return { handle: () => of(value) };
 }
 
 describe('AdminAuditService.record', () => {

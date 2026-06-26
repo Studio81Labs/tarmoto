@@ -57,8 +57,8 @@ describe('AdminAuthService.loginWithPassword', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(
@@ -81,8 +81,8 @@ describe('AdminAuthService.loginWithPassword', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(
@@ -148,8 +148,8 @@ describe('AdminAuthService.loginWithPassword', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(
@@ -272,7 +272,7 @@ describe('AdminAuthService.refresh', () => {
     const service = new AdminAuthService(
       jwt,
       config,
-      repoMock() as never,
+      repoMock(),
       sessions as never,
       refreshTokens as never,
       dataSource,
@@ -319,7 +319,7 @@ describe('AdminAuthService.refresh', () => {
     const service = new AdminAuthService(
       jwt,
       config,
-      repoMock() as never,
+      repoMock(),
       sessions as never,
       refreshTokens as never,
       dataSource,
@@ -360,8 +360,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(
@@ -389,8 +389,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(
@@ -419,8 +419,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
 
@@ -458,8 +458,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
 
@@ -491,8 +491,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       jwt,
       config,
       users as never,
-      repoMock() as never,
-      repoMock() as never,
+      repoMock(),
+      repoMock(),
       noopDataSource,
     );
     await expect(

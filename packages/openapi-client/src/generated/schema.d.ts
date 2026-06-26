@@ -5299,7 +5299,7 @@ export interface components {
       users: number;
       activeRides: number;
       featureFlags: number;
-      pendingClosures: number;
+      closures: number;
     };
   };
   responses: never;

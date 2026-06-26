@@ -4,5 +4,5 @@ export class AdminMetricsDto {
   @ApiProperty() users!: number;
   @ApiProperty() activeRides!: number;
   @ApiProperty() featureFlags!: number;
-  @ApiProperty() pendingClosures!: number;
+  @ApiProperty() closures!: number;
 }

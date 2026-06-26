@@ -4,7 +4,7 @@ import { LoginScreen } from "../auth/LoginScreen.js";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
-import { useHashRoute } from "./routes.js";
+import { routes, useHashRoute } from "./routes.js";
 
 function passwordLoginEnabled(): boolean {
   return (
@@ -21,11 +21,17 @@ export function App() {
   }
 
   if (auth.status === "unauthenticated" || !auth.user) {
+    const hasSsoError =
+      new URLSearchParams(window.location.search).get("adminAuthError") !==
+      null;
+    const ssoError = hasSsoError
+      ? "GitHub sign-in failed. Please try again."
+      : null;
     return (
       <LoginScreen
         onPasswordLogin={auth.loginWithPassword}
         onGithubSso={adminAuthApi.startGithubSso}
-        error={auth.error}
+        error={auth.error ?? ssoError}
         passwordLoginEnabled={passwordLoginEnabled()}
       />
     );
@@ -45,7 +51,7 @@ export function App() {
             <OverviewScreen />
           ) : (
             <section>
-              <h2>{active}</h2>
+              <h2>{routes.find((r) => r.key === active)?.label ?? active}</h2>
               <p>Coming soon.</p>
             </section>
           )}

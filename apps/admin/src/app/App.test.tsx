@@ -15,7 +15,7 @@ vi.mock("../auth/adminAuthApi.js", () => ({
 
 vi.mock("../data/useAdminMetrics.js", () => ({
   useAdminMetrics: () => ({
-    data: { users: 0, activeRides: 0, featureFlags: 0, pendingClosures: 0 },
+    data: { users: 0, activeRides: 0, featureFlags: 0, closures: 0 },
     isPending: false,
     error: null,
   }),
@@ -41,6 +41,20 @@ describe("App", () => {
         screen.getByRole("button", { name: /github/i }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("surfaces adminAuthError from the query string when unauthenticated", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
+    window.history.pushState({}, "", "/?adminAuthError=sso");
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByText("GitHub sign-in failed. Please try again."),
+      ).toBeInTheDocument(),
+    );
+    window.history.pushState({}, "", "/");
   });
 
   it("shows the shell + Overview when authenticated", async () => {

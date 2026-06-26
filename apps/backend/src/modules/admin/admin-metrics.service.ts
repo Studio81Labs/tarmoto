@@ -15,7 +15,7 @@ export class AdminMetricsService {
   ) {}
 
   async snapshot(): Promise<AdminMetricsDto> {
-    const [users, pendingClosures] = await Promise.all([
+    const [users, closures] = await Promise.all([
       this.users.count({ where: { deleted_at: IsNull() } }),
       this.closures.count(),
     ]);
@@ -23,7 +23,7 @@ export class AdminMetricsService {
       users,
       activeRides: 0, // wired to the rides module in a later phase
       featureFlags: 0, // wired when the flag store lands (Phase 3)
-      pendingClosures,
+      closures,
     };
   }
 }

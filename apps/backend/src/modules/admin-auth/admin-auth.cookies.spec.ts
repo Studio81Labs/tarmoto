@@ -21,7 +21,7 @@ function fakeResponse(): { res: Response; cookies: string[] } {
     get cookies() {
       return Array.isArray(store) ? store : store ? [store] : [];
     },
-  } as { res: Response; cookies: string[] };
+  };
 }
 
 describe('admin auth cookies', () => {

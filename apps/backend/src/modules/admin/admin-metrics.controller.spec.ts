@@ -7,7 +7,7 @@ describe('AdminMetricsController', () => {
       users: 42,
       activeRides: 3,
       featureFlags: 0,
-      pendingClosures: 5,
+      closures: 5,
     };
     const service = {
       snapshot: jest.fn().mockResolvedValue(snapshot),
