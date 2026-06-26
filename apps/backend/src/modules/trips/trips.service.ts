@@ -1402,6 +1402,7 @@ export class TripsService {
       curviness_score: d.curviness_score ?? 0,
       scenic_score: d.scenic_score ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
+      start_linked: d.start_linked ?? false,
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
         // `location` is NOT NULL in the schema, but the shared helper

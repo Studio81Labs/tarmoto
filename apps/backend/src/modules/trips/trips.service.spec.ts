@@ -2548,5 +2548,41 @@ describe('TripsService', () => {
       const result = await service.getDetail(OWNER_ID, TRIP_ID);
       expect(result.days[0]?.estimated_time_min).toBe(135);
     });
+
+    it('maps start_linked from the day entity (defaulting false)', async () => {
+      const trip = makeOwnedTrip({
+        days: [
+          {
+            id: 'd-1',
+            day_number: 1,
+            title: null,
+            distance_km: 0,
+            avg_quality: 0,
+            elevation_gain: 0,
+            estimated_time: null,
+            route_geom: null,
+            start_linked: false,
+            waypoints: [],
+          } as never,
+          {
+            id: 'd-2',
+            day_number: 2,
+            title: null,
+            distance_km: 0,
+            avg_quality: 0,
+            elevation_gain: 0,
+            estimated_time: null,
+            route_geom: null,
+            start_linked: true,
+            waypoints: [],
+          } as never,
+        ],
+      });
+      mockGetDetailReturns(trip);
+
+      const detail = await service.getDetail(OWNER_ID, TRIP_ID);
+      expect(detail.days[0]?.start_linked).toBe(false);
+      expect(detail.days[1]?.start_linked).toBe(true);
+    });
   });
 });

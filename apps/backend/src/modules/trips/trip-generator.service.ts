@@ -642,6 +642,7 @@ export class TripGeneratorService {
           curviness_score: d.curvinessScore,
           scenic_score: d.scenicScore,
           estimated_time_min: d.durationMin,
+          start_linked: false,
           route_geometry: d.geometry,
           waypoints: d.waypoints.map(
             (w): TripWaypointDto => ({
