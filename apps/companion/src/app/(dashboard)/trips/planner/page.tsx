@@ -617,8 +617,14 @@ export default function TripPlannerPage() {
   // and the first day carries route geometry (i.e. the live hook already
   // resolved a route). Calls PUT /trips/:id/route — creates the server
   // trip on first save if one doesn't exist yet.
+  // Require `routeDirty` so a no-op Save on an unedited loaded trip can't
+  // trigger the destructive reroute path (PUT /route recomputes from the
+  // waypoints and would overwrite canonical/imported geometry). A fresh draft
+  // and any real edit both set `routeDirty`, so those still save.
   const canSaveRoute =
-    routingWaypoints.length >= 2 && activeDayRouteGeometry !== null;
+    routingWaypoints.length >= 2 &&
+    activeDayRouteGeometry !== null &&
+    routeDirty;
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;

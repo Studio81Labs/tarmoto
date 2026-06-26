@@ -1155,9 +1155,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
-  it("enables Save route when both routing waypoints and route geometry are present", () => {
+  it("enables Save route when waypoints + geometry are present AND the draft is dirty", () => {
     // activeTrip fixture has 2 waypoints + routeGeometry
     storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true; // rider has edited the route
 
     render(<TripPlannerPage />);
 
@@ -1166,8 +1167,19 @@ describe("TripPlannerPage", () => {
     ).not.toBeDisabled();
   });
 
+  it("disables Save route on an unedited loaded trip (routeDirty false) so a no-op save can't reroute", () => {
+    // Loaded trip with geometry + waypoints but no edits yet.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = false;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
   it("calls tripsApi.saveRoute with store waypoints, creates trip on first save, and shows success toast", async () => {
     storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
 
     render(
       <>
@@ -1211,6 +1223,7 @@ describe("TripPlannerPage", () => {
       `/trips/planner?tripId=${serverTripId}`,
     );
     storeState.activeTrip = { ...activeTrip, id: serverTripId };
+    storeState.routeDirty = true;
 
     render(<TripPlannerPage />);
 
@@ -1227,6 +1240,7 @@ describe("TripPlannerPage", () => {
 
   it("shows an error toast when saveRoute fails", async () => {
     storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
     tripsApiSaveRouteMock.mockRejectedValueOnce(new Error("network error"));
 
     render(

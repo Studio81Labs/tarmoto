@@ -38,7 +38,13 @@ export function usePlannerRouting(
           { signal: controller.signal },
         )
         .then(({ data }) => {
-          if (reqId === reqIdRef.current) cbRef.current.onResult(data);
+          // Also bail when this request's controller was aborted (the prior
+          // effect's cleanup aborts it when routing is disabled or drops below
+          // two waypoints). The early-return paths don't advance reqIdRef, so
+          // without this an already-resolved fetch could apply stale geometry
+          // to the now-current trip.
+          if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+          cbRef.current.onResult(data);
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
