@@ -85,9 +85,13 @@ services:
       - ../valhalla/custom_files:/custom_files
     environment:
       # First start downloads this extract + builds tiles into the volume;
-      # later starts reuse the built tiles.
+      # later starts reuse them automatically (the image stores the pbf hash
+      # and skips the rebuild when the data is unchanged).
       tile_urls: https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
-      use_tiles_ignore_pbf: "True"
+      # Must be False so the FIRST run actually builds tiles from the pbf.
+      # (True = "ignore the pbf, load existing tiles" — which crash-loops on an
+      # empty volume because there are no tiles yet.)
+      use_tiles_ignore_pbf: "False"
       build_elevation: "False"
       build_admins: "True"
       build_time_zones: "False"
