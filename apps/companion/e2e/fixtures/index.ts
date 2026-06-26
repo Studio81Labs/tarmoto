@@ -99,6 +99,9 @@ export interface MockApi {
    * Seed a trip that already has a routed day-1 geometry so the planner
    * opens it via `?tripId=` without firing live routing (dirty-gate:
    * existing geometry suppresses the routing hook until an edit).
+   *
+   * Pass `days` to seed a multi-day trip instead of the legacy
+   * single-day `route_geometry` / `waypoints` shorthand.
    */
   seedTrip(
     user: SeededUser,
@@ -113,6 +116,17 @@ export interface MockApi {
         type?: string;
       }>;
       distance_km?: number;
+      days?: Array<{
+        route_geometry?: Array<{ lat: number; lng: number }>;
+        waypoints?: Array<{
+          lat: number;
+          lng: number;
+          name?: string | null;
+          type?: string;
+        }>;
+        start_linked?: boolean;
+        distance_km?: number;
+      }>;
     },
   ): Promise<{ id: string; title: string }>;
 }
@@ -247,15 +261,21 @@ function buildMockApi(api: APIRequestContext): MockApi {
         { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
         { lat: 46.63, lng: 10.52, name: "Finish", type: "end" },
       ];
+      // Multi-day path: pass `days` directly to the seed endpoint.
+      const data: Record<string, unknown> = {
+        id: opts.id,
+        title: opts.title ?? "Seeded route",
+      };
+      if (opts.days) {
+        data.days = opts.days;
+      } else {
+        data.route_geometry = opts.route_geometry ?? defaultGeometry;
+        data.waypoints = opts.waypoints ?? defaultWaypoints;
+        data.distance_km = opts.distance_km ?? 125;
+      }
       const res = await api.post(`${MOCK_BACKEND_URL}/__test__/seed-trip`, {
         headers: { Authorization: `Bearer ${user.accessToken}` },
-        data: {
-          id: opts.id,
-          title: opts.title ?? "Seeded route",
-          route_geometry: opts.route_geometry ?? defaultGeometry,
-          waypoints: opts.waypoints ?? defaultWaypoints,
-          distance_km: opts.distance_km ?? 125,
-        },
+        data,
       });
       if (!res.ok()) {
         throw new Error(`seedTrip failed: ${res.status()} ${await res.text()}`);
