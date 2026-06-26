@@ -8,6 +8,7 @@ import {
   ADMIN_REFRESH_COOKIE,
   ADMIN_SSO_STATE_COOKIE,
 } from './admin-auth.constants.js';
+import { getAdminAuditActor } from '../admin/admin-audit-context.js';
 
 function mockResponse(): Response {
   return {
@@ -42,7 +43,7 @@ describe('AdminAuthController', () => {
     jest.clearAllMocks();
   });
 
-  it('logs in and sets cookies', async () => {
+  it('logs in, sets cookies, and stamps the audit actor on the request', async () => {
     (service.loginWithPassword as jest.Mock).mockResolvedValue({
       accessToken: 'a',
       refreshToken: 'r',
@@ -54,9 +55,11 @@ describe('AdminAuthController', () => {
       },
       expiresIn: 540,
     });
+    const req = { headers: {} } as unknown as Request;
     const res = mockResponse();
     const body = await controller.login(
       { email: 'ops@tarmoto.app', password: 'pw' },
+      req,
       res,
     );
     // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -75,6 +78,61 @@ describe('AdminAuthController', () => {
       },
       expiresIn: 540,
     });
+    expect(getAdminAuditActor(req)).toEqual({
+      admin_user_id: 'a1',
+      admin_role: 'admin',
+    });
+  });
+
+  it('refresh stamps the audit actor on the request after successful token rotation', async () => {
+    (service.refresh as jest.Mock).mockResolvedValue({
+      accessToken: 'a2',
+      refreshToken: 'r2',
+      user: {
+        id: 'a1',
+        email: 'ops@tarmoto.app',
+        role: 'support',
+        status: 'active',
+      },
+      expiresIn: 540,
+    });
+    const req = {
+      headers: { cookie: `${ADMIN_REFRESH_COOKIE}=raw-refresh` },
+    } as unknown as Request;
+    const res = mockResponse();
+    await controller.refresh(req, res);
+    expect(getAdminAuditActor(req)).toEqual({
+      admin_user_id: 'a1',
+      admin_role: 'support',
+    });
+  });
+
+  it('logout stamps the audit actor when revoke returns an actor', async () => {
+    (service.revoke as jest.Mock).mockResolvedValue({
+      admin_user_id: 'a1',
+      admin_role: 'admin',
+    });
+    const req = {
+      headers: { cookie: `${ADMIN_REFRESH_COOKIE}=r` },
+    } as unknown as Request;
+    const res = mockResponse();
+    await controller.logout(req, res);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.revoke).toHaveBeenCalledWith('r');
+    expect(getAdminAuditActor(req)).toEqual({
+      admin_user_id: 'a1',
+      admin_role: 'admin',
+    });
+  });
+
+  it('logout does not stamp an actor when revoke returns null (token not found)', async () => {
+    (service.revoke as jest.Mock).mockResolvedValue(null);
+    const req = {
+      headers: { cookie: `${ADMIN_REFRESH_COOKIE}=unknown` },
+    } as unknown as Request;
+    const res = mockResponse();
+    await controller.logout(req, res);
+    expect(getAdminAuditActor(req)).toBeNull();
   });
 
   it('returns the current admin from the request', () => {
@@ -96,7 +154,8 @@ describe('AdminAuthController', () => {
     });
   });
 
-  it('logout reads the refresh cookie and clears cookies', async () => {
+  it('logout reads the refresh cookie, calls revoke, and clears cookies', async () => {
+    (service.revoke as jest.Mock).mockResolvedValue(null);
     const req = {
       headers: { cookie: `${ADMIN_REFRESH_COOKIE}=r` },
     } as unknown as Request;

@@ -38,6 +38,7 @@ import {
 } from './admin-github-sso.js';
 import type { AdminRequest } from '../admin/internal.guard.js';
 import { isAdminPasswordLoginEnabled } from './admin-password-login.js';
+import { setAdminAuditActor } from '../admin/admin-audit-context.js';
 
 const SSO_ERROR_REDIRECT = '/?adminAuthError=sso';
 
@@ -65,6 +66,7 @@ export class AdminAuthController {
   @ApiResponse({ status: 201, type: AdminAuthSessionResponseDto })
   async login(
     @Body() dto: AdminLoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthSessionResponseDto> {
     if (!isAdminPasswordLoginEnabled(this.config)) {
@@ -74,6 +76,10 @@ export class AdminAuthController {
       dto.email,
       dto.password,
     );
+    setAdminAuditActor(req, {
+      admin_user_id: tokens.user.id,
+      admin_role: tokens.user.role,
+    });
     setAdminAuthCookies(
       res,
       tokens.accessToken,
@@ -93,6 +99,10 @@ export class AdminAuthController {
     const raw = readCookie(req, ADMIN_REFRESH_COOKIE);
     if (!raw) throw new UnauthorizedException('Missing refresh token');
     const tokens = await this.service.refresh(raw);
+    setAdminAuditActor(req, {
+      admin_user_id: tokens.user.id,
+      admin_role: tokens.user.role,
+    });
     setAdminAuthCookies(
       res,
       tokens.accessToken,
@@ -120,7 +130,15 @@ export class AdminAuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     const raw = readCookie(req, ADMIN_REFRESH_COOKIE);
-    if (raw) await this.service.revoke(raw);
+    if (raw) {
+      const actor = await this.service.revoke(raw);
+      if (actor) {
+        setAdminAuditActor(req, {
+          admin_user_id: actor.admin_user_id,
+          admin_role: actor.admin_role,
+        });
+      }
+    }
     clearAdminAuthCookies(res, this.secure);
   }
 

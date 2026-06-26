@@ -438,6 +438,134 @@ describe('AdminAuthService.refresh', () => {
 });
 
 // ---------------------------------------------------------------------------
+// revoke
+// ---------------------------------------------------------------------------
+
+describe('AdminAuthService.revoke', () => {
+  const sessionId = 'sess-rev-1';
+  const userId = 'u-rev-1';
+
+  it('returns null when the token is not found', async () => {
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(null),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      repoMock(),
+      repoMock(),
+      refreshTokens as never,
+      noopDataSource,
+    );
+    const result = await service.revoke('unknown-raw-token');
+    expect(result).toBeNull();
+  });
+
+  it('revokes the session family and returns the actor on success', async () => {
+    const storedToken = {
+      id: 'tok-rev-1',
+      session_id: sessionId,
+      token_hash: 'irrelevant',
+      revoked_at: null,
+    };
+    const session = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+    const adminUser = {
+      id: userId,
+      email: 'ops@tarmoto.app',
+      role: 'super_admin' as const,
+      status: 'active' as const,
+    };
+
+    const users = repoMock({ findOne: jest.fn().mockResolvedValue(adminUser) });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(session),
+      update: jest.fn(),
+    });
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+      update: jest.fn(),
+    });
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      noopDataSource,
+    );
+
+    const result = await service.revoke('any-raw-token');
+
+    expect(result).toEqual({
+      admin_user_id: userId,
+      admin_role: 'super_admin',
+    });
+
+    // Session and refresh tokens for that session must be revoked.
+    expect(sessions.update).toHaveBeenCalledWith(
+      { id: sessionId, revoked_at: IsNull() },
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
+    );
+    expect(refreshTokens.update).toHaveBeenCalledWith(
+      { session_id: sessionId, revoked_at: IsNull() },
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
+        revoked_at: expect.any(Date),
+      }),
+    );
+  });
+
+  it('still revokes the session but returns null when the user row is missing', async () => {
+    const storedToken = {
+      id: 'tok-rev-2',
+      session_id: sessionId,
+      token_hash: 'irrelevant',
+      revoked_at: null,
+    };
+    const session = {
+      id: sessionId,
+      admin_user_id: userId,
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 3_600_000),
+    };
+
+    const users = repoMock({ findOne: jest.fn().mockResolvedValue(null) });
+    const sessions = repoMock({
+      findOne: jest.fn().mockResolvedValue(session),
+      update: jest.fn(),
+    });
+    const refreshTokens = repoMock({
+      findOne: jest.fn().mockResolvedValue(storedToken),
+      update: jest.fn(),
+    });
+
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      sessions as never,
+      refreshTokens as never,
+      noopDataSource,
+    );
+
+    const result = await service.revoke('any-raw-token');
+
+    expect(result).toBeNull();
+    // Revocation still happens.
+    expect(sessions.update).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // findOrProvisionSsoUser
 // ---------------------------------------------------------------------------
 

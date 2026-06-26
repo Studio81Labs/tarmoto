@@ -176,11 +176,28 @@ export class AdminAuthService {
     return outcome.tokens;
   }
 
-  async revoke(rawRefreshToken: string): Promise<void> {
+  async revoke(
+    rawRefreshToken: string,
+  ): Promise<{ admin_user_id: string; admin_role: AdminRole } | null> {
     const stored = await this.refreshTokens.findOne({
       where: { token_hash: hashRefreshToken(rawRefreshToken) },
     });
-    if (stored) await this.revokeSession(stored.session_id);
+    if (!stored) return null;
+
+    const session = await this.sessions.findOne({
+      where: { id: stored.session_id },
+    });
+
+    await this.revokeSession(stored.session_id);
+
+    if (!session) return null;
+
+    const user = await this.users.findOne({
+      where: { id: session.admin_user_id },
+    });
+    if (!user) return null;
+
+    return { admin_user_id: session.admin_user_id, admin_role: user.role };
   }
 
   async findActiveById(id: string): Promise<AdminUser | null> {

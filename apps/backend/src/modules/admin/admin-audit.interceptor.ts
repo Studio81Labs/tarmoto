@@ -12,7 +12,10 @@ import type { Observable } from 'rxjs';
 import { AdminAuditLog } from '../../entities/admin-audit-log.entity.js';
 import type { AdminRole } from '../../entities/admin-user.entity.js';
 import type { AdminRequest } from './internal.guard.js';
-import { getAdminAuditTarget } from './admin-audit-context.js';
+import {
+  getAdminAuditActor,
+  getAdminAuditTarget,
+} from './admin-audit-context.js';
 import { API_GLOBAL_PREFIX } from '../admin-auth/admin-auth.constants.js';
 
 export interface AdminAuditEntry {
@@ -83,13 +86,18 @@ export class AdminAuditInterceptor implements NestInterceptor {
       tap(() => {
         if (!MUTATING.has(method)) return;
         const target = getAdminAuditTarget(request);
+        const contextActor = getAdminAuditActor(request);
+        const admin_user_id =
+          request.adminUser?.id ?? contextActor?.admin_user_id ?? null;
+        const admin_role =
+          request.adminUser?.role ?? contextActor?.admin_role ?? null;
         void this.audit.record({
           event_key: `admin.${method.toLowerCase()}`,
           outcome: 'allowed',
           method,
           path,
-          admin_user_id: request.adminUser?.id ?? null,
-          admin_role: request.adminUser?.role ?? null,
+          admin_user_id,
+          admin_role,
           target_type: target?.target_type ?? null,
           target_id: target?.target_id ?? null,
           metadata: null,

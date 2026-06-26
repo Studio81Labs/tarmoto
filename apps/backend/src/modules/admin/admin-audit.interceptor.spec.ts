@@ -1,9 +1,11 @@
 import { of } from 'rxjs';
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   AdminAuditService,
   AdminAuditInterceptor,
 } from './admin-audit.interceptor.js';
+import { setAdminAuditActor } from './admin-audit-context.js';
 
 function repoMock() {
   return {
@@ -16,7 +18,7 @@ function interceptorContextFor(
   method: string,
   url: string,
   adminUser?: Record<string, unknown>,
-): ExecutionContext {
+): { context: ExecutionContext; request: Record<string, unknown> } {
   const req: Record<string, unknown> = {
     method,
     url,
@@ -24,9 +26,10 @@ function interceptorContextFor(
     headers: {},
     adminUser,
   };
-  return {
+  const context = {
     switchToHttp: () => ({ getRequest: () => req }),
   } as unknown as ExecutionContext;
+  return { context, request: req };
 }
 
 function nextOf(value: unknown): CallHandler {
@@ -79,14 +82,14 @@ describe('AdminAuditInterceptor', () => {
     const interceptor = new AdminAuditInterceptor(
       audit as unknown as AdminAuditService,
     );
-    const ctx = interceptorContextFor('POST', '/admin/users', {
+    const { context } = interceptorContextFor('POST', '/admin/users', {
       id: 'a1',
       role: 'admin',
     });
 
     await new Promise<void>((resolve) => {
       interceptor
-        .intercept(ctx, nextOf({ id: 'new-user' }))
+        .intercept(context, nextOf({ id: 'new-user' }))
         .subscribe({ complete: resolve });
     });
 
@@ -101,14 +104,46 @@ describe('AdminAuditInterceptor', () => {
     const interceptor = new AdminAuditInterceptor(
       audit as unknown as AdminAuditService,
     );
-    const ctx = interceptorContextFor('GET', '/admin/metrics');
+    const { context } = interceptorContextFor('GET', '/admin/metrics');
 
     await new Promise<void>((resolve) => {
       interceptor
-        .intercept(ctx, nextOf({ data: 'metrics' }))
+        .intercept(context, nextOf({ data: 'metrics' }))
         .subscribe({ complete: resolve });
     });
 
     expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('uses the context actor when adminUser is not set (e.g. auth routes)', async () => {
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const interceptor = new AdminAuditInterceptor(
+      audit as unknown as AdminAuditService,
+    );
+    // No adminUser — simulates a public-bypass auth route.
+    const { context, request } = interceptorContextFor(
+      'POST',
+      '/admin/auth/login',
+    );
+    // Stamp the actor as the controller would after a successful login.
+    setAdminAuditActor(request as unknown as Request, {
+      admin_user_id: 'u42',
+      admin_role: 'support',
+    });
+
+    await new Promise<void>((resolve) => {
+      interceptor
+        .intercept(context, nextOf({ accessToken: 'tok' }))
+        .subscribe({ complete: resolve });
+    });
+
+    expect(audit.record).toHaveBeenCalledTimes(1);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        admin_user_id: 'u42',
+        admin_role: 'support',
+        outcome: 'allowed',
+      }),
+    );
   });
 });
