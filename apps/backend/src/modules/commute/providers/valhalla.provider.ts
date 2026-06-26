@@ -106,18 +106,27 @@ export class ValhallaProvider implements RoutingProvider {
     }
   }
 
-  private tripToResult(trip: ValhallaTrip): RouteResult {
+  private tripToResult(trip: ValhallaTrip): RouteResult | null {
     const geometry: Array<{ lat: number; lng: number }> = [];
     trip.legs.forEach((leg, idx) => {
       const pts = decodePolyline6(leg.shape);
       // Drop the duplicate join vertex shared with the previous leg.
       geometry.push(...(idx === 0 ? pts : pts.slice(1)));
     });
-    return {
-      distance_km: Math.round(trip.summary.length * 100) / 100,
-      duration_min: Math.round(trip.summary.time / 60),
-      geometry,
-    };
+    // Reject degenerate shapes (Valhalla can 200 with an empty/one-point or
+    // non-finite shape): a valid LineString needs >=2 finite points, and the
+    // summary must be finite. Otherwise /routing/route would hand back invalid
+    // geometry and a later save would build bad route_geom (PostGIS 500). Return
+    // null so callers fall through to the no-route (502) path.
+    const distance_km = Math.round(trip.summary.length * 100) / 100;
+    const duration_min = Math.round(trip.summary.time / 60);
+    const valid =
+      geometry.length >= 2 &&
+      geometry.every((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)) &&
+      Number.isFinite(distance_km) &&
+      Number.isFinite(duration_min);
+    if (!valid) return null;
+    return { distance_km, duration_min, geometry };
   }
 
   async route(
@@ -157,6 +166,9 @@ export class ValhallaProvider implements RoutingProvider {
       ...(includePrimary ? [data.trip] : []),
       ...(data.alternates ?? []).map((a) => a.trip),
     ];
-    return trips.slice(0, maxAlternatives).map((t) => this.tripToResult(t));
+    return trips
+      .slice(0, maxAlternatives)
+      .map((t) => this.tripToResult(t))
+      .filter((r): r is RouteAlternative => r !== null);
   }
 }

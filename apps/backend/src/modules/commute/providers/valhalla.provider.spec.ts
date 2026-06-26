@@ -161,6 +161,27 @@ describe('ValhallaProvider.route', () => {
     ).toBeNull();
   });
 
+  it('returns null for a degenerate Valhalla shape (<2 decoded points)', async () => {
+    // A 200 whose leg decodes to a single point would form invalid LineString
+    // geometry; the provider must reject it (-> null -> no-route) so a later
+    // save never builds bad route_geom.
+    const shape = encodePolyline6([[50.08, 14.42]]);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        trip: {
+          legs: [{ shape, summary: { length: 0, time: 0 } }],
+          summary: { length: 0, time: 0 },
+        },
+      }),
+    );
+    expect(
+      await makeProvider().route([
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ]),
+    ).toBeNull();
+  });
+
   it('concatenates multi-leg geometry and drops the shared join vertex', async () => {
     // Leg 1: A -> B. Leg 2: B -> C.
     // B appears as the last point of leg 1 AND the first point of leg 2.

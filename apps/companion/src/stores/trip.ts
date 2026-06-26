@@ -133,6 +133,15 @@ interface TripState {
   routeDirty: boolean;
 
   /**
+   * True from the moment a routing input changes (waypoint edit or avoid-option
+   * toggle) until the live hook writes a fresh route via applyRouteResult. The
+   * store keeps the pre-edit geometry during the routing debounce; this gates
+   * Save route so a quick click can't persist stale (un-previewed) geometry.
+   * Reset to false on load (setActiveTrip) and on applyRouteResult.
+   */
+  routePreviewStale: boolean;
+
+  /**
    * The planner controls' current parameters, mirrored from the page so the
    * map's context-menu `placeWaypoint` can seed a brand-new draft with the
    * rider's chosen days/km/avoid options instead of store defaults. Null until
@@ -322,6 +331,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
+    routePreviewStale: false,
     draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
@@ -336,6 +346,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set({
         activeTrip,
         routeDirty: false,
+        routePreviewStale: false,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -344,7 +355,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canRedo: false,
       }),
     setGenerating: (isGenerating) => set({ isGenerating }),
-    markRouteDirty: () => set({ routeDirty: true }),
+    markRouteDirty: () => set({ routeDirty: true, routePreviewStale: true }),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),
 
@@ -372,6 +383,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // Adding a waypoint (e.g. a suggested overnight stay from
         // TripStopsPanel) is a route edit — mark dirty so Save route enables.
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
@@ -398,6 +410,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
@@ -427,6 +440,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
         // edit — mark dirty so they enable Save route (gated on routeDirty).
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     removeWaypoint: (dayIndex, waypointId) =>
@@ -524,6 +538,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     undo: () =>
@@ -540,6 +555,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Restore the dirty flag captured with this snapshot so undoing back
           // to the loaded route also clears routeDirty (re-disabling Save).
           routeDirty: previous.dirty,
+          // The restored waypoints will be re-routed by the live hook; mark the
+          // preview stale until that lands so Save can't persist old geometry.
+          routePreviewStale: true,
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -561,6 +579,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
+          routePreviewStale: true,
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -638,6 +657,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     setWaypointType: (waypointId, type) =>
@@ -665,6 +685,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     removeWaypointById: (waypointId) =>
@@ -686,6 +707,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         routeDirty: true,
+        routePreviewStale: true,
       })),
 
     routingWaypoints: () => {
@@ -724,6 +746,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         };
         return {
           ...state,
+          // Geometry now matches the current routing inputs — preview is fresh.
+          routePreviewStale: false,
           activeTrip: {
             ...activeTrip,
             days,
@@ -741,6 +765,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
         routeDirty: false,
+        routePreviewStale: false,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],

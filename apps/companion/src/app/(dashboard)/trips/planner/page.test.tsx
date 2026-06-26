@@ -258,6 +258,7 @@ type TripStoreSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   routeDirty: boolean;
+  routePreviewStale: boolean;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
   undoStack: Array<{ trip: Trip | null; dirty: boolean }>;
@@ -407,6 +408,7 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
+      routePreviewStale: false,
       draftPlannerParameters: null,
       focusedSegmentId: null,
       hoveredSegmentId: null,
@@ -1169,6 +1171,18 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByRole("button", { name: "Save route" }),
     ).not.toBeDisabled();
+  });
+
+  it("disables Save route while the preview is stale (mid routing debounce)", () => {
+    // Edited (routeDirty) with geometry present, but routePreviewStale=true →
+    // the displayed geometry is from the pre-edit waypoints; Save must wait.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    storeState.routePreviewStale = true;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
   it("disables Save route on an unedited loaded trip (routeDirty false) so a no-op save can't reroute", () => {

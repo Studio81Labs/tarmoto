@@ -192,6 +192,7 @@ export default function TripPlannerPage() {
   const setGenerating = useTripStore((s) => s.setGenerating);
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const routeDirty = useTripStore((s) => s.routeDirty);
+  const routePreviewStale = useTripStore((s) => s.routePreviewStale);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const setDraftPlannerParameters = useTripStore(
     (s) => s.setDraftPlannerParameters,
@@ -639,11 +640,17 @@ export default function TripPlannerPage() {
       wps.some((w) => w.type === "start") && wps.some((w) => w.type === "end")
     );
   }, [activeDayWaypoints]);
+  // Only allow saving when the displayed geometry was computed for the CURRENT
+  // routing inputs. After an edit the store keeps the pre-edit geometry until
+  // the live hook reroutes (300ms debounce + fetch); `routePreviewStale` is true
+  // during that window (and after a preview failure), so a quick click can't
+  // persist a route whose displayed geometry belongs to stale waypoints.
   const canSaveRoute =
     routingWaypoints.length >= 2 &&
     hasStartAndEnd &&
     activeDayRouteGeometry !== null &&
-    routeDirty;
+    routeDirty &&
+    !routePreviewStale;
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;

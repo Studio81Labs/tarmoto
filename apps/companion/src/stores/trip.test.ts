@@ -803,4 +803,31 @@ describe("useTripStore routeDirty flag", () => {
     expect(day.routeGeometry).toBeUndefined();
     expect(day.distanceKm).toBe(0);
   });
+
+  it("marks the preview stale on edit and fresh after applyRouteResult", () => {
+    useTripStore.getState().resetForTest?.();
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    // An edit leaves the preview stale until a fresh route lands.
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
+
+    useTripStore.getState().applyRouteResult({
+      geometry: [
+        { lat: 1, lng: 1 },
+        { lat: 5, lng: 5 },
+      ],
+      distance_km: 5,
+      duration_min: 10,
+      avg_quality: 4,
+      curviness_score: 5,
+      elevation_gain_m: 50,
+      surface_mix: {},
+    } as never);
+    expect(useTripStore.getState().routePreviewStale).toBe(false);
+
+    // A subsequent edit makes it stale again.
+    useTripStore.getState().placeWaypoint({ lat: 2, lng: 2 }, "add-via");
+    expect(useTripStore.getState().routePreviewStale).toBe(true);
+  });
 });
