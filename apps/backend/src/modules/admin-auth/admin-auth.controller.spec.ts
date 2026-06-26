@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AdminAuthController } from './admin-auth.controller.js';
 import { AdminAuthService } from './admin-auth.service.js';
@@ -140,5 +140,40 @@ describe('AdminAuthController', () => {
     expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.createSession).not.toHaveBeenCalled();
+  });
+
+  it('login throws ForbiddenException and does not call service when password login is disabled', async () => {
+    const productionService = {
+      loginWithPassword: jest.fn(),
+      refresh: jest.fn(),
+      revoke: jest.fn(),
+      findActiveById: jest.fn(),
+      findOrProvisionSsoUser: jest.fn(),
+      createSession: jest.fn(),
+    } as unknown as jest.Mocked<AdminAuthService>;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        { provide: AdminAuthService, useValue: productionService },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => {
+              if (key === 'NODE_ENV') return 'production';
+              return undefined;
+            },
+          },
+        },
+      ],
+    }).compile();
+    const prodController = moduleRef.get(AdminAuthController);
+    const res = mockResponse();
+
+    await expect(
+      prodController.login({ email: 'ops@tarmoto.app', password: 'pw' }, res),
+    ).rejects.toThrow(ForbiddenException);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(productionService.loginWithPassword).not.toHaveBeenCalled();
   });
 });

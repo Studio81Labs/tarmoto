@@ -70,10 +70,14 @@ export function useAdminAuth(): AdminAuthState {
   );
 
   const logout = useCallback(async () => {
-    await adminAuthApi.logout();
-    if (mountedRef.current) {
-      setUser(null);
-      setStatus("unauthenticated");
+    try {
+      await adminAuthApi.logout();
+      if (mountedRef.current) {
+        setUser(null);
+        setStatus("unauthenticated");
+      }
+    } catch {
+      if (mountedRef.current) setError("Logout failed. Please try again.");
     }
   }, []);
 

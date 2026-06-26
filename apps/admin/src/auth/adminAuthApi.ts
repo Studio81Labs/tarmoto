@@ -31,7 +31,8 @@ export const adminAuthApi = {
   },
 
   async logout(): Promise<void> {
-    await apiClient.POST("/api/v1/admin/auth/logout", {});
+    const { error } = await apiClient.POST("/api/v1/admin/auth/logout", {});
+    if (error) throw new Error("Logout failed");
   },
 
   startGithubSso(): void {

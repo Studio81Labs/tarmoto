@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Post,
@@ -35,6 +36,7 @@ import {
   exchangeGithubCode,
 } from './admin-github-sso.js';
 import type { AdminRequest } from '../admin/internal.guard.js';
+import { isAdminPasswordLoginEnabled } from './admin-password-login.js';
 
 const SSO_ERROR_REDIRECT = '/?adminAuthError=sso';
 
@@ -57,6 +59,9 @@ export class AdminAuthController {
     @Body() dto: AdminLoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthSessionResponseDto> {
+    if (!isAdminPasswordLoginEnabled(this.config)) {
+      throw new ForbiddenException('Password login is disabled');
+    }
     const tokens = await this.service.loginWithPassword(
       dto.email,
       dto.password,

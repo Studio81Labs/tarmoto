@@ -96,4 +96,24 @@ describe("useAdminAuth", () => {
     expect(result.current.status).toBe("unauthenticated");
     expect(result.current.user).toBeNull();
   });
+
+  it("keeps session and sets error when logout fails", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(admin);
+    (adminAuthApi.logout as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network failure"),
+    );
+
+    const { result } = renderHook(() => useAdminAuth());
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+
+    await act(async () => {
+      await result.current.logout();
+    });
+
+    expect(result.current.status).toBe("authenticated");
+    expect(result.current.user).toEqual(admin);
+    expect(result.current.error).toMatch(/logout failed/i);
+  });
 });
