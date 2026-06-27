@@ -190,10 +190,22 @@ export class AdminAuthController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    const callbackPath = (req.originalUrl ?? req.url ?? '').split('?')[0];
     try {
       const expectedState = readCookie(req, ADMIN_SSO_STATE_COOKIE);
       clearAdminSsoStateCookie(res, this.secure);
       if (!code || !state || !expectedState || state !== expectedState) {
+        void this.audit.record({
+          event_key: 'admin.auth.sso_login',
+          outcome: 'denied',
+          method: 'GET',
+          path: callbackPath,
+          admin_user_id: null,
+          admin_role: null,
+          target_type: null,
+          target_id: null,
+          metadata: { provider: 'github', reason: 'state_mismatch' },
+        });
         res.redirect(SSO_ERROR_REDIRECT);
         return;
       }
@@ -217,7 +229,7 @@ export class AdminAuthController {
         event_key: 'admin.auth.sso_login',
         outcome: 'allowed',
         method: 'GET',
-        path: (req.originalUrl ?? req.url ?? '').split('?')[0],
+        path: callbackPath,
         admin_user_id: user.id,
         admin_role: user.role,
         target_type: null,
@@ -225,7 +237,22 @@ export class AdminAuthController {
         metadata: { provider: 'github' },
       });
       res.redirect('/');
-    } catch {
+    } catch (error) {
+      void this.audit.record({
+        event_key: 'admin.auth.sso_login',
+        outcome: 'denied',
+        method: 'GET',
+        path: callbackPath,
+        admin_user_id: null,
+        admin_role: null,
+        target_type: null,
+        target_id: null,
+        metadata: {
+          provider: 'github',
+          reason: 'callback_failed',
+          detail: error instanceof Error ? error.message : String(error),
+        },
+      });
       res.redirect(SSO_ERROR_REDIRECT);
     }
   }

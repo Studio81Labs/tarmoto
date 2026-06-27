@@ -277,6 +277,105 @@ describe('AdminAuthController', () => {
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
+  it('SSO callback with mismatched state records a denied audit row with state_mismatch reason', async () => {
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<AdminAuditService>;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        { provide: AdminAuthService, useValue: service },
+        { provide: ConfigService, useValue: { get: () => 'development' } },
+        { provide: AdminAuditService, useValue: auditSpy },
+      ],
+    }).compile();
+    const ctrl = moduleRef.get(AdminAuthController);
+
+    const req = {
+      headers: { cookie: `${ADMIN_SSO_STATE_COOKIE}=correct-state` },
+      originalUrl: '/api/v1/admin/auth/sso/github/callback?code=c&state=wrong',
+    } as unknown as Request;
+    const res = mockResponse();
+
+    await ctrl.callback('code123', 'wrong-state', req, res);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.sso_login',
+        outcome: 'denied',
+        method: 'GET',
+        admin_user_id: null,
+        admin_role: null,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        metadata: expect.objectContaining({
+          provider: 'github',
+          reason: 'state_mismatch',
+        }),
+      }),
+    );
+  });
+
+  it('SSO callback exchange/provisioning failure records a denied audit row with callback_failed reason and redirects', async () => {
+    const auditSpy = {
+      record: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<AdminAuditService>;
+
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AdminAuthController],
+      providers: [
+        {
+          provide: AdminAuthService,
+          useValue: {
+            ...service,
+            findOrProvisionSsoUser: jest
+              .fn()
+              .mockRejectedValue(new Error('unlinked identity')),
+          },
+        },
+        { provide: ConfigService, useValue: { get: () => 'development' } },
+        { provide: AdminAuditService, useValue: auditSpy },
+      ],
+    }).compile();
+    const ctrl = moduleRef.get(AdminAuthController);
+
+    (exchangeGithubCode as jest.Mock).mockResolvedValue({
+      subject: 'gh-unknown',
+      emails: ['unknown@example.com'],
+    });
+
+    const req = {
+      headers: { cookie: `${ADMIN_SSO_STATE_COOKIE}=valid-state` },
+      originalUrl:
+        '/api/v1/admin/auth/sso/github/callback?code=code123&state=valid-state',
+    } as unknown as Request;
+    const res = mockResponse();
+
+    await ctrl.callback('code123', 'valid-state', req, res);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditSpy.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_key: 'admin.auth.sso_login',
+        outcome: 'denied',
+        method: 'GET',
+        admin_user_id: null,
+        admin_role: null,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher
+        metadata: expect.objectContaining({
+          provider: 'github',
+          reason: 'callback_failed',
+          detail: 'unlinked identity',
+        }),
+      }),
+    );
+  });
+
   it('successful SSO callback sets client cookie, redirects to /, and records an audit row', async () => {
     const adminUser = {
       id: 'a1',

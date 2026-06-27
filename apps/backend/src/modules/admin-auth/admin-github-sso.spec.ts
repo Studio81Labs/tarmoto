@@ -1,6 +1,9 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { exchangeGithubCode } from './admin-github-sso.js';
+import {
+  buildGithubAuthorizeUrl,
+  exchangeGithubCode,
+} from './admin-github-sso.js';
 
 const config = {
   get: (key: string) => {
@@ -117,6 +120,50 @@ describe('exchangeGithubCode', () => {
       .mockResolvedValueOnce(makeEmailsResponse([]));
 
     await expect(exchangeGithubCode('code', config)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+});
+
+describe('buildGithubAuthorizeUrl', () => {
+  const baseConfig = {
+    get: (key: string) => {
+      if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_ID') return 'test-client-id';
+      if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_SECRET')
+        return 'test-client-secret';
+      return undefined;
+    },
+  } as unknown as ConfigService;
+
+  it('omits redirect_uri when TARMOTO_ADMIN_SSO_REDIRECT_URI is not set', () => {
+    const url = buildGithubAuthorizeUrl('test-state', baseConfig);
+    expect(url).toContain('client_id=test-client-id');
+    expect(url).toContain('state=test-state');
+    expect(url).not.toContain('redirect_uri');
+  });
+
+  it('includes redirect_uri when TARMOTO_ADMIN_SSO_REDIRECT_URI is set', () => {
+    const redirectUri =
+      'http://localhost:3003/api/v1/admin/auth/sso/github/callback';
+    const configWithRedirect = {
+      get: (key: string) => {
+        if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_ID') return 'test-client-id';
+        if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_SECRET')
+          return 'test-client-secret';
+        if (key === 'TARMOTO_ADMIN_SSO_REDIRECT_URI') return redirectUri;
+        return undefined;
+      },
+    } as unknown as ConfigService;
+    const url = buildGithubAuthorizeUrl('test-state', configWithRedirect);
+    expect(url).toContain('redirect_uri=');
+    expect(url).toContain(encodeURIComponent(redirectUri));
+  });
+
+  it('throws UnauthorizedException when client id or secret is missing', () => {
+    const emptyConfig = {
+      get: () => undefined,
+    } as unknown as ConfigService;
+    expect(() => buildGithubAuthorizeUrl('test-state', emptyConfig)).toThrow(
       UnauthorizedException,
     );
   });

@@ -15,6 +15,10 @@ export function buildGithubAuthorizeUrl(
     state,
     allow_signup: 'false',
   });
+  const redirectUri = config.get<string>('TARMOTO_ADMIN_SSO_REDIRECT_URI');
+  if (redirectUri) {
+    params.set('redirect_uri', redirectUri);
+  }
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
