@@ -384,6 +384,18 @@ function syncLinkedStart(
   const nextWaypoints = [...next.waypoints];
   const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
   if (!end) return { days, stale: staleDays }; // no end yet → linked start stays empty
+  // If the linked start already mirrors the predecessor's end, the edit didn't
+  // move the end (e.g. a via/POI change) — don't rewrite or re-stale the
+  // successor, or it would sit in stalePreviewDays with unchanged routing
+  // inputs and wedge the Save gate until the rider visits it.
+  const existingStart = startIdx >= 0 ? nextWaypoints[startIdx] : undefined;
+  if (
+    existingStart &&
+    existingStart.location.lng === end.location.lng &&
+    existingStart.location.lat === end.location.lat
+  ) {
+    return { days, stale: staleDays };
+  }
   const seededStart: Waypoint = {
     id: nextWaypoints[startIdx]?.id ?? `link-${next.dayNumber}`,
     name: "Start",
@@ -708,7 +720,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           routeDirty: previous.dirty,
           // The restored waypoints will be re-routed by the live hook; mark all
           // days stale until the hook lands fresh geometry for each.
-          stalePreviewDays: (previous.trip?.days ?? []).map((d) => d.dayNumber),
+          // Only routable days (>=2 routing waypoints) — an empty/under-spec
+          // day can't be re-routed to clear its flag, which would wedge Save.
+          stalePreviewDays: (previous.trip?.days ?? [])
+            .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+            .map((d) => d.dayNumber),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -730,7 +746,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
-          stalePreviewDays: (next.trip?.days ?? []).map((d) => d.dayNumber),
+          stalePreviewDays: (next.trip?.days ?? [])
+            .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+            .map((d) => d.dayNumber),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -915,13 +933,29 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     saveDays: () => {
       const { activeTrip } = get();
       if (!activeTrip) return [];
-      return activeTrip.days
-        .filter((d) => d.waypoints.length > 0) // drop empties
-        .map((d, i) => ({
-          dayNumber: i + 1, // renumber contiguously
-          startLinked: d.startLinked ?? false,
+      const days = activeTrip.days;
+      const result: {
+        dayNumber: number;
+        startLinked: boolean;
+        waypoints: ReturnType<typeof activePlannerSaveWaypoints>;
+      }[] = [];
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        if (d.waypoints.length === 0) continue; // drop empties
+        // A link is only valid if the day's ORIGINAL immediate predecessor
+        // survived the empty-day filter (and this isn't the new first day).
+        // Otherwise the start was seeded from a dropped day's end and no longer
+        // mirrors the new predecessor — persisting startLinked:true would make
+        // the map hide its start marker and let a future predecessor-end edit
+        // overwrite a start that was never linked to it.
+        const predecessorSurvived = i > 0 && days[i - 1].waypoints.length > 0;
+        result.push({
+          dayNumber: result.length + 1, // renumber contiguously
+          startLinked: predecessorSurvived ? (d.startLinked ?? false) : false,
           waypoints: activePlannerSaveWaypoints(d.waypoints),
-        }));
+        });
+      }
+      return result;
     },
 
     applyRouteResult: (dayNumber, result) =>

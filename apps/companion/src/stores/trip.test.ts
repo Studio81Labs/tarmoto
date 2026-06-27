@@ -609,9 +609,11 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(result[0]!.dayNumber).toBe(1);
     expect(result[1]!.dayNumber).toBe(2);
 
-    // startLinked carried through.
-    expect(result[0]!.startLinked).toBe(false); // day 1 has no startLinked (defaults false)
-    expect(result[1]!.startLinked).toBe(true); // old day 3 had startLinked=true
+    // startLinked is RECONCILED against the filtered predecessor: old day 3 was
+    // linked to day 2, but day 2 was empty and dropped, so the link is cleared
+    // (its seeded start no longer mirrors the new predecessor, day 1's end).
+    expect(result[0]!.startLinked).toBe(false); // day 1: never linked
+    expect(result[1]!.startLinked).toBe(false); // old day 3: predecessor dropped → cleared
 
     // Day 1 waypoints mapped correctly.
     expect(result[0]!.waypoints).toHaveLength(2);
@@ -622,6 +624,55 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(result[1]!.waypoints).toHaveLength(2);
     expect(result[1]!.waypoints[0]!.lat).toBe(46.52);
     expect(result[1]!.waypoints[1]!.lat).toBe(46.2);
+  });
+
+  it("saveDays keeps startLinked when the linked predecessor survives", () => {
+    const s = useTripStore.getState();
+    // 3 complete days, day 3 linked to the surviving day 2 — link must persist.
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end");
+    s.addDay();
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 complete
+    s.addDay();
+    useTripStore.setState({ selectedDayIndex: 2 });
+    s.placeWaypoint({ lat: 30, lng: 30 }, "set-end"); // day 3 complete, linked to day 2
+
+    const result = useTripStore.getState().saveDays();
+    expect(result).toHaveLength(3);
+    expect(result[2]!.startLinked).toBe(true); // predecessor (day 2) survived
+  });
+
+  it("editing a Day 1 via does not re-stale a linked Day 2 (end unchanged)", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1 end (2,2)
+    s.addDay(); // day 2 linked, start seeded from (2,2)
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 complete
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 0 });
+
+    // Edit a via on day 1 — its END (2,2) does not move.
+    s.placeWaypoint({ lat: 1.5, lng: 1.5 }, "add-via");
+
+    const stale = useTripStore.getState().stalePreviewDays;
+    expect(stale).toContain(1); // day 1 was edited
+    expect(stale).not.toContain(2); // day 2's linked start still matches → not re-staled
+  });
+
+  it("undo restores stale flags only for routable days", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1 routable
+    s.addDay(); // day 2: seeded start only — 1 routing wp, NOT routable
+    useTripStore.setState({ selectedDayIndex: 0 });
+    s.placeWaypoint({ lat: 1.5, lng: 1.5 }, "add-via"); // edit day 1 (snapshot)
+
+    s.undo(); // restores { day 1: start+end, day 2: start-only }
+
+    const stale = useTripStore.getState().stalePreviewDays;
+    expect(stale).toContain(1); // day 1 routable
+    expect(stale).not.toContain(2); // day 2 (start only) excluded
   });
 
   it("saveDays maps rest→food and accommodation→hotel types", () => {
