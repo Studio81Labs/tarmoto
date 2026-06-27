@@ -658,8 +658,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 activeTrip.days.length,
               )
             : activeTrip.parameters;
+          // Dragging a linked successor's start (a marker visible only in focus
+          // mode) breaks the link — same as placing a new start via the menu —
+          // so a later predecessor-end edit won't overwrite the rider's chosen
+          // start as if the link were intact.
+          const breakLink =
+            previous.type === "start" &&
+            dayIndex >= 1 &&
+            day.startLinked === true;
           days[dayIndex] = updatePlannerDayRoute(
-            day,
+            breakLink ? { ...day, startLinked: false } : day,
             waypoints,
             nextParameters,
           );

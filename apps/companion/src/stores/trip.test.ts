@@ -1485,6 +1485,29 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(day2Start.location).toEqual({ lat: 5, lng: 5 });
   });
 
+  it("dragging a linked successor's start breaks the link and stops mirroring", () => {
+    seedOneDay(); // day 1: start (1,1) → end (2,2)
+    useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+
+    // Drag day 2's (linked) start to a new spot.
+    useTripStore.getState().moveWaypoint(1, day2Start.id, { lat: 9, lng: 9 });
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+
+    // A later edit to day 1's end must NOT overwrite the dragged start.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    useTripStore.getState().placeWaypoint({ lat: 7, lng: 7 }, "set-end");
+    const after = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+    expect(after.location).toEqual({ lng: 9, lat: 9 }); // stayed where dragged
+  });
+
   it("setWaypointType promoting a via→start on day 2 breaks the link and stops mirroring", () => {
     seedOneDay(); // day 1: start (1,1) → end (2,2)
     useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
