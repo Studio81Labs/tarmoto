@@ -1,34 +1,13 @@
-:root {
-  --color-bg: #0d1117;
-  --color-surface: #161b22;
-  --color-text: #e6edf3;
-  --color-text-muted: #8b949e;
-  --color-accent: #f5a623;
-  --color-border: #30363d;
-}
+@import "tailwindcss";
+@import "@tarmoto/ui/tokens.css";
+@import "@tarmoto/ui/theme.css";
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-#root {
-  min-height: 100dvh;
+@layer base {
+  body {
+    min-height: 100dvh;
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
 }
