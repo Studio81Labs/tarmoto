@@ -1751,4 +1751,27 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
         .location,
     ).toEqual({ lat: 9, lng: 9 });
   });
+
+  it("relinkDayStart is a no-op when the predecessor has no finish", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 }); // day 1: start only, no end
+    s.addDay(); // day 2 linked, no seeded start (day 1 has no end)
+    // Manually place day 2's start (this also breaks the link).
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+
+    // Relink — but day 1 has no finish to mirror → no-op.
+    s.relinkDayStart(1);
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+    // The rider's manual start is preserved (not hidden/overwritten).
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+    expect(day2Start.location).toEqual({ lng: 9, lat: 9 });
+  });
 });

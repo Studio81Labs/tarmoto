@@ -1130,6 +1130,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set((state) => {
         const trip = state.activeTrip;
         if (!trip || index < 1) return state;
+        // No predecessor end to mirror → can't form a valid link. Setting
+        // startLinked:true would make the map hide this day's start with no
+        // shared end drawn, and a later predecessor-finish edit would overwrite
+        // the rider's manual start. Leave the link off until day N-1 has an end.
+        const prevEnd = trip.days[index - 1]?.waypoints.find(
+          (w) => w.type === "end",
+        );
+        if (!prevEnd) return state;
         const days = trip.days.map((d, i) =>
           i === index ? { ...d, startLinked: true } : d,
         );

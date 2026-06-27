@@ -1303,8 +1303,16 @@ export default function TripPlannerPage() {
               // startLinked is only present on real TripDay objects (not placeholders)
               const startLinked =
                 "startLinked" in day ? day.startLinked : undefined;
+              // Only offer relink once the predecessor actually has an end to
+              // mirror — relinking with no predecessor finish would form an
+              // invalid link (the store guards this too, so the button would
+              // otherwise be a no-op).
+              const prevHasEnd =
+                activeTrip?.days[i - 1]?.waypoints.some(
+                  (w) => w.type === "end",
+                ) ?? false;
               const showRelink =
-                !!activeTrip && i >= 1 && startLinked === false;
+                !!activeTrip && i >= 1 && startLinked === false && prevHasEnd;
               return (
                 <div
                   key={day.dayNumber}
