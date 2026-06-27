@@ -648,16 +648,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         });
         // Only mark dirty if the move actually changed state (no-op moves
         // return the same state reference from commitTripChange). A real move
-        // also makes the displayed geometry stale until the live hook reroutes.
+        // makes the DRAGGED day's geometry stale (not the selected day's — a
+        // marker drag can target any day) and, if it moved an end, cascades the
+        // new location into the next linked day's start. Reuse the shared
+        // post-commit sync so the drag handler matches the context-menu edits.
         if (result === state) return state;
-        return {
-          ...result,
-          routeDirty: true,
-          stalePreviewDays: markDayStale(
-            get().stalePreviewDays,
-            get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
-          ),
-        };
+        return { ...result, ...applyPostCommitSync(result, state, dayIndex) };
       }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
@@ -998,7 +994,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         if (days[0]?.startLinked) {
           days[0] = { ...days[0], startLinked: false };
         }
-        const stale = state.stalePreviewDays;
+        // Remap stale day numbers to the renumbered days: the removed day's
+        // number (index + 1) drops out, and any stale day above it shifts down
+        // by one. Without this, removing Day 2 while Day 3 is stale leaves an
+        // orphaned `3` that no day can clear, wedging the Save gate.
+        const stale = state.stalePreviewDays
+          .filter((d) => d !== index + 1)
+          .map((d) => (d > index + 1 ? d - 1 : d));
         // re-evaluate the boundary at `index`: if the day now at `index` is linked, re-seed from its new predecessor
         let result = { days, stale };
         if (index > 0 && index < days.length && days[index]!.startLinked) {

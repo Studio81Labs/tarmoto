@@ -1352,6 +1352,54 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(trip.days[0]!.startLinked).toBe(false);
   });
 
+  it("removeDay remaps stale day numbers so no orphaned flag wedges the save gate", () => {
+    seedOneDay(); // day 1
+    useTripStore.getState().addDay(); // day 2 (linked)
+    useTripStore.getState().addDay(); // day 3 (linked)
+    // Override day 3's start so removeDay won't cascade — isolates the remap.
+    useTripStore.setState({ selectedDayIndex: 2 });
+    useTripStore.getState().placeWaypoint({ lat: 30, lng: 30 }, "set-start");
+    expect(useTripStore.getState().activeTrip!.days[2]!.startLinked).toBe(
+      false,
+    );
+
+    // Day 3 is the only stale day; days 1 and 2 are fresh.
+    useTripStore.setState({ stalePreviewDays: [3] });
+
+    // Remove the MIDDLE day (index 1): old day 3 becomes day 2.
+    useTripStore.getState().removeDay(1);
+
+    // The stale flag must follow the renumber (3 → 2) with no orphaned `3`
+    // left behind that no selected day could ever clear.
+    expect(useTripStore.getState().stalePreviewDays).toEqual([2]);
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
+  });
+
+  it("moveWaypoint marks the DRAGGED day stale and cascades a moved end to the linked next day", () => {
+    seedOneDay(); // day 1: start (1,1) → end (2,2)
+    useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 end
+
+    // Selected day is 2, but we drag DAY 1's end — the dragged day must be the
+    // one marked stale, and the linked day 2 must cascade.
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 1 });
+    const day1End = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!;
+    useTripStore.getState().moveWaypoint(0, day1End.id, { lat: 5, lng: 5 });
+
+    const state = useTripStore.getState();
+    // Day 1 (dragged) is stale even though day 2 is selected.
+    expect(state.stalePreviewDays).toContain(1);
+    // Day 2 (linked) cascaded: stale + its start re-seeded to the new end.
+    expect(state.stalePreviewDays).toContain(2);
+    const day2Start = state.activeTrip!.days[1]!.waypoints.find(
+      (w) => w.type === "start",
+    )!;
+    expect(day2Start.location).toEqual({ lat: 5, lng: 5 });
+  });
+
   it("setWaypointType promoting a via→start on day 2 breaks the link and stops mirroring", () => {
     seedOneDay(); // day 1: start (1,1) → end (2,2)
     useTripStore.getState().addDay(); // day 2: linked start seeded from (2,2)
