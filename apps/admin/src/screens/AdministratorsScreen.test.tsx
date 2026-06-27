@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdministratorsScreen } from "./AdministratorsScreen.js";
 
@@ -7,26 +7,30 @@ const mockPatchMutate = vi.fn();
 const mockCreateMutate = vi.fn();
 const mockRefetch = vi.fn();
 
+const DEFAULT_ROWS = [
+  {
+    id: "a1",
+    email: "ops@tarmoto.app",
+    role: "admin",
+    status: "active",
+    last_login_at: null,
+    created_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "a2",
+    email: "support@tarmoto.app",
+    role: "support",
+    status: "disabled",
+    last_login_at: "2026-05-01T10:00:00Z",
+    created_at: "2026-02-01T00:00:00Z",
+  },
+];
+
+let mockAdminData = DEFAULT_ROWS;
+
 vi.mock("../data/useAdminAdmins.js", () => ({
   useAdminAdminsList: () => ({
-    data: [
-      {
-        id: "a1",
-        email: "ops@tarmoto.app",
-        role: "admin",
-        status: "active",
-        last_login_at: null,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-      {
-        id: "a2",
-        email: "support@tarmoto.app",
-        role: "support",
-        status: "disabled",
-        last_login_at: "2026-05-01T10:00:00Z",
-        created_at: "2026-02-01T00:00:00Z",
-      },
-    ],
+    data: mockAdminData,
     isPending: false,
     error: null,
     refetch: mockRefetch,
@@ -40,6 +44,7 @@ describe("AdministratorsScreen", () => {
     mockPatchMutate.mockClear();
     mockCreateMutate.mockClear();
     mockRefetch.mockClear();
+    mockAdminData = [...DEFAULT_ROWS];
   });
 
   it("renders the admin roster", () => {
@@ -63,18 +68,42 @@ describe("AdministratorsScreen", () => {
     expect(screen.getByText("Administrators")).toBeInTheDocument();
   });
 
-  it("shows per-row controls for manageable rows when super_admin", () => {
+  it("shows per-row controls for all manageable rows when super_admin", () => {
     render(
       <AdministratorsScreen
         currentRole="super_admin"
         currentAdminId="super1"
       />,
     );
-    // Both a1 (admin) and a2 (support) are manageable by super_admin
+    // a1 (admin) → Disable; a2 (support) → Enable; currentAdminId "super1" not in rows
     const disableButtons = screen.getAllByRole("button", {
       name: /disable|enable/i,
     });
-    expect(disableButtons.length).toBeGreaterThanOrEqual(1);
+    expect(disableButtons).toHaveLength(2);
+  });
+
+  it("shows manage controls for a peer super_admin row", () => {
+    mockAdminData = [
+      ...DEFAULT_ROWS,
+      {
+        id: "a3",
+        email: "peer@tarmoto.app",
+        role: "super_admin",
+        status: "active",
+        last_login_at: null,
+        created_at: "2026-03-01T00:00:00Z",
+      },
+    ];
+    render(
+      // currentAdminId "super1" is NOT in the list → all three rows get controls
+      <AdministratorsScreen
+        currentRole="super_admin"
+        currentAdminId="super1"
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: /disable|enable/i });
+    // a1, a2, and peer a3 (super_admin) all receive controls
+    expect(buttons).toHaveLength(3);
   });
 
   it("hides per-row controls for own row (self-lockout)", () => {
@@ -98,6 +127,23 @@ describe("AdministratorsScreen", () => {
     // a2 (support) — lower rank, controls shown
     const buttons = screen.getAllByRole("button", { name: /disable|enable/i });
     expect(buttons).toHaveLength(1);
+  });
+
+  it("role Select for a manageable row does not include admin/super_admin for a non-super_admin actor", () => {
+    render(
+      // admin actor can only manage a2 (support); a1 (admin peer) gets no controls
+      <AdministratorsScreen currentRole="admin" currentAdminId="other" />,
+    );
+    // The per-row role Select for a2 should only expose roles the admin can assign
+    const roleSelect = screen.getByRole("combobox", {
+      name: /role for support@tarmoto\.app/i,
+    });
+    const options = within(roleSelect).getAllByRole("option");
+    const values = options.map((o) => o.getAttribute("value"));
+    expect(values).not.toContain("admin");
+    expect(values).not.toContain("super_admin");
+    expect(values).toContain("read_only");
+    expect(values).toContain("support");
   });
 
   it("calls patchMutate with correct body and refetches on success", async () => {

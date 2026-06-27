@@ -27,6 +27,30 @@ const ROLE_RANK: Record<AdminRoleType, number> = {
   super_admin: 4,
 };
 
+const ALL_ROLES: AdminRoleType[] = [
+  "read_only",
+  "support",
+  "admin",
+  "super_admin",
+];
+
+const ROLE_LABEL: Record<AdminRoleType, string> = {
+  read_only: "Read-only",
+  support: "Support",
+  admin: "Admin",
+  super_admin: "Super Admin",
+};
+
+/**
+ * Returns the roles that `currentRole` is permitted to assign.
+ *   - super_admin → all four roles
+ *   - all other actors → only roles with a strictly lower rank
+ */
+function assignableRoles(currentRole: AdminRoleType): AdminRoleType[] {
+  if (currentRole === "super_admin") return ALL_ROLES;
+  return ALL_ROLES.filter((role) => ROLE_RANK[role] < ROLE_RANK[currentRole]);
+}
+
 /**
  * Returns true when `actorRole` is allowed to manage an account with
  * `targetRole`. Mirrors the server `canManageAdminRole` rule:
@@ -134,10 +158,11 @@ export function AdministratorsScreen({
               className="w-32"
               tone="cream"
             >
-              <option value="read_only">Read-only</option>
-              <option value="support">Support</option>
-              <option value="admin">Admin</option>
-              <option value="super_admin">Super Admin</option>
+              {assignableRoles(currentRole).map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABEL[role]}
+                </option>
+              ))}
             </Select>
             <Button
               variant={isActive ? "danger" : "secondary"}
@@ -183,6 +208,8 @@ export function AdministratorsScreen({
         onSuccess: () => {
           setNewEmail("");
           setNewPassword("");
+          setNewRole("support");
+          setNewMode("sso-only");
           void refetch();
         },
         onError: (err: unknown) => {
@@ -242,10 +269,11 @@ export function AdministratorsScreen({
             onChange={(v) => setNewRole(v as AdminRoleType)}
             ariaLabel="Role"
           >
-            <option value="read_only">Read-only</option>
-            <option value="support">Support</option>
-            <option value="admin">Admin</option>
-            <option value="super_admin">Super Admin</option>
+            {assignableRoles(currentRole).map((role) => (
+              <option key={role} value={role}>
+                {ROLE_LABEL[role]}
+              </option>
+            ))}
           </Select>
           <Select
             value={newMode}
