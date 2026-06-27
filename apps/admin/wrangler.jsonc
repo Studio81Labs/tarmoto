@@ -1,0 +1,24 @@
+{
+  // Admin SPA: static-assets-only config. Build output lands in apps/admin/dist;
+  // no Worker script is generated, and production deployment is NOT wired yet
+  // (there is intentionally no `worker:deploy` script — see DEPLOY note below).
+  //
+  // DEPLOY (deferred to a dedicated deploy phase): a production deploy needs a
+  // Worker entry (`main`) or Cloudflare origin rule that forwards /api/v1/admin/*
+  // to the NestJS backend, plus an admin-deploy workflow and a backend-origin
+  // var. Until then this file is a placeholder; local dev reaches the backend
+  // via the Vite proxy (`/api/v1` -> http://localhost:3000) in vite.config.ts.
+  //
+  // The worker name here keeps `wrangler dev` / local preview working without
+  // env wiring; a future deploy workflow should override --name from a repo var.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tarmoto-admin",
+  "compatibility_date": "2026-04-01",
+  "assets": {
+    "directory": "dist",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

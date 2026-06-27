@@ -6,7 +6,7 @@
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepare": "husky",
-    "dev": "pnpm shared:build && pnpm --parallel --filter @tarmoto/shared --filter @tarmoto/backend --filter @tarmoto/web --filter @tarmoto/companion run dev",
+    "dev": "pnpm shared:build && pnpm --parallel --filter @tarmoto/shared --filter @tarmoto/backend --filter @tarmoto/web --filter @tarmoto/companion --filter @tarmoto/admin run dev",
     "backend:dev": "pnpm --filter @tarmoto/backend dev",
     "backend:build": "pnpm --filter @tarmoto/backend build",
     "backend:start": "pnpm --filter @tarmoto/backend start",
@@ -28,6 +28,9 @@
     "mobile:dev": "pnpm --filter @tarmoto/mobile start",
     "mobile:ios": "pnpm --filter @tarmoto/mobile ios",
     "mobile:android": "pnpm --filter @tarmoto/mobile android",
+    "admin:dev": "pnpm --filter @tarmoto/admin dev",
+    "admin:build": "pnpm --filter @tarmoto/admin build",
+    "admin:test": "pnpm --filter @tarmoto/admin test",
     "poc:dev": "pnpm --filter @tarmoto/poc-sensor dev",
     "poc:build": "pnpm --filter @tarmoto/poc-sensor build",
     "shared:build": "pnpm --filter @tarmoto/shared build",

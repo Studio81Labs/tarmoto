@@ -57,3 +57,8 @@ export { WeatherAlertDispatch } from './weather-alert-dispatch.entity.js';
 export { Bike } from './bike.entity.js';
 export { RideTagEvent } from './ride-tag-event.entity.js';
 export { ModelEvalSample } from './model-eval-sample.entity.js';
+export { AdminUser } from './admin-user.entity.js';
+export type { AdminRole, AdminUserStatus } from './admin-user.entity.js';
+export { AdminSession } from './admin-session.entity.js';
+export { AdminRefreshToken } from './admin-refresh-token.entity.js';
+export { AdminAuditLog } from './admin-audit-log.entity.js';

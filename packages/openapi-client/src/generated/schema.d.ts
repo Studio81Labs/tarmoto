@@ -2803,6 +2803,142 @@ export interface paths {
     patch: operations["ClosuresController_update"];
     trace?: never;
   };
+  "/api/v1/admin/auth/config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Public admin auth config (pre-auth) */
+    get: operations["AdminAuthController_getConfig"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Admin password login (dev / fallback) */
+    post: operations["AdminAuthController_login"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/refresh": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate the admin session tokens */
+    post: operations["AdminAuthController_refresh"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Current admin session */
+    get: operations["AdminAuthController_me"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke the admin session */
+    post: operations["AdminAuthController_logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/sso/github/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Begin GitHub OAuth */
+    get: operations["AdminAuthController_start"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/auth/sso/github/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GitHub OAuth callback */
+    get: operations["AdminAuthController_callback"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Admin overview metrics */
+    get: operations["AdminMetricsController_metrics"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5157,6 +5293,35 @@ export interface components {
       ends_at?: string | null;
       notes?: string | null;
     };
+    AdminAuthConfigDto: {
+      /** @description Whether password login is enabled server-side */
+      passwordLoginEnabled: boolean;
+    };
+    AdminLoginDto: {
+      email: string;
+      password: string;
+    };
+    AdminUserViewDto: {
+      id: string;
+      email: string;
+      /** @enum {string} */
+      role: "read_only" | "support" | "admin" | "super_admin";
+      /** @enum {string} */
+      status: "active" | "disabled";
+    };
+    AdminAuthSessionResponseDto: {
+      user: components["schemas"]["AdminUserViewDto"];
+      expiresIn: number;
+    };
+    AdminMeResponseDto: {
+      user: components["schemas"]["AdminUserViewDto"];
+    };
+    AdminMetricsDto: {
+      users: number;
+      activeRides: number;
+      featureFlags: number;
+      closures: number;
+    };
   };
   responses: never;
   parameters: never;
@@ -5512,6 +5677,15 @@ export type SchemaCheckRouteClosuresResponseDto =
   components["schemas"]["CheckRouteClosuresResponseDto"];
 export type SchemaCreateClosureDto = components["schemas"]["CreateClosureDto"];
 export type SchemaUpdateClosureDto = components["schemas"]["UpdateClosureDto"];
+export type SchemaAdminAuthConfigDto =
+  components["schemas"]["AdminAuthConfigDto"];
+export type SchemaAdminLoginDto = components["schemas"]["AdminLoginDto"];
+export type SchemaAdminUserViewDto = components["schemas"]["AdminUserViewDto"];
+export type SchemaAdminAuthSessionResponseDto =
+  components["schemas"]["AdminAuthSessionResponseDto"];
+export type SchemaAdminMeResponseDto =
+  components["schemas"]["AdminMeResponseDto"];
+export type SchemaAdminMetricsDto = components["schemas"]["AdminMetricsDto"];
 export type $defs = Record<string, never>;
 export interface operations {
   AppController_getHello: {
@@ -10613,6 +10787,160 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  AdminAuthController_getConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAuthConfigDto"];
+        };
+      };
+    };
+  };
+  AdminAuthController_login: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AdminLoginDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAuthSessionResponseDto"];
+        };
+      };
+    };
+  };
+  AdminAuthController_refresh: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAuthSessionResponseDto"];
+        };
+      };
+    };
+  };
+  AdminAuthController_me: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminMeResponseDto"];
+        };
+      };
+    };
+  };
+  AdminAuthController_logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Session revoked */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  AdminAuthController_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  AdminAuthController_callback: {
+    parameters: {
+      query?: {
+        state?: unknown;
+        code?: unknown;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  AdminMetricsController_metrics: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminMetricsDto"];
+        };
       };
     };
   };

@@ -20,6 +20,8 @@ import {
   WAYPOINT_TYPES,
 } from '@tarmoto/shared';
 import { BadgesService } from '../../modules/badges/badges.service.js';
+import { hashAdminPassword } from '../../modules/admin-auth/admin-password.js';
+import { AdminUser } from '../../entities/admin-user.entity.js';
 import { Bike } from '../../entities/bike.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -182,6 +184,32 @@ export class DemoSeeder {
     }
 
     result.followsCreated = await this.seedFollows(now);
+
+    // Upsert the admin super_admin account (idempotent — skips if already present).
+    // Never seed a predictable backdoor account in production.
+    if (process.env.NODE_ENV === 'production') {
+      console.log('Skipping super_admin seed in production');
+    } else {
+      const adminRepo = this.repo(AdminUser);
+      const adminEmail = 'admin@tarmoto.app';
+      const existingAdmin = await adminRepo.findOne({
+        where: { email: adminEmail },
+      });
+      if (!existingAdmin) {
+        const seedPassword =
+          process.env.TARMOTO_ADMIN_SEED_PASSWORD ?? adminEmail;
+        await adminRepo.save(
+          adminRepo.create({
+            email: adminEmail,
+            password_hash: await hashAdminPassword(seedPassword),
+            role: 'super_admin',
+            status: 'active',
+          }),
+        );
+        console.log('Seeded super_admin:', adminEmail);
+      }
+    }
+
     return result;
   }
 
