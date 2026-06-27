@@ -4,11 +4,11 @@
  * Imports only from create-admin-args (pure arg parser) and
  * create-admin-core (pure upsert logic). The CLI entry point
  * (create-admin.ts) is never imported here so its `void main()` call never
- * runs during tests.
+ * runs during tests. The stdin prompt and AppDataSource initialisation live
+ * in main() and remain untested at the unit level.
  *
  * Covers:
  *  - parseArgs (arg parser from create-admin-args)
- *  - resolvePassword (pure helper from create-admin-core)
  *  - runCreateAdmin (upsert core with a mocked Repository<AdminUser>)
  */
 
@@ -23,11 +23,7 @@ import { Repository } from 'typeorm';
 import { AdminUser } from '../entities/admin-user.entity.js';
 import { hashAdminPassword } from '../modules/admin-auth/admin-password.js';
 import { parseArgs, VALID_ROLES } from './create-admin-args.js';
-import {
-  runCreateAdmin,
-  resolvePassword,
-  CreateAdminResult,
-} from './create-admin-core.js';
+import { runCreateAdmin, CreateAdminResult } from './create-admin-core.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,7 +64,6 @@ describe('create-admin parseArgs', () => {
       expect(options.role).toBe('admin');
       expect(options.ssoOnly).toBe(false);
       expect(options.help).toBe(false);
-      expect(options.password).toBeNull();
       expect(options.email).toBe('');
     });
 
@@ -111,13 +106,16 @@ describe('create-admin parseArgs', () => {
   });
 
   describe('--password', () => {
-    it('captures the password value', () => {
-      const { options } = parseArgs(['--password=s3cr3t']);
-      expect(options.password).toBe('s3cr3t');
+    it('throws a helpful error when --password=x is passed on the command line', () => {
+      expect(() => parseArgs(['--password=x'])).toThrow(
+        /do not pass the admin password on the command line/i,
+      );
     });
 
-    it('rejects an empty --password value', () => {
-      expect(() => parseArgs(['--password='])).toThrow(/must not be empty/);
+    it('throws a helpful error when --password is passed without a value', () => {
+      expect(() => parseArgs(['--password'])).toThrow(
+        /do not pass the admin password on the command line/i,
+      );
     });
   });
 
@@ -162,51 +160,6 @@ describe('create-admin parseArgs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolvePassword
-// ---------------------------------------------------------------------------
-
-describe('resolvePassword', () => {
-  it('returns null for --sso-only regardless of other sources', () => {
-    expect(
-      resolvePassword(
-        { password: 's3cr3t', ssoOnly: true },
-        { TARMOTO_ADMIN_PASSWORD: 'envpw' },
-      ),
-    ).toBeNull();
-  });
-
-  it('returns the --password flag value when provided', () => {
-    expect(resolvePassword({ password: 'flagpw', ssoOnly: false }, {})).toBe(
-      'flagpw',
-    );
-  });
-
-  it('falls back to TARMOTO_ADMIN_PASSWORD when --password is null', () => {
-    expect(
-      resolvePassword(
-        { password: null, ssoOnly: false },
-        { TARMOTO_ADMIN_PASSWORD: 'envpw' },
-      ),
-    ).toBe('envpw');
-  });
-
-  it('throws a clear error when neither password source is available', () => {
-    expect(() =>
-      resolvePassword({ password: null, ssoOnly: false }, {}),
-    ).toThrow(/provide --password|TARMOTO_ADMIN_PASSWORD|--sso-only/i);
-  });
-
-  it('throws when env var is present but empty', () => {
-    expect(() =>
-      resolvePassword(
-        { password: null, ssoOnly: false },
-        { TARMOTO_ADMIN_PASSWORD: '' },
-      ),
-    ).toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // runCreateAdmin — create path
 // ---------------------------------------------------------------------------
 
@@ -220,11 +173,10 @@ describe('runCreateAdmin – create', () => {
       {
         email: 'new@tarmoto.app',
         role: 'admin',
-        password: 'plaintext',
         ssoOnly: false,
         help: false,
       },
-      {},
+      'plaintext',
     );
 
     expect(result).toEqual({
@@ -250,11 +202,10 @@ describe('runCreateAdmin – create', () => {
       {
         email: 'sso@tarmoto.app',
         role: 'support',
-        password: null,
         ssoOnly: true,
         help: false,
       },
-      {},
+      null,
     );
 
     expect(result.created).toBe(true);
@@ -264,18 +215,17 @@ describe('runCreateAdmin – create', () => {
     expect(saved.password_hash).toBeNull();
   });
 
-  it('picks up password from the env param (TARMOTO_ADMIN_PASSWORD)', async () => {
+  it('hashes the password passed in directly', async () => {
     const repo = makeRepo(null);
     await runCreateAdmin(
       repo as unknown as Repository<AdminUser>,
       {
         email: 'env@tarmoto.app',
         role: 'read_only',
-        password: null,
         ssoOnly: false,
         help: false,
       },
-      { TARMOTO_ADMIN_PASSWORD: 'envpw' },
+      'envpw',
     );
 
     expect(hashAdminPassword).toHaveBeenCalledWith('envpw');
@@ -289,16 +239,15 @@ describe('runCreateAdmin – create', () => {
         {
           email: '',
           role: 'admin',
-          password: 'pw',
           ssoOnly: false,
           help: false,
         },
-        {},
+        'pw',
       ),
     ).rejects.toThrow(/--email is required/);
   });
 
-  it('throws when no password source is available and not sso-only', async () => {
+  it('throws when no password is provided and not sso-only', async () => {
     const repo = makeRepo(null);
     await expect(
       runCreateAdmin(
@@ -306,13 +255,12 @@ describe('runCreateAdmin – create', () => {
         {
           email: 'nopw@tarmoto.app',
           role: 'admin',
-          password: null,
           ssoOnly: false,
           help: false,
         },
-        {},
+        null,
       ),
-    ).rejects.toThrow(/provide --password|TARMOTO_ADMIN_PASSWORD|--sso-only/i);
+    ).rejects.toThrow(/No password provided/i);
   });
 });
 
@@ -346,14 +294,13 @@ describe('runCreateAdmin – update', () => {
       {
         email: 'existing@tarmoto.app',
         role: 'super_admin',
-        password: null,
         ssoOnly: false,
         help: false,
       },
-      {},
+      null,
     );
 
-    // Password hash NOT touched when no explicit password source given
+    // Password hash NOT touched when no password is provided
     expect(hashAdminPassword).not.toHaveBeenCalled();
 
     expect(result).toEqual({
@@ -368,18 +315,17 @@ describe('runCreateAdmin – update', () => {
     expect(saved.password_hash).toBe('old-hash');
   });
 
-  it('updates password_hash when --password is supplied on update', async () => {
+  it('updates password_hash when a password is provided on update', async () => {
     const repo = makeRepo(existingUser());
     await runCreateAdmin(
       repo as unknown as Repository<AdminUser>,
       {
         email: 'existing@tarmoto.app',
         role: 'admin',
-        password: 'newpassword',
         ssoOnly: false,
         help: false,
       },
-      {},
+      'newpassword',
     );
 
     expect(hashAdminPassword).toHaveBeenCalledWith('newpassword');
@@ -394,11 +340,10 @@ describe('runCreateAdmin – update', () => {
       {
         email: 'existing@tarmoto.app',
         role: 'support',
-        password: null,
         ssoOnly: true,
         help: false,
       },
-      {},
+      null,
     );
 
     expect(hashAdminPassword).not.toHaveBeenCalled();
@@ -406,18 +351,17 @@ describe('runCreateAdmin – update', () => {
     expect(saved.password_hash).toBeNull();
   });
 
-  it('updates password_hash via env var on update path', async () => {
+  it('updates password_hash via provided password on update path', async () => {
     const repo = makeRepo(existingUser());
     await runCreateAdmin(
       repo as unknown as Repository<AdminUser>,
       {
         email: 'existing@tarmoto.app',
         role: 'admin',
-        password: null,
         ssoOnly: false,
         help: false,
       },
-      { TARMOTO_ADMIN_PASSWORD: 'envpw' },
+      'envpw',
     );
 
     expect(hashAdminPassword).toHaveBeenCalledWith('envpw');
