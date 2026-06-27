@@ -51,6 +51,9 @@ export function parseArgs(argv: string[]): ParsedAdminArgs {
 
   for (const raw of argv) {
     if (raw.length === 0) continue;
+    // Skip the bare `--` separator that pnpm forwards to the script
+    // (e.g. `pnpm --filter @tarmoto/backend create-admin -- --email=...`).
+    if (raw === '--') continue;
     if (!raw.startsWith('--')) {
       throw new Error(
         `Unknown argument: "${raw}". Flags must start with "--".`,

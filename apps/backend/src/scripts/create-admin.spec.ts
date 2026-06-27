@@ -71,6 +71,12 @@ describe('create-admin parseArgs', () => {
       expect(options.password).toBeNull();
       expect(options.email).toBe('');
     });
+
+    it('ignores the bare `--` separator pnpm forwards', () => {
+      const { options } = parseArgs(['--', '--email=ops@tarmoto.app']);
+      expect(options.email).toBe('ops@tarmoto.app');
+      expect(options.role).toBe('admin');
+    });
   });
 
   describe('--email', () => {
