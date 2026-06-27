@@ -7,6 +7,7 @@ import { Sidebar } from "../components/layout/Sidebar.js";
 import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
 import { UsersScreen } from "../screens/UsersScreen.js";
+import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 
 // Priority: injected window config > fetched endpoint value > dev fallback.
@@ -66,6 +67,11 @@ export function App() {
             <OverviewScreen />
           ) : active === "users" ? (
             <UsersScreen />
+          ) : active === "administrators" ? (
+            <AdministratorsScreen
+              currentRole={auth.user.role}
+              currentAdminId={auth.user.id}
+            />
           ) : (
             <section>
               <Heading as="h2">

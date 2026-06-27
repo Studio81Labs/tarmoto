@@ -8,6 +8,7 @@ export interface AdminRoute {
 export const routes: AdminRoute[] = [
   { key: "overview", label: "Overview" },
   { key: "users", label: "Users" },
+  { key: "administrators", label: "Administrators" },
   { key: "feature-flags", label: "Feature Flags" },
   { key: "content", label: "Content" },
 ];
