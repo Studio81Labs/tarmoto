@@ -41,7 +41,11 @@ export class AdminAdminsService {
   }
 
   async create(actor: ActingAdmin, dto: CreateAdminDto): Promise<AdminRowDto> {
-    if (!canManageAdminRole(actor.role, dto.role)) {
+    // super_admin may create any role (including peers); non-super_admin must out-rank the target role.
+    if (
+      actor.role !== 'super_admin' &&
+      !canManageAdminRole(actor.role, dto.role)
+    ) {
       throw new ForbiddenException(
         'Cannot create an admin at or above your role',
       );
@@ -120,22 +124,23 @@ export class AdminAdminsService {
         'You cannot assign a role at or above your own',
       );
     }
-    // Safety rail 2: protect the last active super_admin.
-    if (
-      target.role === 'super_admin' &&
-      (disabling || (demoting && newRole !== 'super_admin'))
-    ) {
-      const activeSupers = await repo.count({
-        where: { role: 'super_admin', status: 'active' },
-      });
-      if (activeSupers <= 1) {
-        throw new ConflictException(
-          'Cannot disable or demote the last super_admin',
-        );
-      }
-    }
-
     await this.dataSource.transaction(async (manager) => {
+      // Safety rail 2: protect the last active super_admin.
+      // Checked inside the transaction to prevent TOCTOU: two concurrent patches
+      // could both pass the count check before either write lands.
+      if (
+        target.role === 'super_admin' &&
+        (disabling || (demoting && newRole !== 'super_admin'))
+      ) {
+        const activeSupers = await manager
+          .getRepository(AdminUser)
+          .count({ where: { role: 'super_admin', status: 'active' } });
+        if (activeSupers <= 1) {
+          throw new ConflictException(
+            'Cannot disable or demote the last super_admin',
+          );
+        }
+      }
       await manager
         .getRepository(AdminUser)
         .update({ id }, { role: newRole, status: newStatus });

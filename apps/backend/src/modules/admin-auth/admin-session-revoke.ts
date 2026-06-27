@@ -12,9 +12,10 @@ export async function revokeAdminSessions(
   adminUserId: string,
 ): Promise<void> {
   const now = new Date();
-  const sessions = await manager
-    .getRepository(AdminSession)
-    .find({ where: { admin_user_id: adminUserId }, select: { id: true } });
+  const sessions = await manager.getRepository(AdminSession).find({
+    where: { admin_user_id: adminUserId, revoked_at: IsNull() },
+    select: { id: true },
+  });
 
   await manager
     .getRepository(AdminSession)
