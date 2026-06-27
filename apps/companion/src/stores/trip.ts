@@ -482,8 +482,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     markRouteDirty: () =>
       set((s) => ({
         routeDirty: true,
-        // Avoid-option toggles are trip-level — mark every day stale.
-        stalePreviewDays: (s.activeTrip?.days ?? []).map((d) => d.dayNumber),
+        // Avoid-option toggles are trip-level, but only mark ROUTABLE days
+        // (>=2 routing waypoints) stale. Empty/under-specified days can't be
+        // re-routed by the live hook (it bails for <2 routing waypoints), so
+        // marking them would leave a stale flag that never clears and wedges
+        // the Save gate (which requires stalePreviewDays to be empty).
+        stalePreviewDays: (s.activeTrip?.days ?? [])
+          .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+          .map((d) => d.dayNumber),
       })),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),

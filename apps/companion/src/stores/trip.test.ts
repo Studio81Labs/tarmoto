@@ -756,6 +756,21 @@ describe("useTripStore selectedDayIndex + stalePreviewDays (Task 6)", () => {
     expect(useTripStore.getState().stalePreviewDays).toContain(1);
   });
 
+  it("markRouteDirty skips unroutable days so an empty day can't wedge the save gate", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1: routable
+    s.addDay(); // day 2: linked start only — 1 routing wp, NOT routable
+    useTripStore.setState({ stalePreviewDays: [] });
+
+    s.markRouteDirty();
+
+    // Only day 1 (>=2 routing waypoints) is marked. Day 2 has a single start —
+    // the live hook bails for <2 routing waypoints, so marking it would leave a
+    // stale flag that never clears and keeps Save route disabled.
+    expect(useTripStore.getState().stalePreviewDays).toEqual([1]);
+  });
+
   it("places a waypoint on the selected day, not day 0", () => {
     const s = useTripStore.getState();
 
