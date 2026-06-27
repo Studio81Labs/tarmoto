@@ -298,6 +298,18 @@ describe("buildTripPlannerWaypointCollection", () => {
     });
   });
 
+  it("emits only the selected day's markers in focus mode", () => {
+    const all = buildTripPlannerWaypointCollection(trip());
+    const focused = buildTripPlannerWaypointCollection(trip(), 2, true);
+    // Focus mode must drop other days' markers (they're also the drag source),
+    // so the map is truly isolated to the selected day.
+    expect(focused.features.length).toBeGreaterThan(0);
+    expect(focused.features.length).toBeLessThan(all.features.length);
+    expect(focused.features.every((f) => f.properties.dayNumber === 2)).toBe(
+      true,
+    );
+  });
+
   it("suppresses a linked day's start so the shared overnight stop renders once", () => {
     // Day 1 ends at the overnight stop; day 2 has startLinked: true and its
     // start waypoint is at the same physical point. The builder must emit the

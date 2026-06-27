@@ -426,8 +426,13 @@ const TripPlannerMapContent = forwardRef<
     [trip, selectedDayNumber, focusSelectedDay],
   );
   const waypointCollection = useMemo(
-    () => buildTripPlannerWaypointCollection(trip),
-    [trip],
+    () =>
+      buildTripPlannerWaypointCollection(
+        trip,
+        selectedDayNumber,
+        focusSelectedDay,
+      ),
+    [trip, selectedDayNumber, focusSelectedDay],
   );
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
   const waypointCount = waypointCollection.features.length;

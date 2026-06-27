@@ -1508,4 +1508,24 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     // Trip should still have 1 day.
     expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
   });
+
+  it("removeDay keeps the same logical day selected when an EARLIER day is removed", () => {
+    // Build a 3-day trip (each complete), select day 3, remove day 1.
+    seedOneDay();
+    useTripStore.getState().addDay();
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 20, lng: 20 }, "set-end");
+    useTripStore.getState().addDay();
+    useTripStore.setState({ selectedDayIndex: 2 });
+    useTripStore.getState().placeWaypoint({ lat: 30, lng: 30 }, "set-end");
+
+    // Day 3 is selected (index 2). Remove day 1 (index 0).
+    useTripStore.setState({ selectedDayIndex: 2 });
+    useTripStore.getState().removeDay(0);
+
+    // Old day 3 is now at index 1 — selection must follow it, not jump to old
+    // day 2 (which is now index... ) via a bare clamp to length-1.
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
+    expect(useTripStore.getState().selectedDayIndex).toBe(1);
+  });
 });

@@ -1046,9 +1046,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         if (index > 0 && index < days.length && days[index]!.startLinked) {
           result = syncLinkedStart(days, index - 1, stale);
         }
-        const selectedDayIndex = Math.min(
-          state.selectedDayIndex,
-          result.days.length - 1,
+        // Keep the SAME logical day selected: removing a day BEFORE the
+        // selected one shifts it down by one. Then clamp into range (e.g. when
+        // the selected day itself, or the last day, was removed).
+        const shifted =
+          index < state.selectedDayIndex
+            ? state.selectedDayIndex - 1
+            : state.selectedDayIndex;
+        const selectedDayIndex = Math.max(
+          0,
+          Math.min(shifted, result.days.length - 1),
         );
         return {
           activeTrip: {

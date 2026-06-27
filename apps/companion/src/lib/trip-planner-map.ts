@@ -91,11 +91,17 @@ export function buildTripPlannerRouteCollection(
 
 export function buildTripPlannerWaypointCollection(
   trip: Trip | null,
+  selectedDayNumber?: number,
+  focusSelectedDay?: boolean,
 ): FeatureCollection<Point, WaypointProperties> {
   if (!trip) return emptyPointCollection();
 
-  const features = trip.days.flatMap((day) =>
-    day.waypoints.flatMap((waypoint) => {
+  const features = trip.days.flatMap((day) => {
+    // In focus mode, emit markers only for the selected day — the marker layer
+    // is also the drag source, so this prevents editing a hidden day while the
+    // map is isolated to one day.
+    if (focusSelectedDay && day.dayNumber !== selectedDayNumber) return [];
+    return day.waypoints.flatMap((waypoint) => {
       // Suppress the linked start: the shared overnight stop is already drawn
       // as the previous day's end, so rendering it again here would overlap.
       if (waypoint.type === "start" && day.startLinked) return [];
@@ -113,8 +119,8 @@ export function buildTripPlannerWaypointCollection(
         },
       };
       return feature;
-    }),
-  );
+    });
+  });
 
   return {
     type: "FeatureCollection",
