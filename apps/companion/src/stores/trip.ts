@@ -1022,12 +1022,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               },
             ];
         }
+        // Route through commitTripChange so the addition is snapshotted onto
+        // the undo stack AND the redo stack is cleared — otherwise a Redo left
+        // over from a prior undo could be pressed and drop the new day.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: [...activeTrip.days, newDay],
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
         return {
-          activeTrip: {
-            ...trip,
-            days: [...trip.days, newDay],
-            updatedAt: new Date().toISOString(),
-          },
+          ...committed,
           selectedDayIndex: trip.days.length, // select the new day
           routeDirty: true,
         };

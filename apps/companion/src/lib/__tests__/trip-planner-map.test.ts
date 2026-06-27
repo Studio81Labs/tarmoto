@@ -391,6 +391,74 @@ describe("buildTripPlannerWaypointCollection", () => {
     expect(linkedStart).toBeUndefined();
   });
 
+  it("renders a focused linked day's start (predecessor isn't drawn in focus mode)", () => {
+    const overnightTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day one",
+          distanceKm: 120,
+          durationMinutes: 180,
+          elevationGain: 800,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "start-1",
+              name: "Start",
+              location: { lng: 14.41, lat: 50.08 },
+              type: "start",
+            },
+            {
+              id: "end-1",
+              name: "Overnight",
+              location: { lng: 14.61, lat: 50.19 },
+              type: "end",
+            },
+          ],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          startLinked: true,
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Overnight",
+              location: { lng: 14.61, lat: 50.19 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    });
+
+    // Non-focus: the linked start is suppressed (drawn as day 1's end).
+    const all = buildTripPlannerWaypointCollection(overnightTrip);
+    expect(
+      all.features.find((f) => f.properties.waypointId === "start-2"),
+    ).toBeUndefined();
+
+    // Focus on day 2: day 1 isn't drawn, so day 2's linked start MUST render —
+    // otherwise the focused leg has no overnight/start marker at all.
+    const focused = buildTripPlannerWaypointCollection(overnightTrip, 2, true);
+    expect(
+      focused.features.find((f) => f.properties.waypointId === "start-2"),
+    ).toBeDefined();
+    expect(focused.features.every((f) => f.properties.dayNumber === 2)).toBe(
+      true,
+    );
+  });
+
   it("does not suppress a non-linked day's start", () => {
     // When startLinked is false/undefined, the start waypoint must still render.
     const collection = buildTripPlannerWaypointCollection(trip());

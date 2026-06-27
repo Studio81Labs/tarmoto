@@ -1616,6 +1616,25 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(useTripStore.getState().selectedDayIndex).toBe(0);
   });
 
+  it("addDay is undoable and invalidates a pending redo", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1 (snapshot)
+    s.placeWaypoint({ lat: 1.5, lng: 1.5 }, "add-via"); // edit (snapshot)
+    s.undo(); // creates a redo entry
+    expect(useTripStore.getState().canRedo).toBe(true);
+
+    s.addDay();
+    // The stale redo must be invalidated (pressing Redo would otherwise drop
+    // the new day), and the addition itself must be undoable.
+    expect(useTripStore.getState().canRedo).toBe(false);
+    expect(useTripStore.getState().canUndo).toBe(true);
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
+
+    s.undo();
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
+  });
+
   it("relinkDayStart is undoable and recovers the manual start", () => {
     seedOneDay(); // day 1: start (1,1) → end (2,2)
     useTripStore.getState().addDay(); // day 2 linked, start seeded from (2,2)
