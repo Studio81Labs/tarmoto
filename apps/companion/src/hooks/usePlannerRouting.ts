@@ -8,9 +8,14 @@ import {
 export function usePlannerRouting(
   waypoints: ReadonlyArray<{ lat: number; lng: number }>,
   options: RouteRequestBody["options"],
-  onResult: (r: RouteResponse) => void,
+  // `onResult` receives the `requestKey` that was current when THIS request
+  // fired, so a response that resolves after the caller switched context (e.g.
+  // a different planner day) is applied to the day it was computed for — not
+  // whatever is selected at resolution time.
+  onResult: (r: RouteResponse, requestKey: number | null) => void,
   onError: (message: string) => void,
   enabled = true,
+  requestKey: number | null = null,
 ): { routing: boolean } {
   const [routing, setRouting] = useState(false);
   const reqIdRef = useRef(0);
@@ -30,6 +35,10 @@ export function usePlannerRouting(
     }
     const controller = new AbortController();
     const reqId = ++reqIdRef.current;
+    // Capture the key at request-fire time. The effect re-runs (and this is
+    // recaptured) whenever the inputs change, so it always matches the
+    // waypoints this request was built from.
+    const firedRequestKey = requestKey;
     const handle = setTimeout(() => {
       setRouting(true);
       routingApi
@@ -44,7 +53,7 @@ export function usePlannerRouting(
           // without this an already-resolved fetch could apply stale geometry
           // to the now-current trip.
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
-          cbRef.current.onResult(data);
+          cbRef.current.onResult(data, firedRequestKey);
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
@@ -60,7 +69,7 @@ export function usePlannerRouting(
       clearTimeout(handle);
       controller.abort();
     };
-  }, [waypoints, options, enabled]);
+  }, [waypoints, options, enabled, requestKey]);
 
   return { routing };
 }

@@ -270,11 +270,18 @@ export default function TripPlannerPage() {
     selectedDay !== null &&
     stalePreviewDays.includes(selectedDay.dayNumber);
   const handleRouteResult = useCallback(
-    (result: Parameters<typeof applyRouteResult>[1]) => {
-      if (!selectedDay) return;
-      applyRouteResult(selectedDay.dayNumber, result);
+    (
+      result: Parameters<typeof applyRouteResult>[1],
+      requestDayNumber: number | null,
+    ) => {
+      // Apply geometry to the day the request was FIRED for (passed back by the
+      // hook), not the live `selectedDay` — the rider may have switched tabs
+      // before this response resolved, which would otherwise corrupt the
+      // now-current day and clear its stale flag.
+      if (requestDayNumber == null) return;
+      applyRouteResult(requestDayNumber, result);
     },
-    [applyRouteResult, selectedDay],
+    [applyRouteResult],
   );
   const { routing } = usePlannerRouting(
     routingWaypoints,
@@ -282,6 +289,7 @@ export default function TripPlannerPage() {
     handleRouteResult,
     (msg) => toast.error(msg),
     liveRouteEnabled,
+    selectedDay?.dayNumber ?? null,
   );
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the

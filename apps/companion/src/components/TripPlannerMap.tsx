@@ -380,11 +380,17 @@ const TripPlannerMapContent = forwardRef<
   // ── Context-menu waypoint placement (Task 10) ────────────────────────────
   // Task 9 store actions for context-menu placement.
   const placeWaypoint = useTripStore((s) => s.placeWaypoint);
-  // Derive hasStart / hasEnd from the active planner day (day 0).
+  // Derive hasStart / hasEnd from the SELECTED planner day (placement targets
+  // the selected day via the store), not day 0 — otherwise the menu on Day 2
+  // would offer Day 1's actions and the rider could never set Day 2's start.
   const activeTrip = useTripStore((s) => s.activeTrip);
-  const activeDayWaypoints = activeTrip?.days[0]?.waypoints ?? [];
-  const hasStart = activeDayWaypoints.some((w) => w.type === "start");
-  const hasEnd = activeDayWaypoints.some((w) => w.type === "end");
+  const selectedDayWaypoints =
+    (selectedDayNumber != null
+      ? activeTrip?.days.find((d) => d.dayNumber === selectedDayNumber)
+      : activeTrip?.days[0]
+    )?.waypoints ?? [];
+  const hasStart = selectedDayWaypoints.some((w) => w.type === "start");
+  const hasEnd = selectedDayWaypoints.some((w) => w.type === "end");
 
   // Context menu state: screen position + the snapped geo coord the menu acts on.
   const [contextMenu, setContextMenu] = useState<{
