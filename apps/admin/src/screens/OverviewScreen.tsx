@@ -1,40 +1,33 @@
+import { PageHeader, MetricTile, Alert } from "@tarmoto/ui";
 import { useAdminMetrics } from "../data/useAdminMetrics.js";
-
-interface MetricCardProps {
-  label: string;
-  value: number | string;
-}
-
-function MetricCard({ label, value }: MetricCardProps) {
-  return (
-    <div className="metric-card">
-      <span className="metric-card__value">{value}</span>
-      <span className="metric-card__label">{label}</span>
-    </div>
-  );
-}
 
 export function OverviewScreen() {
   const { data, isPending, error } = useAdminMetrics();
 
   return (
     <section>
-      <h2>Overview</h2>
-      {error ? <p className="error">Failed to load metrics.</p> : null}
-      <div className="metric-grid">
-        <MetricCard
+      <PageHeader title="Overview" />
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load metrics."
+          className="mb-4"
+        />
+      ) : null}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <MetricTile
           label="Users"
           value={isPending ? "—" : (data?.users ?? 0)}
         />
-        <MetricCard
+        <MetricTile
           label="Active rides"
           value={isPending ? "—" : (data?.activeRides ?? 0)}
         />
-        <MetricCard
+        <MetricTile
           label="Feature flags"
           value={isPending ? "—" : (data?.featureFlags ?? 0)}
         />
-        <MetricCard
+        <MetricTile
           label="Closures"
           value={isPending ? "—" : (data?.closures ?? 0)}
         />

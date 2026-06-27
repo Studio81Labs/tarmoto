@@ -13,6 +13,15 @@ export default defineConfig({
       "/api/v1": "http://localhost:3000",
     },
   },
+  // @tarmoto/ui ships TypeScript/TSX source. Excluding it from pre-bundling
+  // lets Vite (and Vitest) transform it through the normal plugin pipeline
+  // (including @vitejs/plugin-react) rather than via esbuild-only pre-bundling.
+  // pnpm workspace symlinks are dereferenced to their real path outside
+  // node_modules, so @vitejs/plugin-react's exclude-node_modules guard does
+  // not block the transform.
+  optimizeDeps: {
+    exclude: ["@tarmoto/ui"],
+  },
   test: {
     globals: true,
     environment: "jsdom",

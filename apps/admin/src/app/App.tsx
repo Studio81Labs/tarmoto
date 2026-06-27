@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Heading } from "@tarmoto/ui";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { adminAuthApi } from "../auth/adminAuthApi.js";
 import { LoginScreen } from "../auth/LoginScreen.js";
@@ -26,7 +27,11 @@ export function App() {
   }, []);
 
   if (auth.status === "loading") {
-    return <div className="app-loading">Loading…</div>;
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-cream text-sm text-fg-dim">
+        Loading…
+      </div>
+    );
   }
 
   if (auth.status === "unauthenticated" || !auth.user) {
@@ -47,21 +52,23 @@ export function App() {
   }
 
   return (
-    <div className="layout">
+    <div className="flex min-h-dvh bg-cream">
       <Sidebar active={active} onNavigate={navigate} />
-      <div className="layout__main">
+      <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           email={auth.user.email}
           role={auth.user.role}
           onLogout={auth.logout}
         />
-        <main className="layout__content">
+        <main className="flex-1 overflow-auto p-6">
           {active === "overview" ? (
             <OverviewScreen />
           ) : (
             <section>
-              <h2>{routes.find((r) => r.key === active)?.label ?? active}</h2>
-              <p>Coming soon.</p>
+              <Heading as="h2">
+                {routes.find((r) => r.key === active)?.label ?? active}
+              </Heading>
+              <p className="mt-2 text-sm text-fg-dim">Coming soon.</p>
             </section>
           )}
         </main>

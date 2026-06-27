@@ -1,3 +1,5 @@
+import { Pill, Button } from "@tarmoto/ui";
+
 interface TopBarProps {
   email: string;
   role: string;
@@ -6,15 +8,12 @@ interface TopBarProps {
 
 export function TopBar({ email, role, onLogout }: TopBarProps) {
   return (
-    <header className="topbar">
-      <div className="topbar__spacer" />
-      <div className="topbar__user">
-        <span className="topbar__email">{email}</span>
-        <span className="topbar__role">{role}</span>
-        <button type="button" onClick={onLogout}>
-          Log out
-        </button>
-      </div>
+    <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-line bg-cream px-6">
+      <span className="text-[13px] text-ink">{email}</span>
+      <Pill variant="ghost">{role}</Pill>
+      <Button variant="secondary" size="sm" onClick={onLogout}>
+        Log out
+      </Button>
     </header>
   );
 }
