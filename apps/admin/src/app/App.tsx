@@ -6,6 +6,7 @@ import { LoginScreen } from "../auth/LoginScreen.js";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
+import { UsersScreen } from "../screens/UsersScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 
 // Priority: injected window config > fetched endpoint value > dev fallback.
@@ -63,6 +64,8 @@ export function App() {
         <main className="flex-1 overflow-auto p-6">
           {active === "overview" ? (
             <OverviewScreen />
+          ) : active === "users" ? (
+            <UsersScreen />
           ) : (
             <section>
               <Heading as="h2">
