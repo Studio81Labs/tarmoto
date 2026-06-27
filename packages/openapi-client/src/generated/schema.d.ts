@@ -2939,6 +2939,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/users": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List app users (paginated, searchable) */
+    get: operations["AdminUsersController_list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/users/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** App user detail + activity counts */
+    get: operations["AdminUsersController_getById"];
+    put?: never;
+    post?: never;
+    /** Soft-delete an app user */
+    delete: operations["AdminUsersController_softDelete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/users/{id}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore a soft-deleted app user */
+    post: operations["AdminUsersController_restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5322,6 +5374,44 @@ export interface components {
       featureFlags: number;
       closures: number;
     };
+    AdminUserRowDto: {
+      id: string;
+      email: string;
+      display_name: string;
+      subscription_tier: string;
+      subscription_status: string;
+      created_at: string;
+      deleted_at: string | null;
+    };
+    AdminUserListResponseDto: {
+      rows: components["schemas"]["AdminUserRowDto"][];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    AdminUserActivityDto: {
+      rides: number;
+      hazardReports: number;
+      roadReviews: number;
+      trips: number;
+      commuteRoutes: number;
+    };
+    AdminUserDetailDto: {
+      id: string;
+      email: string;
+      display_name: string;
+      subscription_tier: string;
+      subscription_status: string;
+      created_at: string;
+      deleted_at: string | null;
+      home_region: string | null;
+      email_verified_at: string | null;
+      subscription_current_period_end: string | null;
+      subscription_cancel_at_period_end: boolean;
+      deletion_scheduled_at: string | null;
+      deletion_reason: string | null;
+      activity: components["schemas"]["AdminUserActivityDto"];
+    };
   };
   responses: never;
   parameters: never;
@@ -5686,6 +5776,13 @@ export type SchemaAdminAuthSessionResponseDto =
 export type SchemaAdminMeResponseDto =
   components["schemas"]["AdminMeResponseDto"];
 export type SchemaAdminMetricsDto = components["schemas"]["AdminMetricsDto"];
+export type SchemaAdminUserRowDto = components["schemas"]["AdminUserRowDto"];
+export type SchemaAdminUserListResponseDto =
+  components["schemas"]["AdminUserListResponseDto"];
+export type SchemaAdminUserActivityDto =
+  components["schemas"]["AdminUserActivityDto"];
+export type SchemaAdminUserDetailDto =
+  components["schemas"]["AdminUserDetailDto"];
 export type $defs = Record<string, never>;
 export interface operations {
   AppController_getHello: {
@@ -10941,6 +11038,91 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["AdminMetricsDto"];
         };
+      };
+    };
+  };
+  AdminUsersController_list: {
+    parameters: {
+      query?: {
+        /** @description Substring match on email or display_name. */
+        q?: string;
+        /** @description Filter by soft-deleted state. */
+        deleted?: "active" | "deleted" | "all";
+        page?: number;
+        pageSize?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminUserListResponseDto"];
+        };
+      };
+    };
+  };
+  AdminUsersController_getById: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminUserDetailDto"];
+        };
+      };
+    };
+  };
+  AdminUsersController_softDelete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  AdminUsersController_restore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
