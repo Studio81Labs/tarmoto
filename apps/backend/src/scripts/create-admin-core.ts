@@ -4,11 +4,10 @@
  * pattern used by seed-demo-data and cluster-fun-zones).
  */
 
-import { EntityManager, IsNull, In } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { AdminUser, AdminRole } from '../entities/admin-user.entity.js';
-import { AdminSession } from '../entities/admin-session.entity.js';
-import { AdminRefreshToken } from '../entities/admin-refresh-token.entity.js';
 import { hashAdminPassword } from '../modules/admin-auth/admin-password.js';
+import { revokeAdminSessions } from '../modules/admin-auth/admin-session-revoke.js';
 import { CreateAdminOptions } from './create-admin-args.js';
 
 export interface CreateAdminResult {
@@ -96,30 +95,7 @@ export async function runCreateAdmin(
 
     let sessionsRevoked = false;
     if (credentialChanged || reactivated) {
-      const sessionRepo = manager.getRepository(AdminSession);
-      const tokenRepo = manager.getRepository(AdminRefreshToken);
-      const now = new Date();
-
-      // Collect session IDs for this admin before revoking so we can cascade
-      // to refresh tokens (which link via session_id, not admin_user_id).
-      const sessions = await sessionRepo.find({
-        where: { admin_user_id: existing.id },
-        select: { id: true },
-      });
-
-      await sessionRepo.update(
-        { admin_user_id: existing.id, revoked_at: IsNull() },
-        { revoked_at: now },
-      );
-
-      if (sessions.length > 0) {
-        const sessionIds = sessions.map((s) => s.id);
-        await tokenRepo.update(
-          { session_id: In(sessionIds), revoked_at: IsNull() },
-          { revoked_at: now },
-        );
-      }
-
+      await revokeAdminSessions(manager, existing.id);
       sessionsRevoked = true;
     }
 
