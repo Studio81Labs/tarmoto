@@ -73,6 +73,10 @@ export async function runCreateAdmin(
 
   if (existing) {
     // UPDATE: role + status always; credential only when explicitly provided.
+    // Reactivating a disabled admin must also revoke old sessions: InternalGuard
+    // only blocks pre-disable sessions while the row is disabled, so flipping it
+    // back to active would otherwise revive any still-unexpired session/cookie.
+    const reactivated = existing.status !== 'active';
     existing.role = options.role;
     existing.status = 'active';
 
@@ -91,7 +95,7 @@ export async function runCreateAdmin(
     await adminRepo.save(existing);
 
     let sessionsRevoked = false;
-    if (credentialChanged) {
+    if (credentialChanged || reactivated) {
       const sessionRepo = manager.getRepository(AdminSession);
       const tokenRepo = manager.getRepository(AdminRefreshToken);
       const now = new Date();

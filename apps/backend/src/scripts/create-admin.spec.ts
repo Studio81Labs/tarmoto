@@ -361,6 +361,38 @@ describe('runCreateAdmin – update', () => {
     expect(adminRefreshTokenRepo.update).not.toHaveBeenCalled();
   });
 
+  it('reactivating a disabled admin (no credential change) revokes old sessions', async () => {
+    const sessions = [{ id: 'sess-1' }] as AdminSession[];
+    const { manager, adminUserRepo, adminSessionRepo, adminRefreshTokenRepo } =
+      makeManager(existingUser({ status: 'disabled' }), sessions);
+
+    const result = await runCreateAdmin(
+      manager,
+      {
+        email: 'existing@tarmoto.app',
+        role: 'support',
+        ssoOnly: false,
+        help: false,
+      },
+      null, // no password — credential unchanged, but disabled→active
+    );
+
+    // Credential untouched, but the disabled→active flip must revoke sessions.
+    expect(hashAdminPassword).not.toHaveBeenCalled();
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
+    expect(saved.status).toBe('active');
+    expect(saved.password_hash).toBe('old-hash');
+
+    expect(result.sessionsRevoked).toBe(true);
+    expect(adminSessionRepo.update).toHaveBeenCalledTimes(1);
+    const [sessionCriteria] = adminSessionRepo.update.mock.calls[0] as [
+      unknown,
+      unknown,
+    ];
+    expect(sessionCriteria).toMatchObject({ admin_user_id: 'existing-uuid' });
+    expect(adminRefreshTokenRepo.update).toHaveBeenCalledTimes(1);
+  });
+
   it('new password on update → password_hash set AND sessions + refresh tokens revoked', async () => {
     const sessions = [{ id: 'sess-1' }, { id: 'sess-2' }] as AdminSession[];
     const { manager, adminUserRepo, adminSessionRepo, adminRefreshTokenRepo } =
