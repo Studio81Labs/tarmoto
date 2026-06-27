@@ -1004,18 +1004,24 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         if (!trip) return state;
         if (trip.days.length >= MAX_TRIP_DAYS) return state;
         const prev = trip.days[trip.days.length - 1];
-        const newDay = createEmptyPlannerDay(prev!.dayNumber + 1);
-        newDay.startLinked = true;
-        const prevEnd = prev!.waypoints.find((w) => w.type === "end");
-        if (prevEnd)
-          newDay.waypoints = [
-            {
-              id: `link-${newDay.dayNumber}`,
-              name: "Start",
-              type: "start",
-              location: { ...prevEnd.location },
-            },
-          ];
+        // A metadata-only server draft can have zero days (the create/promote
+        // path mints the trip before any route day is saved). In that case
+        // create day 1 — unlinked, no seeded start — instead of dereferencing
+        // a missing predecessor.
+        const newDay = createEmptyPlannerDay(prev ? prev.dayNumber + 1 : 1);
+        if (prev) {
+          newDay.startLinked = true;
+          const prevEnd = prev.waypoints.find((w) => w.type === "end");
+          if (prevEnd)
+            newDay.waypoints = [
+              {
+                id: `link-${newDay.dayNumber}`,
+                name: "Start",
+                type: "start",
+                location: { ...prevEnd.location },
+              },
+            ];
+        }
         return {
           activeTrip: {
             ...trip,
@@ -1096,12 +1102,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           index - 1,
           state.stalePreviewDays,
         );
+        // Route through commitTripChange so the re-link (which restores the
+        // start coordinate to the predecessor's end) is snapshotted onto the
+        // undo stack — otherwise Undo can't recover the rider's manual start.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: synced,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
         return {
-          activeTrip: {
-            ...trip,
-            days: synced,
-            updatedAt: new Date().toISOString(),
-          },
+          ...committed,
           stalePreviewDays: stale,
           routeDirty: true,
         };

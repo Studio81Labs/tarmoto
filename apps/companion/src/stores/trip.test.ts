@@ -1582,4 +1582,71 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(stale).toContain(1); // the mutated day (day 1)
     expect(stale).not.toContain(2); // NOT the selected day (day 2)
   });
+
+  it("addDay creates day 1 on a zero-day metadata draft without crashing", () => {
+    // Metadata-only server draft: a trip whose days array is empty.
+    useTripStore.setState({
+      activeTrip: {
+        id: "draft-0",
+        name: "Empty draft",
+        status: "draft",
+        num_days: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        parameters: {
+          days: 1,
+          dailyKmTarget: 250,
+          roadPreference: "mixed",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [{ userId: "u", displayName: "You", role: "owner" }],
+        days: [],
+      } as never,
+    });
+
+    expect(() => useTripStore.getState().addDay()).not.toThrow();
+    const trip = useTripStore.getState().activeTrip!;
+    expect(trip.days).toHaveLength(1);
+    expect(trip.days[0]!.dayNumber).toBe(1);
+    expect(trip.days[0]!.startLinked).toBeFalsy(); // day 1 is never linked
+    expect(useTripStore.getState().selectedDayIndex).toBe(0);
+  });
+
+  it("relinkDayStart is undoable and recovers the manual start", () => {
+    seedOneDay(); // day 1: start (1,1) → end (2,2)
+    useTripStore.getState().addDay(); // day 2 linked, start seeded from (2,2)
+    // Manually override day 2's start.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+
+    // Re-link → start re-seeds to day 1's end and the link is restored.
+    useTripStore.getState().relinkDayStart(1);
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!
+        .location,
+    ).toEqual({ lat: 2, lng: 2 });
+    expect(useTripStore.getState().canUndo).toBe(true);
+
+    // Undo recovers the rider's manual start.
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!
+        .location,
+    ).toEqual({ lat: 9, lng: 9 });
+  });
 });
