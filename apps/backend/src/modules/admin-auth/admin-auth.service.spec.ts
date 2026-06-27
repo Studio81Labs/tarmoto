@@ -1056,8 +1056,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
 
   it('throws UnauthorizedException when no admin row exists for the email', async () => {
     const users = repoMock({
-      // bySso lookup returns null, byEmail lookup returns null
       findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([]),
     });
     const service = new AdminAuthService(
       jwt,
@@ -1083,11 +1083,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       sso_subject: null,
     };
     const users = repoMock({
-      // bySso returns null; byEmail returns disabled user
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(disabledUser),
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([disabledUser]),
     });
     const service = new AdminAuthService(
       jwt,
@@ -1113,11 +1110,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       sso_subject: null,
     };
     const users = repoMock({
-      // bySso returns null; byEmail returns active user
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(activeUser),
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([activeUser]),
       update: jest.fn(),
     });
     const service = new AdminAuthService(
@@ -1217,11 +1211,8 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       sso_subject: 'some_other_github_subject', // different from the presenting subject
     };
     const users = repoMock({
-      // bySso lookup returns null; byEmail lookup returns the conflicting row
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(alreadyLinkedUser),
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([alreadyLinkedUser]),
       update: jest.fn(),
     });
     const service = new AdminAuthService(
@@ -1254,12 +1245,9 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
       sso_subject: null,
     };
     const users = repoMock({
-      // bySso returns null; byEmail lookup with In(['primary@github.com', 'secondary@tarmoto.app'])
-      // returns the admin matched on the secondary email.
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(adminBySecondary),
+      findOne: jest.fn().mockResolvedValue(null),
+      // find returns the admin matched on the secondary email.
+      find: jest.fn().mockResolvedValue([adminBySecondary]),
       update: jest.fn(),
     });
     const service = new AdminAuthService(
@@ -1291,6 +1279,7 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
   it('throws UnauthorizedException when none of the verified emails matches an active admin', async () => {
     const users = repoMock({
       findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([]),
     });
     const service = new AdminAuthService(
       jwt,
@@ -1307,6 +1296,101 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
         'alsounknown@example.com',
       ]),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('links the ACTIVE row and ignores a DISABLED row when both share verified emails', async () => {
+    // One of the GitHub verified emails maps to a disabled admin row; another
+    // maps to an unlinked active admin row. The disabled row must be ignored
+    // and the active row linked.
+    const disabledRow = {
+      id: 'a6',
+      email: 'disabled@tarmoto.app',
+      role: 'admin',
+      status: 'disabled',
+      sso_provider: null,
+      sso_subject: null,
+    };
+    const activeRow = {
+      id: 'a7',
+      email: 'active@tarmoto.app',
+      role: 'admin',
+      status: 'active',
+      sso_provider: null,
+      sso_subject: null,
+    };
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([disabledRow, activeRow]),
+      update: jest.fn(),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+
+    const result = await service.findOrProvisionSsoUser('github', 'gh-777', [
+      'disabled@tarmoto.app',
+      'active@tarmoto.app',
+    ]);
+    // Disabled row must be ignored; active row returned.
+    expect(result.id).toBe('a7');
+
+    // SSO credentials must be linked to the active row only.
+    expect(users.update).toHaveBeenCalledWith(
+      { id: 'a7' },
+      expect.objectContaining({
+        sso_provider: 'github',
+        sso_subject: 'gh-777',
+      }),
+    );
+  });
+
+  it('throws UnauthorizedException (ambiguous) when verified emails map to TWO DIFFERENT active admin rows', async () => {
+    const activeRow1 = {
+      id: 'a8',
+      email: 'first@tarmoto.app',
+      role: 'admin',
+      status: 'active',
+      sso_provider: null,
+      sso_subject: null,
+    };
+    const activeRow2 = {
+      id: 'a9',
+      email: 'second@tarmoto.app',
+      role: 'super_admin',
+      status: 'active',
+      sso_provider: null,
+      sso_subject: null,
+    };
+    const users = repoMock({
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([activeRow1, activeRow2]),
+      update: jest.fn(),
+    });
+    const service = new AdminAuthService(
+      jwt,
+      config,
+      users as never,
+      repoMock(),
+      repoMock(),
+      noopDataSource,
+      noopAudit,
+    );
+
+    await expect(
+      service.findOrProvisionSsoUser('github', 'gh-888', [
+        'first@tarmoto.app',
+        'second@tarmoto.app',
+      ]),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    // Must never update when ambiguous.
+    expect(users.update).not.toHaveBeenCalled();
   });
 });
 

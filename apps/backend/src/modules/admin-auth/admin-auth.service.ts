@@ -283,34 +283,53 @@ export class AdminAuthService implements OnModuleInit {
       return bySso;
     }
     // No open self-signup: only link SSO to a pre-seeded admin row by email.
-    // Match against ALL verified emails from the provider so an admin whose
-    // seeded address is a verified secondary email is not wrongly rejected.
-    const byEmail = await this.users.findOne({
+    // Fetch ALL rows matching any verified email so that a disabled row for
+    // one address never blocks an active row for another, and ambiguity across
+    // distinct active admin accounts fails safely rather than picking arbitrarily.
+    const rows = await this.users.find({
       where: { email: In(normalizedEmails) },
     });
-    if (!byEmail || byEmail.status !== 'active') {
+    const active = rows.filter((r) => r.status === 'active');
+    if (active.length === 0) {
       throw new UnauthorizedException('No admin account for this identity');
     }
+    // Ambiguity guard: two verified emails must not silently select one of
+    // multiple distinct active admin rows — fail safely rather than guess.
+    if (new Set(active.map((r) => r.id)).size > 1) {
+      throw new UnauthorizedException(
+        'Ambiguous admin identity for SSO emails',
+      );
+    }
+    const row = active[0];
     // Guard against SSO identity hijack: if this admin row is already linked to
     // a DIFFERENT SSO identity (the first bySso lookup did not match, so the
     // subjects differ), refuse to overwrite the existing link. A new GitHub
     // account presenting the same verified email must not silently take over
     // an existing linked account.
-    if (byEmail.sso_subject !== null) {
+    if (
+      row.sso_subject !== null &&
+      (row.sso_provider !== provider || row.sso_subject !== subject)
+    ) {
       throw new UnauthorizedException(
         'Admin account is linked to a different SSO identity',
       );
     }
-    // First-time SSO link: the admin row has no prior identity — safe to link.
-    await this.users.update(
-      { id: byEmail.id },
-      {
-        sso_provider: provider,
-        sso_subject: subject,
-        last_login_at: new Date(),
-      },
-    );
-    return byEmail;
+    if (!row.sso_subject) {
+      // First-time SSO link: the admin row has no prior identity — safe to link.
+      await this.users.update(
+        { id: row.id },
+        {
+          sso_provider: provider,
+          sso_subject: subject,
+          last_login_at: new Date(),
+        },
+      );
+    } else {
+      // Already linked to this exact identity (edge case normally caught by the
+      // bySso lookup above) — just update last_login_at.
+      await this.users.update({ id: row.id }, { last_login_at: new Date() });
+    }
+    return row;
   }
 
   private async issueTokens(
