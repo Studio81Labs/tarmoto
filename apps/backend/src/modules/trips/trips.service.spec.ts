@@ -1082,7 +1082,7 @@ describe('TripsService', () => {
       expect(days.map((d) => d.day_number)).toEqual([1, 2, 3]);
     });
 
-    it('carries startLinked from the share snapshot into the persisted days', async () => {
+    it('carries startLinked from the share snapshot when the start sits on the previous end', async () => {
       tripShares.findActiveByToken.mockResolvedValueOnce(
         makeShare([
           {
@@ -1090,6 +1090,10 @@ describe('TripsService', () => {
             coordinates: [
               [10, 46],
               [10.1, 46.1],
+            ],
+            waypoints: [
+              { lat: 46, lng: 10, type: 'start' },
+              { lat: 46.1, lng: 10.1, type: 'end' }, // day 1 ends here
             ],
           },
           {
@@ -1099,6 +1103,10 @@ describe('TripsService', () => {
               [10.2, 46.2],
             ],
             startLinked: true,
+            waypoints: [
+              { lat: 46.1, lng: 10.1, type: 'start' }, // == day 1 end → valid link
+              { lat: 46.2, lng: 10.2, type: 'end' },
+            ],
           },
         ]),
       );
@@ -1109,7 +1117,44 @@ describe('TripsService', () => {
       const days = dayBodies();
       expect(days).toHaveLength(2);
       expect(days[0].start_linked).toBe(false); // day 1 is never linked
-      expect(days[1].start_linked).toBe(true); // day 2's link carried through
+      expect(days[1].start_linked).toBe(true); // valid link carried through
+    });
+
+    it('clears an imported link whose start does not sit on the previous end', async () => {
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [10.1, 46.1],
+            ],
+            waypoints: [
+              { lat: 46, lng: 10, type: 'start' },
+              { lat: 46.1, lng: 10.1, type: 'end' }, // day 1 ends here
+            ],
+          },
+          {
+            distanceKm: 60,
+            coordinates: [
+              [10.5, 46.5],
+              [10.6, 46.6],
+            ],
+            startLinked: true, // claims linked…
+            waypoints: [
+              { lat: 46.5, lng: 10.5, type: 'start' }, // …but start ≠ day 1 end
+              { lat: 46.6, lng: 10.6, type: 'end' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 2 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-badlink' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(2);
+      expect(days[1].start_linked).toBe(false); // impossible link cleared
     });
 
     it('drops days with neither geometry nor waypoints rather than persisting empty rows', async () => {

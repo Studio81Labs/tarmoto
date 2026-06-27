@@ -571,6 +571,24 @@ export class TripsService {
       for (let i = 0; i < days.length; i++) {
         const parsed = days[i];
         const dayNumber = i + 1;
+        // Normalize the (client-supplied) overnight link like manual saves: day
+        // 1 is never linked, and a successor is only linked when its start
+        // actually sits on the previous SURVIVING day's end. Empty days were
+        // dropped above, so the original predecessor may no longer be adjacent.
+        const startWp = parsed.waypoints.find(
+          (w) => w.waypoint_type === 'start',
+        );
+        const prevEndWp =
+          i > 0
+            ? days[i - 1].waypoints.find((w) => w.waypoint_type === 'end')
+            : undefined;
+        const startLinked =
+          i > 0 &&
+          parsed.startLinked === true &&
+          !!startWp &&
+          !!prevEndWp &&
+          startWp.lat === prevEndWp.lat &&
+          startWp.lng === prevEndWp.lng;
         const day = manager.create(TripDay, {
           trip_id: savedTrip.id,
           day_number: dayNumber,
@@ -595,9 +613,7 @@ export class TripsService {
                   coordinates: parsed.geometry.map((p) => [p.lng, p.lat]),
                 }
               : null,
-          // Day 1 is never linked; only honour startLinked for day >= 2 so a
-          // malformed snapshot can't link the first day to nothing.
-          start_linked: dayNumber > 1 ? parsed.startLinked : false,
+          start_linked: startLinked,
         });
         const savedDay = await manager.save(day);
 

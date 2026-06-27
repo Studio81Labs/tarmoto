@@ -1635,6 +1635,21 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
   });
 
+  it("undo clamps selectedDayIndex when the restored trip has fewer days", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1
+    s.addDay(); // appends day 2 and selects index 1
+    expect(useTripStore.getState().selectedDayIndex).toBe(1);
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
+
+    s.undo(); // back to a single day
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
+    // selectedDayIndex must clamp into range — not stay at 1 ("Day 2 of 1"),
+    // which would make the next placement target a missing day and recreate it.
+    expect(useTripStore.getState().selectedDayIndex).toBe(0);
+  });
+
   it("relinkDayStart is undoable and recovers the manual start", () => {
     seedOneDay(); // day 1: start (1,1) → end (2,2)
     useTripStore.getState().addDay(); // day 2 linked, start seeded from (2,2)

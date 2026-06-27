@@ -728,6 +728,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
                 .map((d) => d.dayNumber)
             : [],
+          // Clamp the selection into the restored day range — undoing back to
+          // fewer days must not leave selectedDayIndex past the end (which would
+          // render "Day N of M<N" and make the next placement recreate a day).
+          selectedDayIndex: Math.max(
+            0,
+            Math.min(
+              state.selectedDayIndex,
+              (previous.trip?.days.length ?? 1) - 1,
+            ),
+          ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -756,6 +766,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
                 .map((d) => d.dayNumber)
             : [],
+          selectedDayIndex: Math.max(
+            0,
+            Math.min(state.selectedDayIndex, (next.trip?.days.length ?? 1) - 1),
+          ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
