@@ -42,6 +42,19 @@ const ROLE_LABEL: Record<AdminRoleType, string> = {
 };
 
 /**
+ * Maps a server error from a patch mutation to a user-facing message.
+ * Mirrors the status-code discrimination already used by the create handler.
+ */
+function mapPatchError(err: unknown, fallback: string): string {
+  const status = (err as { status?: number })?.status;
+  if (status === 409)
+    return "Cannot make this change: it would remove the last super admin.";
+  if (status === 403)
+    return "Permission denied: you don't have permission to make this change.";
+  return fallback;
+}
+
+/**
  * Returns the roles that `currentRole` is permitted to assign.
  *   - super_admin → all four roles
  *   - all other actors → only roles with a strictly lower rank
@@ -149,7 +162,10 @@ export function AdministratorsScreen({
                   },
                   {
                     onSuccess: () => void refetch(),
-                    onError: () => setPatchError("Failed to update role."),
+                    onError: (err: unknown) =>
+                      setPatchError(
+                        mapPatchError(err, "Failed to update role."),
+                      ),
                     onSettled: () => setPendingId(null),
                   },
                 );
@@ -178,7 +194,10 @@ export function AdministratorsScreen({
                   },
                   {
                     onSuccess: () => void refetch(),
-                    onError: () => setPatchError("Failed to update status."),
+                    onError: (err: unknown) =>
+                      setPatchError(
+                        mapPatchError(err, "Failed to update status."),
+                      ),
                     onSettled: () => setPendingId(null),
                   },
                 );

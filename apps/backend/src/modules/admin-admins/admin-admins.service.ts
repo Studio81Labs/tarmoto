@@ -56,13 +56,30 @@ export class AdminAdminsService {
     ) {
       throw new BadRequestException('Password is required for password mode');
     }
+
+    // Normalize email — create-admin-core expects a lowercased email, and
+    // normalizing here also makes the duplicate check case-insensitive.
+    const email = dto.email.trim().toLowerCase();
+
+    // Explicit 409 guard: reject if an admin with this email already exists so
+    // create() is never an upsert.  Without this check, runCreateAdmin (an upsert
+    // by email) would silently demote or modify an existing row, bypassing all of
+    // patch()'s per-target rank checks and safety rails.
+    // The unique index on email remains the TOCTOU backstop for concurrent creates.
+    const existing = await this.dataSource
+      .getRepository(AdminUser)
+      .findOne({ where: { email } });
+    if (existing) {
+      throw new ConflictException('An admin with this email already exists');
+    }
+
     const password = dto.mode === 'sso-only' ? null : (dto.password ?? null);
 
     const created = await this.dataSource.transaction((manager) =>
       runCreateAdmin(
         manager,
         {
-          email: dto.email,
+          email,
           role: dto.role,
           ssoOnly: dto.mode === 'sso-only',
           help: false,

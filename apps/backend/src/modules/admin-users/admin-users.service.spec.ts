@@ -90,6 +90,23 @@ describe('AdminUsersService', () => {
     expect(users.update).toHaveBeenCalledWith({ id: 'u1' }, updateCall);
   });
 
+  it('softDelete() is idempotent — does NOT call update when user is already deleted', async () => {
+    const alreadyDeleted = {
+      ...SAMPLE_USER,
+      deleted_at: new Date('2026-03-01T00:00:00Z'),
+      deletion_reason: 'Soft-deleted by admin',
+    };
+    const { service, users } = make({
+      users: repo({
+        findOne: jest.fn().mockResolvedValue(alreadyDeleted),
+        update: jest.fn(),
+      }),
+    });
+    await service.softDelete('u1');
+    // update must NOT have been called — the original deleted_at must be preserved.
+    expect(users.update).not.toHaveBeenCalled();
+  });
+
   it('restore() clears deleted_at + reason', async () => {
     const { service, users } = make();
     await service.restore('u1');

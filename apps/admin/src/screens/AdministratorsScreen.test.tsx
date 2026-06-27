@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdministratorsScreen } from "./AdministratorsScreen.js";
 
@@ -167,6 +167,65 @@ describe("AdministratorsScreen", () => {
 
     await options.onSuccess();
     expect(mockRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("shows a specific error for a 409 response from patch (not the generic fallback)", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdministratorsScreen
+        currentRole="super_admin"
+        currentAdminId="super1"
+      />,
+    );
+    // a1 is active → Disable button (status mutation path)
+    const disableBtn = screen.getByRole("button", { name: /disable/i });
+    await user.click(disableBtn);
+
+    expect(mockPatchMutate).toHaveBeenCalledOnce();
+    const [, options] = mockPatchMutate.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+
+    // Simulate a 409 from the server (last super_admin protection).
+    // Wrap in act() because onError calls setPatchError (React state update).
+    act(() => {
+      options.onError({ status: 409 });
+    });
+
+    // Should show the specific 409 message, not the generic fallback
+    expect(screen.getByText(/last super admin/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Failed to update status."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a specific error for a 403 response from patch (not the generic fallback)", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdministratorsScreen
+        currentRole="super_admin"
+        currentAdminId="super1"
+      />,
+    );
+    const disableBtn = screen.getByRole("button", { name: /disable/i });
+    await user.click(disableBtn);
+
+    const [, options] = mockPatchMutate.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+
+    // Simulate a 403 from the server (self-lockout / rank violation).
+    // Wrap in act() because onError calls setPatchError (React state update).
+    act(() => {
+      options.onError({ status: 403 });
+    });
+
+    expect(screen.getByText(/permission denied/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Failed to update status."),
+    ).not.toBeInTheDocument();
   });
 
   it("shows New Admin form", () => {

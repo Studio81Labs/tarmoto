@@ -83,6 +83,9 @@ export class AdminUsersService {
   async softDelete(id: string): Promise<void> {
     const u = await this.users.findOne({ where: { id } });
     if (!u) throw new NotFoundException('User not found');
+    // Idempotent: if the user is already soft-deleted, preserve the original
+    // deleted_at timestamp rather than overwriting it with a newer value.
+    if (u.deleted_at) return;
     await this.users.update(
       { id },
       { deleted_at: new Date(), deletion_reason: 'Soft-deleted by admin' },
