@@ -718,13 +718,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Restore the dirty flag captured with this snapshot so undoing back
           // to the loaded route also clears routeDirty (re-disabling Save).
           routeDirty: previous.dirty,
-          // The restored waypoints will be re-routed by the live hook; mark all
-          // days stale until the hook lands fresh geometry for each.
-          // Only routable days (>=2 routing waypoints) — an empty/under-spec
-          // day can't be re-routed to clear its flag, which would wedge Save.
-          stalePreviewDays: (previous.trip?.days ?? [])
-            .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
-            .map((d) => d.dayNumber),
+          // Mark routable days stale ONLY when the restored snapshot was dirty
+          // (the live hook re-routes them). Restoring a CLEAN snapshot
+          // (dirty=false → back to the loaded/saved route) keeps fresh geometry
+          // and routeDirty=false, so the hook never runs — any stale flag here
+          // would be orphaned and wedge the NEXT edit's Save gate.
+          stalePreviewDays: previous.dirty
+            ? (previous.trip?.days ?? [])
+                .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+                .map((d) => d.dayNumber)
+            : [],
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -746,9 +749,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
-          stalePreviewDays: (next.trip?.days ?? [])
-            .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
-            .map((d) => d.dayNumber),
+          // Same as undo: only stale routable days when the redone state is
+          // dirty; a clean redo target keeps its fresh geometry.
+          stalePreviewDays: next.dirty
+            ? (next.trip?.days ?? [])
+                .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+                .map((d) => d.dayNumber)
+            : [],
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,

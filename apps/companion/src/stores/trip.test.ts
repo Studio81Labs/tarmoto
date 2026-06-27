@@ -675,6 +675,25 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(stale).not.toContain(2); // day 2 (start only) excluded
   });
 
+  it("undo back to a clean loaded trip leaves no stale days", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1 routable
+    // "Load" it as a clean saved trip: setActiveTrip resets routeDirty + stale
+    // + the undo stack, so the next edit captures a CLEAN (dirty=false) snapshot.
+    s.setActiveTrip(useTripStore.getState().activeTrip!);
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    s.placeWaypoint({ lat: 1.5, lng: 1.5 }, "add-via");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    s.undo(); // back to the clean loaded route
+    // routeDirty restored to false → the live hook won't run, so there must be
+    // NO stale flags left to orphan the next edit's Save gate.
+    expect(useTripStore.getState().routeDirty).toBe(false);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
   it("saveDays maps rest→food and accommodation→hotel types", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
