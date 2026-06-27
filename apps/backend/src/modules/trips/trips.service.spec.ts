@@ -2793,6 +2793,89 @@ describe('TripsService', () => {
       expect(dayBodies[0].start_linked).toBe(false); // day 1 is never linked
       expect(dayBodies[1].start_linked).toBe(false); // start not on previous end
     });
+
+    it('preserves existing per-day titles across a multi-day save', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      routingProvider.route
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 0, lng: 0 },
+            { lat: 1, lng: 1 },
+          ],
+          distance_km: 10,
+          duration_min: 20,
+        })
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 1, lng: 1 },
+            { lat: 2, lng: 2 },
+          ],
+          distance_km: 12,
+          duration_min: 24,
+        });
+      enrichment.aggregate
+        .mockResolvedValueOnce({
+          avgQuality: 4,
+          curvinessScore: 6,
+          scenicScore: 3,
+          elevationGain: 100,
+          elevationLoss: 80,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        })
+        .mockResolvedValueOnce({
+          avgQuality: 3,
+          curvinessScore: 5,
+          scenicScore: 4,
+          elevationGain: 200,
+          elevationLoss: 150,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        });
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
+      // Existing days carry titles (e.g. from generation/import).
+      manager.find.mockResolvedValueOnce([
+        { id: 'old-1', day_number: 1, title: 'Leg A' },
+        { id: 'old-2', day_number: 2, title: 'Leg B' },
+      ]);
+      manager.save
+        .mockResolvedValueOnce({ id: 'd1', trip_id: TRIP_ID, day_number: 1 })
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ id: 'd2', trip_id: TRIP_ID, day_number: 2 })
+        .mockResolvedValueOnce([]);
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 0, lng: 0, type: 'start' },
+              { lat: 1, lng: 1, type: 'end' },
+            ],
+          },
+          {
+            dayNumber: 2,
+            startLinked: true,
+            waypoints: [
+              { lat: 1, lng: 1, type: 'start' },
+              { lat: 2, lng: 2, type: 'end' },
+            ],
+          },
+        ],
+      });
+
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'route_geom' in b);
+      expect(dayBodies[0].title).toBe('Leg A'); // carried forward by day_number
+      expect(dayBodies[1].title).toBe('Leg B');
+    });
   });
 
   describe('detail mapping', () => {
