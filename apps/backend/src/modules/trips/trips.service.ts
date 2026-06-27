@@ -209,6 +209,7 @@ export class TripsService {
               curviness_score: day.curviness_score,
               scenic_score: day.scenic_score,
               estimated_time: day.estimated_time,
+              start_linked: day.start_linked,
             }),
           );
 
@@ -594,6 +595,9 @@ export class TripsService {
                   coordinates: parsed.geometry.map((p) => [p.lng, p.lat]),
                 }
               : null,
+          // Day 1 is never linked; only honour startLinked for day >= 2 so a
+          // malformed snapshot can't link the first day to nothing.
+          start_linked: dayNumber > 1 ? parsed.startLinked : false,
         });
         const savedDay = await manager.save(day);
 
@@ -1635,6 +1639,7 @@ interface ParsedSnapshotDay {
   elevation_gain: number | null;
   geometry: Array<{ lat: number; lng: number }>;
   waypoints: BuiltWaypoint[];
+  startLinked: boolean;
 }
 
 // Snapshot waypoints round-trip the same vocabulary the backend
@@ -1718,6 +1723,8 @@ function parseSnapshotDay(raw: unknown): ParsedSnapshotDay {
 
   const geometry = parseSnapshotGeometry(day.routeGeometry);
   const waypoints = parseSnapshotWaypoints(day.waypoints);
+  // Companion snapshots carry the overnight link flag as `startLinked`.
+  const startLinked = day.startLinked === true;
 
   // Recompute distance from geometry when the snapshot didn't carry it
   // (older shares predating the per-day distance field) — the trip-list
@@ -1736,6 +1743,7 @@ function parseSnapshotDay(raw: unknown): ParsedSnapshotDay {
     elevation_gain,
     geometry,
     waypoints,
+    startLinked,
   };
 }
 

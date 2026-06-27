@@ -1528,4 +1528,39 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
     expect(useTripStore.getState().selectedDayIndex).toBe(1);
   });
+
+  it("removeDay is undoable (snapshots the deleted day onto the undo stack)", () => {
+    seedOneDay();
+    useTripStore.getState().addDay();
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 complete
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2);
+
+    useTripStore.getState().removeDay(1);
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(1);
+    expect(useTripStore.getState().canUndo).toBe(true);
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().activeTrip!.days).toHaveLength(2); // day restored
+  });
+
+  it("addWaypoint marks the MUTATED day stale, not the selected day", () => {
+    seedOneDay(); // day 1
+    useTripStore.getState().addDay();
+    useTripStore.setState({ selectedDayIndex: 1 });
+    useTripStore.getState().placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 complete
+    // Select day 2, clear stale, then add a stop to DAY 1 (index 0).
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 1 });
+
+    useTripStore.getState().addWaypoint(0, {
+      id: "stop-1",
+      name: "Fuel",
+      type: "fuel",
+      location: { lng: 1.2, lat: 1.2 },
+    });
+
+    const stale = useTripStore.getState().stalePreviewDays;
+    expect(stale).toContain(1); // the mutated day (day 1)
+    expect(stale).not.toContain(2); // NOT the selected day (day 2)
+  });
 });

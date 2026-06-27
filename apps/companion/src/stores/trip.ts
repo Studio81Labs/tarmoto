@@ -532,7 +532,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: true,
         stalePreviewDays: markDayStale(
           get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
         ),
       })),
 
@@ -562,7 +562,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: true,
         stalePreviewDays: markDayStale(
           get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
         ),
       })),
 
@@ -595,7 +595,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: true,
         stalePreviewDays: markDayStale(
           get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
         ),
       })),
 
@@ -700,7 +700,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: true,
         stalePreviewDays: markDayStale(
           get().stalePreviewDays,
-          get().activeTrip?.days[get().selectedDayIndex]?.dayNumber ?? 1,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
         ),
       })),
 
@@ -1057,12 +1057,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           0,
           Math.min(shifted, result.days.length - 1),
         );
+        // Route through commitTripChange so the deletion is snapshotted onto
+        // the undo stack (a populated day's waypoints/geometry are otherwise
+        // unrecoverable until reload) and canUndo is updated.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: result.days,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
         return {
-          activeTrip: {
-            ...trip,
-            days: result.days,
-            updatedAt: new Date().toISOString(),
-          },
+          ...committed,
           stalePreviewDays: result.stale,
           selectedDayIndex,
           routeDirty: true,
