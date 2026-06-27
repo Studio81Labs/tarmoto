@@ -149,7 +149,7 @@ describe('AdminAdminsService', () => {
     // sessions revoked (revokeAdminSessions issues a session update by admin_user_id)
     expect(adminRepo.update).toHaveBeenCalledWith(
       expect.objectContaining({ admin_user_id: 'sup2' }),
-      expect.objectContaining({ revoked_at: expect.any(Date) }),
+      expect.objectContaining({ revoked_at: expect.any(Date) as unknown }),
     );
   });
 
