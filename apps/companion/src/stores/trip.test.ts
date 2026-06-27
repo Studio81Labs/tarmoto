@@ -1650,6 +1650,51 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(useTripStore.getState().selectedDayIndex).toBe(0);
   });
 
+  it("undo restores the snapshot's exact stale set, not every routable day", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // day 1 routable
+    s.addDay();
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.placeWaypoint({ lat: 20, lng: 20 }, "set-end"); // day 2 routable
+    // Both days routed fresh, but the trip is still dirty (edited since load).
+    useTripStore.setState({
+      stalePreviewDays: [],
+      routeDirty: true,
+      selectedDayIndex: 0,
+    });
+
+    // Edit day 1 → its snapshot captures { dirty: true, stale: [] }.
+    s.placeWaypoint({ lat: 1.5, lng: 1.5 }, "add-via");
+    expect(useTripStore.getState().stalePreviewDays).toContain(1);
+
+    s.undo();
+    // The captured set ([]) is restored verbatim — NOT a reconstruction from
+    // all routable days, which would wrongly stale the untouched day 2.
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
+  it("appendPlannerWaypoint cascades a new finish into the linked successor's start", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 }); // day 1: start only (no end)
+    s.addDay(); // day 2 linked, but no seeded start yet (day 1 has no end)
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.filter((w) => w.type === "start"),
+    ).toHaveLength(0);
+
+    // Append day 1's finish via the map-click path.
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 }); // day 1 end at (2,2)
+
+    // Day 2's linked start must now be seeded to day 1's end (2,2).
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start");
+    expect(day2Start?.location).toEqual({ lng: 2, lat: 2 });
+  });
+
   it("relinkDayStart is undoable and recovers the manual start", () => {
     seedOneDay(); // day 1: start (1,1) → end (2,2)
     useTripStore.getState().addDay(); // day 2 linked, start seeded from (2,2)

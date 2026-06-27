@@ -263,8 +263,8 @@ type TripStoreSnapshot = {
   selectedDayIndex: number;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
-  undoStack: Array<{ trip: Trip | null; dirty: boolean }>;
-  redoStack: Array<{ trip: Trip | null; dirty: boolean }>;
+  undoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
+  redoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;

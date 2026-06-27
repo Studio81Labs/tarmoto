@@ -298,6 +298,8 @@ interface TripState {
 interface TripHistoryEntry {
   trip: Trip | null;
   dirty: boolean;
+  /** The exact `stalePreviewDays` at snapshot time, restored verbatim on undo/redo. */
+  stale: number[];
 }
 
 interface TripStoreHistory {
@@ -537,8 +539,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       })),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           const baseTrip =
             activeTrip ??
             createPlannerDraftTrip(new Date().toISOString(), parameters);
@@ -558,13 +560,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        });
+        if (committed === state) return state;
+        // Use the shared post-commit sync (like placeWaypoint/moveWaypoint) so
+        // appending this day's finish cascades into the next linked day's
+        // start — otherwise a successor added via "Add day" before the finish
+        // existed stays empty and gets dropped on save.
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
       set((state) => ({
@@ -711,23 +717,24 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const undoStack = state.undoStack.slice(0, -1);
         const redoStack = trimHistory([
           ...state.redoStack,
-          { trip: state.activeTrip, dirty: state.routeDirty },
+          {
+            trip: state.activeTrip,
+            dirty: state.routeDirty,
+            stale: state.stalePreviewDays,
+          },
         ]);
         return {
           activeTrip: previous.trip,
           // Restore the dirty flag captured with this snapshot so undoing back
           // to the loaded route also clears routeDirty (re-disabling Save).
           routeDirty: previous.dirty,
-          // Mark routable days stale ONLY when the restored snapshot was dirty
-          // (the live hook re-routes them). Restoring a CLEAN snapshot
-          // (dirty=false → back to the loaded/saved route) keeps fresh geometry
-          // and routeDirty=false, so the hook never runs — any stale flag here
-          // would be orphaned and wedge the NEXT edit's Save gate.
-          stalePreviewDays: previous.dirty
-            ? (previous.trip?.days ?? [])
-                .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
-                .map((d) => d.dayNumber)
-            : [],
+          // Restore the EXACT stale set captured with this snapshot — not a
+          // reconstruction from all routable days, which would over-stale
+          // untouched days. Live routing only runs the selected day, so an
+          // over-stale untouched day could never clear and would wedge Save.
+          // (A clean snapshot captured an empty set, so this also re-disables
+          // Save when undoing back to the loaded route.)
+          stalePreviewDays: previous.stale,
           // Clamp the selection into the restored day range — undoing back to
           // fewer days must not leave selectedDayIndex past the end (which would
           // render "Day N of M<N" and make the next placement recreate a day).
@@ -754,18 +761,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const redoStack = state.redoStack.slice(0, -1);
         const undoStack = trimHistory([
           ...state.undoStack,
-          { trip: state.activeTrip, dirty: state.routeDirty },
+          {
+            trip: state.activeTrip,
+            dirty: state.routeDirty,
+            stale: state.stalePreviewDays,
+          },
         ]);
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
-          // Same as undo: only stale routable days when the redone state is
-          // dirty; a clean redo target keeps its fresh geometry.
-          stalePreviewDays: next.dirty
-            ? (next.trip?.days ?? [])
-                .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
-                .map((d) => d.dayNumber)
-            : [],
+          // Restore the exact stale set captured with this snapshot (see undo).
+          stalePreviewDays: next.stale,
           selectedDayIndex: Math.max(
             0,
             Math.min(state.selectedDayIndex, (next.trip?.days.length ?? 1) - 1),
@@ -1195,7 +1201,11 @@ function commitTripChange(
   // value to restore on undo).
   const undoStack = trimHistory([
     ...state.undoStack,
-    { trip: state.activeTrip, dirty: state.routeDirty },
+    {
+      trip: state.activeTrip,
+      dirty: state.routeDirty,
+      stale: state.stalePreviewDays,
+    },
   ]);
   return {
     activeTrip: nextTrip,
