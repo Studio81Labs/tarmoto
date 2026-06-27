@@ -80,13 +80,14 @@ describe('AdminUsersService', () => {
   it('softDelete() sets deleted_at + reason', async () => {
     const { service, users } = make();
     await service.softDelete('u1');
-    expect(users.update).toHaveBeenCalledWith(
-      { id: 'u1' },
-      expect.objectContaining({
-        deleted_at: expect.any(Date),
-        deletion_reason: expect.any(String),
-      }),
-    );
+
+    const updateCall = {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      deleted_at: expect.any(Date),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      deletion_reason: expect.any(String),
+    };
+    expect(users.update).toHaveBeenCalledWith({ id: 'u1' }, updateCall);
   });
 
   it('restore() clears deleted_at + reason', async () => {
@@ -96,5 +97,31 @@ describe('AdminUsersService', () => {
       { id: 'u1' },
       { deleted_at: null, deletion_scheduled_at: null, deletion_reason: null },
     );
+  });
+
+  it('list() applies deleted filter to each search clause', async () => {
+    const { service, users } = make();
+    await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const findAndCountCall = expect.objectContaining({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      where: expect.arrayContaining([
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          email: expect.anything(),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          deleted_at: expect.anything(),
+        }),
+
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          display_name: expect.anything(),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          deleted_at: expect.anything(),
+        }),
+      ]),
+    });
+    expect(users.findAndCount).toHaveBeenCalledWith(findAndCountCall);
   });
 });
