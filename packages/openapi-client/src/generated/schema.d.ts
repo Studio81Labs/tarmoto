@@ -2991,6 +2991,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/admins": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List admin (staff) accounts */
+    get: operations["AdminAdminsController_list"];
+    put?: never;
+    /** Create an admin account */
+    post: operations["AdminAdminsController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/admins/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change an admin role / enable-disable */
+    patch: operations["AdminAdminsController_patch"];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5412,6 +5447,30 @@ export interface components {
       deletion_reason: string | null;
       activity: components["schemas"]["AdminUserActivityDto"];
     };
+    AdminRowDto: {
+      id: string;
+      email: string;
+      /** @enum {string} */
+      role: "read_only" | "support" | "admin" | "super_admin";
+      /** @enum {string} */
+      status: "active" | "disabled";
+      last_login_at: string | null;
+      created_at: string;
+    };
+    CreateAdminDto: {
+      email: string;
+      /** @enum {string} */
+      role: "read_only" | "support" | "admin" | "super_admin";
+      /** @enum {string} */
+      mode: "password" | "sso-only";
+      password?: string;
+    };
+    PatchAdminDto: {
+      /** @enum {string} */
+      role?: "read_only" | "support" | "admin" | "super_admin";
+      /** @description true = active, false = disabled */
+      active?: boolean;
+    };
   };
   responses: never;
   parameters: never;
@@ -5783,6 +5842,9 @@ export type SchemaAdminUserActivityDto =
   components["schemas"]["AdminUserActivityDto"];
 export type SchemaAdminUserDetailDto =
   components["schemas"]["AdminUserDetailDto"];
+export type SchemaAdminRowDto = components["schemas"]["AdminRowDto"];
+export type SchemaCreateAdminDto = components["schemas"]["CreateAdminDto"];
+export type SchemaPatchAdminDto = components["schemas"]["PatchAdminDto"];
 export type $defs = Record<string, never>;
 export interface operations {
   AppController_getHello: {
@@ -11123,6 +11185,73 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  AdminAdminsController_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminRowDto"][];
+        };
+      };
+    };
+  };
+  AdminAdminsController_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAdminDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminRowDto"];
+        };
+      };
+    };
+  };
+  AdminAdminsController_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PatchAdminDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminRowDto"];
+        };
       };
     };
   };
