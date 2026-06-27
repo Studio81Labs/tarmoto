@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { components } from "@tarmoto/openapi-client";
 import {
   Alert,
   Button,
@@ -16,20 +17,12 @@ import {
 } from "../data/useAdminUsers.js";
 
 type DeletedFilter = "active" | "deleted" | "all";
-
-interface UserRow {
-  id: string;
-  email: string;
-  display_name: string;
-  subscription_tier: string;
-  subscription_status: string;
-  created_at: string;
-  deleted_at: string | null;
-}
+type UserRow = components["schemas"]["AdminUserRowDto"];
 
 export function UsersScreen() {
   const [q, setQ] = useState("");
   const [deleted, setDeleted] = useState<DeletedFilter>("active");
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   const { data, isPending, error, refetch } = useAdminUsersList({
     q: q || undefined,
@@ -87,13 +80,17 @@ export function UsersScreen() {
           <Button
             variant="secondary"
             size="sm"
-            loading={restoreMutation.isPending}
-            onClick={() =>
+            loading={pendingId === row.id}
+            onClick={() => {
+              setPendingId(row.id);
               restoreMutation.mutate(
                 { params: { path: { id: row.id } } },
-                { onSuccess: () => void refetch() },
-              )
-            }
+                {
+                  onSuccess: () => void refetch(),
+                  onSettled: () => setPendingId(null),
+                },
+              );
+            }}
           >
             Restore
           </Button>
@@ -101,13 +98,17 @@ export function UsersScreen() {
           <Button
             variant="danger"
             size="sm"
-            loading={deleteMutation.isPending}
-            onClick={() =>
+            loading={pendingId === row.id}
+            onClick={() => {
+              setPendingId(row.id);
               deleteMutation.mutate(
                 { params: { path: { id: row.id } } },
-                { onSuccess: () => void refetch() },
-              )
-            }
+                {
+                  onSuccess: () => void refetch(),
+                  onSettled: () => setPendingId(null),
+                },
+              );
+            }}
           >
             Delete
           </Button>
@@ -132,7 +133,9 @@ export function UsersScreen() {
         />
         <Select
           value={deleted}
-          onChange={(v) => setDeleted(v as DeletedFilter)}
+          onChange={(v) => {
+            if (v === "active" || v === "deleted" || v === "all") setDeleted(v);
+          }}
           ariaLabel="Filter by status"
           className="w-36"
         >
