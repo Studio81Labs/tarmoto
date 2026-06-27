@@ -9,7 +9,7 @@
  *
  * Covers:
  *  - parseArgs (arg parser from create-admin-args)
- *  - runCreateAdmin (upsert core with a mocked Repository<AdminUser>)
+ *  - runCreateAdmin (upsert core with a mocked EntityManager)
  */
 
 // Mock hashAdminPassword so bcrypt doesn't slow down the test suite.
@@ -19,8 +19,10 @@ jest.mock('../modules/admin-auth/admin-password.js', () => ({
   ),
 }));
 
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { AdminUser } from '../entities/admin-user.entity.js';
+import { AdminSession } from '../entities/admin-session.entity.js';
+import { AdminRefreshToken } from '../entities/admin-refresh-token.entity.js';
 import { hashAdminPassword } from '../modules/admin-auth/admin-password.js';
 import { parseArgs, VALID_ROLES } from './create-admin-args.js';
 import { runCreateAdmin, CreateAdminResult } from './create-admin-core.js';
@@ -29,19 +31,27 @@ import { runCreateAdmin, CreateAdminResult } from './create-admin-core.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeRepo(
-  existing: AdminUser | null = null,
-): jest.Mocked<
-  Pick<Repository<AdminUser>, 'createQueryBuilder' | 'save' | 'create'>
-> {
-  const qb = {
-    addSelect: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    getOne: jest.fn().mockResolvedValue(existing),
+interface PerEntityRepos {
+  adminUserRepo: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+    create: jest.Mock;
   };
+  adminSessionRepo: {
+    find: jest.Mock;
+    update: jest.Mock;
+  };
+  adminRefreshTokenRepo: {
+    update: jest.Mock;
+  };
+}
 
-  return {
-    createQueryBuilder: jest.fn().mockReturnValue(qb),
+function makeManager(
+  existing: AdminUser | null = null,
+  sessions: Pick<AdminSession, 'id'>[] = [],
+): { manager: jest.Mocked<EntityManager> } & PerEntityRepos {
+  const adminUserRepo = {
+    findOne: jest.fn().mockResolvedValue(existing),
     save: jest
       .fn()
       .mockImplementation((entity: AdminUser) =>
@@ -51,6 +61,26 @@ function makeRepo(
       ...data,
     })),
   };
+
+  const adminSessionRepo = {
+    find: jest.fn().mockResolvedValue(sessions),
+    update: jest.fn().mockResolvedValue({ affected: sessions.length }),
+  };
+
+  const adminRefreshTokenRepo = {
+    update: jest.fn().mockResolvedValue({ affected: 0 }),
+  };
+
+  const manager = {
+    getRepository: jest.fn().mockImplementation((entity: unknown) => {
+      if (entity === AdminUser) return adminUserRepo;
+      if (entity === AdminSession) return adminSessionRepo;
+      if (entity === AdminRefreshToken) return adminRefreshTokenRepo;
+      throw new Error(`Unexpected entity in mock: ${String(entity)}`);
+    }),
+  } as unknown as jest.Mocked<EntityManager>;
+
+  return { manager, adminUserRepo, adminSessionRepo, adminRefreshTokenRepo };
 }
 
 // ---------------------------------------------------------------------------
@@ -166,10 +196,10 @@ describe('create-admin parseArgs', () => {
 describe('runCreateAdmin – create', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('inserts a new row, hashes the password, returns {created:true}', async () => {
-    const repo = makeRepo(null);
+  it('inserts a new row, hashes the password, returns {created:true, sessionsRevoked:false}', async () => {
+    const { manager, adminUserRepo } = makeManager(null);
     const result: CreateAdminResult = await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+      manager,
       {
         email: 'new@tarmoto.app',
         role: 'admin',
@@ -183,22 +213,23 @@ describe('runCreateAdmin – create', () => {
       created: true,
       email: 'new@tarmoto.app',
       role: 'admin',
+      sessionsRevoked: false,
     });
 
     // hashAdminPassword was called with the plaintext — never store plaintext
     expect(hashAdminPassword).toHaveBeenCalledWith('plaintext');
 
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.password_hash).toBe('hashed:plaintext');
     expect(saved.email).toBe('new@tarmoto.app');
     expect(saved.role).toBe('admin');
     expect(saved.status).toBe('active');
   });
 
-  it('creates an SSO-only row with password_hash=null', async () => {
-    const repo = makeRepo(null);
+  it('creates an SSO-only row with password_hash=null, no revoke', async () => {
+    const { manager, adminUserRepo, adminSessionRepo } = makeManager(null);
     const result = await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+      manager,
       {
         email: 'sso@tarmoto.app',
         role: 'support',
@@ -208,17 +239,25 @@ describe('runCreateAdmin – create', () => {
       null,
     );
 
-    expect(result.created).toBe(true);
+    expect(result).toEqual({
+      created: true,
+      email: 'sso@tarmoto.app',
+      role: 'support',
+      sessionsRevoked: false,
+    });
     expect(hashAdminPassword).not.toHaveBeenCalled();
 
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.password_hash).toBeNull();
+
+    // No sessions to revoke on a fresh create
+    expect(adminSessionRepo.update).not.toHaveBeenCalled();
   });
 
   it('hashes the password passed in directly', async () => {
-    const repo = makeRepo(null);
+    const { manager } = makeManager(null);
     await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+      manager,
       {
         email: 'env@tarmoto.app',
         role: 'read_only',
@@ -232,10 +271,10 @@ describe('runCreateAdmin – create', () => {
   });
 
   it('throws when email is empty', async () => {
-    const repo = makeRepo(null);
+    const { manager } = makeManager(null);
     await expect(
       runCreateAdmin(
-        repo as unknown as Repository<AdminUser>,
+        manager,
         {
           email: '',
           role: 'admin',
@@ -247,11 +286,11 @@ describe('runCreateAdmin – create', () => {
     ).rejects.toThrow(/--email is required/);
   });
 
-  it('throws when no password is provided and not sso-only', async () => {
-    const repo = makeRepo(null);
+  it('throws when no password is provided and not sso-only (CREATE path)', async () => {
+    const { manager } = makeManager(null);
     await expect(
       runCreateAdmin(
-        repo as unknown as Repository<AdminUser>,
+        manager,
         {
           email: 'nopw@tarmoto.app',
           role: 'admin',
@@ -260,7 +299,7 @@ describe('runCreateAdmin – create', () => {
         },
         null,
       ),
-    ).rejects.toThrow(/No password provided/i);
+    ).rejects.toThrow(/a password is required for a new admin/i);
   });
 });
 
@@ -287,17 +326,19 @@ describe('runCreateAdmin – update', () => {
     };
   }
 
-  it('updates role + status, returns {created:false}', async () => {
-    const repo = makeRepo(existingUser());
+  it('role/status-only rerun: updates role + status, leaves password_hash untouched, NO revoke', async () => {
+    const { manager, adminUserRepo, adminSessionRepo, adminRefreshTokenRepo } =
+      makeManager(existingUser());
+
     const result = await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+      manager,
       {
         email: 'existing@tarmoto.app',
         role: 'super_admin',
         ssoOnly: false,
         help: false,
       },
-      null,
+      null, // no password supplied — role/status-only
     );
 
     // Password hash NOT touched when no password is provided
@@ -307,18 +348,26 @@ describe('runCreateAdmin – update', () => {
       created: false,
       email: 'existing@tarmoto.app',
       role: 'super_admin',
+      sessionsRevoked: false,
     });
 
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.role).toBe('super_admin');
     expect(saved.status).toBe('active');
     expect(saved.password_hash).toBe('old-hash');
+
+    // No credential change → no session revocation
+    expect(adminSessionRepo.update).not.toHaveBeenCalled();
+    expect(adminRefreshTokenRepo.update).not.toHaveBeenCalled();
   });
 
-  it('updates password_hash when a password is provided on update', async () => {
-    const repo = makeRepo(existingUser());
-    await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+  it('new password on update → password_hash set AND sessions + refresh tokens revoked', async () => {
+    const sessions = [{ id: 'sess-1' }, { id: 'sess-2' }] as AdminSession[];
+    const { manager, adminUserRepo, adminSessionRepo, adminRefreshTokenRepo } =
+      makeManager(existingUser(), sessions);
+
+    const result = await runCreateAdmin(
+      manager,
       {
         email: 'existing@tarmoto.app',
         role: 'admin',
@@ -328,15 +377,45 @@ describe('runCreateAdmin – update', () => {
       'newpassword',
     );
 
+    expect(result).toEqual({
+      created: false,
+      email: 'existing@tarmoto.app',
+      role: 'admin',
+      sessionsRevoked: true,
+    });
+
     expect(hashAdminPassword).toHaveBeenCalledWith('newpassword');
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.password_hash).toBe('hashed:newpassword');
+
+    // Sessions revoked
+    expect(adminSessionRepo.update).toHaveBeenCalledTimes(1);
+    const [sessionCriteria] = adminSessionRepo.update.mock.calls[0] as [
+      unknown,
+      unknown,
+    ];
+    expect(sessionCriteria).toMatchObject({ admin_user_id: 'existing-uuid' });
+
+    // Refresh tokens revoked for those sessions
+    expect(adminRefreshTokenRepo.update).toHaveBeenCalledTimes(1);
+    const [tokenCriteria] = adminRefreshTokenRepo.update.mock.calls[0] as [
+      unknown,
+      unknown,
+    ];
+    expect(tokenCriteria).toMatchObject({
+      session_id: expect.anything() as unknown, // In(['sess-1','sess-2']) operator
+    });
   });
 
-  it('sets password_hash=null on update when --sso-only is passed', async () => {
-    const repo = makeRepo(existingUser({ password_hash: 'old-hash' }));
-    await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+  it('--sso-only when existing had a password → password_hash=null AND sessions revoked', async () => {
+    const sessions = [{ id: 'sess-a' }] as AdminSession[];
+    const { manager, adminUserRepo, adminSessionRepo } = makeManager(
+      existingUser({ password_hash: 'old-hash' }),
+      sessions,
+    );
+
+    const result = await runCreateAdmin(
+      manager,
       {
         email: 'existing@tarmoto.app',
         role: 'support',
@@ -346,15 +425,54 @@ describe('runCreateAdmin – update', () => {
       null,
     );
 
+    expect(result).toEqual({
+      created: false,
+      email: 'existing@tarmoto.app',
+      role: 'support',
+      sessionsRevoked: true,
+    });
+
     expect(hashAdminPassword).not.toHaveBeenCalled();
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.password_hash).toBeNull();
+
+    expect(adminSessionRepo.update).toHaveBeenCalledTimes(1);
   });
 
-  it('updates password_hash via provided password on update path', async () => {
-    const repo = makeRepo(existingUser());
+  it('--sso-only when existing was already null → NO revoke (no credential change)', async () => {
+    const { manager, adminSessionRepo, adminRefreshTokenRepo } = makeManager(
+      existingUser({ password_hash: null }),
+    );
+
+    const result = await runCreateAdmin(
+      manager,
+      {
+        email: 'existing@tarmoto.app',
+        role: 'support',
+        ssoOnly: true,
+        help: false,
+      },
+      null,
+    );
+
+    expect(result).toEqual({
+      created: false,
+      email: 'existing@tarmoto.app',
+      role: 'support',
+      sessionsRevoked: false,
+    });
+
+    // null → null is not a credential change
+    expect(adminSessionRepo.update).not.toHaveBeenCalled();
+    expect(adminRefreshTokenRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('update via env password: hashes and saves', async () => {
+    const sessions = [{ id: 'sess-z' }] as AdminSession[];
+    const { manager, adminUserRepo } = makeManager(existingUser(), sessions);
+
     await runCreateAdmin(
-      repo as unknown as Repository<AdminUser>,
+      manager,
       {
         email: 'existing@tarmoto.app',
         role: 'admin',
@@ -365,7 +483,7 @@ describe('runCreateAdmin – update', () => {
     );
 
     expect(hashAdminPassword).toHaveBeenCalledWith('envpw');
-    const [[saved]] = repo.save.mock.calls as unknown as [[AdminUser]];
+    const [[saved]] = adminUserRepo.save.mock.calls as unknown as [[AdminUser]];
     expect(saved.password_hash).toBe('hashed:envpw');
   });
 });

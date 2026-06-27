@@ -29,7 +29,6 @@
 import 'reflect-metadata';
 import { createInterface } from 'readline';
 import { AppDataSource } from '../data-source.js';
-import { AdminUser } from '../entities/admin-user.entity.js';
 import { parseArgs, usage } from './create-admin-args.js';
 import { runCreateAdmin } from './create-admin-core.js';
 
@@ -96,6 +95,10 @@ async function main(): Promise<void> {
 
   // Resolve the password before touching the DB so that any I/O errors fail
   // fast without an open connection.
+  //
+  // An empty/omitted password is NOT an early exit — the core enforces the
+  // "password required for new admins" rule and allows null on the update path
+  // (role/status-only reruns leave password_hash untouched).
   let password: string | null;
   if (options.ssoOnly) {
     password = null;
@@ -104,25 +107,26 @@ async function main(): Promise<void> {
     if (envPw !== undefined && envPw.length > 0) {
       password = envPw;
     } else {
-      const entered = await readPassword('Admin password: ');
-      if (entered.length === 0) {
-        console.error(
-          'Error: no password provided. Set the TARMOTO_ADMIN_PASSWORD env var, ' +
-            'pipe the password via stdin, or use --sso-only.',
-        );
-        process.exit(1);
-      }
-      password = entered;
+      const entered = await readPassword(
+        'Admin password (leave blank to keep existing): ',
+      );
+      password = entered.length > 0 ? entered : null;
     }
   }
 
   await AppDataSource.initialize();
 
   try {
-    const repo = AppDataSource.getRepository(AdminUser);
-    const result = await runCreateAdmin(repo, options, password);
+    const result = await runCreateAdmin(
+      AppDataSource.manager,
+      options,
+      password,
+    );
     const verb = result.created ? 'Created' : 'Updated';
-    console.log(`${verb} admin: ${result.email} (${result.role})`);
+    const revokeNote = result.sessionsRevoked
+      ? ' (active sessions revoked)'
+      : '';
+    console.log(`${verb} admin: ${result.email} (${result.role})${revokeNote}`);
   } finally {
     await AppDataSource.destroy();
   }
