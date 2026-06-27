@@ -2667,6 +2667,87 @@ describe('TripsService', () => {
         expect.objectContaining({ status: 'planned', num_days: 2 }),
       );
     });
+
+    it('normalizes start_linked: clears a day-1 link and a successor whose start is not on the previous end', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      routingProvider.route
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 0, lng: 0 },
+            { lat: 1, lng: 1 },
+          ],
+          distance_km: 10,
+          duration_min: 20,
+        })
+        .mockResolvedValueOnce({
+          geometry: [
+            { lat: 5, lng: 5 },
+            { lat: 6, lng: 6 },
+          ],
+          distance_km: 12,
+          duration_min: 24,
+        });
+      enrichment.aggregate
+        .mockResolvedValueOnce({
+          avgQuality: 4,
+          curvinessScore: 6,
+          scenicScore: 3,
+          elevationGain: 100,
+          elevationLoss: 80,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        })
+        .mockResolvedValueOnce({
+          avgQuality: 3,
+          curvinessScore: 5,
+          scenicScore: 4,
+          elevationGain: 200,
+          elevationLoss: 150,
+          hazardCount: 0,
+          surfaceMixMetres: {},
+        });
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
+      manager.find.mockResolvedValueOnce([]);
+      manager.save
+        .mockResolvedValueOnce({ id: 'd1', trip_id: TRIP_ID, day_number: 1 })
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ id: 'd2', trip_id: TRIP_ID, day_number: 2 })
+        .mockResolvedValueOnce([]);
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        days: [
+          // Day 1 with an impossible startLinked:true → normalized to false.
+          {
+            dayNumber: 1,
+            startLinked: true,
+            waypoints: [
+              { lat: 0, lng: 0, type: 'start' },
+              { lat: 1, lng: 1, type: 'end' },
+            ],
+          },
+          // Day 2 linked, but its start (5,5) is NOT day 1's end (1,1) → false.
+          {
+            dayNumber: 2,
+            startLinked: true,
+            waypoints: [
+              { lat: 5, lng: 5, type: 'start' },
+              { lat: 6, lng: 6, type: 'end' },
+            ],
+          },
+        ],
+      });
+
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'route_geom' in b);
+      expect(dayBodies[0].start_linked).toBe(false); // day 1 is never linked
+      expect(dayBodies[1].start_linked).toBe(false); // start not on previous end
+    });
   });
 
   describe('detail mapping', () => {

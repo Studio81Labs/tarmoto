@@ -1117,11 +1117,28 @@ export class TripsService {
       for (let i = 0; i < days.length; i++) {
         const d = days[i];
         const b = built[i];
+        // Normalize the overnight-link flag rather than trusting the client:
+        // day 1 is never linked, and a successor is only linked if its start
+        // actually sits on the previous day's end. A direct/mobile client could
+        // otherwise persist an impossible link the companion later trusts to
+        // hide markers and resync starts.
+        const startWp = d.waypoints.find((w) => w.type === 'start');
+        const prevEndWp =
+          i > 0
+            ? days[i - 1].waypoints.find((w) => w.type === 'end')
+            : undefined;
+        const startLinked =
+          i > 0 &&
+          d.startLinked === true &&
+          !!startWp &&
+          !!prevEndWp &&
+          startWp.lat === prevEndWp.lat &&
+          startWp.lng === prevEndWp.lng;
         const dayRow = await manager.save(
           manager.create(TripDay, {
             trip_id: tripId,
             day_number: d.dayNumber,
-            start_linked: d.startLinked,
+            start_linked: startLinked,
             distance_km: b.distance_km,
             estimated_time: b.estimated_time,
             avg_quality: b.avg_quality,
