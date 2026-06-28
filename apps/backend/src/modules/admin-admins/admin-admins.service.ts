@@ -316,6 +316,12 @@ export class AdminAdminsService {
           ROLE_RANK[freshNewRole] < ROLE_RANK[fresh.role];
         const freshDisabling =
           freshNewStatus === 'disabled' && fresh.status === 'active';
+        // Re-enabling a previously-disabled admin restores access to any unexpired
+        // sessions/refresh tokens from before the disable. Revoke them so the
+        // account starts with a clean session state, consistent with how
+        // create-admin-core handles the disabled→active reactivation path.
+        const freshReactivating =
+          fresh.status === 'disabled' && freshNewStatus === 'active';
 
         // Re-run rank gates against the fresh (possibly promoted) role.
         if (
@@ -375,7 +381,7 @@ export class AdminAdminsService {
         await manager
           .getRepository(AdminUser)
           .update({ id }, { role: freshNewRole, status: freshNewStatus });
-        if (freshDisabling || freshDemoting) {
+        if (freshDisabling || freshDemoting || freshReactivating) {
           await revokeAdminSessions(manager, id);
         }
       });

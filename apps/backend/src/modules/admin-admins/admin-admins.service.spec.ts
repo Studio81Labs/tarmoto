@@ -489,6 +489,30 @@ describe('AdminAdminsService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  // Fix 6: re-enabling a disabled admin revokes any sessions left from before the disable
+  it('patch: re-enabling a disabled admin revokes their sessions', async () => {
+    const { service, adminRepo } = makeService({
+      target: {
+        id: 'sup3',
+        role: 'support',
+        status: 'disabled',
+        created_at: new Date(),
+      },
+      superAdminCount: 2,
+    });
+    await service.patch(SUPER, 'sup3', { active: true });
+    // status updated to active
+    expect(adminRepo.update).toHaveBeenCalledWith(
+      { id: 'sup3' },
+      expect.objectContaining({ status: 'active' }),
+    );
+    // sessions revoked so unexpired pre-disable tokens cannot be replayed
+    expect(adminRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ admin_user_id: 'sup3' }),
+      expect.objectContaining({ revoked_at: expect.any(Date) as unknown }),
+    );
+  });
+
   // Fix 5: denial audit rows are recorded for every lifecycle/permission rejection
 
   it('patch: self-lockout records a denied audit row with reason=self_lockout', async () => {
