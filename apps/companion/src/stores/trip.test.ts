@@ -1925,21 +1925,26 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(useTripStore.getState().stalePreviewDays).toEqual([]);
   });
 
-  it("appendPlannerWaypoint cascades a new finish into the linked successor's start", () => {
+  it("Add day does not link a successor when the predecessor has no finish yet", () => {
     const s = useTripStore.getState();
-    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 }); // day 1: start only (no end)
-    s.addDay(); // day 2 linked, but no seeded start yet (day 1 has no end)
-    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 }); // day 1: start only (no finish)
+    s.addDay();
+    // Day 2 must NOT be linked — an unseeded "linked" start would be filled by
+    // the next map click WITHOUT clearing the link, then hidden outside focus
+    // and overwritten by a later predecessor finish.
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
     expect(
       useTripStore
         .getState()
         .activeTrip!.days[1]!.waypoints.filter((w) => w.type === "start"),
     ).toHaveLength(0);
 
-    // Append day 1's finish via the map-click path.
-    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 }); // day 1 end at (2,2)
-
-    // Day 2's linked start must now be seeded to day 1's end (2,2).
+    // Once day 1 has a finish, the rider can relink → start seeds to it.
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 }); // day 1 finish at (2,2)
+    s.relinkDayStart(1);
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
     const day2Start = useTripStore
       .getState()
       .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start");

@@ -1117,11 +1117,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // a missing predecessor.
         const newDay = createEmptyPlannerDay(prev ? prev.dayNumber + 1 : 1);
         if (prev) {
-          newDay.startLinked = true;
-          // Seed the linked start from the predecessor's finish — an explicit
-          // `end`, or a terminal accommodation on a generated overnight day.
+          // Only mark the new day linked once the predecessor actually has a
+          // finish to mirror — an explicit `end` or a terminal accommodation.
+          // Linking with no finish leaves an unseeded "linked" start; the next
+          // map click would fill it WITHOUT clearing the link, so outside focus
+          // the map would suppress it and a later predecessor finish overwrite
+          // it. The rider can relink (button is gated the same way) once day N-1
+          // has a finish.
           const prevEnd = dayFinishWaypoint(prev.waypoints);
-          if (prevEnd)
+          newDay.startLinked = !!prevEnd;
+          if (prevEnd) {
             newDay.waypoints = [
               {
                 id: `link-${newDay.dayNumber}`,
@@ -1130,6 +1135,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 location: { ...prevEnd.location },
               },
             ];
+          }
         }
         // Route through commitTripChange so the addition is snapshotted onto
         // the undo stack AND the redo stack is cleared — otherwise a Redo left
