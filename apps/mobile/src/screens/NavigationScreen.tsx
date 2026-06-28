@@ -36,6 +36,7 @@ import React, {
 } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import {
@@ -99,6 +100,9 @@ const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
 export default function NavigationScreen() {
   const { params } = useRoute<NavRoute>();
   const nav = useNavigation<Nav>();
+  // This full-screen route hides the tab bar, which previously reserved the
+  // bottom inset; pad the bottom controls so they clear the home indicator.
+  const insets = useSafeAreaInsets();
   // The voice FAB defaults from the rider's persisted Voice Navigation
   // preference (Settings → Voice navigation). Toggling the FAB is a
   // session-scoped override — it doesn't write back to Settings, so a
@@ -306,7 +310,10 @@ export default function NavigationScreen() {
         />
       </View>
 
-      <View pointerEvents="box-none" style={styles.bottomOverlay}>
+      <View
+        pointerEvents="box-none"
+        style={[styles.bottomOverlay, { bottom: spacing.xl + insets.bottom }]}
+      >
         <View style={styles.statsRow}>
           <Stat
             label="Remaining"

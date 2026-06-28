@@ -1,6 +1,7 @@
 /** Jest config for the Tarmoto React Native mobile app. */
 module.exports = {
   preset: "@react-native/jest-preset",
+  setupFiles: ["<rootDir>/jest.setup.js"],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   testMatch: [
     "**/__tests__/**/*.test.[jt]s?(x)",

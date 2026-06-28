@@ -20,6 +20,7 @@ export default [
       "node_modules/**",
       "babel.config.js",
       "jest.config.js",
+      "jest.setup.js",
       "metro.config.js",
       "react-native.config.js",
       "lib/api/**",
