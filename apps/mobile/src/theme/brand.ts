@@ -173,6 +173,18 @@ export const statusFg = {
 } as const;
 
 /**
+ * Off-state track for the brand `Toggle`. The design's light overlay
+ * (`rgba(14,14,16,0.16)`) is only ~1.4:1 on a white card and against the
+ * white knob, so an off switch can visually vanish. These are mid-grey
+ * tracks that clear the 3:1 non-text-control contrast against both the
+ * surface and the knob, per theme.
+ */
+export const TOGGLE_OFF_TRACK = {
+  light: "#808080",
+  dark: "rgba(243,238,230,0.45)",
+} as const;
+
+/**
  * Clamp a known quality score to a 1–5 ramp index (0-based). Scores are
  * rounded to the nearest integer bucket, then clamped to `[0, 4]` so the
  * index is always a valid `QUALITY_COLORS` / label position.

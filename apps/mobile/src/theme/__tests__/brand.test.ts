@@ -10,6 +10,7 @@ import {
   qualityBrandLabel,
   qualityIndex,
   statusFg,
+  TOGGLE_OFF_TRACK,
   UNSCORED_COLOR,
   UNSCORED_LABEL,
 } from "../brand";
@@ -133,5 +134,34 @@ describe("statusFg", () => {
     // Guards the rationale: ramp greens/ambers are fill colours, not text.
     expect(contrastRatio(QUALITY_COLORS[4], "#FFFFFF")).toBeLessThan(4.5);
     expect(contrastRatio(QUALITY_COLORS[1], "#FFFFFF")).toBeLessThan(4.5);
+  });
+});
+
+// Composite an `rgba(r,g,b,a)` string over an opaque hex background.
+function flattenRgbaOverHex(rgba: string, bgHex: string): string {
+  const m = rgba.match(/rgba?\(([^)]+)\)/);
+  if (!m) return rgba;
+  const [r, g, b, a = "1"] = m[1].split(",").map((s) => parseFloat(s.trim()));
+  const bg = [1, 3, 5].map((i) => parseInt(bgHex.slice(i, i + 2), 16));
+  const mix = [r, g, b].map((c, i) => Math.round(c * a + bg[i] * (1 - a)));
+  return "#" + mix.map((c) => c.toString(16).padStart(2, "0")).join("");
+}
+
+describe("control + heading contrast on the light card", () => {
+  it("Toggle off-track clears 3:1 against the white card and knob", () => {
+    // Non-text control contrast: the off switch must not vanish on white.
+    expect(
+      contrastRatio(TOGGLE_OFF_TRACK.light, "#FFFFFF"),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("the `dim` tone is legible for section-heading stamps on white", () => {
+    // Settings uses `dim` (not the default muted eyebrow) for real headings.
+    const dimOnWhite = flattenRgbaOverHex(brandColorsLight.dim, "#FFFFFF");
+    expect(contrastRatio(dimOnWhite, "#FFFFFF")).toBeGreaterThanOrEqual(4.5);
+    // The default muted eyebrow tone would NOT pass as a heading — that's
+    // why the override exists.
+    const muteOnWhite = flattenRgbaOverHex(brandColorsLight.mute, "#FFFFFF");
+    expect(contrastRatio(muteOnWhite, "#FFFFFF")).toBeLessThan(4.5);
   });
 });

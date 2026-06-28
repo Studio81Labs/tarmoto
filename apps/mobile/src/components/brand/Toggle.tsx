@@ -1,6 +1,10 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { brandColorsDark, brandColorsLight } from "@/theme/brand";
+import {
+  brandColorsDark,
+  brandColorsLight,
+  TOGGLE_OFF_TRACK,
+} from "@/theme/brand";
 
 interface ToggleProps {
   /** On/off state. */
@@ -26,7 +30,7 @@ export default function Toggle({
   accessibilityLabel,
 }: ToggleProps) {
   const t = onDark ? brandColorsDark : brandColorsLight;
-  const offTrack = onDark ? "rgba(243,238,230,0.18)" : "rgba(14,14,16,0.16)";
+  const offTrack = onDark ? TOGGLE_OFF_TRACK.dark : TOGGLE_OFF_TRACK.light;
   return (
     <Pressable
       onPress={() => onToggle?.(!on)}

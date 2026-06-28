@@ -64,7 +64,9 @@ export default function SettingsScreen() {
       <Text style={styles.title}>Settings</Text>
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
-        <Stamp>Route quality</Stamp>
+        {/* These stamps are the section headings — use the readable `dim`
+            tone (AA on white), not the default muted eyebrow colour. */}
+        <Stamp color={t.dim}>Route quality</Stamp>
         <Text style={styles.sectionBody}>
           Routes and road segments below your minimum are grayed out so you can
           focus on the roads you actually want to ride.
@@ -79,7 +81,7 @@ export default function SettingsScreen() {
       </Card>
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
-        <Stamp>Fuel range</Stamp>
+        <Stamp color={t.dim}>Fuel range</Stamp>
         <Text style={styles.sectionBody}>
           How far your bike comfortably goes on a tank. Trip days with a stretch
           longer than this between fuel stops will trigger a warning.
