@@ -759,7 +759,10 @@ function RatingSelector({
             <Icon
               name={filled ? "star" : "star-outline"}
               size={36}
-              color={filled ? ACCENT_DARK : t.faint}
+              // Empty stars are the required, interactive rating target, so
+              // they use `dim` (~5:1) rather than `faint` (~1.5:1) to stay
+              // discoverable; the filled state keeps the accent.
+              color={filled ? ACCENT_DARK : t.dim}
             />
           </Pressable>
         );
