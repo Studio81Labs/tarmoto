@@ -19,7 +19,14 @@ import {
 type FeatureFlag = components["schemas"]["FeatureFlagDto"];
 
 function readErrorMessage(err: unknown, fallback: string): string {
+  const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
   const serverMsg = (err as { message?: string } | undefined)?.message;
+  if (statusCode === 404)
+    return (
+      serverMsg ??
+      "Flag not found (it may have been deleted by another session)."
+    );
+  if (statusCode === 403) return serverMsg ?? "Permission denied.";
   return serverMsg ?? fallback;
 }
 
@@ -160,22 +167,7 @@ export function FeatureFlagsScreen() {
           className="mb-4"
         />
       ) : null}
-      {actionError ? (
-        <Alert intent="danger" title={actionError} className="mb-4" compact />
-      ) : null}
-      <DataTable
-        columns={columns}
-        rows={isPending ? [] : rows}
-        rowKey={(row) => row.id}
-        showCaret={false}
-        emptyState={
-          <span className="text-sm text-fg-dim">
-            {isPending ? "—" : "No feature flags found."}
-          </span>
-        }
-        ariaLabel="Feature Flags"
-      />
-      <div className="mt-8 max-w-md rounded-xl border border-line bg-paper p-5">
+      <div className="mb-8 max-w-md rounded-xl border border-line bg-paper p-5">
         <h3 className="mb-4 text-sm font-semibold text-ink">New Flag</h3>
         {createError ? (
           <Alert intent="danger" title={createError} className="mb-4" compact />
@@ -202,6 +194,21 @@ export function FeatureFlagsScreen() {
           </Button>
         </form>
       </div>
+      {actionError ? (
+        <Alert intent="danger" title={actionError} className="mb-4" compact />
+      ) : null}
+      <DataTable
+        columns={columns}
+        rows={isPending ? [] : rows}
+        rowKey={(row) => row.id}
+        showCaret={false}
+        emptyState={
+          <span className="text-sm text-fg-dim">
+            {isPending ? "—" : "No feature flags found."}
+          </span>
+        }
+        ariaLabel="Feature Flags"
+      />
     </section>
   );
 }
