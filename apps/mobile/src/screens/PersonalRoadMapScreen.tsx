@@ -591,9 +591,10 @@ const styles = StyleSheet.create({
     left: brandSpacing.s2,
     flexDirection: "row",
     gap: brandSpacing.s3,
-    backgroundColor: t.raised,
-    borderWidth: 1,
-    borderColor: t.line,
+    // Dark (ink) overlay pill, as in the canonical design: the accent /
+    // unridden-grey swatches clear 3:1 here (~6.7:1) where they would fall
+    // below it on a white pill, keeping the colour key perceivable.
+    backgroundColor: "rgba(14,14,16,0.85)",
     paddingHorizontal: brandSpacing.s3,
     paddingVertical: brandSpacing.s2,
     borderRadius: brandRadii.pill,
@@ -609,7 +610,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendLabel: {
-    color: t.fg,
+    color: t.invFg,
     fontFamily: brandFonts.sans,
     fontSize: 11,
     fontWeight: "600",
