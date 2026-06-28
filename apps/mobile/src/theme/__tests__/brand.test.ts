@@ -9,6 +9,8 @@ import {
   qualityBrandColor,
   qualityBrandLabel,
   qualityIndex,
+  UNSCORED_COLOR,
+  UNSCORED_LABEL,
 } from "../brand";
 
 describe("brand quality ramp", () => {
@@ -64,9 +66,16 @@ describe("qualityBrandColor / qualityBrandLabel", () => {
     expect(qualityBrandLabel(2)).toBe("Rough");
   });
 
-  it("collapses nullish scores to the bottom of the ramp", () => {
-    expect(qualityBrandColor(null)).toBe(QUALITY_COLORS[0]);
-    expect(qualityBrandLabel(undefined)).toBe(QUALITY_LABELS[0]);
+  it("returns the unscored state for missing data, not the Q1 bucket", () => {
+    // Missing data must not read as the worst road.
+    expect(qualityBrandColor(null)).toBe(UNSCORED_COLOR);
+    expect(qualityBrandColor(undefined)).toBe(UNSCORED_COLOR);
+    expect(qualityBrandColor(NaN)).toBe(UNSCORED_COLOR);
+    expect(qualityBrandColor(Infinity)).toBe(UNSCORED_COLOR);
+    expect(qualityBrandLabel(null)).toBe(UNSCORED_LABEL);
+    expect(qualityBrandLabel(undefined)).toBe(UNSCORED_LABEL);
+    expect(UNSCORED_COLOR).not.toBe(QUALITY_COLORS[0]);
+    expect(UNSCORED_LABEL).not.toBe(QUALITY_LABELS[0]);
   });
 });
 

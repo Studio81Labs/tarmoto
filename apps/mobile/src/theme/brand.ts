@@ -147,10 +147,24 @@ export const brandSpacing = {
 } as const;
 
 /**
- * Clamp an arbitrary quality score to a 1–5 ramp index (0-based).
- * Non-finite scores collapse to the bottom of the ramp. Scores are rounded
- * to the nearest integer bucket, then clamped to `[0, 4]` so the index is
- * always a valid `QUALITY_COLORS` / label position.
+ * Neutral tone for roads with no scored quality data yet — a road the crowd
+ * hasn't measured is NOT a bad road. Matches the intent of the legacy
+ * `qualityColor(null)` -> tertiary grey, kept theme-agnostic like the Q ramp.
+ */
+export const UNSCORED_COLOR = "#9C968C";
+
+/** Label for roads with no scored quality data yet. */
+export const UNSCORED_LABEL = "Unscored";
+
+/**
+ * Clamp a known quality score to a 1–5 ramp index (0-based). Scores are
+ * rounded to the nearest integer bucket, then clamped to `[0, 4]` so the
+ * index is always a valid `QUALITY_COLORS` / label position.
+ *
+ * This is the ramp primitive for scores that exist. No-data (`null` /
+ * non-finite) collapses to the bottom here; callers that distinguish
+ * "unscored" from "worst" must use `qualityBrandColor` / `qualityBrandLabel`,
+ * which short-circuit to the unscored state before indexing.
  */
 export function qualityIndex(score: number | null | undefined): number {
   if (score == null || !Number.isFinite(score)) return 0;
@@ -158,12 +172,21 @@ export function qualityIndex(score: number | null | undefined): number {
   return Math.max(0, Math.min(4, bucket - 1));
 }
 
-/** Brand quality colour for a 1–5 score (rounds to the nearest bucket). */
+/**
+ * Brand quality colour for a 1–5 score (rounds to the nearest bucket).
+ * Missing data (`null` / non-finite) returns the neutral unscored tone, not
+ * Q1 — so unmeasured roads don't read as "Avoid".
+ */
 export function qualityBrandColor(score: number | null | undefined): string {
+  if (score == null || !Number.isFinite(score)) return UNSCORED_COLOR;
   return QUALITY_COLORS[qualityIndex(score)];
 }
 
-/** Short brand quality label for a 1–5 score. */
+/**
+ * Short brand quality label for a 1–5 score. Missing data (`null` /
+ * non-finite) returns `Unscored`, not the Q1 label.
+ */
 export function qualityBrandLabel(score: number | null | undefined): string {
+  if (score == null || !Number.isFinite(score)) return UNSCORED_LABEL;
   return QUALITY_LABELS[qualityIndex(score)];
 }
