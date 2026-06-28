@@ -52,7 +52,7 @@ import {
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "@/lib/trip-planner-map";
-import { useTripStore } from "@/stores/trip";
+import { useTripStore, dayFinishWaypoint } from "@/stores/trip";
 import {
   buildPlacementMenu,
   type PlacementActionId,
@@ -390,7 +390,10 @@ const TripPlannerMapContent = forwardRef<
       : activeTrip?.days[0]
     )?.waypoints ?? [];
   const hasStart = selectedDayWaypoints.some((w) => w.type === "start");
-  const hasEnd = selectedDayWaypoints.some((w) => w.type === "end");
+  // A terminal accommodation (generated overnight) counts as the day's finish,
+  // so the menu offers "Add via" (inserted before it) instead of the no-end
+  // actions — otherwise a via would land after the overnight and un-terminate it.
+  const hasEnd = !!dayFinishWaypoint(selectedDayWaypoints);
 
   // Context menu state: screen position + the snapped geo coord the menu acts on.
   const [contextMenu, setContextMenu] = useState<{

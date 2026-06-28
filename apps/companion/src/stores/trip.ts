@@ -74,11 +74,13 @@ function appendPlannerWaypointToDay(
 ): TripDay {
   const waypoints = [...day.waypoints];
   const id = `planner-${day.dayNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const endIndex = waypoints.findIndex((w) => w.type === "end");
+  // Insertion target relative to the day's finish (explicit end OR a terminal
+  // accommodation). `length` means "no finish yet" → this click sets it.
+  const insertAt = viaInsertIndex(waypoints);
 
   if (waypoints.length === 0) {
     waypoints.push({ id, name: "Start", location, type: "start" });
-  } else if (endIndex === -1) {
+  } else if (insertAt === waypoints.length) {
     waypoints.push({ id, name: "Finish", location, type: "end" });
   } else {
     const viaCount =
@@ -90,7 +92,7 @@ function appendPlannerWaypointToDay(
           w.type === "photo" ||
           w.type === "accommodation",
       ).length + 1;
-    waypoints.splice(endIndex, 0, {
+    waypoints.splice(insertAt, 0, {
       id,
       name: `Via ${viaCount}`,
       location,
@@ -399,6 +401,17 @@ export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
   return last?.type === "accommodation" ? last : undefined;
 }
 
+/**
+ * Index at which to insert a via so it lands BEFORE the day's finish (explicit
+ * `end` or terminal `accommodation`). Returns `waypoints.length` (append) when
+ * the day has no finish yet — keeping a generated overnight day's accommodation
+ * terminal instead of stranding the via after it.
+ */
+function viaInsertIndex(waypoints: Waypoint[]): number {
+  const finish = dayFinishWaypoint(waypoints);
+  return finish ? waypoints.indexOf(finish) : waypoints.length;
+}
+
 // ── Task 8: linked-start sync helper ─────────────────────────────────────────
 
 /**
@@ -620,10 +633,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
           const waypoints = [...day.waypoints];
-          const endIndex = waypoints.findIndex(
-            (existing) => existing.type === "end",
-          );
-          const insertionIndex = endIndex >= 0 ? endIndex : waypoints.length;
+          // Insert before the day's finish (explicit end OR a terminal
+          // accommodation), so a stop added to a generated overnight day keeps
+          // the accommodation terminal instead of landing after it.
+          const insertionIndex = viaInsertIndex(waypoints);
           waypoints.splice(insertionIndex, 0, waypoint);
           days[dayIndex] = updatePlannerDayRoute(
             day,
@@ -885,9 +898,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               waypoints.push({ ...newWaypoint, type: "end", name: "Finish" });
             }
           } else {
-            // add-via: insert before end, or append if no end
-            const endIndex = waypoints.findIndex((w) => w.type === "end");
-            const insertAt = endIndex >= 0 ? endIndex : waypoints.length;
+            // add-via: insert before the day's finish (explicit end OR a
+            // terminal accommodation on a generated overnight day), else append.
+            const insertAt = viaInsertIndex(waypoints);
             waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
           }
 

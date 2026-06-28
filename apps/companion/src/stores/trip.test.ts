@@ -718,6 +718,42 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(useTripStore.getState().stalePreviewDays).toContain(2);
   });
 
+  it("add-via inserts before a terminal accommodation (keeps the overnight terminal)", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation", // generated overnight finish, no explicit end
+      location: { lng: 2, lat: 2 },
+    });
+
+    s.placeWaypoint({ lat: 5, lng: 5 }, "add-via"); // menu "Add via"
+    // The via lands BEFORE the accommodation, so it stays terminal and the day
+    // remains complete (start → via → accommodation).
+    const types = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.type);
+    expect(types).toEqual(["start", "via", "accommodation"]);
+  });
+
+  it("appendPlannerWaypoint inserts before a terminal accommodation", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 }); // day 1: start
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation",
+      location: { lng: 2, lat: 2 },
+    });
+
+    s.appendPlannerWaypoint(0, { lng: 5, lat: 5 }); // map-click add
+    const types = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.type);
+    expect(types).toEqual(["start", "via", "accommodation"]);
+  });
+
   it("editing a Day 1 via does not re-stale a linked Day 2 (end unchanged)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
