@@ -409,7 +409,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="OfflineRegions"
         component={OfflineRegionsScreen}
-        options={{ title: "Offline maps" }}
+        options={{ ...brandScreenOptions, title: "Offline maps" }}
       />
       <ProfileStack.Screen
         name="EmergencyContacts"

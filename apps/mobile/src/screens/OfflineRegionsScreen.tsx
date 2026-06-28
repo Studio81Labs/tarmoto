@@ -12,6 +12,11 @@
  * a region) and mirrors what other mobile apps do for this feature —
  * the trip planner on web (US-43) is where riders draw arbitrary
  * polygons.
+ *
+ * Brand: migrated onto the cream + ink brand system (Phase 3) so the
+ * Settings → Offline maps flow stays consistent. Each status carries an
+ * AA-safe text/icon colour and a separate progress-fill colour. See
+ * docs/design/mobile-spec/README.md.
  */
 
 import React, { type ComponentProps, useCallback, useMemo } from "react";
@@ -29,7 +34,16 @@ import { bboxAroundPoint, type OfflineRegion } from "@/services/offlineRegions";
 type IconName = ComponentProps<typeof Icon>["name"];
 import { regionProgress, useMapStore } from "@/stores";
 import { useOfflineRegions } from "@/hooks";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
+
+const t = brandColorsLight;
+const INK = "#0E0E10";
 
 // Zoom range cached per region. z=8 is country-level, z=14 is "individual
 // road" on the quality overlay — that window matches what the map renders
@@ -57,12 +71,23 @@ const STATUS_ICONS: Record<OfflineRegion["status"], IconName> = {
   cancelled: "pause-circle-outline",
 };
 
-const STATUS_COLORS: Record<OfflineRegion["status"], string> = {
-  pending: colors.textSecondary,
-  downloading: colors.primary,
-  complete: colors.success,
-  failed: colors.danger,
-  cancelled: colors.warning,
+// AA-safe (>=4.5:1 on the white card) colour for the status label + icon.
+const STATUS_TEXT: Record<OfflineRegion["status"], string> = {
+  pending: t.dim,
+  downloading: t.fg,
+  complete: statusFg.success,
+  failed: statusFg.danger,
+  cancelled: statusFg.warning,
+};
+
+// Progress-bar fill (graphical, >=3:1 against the track). Accent marks the
+// one active download; terminal states reuse their status colour.
+const STATUS_FILL: Record<OfflineRegion["status"], string> = {
+  pending: t.faint,
+  downloading: t.accent,
+  complete: statusFg.success,
+  failed: statusFg.danger,
+  cancelled: statusFg.warning,
 };
 
 export default function OfflineRegionsScreen() {
@@ -151,11 +176,7 @@ export default function OfflineRegionsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Save current map area for offline use"
             >
-              <Icon
-                name="map-marker-plus-outline"
-                size={20}
-                color={colors.textInverse}
-              />
+              <Icon name="map-marker-plus-outline" size={20} color={INK} />
               <Text style={styles.primaryBtnLabel}>
                 Save current area ({DEFAULT_SAVE_RADIUS_KM} km)
               </Text>
@@ -172,11 +193,7 @@ export default function OfflineRegionsScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
-            <Icon
-              name="cloud-off-outline"
-              size={28}
-              color={colors.textTertiary}
-            />
+            <Icon name="cloud-off-outline" size={28} color={t.dim} />
             <Text style={styles.emptyTitle}>No offline regions yet</Text>
             <Text style={styles.emptyBody}>
               Pan the map to the area you want to cache and tap "Save current
@@ -208,28 +225,24 @@ function RegionRowImpl({
   onCancel,
   onDelete,
 }: RegionRowProps) {
-  const statusColor = STATUS_COLORS[region.status];
   const statusLabel = STATUS_LABELS[region.status];
   const statusIcon = STATUS_ICONS[region.status];
+  const statusTextColor = STATUS_TEXT[region.status];
+  const statusFillColor = STATUS_FILL[region.status];
 
   const progressPct = Math.round(regionProgress(region) * 100);
 
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <View
-          style={[
-            styles.statusIcon,
-            { backgroundColor: colors.primaryAlpha15 },
-          ]}
-        >
-          <Icon name={statusIcon} size={20} color={statusColor} />
+        <View style={styles.statusIcon}>
+          <Icon name={statusIcon} size={20} color={statusTextColor} />
         </View>
         <View style={styles.cardTitleBlock}>
           <Text style={styles.cardTitle} numberOfLines={1}>
             {region.name}
           </Text>
-          <Text style={[styles.cardStatus, { color: statusColor }]}>
+          <Text style={[styles.cardStatus, { color: statusTextColor }]}>
             {statusLabel}
           </Text>
         </View>
@@ -246,7 +259,7 @@ function RegionRowImpl({
             styles.progressFill,
             {
               width: `${progressPct}%`,
-              backgroundColor: statusColor,
+              backgroundColor: statusFillColor,
             },
           ]}
         />
@@ -270,7 +283,7 @@ function RegionRowImpl({
             accessibilityRole="button"
             accessibilityLabel={`Pause download of ${region.name}`}
           >
-            <Icon name="pause" size={18} color={colors.textPrimary} />
+            <Icon name="pause" size={18} color={t.fg} />
             <Text style={styles.secondaryBtnLabel}>Pause</Text>
           </TouchableOpacity>
         ) : null}
@@ -282,7 +295,7 @@ function RegionRowImpl({
             accessibilityRole="button"
             accessibilityLabel={`Retry download of ${region.name}`}
           >
-            <Icon name="refresh" size={18} color={colors.textPrimary} />
+            <Icon name="refresh" size={18} color={t.fg} />
             <Text style={styles.secondaryBtnLabel}>Retry</Text>
           </TouchableOpacity>
         ) : null}
@@ -293,8 +306,8 @@ function RegionRowImpl({
           accessibilityRole="button"
           accessibilityLabel={`Delete ${region.name}`}
         >
-          <Icon name="trash-can-outline" size={18} color={colors.danger} />
-          <Text style={[styles.secondaryBtnLabel, { color: colors.danger }]}>
+          <Icon name="trash-can-outline" size={18} color={statusFg.danger} />
+          <Text style={[styles.secondaryBtnLabel, { color: statusFg.danger }]}>
             Delete
           </Text>
         </TouchableOpacity>
@@ -323,63 +336,69 @@ function formatBytes(bytes: number): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   headerCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   sectionBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   primaryBtn: {
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    minHeight: 44,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.accent,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: INK,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   statusIcon: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    backgroundColor: t.sunken,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -388,75 +407,86 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 15,
+    fontWeight: "700",
   },
   cardStatus: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   cardDetails: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 12,
   },
   progressTrack: {
     height: 6,
-    backgroundColor: colors.bgElevated,
-    borderRadius: borderRadius.pill,
+    backgroundColor: t.sunken,
+    borderRadius: brandRadii.pill,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: borderRadius.pill,
+    borderRadius: brandRadii.pill,
   },
   progressText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.xs,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   actionsRow: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s1,
   },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    minHeight: 44,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
+    borderWidth: 1,
+    borderColor: t.line,
   },
   secondaryBtnLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   dangerBtn: {
-    backgroundColor: colors.bgElevated,
+    backgroundColor: t.raised2,
   },
   emptyCard: {
     alignItems: "center",
-    padding: spacing.xxl,
-    gap: spacing.sm,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    padding: brandSpacing.s6,
+    gap: brandSpacing.s2,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 15,
+    fontWeight: "800",
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     textAlign: "center",
   },
 });
