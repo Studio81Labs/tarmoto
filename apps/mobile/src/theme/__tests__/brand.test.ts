@@ -141,6 +141,18 @@ describe("statusFg", () => {
     expect(contrastRatio(ACCENT, brandColorsLight.sunken)).toBeLessThan(3);
   });
 
+  it("legend swatches clear 3:1 on an ink overlay pill but not on white", () => {
+    // The personal-map legend dots (accent = ridden, unscored grey = not
+    // ridden) are graphical objects keyed to the map line colours, so they
+    // must clear 3:1 against the legend surface. Both fall below it on white,
+    // which is why the legend pill is ink rather than the white card colour.
+    const ink = brandColorsLight.invBg;
+    expect(contrastRatio(ACCENT, ink)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(UNSCORED_COLOR, ink)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(ACCENT, "#FFFFFF")).toBeLessThan(3);
+    expect(contrastRatio(UNSCORED_COLOR, "#FFFFFF")).toBeLessThan(3);
+  });
+
   it("an ink glyph clears 3:1 on the accent badge where a cream glyph fails", () => {
     // Interactive glyphs on the accent badge (e.g. the Profile avatar camera
     // affordance) are non-text graphical objects, so they need >=3:1. Ink

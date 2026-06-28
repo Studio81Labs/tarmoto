@@ -146,7 +146,7 @@ without a clean 1:1 today are noted.
 | `HazardScreen` (report)                    | `HazardReportScreen` ✅                                  | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                       |
 | `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component)                          | Full-bleed Q1-red countdown.                                                                                                           |
 | `PostRideScreen` (summary)                 | `RideDetailScreen` ✅, `RideScreen`                      | Hero metrics, quality breakdown, elevation, splits, badges. `RideDetailScreen` migrated; `RideScreen` (history list) is a later phase. |
-| `ProfileScreen`                            | `ProfileScreen` ✅, `PersonalRoadMapScreen`              | Stats grid, explored-roads map, settings rows. `ProfileScreen` migrated; `PersonalRoadMapScreen` is a follow-up.                       |
+| `ProfileScreen`                            | `ProfileScreen` ✅, `PersonalRoadMapScreen` ✅           | Stats grid, explored-roads map, settings rows. Both migrated.                                                                          |
 
 Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
 Emergency contacts ✅ → Offline maps ✅ → Profile ✅ → Post-ride summary ✅ →
@@ -176,7 +176,10 @@ shared `@/components` deps) is a self-contained follow-up.
 > (the lesson from #725's `QualityThresholdSlider` regression). Those callers
 > keep the default-legacy look until their own phase; `ProfileScreen` passes
 > `light`. `PersonalRoadMapScreen` has no shared `@/components` deps, so it
-> migrates independently as a follow-up.
+> migrated independently right after Profile: the explored-roads map paints
+> ridden segments in the accent and unridden in the neutral "unscored" grey,
+> the nearby-roads list carries quality on a swatch dot with AA-safe `dim`
+> text, and the period filter / stats card use the cream-card brand tokens.
 
 > **Per-screen checklist (learned on #725 / Hazard):**
 >
