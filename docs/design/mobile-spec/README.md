@@ -136,22 +136,45 @@ screen migrated yet.
 The mobile prototype's screens map onto the existing app as follows. Screens
 without a clean 1:1 today are noted.
 
-| Canonical screen (`source/mobile`)         | App screen(s)                                            | Notes                                                                          |
-| ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.     |
-| `HomeScreen` (map-first / list-first)      | `HomeScreen`, `CommuteScreen`, `MapScreen`               | Commute card, suggested ride, stat strip, nearby roads.                        |
-| `ExplorerScreen` (road quality explorer)   | `MapScreen`, `RoadPreviewScreen`                         | Map + filter chips + segment detail sheet.                                     |
-| `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen`, `TripDayScreen`       | The quick round-trip generator + result is new product surface; align styling. |
-| `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                     |
-| `HazardScreen` (report)                    | `HazardReportScreen`                                     | Type grid + severity + location card.                                          |
-| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component)                          | Full-bleed Q1-red countdown.                                                   |
-| `PostRideScreen` (summary)                 | `RideDetailScreen`, `RideScreen`                         | Hero metrics, quality breakdown, elevation, splits, badges.                    |
-| `ProfileScreen`                            | `ProfileScreen`, `PersonalRoadMapScreen`                 | Stats grid, explored-roads map, settings rows.                                 |
+| Canonical screen (`source/mobile`)         | App screen(s)                                            | Notes                                                                            |
+| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.       |
+| `HomeScreen` (map-first / list-first)      | `HomeScreen`, `CommuteScreen`, `MapScreen`               | Commute card, suggested ride, stat strip, nearby roads.                          |
+| `ExplorerScreen` (road quality explorer)   | `MapScreen`, `RoadPreviewScreen`                         | Map + filter chips + segment detail sheet.                                       |
+| `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen`, `TripDayScreen`       | The quick round-trip generator + result is new product surface; align styling.   |
+| `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                       |
+| `HazardScreen` (report)                    | `HazardReportScreen` ✅                                  | Type grid + severity + location card. Migrated (self-contained, no shared deps). |
+| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component)                          | Full-bleed Q1-red countdown.                                                     |
+| `PostRideScreen` (summary)                 | `RideDetailScreen`, `RideScreen`                         | Hero metrics, quality breakdown, elevation, splits, badges.                      |
+| `ProfileScreen`                            | `ProfileScreen`, `PersonalRoadMapScreen`                 | Stats grid, explored-roads map, settings rows.                                   |
 
-Suggested order: **Settings → Profile → Hazard report → Post-ride summary →
-Home → Road explorer → Ride mode → Crash → Planner/Route**, smallest surface
-first. Bottom navigation (the brand tab bar with the raised "Start ride"
-action) is migrated alongside the Home phase.
+Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
+Profile → Post-ride summary → Home → Road explorer → Ride mode → Crash →
+Planner/Route**. Bottom navigation (the brand tab bar with the raised "Start
+ride" action) is migrated alongside the Home phase.
+
+> **Resequencing note:** Hazard report was migrated before Profile.
+> `HazardReportScreen` is fully self-contained (no shared `@/components`),
+> so it's a clean, low-risk sweep. **Profile is deferred** because its
+> building blocks — `Avatar`, `StatTile`, `SharedRidesSection` — are shared
+> with the still-legacy `ViewProfileScreen` / `FollowList`. Flipping them to
+> the brand light palette would break those dark screens (the lesson from
+> #725's `QualityThresholdSlider` regression). Profile needs those shared
+> atoms made **surface-aware** first (default legacy, opt into `light`),
+> which is its own foundation step.
+
+> **Per-screen checklist (learned on #725 / Hazard):**
+>
+> 1. Grep every caller of each shared component the screen uses; if any
+>    caller is still legacy-dark, make the component surface-aware
+>    (`light?` prop, default legacy) rather than flipping it globally.
+> 2. On the white surface, use AA-safe tones: `dim` for labels/headings (not
+>    `mute`), `statusFg.*` for success/warning/danger text+icons (not the
+>    quality ramp, which is fill-only), `TOGGLE_OFF_TRACK` for off switches.
+> 3. Keep ≥44px glove-first hit targets (`minHeight`/`hitSlop`).
+> 4. Theme the screen's stack header with `brandScreenOptions`.
+> 5. Preserve copy + accessibility labels so behaviour tests stay green; run
+>    the full `pnpm typecheck` (not a path-grepped subset).
 
 ### Phase 4 — Cleanup
 

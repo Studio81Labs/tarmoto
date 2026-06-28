@@ -22,6 +22,10 @@
  * `useHazardStore` immediately so the map shows it on the next tab
  * switch without waiting for the WebSocket fan-out (the store
  * subscription will dedupe by id when the broadcast arrives).
+ *
+ * Brand: migrated onto the cream + ink brand system (Phase 3). Status
+ * colours use the accessible `statusFg` tokens; the quality ramp backs
+ * the severity fills. See docs/design/mobile-spec/README.md.
  */
 
 import React, {
@@ -48,15 +52,15 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
+import { hazardIcons } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  hazardIcons,
-  shadows,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  QUALITY_COLORS,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import {
@@ -79,10 +83,15 @@ type HazardReportNav = NativeStackNavigationProp<
   "HazardReport"
 >;
 
+const t = brandColorsLight;
+const INK = "#0E0E10";
+
+// Severity fills come from the quality ramp (Q4 → Q2 → Q1), matching the
+// design prototype; ink text sits on the selected fill.
 const SEVERITIES: { value: Severity; label: string; color: string }[] = [
-  { value: "low", label: "Low", color: colors.quality.fair },
-  { value: "medium", label: "Medium", color: colors.warning },
-  { value: "high", label: "High", color: colors.danger },
+  { value: "low", label: "Low", color: QUALITY_COLORS[3] },
+  { value: "medium", label: "Medium", color: QUALITY_COLORS[1] },
+  { value: "high", label: "High", color: QUALITY_COLORS[0] },
 ];
 
 /** Sensible cap so the note stays a glanceable one-liner on the map card. */
@@ -339,6 +348,12 @@ export default function HazardReportScreen() {
     return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${acc}`;
   }, [location, locationLoading]);
 
+  const locationIconColor = isLocationStale
+    ? statusFg.warning
+    : location
+      ? statusFg.success
+      : t.dim;
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -370,7 +385,7 @@ export default function HazardReportScreen() {
                   <Icon
                     name={(hazardIcons[type] ?? "alert-circle") as IconName}
                     size={28}
-                    color={selected ? colors.textInverse : colors.primary}
+                    color={selected ? INK : t.fg}
                   />
                   <Text
                     style={[
@@ -422,30 +437,20 @@ export default function HazardReportScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location</Text>
           <View style={styles.locationCard}>
-            <Icon
-              name="map-marker"
-              size={20}
-              color={
-                isLocationStale
-                  ? colors.warning
-                  : location
-                    ? colors.primary
-                    : colors.textTertiary
-              }
-            />
+            <Icon name="map-marker" size={20} color={locationIconColor} />
             <Text style={styles.locationText} numberOfLines={1}>
               {locationLine}
             </Text>
             {locationLoading ? (
-              <ActivityIndicator size="small" color={colors.textSecondary} />
+              <ActivityIndicator size="small" color={t.dim} />
             ) : (
               <TouchableOpacity
                 onPress={() => void refreshLocation()}
                 accessibilityRole="button"
                 accessibilityLabel="Refresh location"
-                hitSlop={10}
+                hitSlop={12}
               >
-                <Icon name="refresh" size={20} color={colors.textSecondary} />
+                <Icon name="refresh" size={20} color={t.dim} />
               </TouchableOpacity>
             )}
           </View>
@@ -462,7 +467,7 @@ export default function HazardReportScreen() {
           <TextInput
             style={styles.noteInput}
             placeholder="One short note — e.g. 'left lane after bridge'"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             value={note}
             onChangeText={setNote}
             maxLength={NOTE_MAX_CHARS}
@@ -477,7 +482,7 @@ export default function HazardReportScreen() {
           <Text style={styles.sectionTitle}>Photo (optional)</Text>
           {photo ? (
             <View style={styles.photoCard}>
-              <Icon name="image-check" size={20} color={colors.primary} />
+              <Icon name="image-check" size={20} color={statusFg.success} />
               <Text style={styles.photoLabel} numberOfLines={1}>
                 {photo.fileName ?? "Photo attached"}
               </Text>
@@ -485,9 +490,9 @@ export default function HazardReportScreen() {
                 onPress={handleClearPhoto}
                 accessibilityRole="button"
                 accessibilityLabel="Remove attached photo"
-                hitSlop={10}
+                hitSlop={12}
               >
-                <Icon name="close" size={20} color={colors.textSecondary} />
+                <Icon name="close" size={20} color={t.dim} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -499,7 +504,7 @@ export default function HazardReportScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Take photo with camera"
               >
-                <Icon name="camera" size={20} color={colors.textPrimary} />
+                <Icon name="camera" size={20} color={t.fg} />
                 <Text style={styles.photoButtonLabel}>Camera</Text>
               </Pressable>
               <Pressable
@@ -509,7 +514,7 @@ export default function HazardReportScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Pick photo from library"
               >
-                <Icon name="image" size={20} color={colors.textPrimary} />
+                <Icon name="image" size={20} color={t.fg} />
                 <Text style={styles.photoButtonLabel}>Library</Text>
               </Pressable>
             </View>
@@ -521,7 +526,7 @@ export default function HazardReportScreen() {
 
         {errorMessage ? (
           <View style={styles.errorBanner}>
-            <Icon name="alert-circle" size={18} color={colors.danger} />
+            <Icon name="alert-circle" size={18} color={statusFg.danger} />
             <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
         ) : null}
@@ -549,10 +554,10 @@ export default function HazardReportScreen() {
             accessibilityState={{ disabled: !canSubmit, busy: submitting }}
           >
             {submitting ? (
-              <ActivityIndicator color={colors.textInverse} />
+              <ActivityIndicator color={INK} />
             ) : (
               <>
-                <Icon name="send" size={18} color={colors.textInverse} />
+                <Icon name="send" size={18} color={INK} />
                 <Text style={styles.submitLabel}>Submit</Text>
               </>
             )}
@@ -566,206 +571,221 @@ export default function HazardReportScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.section,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   section: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   sectionTitle: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
   },
   typeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   typeTile: {
     flexBasis: "30%",
     flexGrow: 1,
     minHeight: 88,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    paddingVertical: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s2,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   typeTileSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-    ...shadows.button,
+    backgroundColor: t.accent,
+    borderColor: t.accent,
   },
   typeTileLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12.5,
+    fontWeight: "700",
     textAlign: "center",
   },
   typeTileLabelSelected: {
-    color: colors.textInverse,
+    color: INK,
   },
   severityRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   severityChip: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgCard,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     alignItems: "center",
     justifyContent: "center",
   },
   severityLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   severityLabelSelected: {
-    color: colors.textInverse,
+    color: INK,
   },
   locationCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   locationText: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 13,
   },
   locationStaleNotice: {
-    color: colors.warning,
-    fontSize: fontSize.xs,
+    color: statusFg.warning,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     lineHeight: 16,
   },
   noteInput: {
-    backgroundColor: colors.bgInput,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.textPrimary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: fontSize.md,
+    borderColor: t.line,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    borderRadius: brandRadii.md,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    fontSize: 14,
   },
   noteCounter: {
     alignSelf: "flex-end",
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
   },
   photoButtons: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   photoButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    minHeight: 44,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   photoButtonLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   photoCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   photoLabel: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   photoNotice: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     lineHeight: 18,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    borderColor: statusFg.danger,
+    backgroundColor: "rgba(179,38,30,0.08)",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   actionRow: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s2,
   },
   actionButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
+    minHeight: 44,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
   },
   cancelButton: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   cancelLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   submitButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: t.accent,
   },
   submitButtonDisabled: {
     opacity: 0.5,
   },
   submitLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: INK,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
