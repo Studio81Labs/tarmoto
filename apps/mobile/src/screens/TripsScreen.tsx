@@ -26,7 +26,14 @@ import {
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
 import type { TripFolder, TripSummary } from "@/types";
@@ -37,6 +44,8 @@ import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
 type Phase = "loading" | "ready" | "error";
+
+const t = brandColorsLight;
 
 export default function TripsScreen() {
   const navigation = useNavigation<TripsNav>();
@@ -136,7 +145,7 @@ export default function TripsScreen() {
   if (phase === "loading") {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -144,7 +153,7 @@ export default function TripsScreen() {
   if (phase === "error") {
     return (
       <View style={styles.centered}>
-        <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+        <Icon name="wifi-off" size={40} color={t.dim} />
         <Text style={styles.emptyTitle}>Can't load trips</Text>
         <Text style={styles.emptyBody}>
           {errorMessage ?? "Check your connection and try again."}
@@ -174,7 +183,7 @@ export default function TripsScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => void load(false)}
-            tintColor={colors.primary}
+            tintColor={t.fg}
           />
         }
         ListEmptyComponent={
@@ -216,7 +225,7 @@ export default function TripsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Plan a new trip"
         >
-          <Icon name="plus" size={24} color={colors.textInverse} />
+          <Icon name="plus" size={24} color={t.fg} />
           <Text style={styles.fabLabel}>Plan a trip</Text>
         </TouchableOpacity>
       ) : null}
@@ -231,7 +240,7 @@ function FolderHeader({ label, count }: { label: string; count: number }) {
       accessibilityRole="header"
       accessibilityLabel={`${label}, ${count} ${count === 1 ? "trip" : "trips"}`}
     >
-      <Icon name="folder-outline" size={14} color={colors.textTertiary} />
+      <Icon name="folder-outline" size={14} color={t.dim} />
       <Text style={styles.folderHeaderLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -249,7 +258,7 @@ function ListHeader({ onJoin }: { onJoin: () => void }) {
       accessibilityLabel="Join a trip with an invite code"
     >
       <View style={styles.joinIconWrap}>
-        <Icon name="account-multiple-plus" size={20} color={colors.primary} />
+        <Icon name="account-multiple-plus" size={20} color={t.fg} />
       </View>
       <View style={styles.joinBody}>
         <Text style={styles.joinTitle}>Join a trip</Text>
@@ -257,7 +266,7 @@ function ListHeader({ onJoin }: { onJoin: () => void }) {
           Got an invite code? Ride along with the rest of the group.
         </Text>
       </View>
-      <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+      <Icon name="chevron-right" size={22} color={t.faint} />
     </TouchableOpacity>
   );
 }
@@ -271,18 +280,18 @@ function EmptyState({
 }) {
   return (
     <View style={styles.emptyWrap}>
-      <Icon name="calendar-blank-outline" size={48} color={colors.primary} />
+      <Icon name="calendar-blank-outline" size={48} color={t.accent} />
       <Text style={styles.emptyTitle}>No trips yet</Text>
       <Text style={styles.emptyBody}>
         Tarmoto finds the best roads for a multi-day ride. Pick a few parameters
         and we'll auto-generate the route.
       </Text>
       <TouchableOpacity style={styles.primaryBtn} onPress={onCreate}>
-        <Icon name="plus" size={18} color={colors.textInverse} />
+        <Icon name="plus" size={18} color={t.invFg} />
         <Text style={styles.primaryBtnLabel}>Plan a trip</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.secondaryBtn} onPress={onJoin}>
-        <Icon name="account-multiple-plus" size={18} color={colors.primary} />
+        <Icon name="account-multiple-plus" size={18} color={t.fg} />
         <Text style={styles.secondaryBtnLabel}>Join with invite code</Text>
       </TouchableOpacity>
     </View>
@@ -323,129 +332,142 @@ function TripCard({
           {formatStatus(trip.status)}
         </Text>
       </View>
-      <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+      <Icon name="chevron-right" size={22} color={t.faint} />
     </TouchableOpacity>
   );
 }
 
+// Status pill border + text. All clear AA on the white card: `ACCENT_DARK`
+// is the burnt-orange "active" mark (the raw accent fails AA as text), the
+// status tones cover completed/planned, and `dim` is the neutral fallback.
 function statusBadgeColor(status: TripSummary["status"]): string {
   switch (status) {
     case "active":
-      return colors.primary;
+      return ACCENT_DARK;
     case "completed":
-      return colors.success;
+      return statusFg.success;
     case "planned":
-      return colors.info;
+      return statusFg.warning;
     default:
-      return colors.textTertiary;
+      return t.dim;
   }
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   listContent: {
-    padding: spacing.xl,
-    paddingBottom: spacing.section * 2,
+    padding: brandSpacing.s5,
+    paddingBottom: brandSpacing.s12 * 2,
     flexGrow: 1,
   },
   separator: {
-    height: spacing.md,
+    height: brandSpacing.s3,
   },
   headerSeparator: {
-    height: spacing.sm,
+    height: brandSpacing.s2,
   },
   folderHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s2,
+    paddingTop: brandSpacing.s3,
+    paddingBottom: brandSpacing.s1,
   },
   folderHeaderLabel: {
     flex: 1,
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   folderHeaderCount: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
     fontVariant: ["tabular-nums"],
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: t.lineStrong,
   },
   secondaryBtnLabel: {
-    color: colors.primary,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   joinRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    marginBottom: brandSpacing.s3,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   joinIconWrap: {
     width: 36,
@@ -453,71 +475,80 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   joinBody: {
     flex: 1,
     gap: 2,
   },
   joinTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   joinSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   cardBody: {
     flex: 1,
     gap: 4,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   cardMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   statusPill: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 4,
-    borderRadius: borderRadius.pill,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
   },
   statusLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   fab: {
     position: "absolute",
-    bottom: spacing.xl,
-    right: spacing.xl,
+    bottom: brandSpacing.s5,
+    right: brandSpacing.s5,
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    // The signature "Plan a trip" raised action — the screen's accent moment
+    // (ink glyph/label on accent clears ~6.7:1).
+    backgroundColor: t.accent,
   },
   fabLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
