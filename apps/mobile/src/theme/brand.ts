@@ -51,17 +51,15 @@ export const QUALITY_FULL_LABELS = [
 export const ACCENT = "#FF6A1A";
 
 /**
- * Type families. These are the fonts' internal family names (from the
- * bundled `.ttf` `name` tables — `apps/mobile/assets/fonts/`), so
- * `fontFamily` resolves once the assets are linked (`npx react-native-asset`
- * + a native rebuild). Both are variable fonts, so `fontFamily` + numeric
- * `fontWeight` selects the weight from a single file. Until a build links
- * them, text falls back to the platform sans/mono and leans on `weight` —
- * referencing an unregistered family is safe on both platforms.
+ * Type families. These are the *intended* families; the `.ttf` assets are
+ * not bundled yet, so until the font-linking follow-up lands, text falls
+ * back to the platform sans/mono and relies on `weight` for emphasis.
+ * Referencing an unregistered family is safe on both platforms (graceful
+ * fallback). See the README's Phase 1 note.
  */
 export const brandFonts = {
-  sans: "Space Grotesk",
-  mono: "JetBrains Mono",
+  sans: "SpaceGrotesk",
+  mono: "JetBrainsMono",
   /** Emotional marketing beats only — not used in product UI. */
   serif: "Fraunces",
 } as const;

@@ -90,16 +90,18 @@ existing screen changes appearance yet:
   `BrandIcon` set — ported 1:1 from `mobile/tokens.jsx` to React Native +
   `react-native-svg`.
 
-### Fonts — bundled in Phase 2
+### Fonts — source vendored, linking deferred
 
-Space Grotesk and JetBrains Mono (both variable `.ttf`) are bundled under
-[`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/) and wired
-through `react-native.config.js`. `brand.ts` references their verified
-internal family names (`"Space Grotesk"`, `"JetBrains Mono"`).
-On-device validation after `npx react-native-asset` + a native rebuild is
-still required (this environment can't run native builds) — see the fonts
-[README](../../../apps/mobile/assets/fonts/README.md). Until a build links
-them, text falls back to the platform sans/mono and leans on weight.
+Space Grotesk and JetBrains Mono (both variable `.ttf`, OFL 1.1) are checked
+in as **source** under
+[`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/), but they
+are **not linked yet** — `brand.ts` still uses placeholder family names and
+text falls back to the platform sans/mono. Linking them correctly needs
+static-weight instancing, Android filename-based resolution, committed native
+build artifacts, and on-device validation — none of which can be done/verified
+in a headless environment. The fonts
+[README](../../../apps/mobile/assets/fonts/README.md) documents the full
+dev-machine procedure. Tracked as a Phase 2 follow-up.
 
 ## Migration plan
 
@@ -114,9 +116,10 @@ screen migrated yet.
 
 ### Phase 2 — Fonts + first screen
 
-1. ✅ Bundle Space Grotesk + JetBrains Mono and wire asset linking
-   (`apps/mobile/assets/fonts/`, `react-native.config.js`). Needs on-device
-   validation after `npx react-native-asset` + a native rebuild.
+1. Bundle Space Grotesk + JetBrains Mono. **Source vendored** under
+   `apps/mobile/assets/fonts/` (this PR); actual linking (static-weight
+   instancing, Android filename resolution, committed native artifacts,
+   device validation) is a dev-machine follow-up — see the fonts README.
 2. Migrate **Settings** (`SettingsScreen`) — the narrowest surface (stamp +
    row list + toggles), a clean first proof of the system end-to-end.
 
