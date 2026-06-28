@@ -28,6 +28,13 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { ApiError, api } from "@/services/api";
 import type { UserSharedRide } from "@/types";
 import {
@@ -47,6 +54,12 @@ interface SharedRidesSectionProps {
    * change (number bump or new object reference) triggers a reload.
    */
   refreshKey?: number;
+  /**
+   * Render on a light brand surface (cream/white card). Default: legacy dark.
+   * Shared with the still-legacy ViewProfileScreen, so the default must stay
+   * the dark-theme look.
+   */
+  light?: boolean;
 }
 
 type Phase = "loading" | "ready" | "error";
@@ -58,7 +71,9 @@ export default function SharedRidesSection({
   isSelf,
   displayName,
   refreshKey,
+  light = false,
 }: SharedRidesSectionProps) {
+  const styles = light ? brandStyles : legacyStyles;
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -122,7 +137,9 @@ export default function SharedRidesSection({
 
       {phase === "loading" ? (
         <View style={styles.placeholder}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator
+            color={light ? brandColorsLight.fg : colors.primary}
+          />
         </View>
       ) : phase === "error" ? (
         <Text style={styles.errorText}>{errorMessage}</Text>
@@ -135,7 +152,12 @@ export default function SharedRidesSection({
       ) : (
         <View style={styles.list}>
           {items.map((ride) => (
-            <SharedRideRow key={ride.share_token} ride={ride} isSelf={isSelf} />
+            <SharedRideRow
+              key={ride.share_token}
+              ride={ride}
+              isSelf={isSelf}
+              light={light}
+            />
           ))}
         </View>
       )}
@@ -146,9 +168,11 @@ export default function SharedRidesSection({
 interface SharedRideRowProps {
   ride: UserSharedRide;
   isSelf: boolean;
+  light: boolean;
 }
 
-function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
+function SharedRideRow({ ride, isSelf, light }: SharedRideRowProps) {
+  const styles = light ? brandStyles : legacyStyles;
   const showPrivatePill = isSelf && !ride.is_public;
   return (
     <View
@@ -159,7 +183,11 @@ function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
         <Text style={styles.rowDate}>{formatRideDate(ride.started_at)}</Text>
         {showPrivatePill ? (
           <View style={styles.privatePill}>
-            <Icon name="lock-outline" size={11} color={colors.textSecondary} />
+            <Icon
+              name="lock-outline"
+              size={11}
+              color={light ? brandColorsLight.dim : colors.textSecondary}
+            />
             <Text style={styles.privatePillLabel}>Private</Text>
           </View>
         ) : null}
@@ -168,21 +196,33 @@ function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
         <RowMetric
           label="Distance"
           value={formatDistanceKm(ride.distance_km)}
+          light={light}
         />
         <RowMetric
           label="Duration"
           value={formatDurationMinutes(ride.duration_min)}
+          light={light}
         />
         <RowMetric
           label="Views"
           value={`${Math.max(0, Math.round(ride.view_count))}`}
+          light={light}
         />
       </View>
     </View>
   );
 }
 
-function RowMetric({ label, value }: { label: string; value: string }) {
+function RowMetric({
+  label,
+  value,
+  light,
+}: {
+  label: string;
+  value: string;
+  light: boolean;
+}) {
+  const styles = light ? brandStyles : legacyStyles;
   return (
     <View style={styles.metric}>
       <Text style={styles.metricValue}>{value}</Text>
@@ -191,7 +231,9 @@ function RowMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+// Legacy dark-surface styling — unchanged so the still-legacy
+// ViewProfileScreen renders exactly as before.
+const legacyStyles = StyleSheet.create({
   card: {
     backgroundColor: colors.bgCard,
     borderRadius: borderRadius.lg,
@@ -268,5 +310,95 @@ const styles = StyleSheet.create({
   metricLabel: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
+  },
+});
+
+// Brand light-surface styling (white card on cream). Metric values use the
+// mono "stamp" family (numbers); `dim` labels/hints clear AA on white and
+// `statusFg.danger` keeps errors legible without the raw quality red.
+const brandStyles = StyleSheet.create({
+  card: {
+    backgroundColor: brandColorsLight.raised,
+    borderRadius: brandRadii.md,
+    borderWidth: 1,
+    borderColor: brandColorsLight.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
+  },
+  title: {
+    color: brandColorsLight.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  placeholder: {
+    paddingVertical: brandSpacing.s4,
+    alignItems: "center",
+  },
+  emptyHint: {
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+  },
+  errorText: {
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+  },
+  list: {
+    gap: brandSpacing.s3,
+  },
+  row: {
+    paddingVertical: brandSpacing.s3,
+    borderTopWidth: 1,
+    borderTopColor: brandColorsLight.line,
+    gap: brandSpacing.s2,
+  },
+  rowHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  rowDate: {
+    color: brandColorsLight.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  privatePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s2,
+    paddingVertical: 2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: brandColorsLight.raised2,
+    borderWidth: 1,
+    borderColor: brandColorsLight.line,
+  },
+  privatePillLabel: {
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  rowMetrics: {
+    flexDirection: "row",
+    gap: brandSpacing.s4,
+  },
+  metric: {
+    alignItems: "flex-start",
+  },
+  metricValue: {
+    color: brandColorsLight.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  metricLabel: {
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
   },
 });

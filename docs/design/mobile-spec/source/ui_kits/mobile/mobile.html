@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Tarmoto UI Kit · Mobile</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 56px 32px 120px; background: var(--cream); color: var(--ink);
+         font-family: var(--font-sans); }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  .head { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 48px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+             letter-spacing: 1.5px; text-transform: uppercase; color: var(--fg-mute); }
+  h1 { font-family: var(--font-serif); font-weight: 700; font-size: 72px;
+       letter-spacing: -1.8px; line-height: 0.95; margin: 14px 0 12px; }
+  h1 em { color: var(--accent); font-style: italic; }
+  .sub { color: var(--fg-dim); max-width: 640px; font-size: 17px; line-height: 1.55; }
+  h2 { font-family: var(--font-sans); font-weight: 800; font-size: 28px; letter-spacing: -0.6px;
+       margin: 64px 0 8px; }
+  h2 .num { font-family: var(--font-mono); color: var(--accent); font-size: 16px;
+            margin-right: 10px; font-weight: 700; letter-spacing: 1; }
+  .note { color: var(--fg-dim); font-size: 14px; margin-bottom: 28px; max-width: 680px; line-height: 1.55; }
+  .grid { display: grid; gap: 20px; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+          padding: 24px; position: relative; }
+  .card .tag { position: absolute; top: 14px; right: 14px; font-family: var(--font-mono);
+               font-size: 10px; color: var(--fg-mute); letter-spacing: 1.2px; text-transform: uppercase; }
+  .lbl { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+         text-transform: uppercase; color: var(--fg-mute); margin-bottom: 10px; }
+
+  /* phone */
+  .phone { width: 280px; height: 570px; border-radius: 38px; background: var(--ink); padding: 10px;
+           box-shadow: 0 30px 60px -20px rgba(14,14,16,0.35), 0 0 0 2px rgba(14,14,16,0.9); flex-shrink: 0; }
+  .screen { width: 100%; height: 100%; border-radius: 28px; background: var(--cream);
+            overflow: hidden; position: relative; }
+  .status { padding: 14px 20px 6px; display: flex; justify-content: space-between;
+            font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+  .status .right { color: var(--fg-mute); letter-spacing: 0.5px; }
+
+  /* stamps */
+  .stamp { font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+           letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink); }
+  .stamp.dim { color: var(--fg-mute); }
+  .stamp.accent { color: var(--accent); }
+
+  /* buttons */
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 20px;
+         border-radius: 12px; font-weight: 700; font-size: 14px; border: none; cursor: pointer;
+         font-family: var(--font-sans); }
+  .btn-primary { background: var(--ink); color: var(--cream); }
+  .btn-accent { background: var(--accent); color: var(--ink); }
+  .btn-ghost { background: transparent; border: 1px solid var(--ink); color: var(--ink); }
+  .btn-lg { padding: 16px 24px; font-size: 15px; border-radius: 14px; }
+
+  /* pills */
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px;
+          border-radius: 999px; font-weight: 700; font-size: 12px; }
+  .pill-ink { background: var(--ink); color: var(--cream); }
+  .pill-accent { background: var(--accent); color: var(--ink); }
+  .pill-ghost { background: rgba(14,14,16,0.06); color: var(--ink); border: 1px solid var(--line); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+         box-shadow: 0 0 0 4px rgba(255,106,26,0.2); }
+
+  /* q bars */
+  .qbars { display: inline-flex; gap: 2px; vertical-align: middle; }
+  .qbar { width: 8px; height: 18px; border-radius: 2px; }
+
+  /* list rows */
+  .list { background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+          overflow: hidden; min-width: 280px; }
+  .list-row { padding: 14px 16px; border-bottom: 1px solid var(--line);
+              display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .left { display: flex; align-items: center; gap: 12px; }
+  .list-row .icon { width: 30px; height: 30px; border-radius: 8px; background: var(--cream);
+                    border: 1px solid var(--line); display: flex; align-items: center;
+                    justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .muted { color: var(--fg-mute); }
+  .mono { font-family: var(--font-mono); }
+
+  /* HUD preview */
+  .hud { background: var(--tarmac); color: var(--cream); border-radius: 20px; padding: 24px;
+         min-width: 320px; position: relative; overflow: hidden; }
+  .hud::before { content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 0% 100%, rgba(255,106,26,0.18), transparent 60%); }
+  .hud > * { position: relative; }
+  .hud .big { font-size: 52px; font-weight: 800; letter-spacing: -2px; line-height: 1;
+              font-family: var(--font-sans); }
+  .hud .unit { font-family: var(--font-mono); font-size: 12px; color: rgba(245,239,230,0.65);
+               letter-spacing: 1.2px; margin-top: 6px; }
+
+  /* toast / hazard */
+  .hazard { background: var(--ink); color: var(--cream); padding: 18px; border-radius: 16px;
+            display: flex; gap: 14px; align-items: center; min-width: 320px;
+            border-left: 4px solid var(--accent); }
+  .hazard .glyph { width: 42px; height: 42px; border-radius: 50%; background: var(--accent);
+                   color: var(--ink); display: flex; align-items: center; justify-content: center;
+                   font-weight: 800; font-size: 22px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="eyebrow">Tarmoto · UI Kit · Mobile</div>
+    <h1>Components for <em>the bike.</em></h1>
+    <p class="sub">
+      Mobile patterns used across Ride Mode, Trip Planner, Hazard Report, and Post-Ride.
+      All components are glove-first: minimum 44&#8239;px hit targets, high contrast, and
+      designed to be glanced at, not read.
+    </p>
+  </div>
+
+  <!-- Devices + screens -->
+  <h2><span class="num">01</span>Device frame & ride-mode HUD</h2>
+  <div class="note">The iPhone frame is a starter component. Inside it we show the core ride states.
+    Open the full ride-mode prototype for interactions.</div>
+  <div class="row">
+    <div class="phone">
+      <div class="screen">
+        <div class="status"><span>9:41</span><span class="right">●●● ▲</span></div>
+        <div style="padding: 8px 18px;">
+          <span class="stamp dim">Now riding · Day 1</span>
+          <div style="font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-top: 4px;">Stelvio East</div>
+          <div style="font-size: 12px; color: var(--fg-dim); margin-top: 4px;">22&nbsp;km · 48 turns · +1,536&nbsp;m</div>
+        </div>
+        <div style="margin: 10px 14px; height: 130px; border-radius: 12px; background: var(--paper);
+                    border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+                    color: var(--fg-mute); font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.2px;">
+          [ MAP CANVAS ]
+        </div>
+        <div style="padding: 8px 18px; display: flex; gap: 8px;">
+          <div style="flex:1; padding:10px; border-radius:10px; background: var(--paper); border:1px solid var(--line);">
+            <div class="stamp" style="font-size:9px">Surface</div>
+            <div style="font-weight:800; margin-top:4px; display:flex; gap:6px; align-items:center;">
+              <span class="qbars"><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span></span> Hero
+            </div>
+          </div>
+          <div style="flex:1; padding:10px; border-radius:10px; background: var(--paper); border:1px solid var(--line);">
+            <div class="stamp" style="font-size:9px">Hazard</div>
+            <div style="font-weight:800; color: var(--accent); margin-top:4px;">Gravel · 300m</div>
+          </div>
+        </div>
+        <div style="position: absolute; bottom: 12px; left: 14px; right: 14px; padding: 14px 16px;
+                    background: var(--ink); color: var(--cream); border-radius: 14px;
+                    display: flex; gap: 12px; align-items: center;">
+          <div style="width:36px; height:36px; border-radius:50%; background: var(--accent); color: var(--ink);
+                      display:flex; align-items:center; justify-content:center; font-size: 16px; font-weight: 800;">▶</div>
+          <div>
+            <div style="font-size:13px; font-weight:700">Start ride</div>
+            <div style="font-size:10px; color: rgba(245,239,230,0.6)">Haptic turn-by-turn · offline</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; min-width: 280px;">
+      <div class="card">
+        <span class="tag">/atoms</span>
+        <div class="lbl">Stamp · context label</div>
+        <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+          <span class="stamp">NOW RIDING · DAY 1</span>
+          <span class="stamp dim">UPDATED 12 MIN AGO</span>
+          <span class="stamp accent">LIVE · REC</span>
+        </div>
+      </div>
+      <div class="card">
+        <span class="tag">/atoms</span>
+        <div class="lbl">Pill / badge</div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+          <span class="pill pill-ink"><span class="dot"></span>PRO</span>
+          <span class="pill pill-accent">BETA</span>
+          <span class="pill pill-ghost">+12 km</span>
+          <span class="pill pill-ghost">48 TURNS</span>
+        </div>
+      </div>
+      <div class="card">
+        <span class="tag">/domain</span>
+        <div class="lbl">Quality bars — Q1 to Q5</div>
+        <div style="display:flex; gap: 28px; flex-wrap:wrap; align-items:center;">
+          <span style="display:inline-flex; gap: 10px; align-items:center;">
+            <span class="qbars"><span class="qbar" style="background:#E05A3C"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span></span>
+            <span style="font-weight:700">Avoid</span>
+          </span>
+          <span style="display:inline-flex; gap: 10px; align-items:center;">
+            <span class="qbars"><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span></span>
+            <span style="font-weight:700">Great</span>
+          </span>
+          <span style="display:inline-flex; gap: 10px; align-items:center;">
+            <span class="qbars"><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span></span>
+            <span style="font-weight:700">Hero</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <h2><span class="num">02</span>Buttons & inputs</h2>
+  <div class="note">Glove-first scale. Primary is always ink on cream. Accent is reserved for one action per view.</div>
+  <div class="row">
+    <div class="card" style="flex:1; min-width:320px;">
+      <div class="lbl">Primary · ink</div>
+      <div style="display:flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px;">
+        <button class="btn btn-primary">Start ride →</button>
+        <button class="btn btn-primary btn-lg">Start ride →</button>
+      </div>
+      <div class="lbl">Accent · for the one thing that matters</div>
+      <div style="display:flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px;">
+        <button class="btn btn-accent">Report hazard</button>
+        <button class="btn btn-accent btn-lg">Join the waitlist →</button>
+      </div>
+      <div class="lbl">Ghost · secondary</div>
+      <div style="display:flex; gap: 12px; flex-wrap: wrap;">
+        <button class="btn btn-ghost">Save route</button>
+        <button class="btn btn-ghost btn-lg">Explore the map →</button>
+      </div>
+    </div>
+    <div class="card" style="flex:1; min-width:320px;">
+      <div class="lbl">Text input · email</div>
+      <div style="display: flex; gap: 6px; padding: 4px; border: 1px solid var(--ink);
+                  border-radius: 12px; background: var(--cream); max-width: 380px;">
+        <input placeholder="you@ridingfast.cc" style="flex:1; border:none; outline:none;
+               background: transparent; padding: 10px 12px; font-size: 15px; font-family: var(--font-sans);">
+        <button class="btn btn-primary" style="padding: 10px 16px;">Join →</button>
+      </div>
+
+      <div class="lbl" style="margin-top: 26px;">Segmented control</div>
+      <div style="display:inline-flex; gap: 4px; background: var(--paper); padding: 4px;
+                  border-radius: 10px; border: 1px solid var(--line);">
+        <div style="padding: 7px 14px; border-radius: 7px; background: var(--ink); color: var(--cream);
+                    font-size: 12px; font-weight: 700;">Solo</div>
+        <div style="padding: 7px 14px; color: var(--fg-dim); font-size: 12px; font-weight: 700;">Group</div>
+        <div style="padding: 7px 14px; color: var(--fg-dim); font-size: 12px; font-weight: 700;">Track</div>
+      </div>
+
+      <div class="lbl" style="margin-top: 26px;">Toggle chips</div>
+      <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+        <span class="pill pill-ink">Paved only</span>
+        <span class="pill pill-ghost">No highways</span>
+        <span class="pill pill-ghost">Fun zones ×3</span>
+        <span class="pill pill-ghost">Twistiness ≥ 4</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lists & rows -->
+  <h2><span class="num">03</span>Lists, cards, HUD, alerts</h2>
+  <div class="row">
+    <div class="list">
+      <div class="list-row"><div class="left"><div class="icon">▲</div>
+        <div><div style="font-weight:700">Stelvio Pass</div><div class="muted" style="font-size:12px">2,757 m · 48 turns</div></div>
+      </div>
+      <span class="qbars"><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span><span class="qbar" style="background:#6FD38A"></span></span></div>
+      <div class="list-row"><div class="left"><div class="icon">▲</div>
+        <div><div style="font-weight:700">Passo Gavia</div><div class="muted" style="font-size:12px">2,621 m · 34 turns</div></div>
+      </div><span class="qbars"><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:#C7D36A"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span></span></div>
+      <div class="list-row"><div class="left"><div class="icon">▲</div>
+        <div><div style="font-weight:700">Mortirolo</div><div class="muted" style="font-size:12px">1,852 m · 39 turns</div></div>
+      </div><span class="qbars"><span class="qbar" style="background:#E8D66A"></span><span class="qbar" style="background:#E8D66A"></span><span class="qbar" style="background:#E8D66A"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span><span class="qbar" style="background:rgba(14,14,16,0.08)"></span></span></div>
+    </div>
+
+    <div class="hud">
+      <span class="stamp" style="color:rgba(245,239,230,0.55)">Current speed</span>
+      <div class="big">94<span style="font-size:22px; margin-left: 6px; color: rgba(245,239,230,0.5);">km/h</span></div>
+      <div class="unit">LEANING 18° · NEXT CURVE 240M</div>
+      <div style="height: 1px; background: rgba(245,239,230,0.12); margin: 16px 0;"></div>
+      <div style="display:flex; justify-content:space-between;">
+        <div><div class="stamp" style="color:rgba(245,239,230,0.55)">Distance</div>
+          <div style="font-weight:800; font-size:20px; margin-top:4px;">48.2 <span style="font-family:var(--font-mono); font-size:11px; color: rgba(245,239,230,0.5); margin-left: 2px;">KM</span></div></div>
+        <div><div class="stamp" style="color:rgba(245,239,230,0.55)">Elevation</div>
+          <div style="font-weight:800; font-size:20px; margin-top:4px;">+1,212</div></div>
+        <div><div class="stamp" style="color:rgba(245,239,230,0.55)">Avg quality</div>
+          <div style="margin-top: 6px;"><span class="qbars">
+            <span class="qbar" style="background:#C7D36A"></span>
+            <span class="qbar" style="background:#C7D36A"></span>
+            <span class="qbar" style="background:#C7D36A"></span>
+            <span class="qbar" style="background:#C7D36A"></span>
+            <span class="qbar" style="background:rgba(245,239,230,0.15)"></span></span></div></div>
+      </div>
+    </div>
+
+    <div class="hazard">
+      <div class="glyph">!</div>
+      <div>
+        <div class="stamp accent">Hazard · 300m ahead</div>
+        <div style="font-weight:800; font-size:18px; margin-top: 4px;">Gravel across lane</div>
+        <div style="font-size: 12px; color: rgba(245,239,230,0.65); margin-top: 2px;">Reported 6 min ago · 3 confirmed</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 80px; padding-top: 32px; border-top: 1px solid var(--line);
+              font-family: var(--font-mono); font-size: 11px; color: var(--fg-mute);
+              letter-spacing: 1px; text-transform: uppercase; display: flex; justify-content: space-between;">
+    <span>TARMOTO · UI KIT · MOBILE</span>
+    <span>See App Tour.html + Ride Mode.html for full flows</span>
+  </div>
+</div>
+</body>
+</html>

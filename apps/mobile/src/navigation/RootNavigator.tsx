@@ -14,6 +14,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
+import { brandColorsLight } from "@/theme/brand";
 import type { HazardType, LatLng, Waypoint } from "@/types";
 import { parseHazardTypeParam } from "@/services/hazardReportLink";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
@@ -215,6 +216,18 @@ const screenOptions = {
   contentStyle: { backgroundColor: colors.bg },
 };
 
+// Cream + ink header for screens migrated onto the brand system, so a
+// brand screen isn't a light body under the legacy dark header. Applied
+// per-screen during the incremental migration (see
+// docs/design/mobile-spec/README.md); the shared chrome flips once enough
+// screens have moved across.
+const brandScreenOptions = {
+  headerStyle: { backgroundColor: brandColorsLight.bg },
+  headerTintColor: brandColorsLight.fg,
+  headerTitleStyle: { fontWeight: "800" as const },
+  contentStyle: { backgroundColor: brandColorsLight.bg },
+};
+
 function HomeNavigator() {
   return (
     <HomeStack.Navigator screenOptions={screenOptions}>
@@ -240,7 +253,7 @@ function HomeNavigator() {
       <HomeStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: "Ride Details" }}
       />
     </HomeStack.Navigator>
   );
@@ -262,7 +275,11 @@ function MapNavigator() {
       <MapStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
-        options={{ title: "Report Hazard", presentation: "modal" }}
+        options={{
+          ...brandScreenOptions,
+          title: "Report Hazard",
+          presentation: "modal",
+        }}
       />
     </MapStack.Navigator>
   );
@@ -284,12 +301,16 @@ function RideNavigator() {
       <RideStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: "Ride Details" }}
       />
       <RideStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
-        options={{ title: "Report Hazard", presentation: "modal" }}
+        options={{
+          ...brandScreenOptions,
+          title: "Report Hazard",
+          presentation: "modal",
+        }}
       />
       <RideStack.Screen
         name="GroupRide"
@@ -355,7 +376,11 @@ function ProfileNavigator() {
         component={ProfileScreen}
         options={{ headerShown: false }}
       />
-      <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+      <ProfileStack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={brandScreenOptions}
+      />
       <ProfileStack.Screen
         name="EditProfile"
         component={EditProfileModal}
@@ -384,12 +409,12 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="OfflineRegions"
         component={OfflineRegionsScreen}
-        options={{ title: "Offline maps" }}
+        options={{ ...brandScreenOptions, title: "Offline maps" }}
       />
       <ProfileStack.Screen
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
-        options={{ title: "Emergency contacts" }}
+        options={{ ...brandScreenOptions, title: "Emergency contacts" }}
       />
       <ProfileStack.Screen
         name="Achievements"

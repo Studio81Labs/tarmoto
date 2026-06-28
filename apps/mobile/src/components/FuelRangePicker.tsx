@@ -15,15 +15,16 @@ import {
   View,
 } from "react-native";
 import {
-  borderRadius,
   clampFuelRangeKm,
-  colors,
-  fontSize,
-  fontWeight,
-  spacing,
   FUEL_RANGE_BOUNDS,
   FUEL_RANGE_STEP_KM,
 } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+} from "@/theme/brand";
 
 interface Props {
   value: number;
@@ -31,6 +32,8 @@ interface Props {
   label?: string;
   helpText?: string;
 }
+
+const t = brandColorsLight;
 
 const STEPS = buildSteps();
 
@@ -107,7 +110,7 @@ export default function FuelRangePicker({
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   labelRow: {
     flexDirection: "row",
@@ -115,45 +118,50 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
   },
   label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    // `dim` (AA on white), not the muted eyebrow tone — this labels the value.
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
   },
   value: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   pillRow: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
   },
   pill: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
+    borderColor: t.line,
+    backgroundColor: t.raised,
     minWidth: 64,
     alignItems: "center",
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: t.accent,
+    borderColor: t.accent,
   },
   pillText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   pillTextSelected: {
-    color: colors.textInverse,
+    color: "#0E0E10",
   },
   help: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
 });

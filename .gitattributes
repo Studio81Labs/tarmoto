@@ -1,0 +1,10 @@
+# Vendored Claude Design handoff bundles.
+#
+# `docs/design/*-spec/source/**` holds the frozen, read-only design
+# prototypes (HTML/CSS/JSX) exported from claude.ai/design. They are a
+# reference, not maintained source — see `docs/design/*-spec/README.md`.
+# Marking them vendored + generated keeps them out of language stats,
+# collapses them in diffs, and excludes them from code scanning
+# (CodeQL default setup / GitHub Code Quality honor `linguist-generated`),
+# so the prototypes' own lint quirks aren't reported against this repo.
+docs/design/*-spec/source/** linguist-vendored=true linguist-generated=true

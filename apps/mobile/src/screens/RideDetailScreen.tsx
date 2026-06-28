@@ -43,16 +43,16 @@ import {
   Layer,
   Map,
 } from "@maplibre/maplibre-react-native";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  shadows,
-  spacing,
-} from "@/theme";
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import type { RideDetail, RideSegment } from "@/types";
 import type {
@@ -95,6 +95,8 @@ type DetailNav = NativeStackNavigationProp<
 >;
 
 type Phase = "loading" | "ready" | "error";
+
+const t = brandColorsLight;
 
 export default function RideDetailScreen() {
   const { params } = useRoute<DetailRoute>();
@@ -153,7 +155,7 @@ export default function RideDetailScreen() {
   if (phase === "loading") {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -161,7 +163,7 @@ export default function RideDetailScreen() {
   if (phase === "error" || !ride) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" size={48} color={colors.danger} />
+        <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
         <Text style={styles.errorTitle}>Couldn't load ride</Text>
         {errorMessage ? (
           <Text style={styles.errorBody}>{errorMessage}</Text>
@@ -237,11 +239,7 @@ function RouteMap({
   if (!bounds) {
     return (
       <View style={styles.mapPlaceholder}>
-        <Icon
-          name="map-marker-off-outline"
-          size={32}
-          color={colors.textTertiary}
-        />
+        <Icon name="map-marker-off-outline" size={32} color={t.dim} />
         <Text style={styles.mapPlaceholderText}>No route recorded</Text>
       </View>
     );
@@ -282,7 +280,10 @@ function RouteMap({
 function SummaryCard({ ride }: { ride: RideDetail }) {
   const qScore = ride.avg_road_quality ?? 0;
   const qHas = qScore > 0;
-  const qColor = qHas ? qualityColor(qScore) : colors.textTertiary;
+  // Quality value stays ink: the ramp is a fill colour and fails AA as text
+  // on the white card. The quality colour vocabulary is carried visually by
+  // the segment histogram bars below. A small swatch keeps the at-a-glance
+  // colour cue without colouring the (AA-critical) label text.
   return (
     <View style={styles.card}>
       <Text style={styles.cardDate}>{formatRideDate(ride.started_at)}</Text>
@@ -291,18 +292,30 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
           label="Distance"
           value={formatDistanceKm(ride.distance_km)}
           size="lg"
+          light
         />
         <RideMetric
           label="Duration"
           value={formatDurationMinutes(ride.duration_min)}
           size="lg"
+          light
         />
-        <RideMetric
-          label="Quality"
-          value={qHas ? qualityLabel(qScore) : "—"}
-          valueColor={qColor}
-          size="lg"
-        />
+        <View style={styles.qualityMetric}>
+          <RideMetric
+            label="Quality"
+            value={qHas ? qualityLabel(qScore) : "—"}
+            size="lg"
+            light
+          />
+          {qHas ? (
+            <View
+              style={[
+                styles.qualitySwatch,
+                { backgroundColor: qualityBrandColor(qScore) },
+              ]}
+            />
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -415,9 +428,12 @@ function LeanHistogramRowView({
         <View
           style={[
             styles.histBarFill,
+            row.count > 0 ? styles.histBarFillEdge : null,
             {
               width: widthPct as `${number}%`,
-              backgroundColor: colors.primary,
+              // ACCENT_DARK clears 3:1 on the cream `sunken` track (the raw
+              // accent does not — same rationale as the offline progress bar).
+              backgroundColor: ACCENT_DARK,
             },
           ]}
         />
@@ -482,15 +498,20 @@ function HistogramRow({
   max: number;
 }) {
   const ratio = max > 0 ? count / max : 0;
-  const color = qualityColor(bucket);
+  // The Q1–Q5 ramp is the brand's essential quality encoding (rule #4), so
+  // it stays as the bar fill even on the light card (WCAG 1.4.11 "essential"
+  // graphic). The row label + count carry the same info as AA-safe ink text,
+  // so quality is never conveyed by colour alone.
+  const color = qualityBrandColor(bucket);
   const label = qualityLabel(bucket);
   return (
     <View style={styles.histRow} accessibilityLabel={`${label}: ${count}`}>
-      <Text style={[styles.histLabel, { color }]}>{label}</Text>
+      <Text style={styles.histLabel}>{label}</Text>
       <View style={styles.histBarTrack}>
         <View
           style={[
             styles.histBarFill,
+            count > 0 ? styles.histBarFillEdge : null,
             {
               width: `${Math.max(ratio * 100, count > 0 ? 6 : 0)}%`,
               backgroundColor: color,
@@ -576,7 +597,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         accessibilityRole="button"
         accessibilityLabel="Share ride"
       >
-        <Icon name="share-variant" size={18} color={colors.primary} />
+        <Icon name="share-variant" size={18} color={t.invFg} />
         <Text style={styles.actionLabel}>
           {busy === "share" ? "Sharing…" : "Share"}
         </Text>
@@ -588,7 +609,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         accessibilityRole="button"
         accessibilityLabel="Export ride as GPX"
       >
-        <Icon name="download-outline" size={18} color={colors.primary} />
+        <Icon name="download-outline" size={18} color={t.invFg} />
         <Text style={styles.actionLabel}>
           {busy === "gpx" ? "Exporting…" : "Export GPX"}
         </Text>
@@ -608,7 +629,7 @@ function StatTile({
 }) {
   return (
     <View style={styles.statTile}>
-      <Icon name={icon} size={18} color={colors.primary} />
+      <Icon name={icon} size={18} color={t.fg} />
       <Text style={styles.statTileLabel}>{label}</Text>
       <Text style={styles.statTileValue}>{value}</Text>
     </View>
@@ -618,113 +639,136 @@ function StatTile({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.section,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s12,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   errorTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
   },
   errorBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
   },
   errorActions: {
     flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.md,
+    gap: brandSpacing.s3,
+    marginTop: brandSpacing.s3,
   },
   primaryBtn: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   secondaryBtn: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   secondaryBtnLabel: {
-    color: colors.textPrimary,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   mapWrap: {
     height: 240,
-    borderRadius: borderRadius.lg,
+    borderRadius: brandRadii.md,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgCard,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
   },
   map: {
     flex: 1,
   },
   mapPlaceholder: {
     height: 160,
-    borderRadius: borderRadius.lg,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgCard,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   mapPlaceholderText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   statsCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   cardDate: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   summaryRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
+  },
+  qualityMetric: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: brandSpacing.s2,
+  },
+  qualitySwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+    marginTop: 22,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -732,89 +776,103 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sectionMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   statTile: {
     width: "31%",
     flexGrow: 1,
     minWidth: 96,
-    padding: spacing.md,
-    backgroundColor: colors.bgSurface,
-    borderRadius: borderRadius.md,
+    padding: brandSpacing.s3,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     gap: 4,
   },
   statTileLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   statTileValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
   },
   emptyHint: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   histRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   histLabel: {
     width: 80,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   histBarTrack: {
     flex: 1,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.bgSurface,
+    backgroundColor: t.sunken,
     overflow: "hidden",
   },
   histBarFill: {
     height: "100%",
     borderRadius: 4,
   },
+  // Hairline edge so a pale quality-ramp fill (Q3–Q5) is still perceivable
+  // as a bar against the cream track — the fill colour alone can be near the
+  // track's luminance. Applied only to non-empty bars so a 0%-width fill
+  // doesn't draw a stray border sliver next to a "0" count.
+  histBarFillEdge: {
+    borderWidth: 1,
+    borderColor: t.lineStrong,
+  },
   histCount: {
     width: 32,
     textAlign: "right",
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 13,
+    fontWeight: "700",
   },
   actionsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   actionBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.bgCard,
-    ...shadows.card,
+    gap: brandSpacing.s2,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   actionLabel: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

@@ -1,0 +1,171 @@
+/* ==========================================================================
+   Tarmoto — Design tokens
+   All colors, type, spacing, and semantic styles used across products.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,600;1,9..144,700;1,9..144,800&display=swap');
+
+:root {
+  /* ---------- core palette ---------- */
+  --cream: #F5EFE6;
+  --ink: #0E0E10;
+  --accent: #FF6A1A;
+  --tarmac: #2B2C30;
+  --paper: #EDE6DA;
+  --paper-2: #E5DBCB;
+
+  /* ---------- semantic surfaces ---------- */
+  --bg: var(--cream);
+  --bg-raised: var(--paper);
+  --bg-sunken: var(--paper-2);
+  --surface-inverse: var(--ink);
+  --surface-dark: var(--tarmac);
+
+  /* ---------- foreground ---------- */
+  --fg: var(--ink);
+  --fg-dim: rgba(14, 14, 16, 0.62);
+  --fg-mute: rgba(14, 14, 16, 0.42);
+  --fg-faint: rgba(14, 14, 16, 0.22);
+  --fg-on-dark: var(--cream);
+  --fg-on-dark-dim: rgba(245, 239, 230, 0.65);
+  --fg-on-dark-mute: rgba(245, 239, 230, 0.45);
+
+  /* ---------- lines ---------- */
+  --line: rgba(14, 14, 16, 0.10);
+  --line-strong: rgba(14, 14, 16, 0.22);
+  --line-on-dark: rgba(245, 239, 230, 0.12);
+
+  /* ---------- quality scale (domain) ---------- */
+  --q1: #E05A3C; /* avoid */
+  --q2: #F0A03C; /* rough */
+  --q3: #E8D66A; /* ok */
+  --q4: #C7D36A; /* great */
+  --q5: #6FD38A; /* hero */
+
+  /* ---------- type families ---------- */
+  --font-sans: 'Space Grotesk', system-ui, -apple-system, Helvetica, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+  --font-serif: 'Fraunces', Georgia, serif;
+
+  /* ---------- spacing (4pt grid) ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-30: 120px;
+
+  /* ---------- radii ---------- */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-device: 38px;
+  --r-pill: 999px;
+
+  /* ---------- shadow (sparse) ---------- */
+  --shadow-card: 0 8px 24px rgba(14, 14, 16, 0.08);
+  --shadow-lift: 0 24px 60px rgba(14, 14, 16, 0.2);
+  --shadow-device: 0 40px 80px -20px rgba(14, 14, 16, 0.4), 0 0 0 2px rgba(14, 14, 16, 0.9);
+}
+
+/* ==========================================================================
+   Semantic type styles
+   ========================================================================== */
+
+.ty-display {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 108px;
+  line-height: 0.94;
+  letter-spacing: -3px;
+}
+
+.ty-h1 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 64px;
+  line-height: 1;
+  letter-spacing: -1.8px;
+}
+
+.ty-h2 {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: -0.6px;
+}
+
+.ty-h3 {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.3px;
+}
+
+.ty-body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.ty-body-lg {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.ty-small {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ty-mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.ty-stamp {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.ty-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ==========================================================================
+   Semantic element base (optional, opt-in by class)
+   ========================================================================== */
+
+.tarmoto {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tarmoto h1 { @extend .ty-h1; }
+.tarmoto h2 { @extend .ty-h2; }
+.tarmoto h3 { @extend .ty-h3; }
+.tarmoto code, .tarmoto .mono { font-family: var(--font-mono); }

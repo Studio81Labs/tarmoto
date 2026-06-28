@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { initialsFromName } from "@tarmoto/shared";
 import { borderRadius, colors, fontWeight } from "@/theme";
+import { brandColorsLight, brandFontWeight } from "@/theme/brand";
 
 // Re-exported for the Avatar test file and any caller that prefers the
 // component-local import. The implementation lives in `@tarmoto/shared`
@@ -20,10 +21,23 @@ interface AvatarProps {
   name: string;
   size?: number;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Render on a light brand surface (cream/white card). Default: legacy dark.
+   * Shared with still-legacy callers (ViewProfileScreen, FollowList), so the
+   * default must stay the dark-theme look.
+   */
+  light?: boolean;
 }
 
-export default function Avatar({ uri, name, size = 64, style }: AvatarProps) {
+export default function Avatar({
+  uri,
+  name,
+  size = 64,
+  style,
+  light = false,
+}: AvatarProps) {
   const dim = { width: size, height: size, borderRadius: size / 2 };
+  const styles = light ? brandStyles : legacyStyles;
   if (uri) {
     // `Image` only accepts `ImageStyle`. The optional `style` prop is
     // typed as `ViewStyle` for the View fallback below; flatten and
@@ -49,7 +63,10 @@ export default function Avatar({ uri, name, size = 64, style }: AvatarProps) {
   );
 }
 
-const styles = StyleSheet.create({
+// Legacy dark-surface styling — unchanged from the pre-brand component so
+// callers still on the dark theme (ViewProfileScreen, FollowList) render
+// exactly as before.
+const legacyStyles = StyleSheet.create({
   image: {
     backgroundColor: colors.bgCard,
   },
@@ -64,5 +81,25 @@ const styles = StyleSheet.create({
   initials: {
     color: colors.primary,
     fontWeight: fontWeight.bold,
+  },
+});
+
+// Brand light-surface styling (cream/white card). Ink initials on a cream
+// tint read clearly without leaning on the accent (kept <5% of pixels).
+const brandStyles = StyleSheet.create({
+  image: {
+    backgroundColor: brandColorsLight.raised2,
+  },
+  fallback: {
+    backgroundColor: brandColorsLight.raised2,
+    borderWidth: 1,
+    borderColor: brandColorsLight.lineStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+  },
+  initials: {
+    color: brandColorsLight.fg,
+    fontWeight: brandFontWeight.bold,
   },
 });
