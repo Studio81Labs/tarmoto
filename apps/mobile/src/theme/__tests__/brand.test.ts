@@ -1,5 +1,6 @@
 import {
   ACCENT,
+  ACCENT_DARK,
   brandColorsDark,
   brandColorsLight,
   brandPalette,
@@ -128,6 +129,16 @@ describe("statusFg", () => {
     expect(
       contrastRatio(color, brandColorsLight.raised2),
     ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("ACCENT_DARK clears 3:1 as a fill on the sunken track where raw accent fails", () => {
+    // The active-download progress fill is a graphical object on the cream
+    // `sunken` track, so it must clear the 3:1 non-text contrast floor. The
+    // raw accent does not on this surface — that's why ACCENT_DARK exists.
+    expect(
+      contrastRatio(ACCENT_DARK, brandColorsLight.sunken),
+    ).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(ACCENT, brandColorsLight.sunken)).toBeLessThan(3);
   });
 
   it("the raw quality ramp would fail as foreground text on white", () => {

@@ -35,6 +35,7 @@ type IconName = ComponentProps<typeof Icon>["name"];
 import { regionProgress, useMapStore } from "@/stores";
 import { useOfflineRegions } from "@/hooks";
 import {
+  ACCENT_DARK,
   brandColorsLight,
   brandFonts,
   brandRadii,
@@ -80,11 +81,14 @@ const STATUS_TEXT: Record<OfflineRegion["status"], string> = {
   cancelled: statusFg.warning,
 };
 
-// Progress-bar fill (graphical, >=3:1 against the track). Accent marks the
-// one active download; terminal states reuse their status colour.
+// Progress-bar fill (graphical, >=3:1 against the `sunken` track). The
+// deepened accent marks the one active download — the raw accent only reaches
+// ~2.1:1 on the cream track, so `ACCENT_DARK` carries the same "active" read
+// while clearing the non-text contrast floor. Terminal states reuse their
+// (already AA-safe) status colour.
 const STATUS_FILL: Record<OfflineRegion["status"], string> = {
   pending: t.faint,
-  downloading: t.accent,
+  downloading: ACCENT_DARK,
   complete: statusFg.success,
   failed: statusFg.danger,
   cancelled: statusFg.warning,

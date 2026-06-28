@@ -51,6 +51,18 @@ export const QUALITY_FULL_LABELS = [
 export const ACCENT = "#FF6A1A";
 
 /**
+ * Deepened accent for small graphical fills on the cream sunken track.
+ *
+ * The raw `ACCENT` (#FF6A1A) is tuned for ink/cream surfaces but only reaches
+ * ~2.1:1 against the `sunken` (#E7DECF) progress track — below the 3:1 WCAG
+ * non-text contrast floor for graphical objects. This burnt-orange keeps the
+ * "active" accent read while clearing 3:1 against `sunken`. Use it for accent
+ * fills painted on the cream sunken surface (e.g. the active download bar),
+ * not for the broad accent surfaces that already pass on ink/cream.
+ */
+export const ACCENT_DARK = "#C2410C";
+
+/**
  * Type families. These are the *intended* families; the `.ttf` assets are
  * not bundled yet, so until the font-linking follow-up lands, text falls
  * back to the platform sans/mono and relies on `weight` for emphasis.
