@@ -253,7 +253,7 @@ function HomeNavigator() {
       <HomeStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: "Ride Details" }}
       />
     </HomeStack.Navigator>
   );
@@ -301,7 +301,7 @@ function RideNavigator() {
       <RideStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: "Ride Details" }}
       />
       <RideStack.Screen
         name="HazardReport"
