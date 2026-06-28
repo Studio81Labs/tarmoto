@@ -414,7 +414,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
-        options={{ title: "Emergency contacts" }}
+        options={{ ...brandScreenOptions, title: "Emergency contacts" }}
       />
       <ProfileStack.Screen
         name="Achievements"
