@@ -5,6 +5,7 @@ import {
   IsString,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export const FEATURE_FLAG_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -22,7 +23,7 @@ export class CreateFeatureFlagDto {
   key!: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((o: CreateFeatureFlagDto) => o.enabled !== undefined)
   @IsBoolean()
   enabled?: boolean;
 
@@ -35,7 +36,7 @@ export class CreateFeatureFlagDto {
 
 export class UpdateFeatureFlagDto {
   @ApiPropertyOptional({ description: 'Toggle the flag.' })
-  @IsOptional()
+  @ValidateIf((o: UpdateFeatureFlagDto) => o.enabled !== undefined)
   @IsBoolean()
   enabled?: boolean;
 

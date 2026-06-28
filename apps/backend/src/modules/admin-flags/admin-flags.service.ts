@@ -51,7 +51,7 @@ export class AdminFlagsService {
     if (!existing) throw new NotFoundException('Flag not found');
 
     const patch: Partial<FeatureFlag> = {};
-    if (dto.enabled !== undefined) patch.enabled = dto.enabled;
+    if (typeof dto.enabled === 'boolean') patch.enabled = dto.enabled;
     if (dto.description !== undefined) patch.description = dto.description;
     if (Object.keys(patch).length > 0) {
       await this.flags.update({ id }, patch);
