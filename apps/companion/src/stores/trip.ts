@@ -379,26 +379,30 @@ function activePlannerSaveWaypoints(
  * the per-day start→end validation and routes to the overnight location.
  */
 export function normalizeDayFinish(waypoints: Waypoint[]): Waypoint[] {
-  if (waypoints.some((w) => w.type === "end")) return waypoints;
   const lastIdx = waypoints.length - 1;
-  if (waypoints[lastIdx]?.type === "accommodation") {
-    return waypoints.map((w, i) => (i === lastIdx ? { ...w, type: "end" } : w));
-  }
-  return waypoints;
+  // A terminal accommodation IS the day's finish — even when an earlier explicit
+  // `end` exists (a stay added after the end). Re-type the terminal stay to
+  // `end` and demote any pre-existing end to a via, so the day keeps exactly one
+  // finish and the backend routes to the overnight stop.
+  if (waypoints[lastIdx]?.type !== "accommodation") return waypoints;
+  return waypoints.map((w, i) => {
+    if (i === lastIdx) return { ...w, type: "end" };
+    if (w.type === "end") return { ...w, type: "via" };
+    return w;
+  });
 }
 
 /**
- * The waypoint that finishes a day's route: its explicit `end`, or — for a
- * generated overnight day with no explicit end — its terminal `accommodation`.
- * Returns `undefined` when the day has no finish yet. Use this anywhere a
- * predecessor's end coordinates drive linked-start sync so generated
- * (accommodation-terminated) days behave like `end`-terminated ones.
+ * The waypoint that finishes a day's route: a TERMINAL `accommodation` (a
+ * generated overnight, or a stay added after an explicit end) takes precedence,
+ * otherwise the explicit `end`. Returns `undefined` when the day has no finish.
+ * Use this anywhere a predecessor's finish coordinates drive linked-start sync
+ * so accommodation-terminated days behave like `end`-terminated ones.
  */
 export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
-  const end = waypoints.find((w) => w.type === "end");
-  if (end) return end;
   const last = waypoints[waypoints.length - 1];
-  return last?.type === "accommodation" ? last : undefined;
+  if (last?.type === "accommodation") return last;
+  return waypoints.find((w) => w.type === "end");
 }
 
 /**

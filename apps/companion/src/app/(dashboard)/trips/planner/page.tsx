@@ -676,10 +676,7 @@ export default function TripPlannerPage() {
     (d: TripDay): "empty" | "incomplete" | "complete" => {
       if (d.waypoints.length === 0) return "empty";
       const hasStart = d.waypoints.some((w) => w.type === "start");
-      const last = d.waypoints[d.waypoints.length - 1];
-      const hasFinish =
-        d.waypoints.some((w) => w.type === "end") ||
-        last?.type === "accommodation";
+      const hasFinish = !!dayFinishWaypoint(d.waypoints);
       return hasStart && hasFinish && d.waypoints.length >= 2
         ? "complete"
         : "incomplete";

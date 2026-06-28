@@ -625,7 +625,9 @@ export class TripsService {
               sequence: idx,
               location: latLngToPoint({ lat: w.lat, lng: w.lng }),
               name: w.name ?? null,
-              waypoint_type: w.waypoint_type,
+              // Persist backend vocabulary so the companion remaps stays on
+              // reload (a raw `accommodation` would fall through to `via`).
+              waypoint_type: canonicalSnapshotWaypointType(w.waypoint_type),
             }),
           );
           await manager.save(rows);
@@ -1662,6 +1664,19 @@ function snapshotDayFinish(
   if (end) return end;
   const last = waypoints[waypoints.length - 1];
   return last?.waypoint_type === 'accommodation' ? last : undefined;
+}
+
+/**
+ * Snapshots carry companion-local stop vocabulary (`accommodation`, `rest`),
+ * but persisted rows and `TripWaypointDto`/`tripFromDetail` speak the backend
+ * vocabulary (`hotel`, `coffee`). Canonicalize stay/rest types on import so a
+ * reloaded shared trip maps the overnight back to a stay (not `via`) — which
+ * also keeps the `start_linked` boundary intact. Shared types pass through.
+ */
+function canonicalSnapshotWaypointType(type: BuiltWaypointType): string {
+  if (type === 'accommodation') return 'hotel';
+  if (type === 'rest') return 'coffee';
+  return type;
 }
 
 const SAME_POINT_EPSILON = 1e-5;

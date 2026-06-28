@@ -983,17 +983,17 @@ describe('TripsService', () => {
       expect(day3Coords[2]).toEqual([10.6, 46.5]);
 
       // Each saved day gets its OWN waypoints — the rich type vocabulary
-      // (rest, accommodation, photo, fuel, start, end) all survives. The
-      // legacy `/trips/import` path drops `accommodation` entirely
-      // because its DTO doesn't accept the type — this assertion guards
-      // the regression.
+      // survives, canonicalized to the BACKEND vocabulary so the companion
+      // remaps stays on reload: snapshot `rest`→`coffee`, `accommodation`→
+      // `hotel` (a raw `accommodation` would fall through to `via`). The legacy
+      // `/trips/import` path drops stays entirely — this guards the regression.
       const wpByDay = waypointBodiesByDayId();
       const allTypes = Array.from(wpByDay.values())
         .flat()
         .map((w) => w.waypoint_type);
       expect(allTypes).toContain('start');
-      expect(allTypes).toContain('rest');
-      expect(allTypes).toContain('accommodation');
+      expect(allTypes).toContain('coffee'); // snapshot `rest` canonicalized
+      expect(allTypes).toContain('hotel'); // snapshot `accommodation` canonicalized
       expect(allTypes).toContain('photo');
       expect(allTypes).toContain('fuel');
       expect(allTypes).toContain('end');
