@@ -30,6 +30,7 @@ export function UsersScreen() {
   const [page, setPage] = useState(1);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isPending, error, refetch } = useAdminUsersList({
     q: q || undefined,
@@ -111,7 +112,16 @@ export function UsersScreen() {
                 restoreMutation.mutate(
                   { params: { path: { id: row.id } } },
                   {
-                    onSuccess: () => void refetch(),
+                    onSuccess: () => {
+                      setActionError(null);
+                      void refetch();
+                    },
+                    onError: (err: unknown) => {
+                      const serverMsg = (
+                        err as { message?: string } | undefined
+                      )?.message;
+                      setActionError(serverMsg ?? "Failed to restore user.");
+                    },
                     onSettled: () => setPendingId(null),
                   },
                 );
@@ -129,7 +139,18 @@ export function UsersScreen() {
                 deleteMutation.mutate(
                   { params: { path: { id: row.id } } },
                   {
-                    onSuccess: () => void refetch(),
+                    onSuccess: () => {
+                      setActionError(null);
+                      void refetch();
+                    },
+                    onError: (err: unknown) => {
+                      const serverMsg = (
+                        err as { message?: string } | undefined
+                      )?.message;
+                      setActionError(
+                        serverMsg ?? "Failed to soft-delete user.",
+                      );
+                    },
                     onSettled: () => setPendingId(null),
                   },
                 );
@@ -148,6 +169,9 @@ export function UsersScreen() {
       <PageHeader title="Users" />
       {error ? (
         <Alert intent="danger" title="Failed to load users." className="mb-4" />
+      ) : null}
+      {actionError ? (
+        <Alert intent="danger" title={actionError} className="mb-4" compact />
       ) : null}
       <div className="mb-4 flex flex-wrap gap-3">
         <Input

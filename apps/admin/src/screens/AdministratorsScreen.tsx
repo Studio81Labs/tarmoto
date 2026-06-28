@@ -15,17 +15,11 @@ import {
   useCreateAdmin,
   usePatchAdmin,
 } from "../data/useAdminAdmins.js";
+import { ROLE_RANK } from "../lib/roleRank.js";
 
 type AdminRow = components["schemas"]["AdminRowDto"];
 type AdminRoleType = AdminRow["role"];
 type AdminMode = "password" | "sso-only";
-
-const ROLE_RANK: Record<AdminRoleType, number> = {
-  read_only: 1,
-  support: 2,
-  admin: 3,
-  super_admin: 4,
-};
 
 const ALL_ROLES: AdminRoleType[] = [
   "read_only",

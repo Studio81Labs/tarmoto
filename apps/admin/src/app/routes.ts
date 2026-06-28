@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import type { AdminRole } from "../auth/adminAuthApi.js";
 
 export interface AdminRoute {
   key: string;
   label: string;
+  /** Minimum role required to view this route. Undefined = accessible to all authenticated admins. */
+  minRole?: AdminRole;
 }
 
 export const routes: AdminRoute[] = [
-  { key: "overview", label: "Overview" },
-  { key: "users", label: "Users" },
-  { key: "administrators", label: "Administrators" },
+  { key: "overview", label: "Overview", minRole: "read_only" },
+  { key: "users", label: "Users", minRole: "support" },
+  { key: "administrators", label: "Administrators", minRole: "admin" },
   { key: "feature-flags", label: "Feature Flags" },
   { key: "content", label: "Content" },
 ];

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { UsersScreen } from "./UsersScreen.js";
 
@@ -106,6 +106,107 @@ describe("UsersScreen", () => {
 
     await options.onSuccess();
     expect(mockRefetch).toHaveBeenCalledOnce();
+  });
+
+  // ── Fix 1: Action error surfacing ─────────────────────────────────────────
+
+  it("shows the server error message in an alert when delete mutation fails", async () => {
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(mockDeleteMutate).toHaveBeenCalledOnce();
+    const [, options] = mockDeleteMutate.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+
+    act(() => {
+      options.onError({
+        statusCode: 403,
+        message: "User cannot be deleted: active subscription.",
+      });
+    });
+
+    expect(
+      screen.getByText("User cannot be deleted: active subscription."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the fallback message when delete mutation fails without a server message", async () => {
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    const [, options] = mockDeleteMutate.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+
+    act(() => {
+      options.onError({ statusCode: 500 });
+    });
+
+    expect(screen.getByText("Failed to soft-delete user.")).toBeInTheDocument();
+  });
+
+  it("shows the server error message in an alert when restore mutation fails", async () => {
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+
+    expect(mockRestoreMutate).toHaveBeenCalledOnce();
+    const [, options] = mockRestoreMutate.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+
+    act(() => {
+      options.onError({
+        statusCode: 404,
+        message: "User not found.",
+      });
+    });
+
+    expect(screen.getByText("User not found.")).toBeInTheDocument();
+  });
+
+  it("clears the action error on a subsequent successful action", async () => {
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    // First: trigger a delete error
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const [, deleteOptions] = mockDeleteMutate.mock.calls[0] as [
+      unknown,
+      {
+        onError: (err: unknown) => void;
+        onSuccess: () => void;
+        onSettled: () => void;
+      },
+    ];
+    act(() => {
+      deleteOptions.onError({ statusCode: 500, message: "Something broke." });
+      // onSettled resets pendingId so the button is no longer in loading state
+      deleteOptions.onSettled();
+    });
+    expect(screen.getByText("Something broke.")).toBeInTheDocument();
+
+    // Second: simulate a successful delete
+    mockDeleteMutate.mockClear();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const [, deleteOptions2] = mockDeleteMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: () => void },
+    ];
+    act(() => {
+      deleteOptions2.onSuccess();
+    });
+
+    expect(screen.queryByText("Something broke.")).not.toBeInTheDocument();
   });
 
   // ── Fix 2: Pagination ──────────────────────────────────────────────────────
