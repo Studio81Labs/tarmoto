@@ -43,15 +43,24 @@ const ROLE_LABEL: Record<AdminRoleType, string> = {
 
 /**
  * Maps a server error from a patch mutation to a user-facing message.
- * Mirrors the status-code discrimination already used by the create handler.
+ * `openapi-react-query` throws the parsed Nest error body
+ * (`{ statusCode, message, error }`), not a `Response` object — so we read
+ * `statusCode`, not `status`. The server `message` is preferred when present.
  */
 function mapPatchError(err: unknown, fallback: string): string {
-  const status = (err as { status?: number })?.status;
-  if (status === 409)
-    return "Cannot make this change: it would remove the last super admin.";
-  if (status === 403)
-    return "Permission denied: you don't have permission to make this change.";
-  return fallback;
+  const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
+  const serverMsg = (err as { message?: string } | undefined)?.message;
+  if (statusCode === 409)
+    return (
+      serverMsg ??
+      "Cannot make this change: it would remove the last super admin."
+    );
+  if (statusCode === 403)
+    return (
+      serverMsg ??
+      "Permission denied: you don't have permission to make this change."
+    );
+  return serverMsg ?? fallback;
 }
 
 /**
@@ -232,13 +241,26 @@ export function AdministratorsScreen({
           void refetch();
         },
         onError: (err: unknown) => {
-          const status = (err as { status?: number })?.status;
-          if (status === 409) {
-            setCreateError("An admin with this email already exists.");
-          } else if (status === 403) {
-            setCreateError("You don't have permission to create this role.");
+          const statusCode = (
+            err as
+              | {
+                  statusCode?: number;
+                }
+              | undefined
+          )?.statusCode;
+          const serverMsg = (err as { message?: string } | undefined)?.message;
+          if (statusCode === 409) {
+            setCreateError(
+              serverMsg ?? "An admin with this email already exists.",
+            );
+          } else if (statusCode === 403) {
+            setCreateError(
+              serverMsg ?? "You don't have permission to create this role.",
+            );
           } else {
-            setCreateError("Failed to create admin. Please try again.");
+            setCreateError(
+              serverMsg ?? "Failed to create admin. Please try again.",
+            );
           }
         },
       },

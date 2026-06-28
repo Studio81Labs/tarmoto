@@ -187,13 +187,19 @@ describe("AdministratorsScreen", () => {
       { onError: (err: unknown) => void },
     ];
 
-    // Simulate a 409 from the server (last super_admin protection).
+    // Simulate the REAL shape thrown by openapi-react-query: the parsed Nest
+    // error body ({ statusCode, message, error }) — NOT a Response object.
     // Wrap in act() because onError calls setPatchError (React state update).
     act(() => {
-      options.onError({ status: 409 });
+      options.onError({
+        statusCode: 409,
+        message:
+          "Cannot make this change: it would remove the last super admin.",
+        error: "Conflict",
+      });
     });
 
-    // Should show the specific 409 message, not the generic fallback
+    // The server message should be surfaced verbatim, not the generic fallback.
     expect(screen.getByText(/last super admin/i)).toBeInTheDocument();
     expect(
       screen.queryByText("Failed to update status."),
@@ -216,10 +222,14 @@ describe("AdministratorsScreen", () => {
       { onError: (err: unknown) => void },
     ];
 
-    // Simulate a 403 from the server (self-lockout / rank violation).
-    // Wrap in act() because onError calls setPatchError (React state update).
+    // Simulate the REAL shape thrown by openapi-react-query.
     act(() => {
-      options.onError({ status: 403 });
+      options.onError({
+        statusCode: 403,
+        message:
+          "Permission denied: you don't have permission to make this change.",
+        error: "Forbidden",
+      });
     });
 
     expect(screen.getByText(/permission denied/i)).toBeInTheDocument();

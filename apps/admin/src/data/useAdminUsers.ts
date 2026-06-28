@@ -3,6 +3,7 @@ import { $api } from "./apiClient.js";
 export function useAdminUsersList(params: {
   q?: string;
   deleted?: "active" | "deleted" | "all";
+  subscription?: string;
   page?: number;
   pageSize?: number;
 }) {
