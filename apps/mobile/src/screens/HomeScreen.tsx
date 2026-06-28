@@ -14,7 +14,13 @@ import {
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { useCommute } from "@/hooks/useCommute";
 import type {
   HomeStackParamList,
@@ -29,6 +35,8 @@ type HomeNav = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, "Home">,
   BottomTabNavigationProp<RootTabParamList>
 >;
+
+const t = brandColorsLight;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
@@ -78,7 +86,7 @@ export default function HomeScreen() {
             accessibilityLabel={`Start commute to ${route.name}`}
           >
             <View style={styles.startIcon}>
-              <Icon name="play-circle" size={24} color={colors.textInverse} />
+              <Icon name="play-circle" size={24} color={t.invFg} />
             </View>
             <View style={styles.cardBody}>
               <Text style={styles.startTitle}>Start commute</Text>
@@ -92,7 +100,7 @@ export default function HomeScreen() {
             <Icon
               name="chevron-right"
               size={22}
-              color={colors.textInverse}
+              color={t.invFg}
               accessibilityElementsHidden
             />
           </TouchableOpacity>
@@ -111,7 +119,7 @@ export default function HomeScreen() {
           }
         >
           <View style={styles.cardIcon}>
-            <Icon name="map-marker-path" size={22} color={colors.primary} />
+            <Icon name="map-marker-path" size={22} color={t.accent} />
           </View>
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle}>Commute check</Text>
@@ -131,7 +139,7 @@ export default function HomeScreen() {
               <Text style={styles.newBadgeText}>{displayCount} NEW</Text>
             </View>
           ) : null}
-          <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+          <Icon name="chevron-right" size={22} color={t.faint} />
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -141,62 +149,72 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 32,
+    fontWeight: "800",
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    minHeight: 64,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
+  // The one-tap hero CTA reads as a solid ink card (primary-action pattern,
+  // matching the migrated Profile / RideDetail buttons) so the accent stays
+  // reserved for small marks (<5% of pixels).
   startCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    minHeight: 64,
+    backgroundColor: t.invBg,
+    borderRadius: brandRadii.md,
   },
   startIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    // Cream tint on the ink card so the play glyph sits in a subtle disc.
+    backgroundColor: "rgba(245, 239, 230, 0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
   startTitle: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   startBody: {
-    color: colors.textInverse,
-    fontSize: fontSize.sm,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     opacity: 0.85,
   },
   cardIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -205,24 +223,28 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "600",
   },
   cardBodyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   newBadge: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 2,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.danger,
+    borderRadius: brandRadii.pill,
+    backgroundColor: statusFg.danger,
   },
   newBadgeText: {
-    color: colors.white,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    // White on the dark danger red clears AA (~6:1) for this small label.
+    color: "#FFFFFF",
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "700",
     letterSpacing: 0.4,
   },
 });

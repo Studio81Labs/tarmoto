@@ -139,7 +139,7 @@ without a clean 1:1 today are noted.
 | Canonical screen (`source/mobile`)         | App screen(s)                                            | Notes                                                                                                                                  |
 | ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                             |
-| `HomeScreen` (map-first / list-first)      | `HomeScreen`, `CommuteScreen`, `MapScreen`               | Commute card, suggested ride, stat strip, nearby roads.                                                                                |
+| `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen`, `MapScreen`            | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` migrated; `CommuteScreen` + `MapScreen` + bottom nav remain.      |
 | `ExplorerScreen` (road quality explorer)   | `MapScreen`, `RoadPreviewScreen`                         | Map + filter chips + segment detail sheet.                                                                                             |
 | `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen`, `TripDayScreen`       | The quick round-trip generator + result is new product surface; align styling.                                                         |
 | `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                                                                             |
@@ -150,10 +150,19 @@ without a clean 1:1 today are noted.
 
 Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
 Emergency contacts ✅ → Offline maps ✅ → Profile ✅ → Post-ride summary ✅ →
-Home → Road explorer → Ride mode → Crash → Planner/Route**. Bottom navigation
-(the brand tab bar with the raised "Start ride" action) is migrated alongside
-the Home phase. `PersonalRoadMapScreen` (grouped with Profile, but with no
-shared `@/components` deps) is a self-contained follow-up.
+Home (in progress) → Road explorer → Ride mode → Crash → Planner/Route**.
+The Home phase is split per surface: **`HomeScreen` ✅** landed first (the
+self-contained two-card entry point); `CommuteScreen`, `MapScreen`, and the
+bottom navigation (the brand tab bar with the raised "Start ride" action)
+follow as their own steps. `PersonalRoadMapScreen` ✅ (grouped with Profile,
+but with no shared `@/components` deps) was a self-contained follow-up.
+
+> **Home note:** `HomeScreen` has no shared `@/components`, no map, no
+> quality visuals, and no stack header (tab root), so it migrated in
+> isolation. The one-tap "Start commute" CTA reads as a solid **ink** card
+> (the primary-action pattern from Profile/RideDetail) rather than an accent
+> fill, keeping the accent reserved for small marks (the commute-check icon);
+> the new-hazard badge uses `statusFg.danger` with white text.
 
 > **Post-ride note:** `RideDetailScreen` (the past-ride summary) is migrated;
 > its shared `RideMetric` label/value atom was made surface-aware (`light?`,
