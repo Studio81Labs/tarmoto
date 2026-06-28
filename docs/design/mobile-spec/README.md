@@ -140,7 +140,7 @@ without a clean 1:1 today are noted.
 | ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                                                           |
 | `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen` ✅, `MapScreen`         | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` + `CommuteScreen` migrated; `MapScreen` + bottom nav remain.                                    |
-| `ExplorerScreen` (road quality explorer)   | `MapScreen` ✅, `RoadPreviewScreen` ✅                   | Map + filter chips + segment detail sheet. Both migrated; the `ReviewFormModal` opened from RoadPreview is a fast follow.                                            |
+| `ExplorerScreen` (road quality explorer)   | `MapScreen` ✅, `RoadPreviewScreen` ✅                   | Map + filter chips + segment detail sheet. Both migrated, plus the `ReviewFormModal` composer opened from RoadPreview. ✅                                            |
 | `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen` ✅, `TripDayScreen`    | The quick round-trip generator + result is new product surface; align styling. `TripsScreen` (Trips-tab list) migrated; `TripCreateScreen` + `TripDayScreen` remain. |
 | `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                                                                                                           |
 | `HazardScreen` (report)                    | `HazardReportScreen` ✅                                  | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                                                     |
@@ -238,8 +238,12 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > AA as text). Hazard severity maps to `statusFg.{danger,warning}` (low →
 > neutral ink); interactive text (review links, write/edit actions) uses the
 > AA-safe `ACCENT_DARK`; the elevation chart line is `ACCENT_DARK`. The
-> `ReviewFormModal` it opens is still legacy (only used here) — a fast follow,
-> not in this PR.
+> `ReviewFormModal` it opens is now migrated too (the fast follow): the
+> review composer (rating selector, note/bike inputs, photo strip, submit/
+> delete) is on cream + ink, with `sunken` text inputs, `ACCENT_DARK` rating
+> stars + interactive accents, an ink submit button, and `statusFg.*` for the
+> delete/error/picker states. Photo-thumbnail overlays keep white glyphs on
+> their dark scrim. It's only used by RoadPreview, so no blast radius.
 
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
