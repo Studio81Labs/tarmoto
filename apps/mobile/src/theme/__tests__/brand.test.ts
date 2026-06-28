@@ -153,6 +153,15 @@ describe("statusFg", () => {
     expect(contrastRatio(UNSCORED_COLOR, "#FFFFFF")).toBeLessThan(3);
   });
 
+  it("ACCENT_DARK is a legible active tint on the white tab bar where raw accent fails", () => {
+    // The bottom tab bar's active tint colours a small (10px) label + icon on
+    // the white bar, so it needs AA for small text (>=4.5:1). The raw accent
+    // is only ~2.9:1 on white; ACCENT_DARK clears it while keeping the accent
+    // identity.
+    expect(contrastRatio(ACCENT_DARK, "#FFFFFF")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(ACCENT, "#FFFFFF")).toBeLessThan(4.5);
+  });
+
   it("an ink glyph clears 3:1 on the accent badge where a cream glyph fails", () => {
     // Interactive glyphs on the accent badge (e.g. the Profile avatar camera
     // affordance) are non-text graphical objects, so they need >=3:1. Ink
