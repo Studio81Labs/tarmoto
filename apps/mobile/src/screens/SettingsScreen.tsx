@@ -20,7 +20,7 @@ import {
   brandFonts,
   brandRadii,
   brandSpacing,
-  QUALITY_COLORS,
+  statusFg,
 } from "@/theme/brand";
 import { Card, Stamp, Toggle } from "@/components/brand";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
@@ -40,12 +40,12 @@ type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
 // Brand palette (Atlas / light). Settings is the first screen migrated onto
 // the cream + ink brand system — see docs/design/mobile-spec/README.md.
-// Semantic quality colours stand in for the legacy status palette:
-// warning -> Q2 amber, success -> Q5 green, danger -> Q1 red.
+// Status text/icons use the accessible `statusFg` tokens (not the quality
+// ramp, whose fills fail WCAG contrast as foreground on the white Card).
 const t = brandColorsLight;
-const WARNING = QUALITY_COLORS[1];
-const SUCCESS = QUALITY_COLORS[4];
-const DANGER = QUALITY_COLORS[0];
+const WARNING = statusFg.warning;
+const SUCCESS = statusFg.success;
+const DANGER = statusFg.danger;
 
 export default function SettingsScreen() {
   const minQuality = usePreferencesStore((s) => s.minQuality);
