@@ -1,7 +1,35 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
+
+// Stub react-native-svg primitives — the jest preset doesn't register the
+// native host views, and these tests only assert props, not pixels.
+jest.mock("react-native-svg", () => {
+  const ReactLib = require("react");
+  const stub = (name: string) => {
+    const C = (props: Record<string, unknown>) =>
+      ReactLib.createElement(name, props, props.children as React.ReactNode);
+    C.displayName = name;
+    return C;
+  };
+  return {
+    __esModule: true,
+    default: stub("Svg"),
+    Svg: stub("Svg"),
+    Path: stub("Path"),
+    Circle: stub("Circle"),
+    Rect: stub("Rect"),
+  };
+});
+
 import { QUALITY_COLORS } from "@/theme/brand";
-import { BrandButton, Chip, Metric, QualityBars, Stamp } from "../index";
+import {
+  BrandButton,
+  BrandIcon,
+  Chip,
+  Metric,
+  QualityBars,
+  Stamp,
+} from "../index";
 
 describe("Stamp", () => {
   it("renders its label", () => {
@@ -97,5 +125,36 @@ describe("QualityBars", () => {
     const empty = colors.filter((c) => c === "#000000");
     expect(filled).toHaveLength(3);
     expect(empty).toHaveLength(2);
+  });
+
+  it("rounds a fractional score so colour and fill count agree", () => {
+    // 3.6 rounds to bucket Q4: four bars filled, all in the Q4 colour.
+    const { toJSON } = render(<QualityBars q={3.6} empty="#000000" />);
+    const colors = barColors(toJSON());
+    expect(colors.filter((c) => c === QUALITY_COLORS[3])).toHaveLength(4);
+    expect(colors.filter((c) => c === "#000000")).toHaveLength(1);
+  });
+});
+
+describe("icon colour injection", () => {
+  // A bare icon with no explicit colour should inherit the control's
+  // resolved label colour (react-native-svg doesn't cascade currentColor).
+  it("BrandButton injects its label colour into a bare icon", () => {
+    // Default ink button -> cream label/icon colour, not black.
+    const { UNSAFE_root } = render(
+      <BrandButton icon={<BrandIcon name="nav" />}>Start</BrandButton>,
+    );
+    const icon = UNSAFE_root.findByType(BrandIcon);
+    expect(icon.props.color).toBe("#F5EFE6");
+  });
+
+  it("does not override an explicit icon colour", () => {
+    const { UNSAFE_root } = render(
+      <BrandButton accent icon={<BrandIcon name="nav" color="#123456" />}>
+        Go
+      </BrandButton>,
+    );
+    const icon = UNSAFE_root.findByType(BrandIcon);
+    expect(icon.props.color).toBe("#123456");
   });
 });

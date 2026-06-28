@@ -74,6 +74,13 @@ export default function BrandButton({
     color = onDark ? "#0E0E10" : t.bg;
   }
 
+  // react-native-svg doesn't cascade text colour into a child icon, so push
+  // the resolved label colour into the leading icon. An explicit `color` on
+  // the icon still wins.
+  const renderedIcon = React.isValidElement<{ color?: string }>(icon)
+    ? React.cloneElement(icon, { color: icon.props.color ?? color })
+    : icon;
+
   return (
     <Pressable
       onPress={onPress}
@@ -94,7 +101,7 @@ export default function BrandButton({
         style,
       ]}
     >
-      {icon ? <View style={styles.icon}>{icon}</View> : null}
+      {renderedIcon ? <View style={styles.icon}>{renderedIcon}</View> : null}
       <Text style={[styles.label, { color, fontSize: FONT_SIZE[size] }]}>
         {children}
       </Text>

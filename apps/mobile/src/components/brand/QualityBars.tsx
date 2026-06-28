@@ -29,7 +29,12 @@ export default function QualityBars({
   empty,
   style,
 }: QualityBarsProps) {
-  const fill = QUALITY_COLORS[qualityIndex(q)];
+  // Derive the colour AND the filled-bar count from the same rounded
+  // bucket so a fractional score (e.g. 3.6) can't show the Q4 colour while
+  // filling only three bars. `qualityIndex` is 0-based; +1 is the count.
+  const bucket = qualityIndex(q);
+  const fill = QUALITY_COLORS[bucket];
+  const filled = bucket + 1;
   const emptyColor = empty ?? brandColorsLight.qEmpty;
   return (
     <View style={[styles.row, { gap }, style]}>
@@ -40,7 +45,7 @@ export default function QualityBars({
             width: size,
             height: size * 1.85,
             borderRadius: 2,
-            backgroundColor: n <= q ? fill : emptyColor,
+            backgroundColor: n <= filled ? fill : emptyColor,
           }}
         />
       ))}

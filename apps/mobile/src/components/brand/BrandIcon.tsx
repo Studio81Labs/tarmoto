@@ -61,7 +61,12 @@ interface BrandIconProps {
 export default function BrandIcon({
   name,
   size = 22,
-  color = "currentColor",
+  // Concrete brand ink, NOT `currentColor`: react-native-svg does not
+  // cascade a parent text colour into the SVG the way web CSS does, so a
+  // `currentColor` default would render as the library's black fallback.
+  // Surfaces that place an icon on a dark/ink fill pass an explicit colour
+  // (and `BrandButton` / `Chip` inject their resolved label colour).
+  color = "#0E0E10",
   sw = 1.8,
   fill = "none",
   style,

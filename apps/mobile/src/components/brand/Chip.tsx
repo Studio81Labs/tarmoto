@@ -59,6 +59,12 @@ export default function Chip({
       ? "#F3EEE6"
       : t.fg;
 
+  // Push the resolved label colour into the leading icon — react-native-svg
+  // doesn't cascade text colour. An explicit `color` on the icon wins.
+  const renderedIcon = React.isValidElement<{ color?: string }>(icon)
+    ? React.cloneElement(icon, { color: icon.props.color ?? color })
+    : icon;
+
   return (
     <Pressable
       onPress={onPress}
@@ -66,7 +72,7 @@ export default function Chip({
       accessibilityState={{ selected: active }}
       style={[styles.chip, { backgroundColor, borderColor }, style]}
     >
-      {icon ? <View style={styles.icon}>{icon}</View> : null}
+      {renderedIcon ? <View style={styles.icon}>{renderedIcon}</View> : null}
       <Text style={[styles.label, { color }]}>{children}</Text>
     </Pressable>
   );
