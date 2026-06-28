@@ -90,14 +90,18 @@ existing screen changes appearance yet:
   `BrandIcon` set — ported 1:1 from `mobile/tokens.jsx` to React Native +
   `react-native-svg`.
 
-### Fonts — follow-up required
+### Fonts — source vendored, linking deferred
 
-Space Grotesk and JetBrains Mono `.ttf` files are **not yet bundled**.
-`brand.ts` references the intended family names, but until a follow-up adds
-the font assets and wires them through `react-native.config.js` (+ a native
-rebuild), text falls back to the platform sans/mono and relies on font
-weight for emphasis. Referencing an unregistered family is safe on both
-platforms. Tracked as the first task of Phase 2.
+Space Grotesk and JetBrains Mono (both variable `.ttf`, OFL 1.1) are checked
+in as **source** under
+[`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/), but they
+are **not linked yet** — `brand.ts` still uses placeholder family names and
+text falls back to the platform sans/mono. Linking them correctly needs
+static-weight instancing, Android filename-based resolution, committed native
+build artifacts, and on-device validation — none of which can be done/verified
+in a headless environment. The fonts
+[README](../../../apps/mobile/assets/fonts/README.md) documents the full
+dev-machine procedure. Tracked as a Phase 2 follow-up.
 
 ## Migration plan
 
@@ -112,7 +116,10 @@ screen migrated yet.
 
 ### Phase 2 — Fonts + first screen
 
-1. Bundle Space Grotesk + JetBrains Mono and wire asset linking.
+1. Bundle Space Grotesk + JetBrains Mono. **Source vendored** under
+   `apps/mobile/assets/fonts/` (this PR); actual linking (static-weight
+   instancing, Android filename resolution, committed native artifacts,
+   device validation) is a dev-machine follow-up — see the fonts README.
 2. Migrate **Settings** (`SettingsScreen`) — the narrowest surface (stamp +
    row list + toggles), a clean first proof of the system end-to-end.
 
