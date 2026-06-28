@@ -844,6 +844,39 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(wps[2]!.location).toEqual({ lng: 9, lat: 9 });
   });
 
+  it("reorderWaypoints cascades a finish change into the linked successor", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // [start, end(2,2)]
+    s.addWaypoint(0, {
+      id: "stay-1",
+      name: "Hotel",
+      type: "accommodation", // [start, end, accommodation(3,3)] — finish = (3,3)
+      location: { lng: 3, lat: 3 },
+    });
+    s.addDay(); // day 2 linked, seeded from the finish (3,3)
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!
+        .location,
+    ).toEqual({ lng: 3, lat: 3 });
+
+    // Drag the accommodation BEFORE the end → the finish reverts to (2,2).
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 1 });
+    s.reorderWaypoints(0, 2, 1);
+    expect(
+      useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type),
+    ).toEqual(["start", "accommodation", "end"]);
+
+    // The linked day 2 start re-seeds to the new finish (2,2) and goes stale.
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+    expect(day2Start.location).toEqual({ lng: 2, lat: 2 });
+    expect(useTripStore.getState().stalePreviewDays).toContain(2);
+  });
+
   it("adding a stay after an explicit end re-seeds the linked successor to the stay", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

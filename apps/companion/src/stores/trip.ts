@@ -749,8 +749,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -770,13 +770,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        });
+        if (committed === state) return state;
+        // Cascade through the shared post-commit sync: reordering can change the
+        // day's effective finish (e.g. dragging a terminal accommodation before
+        // the explicit end), which must re-seed AND re-stale the linked
+        // successor's start — otherwise Save persists a broken boundary.
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     undo: () =>
       set((state) => {
