@@ -71,16 +71,16 @@ import {
 } from "@/services/offlineTileLookup";
 import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
+// `colors` + the quality ramp helpers are kept because the legend swatches
+// must mirror the MapLibre overlay colours (which still use the legacy ramp
+// from `MapScreen.helpers`); only the overlay CHROME is re-skinned here.
+import { colors, qualityColor, qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  shadows,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+} from "@/theme/brand";
 import {
   applyHazardAlert,
   bboxFromVisibleBounds,
@@ -108,9 +108,20 @@ type IconName = ComponentProps<typeof Icon>["name"];
 // measured via `onLayout` and fed to both. This fallback is only used
 // before the first layout pass.
 const QUALITY_LEGEND_FALLBACK_HEIGHT = 76;
-const FUN_ZONE_CARD_PASSES_OFFSET = 60 + spacing.sm;
+const FUN_ZONE_CARD_PASSES_OFFSET = 60 + brandSpacing.s2;
 
 type MapNav = NativeStackNavigationProp<MapStackParamList, "Map">;
+
+const t = brandColorsLight;
+// Overlay chrome floats over the map tiles, so it follows the dark-overlay
+// pattern (ink pills + cream labels) rather than cream cards — the ramp
+// swatches and accent then pop against the ink at >=6:1.
+const INK_PILL = "rgba(14,14,16,0.85)";
+const INK_CARD = "rgba(14,14,16,0.92)";
+const ON_DARK = t.invFg;
+const ON_DARK_DIM = "rgba(245,239,230,0.66)";
+const ON_DARK_FAINT = "rgba(245,239,230,0.40)";
+const HAIRLINE_ON_DARK = "rgba(245,239,230,0.15)";
 
 export default function MapScreen() {
   const navigation = useNavigation<MapNav>();
@@ -604,11 +615,7 @@ function ToggleFab({
       accessibilityLabel={`${active ? "Hide" : "Show"} ${label.toLowerCase()} overlay`}
       accessibilityState={{ selected: active }}
     >
-      <Icon
-        name={icon}
-        size={20}
-        color={active ? colors.textInverse : colors.textPrimary}
-      />
+      <Icon name={icon} size={20} color={active ? t.fg : ON_DARK} />
       <Text
         style={[styles.toggleLabel, active ? styles.toggleLabelActive : null]}
       >
@@ -656,7 +663,7 @@ function QualityLegend({
         {buckets.map((b) => (
           <LegendSwatch
             key={b.label}
-            color={b.score < minQuality ? colors.textTertiary : b.color}
+            color={b.score < minQuality ? ON_DARK_FAINT : b.color}
             label={b.label}
             dimmed={b.score < minQuality}
           />
@@ -664,11 +671,7 @@ function QualityLegend({
       </View>
       {offlineRegionName ? (
         <View style={styles.legendOfflineRow}>
-          <Icon
-            name="cloud-check-outline"
-            size={12}
-            color={colors.textSecondary}
-          />
+          <Icon name="cloud-check-outline" size={12} color={ON_DARK_DIM} />
           <Text style={styles.legendOfflineText} numberOfLines={1}>
             Offline tiles · {offlineRegionName}
           </Text>
@@ -707,7 +710,7 @@ function PassesLegend({
   // legends never kiss. Falls back to the default bottom from
   // `styles.legend` when quality is hidden.
   const stackedStyle = stacked
-    ? { bottom: spacing.xl + qualityLegendHeight + spacing.sm }
+    ? { bottom: brandSpacing.s5 + qualityLegendHeight + brandSpacing.s2 }
     : null;
   return (
     <View style={[styles.legend, stackedStyle]}>
@@ -742,7 +745,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
   return (
     <View style={styles.funZonesLegend}>
-      <Icon name="fire" size={16} color={colors.primary} />
+      <Icon name="fire" size={16} color={t.accent} />
       <Text style={styles.funZonesLegendTitle}>
         {zoneCount > 0
           ? `${zoneCount} fun zone${zoneCount === 1 ? "" : "s"} · tap to open`
@@ -805,9 +808,9 @@ function FunZoneCard({
   // is measured (it grows when the offline row is active); passes legend
   // is still an approximate fixed height since its content never changes.
   const stackOffset =
-    (hasQualityLegend ? qualityLegendHeight + spacing.sm : 0) +
+    (hasQualityLegend ? qualityLegendHeight + brandSpacing.s2 : 0) +
     (hasPassesLegend ? FUN_ZONE_CARD_PASSES_OFFSET : 0);
-  const bottom = spacing.xl + stackOffset;
+  const bottom = brandSpacing.s5 + stackOffset;
   const title = zone.name?.trim() || "Fun zone";
   const curveKm =
     zone.total_curve_km != null ? formatKm(zone.total_curve_km) : null;
@@ -838,7 +841,7 @@ function FunZoneCard({
           accessibilityLabel="Close fun zone details"
           hitSlop={10}
         >
-          <Icon name="close" size={20} color={colors.textSecondary} />
+          <Icon name="close" size={20} color={ON_DARK_DIM} />
         </TouchableOpacity>
       </View>
       <View style={styles.funZoneStatsRow}>
@@ -871,52 +874,52 @@ function formatSeason(season: string): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   map: {
     flex: 1,
   },
   fabColumn: {
     position: "absolute",
-    top: spacing.xl,
-    right: spacing.lg,
-    gap: spacing.sm,
+    top: brandSpacing.s5,
+    right: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   toggleFab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s4,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: INK_PILL,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: HAIRLINE_ON_DARK,
   },
   toggleFabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: t.accent,
+    borderColor: t.accent,
   },
   toggleLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: ON_DARK,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
   },
   toggleLabelActive: {
-    color: colors.textInverse,
+    color: t.fg,
   },
   legend: {
     position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    bottom: brandSpacing.s5,
+    left: brandSpacing.s4,
+    right: brandSpacing.s4,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: INK_PILL,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: HAIRLINE_ON_DARK,
   },
   dot: {
     width: 10,
@@ -927,26 +930,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   legendTitle: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: ON_DARK,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+    marginBottom: brandSpacing.s2,
   },
   legendSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   legendRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   swatchRow: {
     flexDirection: "row",
@@ -962,22 +967,24 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   swatchLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   legendOfflineRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
+    marginTop: brandSpacing.s2,
+    paddingTop: brandSpacing.s2,
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
+    borderTopColor: HAIRLINE_ON_DARK,
   },
   legendOfflineText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     flex: 1,
   },
   // Compact pill in the top-left so fun-zones status stays visible without
@@ -985,23 +992,23 @@ const styles = StyleSheet.create({
   // column on the right.
   funZonesLegend: {
     position: "absolute",
-    top: spacing.xl,
-    left: spacing.lg,
+    top: brandSpacing.s5,
+    left: brandSpacing.s4,
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: INK_PILL,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: HAIRLINE_ON_DARK,
   },
   funZonesLegendTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: ON_DARK,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   funZonesLegendGradient: {
     flexDirection: "row",
@@ -1019,34 +1026,35 @@ const styles = StyleSheet.create({
     // inline override lands (e.g. in a future context that doesn't pass
     // the legend flags).
     position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    bottom: brandSpacing.s5,
+    left: brandSpacing.s4,
+    right: brandSpacing.s4,
+    padding: brandSpacing.s4,
+    borderRadius: brandRadii.md,
+    backgroundColor: INK_CARD,
     borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.md,
-    ...shadows.card,
+    borderColor: HAIRLINE_ON_DARK,
+    gap: brandSpacing.s3,
   },
   funZoneCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   funZoneCardHeaderText: {
     flex: 1,
     gap: 2,
   },
   funZoneCardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: ON_DARK,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   funZoneCardSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   funZoneScoreChip: {
     width: 56,
@@ -1055,37 +1063,41 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bgElevated,
+    backgroundColor: "rgba(245,239,230,0.08)",
   },
   funZoneScoreChipValue: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    fontFamily: brandFonts.mono,
+    fontSize: 16,
+    fontWeight: "700",
   },
   funZoneScoreChipLabel: {
-    color: colors.textTertiary,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
     fontSize: 9,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   funZoneStatsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   funZoneStat: {
     flex: 1,
   },
   funZoneStatLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: ON_DARK_DIM,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   funZoneStatValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: ON_DARK,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
     marginTop: 2,
   },
   // Bottom-right thumb-reach for a quick "panic" tap. Offset above the
@@ -1094,7 +1106,7 @@ const styles = StyleSheet.create({
   // the screen edge when no overlay legends are visible.
   hazardFab: {
     position: "absolute",
-    right: spacing.lg,
-    bottom: spacing.xl + 100,
+    right: brandSpacing.s4,
+    bottom: brandSpacing.s5 + 100,
   },
 });
