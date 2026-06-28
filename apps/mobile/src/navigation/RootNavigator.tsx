@@ -434,7 +434,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="PersonalRoadMap"
         component={PersonalRoadMapScreen}
-        options={{ title: "Personal road map" }}
+        options={{ ...brandScreenOptions, title: "Personal road map" }}
       />
     </ProfileStack.Navigator>
   );

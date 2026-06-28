@@ -35,15 +35,15 @@ import type { LineLayerStyle } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+  UNSCORED_COLOR,
+} from "@/theme/brand";
 import type { ExplorationStats, RiddenSegment, UnriddenSegment } from "@/types";
 import {
   DEV_MAP_STYLE_URL,
@@ -63,6 +63,12 @@ import {
 // how MapScreen handles the no-location case (no fix → still mounts a
 // map at a sensible default rather than a black square).
 const DEFAULT_CENTER = { lat: 49.1951, lng: 16.6068 } as const;
+
+const t = brandColorsLight;
+// Dimmed grey for unridden roads on the map + their legend dot. A brand-
+// sympathetic neutral (the "unscored" grey) rather than an ink alpha, so it
+// reads as a real line colour over the map tiles.
+const UNRIDDEN_COLOR = UNSCORED_COLOR;
 
 export default function PersonalRoadMapScreen() {
   const [stats, setStats] = useState<ExplorationStats | null>(null);
@@ -122,7 +128,7 @@ export default function PersonalRoadMapScreen() {
   if (isInitialLoad && stats === null && errorMessage === null) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -130,7 +136,7 @@ export default function PersonalRoadMapScreen() {
   if (errorMessage && stats === null) {
     return (
       <View style={styles.centered}>
-        <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+        <Icon name="wifi-off" size={40} color={t.dim} />
         <Text style={styles.emptyTitle}>Can't load your map</Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
@@ -154,7 +160,7 @@ export default function PersonalRoadMapScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void load(false)}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -197,14 +203,14 @@ export default function PersonalRoadMapScreen() {
           </VectorSource>
         </Map>
         <View style={styles.legend}>
-          <LegendDot color={colors.primary} label="Ridden" />
-          <LegendDot color={colors.textTertiary} label="Not ridden" />
+          <LegendDot color={t.accent} label="Ridden" />
+          <LegendDot color={UNRIDDEN_COLOR} label="Not ridden" />
         </View>
       </View>
 
       {isBrandNew ? (
         <View style={styles.emptyCard}>
-          <Icon name="map-search-outline" size={40} color={colors.primary} />
+          <Icon name="map-search-outline" size={40} color={t.accent} />
           <Text style={styles.emptyTitle}>No rides recorded yet</Text>
           <Text style={styles.emptyBody}>
             Once you complete a ride, the roads you covered will light up here.
@@ -339,11 +345,14 @@ function NearbyUnridden({ segments }: { segments: UnriddenSegment[] }) {
 function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
   const score = segment.quality_score;
   const qualityText = score !== null ? qualityLabel(score) : "Quality pending";
-  const qualityClr = score !== null ? qualityColor(score) : colors.textTertiary;
+  // The quality colour rides on the swatch dot (a graphical object); the
+  // quality text stays `dim` ink because the ramp fails AA as text on the
+  // white card. Quality is never conveyed by colour alone.
+  const dotColor = score !== null ? qualityBrandColor(score) : UNSCORED_COLOR;
 
   return (
     <View style={styles.unriddenRow}>
-      <View style={[styles.qualityDot, { backgroundColor: qualityClr }]} />
+      <View style={[styles.qualityDot, { backgroundColor: dotColor }]} />
       <View style={styles.unriddenBody}>
         <Text style={styles.unriddenName}>
           {segment.road_name ?? "Unnamed road"}
@@ -352,7 +361,7 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
           {formatSegmentLength(segment.length_m)} ·{" "}
           {formatDistanceFromHere(segment.distance_m)} from you
         </Text>
-        <Text style={[styles.unriddenQuality, { color: qualityClr }]}>
+        <Text style={styles.unriddenQuality}>
           {qualityText}
           {segment.surface_type ? ` · ${segment.surface_type}` : ""}
         </Text>
@@ -365,7 +374,8 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
 
 /**
  * Build a `LineLayerStyle` that paints ridden segments in the brand
- * primary and dims unridden segments. Uses a `match` expression on the
+ * accent and dims unridden segments in a neutral grey. Uses a `match`
+ * expression on the
  * feature `id` so we can highlight thousands of segments without
  * mounting a second source. When `riddenIds` is empty, every segment
  * renders dim — that's the brand-new-rider state.
@@ -380,8 +390,8 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
 export function buildPersonalLineStyle(
   riddenIds: readonly string[],
 ): LineLayerStyle {
-  const dimmedColor = colors.textTertiary;
-  const riddenColor = colors.primary;
+  const dimmedColor = UNRIDDEN_COLOR;
+  const riddenColor = t.accent;
 
   // No ridden segments — entire layer renders dim. Avoids the empty-match
   // "match expression must have at least one stop" MapLibre error.
@@ -455,127 +465,138 @@ export const __test = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   emptyInline: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     fontStyle: "italic",
   },
   emptyCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xxl,
+    borderColor: t.line,
+    padding: brandSpacing.s6,
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   statsCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   statCell: {
     flex: 1,
   },
   statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 18,
+    fontWeight: "700",
   },
   statLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
     marginTop: 2,
   },
   periodNote: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   periodRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   periodBtn: {
     flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgCard,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     alignItems: "center",
   },
   periodBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: t.invBg,
+    borderColor: t.invBg,
   },
   periodLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   periodLabelActive: {
-    color: colors.textInverse,
+    color: t.invFg,
   },
   mapWrap: {
     position: "relative",
     height: 320,
-    borderRadius: borderRadius.lg,
+    borderRadius: brandRadii.md,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgSurface,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
   },
   map: {
     flex: 1,
   },
   legend: {
     position: "absolute",
-    bottom: spacing.sm,
-    left: spacing.sm,
+    bottom: brandSpacing.s2,
+    left: brandSpacing.s2,
     flexDirection: "row",
-    gap: spacing.md,
-    backgroundColor: "rgba(7, 10, 16, 0.85)",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s3,
+    backgroundColor: t.raised,
+    borderWidth: 1,
+    borderColor: t.line,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
   },
   legendItem: {
     flexDirection: "row",
@@ -588,34 +609,37 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   altSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   unriddenRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   qualityDot: {
     width: 12,
@@ -628,17 +652,21 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   unriddenName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   unriddenMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   unriddenQuality: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     marginTop: 2,
   },
 });
