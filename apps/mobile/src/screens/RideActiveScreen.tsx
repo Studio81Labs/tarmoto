@@ -45,6 +45,7 @@ import {
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import DeviceInfo from "react-native-device-info";
@@ -124,6 +125,10 @@ export function __resetPendingStartPromiseForTests(): void {
 export default function RideActiveScreen() {
   const { params } = useRoute<RideActiveRoute>();
   const navigation = useNavigation<RideActiveNav>();
+  // The tab bar is hidden on this immersive route, so it no longer reserves
+  // the device bottom inset; pad the HUD so the Stop-ride controls clear the
+  // home indicator.
+  const insets = useSafeAreaInsets();
   useKeepAwake(true);
 
   const currentSpeed = useRideStore((s) => s.currentSpeed);
@@ -533,7 +538,10 @@ export default function RideActiveScreen() {
   const surface = currentQuality?.surface_type ?? null;
 
   return (
-    <View style={styles.container} accessibilityLabel="Active ride HUD">
+    <View
+      style={[styles.container, { paddingBottom: spacing.xl + insets.bottom }]}
+      accessibilityLabel="Active ride HUD"
+    >
       <View style={styles.header}>
         <Icon
           name="record-circle-outline"
