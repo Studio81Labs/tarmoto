@@ -34,6 +34,9 @@ export default function Toggle({
       accessibilityRole="switch"
       accessibilityState={{ checked: on, disabled }}
       accessibilityLabel={accessibilityLabel}
+      // Track is 28px tall; expand the touch box to the design's glove-first
+      // 44px minimum without growing the visual control (matches Chip).
+      hitSlop={TOGGLE_HIT_SLOP}
       style={[
         styles.track,
         {
@@ -47,6 +50,9 @@ export default function Toggle({
     </Pressable>
   );
 }
+
+/** Grows the 28px-tall track's touch box to the 44px glove-first target. */
+const TOGGLE_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 } as const;
 
 const styles = StyleSheet.create({
   track: {

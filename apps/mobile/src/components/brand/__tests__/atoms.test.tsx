@@ -206,6 +206,15 @@ describe("Toggle", () => {
     fireEvent.press(screen.getByRole("switch"));
     expect(onToggle).not.toHaveBeenCalled();
   });
+
+  it("expands the touch target to the glove-first 44px minimum", () => {
+    // 28px track + 8px top/bottom hitSlop clears the 44px target.
+    render(<Toggle on={false} accessibilityLabel="x" />);
+    expect(screen.getByRole("switch").props.hitSlop).toMatchObject({
+      top: 8,
+      bottom: 8,
+    });
+  });
 });
 
 describe("icon colour injection", () => {
