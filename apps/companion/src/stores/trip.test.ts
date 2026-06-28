@@ -754,6 +754,40 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(types).toEqual(["start", "via", "accommodation"]);
   });
 
+  it("addWaypoint cascades a new terminal stay into the linked successor", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    s.addWaypoint(0, {
+      id: "stay-1",
+      name: "Hotel",
+      type: "accommodation", // day 1 finishes at the overnight (2,2)
+      location: { lng: 2, lat: 2 },
+    });
+    s.addDay(); // day 2 linked, start seeded from day 1's overnight (2,2)
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!
+        .location,
+    ).toEqual({ lng: 2, lat: 2 });
+
+    // Add a NEW terminal stay to day 1 — its finish moves to (8,8); the linked
+    // day 2 start must re-seed there and go stale (not keep the old overnight).
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 1 });
+    s.addWaypoint(0, {
+      id: "stay-2",
+      name: "New hotel",
+      type: "accommodation",
+      location: { lng: 8, lat: 8 },
+    });
+
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+    expect(day2Start.location).toEqual({ lng: 8, lat: 8 });
+    expect(useTripStore.getState().stalePreviewDays).toContain(2);
+  });
+
   it("editing a Day 1 via does not re-stale a linked Day 2 (end unchanged)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

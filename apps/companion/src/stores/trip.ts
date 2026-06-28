@@ -565,8 +565,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
 
     addWaypoint: (dayIndex, waypoint) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -581,15 +581,18 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
+        });
+        if (committed === state) return state;
         // Adding a waypoint (e.g. a suggested overnight stay from
-        // TripStopsPanel) is a route edit — mark dirty so Save route enables.
-        routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
-      })),
+        // TripStopsPanel) is a route edit — mark dirty + stale, AND cascade
+        // through syncLinkedStart so adding a terminal accommodation re-seeds
+        // and re-stales the linked successor's start (else Save persists a
+        // boundary the backend will clear for mismatched coordinates).
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
       set((state) => {
