@@ -185,7 +185,9 @@ export function tripSummaryFromWire(
 }
 
 export function tripFromDetail(detail: TripDetailResponse): Trip {
-  const days: TripDay[] = (detail.days ?? []).map((day) => mapDay(day));
+  const days: TripDay[] = (detail.days ?? []).map((day, i, arr) =>
+    mapDay(day, i === arr.length - 1),
+  );
 
   return {
     id: detail.id,
@@ -235,7 +237,7 @@ export function findOwnerId(detail: TripDetailResponse): string | null {
   return detail.members?.find((m) => m.role === "owner")?.user_id ?? null;
 }
 
-function mapDay(day: TripDetailDay): TripDay {
+function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
   const sortedSourceWaypoints = [...(day.waypoints ?? [])].sort(
     (a, b) => a.sequence - b.sequence,
   );
@@ -252,15 +254,26 @@ function mapDay(day: TripDetailDay): TripDay {
   // `hotel` waypoint, and a day shouldn't realistically have more than
   // one — but if a planner adds extras, the latest by sequence wins so
   // we surface the actual end-of-day stay instead of an early stopover.
+  //
+  // After a manual save, the planner normalizes a terminal stay to a routed
+  // `end` (the backend save path requires an explicit end), so a re-saved
+  // generated/overnight leg no longer carries a `hotel`. For a NON-FINAL day,
+  // fall back to the day's `end` — on a multi-day trip that endpoint IS the
+  // overnight boundary. The final day's `end` is the trip finish, not a stay.
   const lastHotel = [...sortedSourceWaypoints]
     .reverse()
     .find((w) => w.waypoint_type === "hotel");
-  const overnightStop: POI | undefined = lastHotel
+  const overnightSource =
+    lastHotel ??
+    (isFinalDay
+      ? undefined
+      : sortedSourceWaypoints.find((w) => w.waypoint_type === "end"));
+  const overnightStop: POI | undefined = overnightSource
     ? {
-        id: lastHotel.id,
-        name: lastHotel.name ?? `Day ${day.day_number} overnight`,
+        id: overnightSource.id,
+        name: overnightSource.name ?? `Day ${day.day_number} overnight`,
         type: "accommodation",
-        location: { lat: lastHotel.lat, lng: lastHotel.lng },
+        location: { lat: overnightSource.lat, lng: overnightSource.lng },
       }
     : undefined;
 
