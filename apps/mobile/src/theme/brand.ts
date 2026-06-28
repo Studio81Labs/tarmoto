@@ -157,6 +157,34 @@ export const UNSCORED_COLOR = "#9C968C";
 export const UNSCORED_LABEL = "Unscored";
 
 /**
+ * Accessible semantic status foreground colours for status **text and icons**
+ * on the light brand surfaces (cream / white `Card`).
+ *
+ * The quality ramp (`QUALITY_COLORS`) is tuned as a *fill* colour for maps and
+ * bars; on a white surface its greens/ambers fall well below WCAG AA for text
+ * (Q5 green ~1.9:1, Q2 amber ~2.1:1). Status messaging uses these darker,
+ * brand-sympathetic shades instead — each clears AA (≥4.5:1) for normal text
+ * on both `#FFFFFF` and the `raised2` cream. Keep the ramp for quality visuals.
+ */
+export const statusFg = {
+  success: "#136B3A",
+  warning: "#8A5300",
+  danger: "#B3261E",
+} as const;
+
+/**
+ * Off-state track for the brand `Toggle`. The design's light overlay
+ * (`rgba(14,14,16,0.16)`) is only ~1.4:1 on a white card and against the
+ * white knob, so an off switch can visually vanish. These are mid-grey
+ * tracks that clear the 3:1 non-text-control contrast against both the
+ * surface and the knob, per theme.
+ */
+export const TOGGLE_OFF_TRACK = {
+  light: "#808080",
+  dark: "rgba(243,238,230,0.45)",
+} as const;
+
+/**
  * Clamp a known quality score to a 1–5 ramp index (0-based). Scores are
  * rounded to the nearest integer bucket, then clamped to `[0, 4]` so the
  * index is always a valid `QUALITY_COLORS` / label position.
