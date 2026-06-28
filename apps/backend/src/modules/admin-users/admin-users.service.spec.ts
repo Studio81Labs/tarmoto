@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { IsNull } from 'typeorm';
 import { AdminUsersService } from './admin-users.service.js';
 
 function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
@@ -94,17 +95,25 @@ describe('AdminUsersService', () => {
     );
   });
 
-  it('softDelete() sets deleted_at + reason', async () => {
+  it('softDelete() sets deleted_at + reason with conditional update on deleted_at IS NULL', async () => {
     const { service, users } = make();
     await service.softDelete('u1');
 
-    const updateCall = {
+    const [criteria, payload] = (users.update as jest.Mock).mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toMatchObject({ id: 'u1' });
+    expect(criteria).toHaveProperty('deleted_at');
+    expect(criteria.deleted_at).toEqual(IsNull());
+
+    expect(payload).toMatchObject({
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       deleted_at: expect.any(Date),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       deletion_reason: expect.any(String),
-    };
-    expect(users.update).toHaveBeenCalledWith({ id: 'u1' }, updateCall);
+    });
+    expect(payload).not.toHaveProperty('deletion_scheduled_at');
   });
 
   it('softDelete() is idempotent — does NOT call update when user is already deleted', async () => {

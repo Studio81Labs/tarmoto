@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
@@ -96,7 +96,7 @@ export class AdminUsersService {
     // deleted_at timestamp rather than overwriting it with a newer value.
     if (u.deleted_at) return;
     await this.users.update(
-      { id },
+      { id, deleted_at: IsNull() },
       { deleted_at: new Date(), deletion_reason: 'Soft-deleted by admin' },
     );
   }
