@@ -669,6 +669,55 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(types).not.toContain("hotel");
   });
 
+  it("markRouteDirty marks an accommodation-terminated day stale", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation", // terminal overnight, no explicit end
+      location: { lng: 2, lat: 2 },
+    });
+    useTripStore.setState({ stalePreviewDays: [] });
+
+    s.markRouteDirty();
+    // start + accommodation has <2 RAW routing points, but normalizing the
+    // overnight finish makes it routable — it must be staled (and re-previewed)
+    // so Save can't persist an unpreviewed reroute for it.
+    expect(useTripStore.getState().stalePreviewDays).toContain(1);
+  });
+
+  it("syncLinkedStart cascades a moved terminal accommodation into the linked successor", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation", // day 1 finishes at the overnight (2,2)
+      location: { lng: 2, lat: 2 },
+    });
+    s.addDay(); // day 2 linked, start seeded from day 1's overnight (2,2)
+    expect(
+      useTripStore
+        .getState()
+        .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!
+        .location,
+    ).toEqual({ lng: 2, lat: 2 });
+
+    // Move day 1's overnight; the linked day 2 start must follow and go stale.
+    const hotel = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "accommodation")!;
+    useTripStore.setState({ stalePreviewDays: [], selectedDayIndex: 0 });
+    s.moveWaypoint(0, hotel.id, { lat: 9, lng: 9 });
+
+    const day2Start = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
+    expect(day2Start.location).toEqual({ lng: 9, lat: 9 });
+    expect(useTripStore.getState().stalePreviewDays).toContain(2);
+  });
+
   it("editing a Day 1 via does not re-stale a linked Day 2 (end unchanged)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

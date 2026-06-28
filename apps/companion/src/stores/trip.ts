@@ -385,6 +385,20 @@ export function normalizeDayFinish(waypoints: Waypoint[]): Waypoint[] {
   return waypoints;
 }
 
+/**
+ * The waypoint that finishes a day's route: its explicit `end`, or — for a
+ * generated overnight day with no explicit end — its terminal `accommodation`.
+ * Returns `undefined` when the day has no finish yet. Use this anywhere a
+ * predecessor's end coordinates drive linked-start sync so generated
+ * (accommodation-terminated) days behave like `end`-terminated ones.
+ */
+export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
+  const end = waypoints.find((w) => w.type === "end");
+  if (end) return end;
+  const last = waypoints[waypoints.length - 1];
+  return last?.type === "accommodation" ? last : undefined;
+}
+
 // ── Task 8: linked-start sync helper ─────────────────────────────────────────
 
 /**
@@ -399,10 +413,12 @@ function syncLinkedStart(
 ): { days: TripDay[]; stale: number[] } {
   const next = days[idx + 1];
   if (!next || !next.startLinked) return { days, stale: staleDays };
-  const end = days[idx].waypoints.find((w) => w.type === "end");
+  // A generated predecessor finishes at a terminal accommodation (overnight),
+  // not an explicit `end` — treat that as the finish so moving it cascades.
+  const end = dayFinishWaypoint(days[idx].waypoints);
   const nextWaypoints = [...next.waypoints];
   const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
-  if (!end) return { days, stale: staleDays }; // no end yet → linked start stays empty
+  if (!end) return { days, stale: staleDays }; // no finish yet → linked start stays empty
   // If the linked start already mirrors the predecessor's end, the edit didn't
   // move the end (e.g. a via/POI change) — don't rewrite or re-stale the
   // successor, or it would sit in stalePreviewDays with unchanged routing
@@ -518,8 +534,15 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // re-routed by the live hook (it bails for <2 routing waypoints), so
         // marking them would leave a stale flag that never clears and wedges
         // the Save gate (which requires stalePreviewDays to be empty).
+        // Normalize a terminal accommodation to its finish first, so generated
+        // overnight days (start + accommodation) are correctly routable and get
+        // re-previewed — otherwise Save could persist an unpreviewed reroute.
         stalePreviewDays: (s.activeTrip?.days ?? [])
-          .filter((d) => filterRoutingWaypoints(d.waypoints).length >= 2)
+          .filter(
+            (d) =>
+              filterRoutingWaypoints(normalizeDayFinish(d.waypoints)).length >=
+              2,
+          )
           .map((d) => d.dayNumber),
       })),
     setDraftPlannerParameters: (parameters) =>
@@ -1062,7 +1085,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const newDay = createEmptyPlannerDay(prev ? prev.dayNumber + 1 : 1);
         if (prev) {
           newDay.startLinked = true;
-          const prevEnd = prev.waypoints.find((w) => w.type === "end");
+          // Seed the linked start from the predecessor's finish — an explicit
+          // `end`, or a terminal accommodation on a generated overnight day.
+          const prevEnd = dayFinishWaypoint(prev.waypoints);
           if (prevEnd)
             newDay.waypoints = [
               {
@@ -1156,9 +1181,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // No predecessor end to mirror → can't form a valid link. Setting
         // startLinked:true would make the map hide this day's start with no
         // shared end drawn, and a later predecessor-finish edit would overwrite
-        // the rider's manual start. Leave the link off until day N-1 has an end.
-        const prevEnd = trip.days[index - 1]?.waypoints.find(
-          (w) => w.type === "end",
+        // the rider's manual start. Leave the link off until day N-1 has a
+        // finish — an explicit `end` or a terminal accommodation (overnight).
+        const prevEnd = dayFinishWaypoint(
+          trip.days[index - 1]?.waypoints ?? [],
         );
         if (!prevEnd) return state;
         const days = trip.days.map((d, i) =>
@@ -1274,7 +1300,9 @@ function updatePlannerDayRoute(
   // UNLESS the set is no longer routable (<2 routing waypoints): the live hook
   // returns early without calling applyRouteResult, so we must clear the stale
   // route-derived fields here or the map/sidebar keep showing the old route.
-  if (filterRoutingWaypoints(waypoints).length < 2) {
+  // Normalize a terminal accommodation first so a generated overnight day
+  // (start + accommodation) counts as routable and keeps its geometry.
+  if (filterRoutingWaypoints(normalizeDayFinish(waypoints)).length < 2) {
     return {
       ...day,
       waypoints,
