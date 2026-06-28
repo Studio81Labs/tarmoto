@@ -112,4 +112,64 @@ describe("App", () => {
     );
     expect(screen.queryByRole("button", { name: /sign in/i })).toBeNull();
   });
+
+  // ── Route gating by role ───────────────────────────────────────────────────
+
+  it("hides the Administrators nav item for the support role", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      id: "s1",
+      email: "support@tarmoto.app",
+      role: "support",
+      status: "active",
+    });
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Overview" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Administrators" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Administrators nav item for the admin role", async () => {
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      id: "a1",
+      email: "ops@tarmoto.app",
+      role: "admin",
+      status: "active",
+    });
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Administrators" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("shows the access-denied fallback when a support user navigates to #/administrators", async () => {
+    window.location.hash = "#/administrators";
+    (
+      adminAuthApi.getCurrentAdmin as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      id: "s1",
+      email: "support@tarmoto.app",
+      role: "support",
+      status: "active",
+    });
+    renderApp();
+    await waitFor(() =>
+      expect(
+        screen.getByText("You don't have access to this section."),
+      ).toBeInTheDocument(),
+    );
+    // AdministratorsScreen must NOT be rendered
+    expect(screen.queryByText("Administrators")).not.toBeInTheDocument();
+    window.location.hash = "";
+  });
 });

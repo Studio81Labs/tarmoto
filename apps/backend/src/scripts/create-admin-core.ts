@@ -4,11 +4,10 @@
  * pattern used by seed-demo-data and cluster-fun-zones).
  */
 
-import { EntityManager, IsNull, In } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { AdminUser, AdminRole } from '../entities/admin-user.entity.js';
-import { AdminSession } from '../entities/admin-session.entity.js';
-import { AdminRefreshToken } from '../entities/admin-refresh-token.entity.js';
 import { hashAdminPassword } from '../modules/admin-auth/admin-password.js';
+import { revokeAdminSessions } from '../modules/admin-auth/admin-session-revoke.js';
 import { CreateAdminOptions } from './create-admin-args.js';
 
 export interface CreateAdminResult {
@@ -16,6 +15,23 @@ export interface CreateAdminResult {
   email: string;
   role: AdminRole;
   sessionsRevoked: boolean;
+}
+
+/**
+ * Thrown by runCreateAdmin when failIfExists=true and the email is already
+ * taken — either because the pre-insert findOne found the row, or because
+ * the INSERT itself hit a unique-violation (Postgres code 23505, the narrow
+ * race where findOne missed but a concurrent INSERT committed first).
+ *
+ * Callers that set failIfExists=true should catch this and convert it to a
+ * 409 ConflictException. The default upsert path (failIfExists=false, used
+ * by the CLI) never throws this error.
+ */
+export class AdminAlreadyExistsError extends Error {
+  constructor(email: string) {
+    super(`Admin with email '${email}' already exists.`);
+    this.name = 'AdminAlreadyExistsError';
+  }
 }
 
 /**
@@ -40,17 +56,25 @@ export interface CreateAdminResult {
  *   password null + not sso-only → leaves password_hash untouched; no revoke
  *     (role/status-only rerun).
  *
- * @param manager   TypeORM EntityManager — gives access to all three tables
- *                  (admin_users, admin_sessions, admin_refresh_tokens).
- * @param options   Parsed CLI options (email must be non-empty and lowercased).
- * @param password  Resolved plaintext password, or null for SSO-only / role-only
- *                  reruns. Never pass an argv value here — the caller must
- *                  resolve it from env / stdin only.
+ * @param manager       TypeORM EntityManager — gives access to all three tables
+ *                      (admin_users, admin_sessions, admin_refresh_tokens).
+ * @param options       Parsed CLI options (email must be non-empty and lowercased).
+ * @param password      Resolved plaintext password, or null for SSO-only /
+ *                      role-only reruns. Never pass an argv value here — the
+ *                      caller must resolve it from env / stdin only.
+ * @param failIfExists  When true, the function is strictly insert-only:
+ *                      - If the pre-insert findOne finds an existing row, it
+ *                        throws AdminAlreadyExistsError instead of updating.
+ *                      - If the INSERT hits a Postgres unique-violation (23505)
+ *                        it also throws AdminAlreadyExistsError.
+ *                      Defaults to false so the CLI retains its upsert
+ *                      behaviour unchanged.
  */
 export async function runCreateAdmin(
   manager: EntityManager,
   options: CreateAdminOptions,
   password: string | null,
+  failIfExists = false,
 ): Promise<CreateAdminResult> {
   if (!options.email) {
     throw new Error('--email is required.');
@@ -72,6 +96,12 @@ export async function runCreateAdmin(
   });
 
   if (existing) {
+    // In insert-only mode (failIfExists=true), an existing row is a conflict:
+    // reject instead of mutating the row via the UPDATE path.
+    if (failIfExists) {
+      throw new AdminAlreadyExistsError(options.email);
+    }
+
     // UPDATE: role + status always; credential only when explicitly provided.
     // Reactivating a disabled admin must also revoke old sessions: InternalGuard
     // only blocks pre-disable sessions while the row is disabled, so flipping it
@@ -96,30 +126,7 @@ export async function runCreateAdmin(
 
     let sessionsRevoked = false;
     if (credentialChanged || reactivated) {
-      const sessionRepo = manager.getRepository(AdminSession);
-      const tokenRepo = manager.getRepository(AdminRefreshToken);
-      const now = new Date();
-
-      // Collect session IDs for this admin before revoking so we can cascade
-      // to refresh tokens (which link via session_id, not admin_user_id).
-      const sessions = await sessionRepo.find({
-        where: { admin_user_id: existing.id },
-        select: { id: true },
-      });
-
-      await sessionRepo.update(
-        { admin_user_id: existing.id, revoked_at: IsNull() },
-        { revoked_at: now },
-      );
-
-      if (sessions.length > 0) {
-        const sessionIds = sessions.map((s) => s.id);
-        await tokenRepo.update(
-          { session_id: In(sessionIds), revoked_at: IsNull() },
-          { revoked_at: now },
-        );
-      }
-
+      await revokeAdminSessions(manager, existing.id);
       sessionsRevoked = true;
     }
 
@@ -152,7 +159,26 @@ export async function runCreateAdmin(
     sso_subject: null,
     last_login_at: null,
   });
-  await adminRepo.save(admin);
+
+  // When in insert-only mode, convert a Postgres unique-violation (23505) from
+  // the INSERT into AdminAlreadyExistsError. This handles the narrow race where
+  // the findOne above returned null but a concurrent INSERT committed between
+  // that read and this save.
+  try {
+    await adminRepo.save(admin);
+  } catch (err: unknown) {
+    if (
+      failIfExists &&
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      err.code === '23505'
+    ) {
+      throw new AdminAlreadyExistsError(options.email);
+    }
+    throw err;
+  }
+
   return {
     created: true,
     email: options.email,
