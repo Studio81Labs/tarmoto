@@ -1,12 +1,13 @@
 import { Heading } from "@tarmoto/ui";
-import { routes } from "../../app/routes.js";
+import type { AdminRoute } from "../../app/routes.js";
 
 interface SidebarProps {
+  routes: AdminRoute[];
   active: string;
   onNavigate: (key: string) => void;
 }
 
-export function Sidebar({ active, onNavigate }: SidebarProps) {
+export function Sidebar({ routes, active, onNavigate }: SidebarProps) {
   return (
     <nav
       className="flex h-full w-56 shrink-0 flex-col border-r border-line bg-cream px-4 py-6"

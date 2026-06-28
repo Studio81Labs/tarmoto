@@ -1,0 +1,197 @@
+import { NotFoundException } from '@nestjs/common';
+import { IsNull } from 'typeorm';
+import { AdminUsersService } from './admin-users.service.js';
+
+function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
+  const qb = {
+    orderBy: jest.fn(),
+    skip: jest.fn(),
+    take: jest.fn(),
+    andWhere: jest.fn(),
+    getManyAndCount: jest.fn().mockResolvedValue(result),
+  };
+  // make chainable
+  qb.orderBy.mockReturnValue(qb);
+  qb.skip.mockReturnValue(qb);
+  qb.take.mockReturnValue(qb);
+  qb.andWhere.mockReturnValue(qb);
+  return qb;
+}
+
+function repo<T extends object>(over: Partial<T> = {}): T {
+  return {
+    createQueryBuilder: jest.fn().mockReturnValue(makeQb()),
+    findOne: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
+    update: jest.fn(),
+    ...over,
+  } as unknown as T;
+}
+
+const SAMPLE_USER = {
+  id: 'u1',
+  email: 'rider@x.io',
+  display_name: 'Rider',
+  subscription_tier: 'free',
+  subscription_status: 'canceled',
+  subscription_current_period_end: null,
+  subscription_cancel_at_period_end: false,
+  home_region: 'CZ',
+  email_verified_at: null,
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  deleted_at: null,
+  deletion_scheduled_at: null,
+  deletion_reason: null,
+};
+
+function make(over: { users?: object } = {}) {
+  const qb = makeQb();
+  const users =
+    over.users ??
+    repo({
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    });
+  const activity = () => repo({ count: jest.fn().mockResolvedValue(3) });
+  const service = new AdminUsersService(
+    users as never,
+    activity() as never, // rides
+    activity() as never, // hazards
+    activity() as never, // reviews
+    activity() as never, // trips
+    activity() as never, // commutes
+  );
+  return { service, users, qb };
+}
+
+describe('AdminUsersService', () => {
+  it('list() returns paginated rows + total', async () => {
+    const { service, users } = make();
+    const res = await service.list({ page: 1, pageSize: 25 });
+    expect(res).toMatchObject({ total: 1, page: 1, pageSize: 25 });
+    expect(res.rows[0]).toMatchObject({ id: 'u1', email: 'rider@x.io' });
+    expect(users.createQueryBuilder).toHaveBeenCalledWith('u');
+  });
+
+  it('getById() includes activity counts', async () => {
+    const { service } = make();
+    const detail = await service.getById('u1');
+    expect(detail.activity).toEqual({
+      rides: 3,
+      hazardReports: 3,
+      roadReviews: 3,
+      trips: 3,
+      commuteRoutes: 3,
+    });
+  });
+
+  it('getById() throws NotFound for unknown id', async () => {
+    const { service } = make({
+      users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+    });
+    await expect(service.getById('nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('softDelete() sets deleted_at + reason with conditional update on deleted_at IS NULL', async () => {
+    const { service, users } = make();
+    await service.softDelete('u1');
+
+    const [criteria, payload] = (users.update as jest.Mock).mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toMatchObject({ id: 'u1' });
+    expect(criteria).toHaveProperty('deleted_at');
+    expect(criteria.deleted_at).toEqual(IsNull());
+
+    expect(payload).toMatchObject({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      deleted_at: expect.any(Date),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      deletion_reason: expect.any(String),
+    });
+    expect(payload).not.toHaveProperty('deletion_scheduled_at');
+  });
+
+  it('softDelete() is idempotent — does NOT call update when user is already deleted', async () => {
+    const alreadyDeleted = {
+      ...SAMPLE_USER,
+      deleted_at: new Date('2026-03-01T00:00:00Z'),
+      deletion_reason: 'Soft-deleted by admin',
+    };
+    const { service, users } = make({
+      users: repo({
+        findOne: jest.fn().mockResolvedValue(alreadyDeleted),
+        update: jest.fn(),
+      }),
+    });
+    await service.softDelete('u1');
+    // update must NOT have been called — the original deleted_at must be preserved.
+    expect(users.update).not.toHaveBeenCalled();
+  });
+
+  it('restore() clears deleted_at + reason', async () => {
+    const { service, users } = make();
+    await service.restore('u1');
+    expect(users.update).toHaveBeenCalledWith(
+      { id: 'u1' },
+      { deleted_at: null, deletion_scheduled_at: null, deletion_reason: null },
+    );
+  });
+
+  it('list() applies deleted filter to each search clause', async () => {
+    const qb = makeQb();
+    const users = repo({
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    });
+    const activity = () => repo({ count: jest.fn().mockResolvedValue(3) });
+    const service = new AdminUsersService(
+      users as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+    );
+
+    await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
+
+    // deleted filter clause applied
+    expect(qb.andWhere).toHaveBeenCalledWith('u.deleted_at IS NULL');
+    // q search clause applied (both email and display_name via OR)
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(u.email ILIKE :q OR u.display_name ILIKE :q)',
+      { q: '%foo%' },
+    );
+  });
+
+  it('list() filters by subscription_tier OR subscription_status when subscription is set', async () => {
+    const qb = makeQb();
+    const users = repo({
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    });
+    const activity = () => repo({ count: jest.fn().mockResolvedValue(0) });
+    const service = new AdminUsersService(
+      users as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+    );
+
+    await service.list({ subscription: 'past_due' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
+      { sub: 'past_due' },
+    );
+  });
+});

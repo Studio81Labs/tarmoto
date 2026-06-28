@@ -208,6 +208,74 @@ describe('InternalGuard', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  // --- gating tests for the mutating admin-admins routes ---
+
+  it('[gating] POST /api/v1/admin/admins is forbidden for support role', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      requiredRoles: ['admin'],
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 100000),
+        admin_user: { id: 'a1', role: 'support', status: 'active' },
+      },
+    });
+    await expect(
+      guard.canActivate(contextFor('POST', '/api/v1/admin/admins', token)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('[gating] PATCH /api/v1/admin/admins/:id is forbidden for support role', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      requiredRoles: ['admin'],
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 100000),
+        admin_user: { id: 'a1', role: 'support', status: 'active' },
+      },
+    });
+    await expect(
+      guard.canActivate(
+        contextFor(
+          'PATCH',
+          '/api/v1/admin/admins/00000000-0000-0000-0000-000000000001',
+          token,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('[gating] POST /api/v1/admin/admins is forbidden for read_only role', async () => {
+    const token = await jwt.signAsync(
+      { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+      { secret: SECRET },
+    );
+    const guard = guardWith({
+      requiredRoles: ['admin'],
+      session: {
+        id: 's1',
+        admin_user_id: 'a1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 100000),
+        admin_user: { id: 'a1', role: 'read_only', status: 'active' },
+      },
+    });
+    await expect(
+      guard.canActivate(contextFor('POST', '/api/v1/admin/admins', token)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   // --- prefixed-path tests (simulate production where setGlobalPrefix applies) ---
 
   it('[prefixed] rejects missing token on a protected admin path — catches the prod auth bypass', async () => {
