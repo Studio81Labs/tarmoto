@@ -65,11 +65,21 @@ describe('AdminFlagsService', () => {
   });
 
   it('update() changes enabled/description and returns the row', async () => {
-    const repo = makeRepo({ findOne: jest.fn().mockResolvedValue(ROW) });
+    const repo = makeRepo({
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(ROW) // existence check
+        .mockResolvedValueOnce({
+          ...ROW,
+          enabled: true,
+          updated_at: new Date('2026-02-02T00:00:00Z'),
+        }), // re-fetch
+    });
     const svc = new AdminFlagsService(repo as never);
     const res = await svc.update('f1', { enabled: true });
     expect(repo.update).toHaveBeenCalledWith({ id: 'f1' }, { enabled: true });
     expect(res.enabled).toBe(true);
+    expect(res.updated_at).toBe(new Date('2026-02-02T00:00:00Z').toISOString());
   });
 
   it('update() throws NotFound for an unknown id', async () => {

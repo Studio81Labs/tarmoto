@@ -56,7 +56,8 @@ export class AdminFlagsService {
     if (Object.keys(patch).length > 0) {
       await this.flags.update({ id }, patch);
     }
-    return this.toDto({ ...existing, ...patch });
+    const updated = await this.flags.findOne({ where: { id } });
+    return this.toDto(updated!);
   }
 
   async remove(id: string): Promise<void> {
