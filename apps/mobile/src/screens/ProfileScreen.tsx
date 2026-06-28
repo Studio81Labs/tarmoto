@@ -256,10 +256,12 @@ export default function ProfileScreen() {
         >
           <Avatar uri={avatarUrl} name={displayName} size={88} light />
           <View style={styles.avatarBadge}>
+            {/* Ink glyph on the accent badge: ~6.7:1, clears the 3:1
+                non-text floor (cream-on-accent was only ~2.5:1). */}
             {avatarUploading ? (
-              <ActivityIndicator size="small" color={t.invFg} />
+              <ActivityIndicator size="small" color={t.fg} />
             ) : (
-              <Icon name="camera-outline" size={16} color={t.invFg} />
+              <Icon name="camera-outline" size={16} color={t.fg} />
             )}
           </View>
         </TouchableOpacity>
