@@ -275,7 +275,11 @@ function MapNavigator() {
       <MapStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
-        options={{ title: "Report Hazard", presentation: "modal" }}
+        options={{
+          ...brandScreenOptions,
+          title: "Report Hazard",
+          presentation: "modal",
+        }}
       />
     </MapStack.Navigator>
   );
@@ -302,7 +306,11 @@ function RideNavigator() {
       <RideStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
-        options={{ title: "Report Hazard", presentation: "modal" }}
+        options={{
+          ...brandScreenOptions,
+          title: "Report Hazard",
+          presentation: "modal",
+        }}
       />
       <RideStack.Screen
         name="GroupRide"
