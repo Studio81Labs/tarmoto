@@ -12,4 +12,16 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(flags, "missing")).toBe(false);
     expect(isFeatureEnabled(flags, "missing", true)).toBe(true);
   });
+
+  it("returns false (not a truthy prototype member) for prototype-collision keys", () => {
+    expect(isFeatureEnabled({}, "toString")).toBe(false);
+    expect(isFeatureEnabled({}, "constructor")).toBe(false);
+    expect(isFeatureEnabled({}, "constructor", true)).toBe(true);
+    expect(isFeatureEnabled({}, "hasOwnProperty")).toBe(false);
+  });
+
+  it("returns the own value when a prototype-named key is explicitly set", () => {
+    const withOwnToString: FeatureFlagMap = { toString: true };
+    expect(isFeatureEnabled(withOwnToString, "toString")).toBe(true);
+  });
 });
