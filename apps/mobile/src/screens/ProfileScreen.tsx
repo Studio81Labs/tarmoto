@@ -30,7 +30,13 @@ import {
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import { capturePhoto } from "@/services/photoCapture";
@@ -44,6 +50,8 @@ import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
 type Phase = "loading" | "ready" | "error";
+
+const t = brandColorsLight;
 
 export default function ProfileScreen() {
   const navigation = useNavigation<ProfileNav>();
@@ -201,7 +209,7 @@ export default function ProfileScreen() {
   if (phase === "loading" && !profile) {
     return (
       <View style={styles.empty}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={t.fg} />
       </View>
     );
   }
@@ -235,7 +243,7 @@ export default function ProfileScreen() {
             setSharedRidesRefreshKey((k) => k + 1);
             void load("refresh");
           }}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -246,16 +254,12 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel="Change avatar"
         >
-          <Avatar uri={avatarUrl} name={displayName} size={88} />
+          <Avatar uri={avatarUrl} name={displayName} size={88} light />
           <View style={styles.avatarBadge}>
             {avatarUploading ? (
-              <ActivityIndicator size="small" color={colors.textInverse} />
+              <ActivityIndicator size="small" color={t.invFg} />
             ) : (
-              <Icon
-                name="camera-outline"
-                size={16}
-                color={colors.textInverse}
-              />
+              <Icon name="camera-outline" size={16} color={t.invFg} />
             )}
           </View>
         </TouchableOpacity>
@@ -266,11 +270,7 @@ export default function ProfileScreen() {
         ) : null}
         {homeRegion ? (
           <View style={styles.metaInline}>
-            <Icon
-              name="map-marker-outline"
-              size={14}
-              color={colors.textSecondary}
-            />
+            <Icon name="map-marker-outline" size={14} color={t.dim} />
             <Text style={styles.metaLine}>{homeRegion}</Text>
           </View>
         ) : null}
@@ -291,6 +291,7 @@ export default function ProfileScreen() {
             })
           }
           accessibilityLabel={`${followerCount} followers, open list`}
+          light
         />
         <StatTile
           label="Following"
@@ -302,12 +303,14 @@ export default function ProfileScreen() {
             })
           }
           accessibilityLabel={`Following ${followingCount} riders, open list`}
+          light
         />
         <StatTile
           label="Badges"
           value={formatCount(earnedBadges.length)}
           onPress={() => navigation.navigate("Achievements")}
           accessibilityLabel={`${earnedBadges.length} badges earned, open achievements`}
+          light
         />
       </View>
 
@@ -316,6 +319,7 @@ export default function ProfileScreen() {
         isSelf
         displayName={displayName}
         refreshKey={sharedRidesRefreshKey}
+        light
       />
 
       <View style={styles.actionsCard}>
@@ -408,7 +412,7 @@ function ActionRow({ icon, label, destructive, onPress }: ActionRowProps) {
       <Icon
         name={icon}
         size={20}
-        color={destructive ? colors.danger : colors.textPrimary}
+        color={destructive ? statusFg.danger : t.fg}
       />
       <Text
         style={[styles.actionLabel, destructive ? styles.actionDanger : null]}
@@ -419,7 +423,7 @@ function ActionRow({ icon, label, destructive, onPress }: ActionRowProps) {
         <Icon
           name="chevron-right"
           size={20}
-          color={colors.textTertiary}
+          color={t.faint}
           style={styles.chevron}
         />
       ) : null}
@@ -428,29 +432,30 @@ function ActionRow({ icon, label, destructive, onPress }: ActionRowProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: t.bg },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   empty: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.lg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   header: {
     alignItems: "center",
-    gap: spacing.sm,
-    paddingTop: spacing.lg,
+    gap: brandSpacing.s2,
+    paddingTop: brandSpacing.s4,
   },
   avatarBadge: {
     position: "absolute",
@@ -459,98 +464,113 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    // The one accent moment on the screen (rule #1: accent sparingly).
+    backgroundColor: t.accent,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: colors.bg,
+    borderColor: t.bg,
   },
   displayName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
-    marginTop: spacing.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
+    marginTop: brandSpacing.s2,
   },
   metaLine: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   metaInline: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   bio: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
-    marginTop: spacing.sm,
+    marginTop: brandSpacing.s2,
     lineHeight: 20,
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   actionsCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
+    overflow: "hidden",
   },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s4,
+    // 44px glove-first hit target (rule: >=44px).
+    minHeight: 52,
+    paddingVertical: brandSpacing.s3,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   actionLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
     flex: 1,
   },
   actionDanger: {
-    color: colors.danger,
+    color: statusFg.danger,
   },
   chevron: {
     marginLeft: "auto",
   },
   errorCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
     alignItems: "center",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   retryButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   retryLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   primaryButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryButtonLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
