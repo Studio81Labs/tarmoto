@@ -304,7 +304,7 @@ function MapNavigator() {
       <MapStack.Screen
         name="RoadPreview"
         component={RoadPreviewScreen}
-        options={{ title: "Road Preview" }}
+        options={{ ...brandScreenOptions, title: "Road Preview" }}
       />
       <MapStack.Screen
         name="HazardReport"
@@ -396,7 +396,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="RoadPreview"
         component={RoadPreviewScreen}
-        options={{ title: "Road Preview" }}
+        options={{ ...brandScreenOptions, title: "Road Preview" }}
       />
     </TripsStack.Navigator>
   );
