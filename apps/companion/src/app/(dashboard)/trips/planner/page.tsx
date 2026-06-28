@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
-import { useTripStore, MAX_TRIP_DAYS, normalizeDayFinish } from "@/stores/trip";
+import {
+  useTripStore,
+  MAX_TRIP_DAYS,
+  normalizeDayFinish,
+  dayFinishWaypoint,
+} from "@/stores/trip";
 import {
   ArrowLeft,
   Save,
@@ -1314,16 +1319,19 @@ export default function TripPlannerPage() {
               // startLinked is only present on real TripDay objects (not placeholders)
               const startLinked =
                 "startLinked" in day ? day.startLinked : undefined;
-              // Only offer relink once the predecessor actually has an end to
-              // mirror — relinking with no predecessor finish would form an
-              // invalid link (the store guards this too, so the button would
-              // otherwise be a no-op).
-              const prevHasEnd =
-                activeTrip?.days[i - 1]?.waypoints.some(
-                  (w) => w.type === "end",
-                ) ?? false;
+              // Only offer relink once the predecessor actually has a finish to
+              // mirror — an explicit `end` OR a terminal accommodation (a
+              // generated overnight day). Relinking with no predecessor finish
+              // would form an invalid link (the store guards this too, so the
+              // button would otherwise be a no-op).
+              const prevHasFinish = !!dayFinishWaypoint(
+                activeTrip?.days[i - 1]?.waypoints ?? [],
+              );
               const showRelink =
-                !!activeTrip && i >= 1 && startLinked === false && prevHasEnd;
+                !!activeTrip &&
+                i >= 1 &&
+                startLinked === false &&
+                prevHasFinish;
               return (
                 <div
                   key={day.dayNumber}

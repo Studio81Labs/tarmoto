@@ -578,10 +578,11 @@ export class TripsService {
         const startWp = parsed.waypoints.find(
           (w) => w.waypoint_type === 'start',
         );
+        // A generated predecessor finishes at a terminal accommodation, not an
+        // explicit `end` — treat that as the finish so a valid shared link is
+        // kept (otherwise the trip reloads with a duplicate overnight marker).
         const prevEndWp =
-          i > 0
-            ? days[i - 1].waypoints.find((w) => w.waypoint_type === 'end')
-            : undefined;
+          i > 0 ? snapshotDayFinish(days[i - 1].waypoints) : undefined;
         const startLinked =
           i > 0 &&
           parsed.startLinked === true &&
@@ -1645,6 +1646,22 @@ interface BuiltWaypoint {
   lng: number;
   name?: string;
   waypoint_type: BuiltWaypointType;
+}
+
+/**
+ * The waypoint that finishes a snapshot day: its explicit `end`, or — for a
+ * generated overnight day with no explicit end — its terminal `accommodation`.
+ * Returns `undefined` when the day has no finish. Used by the from-share link
+ * normalizer so a generated predecessor (accommodation-terminated) validates a
+ * successor's `startLinked` instead of clearing it.
+ */
+function snapshotDayFinish(
+  waypoints: BuiltWaypoint[],
+): BuiltWaypoint | undefined {
+  const end = waypoints.find((w) => w.waypoint_type === 'end');
+  if (end) return end;
+  const last = waypoints[waypoints.length - 1];
+  return last?.waypoint_type === 'accommodation' ? last : undefined;
 }
 
 const SAME_POINT_EPSILON = 1e-5;

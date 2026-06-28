@@ -56,6 +56,14 @@ vi.mock("@/stores/trip", () => ({
     }
     return waypoints;
   },
+  // Mirror the real helper: the day's finish is its `end`, or a terminal
+  // accommodation (generated overnight) when there's no explicit end.
+  dayFinishWaypoint: (waypoints: { type: string }[]) => {
+    const end = waypoints.find((w) => w.type === "end");
+    if (end) return end;
+    const last = waypoints[waypoints.length - 1];
+    return last?.type === "accommodation" ? last : undefined;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -1705,6 +1713,59 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByRole("button", { name: "Save route" }),
     ).not.toBeDisabled();
+  });
+
+  it("offers relink when the predecessor finishes at a terminal accommodation", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 1,
+          waypoints: [
+            {
+              id: "s1",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h1",
+              name: "Hotel",
+              type: "accommodation", // generated overnight finish, no `end`
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          startLinked: false, // link broken by a manual start edit
+          waypoints: [
+            {
+              id: "s2",
+              name: "Start",
+              type: "start",
+              location: { lng: 12, lat: 47 },
+            },
+            {
+              id: "e2",
+              name: "End",
+              type: "end",
+              location: { lng: 13, lat: 47.5 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    // Day 2 must offer "Link to previous day" even though day 1 finishes at an
+    // accommodation rather than an explicit end.
+    expect(
+      screen.getByRole("button", { name: "Link to previous day" }),
+    ).toBeInTheDocument();
   });
 
   it("shows Add day button and disables it at 14 days (MAX_TRIP_DAYS)", () => {
