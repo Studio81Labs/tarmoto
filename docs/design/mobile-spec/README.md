@@ -150,12 +150,22 @@ without a clean 1:1 today are noted.
 
 Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
 Emergency contacts ✅ → Offline maps ✅ → Profile ✅ → Post-ride summary ✅ →
-Home (in progress) → Road explorer → Ride mode → Crash → Planner/Route**.
-The Home phase is split per surface: **`HomeScreen` ✅** landed first (the
-self-contained two-card entry point), then **`CommuteScreen` ✅**;
-`MapScreen` and the bottom navigation (the brand tab bar with the raised
-"Start ride" action) follow as their own steps. `PersonalRoadMapScreen` ✅ (grouped with Profile,
-but with no shared `@/components` deps) was a self-contained follow-up.
+Home ✅ → Road explorer (Map ✅, RoadPreview remaining) → Ride mode → Crash →
+Planner/Route**. The Home phase is split per surface: **`HomeScreen` ✅**,
+**`CommuteScreen` ✅**, **`MapScreen` ✅** (chrome), and the **bottom
+navigation ✅** (the brand tab bar) all landed as their own steps.
+`PersonalRoadMapScreen` ✅ (grouped with Profile, but with no shared
+`@/components` deps) was a self-contained follow-up.
+
+> **Bottom tab bar:** flipped to the brand once all five tab roots (Home,
+> Profile, Ride, Trips, Map) were migrated, so the white bar never sits under
+> a still-dark tab root. The bar is white (`raised`) on cream with a `line`
+> top border; the active tint is **`ACCENT_DARK`** (the raw accent is only
+> ~2.9:1 on white — below the 3:1 floor — so the deepened burnt-orange is
+> used; it clears ~5.2:1 for the small label + icon while keeping the accent
+> identity), and inactive tabs use the AA-safe `dim`. Deeper still-legacy
+> stack screens (e.g. ViewProfile, TripCreate) keep their dark headers until
+> their own phase; only the tab roots gate the shared bar.
 
 > **Home note:** `HomeScreen` has no shared `@/components`, no map, no
 > quality visuals, and no stack header (tab root), so it migrated in

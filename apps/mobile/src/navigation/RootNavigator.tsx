@@ -14,7 +14,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
-import { brandColorsLight } from "@/theme/brand";
+import { ACCENT_DARK, brandColorsLight } from "@/theme/brand";
 import type { HazardType, LatLng, Waypoint } from "@/types";
 import { parseHazardTypeParam } from "@/services/hazardReportLink";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
@@ -487,15 +487,20 @@ export default function RootNavigator() {
         <Tab.Navigator
           screenOptions={({ route }) => ({
             headerShown: false,
+            // Brand tab bar: white chrome on cream, with `ACCENT_DARK` as the
+            // active tint. The raw accent (#FF6A1A) is only ~2.9:1 on white —
+            // below the 3:1 non-text floor — so the deepened burnt-orange is
+            // used here; it clears ~5.2:1 for the small label + icon while
+            // keeping the accent identity. Inactive uses the AA-safe `dim`.
             tabBarStyle: {
-              backgroundColor: colors.bgCard,
-              borderTopColor: colors.border,
+              backgroundColor: brandColorsLight.raised,
+              borderTopColor: brandColorsLight.line,
               borderTopWidth: 1,
               paddingBottom: 4,
               height: 60,
             },
-            tabBarActiveTintColor: colors.primary,
-            tabBarInactiveTintColor: colors.textTertiary,
+            tabBarActiveTintColor: ACCENT_DARK,
+            tabBarInactiveTintColor: brandColorsLight.dim,
             tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
             tabBarIcon: ({ color, size }) => (
               <Icon
