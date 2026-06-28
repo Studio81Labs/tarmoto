@@ -1,0 +1,2789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tarmoto — Mobile App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #E4DBCC; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  #root { min-height: 100vh; }
+  button { font-family: 'Space Grotesk', system-ui; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  @media (min-width: 1024px) { .rail-hint { display: inline !important; } }
+  .boot { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+          font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 1.5px;
+          text-transform: uppercase; color: rgba(14,14,16,0.4); }
+</style>
+</head>
+<body>
+<div id="root"><div class="boot">Loading Tarmoto…</div></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#F5EFE6"/>
+    <rect x="34" y="20" width="32" height="60" rx="7" fill="#0E0E10"/>
+    <path d="M40 70 50 44l10 26H40Z" fill="none" stroke="#F5EFE6" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M46 70 50 60l4 10" fill="none" stroke="#FF6A1A" stroke-width="2.4" stroke-linejoin="round"/>
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-src="map.jsx">
+// Stylized Alps map — hand-drawn SVG. Non-real geography, but map-feeling.
+// The "road" is a single path shared across layouts; other elements (quality, hazards,
+// topo, waypoints) animate along it based on the rider's progress (0..1 along the path).
+
+// Master road path — drawn once, referenced everywhere
+const ROAD_D = "M -40 620 C 60 600, 130 560, 180 520 S 280 440, 340 460 S 440 540, 490 510 S 560 400, 620 380 S 740 400, 790 350 S 840 220, 900 200 S 1020 240, 1080 180";
+
+// Quality-tier color mapping (green → red, muted warm)
+const QUALITY_COLORS = {
+  5: '#6FD38A', // excellent
+  4: '#C7D36A', // good
+  3: '#E8D66A', // fair
+  2: '#F0A03C', // poor
+  1: '#E05A3C', // very poor
+};
+
+// Road quality segments — distance along path in %, quality 1-5
+const ROAD_SEGMENTS = [
+  { start: 0,   end: 15,  q: 5 },
+  { start: 15,  end: 28,  q: 4 },
+  { start: 28,  end: 38,  q: 5 },
+  { start: 38,  end: 48,  q: 3 },
+  { start: 48,  end: 58,  q: 2 }, // poor section — this is where the hazard is
+  { start: 58,  end: 68,  q: 4 },
+  { start: 68,  end: 82,  q: 5 },
+  { start: 82,  end: 100, q: 4 },
+];
+
+// Hazards along the road (percentage along path)
+const HAZARDS = [
+  { at: 54, type: 'pothole', label: 'Pothole', severity: 'high' },
+  { at: 72, type: 'gravel',  label: 'Gravel',  severity: 'med'  },
+  { at: 88, type: 'wet',     label: 'Wet road', severity: 'low' },
+];
+
+// Waypoints / POIs
+const WAYPOINTS = [
+  { at: 8,   name: 'Innsbruck',       sub: 'Start',    kind: 'start' },
+  { at: 42,  name: 'Brenner Pass',    sub: '1,370 m',  kind: 'pass'  },
+  { at: 65,  name: 'Passo dello Stelvio', sub: '2,758 m', kind: 'pass' },
+  { at: 95,  name: 'Bormio',          sub: 'Finish',   kind: 'end'   },
+];
+
+// Build a sampled polyline from the SVG path so we can locate points on it
+function samplePath(d, samples = 200) {
+  if (typeof document === 'undefined') return [];
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', d);
+  svg.appendChild(path);
+  const total = path.getTotalLength();
+  const pts = [];
+  for (let i = 0; i <= samples; i++) {
+    const p = path.getPointAtLength((i / samples) * total);
+    pts.push({ x: p.x, y: p.y, t: i / samples });
+  }
+  return pts;
+}
+
+// Memoize one sampling
+let _cachedPts = null;
+function getPathPoints() {
+  if (!_cachedPts) _cachedPts = samplePath(ROAD_D, 300);
+  return _cachedPts;
+}
+
+function pointAt(pct) {
+  const pts = getPathPoints();
+  if (!pts.length) return { x: 0, y: 0 };
+  const i = Math.min(pts.length - 1, Math.max(0, Math.floor((pct / 100) * pts.length)));
+  return pts[i];
+}
+
+// Build the per-segment overlay paths (colored strokes over the master road)
+function SegmentPath({ start, end, q, mapStyle }) {
+  if (mapStyle === 'topo') return null; // topo hides quality
+  const pts = getPathPoints();
+  if (!pts.length) return null;
+  const i0 = Math.floor((start / 100) * pts.length);
+  const i1 = Math.ceil((end / 100) * pts.length);
+  const slice = pts.slice(i0, i1 + 1);
+  if (slice.length < 2) return null;
+  const d = 'M ' + slice.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ');
+  const color = QUALITY_COLORS[q];
+  return (
+    <path d={d} stroke={color} strokeWidth={mapStyle === 'hybrid' ? 7 : 9} strokeLinecap="round" fill="none"
+      style={{ filter: mapStyle === 'heatmap' ? `drop-shadow(0 0 6px ${color}aa)` : 'none' }} />
+  );
+}
+
+// Topographic contour lines for background texture
+function TopoContours({ dark }) {
+  const stroke = dark ? 'rgba(255,255,255,0.06)' : 'rgba(14,14,16,0.08)';
+  const paths = [
+    "M -20 200 C 80 220, 180 240, 280 210 S 460 160, 560 190 S 760 240, 880 210 S 1020 170, 1100 200",
+    "M -20 260 C 80 280, 200 300, 300 270 S 480 220, 580 250 S 780 300, 900 270 S 1040 230, 1100 260",
+    "M -20 340 C 100 360, 220 380, 320 340 S 500 290, 600 320 S 800 370, 920 340 S 1060 300, 1100 330",
+    "M -20 420 C 120 440, 240 460, 340 420 S 520 370, 620 400 S 820 450, 940 420 S 1080 380, 1100 410",
+    "M -20 500 C 140 520, 260 540, 360 500 S 540 450, 640 480 S 840 530, 960 500 S 1100 460, 1120 490",
+    "M -20 580 C 160 600, 280 620, 380 580 S 560 530, 660 560 S 860 610, 980 580 S 1120 540, 1140 570",
+    "M -20 660 C 180 680, 300 700, 400 660 S 580 610, 680 640 S 880 690, 1000 660 S 1140 620, 1160 650",
+  ];
+  return (
+    <g opacity="0.9">
+      {paths.map((d, i) => (
+        <path key={i} d={d} stroke={stroke} strokeWidth={0.8 + (i % 3) * 0.4} fill="none" />
+      ))}
+    </g>
+  );
+}
+
+// Mountain ranges
+function Mountains({ dark }) {
+  const fill = dark ? 'rgba(255,255,255,0.03)' : 'rgba(14,14,16,0.06)';
+  const stroke = dark ? 'rgba(255,255,255,0.1)' : 'rgba(14,14,16,0.15)';
+  return (
+    <g>
+      <path d="M 80 330 L 170 210 L 240 280 L 310 190 L 380 260 L 450 220 L 500 280 L 500 360 L 80 360 Z"
+        fill={fill} stroke={stroke} strokeWidth="0.6" />
+      <path d="M 560 290 L 640 180 L 710 240 L 790 150 L 870 220 L 940 170 L 1020 230 L 1080 180 L 1080 320 L 560 320 Z"
+        fill={fill} stroke={stroke} strokeWidth="0.6" />
+    </g>
+  );
+}
+
+// Little helpers for waypoint markers
+function WaypointMarker({ wp, accent, dark, mapStyle }) {
+  const pos = pointAt(wp.at);
+  const isStartEnd = wp.kind === 'start' || wp.kind === 'end';
+  const c = isStartEnd ? accent : (dark ? '#F5EFE6' : '#0E0E10');
+  return (
+    <g transform={`translate(${pos.x} ${pos.y})`}>
+      {isStartEnd ? (
+        <>
+          <circle r="14" fill={c} />
+          <circle r="6" fill={dark ? '#0E0E10' : '#F5EFE6'} />
+        </>
+      ) : (
+        <>
+          {/* pass summit marker — triangle */}
+          <polygon points="-10,8 10,8 0,-10" fill={dark ? '#1A1A1E' : '#F5EFE6'}
+            stroke={c} strokeWidth="2" strokeLinejoin="round" />
+        </>
+      )}
+    </g>
+  );
+}
+
+// Hazard marker — pulses
+function HazardMarker({ h, accent }) {
+  const pos = pointAt(h.at);
+  return (
+    <g transform={`translate(${pos.x} ${pos.y})`}>
+      <circle r="18" fill={accent} opacity="0.2">
+        <animate attributeName="r" values="10;22;10" dur="1.8s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.5;0;0.5" dur="1.8s" repeatCount="indefinite" />
+      </circle>
+      <circle r="10" fill={accent} />
+      <text y="3.5" textAnchor="middle" fontSize="12" fontWeight="800" fill="#0E0E10"
+        fontFamily="'Space Grotesk', system-ui">!</text>
+    </g>
+  );
+}
+
+// Rider position — arrow / chevron, rotated along path direction
+function RiderMarker({ pct, accent, dark }) {
+  const pts = getPathPoints();
+  if (!pts.length) return null;
+  const i = Math.min(pts.length - 2, Math.max(0, Math.floor((pct / 100) * pts.length)));
+  const p0 = pts[i];
+  const p1 = pts[i + 1];
+  const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+  return (
+    <g transform={`translate(${p0.x} ${p0.y}) rotate(${angle})`}>
+      <circle r="22" fill={accent} opacity="0.15" />
+      <circle r="16" fill={accent} opacity="0.25" />
+      <g transform="rotate(-90)">
+        <path d="M 0 -10 L 8 8 L 0 3 L -8 8 Z" fill={accent}
+          stroke={dark ? '#0E0E10' : '#F5EFE6'} strokeWidth="1.5" strokeLinejoin="round" />
+      </g>
+    </g>
+  );
+}
+
+// The actual Map view
+function TarmotoMap({
+  progress = 40,      // 0..100 along the route
+  theme = 'dark',     // 'light' | 'dark' | 'oled'
+  mapStyle = 'heatmap', // 'heatmap' | 'topo' | 'hybrid'
+  qualityMin = 1,     // 1..5; hide segments worse than this
+  accent = '#FF6A1A',
+  width = 402,
+  height = 600,
+  showLabels = true,
+}) {
+  const dark = theme !== 'light';
+  const bg = theme === 'oled' ? '#000' : theme === 'dark' ? '#17181C' : '#EDE6DA';
+  const roadBase = dark ? '#2B2C30' : '#D4CBBA';
+  const labelColor = dark ? 'rgba(245,239,230,0.85)' : 'rgba(14,14,16,0.85)';
+  const labelSub = dark ? 'rgba(245,239,230,0.5)' : 'rgba(14,14,16,0.55)';
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: bg, overflow: 'hidden' }}>
+      {/* grain */}
+      <div style={{
+        position: 'absolute', inset: 0, opacity: 0.06, pointerEvents: 'none',
+        backgroundImage:
+          'radial-gradient(circle at 20% 30%, rgba(255,106,26,0.3) 0, transparent 30%),' +
+          'radial-gradient(circle at 80% 70%, rgba(255,106,26,0.2) 0, transparent 40%)',
+      }} />
+
+      <svg viewBox="0 0 1040 720" preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+        <defs>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none"
+              stroke={dark ? 'rgba(255,255,255,0.04)' : 'rgba(14,14,16,0.05)'} strokeWidth="0.5" />
+          </pattern>
+        </defs>
+
+        {mapStyle !== 'heatmap' && <rect width="1040" height="720" fill="url(#grid)" />}
+
+        {(mapStyle === 'topo' || mapStyle === 'hybrid') && <TopoContours dark={dark} />}
+        <Mountains dark={dark} />
+
+        {/* Road base */}
+        <path d={ROAD_D} stroke={dark ? '#1A1B1E' : '#C4BBA8'} strokeWidth="13" fill="none" strokeLinecap="round" />
+        <path d={ROAD_D} stroke={roadBase} strokeWidth="11" fill="none" strokeLinecap="round" />
+
+        {/* Quality overlay */}
+        {mapStyle !== 'topo' && ROAD_SEGMENTS.filter(s => s.q >= qualityMin).map((s, i) => (
+          <SegmentPath key={i} {...s} mapStyle={mapStyle} />
+        ))}
+
+        {/* Dashed centerline for style */}
+        <path d={ROAD_D} stroke={dark ? 'rgba(245,239,230,0.25)' : 'rgba(14,14,16,0.3)'}
+          strokeWidth="0.8" fill="none" strokeDasharray="4 8" />
+
+        {/* Waypoints */}
+        {WAYPOINTS.map((wp, i) => <WaypointMarker key={i} wp={wp} accent={accent} dark={dark} mapStyle={mapStyle} />)}
+
+        {/* Hazards */}
+        {HAZARDS.map((h, i) => <HazardMarker key={i} h={h} accent={accent} />)}
+
+        {/* Rider */}
+        <RiderMarker pct={progress} accent={accent} dark={dark} />
+
+        {/* Waypoint labels */}
+        {showLabels && WAYPOINTS.map((wp, i) => {
+          const pos = pointAt(wp.at);
+          return (
+            <g key={i} transform={`translate(${pos.x + 18} ${pos.y - 8})`}>
+              <text fontSize="13" fontWeight="700" fill={labelColor}
+                fontFamily="'Space Grotesk', system-ui">{wp.name}</text>
+              <text y="14" fontSize="10" fontWeight="500" fill={labelSub}
+                fontFamily="'JetBrains Mono', monospace">{wp.sub}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  TarmotoMap, ROAD_D, ROAD_SEGMENTS, HAZARDS, WAYPOINTS, QUALITY_COLORS,
+  pointAt, samplePath, getPathPoints,
+});
+
+</script>
+<script type="text/babel" data-src="mobile/tweaks-panel.jsx">
+// @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
+
+/* BEGIN USAGE */
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+// Exports (to window): useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider,
+//   TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "palette": ["#D97757", "#29261b", "#f6f4ef"],
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        options={['#D97757', '#2A6FDB', '#1F8A5B', '#7A5AE0']}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakColor  label="Palette" value={t.palette}
+//                        options={[['#D97757', '#29261b', '#f6f4ef'],
+//                                  ['#475569', '#0f172a', '#f1f5f9']]}
+//                        onChange={(v) => setTweak('palette', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// TweakRadio is the segmented control for 2–3 short options (auto-falls-back to
+// TweakSelect past ~16/~10 chars per label); reach for TweakSelect directly when
+// options are many or long. For color tweaks always curate 3-4 options rather than
+// a free picker; an option can also be a whole 2–5 color palette (the stored value
+// is the array). The Tweak* controls are a floor, not a ceiling — build custom
+// controls inside the panel if a tweak calls for UI they don't cover.
+/* END USAGE */
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;box-sizing:border-box;min-width:0;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+    transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
+  .twk-chip:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),
+    0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip>span{position:absolute;top:0;bottom:0;right:0;width:34%;
+    display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i:first-child{box-shadow:none}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    // Same-window signal so in-page listeners (deck-stage rail thumbnails)
+    // can react — the parent message only reaches the host, not peers.
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  // Segments wrap mid-word once per-segment width runs out. The track is
+  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // back to a dropdown rather than wrap.
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    // <select> emits strings — map back to the original option value so the
+    // fallback stays type-preserving (numbers, booleans) like the segment path.
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+                        onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// read on both #111 and #fafafa without per-option configuration. Hex input
+// only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#', '');
+  const x = h.length === 3 ? h.replace(/./g, (c) => c + c) : h.padEnd(6, '0');
+  const n = parseInt(x.slice(0, 6), 16);
+  if (Number.isNaN(n)) return true;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 148000;
+}
+
+const __TwkCheck = ({ light }) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round"
+          stroke={light ? 'rgba(0,0,0,.78)' : '#fff'} />
+  </svg>
+);
+
+// TweakColor — curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
+// rest stacked in a sharp column on the right. onChange emits the
+// option in the shape it was passed (string stays string, array stays array).
+// Without options it falls back to the native color input for back-compat.
+function TweakColor({ label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value}
+               onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // Native <input type=color> emits lowercase hex per the HTML spec, so
+  // compare case-insensitively. String() guards JSON.stringify(undefined),
+  // which returns the primitive undefined (no .toLowerCase).
+  const key = (o) => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips" role="radiogroup">
+        {options.map((o, i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero, ...rest] = colors;
+          const sup = rest.slice(0, 4);
+          const on = key(o) === cur;
+          return (
+            <button key={i} type="button" className="twk-chip" role="radio"
+                    aria-checked={on} data-on={on ? '1' : '0'}
+                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    style={{ background: hero }}
+                    onClick={() => onChange(o)}>
+              {sup.length > 0 && (
+                <span>
+                  {sup.map((c, j) => <i key={j} style={{ background: c }} />)}
+                </span>
+              )}
+              {on && <__TwkCheck light={__twkIsLight(hero)} />}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+
+</script>
+<script type="text/babel" data-src="mobile/tokens.jsx">
+// tokens.jsx — Tarmoto mobile design tokens + shared atoms.
+// Three look/feel directions (Atlas / Onyx / Rally) × light/dark, resolved into one
+// token object consumed via context. Keeps every screen DRY across directions.
+
+const QC = ['#E05A3C', '#F0A03C', '#E8D66A', '#C7D36A', '#6FD38A']; // q1..q5
+const QLABEL = ['Avoid', 'Rough', 'Fair', 'Great', 'Hero'];
+const QFULL = ['Very poor', 'Poor', 'Fair', 'Good', 'Excellent'];
+
+function resolveTokens(cfg) {
+  const dir = cfg.direction || 'atlas';
+  const dark = cfg.theme === 'dark';
+
+  const light = {
+    bg: '#F5EFE6', raised: '#FFFFFF', raised2: '#EDE6DA', sunken: '#E7DECF',
+    fg: '#0E0E10', dim: 'rgba(14,14,16,0.60)', mute: 'rgba(14,14,16,0.42)', faint: 'rgba(14,14,16,0.20)',
+    line: 'rgba(14,14,16,0.10)', lineStrong: 'rgba(14,14,16,0.16)',
+    invBg: '#0E0E10', invFg: '#F5EFE6', invDim: 'rgba(245,239,230,0.62)', invLine: 'rgba(245,239,230,0.14)',
+    qEmpty: 'rgba(14,14,16,0.08)',
+  };
+  const night = {
+    bg: '#111216', raised: '#1B1D23', raised2: '#23262D', sunken: '#0B0C0F',
+    fg: '#F3EEE6', dim: 'rgba(243,238,230,0.62)', mute: 'rgba(243,238,230,0.42)', faint: 'rgba(243,238,230,0.22)',
+    line: 'rgba(243,238,230,0.10)', lineStrong: 'rgba(243,238,230,0.18)',
+    invBg: '#F3EEE6', invFg: '#0E0E10', invDim: 'rgba(14,14,16,0.60)', invLine: 'rgba(14,14,16,0.12)',
+    qEmpty: 'rgba(243,238,230,0.10)',
+  };
+  const s = dark ? night : light;
+  const accent = '#FF6A1A';
+
+  const persona = {
+    atlas: { name: 'Atlas', r: 18, rLg: 24, rSm: 12, glow: false, h1: 30, track: -0.6, chunk: false, blurb: 'Editorial cartography' },
+    onyx: { name: 'Onyx', r: 16, rLg: 22, rSm: 11, glow: true, h1: 28, track: -0.4, chunk: false, blurb: 'Instrument cluster' },
+    rally: { name: 'Rally', r: 26, rLg: 32, rSm: 14, glow: false, h1: 36, track: -1.1, chunk: true, blurb: 'Loud & sporty' },
+  }[dir];
+
+  return {
+    dir, dark, accent, QC, QLABEL, QFULL,
+    land: cfg.orient === 'landscape',
+    sans: "'Space Grotesk', system-ui, sans-serif",
+    mono: "'JetBrains Mono', monospace",
+    ...s, ...persona,
+  };
+}
+
+const TokenCtx = React.createContext(resolveTokens({ direction: 'atlas', theme: 'light' }));
+const useT = () => React.useContext(TokenCtx);
+
+// ── Stamp: mono uppercase micro-label ───────────────────────────
+function Stamp({ children, color, size = 10, style }) {
+  const t = useT();
+  return <span style={{
+    fontFamily: t.mono, fontSize: size, fontWeight: 700, letterSpacing: 1.4,
+    textTransform: 'uppercase', color: color || t.mute, whiteSpace: 'nowrap', ...style,
+  }}>{children}</span>;
+}
+
+// ── Quality bars ────────────────────────────────────────────────
+function QBars({ q, size = 7, gap = 2, empty }) {
+  const t = useT();
+  return <span style={{ display: 'inline-flex', gap, verticalAlign: 'middle' }}>
+    {[1, 2, 3, 4, 5].map(n => (
+      <span key={n} style={{
+        width: size, height: size * 1.85, borderRadius: 2,
+        background: n <= q ? QC[q - 1] : (empty || t.qEmpty),
+      }} />
+    ))}
+  </span>;
+}
+
+// ── Chip / toggle pill ──────────────────────────────────────────
+function Chip({ children, active, onClick, accent, dark, style }) {
+  const t = useT();
+  const onDark = dark;
+  return <button onClick={onClick} style={{
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px',
+    borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+    fontFamily: t.sans, fontWeight: 700, fontSize: 12.5, letterSpacing: 0.1,
+    border: '1px solid ' + (active ? 'transparent' : (onDark ? t.invLine : t.line)),
+    background: active ? (accent ? t.accent : (onDark ? '#F3EEE6' : t.fg)) : (onDark ? 'rgba(255,255,255,0.06)' : 'transparent'),
+    color: active ? (accent ? '#0E0E10' : (onDark ? '#0E0E10' : t.bg)) : (onDark ? '#F3EEE6' : t.fg),
+    transition: 'all 140ms ease', ...style,
+  }}>{children}</button>;
+}
+
+// ── Big metric block ────────────────────────────────────────────
+function Metric({ value, unit, label, color, onDark, size = 26, align = 'left' }) {
+  const t = useT();
+  return <div style={{ textAlign: align }}>
+    <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: size, lineHeight: 1, letterSpacing: -0.5,
+      color: color || (onDark ? '#F3EEE6' : t.fg), display: 'flex', alignItems: 'baseline', gap: 3,
+      justifyContent: align === 'center' ? 'center' : 'flex-start' }}>
+      {value}{unit && <span style={{ fontFamily: t.mono, fontSize: size * 0.4, fontWeight: 600,
+        color: onDark ? t.invDim : t.mute }}>{unit}</span>}
+    </div>
+    {label && <div style={{ marginTop: 5 }}><Stamp size={9} color={onDark ? t.invDim : t.mute}>{label}</Stamp></div>}
+  </div>;
+}
+
+// ── Icon set — hand-rolled stroke icons (Lucide-ish, geometric) ──
+function Icon({ name, size = 22, color = 'currentColor', sw = 1.8, fill = 'none', style }) {
+  const p = { stroke: color, strokeWidth: sw, fill, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const paths = {
+    home: <><path d="M3 11.5 12 4l9 7.5" {...p} /><path d="M6 10v9h12v-9" {...p} /></>,
+    roads: <><circle cx="12" cy="12" r="8.4" {...p} /><path d="M3.6 12H20.4M12 3.6c2.6 2.4 2.6 14.4 0 16.8M12 3.6c-2.6 2.4-2.6 14.4 0 16.8" {...p} /></>,
+    route: <><circle cx="6" cy="18" r="2.4" {...p} /><circle cx="18" cy="6" r="2.4" {...p} /><path d="M8.4 18H14a3.5 3.5 0 0 0 0-7H10a3.5 3.5 0 0 1 0-7h5.6" {...p} /></>,
+    user: <><circle cx="12" cy="8" r="3.6" {...p} /><path d="M5 20c0-4 3.2-6 7-6s7 2 7 6" {...p} /></>,
+    gauge: <><path d="M4.5 18a9 9 0 1 1 15 0" {...p} /><path d="M12 14l4-4" {...p} /><circle cx="12" cy="14" r="1.3" fill={color} stroke="none" /></>,
+    alert: <><path d="M12 3 2.5 20h19L12 3Z" {...p} /><path d="M12 10v4.5" {...p} /><circle cx="12" cy="17.4" r="0.4" fill={color} stroke={color} strokeWidth="1.2" /></>,
+    bolt: <path d="M13 3 5 13h5l-1 8 8-11h-5l1-7Z" {...p} />,
+    plus: <><path d="M12 5v14M5 12h14" {...p} /></>,
+    flag: <><path d="M6 21V4M6 4h11l-2.5 4L17 12H6" {...p} /></>,
+    mountain: <path d="M3 19 9.5 7l3.5 6 2-3 5 9H3Z" {...p} />,
+    share: <><circle cx="6" cy="12" r="2.4" {...p} /><circle cx="17" cy="6" r="2.4" {...p} /><circle cx="17" cy="18" r="2.4" {...p} /><path d="M8.2 10.8 14.8 7.2M8.2 13.2l6.6 3.6" {...p} /></>,
+    left: <path d="M15 5l-7 7 7 7" {...p} />,
+    right: <path d="M9 5l7 7-7 7" {...p} />,
+    close: <path d="M6 6l12 12M18 6 6 18" {...p} />,
+    layers: <><path d="M12 3 3 8l9 5 9-5-9-5Z" {...p} /><path d="M3 13l9 5 9-5M3 18l9 5 9-5" {...p} opacity="0.5" /></>,
+    filter: <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" {...p} />,
+    pin: <><path d="M12 21s7-5.4 7-11A7 7 0 0 0 5 10c0 5.6 7 11 7 11Z" {...p} /><circle cx="12" cy="10" r="2.4" {...p} /></>,
+    nav: <path d="M12 3 4 21l8-4 8 4L12 3Z" {...p} />,
+    check: <path d="M5 12.5 10 17l9-10" {...p} />,
+    clock: <><circle cx="12" cy="12" r="8.4" {...p} /><path d="M12 7.5V12l3 2" {...p} /></>,
+    trend: <><path d="M4 16l5-5 3 3 8-8" {...p} /><path d="M16 6h5v5" {...p} /></>,
+    speed: <><path d="M12 4a8 8 0 0 1 8 8M12 4a8 8 0 0 0-8 8" {...p} /><path d="M4 12h2M18 12h2M12 12l3.5-2.5" {...p} /><circle cx="12" cy="12" r="1.2" fill={color} stroke="none" /></>,
+    settings: <><circle cx="12" cy="12" r="3" {...p} /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" {...p} /></>,
+    grid: <><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" {...p} /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" {...p} /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" {...p} /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" {...p} /></>,
+    phone: <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" {...p} />,
+    heart: <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20Z" {...p} />,
+    sun: <><circle cx="12" cy="12" r="4" {...p} /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19" {...p} /></>,
+    moon: <path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5Z" {...p} />,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
+}
+
+// ── Primary button ──────────────────────────────────────────────
+function Btn({ children, onClick, accent, ghost, onDark, size = 'md', icon, style }) {
+  const t = useT();
+  const pad = size === 'lg' ? '17px 22px' : size === 'sm' ? '10px 15px' : '14px 19px';
+  const fs = size === 'lg' ? 16.5 : size === 'sm' ? 13 : 15;
+  let bg, col, border = 'none';
+  if (accent) { bg = t.accent; col = '#0E0E10'; }
+  else if (ghost) { bg = 'transparent'; col = onDark ? '#F3EEE6' : t.fg; border = '1px solid ' + (onDark ? t.invLine : t.lineStrong); }
+  else { bg = onDark ? '#F3EEE6' : t.fg; col = onDark ? '#0E0E10' : t.bg; }
+  return <button onClick={onClick} style={{
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+    padding: pad, borderRadius: t.chunk ? 16 : 14, border, background: bg, color: col, cursor: 'pointer',
+    fontFamily: t.sans, fontWeight: 800, fontSize: fs, letterSpacing: 0.1, width: '100%',
+    boxShadow: accent && t.glow ? '0 8px 26px rgba(255,106,26,0.34)' : 'none', ...style,
+  }}>{icon}{children}</button>;
+}
+
+Object.assign(window, {
+  QC, QLABEL, QFULL, resolveTokens, TokenCtx, useT,
+  Stamp, QBars, Chip, Metric, Icon, Btn,
+});
+
+</script>
+<script type="text/babel" data-src="mobile/route-svg.jsx">
+// route-svg.jsx — compact themed route graphics for cards (not the full map).
+
+// A small quality-coloured route ribbon over faint topo, for preview cards.
+function MiniRoute({ h = 116, progress = 0, showHazard = false, onDark, seed = 0 }) {
+  const t = useT();
+  const dark = onDark || t.dark;
+  const topo = dark ? 'rgba(243,238,230,0.09)' : 'rgba(14,14,16,0.07)';
+  const base = dark ? '#16171B' : '#D7CEBD';
+  const bg = dark ? '#101116' : '#E7DECF';
+  // segment colours along the ribbon
+  const segs = [
+    { d: 'M 8 132 C 50 126, 86 108, 116 112', q: 5 },
+    { d: 'M 116 112 C 150 116, 184 98, 212 88', q: 4 },
+    { d: 'M 212 88 C 238 80, 262 64, 286 62', q: seed % 2 ? 2 : 3 },
+    { d: 'M 286 62 C 320 58, 352 40, 374 26', q: 5 },
+  ];
+  return <div style={{ position: 'relative', width: '100%', height: h, borderRadius: t.rSm + 4, overflow: 'hidden', background: bg }}>
+    <svg viewBox="0 0 382 150" preserveAspectRatio="xMidYMid slice" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+      {[34, 62, 90, 118].map((y, i) => (
+        <path key={i} d={`M -10 ${y} C 60 ${y - 12}, 150 ${y + 14}, 230 ${y - 6} S 360 ${y + 8}, 400 ${y - 4}`} stroke={topo} strokeWidth="1" fill="none" />
+      ))}
+      <path d="M 8 132 C 50 126, 86 108, 116 112 C 150 116, 184 98, 212 88 C 238 80, 262 64, 286 62 C 320 58, 352 40, 374 26" stroke={base} strokeWidth="9" fill="none" strokeLinecap="round" />
+      {segs.map((s, i) => <path key={i} d={s.d} stroke={QC[s.q - 1]} strokeWidth="6.5" fill="none" strokeLinecap="round" />)}
+      {showHazard && <g transform="translate(212 88)">
+        <circle r="9" fill={t.accent} opacity="0.3"><animate attributeName="r" values="6;13;6" dur="1.7s" repeatCount="indefinite" /></circle>
+        <circle r="5.5" fill={t.accent} />
+      </g>}
+      <circle cx="8" cy="132" r="6.5" fill={t.accent} /><circle cx="8" cy="132" r="2.6" fill={dark ? '#0E0E10' : '#F5EFE6'} />
+      <circle cx="374" cy="26" r="6.5" fill={dark ? '#F3EEE6' : '#0E0E10'} /><circle cx="374" cy="26" r="2.6" fill={dark ? '#0E0E10' : '#F5EFE6'} />
+      {progress > 0 && (() => {
+        const pts = [[8, 132], [116, 112], [212, 88], [286, 62], [374, 26]];
+        const i = Math.min(pts.length - 2, Math.floor(progress * (pts.length - 1)));
+        const f = progress * (pts.length - 1) - i;
+        const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f;
+        const y = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
+        return <g transform={`translate(${x} ${y})`}><circle r="11" fill={t.accent} opacity="0.25" /><circle r="5.5" fill={t.accent} stroke={dark ? '#0E0E10' : '#F5EFE6'} strokeWidth="1.5" /></g>;
+      })()}
+    </svg>
+  </div>;
+}
+
+// Elevation profile sparkline
+function ElevProfile({ h = 60, color, onDark, fill = true }) {
+  const t = useT();
+  const c = color || t.accent;
+  const pts = '0,48 24,40 48,44 72,28 96,32 120,16 144,22 168,8 192,18 216,12 240,26 264,20 288,34 312,30 336,42 360,38';
+  return <svg viewBox="0 0 360 56" preserveAspectRatio="none" style={{ width: '100%', height: h, display: 'block' }}>
+    {fill && <polygon points={`0,56 ${pts} 360,56`} fill={c} opacity={onDark || t.dark ? 0.16 : 0.12} />}
+    <polyline points={pts} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
+
+Object.assign(window, { MiniRoute, ElevProfile });
+
+</script>
+<script type="text/babel" data-src="mobile/chrome.jsx">
+// chrome.jsx — device frame, status bar, 3 bottom-nav styles, shared layout helpers.
+
+const SCREEN_W = 390;
+const SCREEN_H = 844;
+
+function StatusBar({ onDark, time = '9:41' }) {
+  const t = useT();
+  const c = onDark ? '#F3EEE6' : t.fg;
+  return <div style={{
+    height: 50, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '0 26px 0 30px', flexShrink: 0, position: 'relative', zIndex: 30,
+  }}>
+    <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 15, color: c, letterSpacing: 0.2 }}>{time}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <svg width="18" height="12" viewBox="0 0 18 12"><g fill={c}>
+        <rect x="0" y="7" width="3" height="5" rx="0.6" /><rect x="4.5" y="4.5" width="3" height="7.5" rx="0.6" />
+        <rect x="9" y="2" width="3" height="10" rx="0.6" /><rect x="13.5" y="0" width="3" height="12" rx="0.6" />
+      </g></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 3c2 0 3.8.8 5.2 2.1l1-1A9 9 0 0 0 8 1.4 9 9 0 0 0 1.8 4.1l1 1A7.4 7.4 0 0 1 8 3Z" fill={c} /><path d="M8 6.4c1.1 0 2.1.4 2.9 1.2l1-1A6 6 0 0 0 8 4.8a6 6 0 0 0-3.9 1.8l1 1A4.2 4.2 0 0 1 8 6.4Z" fill={c} /><circle cx="8" cy="10" r="1.4" fill={c} /></svg>
+      <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke={c} strokeOpacity="0.4" /><rect x="2" y="2" width="18" height="8" rx="1.6" fill={c} /><path d="M24 4v4c.7-.3 1.2-1 1.2-2S24.7 4.3 24 4Z" fill={c} fillOpacity="0.5" /></svg>
+    </div>
+  </div>;
+}
+
+function HomeIndicator({ onDark }) {
+  return <div style={{
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 26, zIndex: 60,
+    display: 'flex', justifyContent: 'center', alignItems: 'flex-end', paddingBottom: 8, pointerEvents: 'none',
+  }}>
+    <div style={{ width: 134, height: 5, borderRadius: 9, background: onDark ? 'rgba(243,238,230,0.55)' : 'rgba(14,14,16,0.28)' }} />
+  </div>;
+}
+
+// ── Bottom navigation — three styles ────────────────────────────
+const NAV_TABS = [
+  { id: 'home', icon: 'home', label: 'Ride' },
+  { id: 'plan', icon: 'route', label: 'Plan' },
+  { id: 'roads', icon: 'roads', label: 'Roads' },
+  { id: 'me', icon: 'user', label: 'Me' },
+];
+
+const LAND_RAIL = 64;
+
+// shared sheet/side-panel positioning: bottom sheet (portrait) | left side panel (landscape)
+function sheetStyle(t, opts = {}) {
+  if (t.land) return {
+    position: 'absolute', left: LAND_RAIL + 24, top: 54, bottom: 14, width: 332, zIndex: 16,
+    background: t.bg, color: t.fg, borderRadius: 22, border: '1px solid ' + t.line,
+    boxShadow: '0 24px 60px rgba(14,14,16,0.36)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  };
+  return {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 16, background: t.bg, color: t.fg,
+    borderTopLeftRadius: 26, borderTopRightRadius: 26, boxShadow: '0 -12px 40px rgba(14,14,16,0.3)',
+    maxHeight: opts.maxH || '56%', display: 'flex', flexDirection: 'column',
+  };
+}
+
+function NavBar({ style, active, onTab, onStart, onDark }) {
+  const t = useT();
+  const fg = onDark ? '#F3EEE6' : t.fg;
+  const idle = onDark ? 'rgba(243,238,230,0.5)' : t.mute;
+  const surface = onDark ? 'rgba(20,21,25,0.82)' : 'rgba(245,239,230,0.86)';
+  const line = onDark ? t.invLine : t.line;
+
+  if (t.land) return <LandRail style={style} active={active} onTab={onTab} onStart={onStart} t={t} surface={surface} line={line} idle={idle} />;
+
+  const StartBtn = ({ d = 56 }) => (
+    <button onClick={onStart} aria-label="Start ride" style={{
+      width: d, height: d, borderRadius: d, border: 'none', cursor: 'pointer', flexShrink: 0,
+      background: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: '0 8px 22px rgba(255,106,26,0.4)',
+    }}><Icon name="nav" size={d * 0.46} color="#0E0E10" sw={2} /></button>
+  );
+
+  const Tab = ({ tab, labelled }) => {
+    const on = active === tab.id;
+    return <button onClick={() => onTab(tab.id)} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 6px',
+      background: 'none', border: 'none', cursor: 'pointer', color: on ? t.accent : idle,
+    }}>
+      <Icon name={tab.icon} size={23} sw={on ? 2.1 : 1.8} />
+      {labelled && <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 10, letterSpacing: 0.2 }}>{tab.label}</span>}
+    </button>;
+  };
+
+  if (style === 'dock') {
+    return <div style={{ position: 'absolute', left: 0, right: 0, bottom: 22, zIndex: 40, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+      <div style={{
+        pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px',
+        background: surface, backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+        border: '1px solid ' + line, borderRadius: 999, boxShadow: '0 14px 40px rgba(14,14,16,0.22)',
+      }}>
+        {NAV_TABS.slice(0, 2).map(tab => <DockTab key={tab.id} tab={tab} on={active === tab.id} onTab={onTab} t={t} idle={idle} />)}
+        <StartBtn d={48} />
+        {NAV_TABS.slice(2).map(tab => <DockTab key={tab.id} tab={tab} on={active === tab.id} onTab={onTab} t={t} idle={idle} />)}
+      </div>
+    </div>;
+  }
+
+  if (style === 'float') {
+    return <>
+      <div style={{ position: 'absolute', left: 18, bottom: 26, zIndex: 40 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 2, padding: '7px 9px',
+          background: surface, backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+          border: '1px solid ' + line, borderRadius: 999, boxShadow: '0 12px 32px rgba(14,14,16,0.20)',
+        }}>
+          {NAV_TABS.map(tab => <DockTab key={tab.id} tab={tab} on={active === tab.id} onTab={onTab} t={t} idle={idle} compact />)}
+        </div>
+      </div>
+      <div style={{ position: 'absolute', right: 18, bottom: 24, zIndex: 40 }}><StartBtn d={58} /></div>
+    </>;
+  }
+
+  // 'bar' — classic labelled tab bar with raised center action
+  return <div style={{
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 40, height: 92,
+    background: surface, backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+    borderTop: '1px solid ' + line, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-around',
+    paddingTop: 12,
+  }}>
+    <Tab tab={NAV_TABS[0]} labelled />
+    <Tab tab={NAV_TABS[1]} labelled />
+    <div style={{ marginTop: -22 }}><StartBtn d={58} /></div>
+    <Tab tab={NAV_TABS[2]} labelled />
+    <Tab tab={NAV_TABS[3]} labelled />
+  </div>;
+}
+
+function LandRail({ style, active, onTab, onStart, t, surface, line, idle }) {
+  const labelled = style === 'bar';
+  return <div style={{
+    position: 'absolute', left: 12, top: 54, bottom: 14, width: LAND_RAIL, zIndex: 40,
+    background: surface, backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+    border: '1px solid ' + line, borderRadius: 22, boxShadow: '0 14px 40px rgba(14,14,16,0.22)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '10px 0',
+  }}>
+    {NAV_TABS.slice(0, 2).map(tab => {
+      const on = active === tab.id;
+      return <button key={tab.id} onClick={() => onTab(tab.id)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', color: on ? t.accent : idle, padding: '4px 0' }}>
+        <Icon name={tab.icon} size={22} sw={on ? 2.1 : 1.8} />{labelled && <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 8.5 }}>{tab.label}</span>}
+      </button>;
+    })}
+    <button onClick={onStart} aria-label="Start ride" style={{ width: 46, height: 46, borderRadius: 999, border: 'none', cursor: 'pointer', background: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 22px rgba(255,106,26,0.4)', margin: '2px 0' }}>
+      <Icon name="nav" size={21} color="#0E0E10" sw={2} /></button>
+    {NAV_TABS.slice(2).map(tab => {
+      const on = active === tab.id;
+      return <button key={tab.id} onClick={() => onTab(tab.id)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', color: on ? t.accent : idle, padding: '4px 0' }}>
+        <Icon name={tab.icon} size={22} sw={on ? 2.1 : 1.8} />{labelled && <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 8.5 }}>{tab.label}</span>}
+      </button>;
+    })}
+  </div>;
+}
+
+function DockTab({ tab, on, onTab, t, idle, compact }) {
+  return <button onClick={() => onTab(tab.id)} style={{
+    width: compact ? 38 : 44, height: compact ? 38 : 44, borderRadius: 999, border: 'none', cursor: 'pointer',
+    background: on ? (t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(14,14,16,0.07)') : 'transparent',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', color: on ? t.accent : idle,
+  }}><Icon name={tab.icon} size={compact ? 20 : 22} sw={on ? 2.1 : 1.8} /></button>;
+}
+
+// ── Device frame ────────────────────────────────────────────────
+function Phone({ children, onDark, scale = 1, time }) {
+  const t = useT();
+  const w = t.land ? SCREEN_H : SCREEN_W;
+  const h = t.land ? SCREEN_W : SCREEN_H;
+  return <div style={{
+    width: w * scale, height: h * scale, flexShrink: 0,
+  }}>
+    <div style={{
+      width: w, height: h, transform: `scale(${scale})`, transformOrigin: 'top left',
+      borderRadius: 46, position: 'relative', overflow: 'hidden',
+      background: onDark ? '#0B0C0F' : t.bg,
+      boxShadow: '0 50px 90px -30px rgba(14,14,16,0.45), 0 0 0 2px rgba(14,14,16,0.9), 0 0 0 7px ' + (t.dark ? '#1a1b1f' : '#dcd3c4'),
+    }}>
+      {children}
+    </div>
+  </div>;
+}
+
+// ── In-screen helpers ───────────────────────────────────────────
+function Screen({ children, bg, onDark, style }) {
+  const t = useT();
+  return <div style={{
+    position: 'absolute', inset: 0, background: bg || t.bg, color: onDark ? '#F3EEE6' : t.fg,
+    display: 'flex', flexDirection: 'column', fontFamily: t.sans, overflow: 'hidden', ...style,
+  }}>{children}</div>;
+}
+
+function Scroll({ children, pad = 20, bottomPad = 120, style }) {
+  const t = useT();
+  if (t.land) return <div style={{
+    flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `8px ${pad}px 26px ${LAND_RAIL + 36}px`,
+    WebkitOverflowScrolling: 'touch', ...style,
+  }}><div style={{ maxWidth: 660, margin: '0 auto' }}>{children}</div></div>;
+  return <div style={{
+    flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: `4px ${pad}px ${bottomPad}px`,
+    WebkitOverflowScrolling: 'touch', ...style,
+  }}>{children}</div>;
+}
+
+// Card with direction-aware shape + optional glow/border
+function Card({ children, onDark, raised, accentBorder, pad = 16, style, onClick }) {
+  const t = useT();
+  const bg = onDark ? (t.dark ? '#1B1D23' : 'rgba(255,255,255,0.07)') : (raised ? t.raised : t.raised2);
+  return <div onClick={onClick} style={{
+    background: bg, borderRadius: t.r, padding: pad,
+    border: '1px solid ' + (accentBorder ? t.accent + '66' : (onDark ? t.invLine : t.line)),
+    boxShadow: t.glow && raised ? '0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 30px rgba(0,0,0,0.18)' : 'none',
+    ...style,
+  }}>{children}</div>;
+}
+
+function TopBar({ title, onBack, right, onDark }) {
+  const t = useT();
+  return <div style={{
+    display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+    padding: t.land ? `6px 18px 10px ${LAND_RAIL + 36}px` : '6px 18px 10px',
+  }}>
+    {onBack && <button onClick={onBack} style={{
+      width: 38, height: 38, borderRadius: 999, border: '1px solid ' + (onDark ? t.invLine : t.line),
+      background: onDark ? 'rgba(255,255,255,0.06)' : t.raised, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', color: onDark ? '#F3EEE6' : t.fg,
+    }}><Icon name="left" size={20} /></button>}
+    <div style={{ flex: 1, fontFamily: t.sans, fontWeight: 800, fontSize: 17, letterSpacing: -0.3 }}>{title}</div>
+    {right}
+  </div>;
+}
+
+Object.assign(window, {
+  SCREEN_W, SCREEN_H, LAND_RAIL, sheetStyle, StatusBar, HomeIndicator, NavBar, NAV_TABS, Phone, Screen, Scroll, Card, TopBar,
+});
+
+</script>
+<script type="text/babel" data-src="mobile/screens-a.jsx">
+// screens-a.jsx — Home (map-first / list-first) + Road Quality Explorer.
+
+function mapThemeFromCfg(cfg) { return cfg.mapStyle === 'light' ? 'light' : 'dark'; }
+
+// ── Shared bits ─────────────────────────────────────────────────
+function Avatar({ size = 42 }) {
+  const t = useT();
+  return <div style={{
+    width: size, height: size, borderRadius: 999, background: t.fg, color: t.bg,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: t.sans,
+    fontWeight: 800, fontSize: size * 0.36, flexShrink: 0,
+  }}>L</div>;
+}
+
+function CommuteCard({ onStart, condensed }) {
+  const t = useT();
+  return <div style={{
+    padding: condensed ? 16 : 18, borderRadius: t.rLg, background: '#141519', color: '#F5EFE6',
+    position: 'relative', overflow: 'hidden',
+  }}>
+    <div style={{ position: 'absolute', right: -34, top: -34, width: 150, height: 150, borderRadius: 999, background: t.accent, opacity: 0.16 }} />
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Stamp color="rgba(245,239,230,0.6)">Daily commute</Stamp>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: t.mono, fontSize: 11, color: QC[4], fontWeight: 600 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 9, background: QC[4] }} /> 4°C · Clear
+        </span>
+      </div>
+      <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 23, letterSpacing: -0.4, marginTop: 8, color: '#F5EFE6' }}>Home → Studio</div>
+      <div style={{ display: 'flex', gap: 16, marginTop: 10, fontFamily: t.mono, fontSize: 12, color: 'rgba(245,239,230,0.6)' }}>
+        <span><b style={{ color: '#F5EFE6', fontSize: 15 }}>14</b> min</span>
+        <span><b style={{ color: '#F5EFE6', fontSize: 15 }}>8.4</b> km</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><QBars q={4} size={5} /> good</span>
+      </div>
+      <div style={{
+        marginTop: 14, padding: '11px 12px', borderRadius: t.rSm + 2, background: 'rgba(255,106,26,0.13)',
+        border: '1px solid rgba(255,106,26,0.4)', display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <div style={{ width: 26, height: 26, borderRadius: 999, background: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon name="alert" size={15} color="#0E0E10" sw={2} />
+        </div>
+        <div style={{ flex: 1, fontSize: 12, lineHeight: 1.35, color: '#F5EFE6' }}>
+          <b style={{ color: t.accent }}>New pothole</b> on Via Gramsci · 2 riders confirmed
+        </div>
+      </div>
+      <button onClick={onStart} style={{
+        marginTop: 14, width: '100%', padding: 14, borderRadius: t.rSm + 2, border: 'none', cursor: 'pointer',
+        background: t.accent, color: '#0E0E10', fontFamily: t.sans, fontWeight: 800, fontSize: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}><Icon name="nav" size={18} color="#0E0E10" sw={2} /> Start commute</button>
+    </div>
+  </div>;
+}
+
+function SuggestedRide({ onOpen }) {
+  const t = useT();
+  return <Card raised pad={14} style={{ cursor: 'pointer' }} onClick={onOpen}>
+    <MiniRoute h={118} showHazard seed={1} />
+    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div>
+        <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 18, letterSpacing: -0.3 }}>Stelvio Pass Loop</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 5, fontFamily: t.mono, fontSize: 11, color: t.mute, fontWeight: 600 }}>
+          <span>186 km</span><span>·</span><span>+2,758 m</span><span>·</span><span>4h 12m</span>
+        </div>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <QBars q={4} size={7} />
+        <div style={{ marginTop: 5 }}><Stamp size={9}>Great</Stamp></div>
+      </div>
+    </div>
+  </Card>;
+}
+
+function StatStrip() {
+  const t = useT();
+  const stats = [['This week', '127', 'km'], ['Rides', '4', 'logged'], ['Reports', '9', 'hazards']];
+  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+    {stats.map(([l, n, u]) => (
+      <Card raised key={l} pad={12}>
+        <Stamp size={9}>{l}</Stamp>
+        <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 24, lineHeight: 1, marginTop: 6 }}>{n}</div>
+        <div style={{ fontFamily: t.mono, fontSize: 10, color: t.mute, marginTop: 3 }}>{u}</div>
+      </Card>
+    ))}
+  </div>;
+}
+
+function NearbyRoads() {
+  const t = useT();
+  const roads = [['Passo Gavia', '2,621 m · 34 turns', 4], ['Mortirolo', '1,852 m · 39 turns', 3], ['Val di Mello', 'Resurfaced ’25', 5]];
+  return <Card raised pad={0} style={{ overflow: 'hidden' }}>
+    {roads.map(([n, s, q], i) => (
+      <div key={n} style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px',
+        borderBottom: i < roads.length - 1 ? '1px solid ' + t.line : 'none',
+      }}>
+        <div style={{ width: 32, height: 32, borderRadius: t.rSm - 2, background: t.bg, border: '1px solid ' + t.line, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon name="mountain" size={17} color={t.dim} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 14 }}>{n}</div>
+          <div style={{ fontFamily: t.mono, fontSize: 11, color: t.mute, marginTop: 2 }}>{s}</div>
+        </div>
+        <QBars q={q} size={6} />
+      </div>
+    ))}
+  </Card>;
+}
+
+// ── HOME ────────────────────────────────────────────────────────
+function HomeScreen({ cfg, onStart, onOpenRide }) {
+  const t = useT();
+  const onDark = t.dark;
+  const Header = () => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div>
+        <Stamp>Tue · 06:42</Stamp>
+        <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: t.h1, letterSpacing: t.track, marginTop: 2 }}>Morning, Luca.</div>
+      </div>
+      <Avatar />
+    </div>
+  );
+
+  if (cfg.homeLayout === 'map') {
+    const mapDark = mapThemeFromCfg(cfg) !== 'light';
+    return <Screen onDark={onDark}>
+      <div style={{ position: 'absolute', inset: 0, ...(t.land ? {} : { height: '56%' }) }}>
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+          <TarmotoMap theme={mapThemeFromCfg(cfg)} mapStyle="heatmap" progress={20} accent={t.accent} showLabels={false} />
+        </div>
+      </div>
+      <StatusBar onDark={mapDark} />
+      {!t.land && <div style={{ position: 'absolute', top: 54, left: 18, right: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 10 }}>
+        <div style={{ padding: '9px 14px', borderRadius: 999, background: 'rgba(14,14,16,0.55)', backdropFilter: 'blur(12px)', color: '#F5EFE6' }}>
+          <Stamp color="rgba(245,239,230,0.6)">Tue · 4°C</Stamp>
+          <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 18, marginTop: 1 }}>Morning, Luca.</div>
+        </div>
+        <Avatar />
+      </div>}
+      <div style={{ ...sheetStyle(t, { maxH: '58%' }), ...(t.land ? {} : { top: '46%', maxHeight: 'none' }) }}>
+        {!t.land && <div style={{ width: 42, height: 5, borderRadius: 9, background: t.faint, margin: '10px auto 4px', flexShrink: 0 }} />}
+        <div style={{ flex: 1, overflowY: 'auto', padding: t.land ? '16px 16px 16px' : '6px 18px 130px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {t.land && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><Stamp>Tue · 06:42 · 4°C</Stamp><div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 24, letterSpacing: t.track, marginTop: 2 }}>Morning, Luca.</div></div>
+              <Avatar size={36} />
+            </div>}
+            <CommuteCard onStart={onStart} condensed />
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <Stamp>Suggested for Saturday</Stamp><Stamp color={t.faint}>See all →</Stamp>
+              </div>
+              <SuggestedRide onOpen={onOpenRide} />
+            </div>
+            <StatStrip />
+          </div>
+        </div>
+      </div>
+    </Screen>;
+  }
+
+  // list-first
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <Scroll pad={20} bottomPad={130}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 4 }}>
+        <Header />
+        <CommuteCard onStart={onStart} />
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <Stamp>Suggested for Saturday</Stamp><Stamp color={t.faint}>See all →</Stamp>
+          </div>
+          <SuggestedRide onOpen={onOpenRide} />
+        </div>
+        <StatStrip />
+        <div>
+          <div style={{ marginBottom: 10 }}><Stamp>Roads near you</Stamp></div>
+          <NearbyRoads />
+        </div>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+// ── ROAD QUALITY EXPLORER ───────────────────────────────────────
+const EXPLORER_ROADS = [
+  { id: 0, name: 'Tornante 18 → 24', road: 'SS38 · Passo dello Stelvio', q: 2, km: '2.4 km', turns: '48 turns', peak: '2,758 m', passes: 184, trend: '+1%', hazards: 3, surface: 'Asphalt', note: 'Rough tarmac between hairpins 19–22. Aggregated from 184 rider passes, last updated 3 days ago.' },
+  { id: 1, name: 'Bormio approach', road: 'SS300 · Valdidentro', q: 5, km: '11.2 km', turns: '22 turns', peak: '1,820 m', passes: 326, trend: '+4%', hazards: 0, surface: 'Asphalt', note: 'Freshly resurfaced in 2025. Consistently excellent across 326 passes — a hero stretch.' },
+  { id: 2, name: 'Gavia north ramp', road: 'SP29 · Passo Gavia', q: 3, km: '6.8 km', turns: '31 turns', peak: '2,621 m', passes: 97, trend: '−2%', hazards: 1, surface: 'Mixed', note: 'Narrow and patchy in places. Some gravel wash near km 4 after spring melt.' },
+];
+
+function ExplorerScreen({ cfg }) {
+  const t = useT();
+  const [sel, setSel] = React.useState(0);
+  const [filter, setFilter] = React.useState('All');
+  const road = EXPLORER_ROADS[sel];
+  const mapDark = mapThemeFromCfg(cfg) !== 'light';
+
+  return <Screen onDark>
+    <div style={{ position: 'absolute', inset: 0 }}>
+      <TarmotoMap theme={mapThemeFromCfg(cfg)} mapStyle="heatmap" progress={road.id === 0 ? 54 : road.id === 1 ? 95 : 65} accent={t.accent} showLabels />
+    </div>
+    <StatusBar onDark={mapDark} />
+
+    {/* filters (portrait floats over map) */}
+    {!t.land && <div style={{ position: 'absolute', top: 52, left: 0, right: 0, zIndex: 12, display: 'flex', gap: 7, padding: '0 16px', overflowX: 'auto' }}>
+      {['All', 'Excellent', 'Gravel', 'Curvy 4+', 'Hazards'].map(f => (
+        <Chip key={f} active={filter === f} dark={mapDark} accent={filter === f} onClick={() => setFilter(f)}
+          style={{ background: filter === f ? t.accent : (mapDark ? 'rgba(14,14,16,0.55)' : 'rgba(245,239,230,0.8)'), color: filter === f ? '#0E0E10' : (mapDark ? '#F5EFE6' : '#0E0E10'), backdropFilter: 'blur(12px)', border: 'none' }}>
+          {f === 'All' && <Icon name="filter" size={13} color={filter === f ? '#0E0E10' : (mapDark ? '#F5EFE6' : '#0E0E10')} />}{f}
+        </Chip>
+      ))}
+    </div>}
+
+    {/* layers btn */}
+    <button style={{
+      position: 'absolute', right: 16, top: t.land ? 64 : 100, zIndex: 12, width: 44, height: 44, borderRadius: 14,
+      background: mapDark ? 'rgba(14,14,16,0.6)' : 'rgba(245,239,230,0.85)', backdropFilter: 'blur(12px)',
+      border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: mapDark ? '#F5EFE6' : '#0E0E10', boxShadow: '0 6px 18px rgba(14,14,16,0.2)',
+    }}><Icon name="layers" size={21} /></button>
+
+    {/* legend (portrait only) */}
+    {!t.land && <div style={{ position: 'absolute', left: 16, top: 100, zIndex: 12, padding: '9px 12px', borderRadius: 12, background: mapDark ? 'rgba(14,14,16,0.6)' : 'rgba(245,239,230,0.85)', backdropFilter: 'blur(12px)' }}>
+      <Stamp size={9} color={mapDark ? 'rgba(245,239,230,0.6)' : t.mute}>Quality</Stamp>
+      <div style={{ display: 'flex', gap: 3, marginTop: 6, alignItems: 'center' }}>
+        {QC.map((c, i) => <span key={i} style={{ width: 14, height: 6, background: c, borderRadius: 1 }} />)}
+      </div>
+    </div>}
+
+    {/* sheet / side panel */}
+    <div style={{ ...sheetStyle(t, { maxH: '56%' }) }}>
+      {!t.land && <div style={{ width: 42, height: 5, borderRadius: 9, background: t.faint, margin: '12px auto 0', flexShrink: 0 }} />}
+      <div style={{ flex: 1, overflowY: 'auto', padding: t.land ? '14px 16px' : '12px 20px 110px' }}>
+        {t.land && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          {['All', 'Excellent', 'Gravel', 'Curvy 4+'].map(f => (
+            <Chip key={f} active={filter === f} accent={filter === f} onClick={() => setFilter(f)}>{f}</Chip>
+          ))}
+        </div>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Stamp>{road.road}</Stamp>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 22, letterSpacing: -0.4, marginTop: 4 }}>{road.name}</div>
+            <div style={{ fontFamily: t.mono, fontSize: 11, color: t.mute, marginTop: 4 }}>{road.km} · {road.turns} · {road.peak}</div>
+          </div>
+          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: -1.5, color: QC[road.q - 1] }}>
+              {road.q}<span style={{ fontSize: 15, color: t.faint }}>/5</span>
+            </div>
+            <div style={{ marginTop: 3 }}><Stamp size={9}>{QFULL[road.q - 1]}</Stamp></div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: t.rSm + 2, background: QC[road.q - 1] + '1f', border: '1px solid ' + QC[road.q - 1] + '55', fontSize: 12.5, lineHeight: 1.45 }}>
+          {road.note}
+        </div>
+
+        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {[[road.passes, 'Passes', 'phone'], [road.trend, 'Trend 90d', 'trend'], [road.hazards, 'Hazards', 'alert']].map(([v, l, ic]) => (
+            <div key={l} style={{ padding: '11px 12px', borderRadius: t.rSm, background: t.raised2, border: '1px solid ' + t.line }}>
+              <Icon name={ic} size={15} color={t.mute} />
+              <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 17, marginTop: 6 }}>{v}</div>
+              <Stamp size={9}>{l}</Stamp>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 14, marginBottom: 6 }}><Stamp>Nearby segments</Stamp></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {EXPLORER_ROADS.map(r => (
+            <button key={r.id} onClick={() => setSel(r.id)} style={{
+              textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', cursor: 'pointer',
+              borderRadius: t.rSm + 2, background: r.id === sel ? t.invBg : t.raised, color: r.id === sel ? t.invFg : t.fg,
+              border: '1px solid ' + (r.id === sel ? 'transparent' : t.line),
+            }}>
+              <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: QC[r.q - 1], minHeight: 32 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 13.5 }}>{r.name}</div>
+                <div style={{ fontFamily: t.mono, fontSize: 10.5, color: r.id === sel ? 'rgba(245,239,230,0.6)' : t.mute, marginTop: 2 }}>{r.road.split(' · ')[0]} · {r.km}</div>
+              </div>
+              <QBars q={r.q} size={6} empty={r.id === sel ? 'rgba(245,239,230,0.18)' : undefined} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  </Screen>;
+}
+
+Object.assign(window, { HomeScreen, ExplorerScreen, mapThemeFromCfg, Avatar });
+
+</script>
+<script type="text/babel" data-src="mobile/screens-b.jsx">
+// screens-b.jsx — Ride mode (turn-by-turn HUD), Crash detection, Hazard report.
+
+// ── Custom hazard glyphs ────────────────────────────────────────
+function HazardGlyph({ type, size = 24, color }) {
+  const p = { stroke: color, strokeWidth: 1.8, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const g = {
+    pothole: <><ellipse cx="12" cy="14" rx="7" ry="4.5" {...p} /><path d="M7 12c1.5-1 3-1.4 5-1.4s3.5.4 5 1.4" {...p} strokeDasharray="2 2" /></>,
+    gravel: <>{[[8, 9], [13, 8], [16, 12], [9, 14], [14, 15], [11, 11]].map((c, i) => <circle key={i} cx={c[0]} cy={c[1]} r="1.6" fill={color} stroke="none" />)}</>,
+    wet: <><path d="M12 4c3 4 5 6.5 5 9a5 5 0 0 1-10 0c0-2.5 2-5 5-9Z" {...p} /></>,
+    debris: <><path d="M12 5 4 19h16L12 5Z" {...p} /><path d="M12 11v4" {...p} /><circle cx="12" cy="17.2" r="0.3" fill={color} stroke={color} /></>,
+    rockfall: <><path d="M3 19 8 9l3 5 2-3 5 8H3Z" {...p} /><circle cx="17" cy="6" r="2" {...p} /></>,
+    animals: <><circle cx="8" cy="10" r="1.8" {...p} /><circle cx="16" cy="10" r="1.8" {...p} /><circle cx="6" cy="14.5" r="1.5" {...p} /><circle cx="18" cy="14.5" r="1.5" {...p} /><path d="M9 18c0-2 1.4-3 3-3s3 1 3 3-1.4 2.5-3 2.5S9 20 9 18Z" {...p} /></>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24">{g[type]}</svg>;
+}
+
+// ── RIDE MODE (always dark / immersive) ─────────────────────────
+function RideScreen({ cfg, onReport, onEnd }) {
+  const t = useT();
+  const [prog, setProg] = React.useState(46);
+  React.useEffect(() => {
+    const iv = setInterval(() => setProg(p => (p >= 58 ? 46 : p + 0.12)), 60);
+    return () => clearInterval(iv);
+  }, []);
+  const glass = 'rgba(16,17,21,0.86)';
+
+  if (t.land) {
+    return <Screen bg="#0B0C0F" onDark>
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <TarmotoMap theme="dark" mapStyle="heatmap" progress={prog} accent={t.accent} showLabels={false} />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(11,12,15,0.7), transparent 45%)' }} />
+      <StatusBar onDark time="10:24" />
+      {/* left HUD column */}
+      <div style={{
+        position: 'absolute', left: 12, top: 54, bottom: 14, width: 304, zIndex: 12,
+        background: glass, backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 22, padding: 16, color: '#F5EFE6', display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 15, background: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="30" height="30" viewBox="0 0 44 44" style={{ transform: 'rotate(-45deg)' }}>
+              <path d="M22 7v30M22 7 12 17M22 7l10 10" stroke="#0E0E10" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 28, letterSpacing: -0.5 }}>280</span>
+              <span style={{ fontFamily: t.mono, fontSize: 12, color: 'rgba(245,239,230,0.55)' }}>m</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: 'rgba(245,239,230,0.7)', marginTop: 1 }}>Left onto SS38 · Stelvio</div>
+          </div>
+        </div>
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '16px 0' }} />
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 58, lineHeight: 0.9, letterSpacing: -2 }}>64</span>
+          <span style={{ fontFamily: t.mono, fontSize: 11, color: 'rgba(245,239,230,0.5)', letterSpacing: 1 }}>KM/H</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.05)' }}>
+            <QBars q={2} size={6} empty="rgba(245,239,230,0.16)" />
+            <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.5)', letterSpacing: 1, marginTop: 6 }}>SURFACE</div>
+          </div>
+          <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.05)' }}>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 17 }}>2,240<span style={{ fontFamily: t.mono, fontSize: 10, color: 'rgba(245,239,230,0.5)', marginLeft: 2 }}>m</span></div>
+            <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.5)', letterSpacing: 1, marginTop: 6 }}>ELEV</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 12, fontFamily: t.mono, fontSize: 10, color: 'rgba(245,239,230,0.5)', letterSpacing: 0.5 }}>ARRIVAL 11:38 · 38 KM LEFT</div>
+        <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onReport} style={{ flex: 1, padding: '13px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.accent, color: '#0E0E10', fontFamily: t.sans, fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Icon name="alert" size={17} color="#0E0E10" sw={2} /> Report</button>
+          <button onClick={onEnd} style={{ padding: '13px 20px', borderRadius: 14, cursor: 'pointer', background: 'transparent', color: '#F5EFE6', border: '1px solid rgba(255,255,255,0.22)', fontFamily: t.sans, fontWeight: 800, fontSize: 14 }}>End</button>
+        </div>
+      </div>
+      {/* hazard chip */}
+      <div style={{ position: 'absolute', top: 64, left: 'calc(160px + 50%)', transform: 'translateX(-50%)', zIndex: 12 }}>
+        <div style={{ background: 'rgba(28,15,8,0.92)', border: '1.5px solid rgba(255,106,26,0.5)', backdropFilter: 'blur(10px)', borderRadius: 999, padding: '7px 15px', display: 'flex', alignItems: 'center', gap: 9, color: '#F5EFE6', fontFamily: t.mono, fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 9, background: t.accent }} /> POTHOLE · 2.4 KM
+        </div>
+      </div>
+      {/* recenter */}
+      <button style={{ position: 'absolute', right: 14, top: 64, zIndex: 12, width: 44, height: 44, borderRadius: 14, background: glass, backdropFilter: 'blur(14px)', border: '1px solid rgba(255,255,255,0.09)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F5EFE6' }}>
+        <Icon name="nav" size={20} color={t.accent} sw={2} /></button>
+    </Screen>;
+  }
+
+  return <Screen bg="#0B0C0F" onDark>
+    <div style={{ position: 'absolute', inset: 0 }}>
+      <TarmotoMap theme="dark" mapStyle="heatmap" progress={prog} accent={t.accent} showLabels={false} />
+    </div>
+    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(11,12,15,0.55), transparent 22%, transparent 60%, rgba(11,12,15,0.7))' }} />
+    <StatusBar onDark time="10:24" />
+
+    {/* next turn */}
+    <div style={{ position: 'absolute', top: 56, left: 12, right: 12, zIndex: 12 }}>
+      <div style={{
+        background: glass, backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 22, padding: 15, display: 'flex', alignItems: 'center', gap: 14, color: '#F5EFE6',
+      }}>
+        <div style={{ width: 58, height: 58, borderRadius: 16, background: t.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="34" height="34" viewBox="0 0 44 44" style={{ transform: 'rotate(-45deg)' }}>
+            <path d="M22 7v30M22 7 12 17M22 7l10 10" stroke="#0E0E10" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+            <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 30, letterSpacing: -0.5 }}>280</span>
+            <span style={{ fontFamily: t.mono, fontSize: 12, color: 'rgba(245,239,230,0.55)' }}>m</span>
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(245,239,230,0.7)', marginTop: 2 }}>Left onto SS38 · Stelvio</div>
+        </div>
+        <div style={{ textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 14 }}>
+          <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 15 }}>11:38</div>
+          <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.5)', marginTop: 2 }}>ARRIVAL</div>
+        </div>
+      </div>
+    </div>
+
+    {/* hazard pre-alert */}
+    <div style={{ position: 'absolute', top: 142, left: '50%', transform: 'translateX(-50%)', zIndex: 12 }}>
+      <div style={{
+        background: 'rgba(28,15,8,0.92)', border: '1.5px solid rgba(255,106,26,0.5)', backdropFilter: 'blur(10px)',
+        borderRadius: 999, padding: '7px 15px', display: 'flex', alignItems: 'center', gap: 9, color: '#F5EFE6',
+        fontFamily: t.mono, fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3,
+      }}>
+        <span style={{ width: 7, height: 7, borderRadius: 9, background: t.accent }}>
+        </span> POTHOLE · 2.4 KM AHEAD
+      </div>
+    </div>
+
+    {/* recenter */}
+    <button style={{ position: 'absolute', right: 14, top: 200, zIndex: 12, width: 44, height: 44, borderRadius: 14, background: glass, backdropFilter: 'blur(14px)', border: '1px solid rgba(255,255,255,0.09)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F5EFE6' }}>
+      <Icon name="nav" size={20} color={t.accent} sw={2} />
+    </button>
+
+    {/* bottom HUD */}
+    <div style={{ position: 'absolute', left: 12, right: 12, bottom: 22, zIndex: 12 }}>
+      <div style={{
+        background: glass, backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 22, padding: '16px 18px', color: '#F5EFE6',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 50, lineHeight: 0.9, letterSpacing: -1.5 }}>64</div>
+            <div style={{ fontFamily: t.mono, fontSize: 10, color: 'rgba(245,239,230,0.5)', letterSpacing: 1, marginTop: 4 }}>KM/H</div>
+          </div>
+          <div style={{ width: 1, height: 46, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ textAlign: 'center' }}>
+            <QBars q={2} size={7} empty="rgba(245,239,230,0.16)" />
+            <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.5)', letterSpacing: 1, marginTop: 6 }}>SURFACE</div>
+          </div>
+          <div style={{ width: 1, height: 46, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 22 }}>2,240<span style={{ fontFamily: t.mono, fontSize: 11, color: 'rgba(245,239,230,0.5)', marginLeft: 2 }}>m</span></div>
+            <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.5)', letterSpacing: 1, marginTop: 6 }}>ELEVATION</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button onClick={onReport} style={{
+            flex: 1, padding: '13px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.accent, color: '#0E0E10',
+            fontFamily: t.sans, fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}><Icon name="alert" size={17} color="#0E0E10" sw={2} /> Report</button>
+          <button onClick={onEnd} style={{
+            padding: '13px 20px', borderRadius: 14, cursor: 'pointer', background: 'transparent', color: '#F5EFE6',
+            border: '1px solid rgba(255,255,255,0.22)', fontFamily: t.sans, fontWeight: 800, fontSize: 14,
+          }}>End</button>
+        </div>
+      </div>
+    </div>
+  </Screen>;
+}
+
+// ── CRASH DETECTION ─────────────────────────────────────────────
+function CrashScreen({ onCancel }) {
+  const t = useT();
+  const [n, setN] = React.useState(12);
+  React.useEffect(() => {
+    const iv = setInterval(() => setN(v => (v <= 0 ? 0 : v - 1)), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  const calling = n <= 0;
+  const R = 96, C = 2 * Math.PI * R, frac = n / 12;
+
+  if (t.land) {
+    const R2 = 78, C2 = 2 * Math.PI * R2;
+    return <Screen bg={QC[0]} style={{ color: '#F5EFE6' }}>
+      <StatusBar onDark time="14:07" />
+      <div style={{ position: 'absolute', inset: 0, top: 50, display: 'flex', alignItems: 'center', gap: 28, padding: '0 40px 0 44px' }}>
+        <div style={{ flex: 1 }}>
+          <Stamp color="rgba(245,239,230,0.8)" style={{ letterSpacing: 2 }}>{calling ? 'Calling for help' : 'Crash detected'}</Stamp>
+          <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 40, letterSpacing: -1, marginTop: 10, lineHeight: 1 }}>{calling ? 'Hold tight.' : 'Are you okay?'}</div>
+          <div style={{ fontSize: 13.5, opacity: 0.9, marginTop: 10, lineHeight: 1.45, maxWidth: 360 }}>
+            {calling ? 'Sharing your live location with Elena and emergency services now.' : <>Hard impact detected near <b>SS38 km 47</b>. We’ll alert your contacts unless you cancel.</>}
+          </div>
+          <button onClick={onCancel} style={{ marginTop: 18, padding: '15px 28px', borderRadius: 16, border: 'none', cursor: 'pointer', background: '#F5EFE6', color: '#0E0E10', fontFamily: t.sans, fontWeight: 800, fontSize: 16 }}>
+            {calling ? 'I’m safe — stand down' : 'I’m okay — cancel'}</button>
+          <div style={{ marginTop: 12, fontFamily: t.mono, fontSize: 11, opacity: 0.85, letterSpacing: 0.5 }}>WILL CALL → ELENA · DANI · 112</div>
+        </div>
+        <div style={{ position: 'relative', width: 196, height: 196, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="196" height="196" viewBox="0 0 196 196" style={{ position: 'absolute', inset: 0 }}>
+            <circle cx="98" cy="98" r={R2} fill="rgba(14,14,16,0.16)" stroke="rgba(245,239,230,0.3)" strokeWidth="2" />
+            <circle cx="98" cy="98" r={R2} fill="none" stroke="#F5EFE6" strokeWidth="6" strokeLinecap="round" strokeDasharray={C2} strokeDashoffset={C2 * (1 - frac)} transform="rotate(-90 98 98)" style={{ transition: 'stroke-dashoffset 1s linear' }} />
+          </svg>
+          <div style={{ textAlign: 'center' }}>
+            {calling ? <Icon name="phone" size={54} color="#F5EFE6" sw={1.6} />
+              : <><div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 72, lineHeight: 1, letterSpacing: -2 }}>{n}</div><Stamp color="rgba(245,239,230,0.75)">seconds</Stamp></>}
+          </div>
+        </div>
+      </div>
+    </Screen>;
+  }
+
+  return <Screen bg={QC[0]} style={{ color: '#F5EFE6', alignItems: 'center' }}>
+    <style>{`@keyframes crashpulse{0%{transform:translateX(-50%) scale(0.75);opacity:0.6}100%{transform:translateX(-50%) scale(1.35);opacity:0}}`}</style>
+    <StatusBar onDark time="14:07" />
+    <div style={{ position: 'absolute', top: 230, left: '50%', width: 240, height: 240, borderRadius: 999, border: '2px solid rgba(245,239,230,0.35)', animation: 'crashpulse 1.6s ease-out infinite' }} />
+    <div style={{ position: 'relative', width: '100%', textAlign: 'center', padding: '20px 24px', zIndex: 2 }}>
+      <Stamp color="rgba(245,239,230,0.8)" style={{ letterSpacing: 2 }}>{calling ? 'Calling for help' : 'Crash detected'}</Stamp>
+      <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 46, letterSpacing: -1, marginTop: 14, lineHeight: 1 }}>
+        {calling ? 'Hold tight.' : 'Are you okay?'}
+      </div>
+      <div style={{ fontSize: 14.5, opacity: 0.9, marginTop: 12, lineHeight: 1.45, maxWidth: 300, margin: '12px auto 0' }}>
+        {calling ? 'Sharing your live location with Elena and emergency services now.' : <>Hard impact detected near <b>SS38 km 47</b>. We’ll alert your contacts unless you cancel.</>}
+      </div>
+    </div>
+    <div style={{ position: 'relative', width: 240, height: 240, margin: '34px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+      <svg width="240" height="240" viewBox="0 0 240 240" style={{ position: 'absolute', inset: 0 }}>
+        <circle cx="120" cy="120" r={R} fill="rgba(14,14,16,0.16)" stroke="rgba(245,239,230,0.3)" strokeWidth="2" />
+        <circle cx="120" cy="120" r={R} fill="none" stroke="#F5EFE6" strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={C * (1 - frac)} transform="rotate(-90 120 120)" style={{ transition: 'stroke-dashoffset 1s linear' }} />
+      </svg>
+      <div style={{ textAlign: 'center', zIndex: 1 }}>
+        {calling
+          ? <Icon name="phone" size={64} color="#F5EFE6" sw={1.6} />
+          : <><div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 92, lineHeight: 1, letterSpacing: -3 }}>{n}</div>
+            <Stamp color="rgba(245,239,230,0.75)">seconds</Stamp></>}
+      </div>
+    </div>
+    <div style={{ position: 'absolute', bottom: 38, left: 22, right: 22, zIndex: 2 }}>
+      <button onClick={onCancel} style={{
+        width: '100%', padding: 18, borderRadius: 18, border: 'none', cursor: 'pointer', background: '#F5EFE6', color: '#0E0E10',
+        fontFamily: t.sans, fontWeight: 800, fontSize: 18,
+      }}>{calling ? 'I’m safe — stand down' : 'I’m okay — cancel'}</button>
+      <div style={{ marginTop: 12, textAlign: 'center', fontFamily: t.mono, fontSize: 11, opacity: 0.85, letterSpacing: 0.5 }}>
+        WILL CALL → ELENA · DANI · 112
+      </div>
+    </div>
+  </Screen>;
+}
+
+// ── HAZARD REPORT ───────────────────────────────────────────────
+const HAZARD_TYPES = [
+  { id: 'pothole', label: 'Pothole' }, { id: 'gravel', label: 'Gravel' }, { id: 'wet', label: 'Wet road' },
+  { id: 'debris', label: 'Debris' }, { id: 'rockfall', label: 'Rockfall' }, { id: 'animals', label: 'Animals' },
+];
+
+function HazardScreen({ onBack, onSubmit }) {
+  const t = useT();
+  const onDark = t.dark;
+  const [sel, setSel] = React.useState('pothole');
+  const [sev, setSev] = React.useState(2);
+  const sevs = ['Minor', 'Caution', 'Severe'];
+  const sevColor = [QC[3], QC[1], QC[0]][sev];
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <TopBar title="Report hazard" onBack={onBack} onDark={onDark} />
+    <Scroll pad={20} bottomPad={30}>
+      <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 26, letterSpacing: -0.5 }}>What did you hit?</div>
+      <div style={{ fontSize: 13, color: t.dim, marginTop: 5 }}>One tap. We’ll attach your live location automatically.</div>
+
+      <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {HAZARD_TYPES.map(h => {
+          const on = sel === h.id;
+          return <button key={h.id} onClick={() => setSel(h.id)} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '16px 14px', cursor: 'pointer', textAlign: 'left',
+            borderRadius: t.r, background: on ? t.accent : (onDark ? t.raised : t.raised),
+            border: '1px solid ' + (on ? 'transparent' : t.line),
+            boxShadow: on ? '0 8px 22px rgba(255,106,26,0.3)' : 'none',
+          }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: on ? '#0E0E10' : (onDark ? 'rgba(255,255,255,0.06)' : t.bg), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <HazardGlyph type={h.id} size={23} color={on ? t.accent : t.fg} />
+            </div>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 15, color: on ? '#0E0E10' : t.fg }}>{h.label}</div>
+          </button>;
+        })}
+      </div>
+
+      <div style={{ marginTop: 22 }}>
+        <Stamp>How bad is it?</Stamp>
+        <div style={{ marginTop: 9, display: 'flex', gap: 8 }}>
+          {sevs.map((s, i) => {
+            const on = sev === i;
+            const c = [QC[3], QC[1], QC[0]][i];
+            return <button key={s} onClick={() => setSev(i)} style={{
+              flex: 1, padding: '13px 0', borderRadius: t.rSm + 2, cursor: 'pointer', textAlign: 'center',
+              fontFamily: t.sans, fontWeight: 800, fontSize: 13.5,
+              background: on ? c + '26' : (onDark ? t.raised : t.raised), color: on ? c : t.dim,
+              border: '1.5px solid ' + (on ? c : t.line),
+            }}>{s}</button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18, padding: '13px 14px', borderRadius: t.rSm + 2, background: onDark ? t.raised : t.raised2, border: '1px solid ' + t.line, display: 'flex', alignItems: 'center', gap: 11 }}>
+        <Icon name="pin" size={20} color={QC[4]} />
+        <div style={{ flex: 1 }}>
+          <Stamp size={9}>Current location</Stamp>
+          <div style={{ fontFamily: t.mono, fontSize: 12, fontWeight: 600, marginTop: 3 }}>SS38 · km 47.2 · 46.5285°N 10.4531°E</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <Btn accent onDark={onDark} size="lg" onClick={onSubmit} icon={<HazardGlyph type={sel} size={19} color="#0E0E10" />}>
+          Report {HAZARD_TYPES.find(h => h.id === sel).label.toLowerCase()}
+        </Btn>
+      </div>
+      <div style={{ marginTop: 12, textAlign: 'center' }}>
+        <Stamp size={10} color={t.mute}>+5 km road-data credit · helps the community</Stamp>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+Object.assign(window, { RideScreen, CrashScreen, HazardScreen, HazardGlyph });
+
+</script>
+<script type="text/babel" data-src="mobile/screens-c.jsx">
+// screens-c.jsx — Post-ride summary & stats dashboard + Profile.
+
+function PostRideScreen({ onDone, onShare }) {
+  const t = useT();
+  const onDark = t.dark;
+  const quality = [[42, 4, 'Good'], [28, 5, 'Excellent'], [16, 2, 'Poor'], [14, 3, 'Fair']];
+  const splits = [
+    { name: 'Innsbruck → Brenner', km: 38, q: 5, t: '46:10' },
+    { name: 'Brenner → Trafoi', km: 64, q: 4, t: '1:24:30' },
+    { name: 'Stelvio climb', km: 42, q: 2, t: '1:08:55' },
+    { name: 'Stelvio → Bormio', km: 42, q: 5, t: '52:20' },
+  ];
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <TopBar title="Ride summary" onBack={onDone} onDark={onDark}
+      right={<button onClick={onShare} style={{ width: 38, height: 38, borderRadius: 999, border: '1px solid ' + (onDark ? t.invLine : t.line), background: onDark ? 'rgba(255,255,255,0.06)' : t.raised, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: onDark ? '#F3EEE6' : t.fg }}><Icon name="share" size={18} /></button>} />
+    <Scroll pad={20} bottomPad={120}>
+      <Stamp>Saved 14:22 · Apr 19</Stamp>
+      <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 30, letterSpacing: t.track, marginTop: 4 }}>Stelvio, smashed.</div>
+      <div style={{ fontFamily: t.mono, fontSize: 11.5, color: t.mute, marginTop: 4 }}>INNSBRUCK → BORMIO · DAY 1 OF 4</div>
+
+      {/* hero */}
+      <div style={{ marginTop: 14, padding: 16, borderRadius: t.rLg, background: '#141519', color: '#F5EFE6', overflow: 'hidden' }}>
+        <MiniRoute h={130} progress={1} onDark />
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+          {[['186', 'km'], ['4:12', 'moving'], ['89', 'km/h peak'], ['2,758', 'm peak']].map(([n, l]) => (
+            <div key={l}>
+              <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 19, lineHeight: 1 }}>{n}</div>
+              <div style={{ fontFamily: t.mono, fontSize: 9, color: 'rgba(245,239,230,0.55)', marginTop: 4, letterSpacing: 0.3 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* quality breakdown */}
+      <Card raised pad={16} style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Stamp>Tarmac encountered</Stamp>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 20 }}>3.8</span>
+            <Stamp size={9}>avg / 5</Stamp>
+          </div>
+        </div>
+        <div style={{ display: 'flex', marginTop: 12, height: 12, borderRadius: 6, overflow: 'hidden', gap: 2 }}>
+          {quality.map(([pct, q], i) => <div key={i} style={{ width: `${pct}%`, background: QC[q - 1] }} />)}
+        </div>
+        <div style={{ marginTop: 12, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          {quality.map(([pct, q, l], i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: QC[q - 1] }} />
+              <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 12 }}>{pct}%</span>
+              <span style={{ fontSize: 11, color: t.mute }}>{l}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* elevation */}
+      <Card raised pad={16} style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <Stamp>Elevation profile</Stamp>
+          <Stamp size={9} color={t.mute}>+2,758 m gain</Stamp>
+        </div>
+        <ElevProfile h={64} onDark={onDark} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontFamily: t.mono, fontSize: 10, color: t.mute }}>
+          <span>620 m</span><span>STELVIO 2,758 m</span><span>1,225 m</span>
+        </div>
+      </Card>
+
+      {/* splits */}
+      <div style={{ marginTop: 14, marginBottom: 10 }}><Stamp>Splits</Stamp></div>
+      <Card raised pad={0} style={{ overflow: 'hidden' }}>
+        {splits.map((s, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', borderBottom: i < splits.length - 1 ? '1px solid ' + t.line : 'none' }}>
+            <div style={{ width: 4, alignSelf: 'stretch', minHeight: 30, borderRadius: 2, background: QC[s.q - 1] }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 13.5 }}>{s.name}</div>
+              <div style={{ fontFamily: t.mono, fontSize: 11, color: t.mute, marginTop: 2 }}>{s.km} km · {s.t}</div>
+            </div>
+            <QBars q={s.q} size={6} />
+          </div>
+        ))}
+      </Card>
+
+      {/* achievements */}
+      <div style={{ marginTop: 14, marginBottom: 10 }}><Stamp>Unlocked this ride</Stamp></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {[['mountain', 'Passo Stelvio', t.accent, true], ['phone', '186 km mapped', null, false], ['gauge', '48° max lean', null, false]].map(([ic, label, bg, hl], i) => (
+          <div key={i} style={{ flex: 1, padding: 13, borderRadius: t.r, background: hl ? t.accent : (onDark ? t.raised : t.raised2), color: hl ? '#0E0E10' : t.fg, border: hl ? 'none' : '1px solid ' + t.line }}>
+            <Icon name={ic} size={22} color={hl ? '#0E0E10' : t.dim} />
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 12.5, marginTop: 8, lineHeight: 1.2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <Btn onDark={onDark} size="lg" onClick={onShare} icon={<Icon name="share" size={18} color={onDark ? '#0E0E10' : t.bg} />}>Share ride</Btn>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+// ── PROFILE ─────────────────────────────────────────────────────
+function ProfileScreen({ cfg, onSettings }) {
+  const t = useT();
+  const onDark = t.dark;
+  const stats = [['12,480', 'km ridden'], ['86', 'rides'], ['1,284', 'km mapped'], ['9', 'badges']];
+  const rows = [
+    ['route', 'My rides', '86', null], ['heart', 'Saved roads', '24', null], ['alert', 'My reports', '31', null],
+    ['settings', 'Settings', '', onSettings], ['phone', 'Linked devices', '2', null],
+  ];
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <Scroll pad={20} bottomPad={120}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingTop: 6 }}>
+        <Avatar size={64} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 22, letterSpacing: -0.4 }}>Luca Moretti</div>
+          <div style={{ fontFamily: t.mono, fontSize: 11.5, color: t.mute, marginTop: 3 }}>Ducati Monster · Bolzano</div>
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, background: t.invBg, color: t.invFg, fontFamily: t.sans, fontWeight: 800, fontSize: 11 }}>
+          <span style={{ width: 6, height: 6, borderRadius: 9, background: t.accent }} /> PRO
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {stats.map(([n, l]) => (
+          <Card raised key={l} pad={14}>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 24, lineHeight: 1 }}>{n}</div>
+            <div style={{ marginTop: 5 }}><Stamp size={9}>{l}</Stamp></div>
+          </Card>
+        ))}
+      </div>
+
+      {/* personal road map */}
+      <Card raised pad={16} style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Stamp>Roads explored · Beskydy</Stamp><Stamp size={9} color={t.accent}>62%</Stamp>
+        </div>
+        <MiniRoute h={110} progress={0.62} onDark={onDark} seed={2} />
+      </Card>
+
+      <div style={{ marginTop: 14 }}>
+        <Card raised pad={0} style={{ overflow: 'hidden' }}>
+          {rows.map(([ic, label, val, act], i) => (
+            <div key={label} onClick={act || undefined} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', cursor: act ? 'pointer' : 'default', borderBottom: i < rows.length - 1 ? '1px solid ' + t.line : 'none' }}>
+              <Icon name={ic} size={20} color={t.dim} />
+              <div style={{ flex: 1, fontFamily: t.sans, fontWeight: 600, fontSize: 15 }}>{label}</div>
+              {val && <span style={{ fontFamily: t.mono, fontSize: 12, color: t.mute }}>{val}</span>}
+              <Icon name="right" size={17} color={t.faint} />
+            </div>
+          ))}
+        </Card>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+Object.assign(window, { PostRideScreen, ProfileScreen });
+
+</script>
+<script type="text/babel" data-src="mobile/screens-d.jsx">
+// screens-d.jsx — Calimoto-style quick round-trip planner: generator + result.
+
+// ── Direction wheel ─────────────────────────────────────────────
+const DIRS = [
+  { id: 'N', a: -90 }, { id: 'NE', a: -45 }, { id: 'E', a: 0 }, { id: 'SE', a: 45 },
+  { id: 'S', a: 90 }, { id: 'SW', a: 135 }, { id: 'W', a: 180 }, { id: 'NW', a: -135 },
+];
+function DirectionWheel({ value, onChange, onDark }) {
+  const t = useT();
+  const S = 170, c = S / 2, r = 64;
+  const line = onDark ? t.invLine : t.line;
+  const sel = DIRS.find(d => d.id === value);
+  return <div style={{ position: 'relative', width: S, height: S, margin: '0 auto' }}>
+    <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} style={{ position: 'absolute', inset: 0 }}>
+      <circle cx={c} cy={c} r={r} fill="none" stroke={line} strokeWidth="1.5" />
+      <circle cx={c} cy={c} r={r + 14} fill="none" stroke={line} strokeWidth="1" strokeDasharray="2 5" opacity="0.6" />
+      {sel && <line x1={c} y1={c} x2={c + Math.cos(sel.a * Math.PI / 180) * r} y2={c + Math.sin(sel.a * Math.PI / 180) * r} stroke={t.accent} strokeWidth="2.5" strokeLinecap="round" />}
+    </svg>
+    {DIRS.map(d => {
+      const on = value === d.id;
+      const x = c + Math.cos(d.a * Math.PI / 180) * r, y = c + Math.sin(d.a * Math.PI / 180) * r;
+      return <button key={d.id} onClick={() => onChange(d.id)} style={{
+        position: 'absolute', left: x - 17, top: y - 17, width: 34, height: 34, borderRadius: 999, cursor: 'pointer',
+        background: on ? t.accent : (onDark ? 'rgba(255,255,255,0.06)' : t.raised), color: on ? '#0E0E10' : t.dim,
+        border: '1px solid ' + (on ? 'transparent' : line), fontFamily: t.mono, fontWeight: 700, fontSize: 11,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>{d.id}</button>;
+    })}
+    <button onClick={() => onChange('any')} style={{
+      position: 'absolute', left: c - 30, top: c - 30, width: 60, height: 60, borderRadius: 999, cursor: 'pointer',
+      background: value === 'any' ? t.fg : (onDark ? 'rgba(255,255,255,0.05)' : t.raised2),
+      color: value === 'any' ? t.bg : t.dim, border: '1px solid ' + line,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+    }}>
+      <Icon name="nav" size={18} color={value === 'any' ? t.bg : t.dim} sw={2} />
+      <span style={{ fontFamily: t.mono, fontSize: 8, fontWeight: 700, letterSpacing: 0.5 }}>ANY</span>
+    </button>
+  </div>;
+}
+
+// ── Notched level selector (curviness) ──────────────────────────
+function LevelPicker({ value, onChange, labels, onDark }) {
+  const t = useT();
+  return <div style={{ display: 'flex', gap: 6 }}>
+    {labels.map((lab, i) => {
+      const on = value === i;
+      const reached = i <= value;
+      return <button key={i} onClick={() => onChange(i)} style={{
+        flex: 1, padding: '10px 4px', borderRadius: t.rSm, cursor: 'pointer', textAlign: 'center',
+        background: reached ? t.accent + (on ? 'ff' : '26') : (onDark ? t.raised : t.raised),
+        border: '1px solid ' + (on ? t.accent : (onDark ? t.invLine : t.line)),
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginBottom: 5 }}>
+          {Array.from({ length: i + 1 }).map((_, k) => <span key={k} style={{ width: 2.5, height: 9 + k * 2, borderRadius: 2, background: on ? '#0E0E10' : (reached ? t.accent : t.faint) }} />)}
+        </div>
+        <span style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 10.5, color: on ? '#0E0E10' : t.dim }}>{lab}</span>
+      </button>;
+    })}
+  </div>;
+}
+
+// ── QUICK PLAN (generator) ──────────────────────────────────────
+function QuickPlanScreen({ onGenerate, embedded }) {
+  const t = useT();
+  const onDark = t.dark;
+  const [dur, setDur] = React.useState(1); // index into DURS
+  const [heading, setHeading] = React.useState('NE');
+  const [twist, setTwist] = React.useState(3);
+  const [avoid, setAvoid] = React.useState({ highways: true, paved: true, tolls: false });
+  const DURS = [['1 h', '~48 km'], ['2 h', '~95 km'], ['3 h', '~150 km'], ['Half day', '~230 km']];
+  const tog = (k) => setAvoid(a => ({ ...a, [k]: !a[k] }));
+
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <div style={{ padding: t.land ? '6px 20px 4px ' + (LAND_RAIL + 36) + 'px' : '6px 20px 4px', flexShrink: 0 }}>
+      <Stamp>Quick ride</Stamp>
+      <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: t.h1, letterSpacing: t.track, marginTop: 2 }}>Round trip</div>
+      <div style={{ fontSize: 13, color: t.dim, marginTop: 4 }}>A loop from here, back to here — built around good tarmac.</div>
+    </div>
+    <Scroll pad={20} bottomPad={110}>
+      {/* start point */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', borderRadius: t.rSm + 2, background: onDark ? t.raised : t.raised2, border: '1px solid ' + t.line, marginTop: 4 }}>
+        <Icon name="pin" size={20} color={t.accent} />
+        <div style={{ flex: 1 }}>
+          <Stamp size={9}>Start & finish</Stamp>
+          <div style={{ fontFamily: t.sans, fontWeight: 700, fontSize: 14, marginTop: 2 }}>Current location · Bolzano</div>
+        </div>
+        <Icon name="settings" size={18} color={t.faint} />
+      </div>
+
+      {/* how long */}
+      <div style={{ marginTop: 20 }}>
+        <Stamp>How long do you have?</Stamp>
+        <div style={{ marginTop: 9, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {DURS.map(([lab, km], i) => {
+            const on = dur === i;
+            return <button key={lab} onClick={() => setDur(i)} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', cursor: 'pointer',
+              borderRadius: t.r, background: on ? t.fg : (onDark ? t.raised : t.raised), color: on ? t.bg : t.fg,
+              border: '1px solid ' + (on ? 'transparent' : t.line),
+            }}>
+              <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 16 }}>{lab}</span>
+              <span style={{ fontFamily: t.mono, fontSize: 11, color: on ? 'rgba(245,239,230,0.65)' : t.mute }}>{km}</span>
+            </button>;
+          })}
+        </div>
+      </div>
+
+      {/* direction */}
+      <div style={{ marginTop: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <Stamp>Which way?</Stamp>
+          <Stamp size={9} color={t.accent}>{heading === 'any' ? 'Surprise me' : 'Head ' + heading}</Stamp>
+        </div>
+        <div style={{ marginTop: 12 }}><DirectionWheel value={heading} onChange={setHeading} onDark={onDark} /></div>
+      </div>
+
+      {/* curviness */}
+      <div style={{ marginTop: 18 }}>
+        <Stamp>Curviness</Stamp>
+        <div style={{ marginTop: 9 }}>
+          <LevelPicker value={twist} onChange={setTwist} onDark={onDark} labels={['Mellow', 'Easy', 'Mixed', 'Twisty', 'Wild']} />
+        </div>
+      </div>
+
+      {/* avoid */}
+      <div style={{ marginTop: 20 }}>
+        <Stamp>Avoid</Stamp>
+        <div style={{ marginTop: 9, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Chip active={avoid.highways} accent={avoid.highways} dark={onDark} onClick={() => tog('highways')}>No highways</Chip>
+          <Chip active={avoid.paved} accent={avoid.paved} dark={onDark} onClick={() => tog('paved')}>Paved only</Chip>
+          <Chip active={avoid.tolls} accent={avoid.tolls} dark={onDark} onClick={() => tog('tolls')}>Avoid tolls</Chip>
+        </div>
+      </div>
+    </Scroll>
+
+    {/* sticky generate */}
+    <div style={{ position: 'absolute', left: t.land ? LAND_RAIL + 24 : 0, right: 0, bottom: 0, padding: '14px 20px',
+      paddingBottom: t.land ? 16 : (embedded ? 100 : 34),
+      background: `linear-gradient(to top, ${t.bg} 62%, transparent)`, zIndex: 20 }}>
+      <div style={{ maxWidth: t.land ? 660 : 'none', margin: '0 auto' }}>
+        <Btn accent onDark={onDark} size="lg" onClick={() => onGenerate({ dur, heading, twist })}
+          icon={<Icon name="bolt" size={19} color="#0E0E10" sw={2} />}>Generate loop</Btn>
+      </div>
+    </div>
+  </Screen>;
+}
+
+// ── ROUTE RESULT (generated loop) ───────────────────────────────
+const ROUTE_VARIANTS = [
+  { id: 0, name: 'Dolomiti quick loop', km: 95, dur: '2h 10m', turns: 64, elev: '+1,420 m', twist: 4, q: 4, prog: 35,
+    zones: [['Passo Pinei', 5], ['Val Gardena ridge', 4], ['Renon switchbacks', 3]] },
+  { id: 1, name: 'Eggental twister', km: 88, dur: '2h 02m', turns: 78, elev: '+1,610 m', twist: 5, q: 3, prog: 60,
+    zones: [['Karerpass', 4], ['Nigerpass', 5], ['Eggental gorge', 3]] },
+  { id: 2, name: 'Adige valley cruise', km: 102, dur: '2h 16m', turns: 41, elev: '+780 m', twist: 2, q: 5, prog: 20,
+    zones: [['Mendola climb', 4], ['Lake Caldaro', 5]] },
+];
+
+function RouteResultScreen({ cfg, onBack, onStart, onShuffle, embedded }) {
+  const t = useT();
+  const [v, setV] = React.useState(0);
+  const r = ROUTE_VARIANTS[v];
+  const mapDark = mapThemeFromCfg(cfg) !== 'light';
+  return <Screen onDark>
+    <div style={{ position: 'absolute', inset: 0, ...(t.land ? {} : { height: '46%' }) }}>
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <TarmotoMap theme={mapThemeFromCfg(cfg)} mapStyle="heatmap" progress={r.prog} accent={t.accent} showLabels={false} />
+      </div>
+    </div>
+    <StatusBar onDark={mapDark} />
+    {!t.land && <div style={{ position: 'absolute', top: 50, left: 16, zIndex: 14 }}>
+      <button onClick={onBack} style={{ width: 42, height: 42, borderRadius: 999, border: 'none', cursor: 'pointer',
+        background: mapDark ? 'rgba(14,14,16,0.55)' : 'rgba(245,239,230,0.85)', backdropFilter: 'blur(12px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', color: mapDark ? '#F5EFE6' : '#0E0E10', boxShadow: '0 6px 18px rgba(14,14,16,0.2)' }}>
+        <Icon name="left" size={21} /></button>
+    </div>}
+    {/* variant tabs */}
+    {!t.land && <div style={{ position: 'absolute', top: 52, right: 16, zIndex: 14, display: 'flex', gap: 6 }}>
+      {ROUTE_VARIANTS.map((rv, i) => (
+        <button key={i} onClick={() => setV(i)} style={{ width: 38, height: 38, borderRadius: 12, cursor: 'pointer',
+          border: 'none', fontFamily: t.sans, fontWeight: 800, fontSize: 14,
+          background: v === i ? t.accent : (mapDark ? 'rgba(14,14,16,0.55)' : 'rgba(245,239,230,0.85)'),
+          color: v === i ? '#0E0E10' : (mapDark ? '#F5EFE6' : '#0E0E10'), backdropFilter: 'blur(12px)' }}>
+          {String.fromCharCode(65 + i)}</button>
+      ))}
+    </div>}
+
+    {/* sheet / side panel */}
+    <div style={{ ...sheetStyle(t, { maxH: '64%' }) }}>
+      {!t.land && <div style={{ width: 42, height: 5, borderRadius: 9, background: t.faint, margin: '12px auto 0', flexShrink: 0 }} />}
+      <div style={{ overflowY: 'auto', padding: t.land ? '14px 16px 16px' : '12px 20px ' + (embedded ? '110px' : '30px') }}>
+        {t.land && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <button onClick={onBack} style={{ width: 36, height: 36, borderRadius: 999, border: '1px solid ' + t.line, background: t.raised, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.fg, flexShrink: 0 }}><Icon name="left" size={19} /></button>
+          <div style={{ flex: 1 }} />
+          {ROUTE_VARIANTS.map((rv, i) => (
+            <button key={i} onClick={() => setV(i)} style={{ width: 34, height: 34, borderRadius: 10, cursor: 'pointer', border: 'none', fontFamily: t.sans, fontWeight: 800, fontSize: 13, background: v === i ? t.accent : t.raised2, color: v === i ? '#0E0E10' : t.fg }}>{String.fromCharCode(65 + i)}</button>
+          ))}
+        </div>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Stamp>Round trip · loop {String.fromCharCode(65 + v)}</Stamp>
+            <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 23, letterSpacing: -0.5, marginTop: 4 }}>{r.name}</div>
+          </div>
+          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              {[1, 2, 3, 4, 5].map(n => <span key={n} style={{ width: 4, height: 14, borderRadius: 2, background: n <= r.twist ? t.accent : t.qEmpty }} />)}
+            </div>
+            <div style={{ marginTop: 4 }}><Stamp size={9}>Twisty {r.twist}/5</Stamp></div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+          {[[r.km, 'KM'], [r.dur, 'TIME'], [r.turns, 'TURNS'], [r.elev.replace(' m', ''), 'M GAIN']].map(([val, l]) => (
+            <div key={l}>
+              <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 18, lineHeight: 1 }}>{val}</div>
+              <div style={{ marginTop: 4 }}><Stamp size={9}>{l}</Stamp></div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: t.rSm + 2, background: t.raised2, border: '1px solid ' + t.line }}>
+          <QBars q={r.q} size={7} />
+          <div style={{ flex: 1, fontSize: 12.5 }}><b>{QFULL[r.q - 1]} tarmac</b> overall · {r.zones.length} fun zones on this loop</div>
+        </div>
+
+        <div style={{ marginTop: 14, marginBottom: 8 }}><Stamp>Fun zones</Stamp></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {r.zones.map(([name, q], i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', borderRadius: t.rSm + 2, background: t.raised, border: '1px solid ' + t.line }}>
+              <div style={{ width: 28, height: 28, borderRadius: 999, background: t.bg, border: '1px solid ' + t.line, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: t.mono, fontWeight: 700, fontSize: 12 }}>{i + 1}</div>
+              <div style={{ flex: 1, fontFamily: t.sans, fontWeight: 700, fontSize: 14 }}>{name}</div>
+              <QBars q={q} size={6} />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button onClick={() => onShuffle && setV((v + 1) % ROUTE_VARIANTS.length)} style={{
+            flex: 1, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'transparent', color: t.fg,
+            border: '1px solid ' + t.lineStrong, fontFamily: t.sans, fontWeight: 800, fontSize: 14,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Icon name="bolt" size={17} /> Shuffle</button>
+          <div style={{ flex: 1.4 }}><Btn accent onClick={onStart} icon={<Icon name="nav" size={18} color="#0E0E10" sw={2} />}>Start ride</Btn></div>
+        </div>
+      </div>
+    </div>
+  </Screen>;
+}
+
+// ── Interactive flow wrapper (Plan tab) ─────────────────────────
+function PlannerScreen({ cfg, onStart }) {
+  const [stage, setStage] = React.useState('form');
+  if (stage === 'result') return <RouteResultScreen cfg={cfg} embedded onBack={() => setStage('form')} onStart={onStart} onShuffle />;
+  return <QuickPlanScreen embedded onGenerate={() => setStage('result')} />;
+}
+
+Object.assign(window, { QuickPlanScreen, RouteResultScreen, PlannerScreen, DirectionWheel });
+
+</script>
+<script type="text/babel" data-src="mobile/screens-e.jsx">
+// screens-e.jsx — Auth (welcome / sign in / sign up) + Settings.
+
+// ── Brand mark for auth ─────────────────────────────────────────
+function BrandMark({ size = 46, light }) {
+  const c = light ? '#F5EFE6' : '#0E0E10';
+  return <svg width={size} height={size} viewBox="0 0 26 26">
+    <path d="M3 21 13 5l10 16H3Z" fill="none" stroke={c} strokeWidth="2.2" strokeLinejoin="round" />
+    <path d="M9.5 21 13 15l3.5 6" fill="none" stroke="#FF6A1A" strokeWidth="2.2" strokeLinejoin="round" />
+  </svg>;
+}
+
+function Field({ label, value, placeholder, type, onDark, t, icon, rightSlot }) {
+  return <label style={{ display: 'block' }}>
+    <Stamp size={9}>{label}</Stamp>
+    <div style={{
+      marginTop: 7, display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', height: 52,
+      borderRadius: t.rSm + 3, background: onDark ? 'rgba(255,255,255,0.06)' : t.raised,
+      border: '1px solid ' + (onDark ? t.invLine : t.line),
+    }}>
+      {icon && <Icon name={icon} size={18} color={t.mute} />}
+      <span style={{ flex: 1, fontFamily: t.sans, fontWeight: value ? 600 : 400, fontSize: 15, color: value ? t.fg : t.mute }}>
+        {value || placeholder}
+      </span>
+      {rightSlot}
+    </div>
+  </label>;
+}
+
+function SocialRow({ t, onDark }) {
+  const btns = [
+    { id: 'apple', label: 'Apple', glyph: <path d="M16 12.6c0-2 1.6-3 1.7-3.1-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7-1.3 0-2.6.8-3.2 2-1.4 2.4-.4 6 1 8 .6 1 1.4 2.1 2.4 2 1-.1 1.3-.6 2.5-.6s1.5.6 2.6.6 1.7-1 2.3-2c.7-1.1 1-2.2 1-2.3-.1 0-2-.8-2-3zM14.3 6.3c.5-.7.9-1.6.8-2.5-.8 0-1.7.5-2.3 1.2-.5.6-.9 1.5-.8 2.4.9.1 1.7-.4 2.3-1.1z" fill={onDark ? '#F3EEE6' : '#0E0E10'} /> },
+    { id: 'google', label: 'Google', glyph: <><path d="M21 12.2c0-.6-.1-1.2-.2-1.8H12v3.4h5c-.2 1.1-.9 2.1-1.9 2.7v2.2h3C19.9 17.1 21 14.9 21 12.2z" fill="#4285F4" /><path d="M12 21c2.4 0 4.5-.8 6-2.2l-3-2.2c-.8.5-1.9.9-3 .9-2.3 0-4.3-1.6-5-3.7H3.9v2.3C5.4 19 8.5 21 12 21z" fill="#34A853" /><path d="M7 13.6c-.2-.5-.3-1.1-.3-1.6s.1-1.1.3-1.6V8.1H3.9C3.3 9.3 3 10.6 3 12s.3 2.7.9 3.9L7 13.6z" fill="#FBBC05" /><path d="M12 6.7c1.3 0 2.5.5 3.4 1.3l2.6-2.6C16.5 3.9 14.4 3 12 3 8.5 3 5.4 5 3.9 8.1L7 10.4c.7-2.1 2.7-3.7 5-3.7z" fill="#EA4335" /></> },
+  ];
+  return <div style={{ display: 'flex', gap: 10 }}>
+    {btns.map(b => (
+      <button key={b.id} style={{
+        flex: 1, height: 52, borderRadius: t.rSm + 3, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+        background: onDark ? 'rgba(255,255,255,0.06)' : t.raised, border: '1px solid ' + (onDark ? t.invLine : t.line),
+        fontFamily: t.sans, fontWeight: 700, fontSize: 14.5, color: t.fg,
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24">{b.glyph}</svg>{b.label}
+      </button>
+    ))}
+  </div>;
+}
+
+// ── AUTH (welcome → signin → signup) ────────────────────────────
+function AuthScreen({ cfg, onAuthed, initial = 'welcome' }) {
+  const t = useT();
+  const [view, setView] = React.useState(initial);
+  const onDark = t.dark;
+
+  if (view === 'welcome') {
+    // Full-bleed dark hero over the map — always immersive
+    return <Screen bg="#0B0C0F" onDark>
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <TarmotoMap theme="dark" mapStyle="heatmap" progress={62} accent={t.accent} showLabels={false} />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(11,12,15,0.5) 0%, rgba(11,12,15,0.2) 38%, rgba(11,12,15,0.92) 78%)' }} />
+      <StatusBar onDark />
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: t.land ? '0 40px 30px' : '0 26px 34px', zIndex: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: t.land ? 14 : 18 }}>
+          <BrandMark size={34} light />
+          <span style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 22, letterSpacing: -0.5, color: '#F5EFE6' }}>Tarmoto</span>
+        </div>
+        <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: t.land ? 38 : 44, lineHeight: 1.0, letterSpacing: -1.4, color: '#F5EFE6', maxWidth: 440 }}>
+          Know the road<br />before you ride it.
+        </div>
+        <div style={{ fontSize: 15, color: 'rgba(245,239,230,0.72)', marginTop: 14, lineHeight: 1.45, maxWidth: 360 }}>
+          Live road-quality maps built from riders’ sensors. Find the good tarmac, dodge the bad.
+        </div>
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 11, maxWidth: t.land ? 420 : 'none' }}>
+          <Btn accent onClick={() => setView('signup')} size="lg" icon={<Icon name="bolt" size={19} color="#0E0E10" sw={2} />}>Create account</Btn>
+          <button onClick={() => setView('signin')} style={{
+            width: '100%', padding: 16, borderRadius: 14, cursor: 'pointer', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.18)', color: '#F5EFE6', fontFamily: t.sans, fontWeight: 800, fontSize: 16,
+          }}>I already ride with Tarmoto</button>
+        </div>
+        <div style={{ marginTop: 18, textAlign: 'center', fontFamily: t.mono, fontSize: 10.5, color: 'rgba(245,239,230,0.5)', lineHeight: 1.5 }}>
+          By continuing you agree to our Terms & Privacy Policy
+        </div>
+      </div>
+    </Screen>;
+  }
+
+  const isSignup = view === 'signup';
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <TopBar title="" onBack={() => setView('welcome')} onDark={onDark} />
+    <Scroll pad={26} bottomPad={30}>
+      <div style={{ maxWidth: t.land ? 460 : 'none', margin: '0 auto' }}>
+        <BrandMark size={40} light={onDark} />
+        <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 30, letterSpacing: -0.7, marginTop: 18 }}>
+          {isSignup ? 'Create your account' : 'Welcome back'}
+        </div>
+        <div style={{ fontSize: 14, color: t.dim, marginTop: 6 }}>
+          {isSignup ? 'Start mapping the roads you ride.' : 'Pick up where you left off.'}
+        </div>
+
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {isSignup && <Field label="Name" value="Luca Moretti" type="text" icon="user" onDark={onDark} t={t} />}
+          <Field label="Email" value="luca@moretti.cc" type="email" icon="pin" onDark={onDark} t={t} />
+          <Field label="Password" value="••••••••••" type="password" icon="settings" onDark={onDark} t={t}
+            rightSlot={<Stamp size={9} color={t.accent}>{isSignup ? 'STRONG' : 'SHOW'}</Stamp>} />
+        </div>
+
+        {!isSignup && <div style={{ marginTop: 12, textAlign: 'right' }}>
+          <Stamp size={10} color={t.dim}>Forgot password?</Stamp>
+        </div>}
+
+        <div style={{ marginTop: 22 }}>
+          <Btn accent onDark={onDark} size="lg" onClick={onAuthed} icon={<Icon name="nav" size={18} color="#0E0E10" sw={2} />}>
+            {isSignup ? 'Create account' : 'Sign in'}
+          </Btn>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0' }}>
+          <div style={{ flex: 1, height: 1, background: t.line }} />
+          <Stamp size={9} color={t.mute}>or continue with</Stamp>
+          <div style={{ flex: 1, height: 1, background: t.line }} />
+        </div>
+        <SocialRow t={t} onDark={onDark} />
+
+        <div style={{ marginTop: 26, textAlign: 'center', fontFamily: t.sans, fontSize: 14, color: t.dim }}>
+          {isSignup ? 'Already have an account? ' : 'New to Tarmoto? '}
+          <button onClick={() => setView(isSignup ? 'signin' : 'signup')} style={{
+            background: 'none', border: 'none', cursor: 'pointer', fontFamily: t.sans, fontWeight: 800, fontSize: 14, color: t.accent, padding: 0,
+          }}>{isSignup ? 'Sign in' : 'Create one'}</button>
+        </div>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+// ── SETTINGS ────────────────────────────────────────────────────
+function Toggle({ on, onClick, t }) {
+  return <button onClick={onClick} style={{
+    width: 46, height: 28, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0,
+    background: on ? t.accent : (t.dark ? 'rgba(243,238,230,0.18)' : 'rgba(14,14,16,0.16)'),
+    padding: 3, display: 'flex', justifyContent: on ? 'flex-end' : 'flex-start', transition: 'all 160ms',
+  }}>
+    <span style={{ width: 22, height: 22, borderRadius: 999, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+  </button>;
+}
+
+function SettingsScreen({ cfg, onBack }) {
+  const t = useT();
+  const onDark = t.dark;
+  const [tog, setTog] = React.useState({ crash: true, hazardAlerts: true, voice: true, autopause: true, offline: false, share: true });
+  const flip = (k) => setTog(s => ({ ...s, [k]: !s[k] }));
+
+  const Section = ({ label, children }) => (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ marginBottom: 9, paddingLeft: 2 }}><Stamp>{label}</Stamp></div>
+      <Card raised pad={0} style={{ overflow: 'hidden' }}>{children}</Card>
+    </div>
+  );
+  const Row = ({ icon, title, sub, right, last, danger }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 16px', borderBottom: last ? 'none' : '1px solid ' + t.line }}>
+      <div style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: danger ? QC[0] + '22' : (onDark ? 'rgba(255,255,255,0.06)' : t.bg), border: '1px solid ' + (danger ? QC[0] + '55' : t.line), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={18} color={danger ? QC[0] : t.dim} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontFamily: t.sans, fontWeight: 600, fontSize: 15, color: danger ? QC[0] : t.fg }}>{title}</div>
+        {sub && <div style={{ fontFamily: t.mono, fontSize: 11, color: t.mute, marginTop: 2 }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  );
+  const Chev = <Icon name="right" size={17} color={t.faint} />;
+
+  return <Screen onDark={onDark}>
+    <StatusBar onDark={onDark} />
+    <TopBar title="Settings" onBack={onBack} onDark={onDark} />
+    <Scroll pad={20} bottomPad={120}>
+      {/* account header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 4px 2px' }}>
+        <Avatar size={56} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: t.sans, fontWeight: 800, fontSize: 19, letterSpacing: -0.3 }}>Luca Moretti</div>
+          <div style={{ fontFamily: t.mono, fontSize: 11.5, color: t.mute, marginTop: 2 }}>luca@moretti.cc</div>
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, background: t.invBg, color: t.invFg, fontFamily: t.sans, fontWeight: 800, fontSize: 11 }}>
+          <span style={{ width: 6, height: 6, borderRadius: 9, background: t.accent }} /> PRO
+        </div>
+      </div>
+
+      <Section label="Safety">
+        <Row icon="heart" title="Crash detection" sub="Auto-alert contacts after a hard impact" right={<Toggle on={tog.crash} onClick={() => flip('crash')} t={t} />} />
+        <Row icon="alert" title="Hazard alerts" sub="Warn me about hazards ahead" right={<Toggle on={tog.hazardAlerts} onClick={() => flip('hazardAlerts')} t={t} />} />
+        <Row icon="user" title="Emergency contacts" sub="Elena · Dani" right={Chev} last />
+      </Section>
+
+      <Section label="Navigation & ride">
+        <Row icon="speed" title="Voice guidance" sub="Spoken turn-by-turn" right={<Toggle on={tog.voice} onClick={() => flip('voice')} t={t} />} />
+        <Row icon="clock" title="Auto-pause" sub="Pause tracking when stopped" right={<Toggle on={tog.autopause} onClick={() => flip('autopause')} t={t} />} />
+        <Row icon="gauge" title="Units" sub="Metric · km, °C" right={Chev} />
+        <Row icon="route" title="Avoid by default" sub="Highways, tolls" right={Chev} last />
+      </Section>
+
+      <Section label="Data & maps">
+        <Row icon="layers" title="Offline maps" sub="Download regions for no-signal rides" right={<Toggle on={tog.offline} onClick={() => flip('offline')} t={t} />} />
+        <Row icon="share" title="Share my road data" sub="Help improve quality maps" right={<Toggle on={tog.share} onClick={() => flip('share')} t={t} />} />
+        <Row icon="trend" title="Storage" sub="1.2 GB cached" right={Chev} last />
+      </Section>
+
+      <Section label="Account">
+        <Row icon="settings" title="Personal details" right={Chev} />
+        <Row icon="phone" title="Linked devices" sub="2 connected" right={Chev} />
+        <Row icon="bolt" title="Manage subscription" sub="Tarmoto Pro · renews May 4" right={Chev} last />
+      </Section>
+
+      <div style={{ marginTop: 22 }}>
+        <Card raised pad={0} style={{ overflow: 'hidden' }}>
+          <Row icon="left" title="Sign out" right={Chev} last />
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 18, textAlign: 'center' }}>
+        <Stamp size={10} color={t.mute}>Tarmoto 2.4.0 · build 1840</Stamp>
+      </div>
+    </Scroll>
+  </Screen>;
+}
+
+Object.assign(window, { AuthScreen, SettingsScreen });
+
+</script>
+<script type="text/babel" data-src="mobile/app.jsx">
+// app.jsx — top-level: router, control rail, gallery, tweaks wiring.
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "direction": "atlas",
+  "theme": "light",
+  "mapStyle": "dark",
+  "homeLayout": "map",
+  "navStyle": "bar",
+  "orient": "portrait"
+}/*EDITMODE-END*/;
+
+const SCENES = [
+  { id: 'auth', label: 'Welcome / sign in', nav: false },
+  { id: 'signup', label: 'Sign up', nav: false },
+  { id: 'home', label: 'Home', nav: true },
+  { id: 'plan', label: 'Quick planner', nav: true },
+  { id: 'route', label: 'Generated route', nav: true },
+  { id: 'roads', label: 'Road explorer', nav: true },
+  { id: 'ride', label: 'Ride mode', nav: false },
+  { id: 'hazard', label: 'Hazard report', nav: false },
+  { id: 'crash', label: 'Crash detection', nav: false },
+  { id: 'postride', label: 'Post-ride summary', nav: false },
+  { id: 'me', label: 'Profile', nav: true },
+  { id: 'settings', label: 'Settings', nav: false },
+];
+
+function navTabFor(id) {
+  if (id === 'plan' || id === 'route') return 'plan';
+  if (id === 'roads') return 'roads';
+  if (id === 'me') return 'me';
+  return 'home';
+}
+
+function Wordmark({ dark }) {
+  const c = dark ? '#F3EEE6' : '#0E0E10';
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <svg width="26" height="26" viewBox="0 0 26 26"><path d="M3 21 13 5l10 16H3Z" fill="none" stroke={c} strokeWidth="2.2" strokeLinejoin="round" /><path d="M9.5 21 13 15l3.5 6" fill="none" stroke="#FF6A1A" strokeWidth="2.2" strokeLinejoin="round" /></svg>
+    <div style={{ fontFamily: "'Space Grotesk', system-ui", fontWeight: 800, fontSize: 19, letterSpacing: -0.5, color: c }}>Tarmoto</div>
+  </div>;
+}
+
+function RailSeg({ options, value, onChange, dark }) {
+  return <div style={{ display: 'inline-flex', gap: 3, padding: 3, borderRadius: 11, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(14,14,16,0.05)', border: '1px solid ' + (dark ? 'rgba(255,255,255,0.08)' : 'rgba(14,14,16,0.08)') }}>
+    {options.map(o => {
+      const on = value === o.v;
+      return <button key={o.v} onClick={() => onChange(o.v)} style={{
+        padding: '7px 13px', borderRadius: 8, border: 'none', cursor: 'pointer',
+        fontFamily: "'Space Grotesk', system-ui", fontWeight: 700, fontSize: 12.5,
+        background: on ? (dark ? '#F3EEE6' : '#0E0E10') : 'transparent',
+        color: on ? (dark ? '#0E0E10' : '#F5EFE6') : (dark ? 'rgba(243,238,230,0.65)' : 'rgba(14,14,16,0.55)'),
+        transition: 'all 140ms',
+      }}>{o.l}</button>;
+    })}
+  </div>;
+}
+
+function PhoneScene({ name, cfg, handlers, scale = 1, interactive = true, tab, onTab, onStart }) {
+  const t = useT();
+  const immersive = name === 'ride' || name === 'crash';
+  const frameDark = immersive ? true : t.dark;
+  let screen;
+  if (name === 'home') screen = <HomeScreen cfg={cfg} onStart={handlers.start} onOpenRide={handlers.start} />;
+  else if (name === 'roads') screen = <ExplorerScreen cfg={cfg} />;
+  else if (name === 'ride') screen = <RideScreen cfg={cfg} onReport={handlers.report} onEnd={handlers.end} />;
+  else if (name === 'hazard') screen = <HazardScreen onBack={handlers.toRide} onSubmit={handlers.toRide} />;
+  else if (name === 'crash') screen = <CrashScreen onCancel={handlers.toRide} />;
+  else if (name === 'postride') screen = <PostRideScreen onDone={handlers.home} onShare={handlers.home} />;
+  else if (name === 'plan') screen = interactive ? <PlannerScreen cfg={cfg} onStart={handlers.start} /> : <QuickPlanScreen embedded onGenerate={() => { }} />;
+  else if (name === 'route') screen = <RouteResultScreen cfg={cfg} embedded onBack={() => { }} onStart={handlers.start} onShuffle />;
+  else if (name === 'me') screen = <ProfileScreen cfg={cfg} onSettings={handlers.settings} />;
+  else if (name === 'auth') screen = <AuthScreen cfg={cfg} initial="welcome" onAuthed={handlers.home} />;
+  else if (name === 'signup') screen = <AuthScreen cfg={cfg} initial="signup" onAuthed={handlers.home} />;
+  else if (name === 'settings') screen = <SettingsScreen cfg={cfg} onBack={handlers.me} />;
+
+  const showNav = SCENES.find(s => s.id === name)?.nav;
+  return <Phone onDark={frameDark} scale={scale}>
+    {screen}
+    {showNav && <NavBar style={cfg.navStyle} active={tab} onDark={t.dark}
+      onTab={interactive ? onTab : () => { }} onStart={interactive ? onStart : () => { }} />}
+    <HomeIndicator onDark={frameDark} />
+  </Phone>;
+}
+
+function App() {
+  const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const cfg = tw;
+  const tokens = React.useMemo(() => resolveTokens(cfg), [cfg.direction, cfg.theme, cfg.orient]);
+  const [mode, setMode] = React.useState('proto');
+  const [tab, setTab] = React.useState('home');
+  const [overlay, setOverlay] = React.useState(null);
+  const dark = tokens.dark;
+
+  const setDirection = (v) => {
+    // sensible default theme per direction; user can still flip
+    setTweak({ direction: v, theme: v === 'onyx' ? 'dark' : 'light' });
+  };
+
+  const handlers = {
+    start: () => setOverlay('ride'),
+    report: () => setOverlay('hazard'),
+    end: () => setOverlay('postride'),
+    toRide: () => setOverlay('ride'),
+    home: () => { setOverlay(null); setTab('home'); },
+    settings: () => setOverlay('settings'),
+    me: () => { setOverlay(null); setTab('me'); },
+  };
+  const onTab = (id) => { setOverlay(null); setTab(id); };
+  const current = overlay || tab;
+
+  const stageBg = dark ? '#0E0F12' : '#E4DBCC';
+  const railBg = dark ? 'rgba(18,19,23,0.9)' : 'rgba(245,239,230,0.92)';
+  const railLine = dark ? 'rgba(243,238,230,0.1)' : 'rgba(14,14,16,0.1)';
+
+  const scenarios = [
+    { id: 'auth', label: 'Sign in', ic: 'user' },
+    { id: 'ride', label: 'Ride mode', ic: 'nav' },
+    { id: 'hazard', label: 'Report', ic: 'alert' },
+    { id: 'crash', label: 'Crash', ic: 'heart' },
+    { id: 'postride', label: 'Summary', ic: 'flag' },
+    { id: 'settings', label: 'Settings', ic: 'settings' },
+  ];
+
+  return <TokenCtx.Provider value={tokens}>
+    <div style={{ minHeight: '100vh', background: stageBg, display: 'flex', flexDirection: 'column' }}>
+      {/* control rail */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 50, background: railBg, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid ' + railLine, padding: '14px 22px',
+        display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+      }}>
+        <Wordmark dark={dark} />
+        <div style={{ width: 1, height: 26, background: railLine }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: dark ? 'rgba(243,238,230,0.45)' : 'rgba(14,14,16,0.42)' }}>Look</span>
+          <RailSeg dark={dark} value={cfg.direction} onChange={setDirection}
+            options={[{ v: 'atlas', l: 'Atlas' }, { v: 'onyx', l: 'Onyx' }, { v: 'rally', l: 'Rally' }]} />
+        </div>
+        <button onClick={() => setTweak('theme', dark ? 'light' : 'dark')} title="Toggle theme" style={{
+          width: 38, height: 38, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '1px solid ' + railLine, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(14,14,16,0.04)', color: dark ? '#F3EEE6' : '#0E0E10',
+        }}><Icon name={dark ? 'sun' : 'moon'} size={19} /></button>
+        <button onClick={() => setTweak('orient', cfg.orient === 'landscape' ? 'portrait' : 'landscape')} title="Rotate device" style={{
+          width: 38, height: 38, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '1px solid ' + railLine, background: cfg.orient === 'landscape' ? '#FF6A1A' : (dark ? 'rgba(255,255,255,0.06)' : 'rgba(14,14,16,0.04)'),
+          color: cfg.orient === 'landscape' ? '#0E0E10' : (dark ? '#F3EEE6' : '#0E0E10'),
+        }}><Icon name="phone" size={19} style={{ transform: cfg.orient === 'landscape' ? 'rotate(90deg)' : 'none' }} /></button>
+
+        <div style={{ flex: 1 }} />
+
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: dark ? 'rgba(243,238,230,0.4)' : 'rgba(14,14,16,0.4)', letterSpacing: 0.5, maxWidth: 190, lineHeight: 1.4, display: 'none' }} className="rail-hint">
+          Open Tweaks for map · home · nav
+        </span>
+        <RailSeg dark={dark} value={mode} onChange={setMode}
+          options={[{ v: 'proto', l: 'Prototype' }, { v: 'gallery', l: 'Gallery' }]} />
+      </div>
+
+      {/* scenario quick-launch (proto only) */}
+      {mode === 'proto' && <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '14px 22px 2px', flexWrap: 'wrap' }}>
+        {scenarios.map(s => {
+          const on = overlay === s.id;
+          return <button key={s.id} onClick={() => setOverlay(s.id)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+            fontFamily: "'Space Grotesk', system-ui", fontWeight: 700, fontSize: 12.5,
+            border: '1px solid ' + (on ? 'transparent' : railLine),
+            background: on ? '#FF6A1A' : (dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.5)'),
+            color: on ? '#0E0E10' : (dark ? '#F3EEE6' : '#0E0E10'),
+          }}><Icon name={s.ic} size={15} color={on ? '#0E0E10' : (dark ? '#F3EEE6' : '#0E0E10')} /> {s.label}</button>;
+        })}
+        {overlay && <button onClick={() => setOverlay(null)} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+          fontFamily: "'Space Grotesk', system-ui", fontWeight: 700, fontSize: 12.5, border: '1px solid ' + railLine,
+          background: 'transparent', color: dark ? 'rgba(243,238,230,0.6)' : 'rgba(14,14,16,0.55)',
+        }}><Icon name="close" size={14} color={dark ? 'rgba(243,238,230,0.6)' : 'rgba(14,14,16,0.55)'} /> Exit</button>}
+      </div>}
+
+      {/* stage */}
+      {mode === 'proto'
+        ? <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '28px 20px 60px' }}>
+          <PhoneScene name={current} cfg={cfg} handlers={handlers} tab={tab} onTab={onTab} onStart={handlers.start} />
+        </div>
+        : <div style={{ flex: 1, padding: '30px 28px 80px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${cfg.orient === 'landscape' ? 366 : 258}px, 1fr))`, gap: '36px 24px', maxWidth: 1280, margin: '0 auto', justifyItems: 'center' }}>
+            {SCENES.map(sc => (
+              <div key={sc.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                <PhoneScene name={sc.id} cfg={cfg} handlers={handlers} tab={navTabFor(sc.id)} interactive={false} scale={cfg.orient === 'landscape' ? 0.42 : 0.62} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontFamily: "'Space Grotesk', system-ui", fontWeight: 800, fontSize: 14, color: dark ? '#F3EEE6' : '#0E0E10' }}>{sc.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>}
+
+      {/* Tweaks */}
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Look & feel" />
+        <TweakRadio label="Direction" value={cfg.direction} options={['atlas', 'onyx', 'rally']} onChange={setDirection} />
+        <TweakRadio label="Theme" value={cfg.theme} options={['light', 'dark']} onChange={(v) => setTweak('theme', v)} />
+        <TweakSection label="Map & layout" />
+        <TweakRadio label="Map style" value={cfg.mapStyle} options={['light', 'dark']} onChange={(v) => setTweak('mapStyle', v)} />
+        <TweakRadio label="Home" value={cfg.homeLayout} options={['map', 'list']} onChange={(v) => setTweak('homeLayout', v)} />
+        <TweakRadio label="Bottom nav" value={cfg.navStyle} options={['bar', 'dock', 'float']} onChange={(v) => setTweak('navStyle', v)} />
+        <TweakRadio label="Orientation" value={cfg.orient} options={['portrait', 'landscape']} onChange={(v) => setTweak('orient', v)} />
+      </TweaksPanel>
+    </div>
+  </TokenCtx.Provider>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
+</body>
+</html>
