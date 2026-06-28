@@ -21,17 +21,16 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import Svg, { Path } from "react-native-svg";
+import { hazardIcons, meetsQualityThreshold, qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  hazardIcons,
-  meetsQualityThreshold,
-  qualityColorWithThreshold,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  QUALITY_COLORS,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import type { RootTabParamList } from "@/navigation/RootNavigator";
@@ -56,6 +55,11 @@ import {
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
 
+const t = brandColorsLight;
+// Interactive text (links, action-chip labels) uses the deepened accent: the
+// raw accent fails AA as text on the white card, ACCENT_DARK clears ~5.2:1.
+const INTERACTIVE = ACCENT_DARK;
+
 type RoadPreviewRoute = RouteProp<
   { RoadPreview: { segmentId: string } },
   "RoadPreview"
@@ -67,11 +71,13 @@ const QUALITY_BUCKETS: Array<{
   label: string;
   color: string;
 }> = [
-  { key: "excellent", label: "Excellent", color: colors.quality.excellent },
-  { key: "good", label: "Good", color: colors.quality.good },
-  { key: "fair", label: "Fair", color: colors.quality.fair },
-  { key: "poor", label: "Poor", color: colors.quality.poor },
-  { key: "very_poor", label: "Very Poor", color: colors.quality.veryPoor },
+  // Brand Q1–Q5 ramp (visual fills on the breakdown bar + legend dots; the
+  // colour is redundant with each labelled %). Excellent = Q5 … Very poor = Q1.
+  { key: "excellent", label: "Excellent", color: QUALITY_COLORS[4] },
+  { key: "good", label: "Good", color: QUALITY_COLORS[3] },
+  { key: "fair", label: "Fair", color: QUALITY_COLORS[2] },
+  { key: "poor", label: "Poor", color: QUALITY_COLORS[1] },
+  { key: "very_poor", label: "Very Poor", color: QUALITY_COLORS[0] },
 ];
 
 export default function RoadPreviewScreen() {
@@ -135,7 +141,7 @@ export default function RoadPreviewScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -143,7 +149,7 @@ export default function RoadPreviewScreen() {
   if (error || !segment) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" size={48} color={colors.danger} />
+        <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
         <Text style={styles.errorTitle}>Unable to load road preview</Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
         <TouchableOpacity style={styles.retryButton} onPress={retry}>
@@ -161,8 +167,8 @@ export default function RoadPreviewScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={t.fg}
+          colors={[t.fg]}
         />
       }
     >
@@ -217,7 +223,7 @@ function HeaderCard({
     >
       {belowThreshold ? (
         <View style={styles.thresholdBadge}>
-          <Icon name="eye-off-outline" size={12} color={colors.textSecondary} />
+          <Icon name="eye-off-outline" size={12} color={t.dim} />
           <Text style={styles.thresholdBadgeLabel}>
             Below your minimum ({qualityLabel(minQuality)})
           </Text>
@@ -252,7 +258,6 @@ function QualityCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
-  const color = qualityColorWithThreshold(segment.quality_score, minQuality);
   // Only flag "below your minimum" when there's an actual score; see
   // `RoadHeaderCard` for the rationale (unscored ≠ below threshold).
   const belowThreshold =
@@ -263,7 +268,10 @@ function QualityCard({
       <SectionTitle icon="road-variant" title="Surface quality" />
       <View style={styles.qualityHeader}>
         <View>
-          <Text style={[styles.qualityScore, { color }]}>
+          {/* The headline score stays ink (the ramp fails AA as text on the
+              white card); the quality vocabulary lives in the breakdown bar
+              below + the label text. */}
+          <Text style={styles.qualityScore}>
             {segment.quality_score != null
               ? segment.quality_score.toFixed(1)
               : "—"}
@@ -367,7 +375,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
               key={i}
               name={i < filled ? "sine-wave" : "minus"}
               size={20}
-              color={i < filled ? colors.primary : colors.textTertiary}
+              color={i < filled ? t.fg : t.faint}
             />
           ))}
         </View>
@@ -464,10 +472,10 @@ function ElevationProfileChart({ profile }: { profile: number[] }) {
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
-          <Path d={paths.area} fill={colors.primaryAlpha15} />
+          <Path d={paths.area} fill="rgba(194,65,12,0.10)" />
           <Path
             d={paths.line}
-            stroke={colors.primary}
+            stroke={ACCENT_DARK}
             strokeWidth={2}
             fill="none"
             strokeLinejoin="round"
@@ -767,7 +775,7 @@ function ReviewsCard({
         <Icon
           name={myReview ? "pencil-outline" : "comment-edit-outline"}
           size={16}
-          color={colors.primary}
+          color={INTERACTIVE}
         />
         <Text style={styles.writeReviewLabel}>
           {myReview ? "Edit your review" : "Write a review"}
@@ -862,7 +870,7 @@ function ReviewRow({
       <View style={styles.reviewFooter}>
         {review.bike_model ? (
           <View style={styles.reviewMetaRow}>
-            <Icon name="motorbike" size={12} color={colors.textTertiary} />
+            <Icon name="motorbike" size={12} color={t.dim} />
             <Text style={styles.reviewMeta}>{review.bike_model}</Text>
           </View>
         ) : null}
@@ -877,7 +885,7 @@ function ReviewRow({
           style={styles.reviewEditButton}
           onPress={onEditOwn}
         >
-          <Icon name="pencil-outline" size={14} color={colors.primary} />
+          <Icon name="pencil-outline" size={14} color={INTERACTIVE} />
           <Text style={styles.reviewEditLabel}>Edit / delete</Text>
         </TouchableOpacity>
       ) : (
@@ -957,7 +965,7 @@ function ReviewHelpfulRow({
         <Icon
           name={helpfulActive ? "thumb-up" : "thumb-up-outline"}
           size={14}
-          color={helpfulActive ? colors.primary : colors.textTertiary}
+          color={helpfulActive ? t.fg : t.dim}
         />
         <Text
           style={[
@@ -986,7 +994,7 @@ function ReviewHelpfulRow({
         <Icon
           name={notHelpfulActive ? "thumb-down" : "thumb-down-outline"}
           size={14}
-          color={notHelpfulActive ? colors.danger : colors.textTertiary}
+          color={notHelpfulActive ? statusFg.danger : t.dim}
         />
         <Text
           style={[
@@ -1040,7 +1048,7 @@ function SectionTitle({
 }) {
   return (
     <View style={styles.sectionTitleRow}>
-      <Icon name={icon} size={16} color={colors.textSecondary} />
+      <Icon name={icon} size={16} color={t.dim} />
       <Text style={styles.sectionTitle}>{title}</Text>
       {rightLabel ? (
         <Text style={styles.sectionRight}>{rightLabel}</Text>
@@ -1052,7 +1060,7 @@ function SectionTitle({
 function MetaPill({ icon, label }: { icon: IconName; label: string }) {
   return (
     <View style={styles.metaPill}>
-      <Icon name={icon} size={12} color={colors.textSecondary} />
+      <Icon name={icon} size={12} color={t.dim} />
       <Text style={styles.metaPillLabel}>{label}</Text>
     </View>
   );
@@ -1069,16 +1077,19 @@ function ElevationStat({ label, value }: { label: string; value: string }) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+// Hazard-severity icon tint (AA-safe status tones) + a low-alpha wash of the
+// same tone for the icon disc. Low severity has no brand "info" colour, so it
+// reads as neutral ink.
 function severityBg(severity: Hazard["severity"]): string {
-  if (severity === "high") return colors.qualityAlpha.veryPoor;
-  if (severity === "medium") return colors.qualityAlpha.poor;
-  return colors.qualityAlpha.fair;
+  if (severity === "high") return "rgba(179,38,30,0.12)";
+  if (severity === "medium") return "rgba(138,83,0,0.12)";
+  return "rgba(14,14,16,0.06)";
 }
 
 function severityFg(severity: Hazard["severity"]): string {
-  if (severity === "high") return colors.quality.veryPoor;
-  if (severity === "medium") return colors.quality.poor;
-  return colors.quality.fair;
+  if (severity === "high") return statusFg.danger;
+  if (severity === "medium") return statusFg.warning;
+  return t.dim;
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────
@@ -1086,127 +1097,139 @@ function severityFg(severity: Hazard["severity"]): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.md,
+    padding: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
+    gap: brandSpacing.s3,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    padding: brandSpacing.s5,
   },
   errorTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   errorBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    marginTop: spacing.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    marginTop: brandSpacing.s1,
     textAlign: "center",
   },
   retryButton: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
+    marginTop: brandSpacing.s4,
+    backgroundColor: t.invBg,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
   },
   retryLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   headerCard: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   headerCardDimmed: {
     opacity: 0.7,
-    borderColor: colors.borderLight,
+    borderColor: t.line,
   },
   thresholdBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   thresholdBadgeLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   thresholdHint: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     fontStyle: "italic",
   },
   headerTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
   },
   headerSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    gap: brandSpacing.s1,
+    marginTop: brandSpacing.s1,
   },
   metaPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.bgElevated,
-    borderRadius: borderRadius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s1,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.pill,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s1,
   },
   metaPillLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "500",
   },
 
   sectionTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   sectionTitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
     flex: 1,
   },
   sectionRight: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   qualityHeader: {
@@ -1215,40 +1238,44 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   qualityScore: {
-    fontSize: fontSize.hero,
-    fontWeight: fontWeight.black,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 40,
+    fontWeight: "800",
   },
   qualitySubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    marginTop: spacing.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    marginTop: brandSpacing.s1,
   },
   qualityScoreMax: {
-    paddingBottom: spacing.sm,
+    paddingBottom: brandSpacing.s2,
   },
   qualityScoreMaxText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   breakdownBar: {
     flexDirection: "row",
     height: 10,
-    borderRadius: borderRadius.sm,
+    borderRadius: brandRadii.sm,
     overflow: "hidden",
-    backgroundColor: colors.bgElevated,
+    backgroundColor: t.sunken,
   },
   breakdownLegend: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s2,
   },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   legendDot: {
     width: 8,
@@ -1256,8 +1283,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
 
   curvinessRow: {
@@ -1266,24 +1294,26 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   curvinessScore: {
-    color: colors.textPrimary,
-    fontSize: fontSize.hero,
-    fontWeight: fontWeight.black,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 40,
+    fontWeight: "800",
   },
   curvinessPips: {
     flexDirection: "row",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   curvinessHint: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
 
   elevationChartWrap: {
     width: "100%",
     height: ELEVATION_CHART_HEIGHT,
-    backgroundColor: colors.bgElevated,
-    borderRadius: borderRadius.sm,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.sm,
     overflow: "hidden",
   },
   elevationRow: {
@@ -1295,22 +1325,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   elevationValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 18,
+    fontWeight: "700",
   },
   elevationLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    marginTop: spacing.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    marginTop: brandSpacing.s1,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
 
   hazardRow: {
     flexDirection: "row",
-    gap: spacing.md,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s3,
+    paddingVertical: brandSpacing.s1,
   },
   hazardIconWrap: {
     width: 32,
@@ -1324,76 +1356,85 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   hazardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   hazardNote: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   hazardMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
 
   writeReviewButton: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primaryAlpha15,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   writeReviewLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: INTERACTIVE,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   statusBanner: {
-    color: colors.warning,
-    fontSize: fontSize.xs,
+    color: statusFg.warning,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     fontStyle: "italic",
   },
   reviewAuthorRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   reviewMineBadge: {
-    backgroundColor: colors.primaryAlpha15,
-    borderRadius: borderRadius.pill,
-    paddingHorizontal: spacing.xs,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.pill,
+    paddingHorizontal: brandSpacing.s1,
     paddingVertical: 2,
   },
   reviewMineBadgeLabel: {
-    color: colors.primary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
   },
   reviewEditButton: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    gap: brandSpacing.s1,
+    marginTop: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s2,
+    minHeight: 36,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   reviewEditLabel: {
-    color: colors.primary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: INTERACTIVE,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
   },
   reviewRow: {
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s1,
+    paddingVertical: brandSpacing.s2,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   reviewHeader: {
     flexDirection: "row",
@@ -1401,88 +1442,97 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   reviewAuthor: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   reviewAuthorLink: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: INTERACTIVE,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   reviewRating: {
-    color: colors.warning,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     letterSpacing: 1,
   },
   reviewComment: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   reviewPhotosRow: {
-    gap: spacing.sm,
-    paddingTop: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingTop: brandSpacing.s1,
   },
   reviewPhoto: {
     width: REVIEW_PHOTO_SIZE,
     height: REVIEW_PHOTO_SIZE,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.bgElevated,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
   },
   reviewFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: spacing.xs,
+    marginTop: brandSpacing.s1,
   },
   reviewMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   reviewMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   reviewHelpfulRow: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s1,
   },
   reviewHelpfulButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s2,
+    minHeight: 36,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   reviewHelpfulButtonActive: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   reviewHelpfulCount: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
+    fontWeight: "500",
     minWidth: 12,
     textAlign: "center",
   },
   reviewHelpfulCountActive: {
-    color: colors.textPrimary,
+    color: t.fg,
   },
 
   empty: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     fontStyle: "italic",
   },
   emptyInline: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     fontStyle: "italic",
   },
 });
