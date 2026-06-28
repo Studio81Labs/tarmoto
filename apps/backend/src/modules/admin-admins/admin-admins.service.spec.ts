@@ -24,6 +24,7 @@ function makeService(opts: {
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     getMany: jest
       .fn()
       .mockResolvedValue(
@@ -266,6 +267,60 @@ describe('AdminAdminsService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  // Fix 1: race — pre-check passes but core's internal findOne finds the row
+  it('create: race — core finds existing row (failIfExists) → ConflictException, existing row NOT updated', async () => {
+    // Simulates: concurrent create committed AFTER the service pre-check
+    // (findOne → null) but BEFORE runCreateAdmin's own findOne inside the
+    // transaction. runCreateAdmin's findOne now finds the row and, with
+    // failIfExists=true, throws AdminAlreadyExistsError instead of silently
+    // mutating the existing row via the UPDATE path.
+    const existingAdmin = {
+      id: 'race-existing',
+      email: 'race@x.io',
+      role: 'super_admin' as const,
+      status: 'active' as const,
+      password_hash: 'existing-hash',
+      created_at: new Date(),
+      last_login_at: null,
+    };
+    const adminRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(null) // service pre-check passes (race)
+        .mockResolvedValueOnce(existingAdmin), // runCreateAdmin internal check finds it
+      update: jest.fn(),
+      count: jest.fn(),
+      create: jest.fn().mockImplementation((v: unknown) => v),
+      save: jest.fn(), // must NOT be called — existing row must not be mutated
+      createQueryBuilder: jest.fn(),
+    };
+    const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
+    const dataSource = {
+      getRepository: jest.fn().mockReturnValue(adminRepo),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
+      manager,
+    };
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
+
+    // An admin POSTs with a lower role — without failIfExists the core would
+    // silently demote the existing super_admin via the UPDATE branch.
+    await expect(
+      service.create(ADMIN, {
+        email: 'race@x.io',
+        role: 'support',
+        mode: 'sso-only',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Critical regression assertion: the existing row's role/status/hash must
+    // NOT have been saved — no UPDATE was applied to the existing super_admin.
+    expect(adminRepo.save).not.toHaveBeenCalled();
+  });
+
   it('patch: cannot modify your own account', async () => {
     const { service } = makeService({
       target: { id: 'super1', role: 'super_admin', status: 'active' },
@@ -397,6 +452,7 @@ describe('AdminAdminsService', () => {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
       getMany: jest
         .fn()
         .mockResolvedValue([{ id: 'super0' }, { id: 'super1' }]),

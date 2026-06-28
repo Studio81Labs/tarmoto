@@ -18,6 +18,23 @@ export interface CreateAdminResult {
 }
 
 /**
+ * Thrown by runCreateAdmin when failIfExists=true and the email is already
+ * taken — either because the pre-insert findOne found the row, or because
+ * the INSERT itself hit a unique-violation (Postgres code 23505, the narrow
+ * race where findOne missed but a concurrent INSERT committed first).
+ *
+ * Callers that set failIfExists=true should catch this and convert it to a
+ * 409 ConflictException. The default upsert path (failIfExists=false, used
+ * by the CLI) never throws this error.
+ */
+export class AdminAlreadyExistsError extends Error {
+  constructor(email: string) {
+    super(`Admin with email '${email}' already exists.`);
+    this.name = 'AdminAlreadyExistsError';
+  }
+}
+
+/**
  * Core upsert logic. Accepts a TypeORM EntityManager, resolved options, and the
  * already-resolved plaintext password (or null) so it can be unit-tested
  * independently of any DB context and without any I/O.
@@ -39,17 +56,25 @@ export interface CreateAdminResult {
  *   password null + not sso-only → leaves password_hash untouched; no revoke
  *     (role/status-only rerun).
  *
- * @param manager   TypeORM EntityManager — gives access to all three tables
- *                  (admin_users, admin_sessions, admin_refresh_tokens).
- * @param options   Parsed CLI options (email must be non-empty and lowercased).
- * @param password  Resolved plaintext password, or null for SSO-only / role-only
- *                  reruns. Never pass an argv value here — the caller must
- *                  resolve it from env / stdin only.
+ * @param manager       TypeORM EntityManager — gives access to all three tables
+ *                      (admin_users, admin_sessions, admin_refresh_tokens).
+ * @param options       Parsed CLI options (email must be non-empty and lowercased).
+ * @param password      Resolved plaintext password, or null for SSO-only /
+ *                      role-only reruns. Never pass an argv value here — the
+ *                      caller must resolve it from env / stdin only.
+ * @param failIfExists  When true, the function is strictly insert-only:
+ *                      - If the pre-insert findOne finds an existing row, it
+ *                        throws AdminAlreadyExistsError instead of updating.
+ *                      - If the INSERT hits a Postgres unique-violation (23505)
+ *                        it also throws AdminAlreadyExistsError.
+ *                      Defaults to false so the CLI retains its upsert
+ *                      behaviour unchanged.
  */
 export async function runCreateAdmin(
   manager: EntityManager,
   options: CreateAdminOptions,
   password: string | null,
+  failIfExists = false,
 ): Promise<CreateAdminResult> {
   if (!options.email) {
     throw new Error('--email is required.');
@@ -71,6 +96,12 @@ export async function runCreateAdmin(
   });
 
   if (existing) {
+    // In insert-only mode (failIfExists=true), an existing row is a conflict:
+    // reject instead of mutating the row via the UPDATE path.
+    if (failIfExists) {
+      throw new AdminAlreadyExistsError(options.email);
+    }
+
     // UPDATE: role + status always; credential only when explicitly provided.
     // Reactivating a disabled admin must also revoke old sessions: InternalGuard
     // only blocks pre-disable sessions while the row is disabled, so flipping it
@@ -128,7 +159,26 @@ export async function runCreateAdmin(
     sso_subject: null,
     last_login_at: null,
   });
-  await adminRepo.save(admin);
+
+  // When in insert-only mode, convert a Postgres unique-violation (23505) from
+  // the INSERT into AdminAlreadyExistsError. This handles the narrow race where
+  // the findOne above returned null but a concurrent INSERT committed between
+  // that read and this save.
+  try {
+    await adminRepo.save(admin);
+  } catch (err: unknown) {
+    if (
+      failIfExists &&
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      err.code === '23505'
+    ) {
+      throw new AdminAlreadyExistsError(options.email);
+    }
+    throw err;
+  }
+
   return {
     created: true,
     email: options.email,

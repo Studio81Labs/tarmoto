@@ -10,7 +10,10 @@ import { DataSource } from 'typeorm';
 import { AdminUser, type AdminRole } from '../../entities/admin-user.entity.js';
 import { canManageAdminRole } from '../admin-auth/admin-role-rank.js';
 import { revokeAdminSessions } from '../admin-auth/admin-session-revoke.js';
-import { runCreateAdmin } from '../../scripts/create-admin-core.js';
+import {
+  AdminAlreadyExistsError,
+  runCreateAdmin,
+} from '../../scripts/create-admin-core.js';
 import { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 import {
   AdminRowDto,
@@ -102,6 +105,13 @@ export class AdminAdminsService {
     const password = dto.mode === 'sso-only' ? null : (dto.password ?? null);
 
     try {
+      // failIfExists=true makes runCreateAdmin insert-only: if its internal
+      // findOne finds the row (race: concurrent create committed after the
+      // pre-check above but before this transaction's findOne), it throws
+      // AdminAlreadyExistsError instead of silently updating the existing row.
+      // If the INSERT itself hits a unique-violation (23505, the narrower race
+      // where both findOnes miss but one INSERT loses), runCreateAdmin also
+      // converts that to AdminAlreadyExistsError.
       const created = await this.dataSource.transaction((manager) =>
         runCreateAdmin(
           manager,
@@ -112,6 +122,7 @@ export class AdminAdminsService {
             help: false,
           },
           password,
+          true, // failIfExists — insert-only from the service
         ),
       );
       const row = await this.dataSource
@@ -120,10 +131,25 @@ export class AdminAdminsService {
       if (!row) throw new NotFoundException('Admin not found after create');
       return this.toRow(row);
     } catch (err: unknown) {
-      // Race backstop: catch the Postgres unique-violation (code 23505) that can
-      // slip through if two concurrent creates both pass the pre-check. Throwing
-      // ConflictException ensures it never surfaces as a 500 and that the losing
-      // request never mutates the already-inserted row.
+      // AdminAlreadyExistsError covers both the findOne-found-existing-row
+      // path and the INSERT 23505 path (both converted inside runCreateAdmin
+      // when failIfExists=true).
+      if (err instanceof AdminAlreadyExistsError) {
+        void this.audit.record({
+          event_key: 'admin.admins.create',
+          outcome: 'denied',
+          method: 'POST',
+          path: '/admin/admins',
+          admin_user_id: actor.id,
+          admin_role: actor.role,
+          target_type: 'admin_user',
+          target_id: email,
+          metadata: { reason: 'duplicate_email' },
+        });
+        throw new ConflictException('An admin with this email already exists');
+      }
+      // Defense-in-depth: catch any raw Postgres unique-violation that escapes
+      // the core (e.g. from a future caller path that bypasses failIfExists).
       if (
         typeof err === 'object' &&
         err !== null &&
@@ -236,10 +262,41 @@ export class AdminAdminsService {
 
     try {
       await this.dataSource.transaction(async (manager) => {
-        // Fix 3: Reload and lock the target row inside the transaction to prevent
-        // stale-read races — a concurrent super_admin could promote the target
-        // between the pre-tx read above and this write, letting a lower-ranked
-        // actor demote or disable a now-peer.
+        // Lock-ordering fix: acquire the shared active-super-admin set lock
+        // FIRST, before the per-target row lock, whenever the operation is a
+        // disable or demote (computed from the pre-tx stale read as a hint).
+        //
+        // Without this ordering two concurrent PATCHes demoting/disabling
+        // DIFFERENT active super_admins can deadlock: T1 holds lock(A) and
+        // waits for the super-set lock; T2 holds lock(B) and waits for the
+        // same super-set lock — PostgreSQL aborts one as a deadlock victim.
+        // By acquiring the shared super-set lock first (deterministic orderBy
+        // a.id ASC) all disable/demote transactions serialize on that lock
+        // before competing for individual per-target locks, eliminating the
+        // lock cycle.
+        //
+        // Residual narrow window: if the pre-tx hint is NOT disable/demote
+        // (e.g. the dto is purely an activation or promotion) but the in-tx
+        // fresh target turns out to be an active super_admin requiring the
+        // last-super guard, we fall back to a fresh query-builder lock below.
+        // This window is acceptable: a transaction that did not pre-compute
+        // disabling||demoting cannot be one leg of the deadlock cycle, because
+        // the cycle requires both transactions to contend for the super-set
+        // lock while already holding a per-target row lock.
+        let lockedActiveSupers: AdminUser[] | null = null;
+        if (disabling || demoting) {
+          lockedActiveSupers = await manager
+            .getRepository(AdminUser)
+            .createQueryBuilder('a')
+            .select('a.id')
+            .setLock('pessimistic_write')
+            .where('a.role = :role', { role: 'super_admin' })
+            .andWhere('a.status = :status', { status: 'active' })
+            .orderBy('a.id', 'ASC')
+            .getMany();
+        }
+
+        // Now lock the per-target row (after the shared super-set lock).
         const fresh = await manager.getRepository(AdminUser).findOne({
           where: { id },
           lock: { mode: 'pessimistic_write' },
@@ -282,28 +339,31 @@ export class AdminAdminsService {
         }
 
         // Safety rail 2: protect the last active super_admin.
-        // Apply ONLY when the target is currently active — a disabled super_admin
-        // being demoted or cleaned up cannot reduce the active count, so blocking
-        // it here would prevent legitimate maintenance.
-        // Uses a pessimistic_write lock so concurrent patch transactions serialize
-        // on the super_admin rows, preventing the write-skew where two concurrent
-        // patches each see count=2 and both commit → zero active super_admins.
+        // Apply ONLY when the fresh target is currently an active super_admin
+        // being disabled or demoted — a disabled super_admin being demoted
+        // cannot reduce the active count, so blocking it would prevent
+        // legitimate maintenance.
         if (
           fresh.role === 'super_admin' &&
           fresh.status === 'active' &&
           (freshDisabling || (freshDemoting && freshNewRole !== 'super_admin'))
         ) {
-          // Lock the active super_admin rows (not a COUNT aggregate — FOR UPDATE
-          // on a COUNT is a Postgres error). Counting in application code after
-          // locking the rows still serializes concurrent transactions.
-          const activeSupers = await manager
-            .getRepository(AdminUser)
-            .createQueryBuilder('a')
-            .select('a.id')
-            .setLock('pessimistic_write')
-            .where('a.role = :role', { role: 'super_admin' })
-            .andWhere('a.status = :status', { status: 'active' })
-            .getMany();
+          // Re-use the super-set rows we already locked at the top of the
+          // transaction (fast path for the disable/demote hint). Fall back to
+          // a fresh query-builder lock for the residual window where the pre-tx
+          // hint did not trigger the early lock (see comment above).
+          const activeSupers =
+            lockedActiveSupers ??
+            (await manager
+              .getRepository(AdminUser)
+              .createQueryBuilder('a')
+              .select('a.id')
+              .setLock('pessimistic_write')
+              .where('a.role = :role', { role: 'super_admin' })
+              .andWhere('a.status = :status', { status: 'active' })
+              .orderBy('a.id', 'ASC')
+              .getMany());
+
           if (activeSupers.length <= 1) {
             pendingDenialReason = 'last_super_admin';
             throw new ConflictException(
