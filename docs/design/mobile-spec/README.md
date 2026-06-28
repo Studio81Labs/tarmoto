@@ -140,7 +140,7 @@ without a clean 1:1 today are noted.
 | ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                                                           |
 | `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen` ✅, `MapScreen`         | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` + `CommuteScreen` migrated; `MapScreen` + bottom nav remain.                                    |
-| `ExplorerScreen` (road quality explorer)   | `MapScreen`, `RoadPreviewScreen`                         | Map + filter chips + segment detail sheet.                                                                                                                           |
+| `ExplorerScreen` (road quality explorer)   | `MapScreen` ✅, `RoadPreviewScreen`                      | Map + filter chips + segment detail sheet. `MapScreen` chrome migrated (dark-overlay pills); `RoadPreviewScreen` (segment detail) remains.                           |
 | `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen` ✅, `TripDayScreen`    | The quick round-trip generator + result is new product surface; align styling. `TripsScreen` (Trips-tab list) migrated; `TripCreateScreen` + `TripDayScreen` remain. |
 | `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                                                                                                           |
 | `HazardScreen` (report)                    | `HazardReportScreen` ✅                                  | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                                                     |
@@ -201,6 +201,19 @@ but with no shared `@/components` deps) was a self-contained follow-up.
 > the accent moment (ink glyph/label on accent, ~6.7:1). With Ride + Trips +
 > Home + Profile roots now on the brand, only the **Map tab root** remains
 > before the shared bottom tab bar can flip.
+>
+> `MapScreen` (the **Map tab root** explorer) is map-heavy: the MapLibre
+> basemap, the quality vector overlay, and the hazard/pass/fun-zone markers
+> are their own surface, so the **map colour expressions and
+> `MapScreen.helpers` are deliberately untouched** (the quality ramp is the
+> essential road-quality encoding, and the helper tests assert those exact
+> colours). Only the **chrome floating over the map** is re-skinned, onto the
+> dark-overlay-pill pattern: the toggle FABs, the quality/passes/fun-zone
+> legends, and the fun-zone detail card become ink pills/cards with cream
+> labels, so the ramp swatches and the accent-active toggle pop at ≥6:1.
+> `HazardReportFab` is shared with the still-legacy `RideActiveScreen`, so it
+> is left as-is. **With all five tab roots now on the brand, the bottom tab
+> bar can flip next.**
 
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
