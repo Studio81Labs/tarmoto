@@ -21,7 +21,7 @@ export class CreateFeatureFlagDto {
   })
   key!: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;

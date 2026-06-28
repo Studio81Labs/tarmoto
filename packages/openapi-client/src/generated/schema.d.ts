@@ -5538,8 +5538,7 @@ export interface components {
        * @example group_rides
        */
       key: string;
-      /** @default false */
-      enabled: boolean;
+      enabled?: boolean;
       description?: string;
     };
     UpdateFeatureFlagDto: {
