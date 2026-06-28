@@ -5,6 +5,7 @@
 
 import React from "react";
 import {
+  getFocusedRouteNameFromRoute,
   NavigationContainer,
   type LinkingOptions,
   type NavigatorScreenParams,
@@ -227,6 +228,35 @@ const brandScreenOptions = {
   headerTitleStyle: { fontWeight: "800" as const },
   contentStyle: { backgroundColor: brandColorsLight.bg },
 };
+
+// Brand bottom tab bar: white chrome on cream, with `ACCENT_DARK` as the
+// active tint. The raw accent (#FF6A1A) is only ~2.9:1 on white — below the
+// 3:1 non-text floor — so the deepened burnt-orange is used; it clears
+// ~5.2:1 for the small label + icon while keeping the accent identity.
+const brandTabBarStyle = {
+  backgroundColor: brandColorsLight.raised,
+  borderTopColor: brandColorsLight.line,
+  borderTopWidth: 1,
+  paddingBottom: 4,
+  height: 60,
+};
+
+// Immersive, full-screen child routes that should NOT show the tab bar at
+// all: the live-ride HUD and turn-by-turn nav are edge-to-edge dark surfaces,
+// so the (light) tab bar must not stay pinned to them. Hiding it here is both
+// the correct UX and avoids attaching brand chrome to an unmigrated dark
+// screen. Keyed by nested route name (resolved per active tab).
+const TAB_BAR_HIDDEN_ROUTES = new Set(["RideActive", "Navigate"]);
+
+function tabBarStyleForRoute(route: {
+  name: string;
+  params?: object;
+}): typeof brandTabBarStyle | { display: "none" } {
+  const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
+  return TAB_BAR_HIDDEN_ROUTES.has(focused)
+    ? { display: "none" }
+    : brandTabBarStyle;
+}
 
 function HomeNavigator() {
   return (
@@ -487,18 +517,10 @@ export default function RootNavigator() {
         <Tab.Navigator
           screenOptions={({ route }) => ({
             headerShown: false,
-            // Brand tab bar: white chrome on cream, with `ACCENT_DARK` as the
-            // active tint. The raw accent (#FF6A1A) is only ~2.9:1 on white —
-            // below the 3:1 non-text floor — so the deepened burnt-orange is
-            // used here; it clears ~5.2:1 for the small label + icon while
-            // keeping the accent identity. Inactive uses the AA-safe `dim`.
-            tabBarStyle: {
-              backgroundColor: brandColorsLight.raised,
-              borderTopColor: brandColorsLight.line,
-              borderTopWidth: 1,
-              paddingBottom: 4,
-              height: 60,
-            },
+            // Hide the bar entirely on immersive full-screen child routes
+            // (live HUD, turn-by-turn nav); brand white bar everywhere else.
+            // Inactive uses the AA-safe `dim`.
+            tabBarStyle: tabBarStyleForRoute(route),
             tabBarActiveTintColor: ACCENT_DARK,
             tabBarInactiveTintColor: brandColorsLight.dim,
             tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },

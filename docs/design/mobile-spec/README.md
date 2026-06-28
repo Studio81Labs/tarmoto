@@ -163,9 +163,14 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > top border; the active tint is **`ACCENT_DARK`** (the raw accent is only
 > ~2.9:1 on white — below the 3:1 floor — so the deepened burnt-orange is
 > used; it clears ~5.2:1 for the small label + icon while keeping the accent
-> identity), and inactive tabs use the AA-safe `dim`. Deeper still-legacy
-> stack screens (e.g. ViewProfile, TripCreate) keep their dark headers until
-> their own phase; only the tab roots gate the shared bar.
+> identity), and inactive tabs use the AA-safe `dim`. The bar is **hidden
+> entirely on immersive full-screen child routes** (`RideActive` live HUD,
+> `Navigate` turn-by-turn) via `getFocusedRouteNameFromRoute` — those are
+> edge-to-edge dark surfaces, so the light bar must not stay pinned to them
+> (and hiding it is the correct UX regardless). Deeper still-legacy _content_
+> stack screens (e.g. ViewProfile, TripCreate) keep their dark headers and
+> show the light bar transiently until their own phase; only the tab roots
+> gate the shared bar.
 
 > **Home note:** `HomeScreen` has no shared `@/components`, no map, no
 > quality visuals, and no stack header (tab root), so it migrated in
