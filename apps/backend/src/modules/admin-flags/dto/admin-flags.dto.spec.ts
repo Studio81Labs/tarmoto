@@ -6,6 +6,12 @@ import {
 } from './admin-flags.dto.js';
 
 describe('UpdateFeatureFlagDto validation', () => {
+  it('allows null description (clear path)', async () => {
+    const dto = plainToInstance(UpdateFeatureFlagDto, { description: null });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
   it('rejects null enabled with a validation error', async () => {
     const dto = plainToInstance(UpdateFeatureFlagDto, { enabled: null });
     const errors = await validate(dto);
@@ -27,6 +33,15 @@ describe('UpdateFeatureFlagDto validation', () => {
 });
 
 describe('CreateFeatureFlagDto validation', () => {
+  it('allows null description (clear path)', async () => {
+    const dto = plainToInstance(CreateFeatureFlagDto, {
+      key: 'beta_ui',
+      description: null,
+    });
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+  });
+
   it('rejects null enabled with a validation error', async () => {
     const dto = plainToInstance(CreateFeatureFlagDto, {
       key: 'beta_ui',

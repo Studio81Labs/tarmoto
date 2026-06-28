@@ -82,6 +82,22 @@ describe('AdminFlagsService', () => {
     expect(res.updated_at).toBe(new Date('2026-02-02T00:00:00Z').toISOString());
   });
 
+  it('update() passes null description to the patch (clear path)', async () => {
+    const repo = makeRepo({
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(ROW) // existence check
+        .mockResolvedValueOnce({ ...ROW, description: null }), // re-fetch
+    });
+    const svc = new AdminFlagsService(repo as never);
+    const res = await svc.update('f1', { description: null });
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'f1' },
+      { description: null },
+    );
+    expect(res.description).toBeNull();
+  });
+
   it('update() throws NotFound when flag is deleted concurrently after existence check', async () => {
     const repo = makeRepo({
       findOne: jest

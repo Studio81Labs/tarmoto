@@ -27,11 +27,11 @@ export class CreateFeatureFlagDto {
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional({ maxLength: 500, nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  description?: string;
+  description?: string | null;
 }
 
 export class UpdateFeatureFlagDto {
@@ -40,11 +40,11 @@ export class UpdateFeatureFlagDto {
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 500 })
+  @ApiPropertyOptional({ maxLength: 500, nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  description?: string;
+  description?: string | null;
 }
 
 export class FeatureFlagDto {

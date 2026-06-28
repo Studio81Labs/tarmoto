@@ -5539,12 +5539,12 @@ export interface components {
        */
       key: string;
       enabled?: boolean;
-      description?: string;
+      description?: string | null;
     };
     UpdateFeatureFlagDto: {
       /** @description Toggle the flag. */
       enabled?: boolean;
-      description?: string;
+      description?: string | null;
     };
   };
   responses: never;
