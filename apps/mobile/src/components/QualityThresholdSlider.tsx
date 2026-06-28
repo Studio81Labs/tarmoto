@@ -5,6 +5,12 @@
  * pill selector rather than a continuous slider avoids the native
  * `@react-native-community/slider` dependency and matches the coarse
  * quality buckets riders actually reason about.
+ *
+ * Surface-aware: this is shared between the brand-migrated Settings screen
+ * (`light`) and screens still on the legacy dark theme (e.g. TripCreate,
+ * the default). Pass `light` only on the cream/white brand surfaces — the
+ * default keeps the legacy dark-readable palette so unmigrated callers stay
+ * legible.
  */
 
 import React from "react";
@@ -25,6 +31,13 @@ import {
   spacing,
   MIN_QUALITY_BOUNDS,
 } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+} from "@/theme/brand";
 
 interface Props {
   value: number;
@@ -33,6 +46,8 @@ interface Props {
   label?: string;
   /** Extra helper text rendered below the pills. */
   helpText?: string;
+  /** Render on a light brand surface (cream/white). Default: legacy dark. */
+  light?: boolean;
 }
 
 const STEPS = [
@@ -48,22 +63,35 @@ export default function QualityThresholdSlider({
   onChange,
   label,
   helpText,
+  light = false,
 }: Props) {
   const active = Math.max(
     MIN_QUALITY_BOUNDS.min,
     Math.min(MIN_QUALITY_BOUNDS.max, Math.round(value)),
   );
   const activeLabel = qualityLabel(active);
-  const activeColor = qualityColor(active);
+  const styles = light ? brandStyles : legacyStyles;
+  const rampColor = light ? qualityBrandColor : qualityColor;
 
   return (
     <View style={styles.container}>
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          <Text style={[styles.value, { color: activeColor }]}>
-            {activeLabel}
-          </Text>
+          {light ? (
+            // Value text stays ink for legibility on the light card; the
+            // quality colour reads from the swatch + the selected pill.
+            <View style={styles.valueRow}>
+              <View
+                style={[styles.swatch, { backgroundColor: rampColor(active) }]}
+              />
+              <Text style={styles.value}>{activeLabel}</Text>
+            </View>
+          ) : (
+            <Text style={[styles.value, { color: rampColor(active) }]}>
+              {activeLabel}
+            </Text>
+          )}
         </View>
       ) : null}
 
@@ -74,7 +102,7 @@ export default function QualityThresholdSlider({
       >
         {STEPS.map((step) => {
           const selected = step === active;
-          const stepColor = qualityColor(step);
+          const stepColor = rampColor(step);
           return (
             <TouchableOpacity
               key={step}
@@ -105,10 +133,10 @@ export default function QualityThresholdSlider({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing.sm,
-  },
+// Legacy dark-surface styling — unchanged from the pre-brand component so
+// callers still on the dark theme (TripCreate) render exactly as before.
+const legacyStyles = StyleSheet.create({
+  container: { gap: spacing.sm },
   labelRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -121,14 +149,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  value: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-  pillRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
+  valueRow: { flexDirection: "row", alignItems: "center" },
+  swatch: { width: 0, height: 0 },
+  value: { fontSize: fontSize.md, fontWeight: fontWeight.bold },
+  pillRow: { flexDirection: "row", gap: spacing.sm },
   pill: {
     flex: 1,
     paddingVertical: spacing.md,
@@ -144,11 +168,60 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
   },
-  pillTextSelected: {
-    color: colors.textInverse,
+  pillTextSelected: { color: colors.textInverse },
+  help: { color: colors.textTertiary, fontSize: fontSize.xs },
+});
+
+// Brand light-surface styling (cream/white card).
+const brandStyles = StyleSheet.create({
+  container: { gap: brandSpacing.s2 },
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
+  label: {
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  valueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: brandSpacing.s2,
+  },
+  swatch: { width: 10, height: 10, borderRadius: 3 },
+  value: {
+    color: brandColorsLight.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  pillRow: { flexDirection: "row", gap: brandSpacing.s2 },
+  pill: {
+    flex: 1,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
+    borderWidth: 1,
+    borderColor: brandColorsLight.line,
+    backgroundColor: brandColorsLight.raised,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillText: {
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  pillTextSelected: { color: "#0E0E10" },
   help: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    // `dim` clears AA on the white card; `mute` would be ~2.7:1.
+    color: brandColorsLight.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
 });

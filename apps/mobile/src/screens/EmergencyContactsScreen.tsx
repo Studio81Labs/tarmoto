@@ -6,6 +6,10 @@
  * `is_emergency` are the ones the backend will SMS/call when a crash
  * alert dispatches (out-of-scope for this issue, but the toggle is
  * surfaced now so the data is captured).
+ *
+ * Brand: migrated onto the cream + ink brand system (Phase 3) so the
+ * Settings → Safety → Emergency contacts flow stays consistent. See
+ * docs/design/mobile-spec/README.md.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -14,16 +18,25 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
+import { Toggle } from "@/components/brand";
 import { api } from "@/services/api";
 import type { EmergencyContact, EmergencyContactInput } from "@/types";
+
+const t = brandColorsLight;
+const INK = "#0E0E10";
 
 type FormMode =
   | { kind: "create" }
@@ -100,13 +113,13 @@ export default function EmergencyContactsScreen() {
         accessibilityRole="button"
         accessibilityLabel="Add emergency contact"
       >
-        <Icon name="plus" size={20} color={colors.textInverse} />
+        <Icon name="plus" size={20} color={INK} />
         <Text style={styles.addLabel}>Add contact</Text>
       </TouchableOpacity>
 
       {loadError ? (
         <View style={styles.errorBanner}>
-          <Icon name="alert-circle-outline" size={18} color={colors.danger} />
+          <Icon name="alert-circle-outline" size={18} color={statusFg.danger} />
           <Text style={styles.errorText}>{loadError}</Text>
           <TouchableOpacity onPress={() => void loadContacts()}>
             <Text style={styles.retryLink}>Retry</Text>
@@ -115,7 +128,7 @@ export default function EmergencyContactsScreen() {
       ) : null}
 
       {contacts === null && !loadError ? (
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={t.accent} />
       ) : null}
 
       {contacts && contacts.length === 0 ? (
@@ -131,11 +144,7 @@ export default function EmergencyContactsScreen() {
             <Text style={styles.contactPhone}>{contact.phone}</Text>
             {contact.is_emergency ? (
               <View style={styles.badge}>
-                <Icon
-                  name="bell-ring-outline"
-                  size={12}
-                  color={colors.textInverse}
-                />
+                <Icon name="bell-ring-outline" size={12} color={t.invFg} />
                 <Text style={styles.badgeLabel}>Emergency contact</Text>
               </View>
             ) : (
@@ -149,7 +158,7 @@ export default function EmergencyContactsScreen() {
               accessibilityLabel={`Edit ${contact.name}`}
               style={styles.iconBtn}
             >
-              <Icon name="pencil-outline" size={20} color={colors.primary} />
+              <Icon name="pencil-outline" size={20} color={t.fg} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleDelete(contact)}
@@ -157,7 +166,11 @@ export default function EmergencyContactsScreen() {
               accessibilityLabel={`Delete ${contact.name}`}
               style={styles.iconBtn}
             >
-              <Icon name="trash-can-outline" size={20} color={colors.danger} />
+              <Icon
+                name="trash-can-outline"
+                size={20}
+                color={statusFg.danger}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -254,7 +267,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
           value={name}
           onChangeText={setName}
           placeholder="Jane Doe"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={t.mute}
           style={styles.input}
           autoCapitalize="words"
           accessibilityLabel="Contact name"
@@ -265,7 +278,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
           value={phone}
           onChangeText={setPhone}
           placeholder="+420 123 456 789"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={t.mute}
           style={styles.input}
           keyboardType="phone-pad"
           accessibilityLabel="Contact phone"
@@ -278,9 +291,9 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
               When off, this contact stays in your list but is not notified.
             </Text>
           </View>
-          <Switch
-            value={isEmergency}
-            onValueChange={setIsEmergency}
+          <Toggle
+            on={isEmergency}
+            onToggle={setIsEmergency}
             accessibilityLabel="Alert this contact in a crash"
           />
         </View>
@@ -306,7 +319,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
             accessibilityState={{ disabled: submitting }}
           >
             {submitting ? (
-              <ActivityIndicator color={colors.textInverse} />
+              <ActivityIndicator color={INK} />
             ) : (
               <Text style={styles.primaryLabel}>Save</Text>
             )}
@@ -320,63 +333,71 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
+    paddingBottom: brandSpacing.s8,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.6,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    minHeight: 44,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.accent,
   },
   addLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: INK,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    borderRadius: brandRadii.lg,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   cardBody: {
     flex: 1,
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   contactName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   contactPhone: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 13,
   },
   contactNote: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     fontStyle: "italic",
   },
   badge: {
@@ -384,114 +405,132 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     alignSelf: "flex-start",
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 2,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   badgeLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "800",
   },
   cardActions: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   iconBtn: {
-    padding: spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     textAlign: "center",
-    paddingVertical: spacing.xl,
+    paddingVertical: brandSpacing.s5,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.bgCard,
+    borderColor: statusFg.danger,
+    backgroundColor: "rgba(179,38,30,0.08)",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   retryLink: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "800",
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: colors.bg,
-    padding: spacing.xl,
-    gap: spacing.md,
+    backgroundColor: t.bg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   modalTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   label: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   input: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   helpText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     marginTop: 2,
   },
   modalActions: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
     marginTop: "auto",
-    paddingTop: spacing.lg,
+    paddingTop: brandSpacing.s4,
   },
   primaryBtn: {
     flex: 1,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    backgroundColor: t.accent,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     alignItems: "center",
+    justifyContent: "center",
   },
   primaryLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: INK,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   secondaryBtn: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   secondaryLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   disabled: {
     opacity: 0.6,

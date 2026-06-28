@@ -96,6 +96,44 @@ describe("EmergencyContactsScreen", () => {
     await waitFor(() => expect(screen.getByText("Mom")).toBeTruthy());
   });
 
+  it("sends is_emergency:false when the alert toggle is switched off", async () => {
+    // Guards the brand Toggle integration: the default is on, so pressing
+    // it must flip the saved notification flag (a broken onToggle wiring
+    // would silently keep the default `true`).
+    mockedApi.addContact.mockResolvedValue({
+      id: "c4",
+      name: "Dad",
+      phone: "+420444",
+      is_emergency: false,
+      created_at: "2026-04-25T12:00:00Z",
+    });
+
+    render(<EmergencyContactsScreen />);
+    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("Add emergency contact"));
+    fireEvent.changeText(screen.getByLabelText("Contact name"), "Dad");
+    fireEvent.changeText(screen.getByLabelText("Contact phone"), "+420444");
+
+    const alertToggle = screen.getByLabelText("Alert this contact in a crash");
+    expect(alertToggle.props.accessibilityState).toMatchObject({
+      checked: true,
+    });
+    fireEvent.press(alertToggle);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Save contact"));
+    });
+
+    await waitFor(() =>
+      expect(mockedApi.addContact).toHaveBeenCalledWith({
+        name: "Dad",
+        phone: "+420444",
+        is_emergency: false,
+      }),
+    );
+  });
+
   it("validates that name and phone are required", async () => {
     render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());

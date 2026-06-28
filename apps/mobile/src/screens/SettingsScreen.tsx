@@ -5,7 +5,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -15,14 +14,15 @@ import RNShare from "react-native-share";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
+import { Card, Stamp, Toggle } from "@/components/brand";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import FuelRangePicker from "@/components/FuelRangePicker";
 import {
@@ -37,6 +37,15 @@ import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
+
+// Brand palette (Atlas / light). Settings is the first screen migrated onto
+// the cream + ink brand system — see docs/design/mobile-spec/README.md.
+// Status text/icons use the accessible `statusFg` tokens (not the quality
+// ramp, whose fills fail WCAG contrast as foreground on the white Card).
+const t = brandColorsLight;
+const WARNING = statusFg.warning;
+const SUCCESS = statusFg.success;
+const DANGER = statusFg.danger;
 
 export default function SettingsScreen() {
   const minQuality = usePreferencesStore((s) => s.minQuality);
@@ -54,8 +63,10 @@ export default function SettingsScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Settings</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Route quality</Text>
+      <Card raised pad={brandSpacing.s4} style={styles.card}>
+        {/* These stamps are the section headings — use the readable `dim`
+            tone (AA on white), not the default muted eyebrow colour. */}
+        <Stamp color={t.dim}>Route quality</Stamp>
         <Text style={styles.sectionBody}>
           Routes and road segments below your minimum are grayed out so you can
           focus on the roads you actually want to ride.
@@ -66,11 +77,12 @@ export default function SettingsScreen() {
           onChange={setMinQuality}
           label="Minimum quality"
           helpText={`Currently showing ${qualityLabel(minQuality)} and above.`}
+          light
         />
-      </View>
+      </Card>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Fuel range</Text>
+      <Card raised pad={brandSpacing.s4} style={styles.card}>
+        <Stamp color={t.dim}>Fuel range</Stamp>
         <Text style={styles.sectionBody}>
           How far your bike comfortably goes on a tank. Trip days with a stretch
           longer than this between fuel stops will trigger a warning.
@@ -82,9 +94,9 @@ export default function SettingsScreen() {
           label="Fuel range"
           helpText="Tap a distance to match your bike."
         />
-      </View>
+      </Card>
 
-      <View style={styles.card}>
+      <Card raised pad={brandSpacing.s4} style={styles.card}>
         <View style={styles.toggleRow}>
           <View style={styles.toggleBody}>
             <Text style={styles.sectionTitle}>Weather alerts</Text>
@@ -93,13 +105,13 @@ export default function SettingsScreen() {
               navigating. Critical alerts (storm, ice) are also read aloud.
             </Text>
           </View>
-          <Switch
-            value={weatherAlertsEnabled}
-            onValueChange={setWeatherAlertsEnabled}
+          <Toggle
+            on={weatherAlertsEnabled}
+            onToggle={setWeatherAlertsEnabled}
             accessibilityLabel="Toggle real-time weather alerts during navigation"
           />
         </View>
-      </View>
+      </Card>
 
       <VoiceNavigationCard />
 
@@ -176,9 +188,9 @@ function BulkExportCard() {
   }, []);
 
   return (
-    <View style={styles.card}>
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
-        <Icon name="export-variant" size={22} color={colors.textPrimary} />
+        <Icon name="export-variant" size={22} color={t.fg} />
         <Text style={styles.sectionTitle}>Export rides</Text>
       </View>
       <Text style={styles.sectionBody}>
@@ -194,10 +206,10 @@ function BulkExportCard() {
           accessibilityLabel="Export all rides as GPX"
         >
           {busy === "gpx" ? (
-            <ActivityIndicator color={colors.primary} size="small" />
+            <ActivityIndicator color={t.accent} size="small" />
           ) : (
             <>
-              <Icon name="download-outline" size={18} color={colors.primary} />
+              <Icon name="download-outline" size={18} color={t.fg} />
               <Text style={styles.exportBtnLabel}>GPX</Text>
             </>
           )}
@@ -210,16 +222,16 @@ function BulkExportCard() {
           accessibilityLabel="Export all rides as CSV"
         >
           {busy === "csv" ? (
-            <ActivityIndicator color={colors.primary} size="small" />
+            <ActivityIndicator color={t.accent} size="small" />
           ) : (
             <>
-              <Icon name="table" size={18} color={colors.primary} />
+              <Icon name="table" size={18} color={t.fg} />
               <Text style={styles.exportBtnLabel}>CSV</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </Card>
   );
 }
 
@@ -244,13 +256,9 @@ function VoiceNavigationCard() {
   const setDistanceUnit = usePreferencesStore((s) => s.setDistanceUnit);
 
   return (
-    <View style={styles.card}>
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
-        <Icon
-          name="volume-high"
-          size={22}
-          color={enabled ? colors.primary : colors.textPrimary}
-        />
+        <Icon name="volume-high" size={22} color={enabled ? t.accent : t.fg} />
         <Text style={styles.sectionTitle}>Voice navigation</Text>
       </View>
 
@@ -262,9 +270,9 @@ function VoiceNavigationCard() {
             friendly early warnings ~300 m before each turn.
           </Text>
         </View>
-        <Switch
-          value={enabled}
-          onValueChange={setEnabled}
+        <Toggle
+          on={enabled}
+          onToggle={setEnabled}
           accessibilityLabel="Enable voice navigation"
         />
       </View>
@@ -279,9 +287,9 @@ function VoiceNavigationCard() {
                 upcoming road name and stay-left/right hints on sharp turns.
               </Text>
             </View>
-            <Switch
-              value={verbose}
-              onValueChange={setVerbose}
+            <Toggle
+              on={verbose}
+              onToggle={setVerbose}
               accessibilityLabel="Toggle verbose voice navigation phrasing"
             />
           </View>
@@ -317,7 +325,7 @@ function VoiceNavigationCard() {
           </View>
         </>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
@@ -455,12 +463,12 @@ function SafetyCard() {
   );
 
   return (
-    <View style={styles.card}>
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
         <Icon
           name="shield-alert-outline"
           size={22}
-          color={enabled ? colors.primary : colors.textPrimary}
+          color={enabled ? t.accent : t.fg}
         />
         <Text style={styles.sectionTitle}>Safety</Text>
       </View>
@@ -473,17 +481,15 @@ function SafetyCard() {
             and call your emergency contacts if you don't cancel.
           </Text>
         </View>
-        <Switch
-          value={enabled}
-          onValueChange={(v) => void handleToggle(v)}
+        <Toggle
+          on={enabled}
+          onToggle={(v) => void handleToggle(v)}
           disabled={pending || !user}
           accessibilityLabel="Enable crash detection"
         />
       </View>
 
-      {pending ? (
-        <ActivityIndicator color={colors.primary} size="small" />
-      ) : null}
+      {pending ? <ActivityIndicator color={t.accent} size="small" /> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <TouchableOpacity
@@ -492,20 +498,16 @@ function SafetyCard() {
         accessibilityRole="button"
         accessibilityLabel="Manage emergency contacts"
       >
-        <Icon
-          name="account-multiple-outline"
-          size={20}
-          color={colors.primary}
-        />
+        <Icon name="account-multiple-outline" size={20} color={t.accent} />
         <Text style={styles.linkLabel}>Emergency contacts</Text>
         <Icon
           name="chevron-right"
           size={20}
-          color={colors.textTertiary}
+          color={t.faint}
           style={styles.chevron}
         />
       </TouchableOpacity>
-    </View>
+    </Card>
   );
 }
 
@@ -528,26 +530,27 @@ function OfflineRegionsCard() {
 
   return (
     <TouchableOpacity
-      style={styles.card}
       onPress={() => navigation.navigate("OfflineRegions")}
       accessibilityRole="button"
       accessibilityLabel="Manage offline map regions"
     >
-      <View style={styles.uploadsHeader}>
-        <Icon
-          name="map-outline"
-          size={22}
-          color={downloading > 0 ? colors.primary : colors.textPrimary}
-        />
-        <Text style={styles.sectionTitle}>Offline maps</Text>
-        <Icon
-          name="chevron-right"
-          size={20}
-          color={colors.textTertiary}
-          style={styles.chevron}
-        />
-      </View>
-      <Text style={styles.sectionBody}>{summary}</Text>
+      <Card raised pad={brandSpacing.s4} style={styles.card}>
+        <View style={styles.uploadsHeader}>
+          <Icon
+            name="map-outline"
+            size={22}
+            color={downloading > 0 ? t.accent : t.fg}
+          />
+          <Text style={styles.sectionTitle}>Offline maps</Text>
+          <Icon
+            name="chevron-right"
+            size={20}
+            color={t.faint}
+            style={styles.chevron}
+          />
+        </View>
+        <Text style={styles.sectionBody}>{summary}</Text>
+      </Card>
     </TouchableOpacity>
   );
 }
@@ -564,12 +567,12 @@ function PendingUploadsCard() {
     : "All your sensor contributions are synced to the Tarmoto community.";
 
   return (
-    <View style={styles.card}>
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
         <Icon
           name={hasPending ? "cloud-upload-outline" : "cloud-check-outline"}
           size={22}
-          color={hasPending ? colors.warning : colors.success}
+          color={hasPending ? WARNING : SUCCESS}
         />
         <Text style={styles.sectionTitle}>Offline uploads</Text>
       </View>
@@ -585,7 +588,7 @@ function PendingUploadsCard() {
           accessibilityState={{ disabled: isRetrying }}
         >
           {isRetrying ? (
-            <ActivityIndicator color={colors.textInverse} size="small" />
+            <ActivityIndicator color="#0E0E10" size="small" />
           ) : (
             <Text style={styles.retryBtnLabel}>Retry now</Text>
           )}
@@ -597,7 +600,7 @@ function PendingUploadsCard() {
           Uploaded {lastFlushed} pending ride{lastFlushed === 1 ? "" : "s"}.
         </Text>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
@@ -616,12 +619,12 @@ function PendingHazardReportsCard() {
   const resultMessage = formatHazardRetryResult(lastResult, isRetrying);
 
   return (
-    <View style={styles.card}>
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
         <Icon
           name={hasPending ? "alert-outline" : "shield-check-outline"}
           size={22}
-          color={hasPending ? colors.warning : colors.success}
+          color={hasPending ? WARNING : SUCCESS}
         />
         <Text style={styles.sectionTitle}>Hazard reports</Text>
       </View>
@@ -637,7 +640,7 @@ function PendingHazardReportsCard() {
           accessibilityState={{ disabled: isRetrying }}
         >
           {isRetrying ? (
-            <ActivityIndicator color={colors.textInverse} size="small" />
+            <ActivityIndicator color="#0E0E10" size="small" />
           ) : (
             <Text style={styles.retryBtnLabel}>Retry now</Text>
           )}
@@ -655,7 +658,7 @@ function PendingHazardReportsCard() {
           {resultMessage.text}
         </Text>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
@@ -697,50 +700,50 @@ export function formatHazardRetryResult(
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 30,
+    fontWeight: "800",
+    letterSpacing: -0.6,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   sectionBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   uploadsHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   chevron: {
     marginLeft: "auto",
   },
   retryBtn: {
     alignSelf: "flex-start",
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.accent,
     minWidth: 120,
     alignItems: "center",
   },
@@ -748,94 +751,102 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   retryBtnLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: "#0E0E10",
+    fontFamily: brandFonts.sans,
+    fontWeight: "800",
+    fontSize: 14,
   },
   retrySuccess: {
-    color: colors.success,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: SUCCESS,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   retryWarning: {
-    color: colors.warning,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: WARNING,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   toggleBody: {
     flex: 1,
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   toggleLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: DANGER,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s2,
   },
   linkLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   exportRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   exportBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s1,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.bgCard,
+    borderColor: t.lineStrong,
+    backgroundColor: t.raised,
   },
   exportBtnLabel: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   segmentRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    gap: brandSpacing.s1,
+    marginTop: brandSpacing.s1,
   },
   segmentPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgCard,
+    borderColor: t.line,
+    backgroundColor: t.raised,
   },
   segmentPillSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
+    borderColor: t.accent,
+    backgroundColor: t.accent,
   },
   segmentLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   segmentLabelSelected: {
-    color: colors.textInverse,
+    color: "#0E0E10",
   },
 });
