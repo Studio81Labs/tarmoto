@@ -438,7 +438,16 @@ function syncLinkedStart(
   const end = dayFinishWaypoint(days[idx].waypoints);
   const nextWaypoints = [...next.waypoints];
   const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
-  if (!end) return { days, stale: staleDays }; // no finish yet → linked start stays empty
+  if (!end) {
+    // The predecessor no longer has a finish to mirror (e.g. its terminal stay
+    // was dragged off the end). The link is no longer valid: clear it so the
+    // successor's start isn't suppressed as "linked" with nothing behind it,
+    // and a later predecessor finish can't overwrite it. Don't re-stale — the
+    // successor's existing start location is unchanged, only the flag.
+    const cleared = [...days];
+    cleared[idx + 1] = { ...next, startLinked: false };
+    return { days: cleared, stale: staleDays };
+  }
   // If the linked start already mirrors the predecessor's end, the edit didn't
   // move the end (e.g. a via/POI change) — don't rewrite or re-stale the
   // successor, or it would sit in stalePreviewDays with unchanged routing

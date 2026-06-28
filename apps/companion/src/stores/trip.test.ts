@@ -901,6 +901,37 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(useTripStore.getState().stalePreviewDays).toContain(2);
   });
 
+  it("reordering a terminal stay off the end clears the now-finishless link", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // [start(1,1)]
+    s.addWaypoint(0, {
+      id: "via-1",
+      name: "Via",
+      type: "via",
+      location: { lng: 5, lat: 5 },
+    });
+    s.addWaypoint(0, {
+      id: "stay-1",
+      name: "Hotel",
+      type: "accommodation", // [start, via, accommodation(2,2)] — finish = (2,2)
+      location: { lng: 2, lat: 2 },
+    });
+    s.addDay(); // day 2 linked, seeded from the terminal stay (2,2)
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
+
+    // Drag the stay BEFORE the via → day 1 has no terminal finish anymore.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.reorderWaypoints(0, 2, 1);
+    expect(
+      useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type),
+    ).toEqual(["start", "accommodation", "via"]);
+
+    // No predecessor finish to mirror → the link is cleared (not left dangling).
+    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
+      false,
+    );
+  });
+
   it("adding a stay after an explicit end re-seeds the linked successor to the stay", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

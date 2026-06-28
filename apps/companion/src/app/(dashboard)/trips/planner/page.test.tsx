@@ -1680,6 +1680,26 @@ describe("TripPlannerPage", () => {
     ).not.toBeDisabled();
   });
 
+  it("disables Save route when a complete-by-waypoints day has no previewed geometry", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!, // valid start/end waypoints…
+          routeGeometry: undefined, // …but never previewed (e.g. a loaded share)
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // not stale → would otherwise pass
+
+    render(<TripPlannerPage />);
+
+    // Geometry-less day must NOT pass the gate — otherwise Save would submit a
+    // leg the backend routes without the rider ever previewing it.
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
   it("treats a terminal accommodation (generated overnight) as a day finish for the Save gate", () => {
     storeState.activeTrip = {
       ...activeTrip,
