@@ -12,6 +12,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
 import type { AdminRequest } from '../admin/internal.guard.js';
+import { setAdminAuditTarget } from '../admin/admin-audit-context.js';
 import {
   AdminAdminsService,
   type ActingAdmin,
@@ -44,11 +45,16 @@ export class AdminAdminsController {
   @AdminRoles('admin')
   @ApiOperation({ summary: 'Create an admin account' })
   @ApiResponse({ status: 201, type: AdminRowDto })
-  create(
+  async create(
     @Req() req: AdminRequest,
     @Body() dto: CreateAdminDto,
   ): Promise<AdminRowDto> {
-    return this.service.create(this.actor(req), dto);
+    const result = await this.service.create(this.actor(req), dto);
+    setAdminAuditTarget(req, {
+      target_type: 'admin_user',
+      target_id: result.id,
+    });
+    return result;
   }
 
   @Patch('admins/:id')
@@ -60,6 +66,7 @@ export class AdminAdminsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PatchAdminDto,
   ): Promise<AdminRowDto> {
+    setAdminAuditTarget(req, { target_type: 'admin_user', target_id: id });
     return this.service.patch(this.actor(req), id, dto);
   }
 }

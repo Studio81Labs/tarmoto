@@ -18,11 +18,17 @@ function makeService(opts: {
   target?: object | null;
   superAdminCount?: number;
 }) {
+  const count = opts.superAdminCount ?? 2;
   const qb = {
+    select: jest.fn().mockReturnThis(),
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
-    getCount: jest.fn().mockResolvedValue(opts.superAdminCount ?? 2),
+    getMany: jest
+      .fn()
+      .mockResolvedValue(
+        Array.from({ length: count }, (_, i) => ({ id: `super${i}` })),
+      ),
   };
   const adminRepo = {
     find: jest.fn().mockResolvedValue([]),
@@ -387,10 +393,13 @@ describe('AdminAdminsService', () => {
       created_at: new Date(),
     };
     const qb = {
+      select: jest.fn().mockReturnThis(),
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
-      getCount: jest.fn().mockResolvedValue(2),
+      getMany: jest
+        .fn()
+        .mockResolvedValue([{ id: 'super0' }, { id: 'super1' }]),
     };
     const adminRepo = {
       find: jest.fn().mockResolvedValue([]),

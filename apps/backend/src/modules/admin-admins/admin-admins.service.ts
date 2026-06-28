@@ -293,14 +293,18 @@ export class AdminAdminsService {
           fresh.status === 'active' &&
           (freshDisabling || (freshDemoting && freshNewRole !== 'super_admin'))
         ) {
+          // Lock the active super_admin rows (not a COUNT aggregate — FOR UPDATE
+          // on a COUNT is a Postgres error). Counting in application code after
+          // locking the rows still serializes concurrent transactions.
           const activeSupers = await manager
             .getRepository(AdminUser)
             .createQueryBuilder('a')
+            .select('a.id')
             .setLock('pessimistic_write')
             .where('a.role = :role', { role: 'super_admin' })
             .andWhere('a.status = :status', { status: 'active' })
-            .getCount();
-          if (activeSupers <= 1) {
+            .getMany();
+          if (activeSupers.length <= 1) {
             pendingDenialReason = 'last_super_admin';
             throw new ConflictException(
               'Cannot disable or demote the last super_admin',

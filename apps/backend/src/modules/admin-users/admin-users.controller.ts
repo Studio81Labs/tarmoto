@@ -7,9 +7,12 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
+import type { AdminRequest } from '../admin/internal.guard.js';
+import { setAdminAuditTarget } from '../admin/admin-audit-context.js';
 import { AdminUsersService } from './admin-users.service.js';
 import {
   AdminUserDetailDto,
@@ -44,7 +47,11 @@ export class AdminUsersController {
   @AdminRoles('support')
   @HttpCode(204)
   @ApiOperation({ summary: 'Soft-delete an app user' })
-  softDelete(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+  softDelete(
+    @Req() req: AdminRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    setAdminAuditTarget(req, { target_type: 'user', target_id: id });
     return this.service.softDelete(id);
   }
 
@@ -52,7 +59,11 @@ export class AdminUsersController {
   @AdminRoles('support')
   @HttpCode(204)
   @ApiOperation({ summary: 'Restore a soft-deleted app user' })
-  restore(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+  restore(
+    @Req() req: AdminRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    setAdminAuditTarget(req, { target_type: 'user', target_id: id });
     return this.service.restore(id);
   }
 }
