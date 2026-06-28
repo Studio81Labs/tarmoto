@@ -57,7 +57,8 @@ export class AdminFlagsService {
       await this.flags.update({ id }, patch);
     }
     const updated = await this.flags.findOne({ where: { id } });
-    return this.toDto(updated!);
+    if (!updated) throw new NotFoundException('Flag not found');
+    return this.toDto(updated);
   }
 
   async remove(id: string): Promise<void> {

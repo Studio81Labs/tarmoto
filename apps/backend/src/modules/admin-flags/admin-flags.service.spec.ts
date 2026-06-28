@@ -82,6 +82,19 @@ describe('AdminFlagsService', () => {
     expect(res.updated_at).toBe(new Date('2026-02-02T00:00:00Z').toISOString());
   });
 
+  it('update() throws NotFound when flag is deleted concurrently after existence check', async () => {
+    const repo = makeRepo({
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(ROW) // existence check passes
+        .mockResolvedValueOnce(null), // re-fetch returns null (concurrent delete)
+    });
+    const svc = new AdminFlagsService(repo as never);
+    await expect(svc.update('f1', { enabled: true })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
   it('update() throws NotFound for an unknown id', async () => {
     const repo = makeRepo({ findOne: jest.fn().mockResolvedValue(null) });
     const svc = new AdminFlagsService(repo as never);
