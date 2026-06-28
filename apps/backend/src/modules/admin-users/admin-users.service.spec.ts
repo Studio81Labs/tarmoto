@@ -1,9 +1,25 @@
 import { NotFoundException } from '@nestjs/common';
 import { AdminUsersService } from './admin-users.service.js';
 
+function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
+  const qb = {
+    orderBy: jest.fn(),
+    skip: jest.fn(),
+    take: jest.fn(),
+    andWhere: jest.fn(),
+    getManyAndCount: jest.fn().mockResolvedValue(result),
+  };
+  // make chainable
+  qb.orderBy.mockReturnValue(qb);
+  qb.skip.mockReturnValue(qb);
+  qb.take.mockReturnValue(qb);
+  qb.andWhere.mockReturnValue(qb);
+  return qb;
+}
+
 function repo<T extends object>(over: Partial<T> = {}): T {
   return {
-    findAndCount: jest.fn(),
+    createQueryBuilder: jest.fn().mockReturnValue(makeQb()),
     findOne: jest.fn(),
     count: jest.fn().mockResolvedValue(0),
     update: jest.fn(),
@@ -28,10 +44,11 @@ const SAMPLE_USER = {
 };
 
 function make(over: { users?: object } = {}) {
+  const qb = makeQb();
   const users =
     over.users ??
     repo({
-      findAndCount: jest.fn().mockResolvedValue([[SAMPLE_USER], 1]),
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     });
@@ -44,7 +61,7 @@ function make(over: { users?: object } = {}) {
     activity() as never, // trips
     activity() as never, // commutes
   );
-  return { service, users };
+  return { service, users, qb };
 }
 
 describe('AdminUsersService', () => {
@@ -53,7 +70,7 @@ describe('AdminUsersService', () => {
     const res = await service.list({ page: 1, pageSize: 25 });
     expect(res).toMatchObject({ total: 1, page: 1, pageSize: 25 });
     expect(res.rows[0]).toMatchObject({ id: 'u1', email: 'rider@x.io' });
-    expect(users.findAndCount).toHaveBeenCalled();
+    expect(users.createQueryBuilder).toHaveBeenCalledWith('u');
   });
 
   it('getById() includes activity counts', async () => {
@@ -117,28 +134,55 @@ describe('AdminUsersService', () => {
   });
 
   it('list() applies deleted filter to each search clause', async () => {
-    const { service, users } = make();
+    const qb = makeQb();
+    const users = repo({
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    });
+    const activity = () => repo({ count: jest.fn().mockResolvedValue(3) });
+    const service = new AdminUsersService(
+      users as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+    );
+
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const findAndCountCall = expect.objectContaining({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      where: expect.arrayContaining([
-        expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          email: expect.anything(),
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          deleted_at: expect.anything(),
-        }),
+    // deleted filter clause applied
+    expect(qb.andWhere).toHaveBeenCalledWith('u.deleted_at IS NULL');
+    // q search clause applied (both email and display_name via OR)
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(u.email ILIKE :q OR u.display_name ILIKE :q)',
+      { q: '%foo%' },
+    );
+  });
 
-        expect.objectContaining({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          display_name: expect.anything(),
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          deleted_at: expect.anything(),
-        }),
-      ]),
+  it('list() filters by subscription_tier OR subscription_status when subscription is set', async () => {
+    const qb = makeQb();
+    const users = repo({
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      findOne: jest.fn().mockResolvedValue(SAMPLE_USER),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     });
-    expect(users.findAndCount).toHaveBeenCalledWith(findAndCountCall);
+    const activity = () => repo({ count: jest.fn().mockResolvedValue(0) });
+    const service = new AdminUsersService(
+      users as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+      activity() as never,
+    );
+
+    await service.list({ subscription: 'past_due' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
+      { sub: 'past_due' },
+    );
   });
 });

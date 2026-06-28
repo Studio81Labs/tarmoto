@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, IsNull, Not, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
@@ -33,23 +33,32 @@ export class AdminUsersService {
     const pageSize = query.pageSize ?? 25;
     const deleted = query.deleted ?? 'active';
 
-    const where: Record<string, unknown> = {};
-    if (deleted === 'active') where.deleted_at = IsNull();
-    else if (deleted === 'deleted') where.deleted_at = Not(IsNull());
+    const qb = this.users
+      .createQueryBuilder('u')
+      .orderBy('u.created_at', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
 
-    const whereClauses = query.q
-      ? [
-          { ...where, email: ILike(`%${query.q}%`) },
-          { ...where, display_name: ILike(`%${query.q}%`) },
-        ]
-      : where;
+    if (deleted === 'active') {
+      qb.andWhere('u.deleted_at IS NULL');
+    } else if (deleted === 'deleted') {
+      qb.andWhere('u.deleted_at IS NOT NULL');
+    }
 
-    const [rows, total] = await this.users.findAndCount({
-      where: whereClauses,
-      order: { created_at: 'DESC' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
+    if (query.q) {
+      qb.andWhere('(u.email ILIKE :q OR u.display_name ILIKE :q)', {
+        q: `%${query.q}%`,
+      });
+    }
+
+    if (query.subscription) {
+      qb.andWhere(
+        '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
+        { sub: query.subscription },
+      );
+    }
+
+    const [rows, total] = await qb.getManyAndCount();
 
     return { rows: rows.map((u) => this.toRow(u)), total, page, pageSize };
   }

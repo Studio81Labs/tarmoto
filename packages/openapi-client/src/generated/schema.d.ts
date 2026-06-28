@@ -11112,6 +11112,8 @@ export interface operations {
         deleted?: "active" | "deleted" | "all";
         page?: number;
         pageSize?: number;
+        /** @description Filter by subscription_tier OR subscription_status value. Valid examples: free | premium | pro | active | trialing | past_due | canceled. */
+        subscription?: string;
       };
       header?: never;
       path?: never;

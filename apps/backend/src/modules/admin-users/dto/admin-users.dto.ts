@@ -37,6 +37,15 @@ export class ListAdminUsersQueryDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter by subscription_tier OR subscription_status value. ' +
+      'Valid examples: free | premium | pro | active | trialing | past_due | canceled.',
+  })
+  @IsOptional()
+  @IsString()
+  subscription?: string;
 }
 
 export class AdminUserRowDto {
