@@ -60,6 +60,13 @@ describe("Chip", () => {
     const chip = screen.getByRole("button");
     expect(chip.props.accessibilityState).toMatchObject({ selected: true });
   });
+
+  it("expands the touch target to the glove-first 44px minimum", () => {
+    // Compact pill (~32px) + 7px top/bottom hitSlop clears the 44px target.
+    render(<Chip>Gravel</Chip>);
+    const chip = screen.getByRole("button");
+    expect(chip.props.hitSlop).toMatchObject({ top: 7, bottom: 7 });
+  });
 });
 
 describe("Metric", () => {

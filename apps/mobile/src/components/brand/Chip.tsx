@@ -70,6 +70,11 @@ export default function Chip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
+      // The pill stays visually compact, but the design is glove-first:
+      // "minimum 44px hit targets" (mobile UI kit). The chip renders ~32px
+      // tall, so expand the touch region by 7px top/bottom (≈46px) without
+      // changing layout. See docs/design/mobile-spec/source/ui_kits/mobile/mobile.html.
+      hitSlop={CHIP_HIT_SLOP}
       style={[styles.chip, { backgroundColor, borderColor }, style]}
     >
       {renderedIcon ? <View style={styles.icon}>{renderedIcon}</View> : null}
@@ -77,6 +82,9 @@ export default function Chip({
     </Pressable>
   );
 }
+
+/** Expands the compact pill's touch region to the 44px glove-first target. */
+const CHIP_HIT_SLOP = { top: 7, bottom: 7, left: 6, right: 6 } as const;
 
 const styles = StyleSheet.create({
   chip: {
