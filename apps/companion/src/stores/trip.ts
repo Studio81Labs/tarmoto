@@ -1181,10 +1181,21 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const stale = state.stalePreviewDays
           .filter((d) => d !== index + 1)
           .map((d) => (d > index + 1 ? d - 1 : d));
-        // re-evaluate the boundary at `index`: if the day now at `index` is linked, re-seed from its new predecessor
+        // re-evaluate the boundary at `index`: if the day now at `index` is
+        // linked, re-seed from its new predecessor — but only when that
+        // predecessor actually has a finish. If it doesn't, the link is no
+        // longer valid (syncLinkedStart would no-op and leave startLinked true,
+        // hiding the successor's start and letting a later predecessor finish
+        // overwrite it), so clear it.
         let result = { days, stale };
         if (index > 0 && index < days.length && days[index]!.startLinked) {
-          result = syncLinkedStart(days, index - 1, stale);
+          if (dayFinishWaypoint(days[index - 1]!.waypoints)) {
+            result = syncLinkedStart(days, index - 1, stale);
+          } else {
+            const cleared = [...days];
+            cleared[index] = { ...cleared[index]!, startLinked: false };
+            result = { days: cleared, stale };
+          }
         }
         // Keep the SAME logical day selected: removing a day BEFORE the
         // selected one shifts it down by one. Then clamp into range (e.g. when

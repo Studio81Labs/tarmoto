@@ -1698,6 +1698,23 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(trip.days[0]!.startLinked).toBe(false);
   });
 
+  it("removeDay clears a successor link when the new predecessor has no finish", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: [start] — NO finish
+    s.addDay(); // day 2 (unlinked — day 1 has no finish)
+    useTripStore.setState({ selectedDayIndex: 1 });
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end"); // day 2: [start, end(3,3)]
+    s.addDay(); // day 3 linked, seeded from day 2's finish (3,3)
+    expect(useTripStore.getState().activeTrip!.days[2]!.startLinked).toBe(true);
+
+    // Remove the middle day — old day 3 becomes day 2, its new predecessor is
+    // day 1 (start only, no finish), so the now-invalid link must be cleared.
+    s.removeDay(1);
+    const newDay2 = useTripStore.getState().activeTrip!.days[1]!;
+    expect(newDay2.startLinked).toBe(false);
+  });
+
   it("removeDay remaps stale day numbers so no orphaned flag wedges the save gate", () => {
     seedOneDay(); // day 1
     useTripStore.getState().addDay(); // day 2 (linked)
