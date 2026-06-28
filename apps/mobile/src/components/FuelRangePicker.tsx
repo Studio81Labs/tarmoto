@@ -118,7 +118,8 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
   },
   label: {
-    color: t.mute,
+    // `dim` (AA on white), not the muted eyebrow tone — this labels the value.
+    color: t.dim,
     fontFamily: brandFonts.mono,
     fontSize: 11,
     fontWeight: "700",
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
     color: "#0E0E10",
   },
   help: {
-    color: t.mute,
+    color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 11,
   },

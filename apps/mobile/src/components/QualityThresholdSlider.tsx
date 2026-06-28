@@ -219,7 +219,8 @@ const brandStyles = StyleSheet.create({
   },
   pillTextSelected: { color: "#0E0E10" },
   help: {
-    color: brandColorsLight.mute,
+    // `dim` clears AA on the white card; `mute` would be ~2.7:1.
+    color: brandColorsLight.dim,
     fontFamily: brandFonts.sans,
     fontSize: 11,
   },
