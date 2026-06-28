@@ -236,7 +236,11 @@ function HomeNavigator() {
         component={HomeScreen}
         options={{ headerShown: false }}
       />
-      <HomeStack.Screen name="Commute" component={CommuteScreen} />
+      <HomeStack.Screen
+        name="Commute"
+        component={CommuteScreen}
+        options={brandScreenOptions}
+      />
       {/*
         US-15 / #342 follow-up: commute callers (CommuteScreen alternative
         cards today, primary-route geometry once the backend caches it)
