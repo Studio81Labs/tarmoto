@@ -125,9 +125,10 @@ screen migrated yet.
    **Done:** the screen is on the brand palette/type, brand `Card` + `Stamp`
    - `Toggle`, with the Settings stack header themed cream (`brandScreenOptions`
      in `RootNavigator`) so it reads consistently. Behaviour and accessibility
-     labels are unchanged (tests stay green). Immediate follow-ups: re-skin the
-     two embedded controls (`QualityThresholdSlider`, `FuelRangePicker`), and
-     swap the remaining `material-design-icons` glyphs for hand-rolled
+     labels are unchanged (tests stay green). The embedded
+     `QualityThresholdSlider` / `FuelRangePicker` are migrated too (legible ink
+     value text + brand-ramp / accent fills on the light card). Remaining
+     follow-up: swap the `material-design-icons` glyphs for hand-rolled
      `BrandIcon`s (rule #3) where equivalents exist.
 
 ### Phase 3 — Per-screen sweeps (one PR each, smallest blast radius first)

@@ -15,16 +15,14 @@ import {
   View,
   AccessibilityRole,
 } from "react-native";
+import { qualityLabel, MIN_QUALITY_BOUNDS } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  spacing,
-  MIN_QUALITY_BOUNDS,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+} from "@/theme/brand";
 
 interface Props {
   value: number;
@@ -34,6 +32,8 @@ interface Props {
   /** Extra helper text rendered below the pills. */
   helpText?: string;
 }
+
+const t = brandColorsLight;
 
 const STEPS = [
   MIN_QUALITY_BOUNDS.min,
@@ -54,16 +54,23 @@ export default function QualityThresholdSlider({
     Math.min(MIN_QUALITY_BOUNDS.max, Math.round(value)),
   );
   const activeLabel = qualityLabel(active);
-  const activeColor = qualityColor(active);
 
   return (
     <View style={styles.container}>
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          <Text style={[styles.value, { color: activeColor }]}>
-            {activeLabel}
-          </Text>
+          {/* Value text stays ink for legibility on the light card; the
+              quality colour reads from the swatch + the selected pill. */}
+          <View style={styles.valueRow}>
+            <View
+              style={[
+                styles.swatch,
+                { backgroundColor: qualityBrandColor(active) },
+              ]}
+            />
+            <Text style={styles.value}>{activeLabel}</Text>
+          </View>
         </View>
       ) : null}
 
@@ -74,7 +81,7 @@ export default function QualityThresholdSlider({
       >
         {STEPS.map((step) => {
           const selected = step === active;
-          const stepColor = qualityColor(step);
+          const stepColor = qualityBrandColor(step);
           return (
             <TouchableOpacity
               key={step}
@@ -107,48 +114,63 @@ export default function QualityThresholdSlider({
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   labelRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "center",
   },
   label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.mute,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
+  },
+  valueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: brandSpacing.s2,
+  },
+  swatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
   },
   value: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "800",
   },
   pillRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   pill: {
     flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
+    borderColor: t.line,
+    backgroundColor: t.raised,
     alignItems: "center",
     justifyContent: "center",
   },
   pillText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "800",
   },
   pillTextSelected: {
-    color: colors.textInverse,
+    color: "#0E0E10",
   },
   help: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.mute,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
 });
