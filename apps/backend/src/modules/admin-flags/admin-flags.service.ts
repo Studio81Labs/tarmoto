@@ -64,7 +64,8 @@ export class AdminFlagsService {
   async remove(id: string): Promise<void> {
     const existing = await this.flags.findOne({ where: { id } });
     if (!existing) throw new NotFoundException('Flag not found');
-    await this.flags.delete({ id });
+    const result = await this.flags.delete({ id });
+    if (!result.affected) throw new NotFoundException('Flag not found');
   }
 
   private toDto(r: FeatureFlag): FeatureFlagDto {

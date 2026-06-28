@@ -113,4 +113,13 @@ describe('AdminFlagsService', () => {
     const svc2 = new AdminFlagsService(repo2 as never);
     await expect(svc2.remove('nope')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('remove() throws NotFound when delete affects 0 rows (concurrent delete)', async () => {
+    const repo = makeRepo({
+      findOne: jest.fn().mockResolvedValue(ROW),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    });
+    const svc = new AdminFlagsService(repo as never);
+    await expect(svc.remove('f1')).rejects.toBeInstanceOf(NotFoundException);
+  });
 });
