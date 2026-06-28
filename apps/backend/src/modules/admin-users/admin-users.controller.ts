@@ -1,0 +1,69 @@
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
+import type { AdminRequest } from '../admin/internal.guard.js';
+import { setAdminAuditTarget } from '../admin/admin-audit-context.js';
+import { AdminUsersService } from './admin-users.service.js';
+import {
+  AdminUserDetailDto,
+  AdminUserListResponseDto,
+  ListAdminUsersQueryDto,
+} from './dto/admin-users.dto.js';
+
+@ApiTags('admin')
+@Controller('admin')
+export class AdminUsersController {
+  constructor(private readonly service: AdminUsersService) {}
+
+  @Get('users')
+  @AdminRoles('support')
+  @ApiOperation({ summary: 'List app users (paginated, searchable)' })
+  @ApiResponse({ status: 200, type: AdminUserListResponseDto })
+  list(
+    @Query() query: ListAdminUsersQueryDto,
+  ): Promise<AdminUserListResponseDto> {
+    return this.service.list(query);
+  }
+
+  @Get('users/:id')
+  @AdminRoles('support')
+  @ApiOperation({ summary: 'App user detail + activity counts' })
+  @ApiResponse({ status: 200, type: AdminUserDetailDto })
+  getById(@Param('id', ParseUUIDPipe) id: string): Promise<AdminUserDetailDto> {
+    return this.service.getById(id);
+  }
+
+  @Delete('users/:id')
+  @AdminRoles('support')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Soft-delete an app user' })
+  softDelete(
+    @Req() req: AdminRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    setAdminAuditTarget(req, { target_type: 'user', target_id: id });
+    return this.service.softDelete(id);
+  }
+
+  @Post('users/:id/restore')
+  @AdminRoles('support')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Restore a soft-deleted app user' })
+  restore(
+    @Req() req: AdminRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    setAdminAuditTarget(req, { target_type: 'user', target_id: id });
+    return this.service.restore(id);
+  }
+}

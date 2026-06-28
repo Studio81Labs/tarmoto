@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Heading } from "@tarmoto/ui";
+import { Alert, Heading } from "@tarmoto/ui";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { adminAuthApi } from "../auth/adminAuthApi.js";
 import { LoginScreen } from "../auth/LoginScreen.js";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
+import { UsersScreen } from "../screens/UsersScreen.js";
+import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
 import { routes, useHashRoute } from "./routes.js";
+import { canAccess } from "../lib/roleRank.js";
 
 // Priority: injected window config > fetched endpoint value > dev fallback.
 const injectedPasswordLoginEnabled =
@@ -51,18 +54,41 @@ export function App() {
     );
   }
 
+  // auth.user is guaranteed non-null beyond this point.
+  const currentUser = auth.user;
+  const visibleRoutes = routes.filter(
+    (r) => r.minRole === undefined || canAccess(currentUser.role, r.minRole),
+  );
+
+  const activeRoute = routes.find((r) => r.key === active);
+  const canViewActive =
+    activeRoute?.minRole === undefined ||
+    canAccess(currentUser.role, activeRoute.minRole);
+
   return (
     <div className="flex min-h-dvh bg-cream">
-      <Sidebar active={active} onNavigate={navigate} />
+      <Sidebar routes={visibleRoutes} active={active} onNavigate={navigate} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
-          email={auth.user.email}
-          role={auth.user.role}
+          email={currentUser.email}
+          role={currentUser.role}
           onLogout={auth.logout}
         />
         <main className="flex-1 overflow-auto p-6">
-          {active === "overview" ? (
+          {!canViewActive ? (
+            <Alert
+              intent="warning"
+              title="You don't have access to this section."
+            />
+          ) : active === "overview" ? (
             <OverviewScreen />
+          ) : active === "users" ? (
+            <UsersScreen />
+          ) : active === "administrators" ? (
+            <AdministratorsScreen
+              currentRole={currentUser.role}
+              currentAdminId={currentUser.id}
+            />
           ) : (
             <section>
               <Heading as="h2">
