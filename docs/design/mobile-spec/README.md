@@ -122,6 +122,13 @@ screen migrated yet.
    device validation) is a dev-machine follow-up — see the fonts README.
 2. Migrate **Settings** (`SettingsScreen`) — the narrowest surface (stamp +
    row list + toggles), a clean first proof of the system end-to-end.
+   **Done:** the screen is on the brand palette/type, brand `Card` + `Stamp`
+   - `Toggle`, with the Settings stack header themed cream (`brandScreenOptions`
+     in `RootNavigator`) so it reads consistently. Behaviour and accessibility
+     labels are unchanged (tests stay green). Immediate follow-ups: re-skin the
+     two embedded controls (`QualityThresholdSlider`, `FuelRangePicker`), and
+     swap the remaining `material-design-icons` glyphs for hand-rolled
+     `BrandIcon`s (rule #3) where equivalents exist.
 
 ### Phase 3 — Per-screen sweeps (one PR each, smallest blast radius first)
 

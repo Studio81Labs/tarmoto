@@ -29,11 +29,14 @@ import {
 import {
   BrandButton,
   BrandIcon,
+  Card,
   Chip,
   Metric,
   QualityBars,
   Stamp,
+  Toggle,
 } from "../index";
+import { Text } from "react-native";
 
 describe("Stamp", () => {
   it("renders its label", () => {
@@ -167,6 +170,41 @@ describe("QualityBars", () => {
     expect(colors.every((c) => c === "#000000")).toBe(true);
     expect(colors.filter((c) => c === QUALITY_COLORS[0])).toHaveLength(0);
     expect(screen.getByLabelText("Quality unscored")).toBeTruthy();
+  });
+});
+
+describe("Card", () => {
+  it("renders its children", () => {
+    render(
+      <Card>
+        <Text>Safety</Text>
+      </Card>,
+    );
+    expect(screen.getByText("Safety")).toBeTruthy();
+  });
+});
+
+describe("Toggle", () => {
+  it("exposes switch role and checked state, and fires onToggle", () => {
+    const onToggle = jest.fn();
+    render(
+      <Toggle
+        on={false}
+        onToggle={onToggle}
+        accessibilityLabel="Crash detection"
+      />,
+    );
+    const sw = screen.getByRole("switch");
+    expect(sw.props.accessibilityState).toMatchObject({ checked: false });
+    fireEvent.press(sw);
+    expect(onToggle).toHaveBeenCalledWith(true);
+  });
+
+  it("does not fire when disabled", () => {
+    const onToggle = jest.fn();
+    render(<Toggle on onToggle={onToggle} disabled accessibilityLabel="x" />);
+    fireEvent.press(screen.getByRole("switch"));
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });
 
