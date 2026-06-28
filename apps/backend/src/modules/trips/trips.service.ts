@@ -1660,10 +1660,13 @@ interface BuiltWaypoint {
 function snapshotDayFinish(
   waypoints: BuiltWaypoint[],
 ): BuiltWaypoint | undefined {
-  const end = waypoints.find((w) => w.waypoint_type === 'end');
-  if (end) return end;
+  // A TERMINAL accommodation (a stay appended after an explicit end) is the
+  // finish — mirror the companion's `dayFinishWaypoint`, else a snapshot shaped
+  // [start, end, accommodation] validates startLinked against the stale end and
+  // clears a valid overnight link on import.
   const last = waypoints[waypoints.length - 1];
-  return last?.waypoint_type === 'accommodation' ? last : undefined;
+  if (last?.waypoint_type === 'accommodation') return last;
+  return waypoints.find((w) => w.waypoint_type === 'end');
 }
 
 /**

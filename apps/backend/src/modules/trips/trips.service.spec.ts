@@ -1196,6 +1196,45 @@ describe('TripsService', () => {
       expect(days[1].start_linked).toBe(true);
     });
 
+    it('prefers a terminal stay over an earlier end when validating a shared link', async () => {
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [10.5, 46.5],
+            ],
+            waypoints: [
+              { lat: 46, lng: 10, type: 'start' },
+              { lat: 46.1, lng: 10.1, type: 'end' }, // earlier explicit end
+              { lat: 46.5, lng: 10.5, type: 'accommodation' }, // stay = real finish
+            ],
+          },
+          {
+            distanceKm: 60,
+            coordinates: [
+              [10.5, 46.5],
+              [10.6, 46.6],
+            ],
+            startLinked: true,
+            waypoints: [
+              { lat: 46.5, lng: 10.5, type: 'start' }, // == the terminal stay, not the end
+              { lat: 46.6, lng: 10.6, type: 'end' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 2 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-stay-end' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(2);
+      // Validated against the terminal stay (46.5,10.5), not the earlier end.
+      expect(days[1].start_linked).toBe(true);
+    });
+
     it('drops days with neither geometry nor waypoints rather than persisting empty rows', async () => {
       // Empty days carry no information the rider could ride. They get
       // skipped, and the surviving days are renumbered so the day_number

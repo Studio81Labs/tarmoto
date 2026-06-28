@@ -895,10 +895,23 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             // Manual start placement on a non-first day breaks the overnight link.
             if (idx >= 1) breakLink = true;
           } else if (action === "set-end" || action === "set-new-end") {
-            const endIndex = waypoints.findIndex((w) => w.type === "end");
-            if (endIndex >= 0) {
-              waypoints[endIndex] = {
-                ...waypoints[endIndex]!,
+            // Setting a new finish overrides the day's CURRENT finish in place —
+            // an explicit `end` OR a terminal accommodation (generated
+            // overnight) — and demotes any other explicit end to a via. Without
+            // this, a `start → accommodation` day keeps the stale overnight and
+            // appends a second finish after it.
+            const finish = dayFinishWaypoint(waypoints);
+            if (finish) {
+              const finishIdx = waypoints.indexOf(finish);
+              for (let i = 0; i < waypoints.length; i++) {
+                if (i !== finishIdx && waypoints[i]!.type === "end") {
+                  waypoints[i] = { ...waypoints[i]!, type: "via" };
+                }
+              }
+              waypoints[finishIdx] = {
+                ...finish,
+                type: "end",
+                name: finish.type === "end" ? finish.name : "Finish",
                 location: { lng: coords.lng, lat: coords.lat },
               };
             } else {

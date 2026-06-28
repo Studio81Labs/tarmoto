@@ -808,6 +808,42 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(wp[wp.length - 1]).toMatchObject({ lat: 3, lng: 3 });
   });
 
+  it("set-end replaces a terminal accommodation finish instead of appending a second end", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation", // [start, accommodation(2,2)]
+      location: { lng: 2, lat: 2 },
+    });
+
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-end"); // menu "Set as finish"
+    const wps = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    // The accommodation slot becomes the end — no stale overnight left behind.
+    expect(wps.map((w) => w.type)).toEqual(["start", "end"]);
+    expect(wps[1]!.location).toEqual({ lng: 9, lat: 9 });
+  });
+
+  it("set-end on [start, end, stay] demotes the old end and replaces the stay", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 2, lng: 2 }, "set-end"); // [start, end(2,2)]
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation", // [start, end, accommodation(3,3)]
+      location: { lng: 3, lat: 3 },
+    });
+
+    s.placeWaypoint({ lat: 9, lng: 9 }, "set-end");
+    const wps = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    // Old end → via, the terminal stay slot → the new end. Exactly one end.
+    expect(wps.map((w) => w.type)).toEqual(["start", "via", "end"]);
+    expect(wps.filter((w) => w.type === "end")).toHaveLength(1);
+    expect(wps[2]!.location).toEqual({ lng: 9, lat: 9 });
+  });
+
   it("adding a stay after an explicit end re-seeds the linked successor to the stay", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
