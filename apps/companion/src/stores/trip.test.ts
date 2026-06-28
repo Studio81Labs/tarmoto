@@ -808,6 +808,30 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(wp[wp.length - 1]).toMatchObject({ lat: 3, lng: 3 });
   });
 
+  it("saveDays demotes a prior stay when a replacement terminal stay becomes the finish", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // [start]
+    s.addWaypoint(0, {
+      id: "old",
+      name: "Old hotel",
+      type: "accommodation", // [start, accommodation(old, 2,2)]
+      location: { lng: 2, lat: 2 },
+    });
+    s.addWaypoint(0, {
+      id: "new",
+      name: "New hotel",
+      type: "accommodation", // [start, acc(old), acc(new, 3,3)]
+      location: { lng: 3, lat: 3 },
+    });
+
+    const wp = useTripStore.getState().saveDays()[0]!.waypoints;
+    // The OLD stay → via, the NEW terminal stay → end. No stale `hotel` is
+    // serialized, so a reload's overnight reads from the new stay (the end).
+    expect(wp.map((w) => w.type)).toEqual(["start", "via", "end"]);
+    expect(wp.filter((w) => w.type === "hotel")).toHaveLength(0);
+    expect(wp[wp.length - 1]).toMatchObject({ lat: 3, lng: 3 });
+  });
+
   it("set-end replaces a terminal accommodation finish instead of appending a second end", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start

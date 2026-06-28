@@ -381,13 +381,16 @@ function activePlannerSaveWaypoints(
 export function normalizeDayFinish(waypoints: Waypoint[]): Waypoint[] {
   const lastIdx = waypoints.length - 1;
   // A terminal accommodation IS the day's finish — even when an earlier explicit
-  // `end` exists (a stay added after the end). Re-type the terminal stay to
-  // `end` and demote any pre-existing end to a via, so the day keeps exactly one
-  // finish and the backend routes to the overnight stop.
+  // `end` OR an earlier stay exists (a replacement overnight added after one).
+  // Re-type the terminal stay to `end` and demote ANY earlier `end`/
+  // `accommodation` to a via, so the day keeps exactly one finish and one
+  // overnight: otherwise the stale earlier stay persists as `hotel` and
+  // `tripFromDetail` would derive the overnight from it instead of the new one.
   if (waypoints[lastIdx]?.type !== "accommodation") return waypoints;
   return waypoints.map((w, i) => {
     if (i === lastIdx) return { ...w, type: "end" };
-    if (w.type === "end") return { ...w, type: "via" };
+    if (w.type === "end" || w.type === "accommodation")
+      return { ...w, type: "via" };
     return w;
   });
 }
