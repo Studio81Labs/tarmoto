@@ -8,8 +8,13 @@ import {
 } from "@/theme/brand";
 
 interface QualityBarsProps {
-  /** Quality score 1–5. Rounded to the nearest bucket for the ramp. */
-  q: number;
+  /**
+   * Quality score 1–5, rounded to the nearest bucket for the ramp. `null` /
+   * `undefined` (or a non-finite value) renders the unscored placeholder —
+   * all bars empty — because the road-quality contract models unmeasured
+   * roads as `number | null` and an unmeasured road is NOT a 1/5 road.
+   */
+  q: number | null | undefined;
   /** Width of a single bar in px (height is `size * 1.85`). */
   size?: number;
   /** Gap between bars in px. */
@@ -39,8 +44,9 @@ interface QualityBarsProps {
  *
  * Filled bars (1..q) take the Q-ramp colour; the rest take `empty`. The
  * fill colour is the score's bucket colour (so a q=4 meter is all-Q4),
- * matching the prototype. The container is a single accessible node so the
- * numeric score reaches TalkBack/VoiceOver instead of five anonymous views.
+ * matching the prototype. An unscored road (`q == null`) renders all bars
+ * empty. The container is a single accessible node so the score (or its
+ * absence) reaches TalkBack/VoiceOver instead of five anonymous views.
  */
 export default function QualityBars({
   q,
@@ -54,17 +60,21 @@ export default function QualityBars({
   // Derive the colour AND the filled-bar count from the same rounded
   // bucket so a fractional score (e.g. 3.6) can't show the Q4 colour while
   // filling only three bars. `qualityIndex` is 0-based; +1 is the count.
+  // Unscored (null / non-finite) fills nothing — an unmeasured road must not
+  // read as the worst bucket.
+  const scored = q != null && Number.isFinite(q);
   const bucket = qualityIndex(q);
   const fill = QUALITY_COLORS[bucket];
-  const filled = bucket + 1;
+  const filled = scored ? bucket + 1 : 0;
   const emptyColor =
     empty ?? (onDark ? brandColorsDark.qEmpty : brandColorsLight.qEmpty);
+  const defaultLabel = scored ? `Quality ${filled} of 5` : "Quality unscored";
   return (
     <View
       style={[styles.row, { gap }, style]}
       accessible
       accessibilityRole="image"
-      accessibilityLabel={accessibilityLabel ?? `Quality ${filled} of 5`}
+      accessibilityLabel={accessibilityLabel ?? defaultLabel}
     >
       {[1, 2, 3, 4, 5].map((n) => (
         <View

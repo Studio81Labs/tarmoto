@@ -159,6 +159,15 @@ describe("QualityBars", () => {
     rerender(<QualityBars q={4} accessibilityLabel="Stelvio surface: great" />);
     expect(screen.getByLabelText("Stelvio surface: great")).toBeTruthy();
   });
+
+  it("renders an unscored placeholder for null/undefined, not Q1", () => {
+    // Unmeasured road: no filled bars, announced as unscored.
+    const { toJSON } = render(<QualityBars q={null} empty="#000000" />);
+    const colors = barColors(toJSON());
+    expect(colors.every((c) => c === "#000000")).toBe(true);
+    expect(colors.filter((c) => c === QUALITY_COLORS[0])).toHaveLength(0);
+    expect(screen.getByLabelText("Quality unscored")).toBeTruthy();
+  });
 });
 
 describe("icon colour injection", () => {
