@@ -102,7 +102,15 @@ export const WAYPOINT_ICONS: Record<WaypointType, string> = {
  * most about fuel range and where they're sleeping — the rest is just
  * turn-by-turn detail the map covers.
  */
-export function summarizeWaypoints(waypoints: Waypoint[]): {
+export function summarizeWaypoints(
+  waypoints: Waypoint[],
+  // Pass the final-day flag so a NON-final day with no `hotel` infers its
+  // overnight from the `end`. After a manual save normalizes a generated leg's
+  // terminal stay to a routed `end`, no `hotel` remains; on a multi-day trip
+  // that endpoint IS the overnight boundary. Defaults to `true` (no inference)
+  // for callers without day context. The final day's `end` is the trip finish.
+  isFinalDay = true,
+): {
   fuelStops: Waypoint[];
   overnightStops: Waypoint[];
   otherStops: Waypoint[];
@@ -111,7 +119,7 @@ export function summarizeWaypoints(waypoints: Waypoint[]): {
 } {
   const sorted = [...waypoints].sort((a, b) => a.sequence - b.sequence);
   const fuelStops = sorted.filter((w) => w.waypoint_type === "fuel");
-  const overnightStops = sorted.filter((w) => w.waypoint_type === "hotel");
+  const hotels = sorted.filter((w) => w.waypoint_type === "hotel");
   const otherStops = sorted.filter(
     (w) =>
       w.waypoint_type !== "fuel" &&
@@ -121,6 +129,8 @@ export function summarizeWaypoints(waypoints: Waypoint[]): {
   );
   const start = sorted.find((w) => w.waypoint_type === "start") ?? null;
   const end = sorted.find((w) => w.waypoint_type === "end") ?? null;
+  const overnightStops =
+    hotels.length > 0 ? hotels : !isFinalDay && end ? [end] : [];
   return { fuelStops, overnightStops, otherStops, start, end };
 }
 

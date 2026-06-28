@@ -113,6 +113,26 @@ describe("summarizeWaypoints", () => {
     expect(summary.end).toBeNull();
     expect(summary.fuelStops).toEqual([]);
   });
+
+  it("infers a non-final day's overnight from its end when no hotel is present", () => {
+    // A manual save normalizes a generated leg's stay to a routed `end`.
+    const waypoints = [wp("a", "start", 0), wp("z", "end", 1)];
+    // Non-final day → the end IS the overnight boundary.
+    expect(
+      summarizeWaypoints(waypoints, false).overnightStops.map((w) => w.id),
+    ).toEqual(["z"]);
+    // Final day → the end is the trip finish, not an overnight.
+    expect(summarizeWaypoints(waypoints, true).overnightStops).toEqual([]);
+    // An explicit hotel still wins over the end inference.
+    const withHotel = [
+      wp("a", "start", 0),
+      wp("h", "hotel", 1),
+      wp("z", "end", 2),
+    ];
+    expect(
+      summarizeWaypoints(withHotel, false).overnightStops.map((w) => w.id),
+    ).toEqual(["h"]);
+  });
 });
 
 describe("sumDistance / averageQuality", () => {
