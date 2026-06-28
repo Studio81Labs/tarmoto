@@ -21,7 +21,11 @@ jest.mock("react-native-svg", () => {
   };
 });
 
-import { QUALITY_COLORS } from "@/theme/brand";
+import {
+  brandColorsDark,
+  brandColorsLight,
+  QUALITY_COLORS,
+} from "@/theme/brand";
 import {
   BrandButton,
   BrandIcon,
@@ -133,6 +137,20 @@ describe("QualityBars", () => {
     const colors = barColors(toJSON());
     expect(colors.filter((c) => c === QUALITY_COLORS[3])).toHaveLength(4);
     expect(colors.filter((c) => c === "#000000")).toHaveLength(1);
+  });
+
+  it("defaults empty bars to the dark palette tone on dark surfaces", () => {
+    const { toJSON } = render(<QualityBars q={2} onDark />);
+    const colors = barColors(toJSON());
+    expect(colors).toContain(brandColorsDark.qEmpty);
+    expect(colors).not.toContain(brandColorsLight.qEmpty);
+  });
+
+  it("exposes the score to screen readers, with an override", () => {
+    const { rerender } = render(<QualityBars q={4} />);
+    expect(screen.getByLabelText("Quality 4 of 5")).toBeTruthy();
+    rerender(<QualityBars q={4} accessibilityLabel="Stelvio surface: great" />);
+    expect(screen.getByLabelText("Stelvio surface: great")).toBeTruthy();
   });
 });
 
