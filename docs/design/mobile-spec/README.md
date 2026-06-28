@@ -189,6 +189,16 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > ink primary-action pattern; the new-hazard and CLEAR/HAZARD pills keep
 > white text on the (AA-safe) status fills.
 
+> **Profile cluster complete:** `ViewProfileScreen` (another rider's profile)
+> and the `FollowList` (Followers / Following) are migrated, with their stack
+> headers themed cream (`brandScreenOptions`). They mirror `ProfileScreen` and
+> pass `light` to the shared `Avatar` / `StatTile` / `SharedRidesSection`
+> atoms — which means **those three atoms now have no remaining legacy
+> callers**, so their default-legacy StyleSheet is dead code that Phase 4
+> cleanup can prune. The follow control reads as a solid ink "Follow" that
+> flips to an outlined ink "Following"; badge pills use `raised2` + ink/`dim`
+> text (the trophy mark is the one small accent).
+
 > **Post-ride note:** `RideDetailScreen` (the past-ride summary) is migrated;
 > its shared `RideMetric` label/value atom was made surface-aware (`light?`,
 > default legacy) first, so the still-legacy `RideScreen` history list that
