@@ -428,6 +428,7 @@ function LeanHistogramRowView({
         <View
           style={[
             styles.histBarFill,
+            row.count > 0 ? styles.histBarFillEdge : null,
             {
               width: widthPct as `${number}%`,
               // ACCENT_DARK clears 3:1 on the cream `sunken` track (the raw
@@ -510,6 +511,7 @@ function HistogramRow({
         <View
           style={[
             styles.histBarFill,
+            count > 0 ? styles.histBarFillEdge : null,
             {
               width: `${Math.max(ratio * 100, count > 0 ? 6 : 0)}%`,
               backgroundColor: color,
@@ -835,9 +837,12 @@ const styles = StyleSheet.create({
   histBarFill: {
     height: "100%",
     borderRadius: 4,
-    // Hairline edge so a pale quality-ramp fill (Q3–Q5) is still perceivable
-    // as a bar against the cream track — the fill colour alone can be near
-    // the track's luminance.
+  },
+  // Hairline edge so a pale quality-ramp fill (Q3–Q5) is still perceivable
+  // as a bar against the cream track — the fill colour alone can be near the
+  // track's luminance. Applied only to non-empty bars so a 0%-width fill
+  // doesn't draw a stray border sliver next to a "0" count.
+  histBarFillEdge: {
     borderWidth: 1,
     borderColor: t.lineStrong,
   },
