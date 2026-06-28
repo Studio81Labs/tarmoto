@@ -26,15 +26,13 @@ import {
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useRideStore } from "@/stores";
 import type { RideSummary } from "@/types";
@@ -51,6 +49,8 @@ type RideNav = NativeStackNavigationProp<RideStackParamList, "RideStart">;
 type Phase = "loading" | "ready" | "error";
 
 const PAGE_SIZE = 20;
+
+const t = brandColorsLight;
 
 export default function RideScreen() {
   const navigation = useNavigation<RideNav>();
@@ -179,7 +179,7 @@ export default function RideScreen() {
   if (phase === "loading") {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -205,7 +205,7 @@ export default function RideScreen() {
           </View>
         ) : null}
         <View style={styles.centeredFlex}>
-          <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+          <Icon name="wifi-off" size={40} color={t.dim} />
           <Text style={styles.emptyTitle}>Can't load rides</Text>
           <Text style={styles.emptyBody}>
             {errorMessage ?? "Check your connection and try again."}
@@ -231,7 +231,7 @@ export default function RideScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => void loadFirstPage(false)}
-            tintColor={colors.primary}
+            tintColor={t.fg}
           />
         }
         ListHeaderComponent={
@@ -265,7 +265,7 @@ export default function RideScreen() {
         ListFooterComponent={
           isLoadingMore ? (
             <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={t.fg} />
             </View>
           ) : null
         }
@@ -292,7 +292,7 @@ function ListHeader({
         accessibilityLabel="Return to active ride"
       >
         <View style={styles.activeIconWrap}>
-          <Icon name="play-circle" size={26} color={colors.textInverse} />
+          <Icon name="play-circle" size={26} color={t.invFg} />
         </View>
         <View style={styles.activeBody}>
           <Text style={styles.activeTitle}>Ride in progress</Text>
@@ -300,7 +300,7 @@ function ListHeader({
             Tap to return to the live HUD.
           </Text>
         </View>
-        <Icon name="chevron-right" size={22} color={colors.textInverse} />
+        <Icon name="chevron-right" size={22} color={t.invFg} />
       </TouchableOpacity>
     );
   }
@@ -312,7 +312,8 @@ function ListHeader({
       accessibilityLabel="Start a free ride"
     >
       <View style={styles.startIconWrap}>
-        <Icon name="play" size={24} color={colors.textInverse} />
+        {/* Ink glyph on the accent disc (~6.7:1); cream would be ~2.5:1. */}
+        <Icon name="play" size={24} color={t.fg} />
       </View>
       <View style={styles.startBody}>
         <Text style={styles.startTitle}>Start a ride</Text>
@@ -327,7 +328,7 @@ function ListHeader({
 function EmptyState({ onStart }: { onStart: () => void }) {
   return (
     <View style={styles.emptyWrap}>
-      <Icon name="motorbike" size={48} color={colors.primary} />
+      <Icon name="motorbike" size={48} color={t.accent} />
       <Text style={styles.emptyTitle}>No rides yet</Text>
       <Text style={styles.emptyBody}>
         Start your first ride and Tarmoto will record distance, road quality,
@@ -339,7 +340,7 @@ function EmptyState({ onStart }: { onStart: () => void }) {
         accessibilityRole="button"
         accessibilityLabel="Start your first ride"
       >
-        <Icon name="play" size={18} color={colors.textInverse} />
+        <Icon name="play" size={18} color={t.invFg} />
         <Text style={styles.primaryBtnLabel}>Start your first ride</Text>
       </TouchableOpacity>
     </View>
@@ -355,7 +356,6 @@ function RideCard({
 }) {
   const qScore = ride.avg_road_quality ?? 0;
   const qHas = qScore > 0;
-  const qColor = qHas ? qualityColor(qScore) : colors.textTertiary;
   return (
     <TouchableOpacity
       style={styles.card}
@@ -371,19 +371,22 @@ function RideCard({
           <RideMetric
             label="Distance"
             value={formatDistanceKm(ride.distance_km)}
+            light
           />
           <RideMetric
             label="Duration"
             value={formatDurationMinutes(ride.duration_min)}
+            light
           />
+          {/* Quality value stays ink: the ramp fails AA as text on the card. */}
           <RideMetric
             label="Quality"
             value={qHas ? qualityLabel(qScore) : "—"}
-            valueColor={qColor}
+            light
           />
         </View>
       </View>
-      <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+      <Icon name="chevron-right" size={22} color={t.faint} />
     </TouchableOpacity>
   );
 }
@@ -391,69 +394,71 @@ function RideCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   listContent: {
-    padding: spacing.xl,
-    paddingBottom: spacing.section * 2,
+    padding: brandSpacing.s5,
+    paddingBottom: brandSpacing.s12,
     flexGrow: 1,
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   separator: {
-    height: spacing.md,
+    height: brandSpacing.s3,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   errorContainer: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   errorTopCard: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xl,
+    paddingHorizontal: brandSpacing.s5,
+    paddingTop: brandSpacing.s5,
   },
   centeredFlex: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   startCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
+    borderColor: t.line,
+    marginBottom: brandSpacing.s3,
   },
   startIconWrap: {
     width: 48,
@@ -461,29 +466,34 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
+    // The "Start ride" accent moment (rule #1: accent used sparingly).
+    backgroundColor: t.accent,
   },
   startBody: {
     flex: 1,
     gap: 2,
   },
   startTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   startSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
+  // The resume card reads as a solid ink card (the active-ride return path),
+  // distinct from the white start card.
   activeCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    backgroundColor: t.invBg,
+    borderRadius: brandRadii.md,
+    marginBottom: brandSpacing.s3,
   },
   activeIconWrap: {
     width: 40,
@@ -491,62 +501,68 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.18)",
+    backgroundColor: "rgba(245,239,230,0.15)",
   },
   activeBody: {
     flex: 1,
     gap: 2,
   },
   activeTitle: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   activeSubtitle: {
-    color: colors.textInverse,
-    fontSize: fontSize.sm,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     opacity: 0.85,
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   cardBody: {
     flex: 1,
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   cardDate: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   cardMetricsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   primaryBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   footerLoader: {
-    paddingVertical: spacing.lg,
+    paddingVertical: brandSpacing.s4,
     alignItems: "center",
   },
 });
