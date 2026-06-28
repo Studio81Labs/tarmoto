@@ -330,6 +330,47 @@ describe('TripGeneratorService', () => {
       );
     });
 
+    it('marks generated successor days start_linked when their start sits on the previous overnight', async () => {
+      const A = { lat: 47.0, lng: 11.5 };
+      const B = { lat: 47.2, lng: 11.7 };
+      const C = { lat: 47.4, lng: 11.9 };
+      // Chain the three legs so each starts where the previous ended:
+      // day1 A→B, day2 B→C, day3 C→A (loop back to the trip start).
+      routingProvider.getAlternatives
+        .mockReset()
+        .mockResolvedValueOnce([makeAlt({ geometry: [A, B] })])
+        .mockResolvedValueOnce([makeAlt({ geometry: [B, C] })])
+        .mockResolvedValueOnce([makeAlt({ geometry: [C, A] })])
+        .mockResolvedValue([makeAlt({ geometry: [A, B] })]);
+
+      const result = await service.generate(USER_ID, TRIP_ID, {
+        start_location: A,
+        option: 'best-fit',
+      });
+
+      // Preview days for the selected option carry the linked flags:
+      // day 1 is never linked; days 2-3 start on the previous overnight.
+      const selected = result.options.find((o) => o.id === 'best-fit')!;
+      expect(selected.days.map((d) => d.start_linked)).toEqual([
+        false,
+        true,
+        true,
+      ]);
+
+      // The persisted TripDay rows carry the same flags (not the column
+      // default) so the companion mirrors the boundary instead of drawing a
+      // duplicate marker on the overnight stop.
+      const persistedDays = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'day_number' in b && 'route_geom' in b)
+        .sort((a, b) => (a.day_number as number) - (b.day_number as number));
+      expect(persistedDays.map((d) => d.start_linked)).toEqual([
+        false,
+        true,
+        true,
+      ]);
+    });
+
     it('issues exactly num_days OSRM round-trips (one per leg, shared across options)', async () => {
       await service.generate(USER_ID, TRIP_ID, {
         start_location: { lat: 47.0, lng: 11.5 },

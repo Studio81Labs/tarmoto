@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
-import { useTripStore, MAX_TRIP_DAYS } from "@/stores/trip";
+import { useTripStore, MAX_TRIP_DAYS, normalizeDayFinish } from "@/stores/trip";
 import {
   ArrowLeft,
   Save,
@@ -242,10 +242,17 @@ export default function TripPlannerPage() {
   // array reference rather than by calling `getState()` inside render.
   const routingWaypoints = useMemo(() => {
     if (!activeDayWaypoints) return [] as { lat: number; lng: number }[];
-    return filterRoutingWaypoints(activeDayWaypoints).map((w) => ({
-      lat: w.location.lat,
-      lng: w.location.lng,
-    }));
+    // Normalize a terminal accommodation (generated overnight) to the day's
+    // finish FIRST — the same transform saveDays applies — so the live preview
+    // routes start→overnight and matches what the backend persists. Without
+    // this, an accommodation-terminated day has <2 routing points (its preview
+    // can't refresh / clear stale) yet Save would persist an unpreviewed route.
+    return filterRoutingWaypoints(normalizeDayFinish(activeDayWaypoints)).map(
+      (w) => ({
+        lat: w.location.lat,
+        lng: w.location.lng,
+      }),
+    );
   }, [activeDayWaypoints]);
   const routeOptions = useMemo(
     () => ({

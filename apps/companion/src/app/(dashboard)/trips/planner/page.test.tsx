@@ -44,6 +44,18 @@ vi.mock("@/stores/trip", () => ({
     getState: vi.fn(),
   }),
   MAX_TRIP_DAYS: 14,
+  // Mirror the real pure helper: re-type a terminal accommodation to `end`
+  // when the day has no explicit end (generated overnight day).
+  normalizeDayFinish: (waypoints: { type: string }[]) => {
+    if (waypoints.some((w) => w.type === "end")) return waypoints;
+    const lastIdx = waypoints.length - 1;
+    if (waypoints[lastIdx]?.type === "accommodation") {
+      return waypoints.map((w, i) =>
+        i === lastIdx ? { ...w, type: "end" } : w,
+      );
+    }
+    return waypoints;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -1478,6 +1490,44 @@ describe("TripPlannerPage", () => {
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     expect(lastCall?.[4]).toBe(true);
+  });
+
+  it("routes start→overnight for an accommodation-terminated day (live inputs match Save)", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h",
+              name: "Hotel",
+              type: "accommodation",
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1];
+
+    render(<TripPlannerPage />);
+
+    // The terminal accommodation is normalized to the day's finish, so the
+    // live-routing inputs (arg 0) carry BOTH points — the preview routes to the
+    // overnight, matching the route saveDays/the backend will persist.
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall?.[0]).toEqual([
+      { lat: 46, lng: 10 },
+      { lat: 46.5, lng: 11 },
+    ]);
   });
 
   it("does NOT route the selected day when a different day is stale", () => {

@@ -459,6 +459,27 @@ export class TripGeneratorService {
     };
   }
 
+  /**
+   * A generated successor day's start sits at the previous day's overnight
+   * terminal (its `hotel`, or `end` on the final day). Day N≥2 is therefore
+   * linked when its start coordinates match the previous day's terminal — the
+   * companion uses `start_linked` to mirror the boundary and suppress the
+   * duplicate marker drawn on top of the overnight stop. Day 1 is never linked.
+   */
+  private isDayStartLinked(days: BuiltDay[], i: number): boolean {
+    if (i < 1) return false;
+    const start = days[i].waypoints.find((w) => w.waypoint_type === 'start');
+    const prevTerminal = days[i - 1].waypoints.find(
+      (w) => w.waypoint_type === 'hotel' || w.waypoint_type === 'end',
+    );
+    return (
+      !!start &&
+      !!prevTerminal &&
+      start.lat === prevTerminal.lat &&
+      start.lng === prevTerminal.lng
+    );
+  }
+
   private buildDay(
     dayNumber: number,
     cand: Candidate,
@@ -564,11 +585,12 @@ export class TripGeneratorService {
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(TripDay, { trip_id: tripId });
 
-      const dayRows = option.days.map((day) =>
+      const dayRows = option.days.map((day, dayIdx) =>
         manager.create(TripDay, {
           trip_id: tripId,
           day_number: day.dayNumber,
           title: day.title,
+          start_linked: this.isDayStartLinked(option.days, dayIdx),
           distance_km: day.distanceKm,
           // estimated_time uses pg's `interval` type — pass minutes via
           // the canonical PostgreSQL `n minutes` syntax so the value
@@ -626,7 +648,7 @@ export class TripGeneratorService {
       avg_scenic: option.avgScenic,
       selected,
       days: option.days.map(
-        (d): TripDayDto => ({
+        (d, dayIdx): TripDayDto => ({
           // Preview-only days haven't been persisted, so they don't have
           // a database id. The companion's "compare side-by-side" card
           // identifies preview rows by `day_number` + the wrapping
@@ -642,7 +664,7 @@ export class TripGeneratorService {
           curviness_score: d.curvinessScore,
           scenic_score: d.scenicScore,
           estimated_time_min: d.durationMin,
-          start_linked: false,
+          start_linked: this.isDayStartLinked(option.days, dayIdx),
           route_geometry: d.geometry,
           waypoints: d.waypoints.map(
             (w): TripWaypointDto => ({
