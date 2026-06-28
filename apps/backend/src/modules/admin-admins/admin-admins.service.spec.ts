@@ -10,10 +10,20 @@ type Actor = {
   role: 'read_only' | 'support' | 'admin' | 'super_admin';
 };
 
+function makeAudit() {
+  return { record: jest.fn().mockResolvedValue(undefined) };
+}
+
 function makeService(opts: {
   target?: object | null;
   superAdminCount?: number;
 }) {
+  const qb = {
+    setLock: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getCount: jest.fn().mockResolvedValue(opts.superAdminCount ?? 2),
+  };
   const adminRepo = {
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(opts.target ?? null),
@@ -21,6 +31,7 @@ function makeService(opts: {
     count: jest.fn().mockResolvedValue(opts.superAdminCount ?? 2),
     create: jest.fn().mockImplementation((v: unknown) => v),
     save: jest.fn().mockResolvedValue(undefined),
+    createQueryBuilder: jest.fn().mockReturnValue(qb),
   };
   const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
   const dataSource = {
@@ -30,8 +41,9 @@ function makeService(opts: {
       .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
     manager,
   };
-  const service = new AdminAdminsService(dataSource as never);
-  return { service, adminRepo, dataSource };
+  const audit = makeAudit();
+  const service = new AdminAdminsService(dataSource as never, audit as never);
+  return { service, adminRepo, dataSource, audit, qb };
 }
 
 const SUPER: Actor = { id: 'super1', role: 'super_admin' };
@@ -84,6 +96,7 @@ describe('AdminAdminsService', () => {
       count: jest.fn().mockResolvedValue(2),
       create: jest.fn().mockReturnValue(savedRow),
       save: jest.fn().mockResolvedValue(savedRow),
+      createQueryBuilder: jest.fn(),
     };
     const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
     const dataSource = {
@@ -93,7 +106,8 @@ describe('AdminAdminsService', () => {
         .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
       manager,
     };
-    const service = new AdminAdminsService(dataSource as never);
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
 
     await expect(
       service.create(SUPER, {
@@ -124,6 +138,7 @@ describe('AdminAdminsService', () => {
       count: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
     const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
     const dataSource = {
@@ -131,7 +146,8 @@ describe('AdminAdminsService', () => {
       transaction: jest.fn(), // must NOT be called
       manager,
     };
-    const service = new AdminAdminsService(dataSource as never);
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
 
     // An admin POSTs the super_admin's email with a lower role — role gate would
     // pass (support < admin), but the dup check must reject it.
@@ -167,6 +183,7 @@ describe('AdminAdminsService', () => {
       count: jest.fn().mockResolvedValue(2),
       create: jest.fn().mockReturnValue(savedRow),
       save: jest.fn().mockResolvedValue(savedRow),
+      createQueryBuilder: jest.fn(),
     };
     const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
     const dataSource = {
@@ -176,7 +193,8 @@ describe('AdminAdminsService', () => {
         .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
       manager,
     };
-    const service = new AdminAdminsService(dataSource as never);
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
 
     await expect(
       service.create(ADMIN, {
@@ -203,6 +221,40 @@ describe('AdminAdminsService', () => {
       service.create(SUPER, {
         email: 'dupe@x.io',
         role: 'read_only',
+        mode: 'sso-only',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  // Fix 4: race backstop — unique-violation (Postgres code 23505) → ConflictException
+  it('create: unique-violation race (code 23505) → ConflictException, not a 500', async () => {
+    const dbError = Object.assign(new Error('unique violation'), {
+      code: '23505',
+    });
+    const adminRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null), // pre-check passes (race)
+      update: jest.fn(),
+      count: jest.fn(),
+      create: jest.fn().mockImplementation((v: unknown) => v),
+      save: jest.fn().mockRejectedValue(dbError),
+      createQueryBuilder: jest.fn(),
+    };
+    const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
+    const dataSource = {
+      getRepository: jest.fn().mockReturnValue(adminRepo),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
+      manager,
+    };
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
+
+    await expect(
+      service.create(SUPER, {
+        email: 'new@x.io',
+        role: 'support',
         mode: 'sso-only',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
@@ -280,6 +332,185 @@ describe('AdminAdminsService', () => {
     expect(adminRepo.update).toHaveBeenCalledWith(
       expect.objectContaining({ admin_user_id: 'admin2' }),
       expect.objectContaining({ revoked_at: expect.anything() as unknown }),
+    );
+  });
+
+  // Fix 2: disabled super_admin can be demoted when an active super_admin exists
+  it('patch: demoting a DISABLED super_admin succeeds even when active count would be 1', async () => {
+    // A disabled super_admin being demoted does NOT reduce the active count,
+    // so the last-super-admin rail must NOT fire.
+    const { service } = makeService({
+      target: {
+        id: 'super2',
+        role: 'super_admin',
+        status: 'disabled',
+        created_at: new Date(),
+      },
+      superAdminCount: 1, // only 1 active super_admin; target is disabled
+    });
+    // Must succeed — should not throw ConflictException.
+    await expect(
+      service.patch(SUPER, 'super2', { role: 'admin' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('patch: disabling the last ACTIVE super_admin still throws ConflictException', async () => {
+    const { service } = makeService({
+      target: {
+        id: 'super2',
+        role: 'super_admin',
+        status: 'active',
+        created_at: new Date(),
+      },
+      superAdminCount: 1,
+    });
+    await expect(
+      service.patch(SUPER, 'super2', { active: false }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  // Fix 3: in-tx reload reveals target was promoted → re-validation throws Forbidden
+  it('patch: in-tx fresh target has a higher role (race-promoted) → ForbiddenException for lower-rank actor', async () => {
+    // Pre-read says target is 'support'; in-tx locked reload reveals 'admin'.
+    // An 'admin' actor can manage 'support' but NOT 'admin', so re-validation
+    // inside the transaction must reject the patch.
+    const preReadTarget = {
+      id: 'sup1',
+      role: 'support',
+      status: 'active',
+      created_at: new Date(),
+    };
+    const freshTarget = {
+      id: 'sup1',
+      role: 'admin',
+      status: 'active',
+      created_at: new Date(),
+    };
+    const qb = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(2),
+    };
+    const adminRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      // 1st call: pre-tx read → preReadTarget
+      // 2nd call: in-tx locked reload → freshTarget (role promoted by concurrent tx)
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(preReadTarget)
+        .mockResolvedValueOnce(freshTarget),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      count: jest.fn().mockResolvedValue(2),
+      create: jest.fn().mockImplementation((v: unknown) => v),
+      save: jest.fn().mockResolvedValue(undefined),
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+    };
+    const manager = { getRepository: jest.fn().mockReturnValue(adminRepo) };
+    const dataSource = {
+      getRepository: jest.fn().mockReturnValue(adminRepo),
+      transaction: jest
+        .fn()
+        .mockImplementation((cb: (m: unknown) => unknown) => cb(manager)),
+      manager,
+    };
+    const audit = makeAudit();
+    const service = new AdminAdminsService(dataSource as never, audit as never);
+
+    // ADMIN actor passes the pre-tx rank gate (sees 'support') but fails the
+    // in-tx re-validation (fresh role is 'admin' — peer, not below).
+    await expect(
+      service.patch(ADMIN, 'sup1', { role: 'read_only' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // Fix 5: denial audit rows are recorded for every lifecycle/permission rejection
+
+  it('patch: self-lockout records a denied audit row with reason=self_lockout', async () => {
+    const { service, audit } = makeService({
+      target: { id: 'super1', role: 'super_admin', status: 'active' },
+    });
+    await expect(
+      service.patch(SUPER, 'super1', { active: false }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'self_lockout' },
+      }),
+    );
+  });
+
+  it('patch: rank-gate denial records a denied audit row with reason=insufficient_role', async () => {
+    const { service, audit } = makeService({
+      target: { id: 'admin2', role: 'admin', status: 'active' },
+    });
+    await expect(
+      service.patch(ADMIN, 'admin2', { role: 'support' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'insufficient_role' },
+      }),
+    );
+  });
+
+  it('patch: last-super-admin denial records a denied audit row with reason=last_super_admin', async () => {
+    const { service, audit } = makeService({
+      target: { id: 'super2', role: 'super_admin', status: 'active' },
+      superAdminCount: 1,
+    });
+    await expect(
+      service.patch(SUPER, 'super2', { active: false }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'last_super_admin' },
+      }),
+    );
+  });
+
+  it('create: duplicate-email denial records a denied audit row with reason=duplicate_email', async () => {
+    const { service, audit } = makeService({
+      target: {
+        id: 'any1',
+        email: 'dupe@x.io',
+        role: 'read_only' as const,
+        status: 'active' as const,
+        created_at: new Date(),
+      },
+    });
+    await expect(
+      service.create(SUPER, {
+        email: 'dupe@x.io',
+        role: 'read_only',
+        mode: 'sso-only',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'duplicate_email' },
+      }),
+    );
+  });
+
+  it('create: rank-gate denial records a denied audit row with reason=insufficient_role', async () => {
+    const { service, audit } = makeService({});
+    await expect(
+      service.create(ADMIN, {
+        email: 'x@x.io',
+        role: 'admin',
+        mode: 'sso-only',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'denied',
+        metadata: { reason: 'insufficient_role' },
+      }),
     );
   });
 });
