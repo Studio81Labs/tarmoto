@@ -139,7 +139,7 @@ without a clean 1:1 today are noted.
 | Canonical screen (`source/mobile`)         | App screen(s)                                            | Notes                                                                                                                                  |
 | ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet) | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                             |
-| `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen`, `MapScreen`            | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` migrated; `CommuteScreen` + `MapScreen` + bottom nav remain.      |
+| `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen` ✅, `MapScreen`         | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` + `CommuteScreen` migrated; `MapScreen` + bottom nav remain.      |
 | `ExplorerScreen` (road quality explorer)   | `MapScreen`, `RoadPreviewScreen`                         | Map + filter chips + segment detail sheet.                                                                                             |
 | `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen`, `TripsScreen`, `TripDayScreen`       | The quick round-trip generator + result is new product surface; align styling.                                                         |
 | `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                   | Always-dark immersive HUD.                                                                                                             |
@@ -152,9 +152,9 @@ Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
 Emergency contacts ✅ → Offline maps ✅ → Profile ✅ → Post-ride summary ✅ →
 Home (in progress) → Road explorer → Ride mode → Crash → Planner/Route**.
 The Home phase is split per surface: **`HomeScreen` ✅** landed first (the
-self-contained two-card entry point); `CommuteScreen`, `MapScreen`, and the
-bottom navigation (the brand tab bar with the raised "Start ride" action)
-follow as their own steps. `PersonalRoadMapScreen` ✅ (grouped with Profile,
+self-contained two-card entry point), then **`CommuteScreen` ✅**;
+`MapScreen` and the bottom navigation (the brand tab bar with the raised
+"Start ride" action) follow as their own steps. `PersonalRoadMapScreen` ✅ (grouped with Profile,
 but with no shared `@/components` deps) was a self-contained follow-up.
 
 > **Home note:** `HomeScreen` has no shared `@/components`, no map, no
@@ -163,6 +163,16 @@ but with no shared `@/components` deps) was a self-contained follow-up.
 > (the primary-action pattern from Profile/RideDetail) rather than an accent
 > fill, keeping the accent reserved for small marks (the commute-check icon);
 > the new-hazard badge uses `statusFg.danger` with white text.
+
+> **Commute note:** `CommuteScreen` (the hazard-check surface) also uses no
+> shared `@/components`. Status banner, hazard-severity, alternative-route,
+> and weekly-trend colours all map onto `statusFg.{success,warning,danger}`
+> (AA-safe as text/icons on the white card); low-severity hazards have no
+> brand "info" tone, so they read as neutral ink. Quality is rendered as
+> ink label text (the ramp fails AA as text on cream) — its colour vocabulary
+> stays on the map/bar surfaces. The "Start commute" / "Retry" CTAs use the
+> ink primary-action pattern; the new-hazard and CLEAR/HAZARD pills keep
+> white text on the (AA-safe) status fills.
 
 > **Post-ride note:** `RideDetailScreen` (the past-ride summary) is migrated;
 > its shared `RideMetric` label/value atom was made surface-aware (`light?`,

@@ -33,16 +33,14 @@ import {
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import { hazardIcons, qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  hazardIcons,
-  qualityColor,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
 import type {
   CommuteAlternativeRoute,
@@ -68,6 +66,11 @@ type CommuteNav = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, "Commute">,
   BottomTabNavigationProp<RootTabParamList>
 >;
+
+const t = brandColorsLight;
+// Low-severity hazards have no brand "info" tone (the palette is cream/ink +
+// the three status colours), so they read as neutral ink rather than blue.
+const SEVERITY_LOW_COLOR = t.dim;
 
 export default function CommuteScreen() {
   const {
@@ -141,7 +144,7 @@ export default function CommuteScreen() {
   if (phase === "loading") {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -149,7 +152,7 @@ export default function CommuteScreen() {
   if (phase === "error") {
     return (
       <View style={styles.centered}>
-        <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+        <Icon name="wifi-off" size={40} color={t.dim} />
         <Text style={styles.emptyTitle}>Can't load commute</Text>
         <Text style={styles.emptyBody}>
           {errorMessage ?? "Check your connection and try again."}
@@ -173,7 +176,7 @@ export default function CommuteScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -198,11 +201,10 @@ export default function CommuteScreen() {
                 : "—"
             }
           />
-          <Metric
-            label="Quality"
-            value={qualityLabel(status.route_quality)}
-            valueColor={qualityColor(status.route_quality)}
-          />
+          {/* Quality value stays ink: the ramp fails AA as text on the
+              white card. The label is enough; the ramp lives on map/bar
+              surfaces elsewhere. */}
+          <Metric label="Quality" value={qualityLabel(status.route_quality)} />
         </View>
         <View style={styles.primaryCtaRow}>
           <TouchableOpacity
@@ -211,7 +213,7 @@ export default function CommuteScreen() {
             accessibilityRole="button"
             accessibilityLabel={`Start commute ride to ${route.name}`}
           >
-            <Icon name="play-circle" size={20} color={colors.textInverse} />
+            <Icon name="play-circle" size={20} color={t.invFg} />
             <Text style={styles.startCommuteLabel}>Start commute</Text>
           </TouchableOpacity>
           {/*
@@ -234,7 +236,7 @@ export default function CommuteScreen() {
             <Icon
               name="navigation-variant"
               size={20}
-              color={primaryNavDisabled ? colors.textTertiary : colors.primary}
+              color={primaryNavDisabled ? t.faint : t.fg}
             />
           </TouchableOpacity>
         </View>
@@ -289,11 +291,11 @@ function LearningState({
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
-      <Icon name="map-marker-path" size={48} color={colors.primary} />
+      <Icon name="map-marker-path" size={48} color={t.accent} />
       <Text style={styles.emptyTitle}>Learning your commute</Text>
       <Text style={styles.emptyBody}>
         Take a few rides to the same destination and we'll start tracking road
@@ -350,11 +352,7 @@ function WeatherCard({ weather }: { weather: Weather }) {
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>Weather</Text>
       <View style={styles.weatherRow}>
-        <Icon
-          name={weatherIcon(weather.condition)}
-          size={32}
-          color={colors.primary}
-        />
+        <Icon name={weatherIcon(weather.condition)} size={32} color={t.fg} />
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
             {Math.round(weather.temperature_c)}°C ·{" "}
@@ -385,7 +383,7 @@ function HazardsCard({
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Hazards</Text>
         <View style={styles.clearRow}>
-          <Icon name="check-circle" size={20} color={colors.success} />
+          <Icon name="check-circle" size={20} color={statusFg.success} />
           <Text style={styles.clearText}>
             No active hazards on your commute.
           </Text>
@@ -503,7 +501,7 @@ function AlternativesCard({
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Alternative routes</Text>
         <View style={styles.clearRow}>
-          <Icon name="check" size={20} color={colors.textSecondary} />
+          <Icon name="check" size={20} color={t.dim} />
           <Text style={styles.clearText}>
             Your usual route looks like the best option right now.
           </Text>
@@ -584,11 +582,15 @@ function AlternativeRow({
             {alt.distance_km.toFixed(1)} km · {alt.duration_min} min
           </Text>
           {alt.hazard_count === 0 ? (
-            <View style={[styles.altPill, { backgroundColor: colors.success }]}>
+            <View
+              style={[styles.altPill, { backgroundColor: statusFg.success }]}
+            >
               <Text style={styles.altPillText}>CLEAR</Text>
             </View>
           ) : (
-            <View style={[styles.altPill, { backgroundColor: colors.warning }]}>
+            <View
+              style={[styles.altPill, { backgroundColor: statusFg.warning }]}
+            >
               <Text style={styles.altPillText}>
                 {alt.hazard_count} HAZARD{alt.hazard_count === 1 ? "" : "S"}
               </Text>
@@ -612,10 +614,10 @@ function AlternativeRow({
             negativeIsGood
             delta={durationDelta ?? undefined}
           />
+          {/* Quality value stays ink (ramp fails AA as text on the card). */}
           <DeltaChip
             label="Quality"
             value={qualityLabel(alt.avg_quality ?? 0)}
-            valueColor={qualityColor(alt.avg_quality ?? 0)}
           />
         </View>
       </TouchableOpacity>
@@ -630,7 +632,7 @@ function AlternativeRow({
         <Icon
           name="navigation-variant"
           size={20}
-          color={navDisabled ? colors.textTertiary : colors.primary}
+          color={navDisabled ? t.faint : t.fg}
         />
       </TouchableOpacity>
     </View>
@@ -729,7 +731,7 @@ function SavedRoutesCard({
               </Text>
             </View>
             {isPending ? (
-              <ActivityIndicator color={colors.primary} size="small" />
+              <ActivityIndicator color={t.fg} size="small" />
             ) : (
               <Text style={styles.altSecondaryLabel}>Use as primary</Text>
             )}
@@ -754,11 +756,11 @@ function DeltaChip({
   negativeIsGood?: boolean;
   delta?: number;
 }) {
-  let color = valueColor ?? colors.textPrimary;
+  let color = valueColor ?? t.fg;
   if (delta !== undefined && negativeIsGood) {
-    if (delta < 0) color = colors.success;
-    else if (delta > 0) color = colors.warning;
-    else color = colors.textPrimary;
+    if (delta < 0) color = statusFg.success;
+    else if (delta > 0) color = statusFg.warning;
+    else color = t.fg;
   }
   return (
     <View style={styles.altDelta}>
@@ -838,14 +840,14 @@ function TrendCell({
   /** When true, the default delta label drops the decimal place (rides). */
   integer?: boolean;
 }) {
-  let color: string = colors.textTertiary;
+  let color: string = t.dim;
   let icon: IconName = "minus";
   const epsilon = 0.05; // dampens the arrow on tiny rounding differences
   if (!neutral && Math.abs(delta) > epsilon) {
     icon = delta > 0 ? "arrow-up" : "arrow-down";
     if (positiveIsGood !== undefined) {
       const isGood = positiveIsGood ? delta > 0 : delta < 0;
-      color = isGood ? colors.success : colors.warning;
+      color = isGood ? statusFg.success : statusFg.warning;
     }
   }
   return (
@@ -872,7 +874,7 @@ function describeStatus(
     const plural = newHazardCount === 1 ? "hazard" : "hazards";
     return {
       icon: "alert",
-      color: colors.danger,
+      color: statusFg.danger,
       message: {
         title: `${newHazardCount} new ${plural}`,
         body: "Check the list before you head out.",
@@ -883,7 +885,7 @@ function describeStatus(
     case "clear":
       return {
         icon: "check-circle",
-        color: colors.success,
+        color: statusFg.success,
         message: {
           title: "Route is clear",
           body: "No new hazards since you last checked.",
@@ -892,7 +894,7 @@ function describeStatus(
     case "hazards":
       return {
         icon: "alert-circle",
-        color: colors.warning,
+        color: statusFg.warning,
         message: {
           title: "Active hazards",
           body: "Known hazards on your route — none new.",
@@ -901,7 +903,7 @@ function describeStatus(
     case "weather_warning":
       return {
         icon: "weather-cloudy-alert",
-        color: colors.warning,
+        color: statusFg.warning,
         message: {
           title: "Weather warning",
           body: "Ride conditions may be tough.",
@@ -910,7 +912,7 @@ function describeStatus(
     case "delays":
       return {
         icon: "clock-alert",
-        color: colors.warning,
+        color: statusFg.warning,
         message: {
           title: "Delays expected",
           body: "Give yourself extra time.",
@@ -941,22 +943,25 @@ function weatherIcon(condition: Weather["condition"]): IconName {
 function severityColor(severity: string): string {
   switch (severity) {
     case "high":
-      return colors.danger;
+      return statusFg.danger;
     case "medium":
-      return colors.warning;
+      return statusFg.warning;
     default:
-      return colors.info;
+      return SEVERITY_LOW_COLOR;
   }
 }
 
+// Light tint behind the severity icon — a low-alpha wash of the same status
+// tone (neutral ink for low). Decorative grouping; the dark status icon on
+// top carries the contrast.
 function severityAlpha(severity: string): string {
   switch (severity) {
     case "high":
-      return "rgba(239, 68, 68, 0.15)";
+      return "rgba(179, 38, 30, 0.12)";
     case "medium":
-      return "rgba(234, 179, 8, 0.15)";
+      return "rgba(138, 83, 0, 0.12)";
     default:
-      return "rgba(59, 130, 246, 0.15)";
+      return "rgba(14, 14, 16, 0.06)";
   }
 }
 
@@ -1031,60 +1036,65 @@ export const __test = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s12,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   centeredContent: {
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   retryBtn: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    marginTop: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   retryLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   statusBanner: {
     flexDirection: "row",
     alignItems: "center",
-    padding: spacing.lg,
-    gap: spacing.md,
-    borderRadius: borderRadius.lg,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
   },
   statusIconWrap: {
     width: 40,
@@ -1097,68 +1107,75 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   statusBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     marginTop: 2,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   metricsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   metric: {
     flex: 1,
   },
   metricLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   metricValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 16,
+    fontWeight: "700",
     marginTop: 4,
   },
   primaryCtaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s2,
   },
   startCommuteBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s2,
+    backgroundColor: t.invBg,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
   },
   startCommuteLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   primaryNavBtn: {
     width: 44,
@@ -1166,9 +1183,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bg,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   primaryNavBtnDisabled: {
     opacity: 0.4,
@@ -1176,20 +1193,22 @@ const styles = StyleSheet.create({
   weatherRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   weatherText: {
     flex: 1,
     gap: 2,
   },
   weatherTemp: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   weatherDetail: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   hazardsHeader: {
     flexDirection: "row",
@@ -1197,25 +1216,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   dismissLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   clearRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   clearText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   hazardRow: {
     flexDirection: "row",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   hazardIconWrap: {
     width: 36,
@@ -1231,56 +1253,61 @@ const styles = StyleSheet.create({
   hazardPhoto: {
     width: 56,
     height: 56,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.border,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
   },
   hazardTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   hazardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   hazardMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   hazardNote: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     marginTop: 4,
     lineHeight: 20,
   },
   newBadge: {
-    backgroundColor: colors.danger,
+    backgroundColor: statusFg.danger,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: brandRadii.sm,
   },
   newBadgeText: {
-    color: colors.white,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: "#FFFFFF",
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 0.5,
   },
   altSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   altRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s2,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   altMain: {
     flex: 1,
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   altNavBtn: {
     width: 40,
@@ -1288,9 +1315,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bg,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   altNavBtnDisabled: {
     opacity: 0.4,
@@ -1299,55 +1326,61 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   altTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   altPill: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: brandRadii.sm,
   },
   altPillText: {
-    color: colors.white,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: "#FFFFFF",
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 0.5,
   },
   altDeltasRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   altDelta: {
     flex: 1,
   },
   altDeltaLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   altDeltaValue: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    fontFamily: brandFonts.mono,
+    fontSize: 13,
+    fontWeight: "700",
     marginTop: 2,
   },
   altSecondaryLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   savedRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   savedMain: {
     flex: 1,
@@ -1359,25 +1392,27 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   weeklySubtitle: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   weeklyGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   weeklyCell: {
     width: "47%",
     gap: 4,
   },
   weeklyValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 16,
+    fontWeight: "700",
   },
   weeklyTrendRow: {
     flexDirection: "row",
@@ -1385,7 +1420,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   weeklyDelta: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
