@@ -141,6 +141,16 @@ describe("statusFg", () => {
     expect(contrastRatio(ACCENT, brandColorsLight.sunken)).toBeLessThan(3);
   });
 
+  it("an ink glyph clears 3:1 on the accent badge where a cream glyph fails", () => {
+    // Interactive glyphs on the accent badge (e.g. the Profile avatar camera
+    // affordance) are non-text graphical objects, so they need >=3:1. Ink
+    // (`fg`) clears it on `#FF6A1A`; the inverse cream foreground does not.
+    expect(contrastRatio(brandColorsLight.fg, ACCENT)).toBeGreaterThanOrEqual(
+      3,
+    );
+    expect(contrastRatio(brandColorsLight.invFg, ACCENT)).toBeLessThan(3);
+  });
+
   it("the raw quality ramp would fail as foreground text on white", () => {
     // Guards the rationale: ramp greens/ambers are fill colours, not text.
     expect(contrastRatio(QUALITY_COLORS[4], "#FFFFFF")).toBeLessThan(4.5);
