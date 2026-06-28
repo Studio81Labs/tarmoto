@@ -43,11 +43,20 @@ import {
   Image,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { ApiError, api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
+
+const t = brandColorsLight;
 
 export const MAX_REVIEW_PHOTOS = 5;
 export const MAX_REVIEW_COMMENT_LENGTH = 1000;
@@ -588,7 +597,7 @@ export default function ReviewFormModal({
             onPress={onClose}
             style={styles.headerButton}
           >
-            <Icon name="close" size={24} color={colors.textPrimary} />
+            <Icon name="close" size={24} color={t.fg} />
           </Pressable>
           <Text style={styles.headerTitle}>
             {isEditing ? "Edit your review" : "Write a review"}
@@ -602,11 +611,7 @@ export default function ReviewFormModal({
         >
           {conflictNotice ? (
             <View style={styles.conflictBanner}>
-              <Icon
-                name="information-outline"
-                size={16}
-                color={colors.primary}
-              />
+              <Icon name="information-outline" size={16} color={t.fg} />
               <Text style={styles.conflictBannerText}>{conflictNotice}</Text>
             </View>
           ) : null}
@@ -631,7 +636,7 @@ export default function ReviewFormModal({
               multiline
               numberOfLines={4}
               placeholder="What's the surface like? Any switchbacks worth flagging?"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={t.mute}
               textAlignVertical="top"
             />
             <Text style={styles.fieldHint}>
@@ -648,7 +653,7 @@ export default function ReviewFormModal({
               onChangeText={setBikeModel}
               maxLength={MAX_REVIEW_BIKE_MODEL_LENGTH}
               placeholder="e.g. BMW R1250GS"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={t.mute}
             />
           </View>
 
@@ -692,7 +697,11 @@ export default function ReviewFormModal({
               onPress={confirmDelete}
               disabled={submitting}
             >
-              <Icon name="trash-can-outline" size={20} color={colors.danger} />
+              <Icon
+                name="trash-can-outline"
+                size={20}
+                color={statusFg.danger}
+              />
               <Text style={styles.deleteLabel}>Delete</Text>
             </Pressable>
           ) : (
@@ -712,7 +721,7 @@ export default function ReviewFormModal({
             disabled={!canSubmit}
           >
             {submitting ? (
-              <ActivityIndicator color={colors.textInverse} />
+              <ActivityIndicator color={t.invFg} />
             ) : (
               <Text style={styles.submitLabel}>
                 {isEditing ? "Save" : "Submit"}
@@ -750,7 +759,10 @@ function RatingSelector({
             <Icon
               name={filled ? "star" : "star-outline"}
               size={36}
-              color={filled ? colors.warning : colors.textTertiary}
+              // Empty stars are the required, interactive rating target, so
+              // they use `dim` (~5:1) rather than `faint` (~1.5:1) to stay
+              // discoverable; the filled state keeps the accent.
+              color={filled ? ACCENT_DARK : t.dim}
             />
           </Pressable>
         );
@@ -793,16 +805,13 @@ function PhotoStrip({
           />
           {photo.uploading ? (
             <View style={styles.photoOverlay}>
-              <ActivityIndicator color={colors.textInverse} />
+              {/* On the dark photo scrim, cream/white reads cleanly. */}
+              <ActivityIndicator color="#FFFFFF" />
             </View>
           ) : null}
           {photo.error ? (
             <View style={styles.photoOverlay}>
-              <Icon
-                name="alert-circle-outline"
-                size={20}
-                color={colors.danger}
-              />
+              <Icon name="alert-circle-outline" size={20} color="#FF8A80" />
             </View>
           ) : null}
           <Pressable
@@ -811,7 +820,7 @@ function PhotoStrip({
             onPress={() => onRemove(photo.id)}
             style={styles.photoRemove}
           >
-            <Icon name="close" size={14} color={colors.textInverse} />
+            <Icon name="close" size={14} color="#FFFFFF" />
           </Pressable>
         </View>
       ))}
@@ -840,11 +849,7 @@ function PhotoButton({
       disabled={disabled}
       style={[styles.photoButton, disabled && styles.photoButtonDisabled]}
     >
-      <Icon
-        name={icon}
-        size={18}
-        color={disabled ? colors.textTertiary : colors.textPrimary}
-      />
+      <Icon name={icon} size={18} color={disabled ? t.faint : t.fg} />
       <Text
         style={[
           styles.photoButtonLabel,
@@ -893,16 +898,16 @@ function isAbortError(error: unknown): boolean {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: t.line,
   },
   headerButton: {
     width: 32,
@@ -911,61 +916,66 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   body: {
-    padding: spacing.lg,
-    gap: spacing.lg,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s4,
   },
   field: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   fieldLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   fieldHint: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   ratingRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   ratingStar: {
-    paddingVertical: spacing.xs,
+    paddingVertical: brandSpacing.s1,
   },
   commentInput: {
-    backgroundColor: colors.bgInput,
-    borderRadius: borderRadius.md,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    backgroundColor: t.sunken,
+    borderRadius: brandRadii.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
     minHeight: 96,
   },
   bikeInput: {
-    backgroundColor: colors.bgInput,
-    borderRadius: borderRadius.md,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    backgroundColor: t.sunken,
+    borderRadius: brandRadii.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
   },
   photoStrip: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
   },
   photoItem: {
     width: 96,
     height: 96,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.bgElevated,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
     overflow: "hidden",
     position: "relative",
   },
@@ -992,80 +1002,89 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   photoEmpty: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     fontStyle: "italic",
   },
   photoButtons: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   photoButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   photoButtonDisabled: {
     opacity: 0.5,
   },
   photoButtonLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "500",
   },
   photoButtonLabelDisabled: {
-    color: colors.textTertiary,
+    color: t.dim,
   },
   conflictBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.primaryAlpha15,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    gap: brandSpacing.s1,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.sm,
+    padding: brandSpacing.s3,
   },
   conflictBannerText: {
     flex: 1,
-    color: colors.primary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   pickerNotice: {
-    color: colors.warning,
-    fontSize: fontSize.xs,
+    color: statusFg.warning,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
   },
   deleteButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
   },
   deleteLabel: {
-    color: colors.danger,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   submitButton: {
     flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.pill,
-    paddingVertical: spacing.md,
+    backgroundColor: t.invBg,
+    borderRadius: brandRadii.pill,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s3,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1073,8 +1092,9 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
