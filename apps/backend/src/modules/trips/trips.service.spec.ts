@@ -2794,7 +2794,7 @@ describe('TripsService', () => {
       expect(dayBodies[1].start_linked).toBe(false); // start not on previous end
     });
 
-    it('preserves existing per-day titles across a multi-day save', async () => {
+    it('persists each day title from the save payload (follows renumbering)', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         trip_id: TRIP_ID,
         user_id: OWNER_ID,
@@ -2853,6 +2853,7 @@ describe('TripsService', () => {
         days: [
           {
             dayNumber: 1,
+            title: 'Leg A',
             startLinked: false,
             waypoints: [
               { lat: 0, lng: 0, type: 'start' },
@@ -2861,6 +2862,7 @@ describe('TripsService', () => {
           },
           {
             dayNumber: 2,
+            title: 'Leg B',
             startLinked: true,
             waypoints: [
               { lat: 1, lng: 1, type: 'start' },
@@ -2873,7 +2875,7 @@ describe('TripsService', () => {
       const dayBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
         .filter((b) => 'route_geom' in b);
-      expect(dayBodies[0].title).toBe('Leg A'); // carried forward by day_number
+      expect(dayBodies[0].title).toBe('Leg A'); // from the payload, not day_number
       expect(dayBodies[1].title).toBe('Leg B');
     });
   });

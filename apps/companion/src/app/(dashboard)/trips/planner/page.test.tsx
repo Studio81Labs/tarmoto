@@ -310,6 +310,7 @@ type TripStoreSnapshot = {
   }[];
   saveDays: () => {
     dayNumber: number;
+    title: string | null;
     startLinked: boolean;
     waypoints: {
       lat: number;
@@ -471,6 +472,7 @@ describe("TripPlannerPage", () => {
       saveDays: vi.fn(() => [
         {
           dayNumber: 1,
+          title: null,
           startLinked: false,
           waypoints: [
             {
@@ -1331,6 +1333,7 @@ describe("TripPlannerPage", () => {
     (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
       {
         dayNumber: 1,
+        title: null,
         startLinked: false,
         waypoints: [
           {
@@ -1349,6 +1352,7 @@ describe("TripPlannerPage", () => {
       },
       {
         dayNumber: 2,
+        title: null,
         startLinked: true,
         waypoints: [
           {
@@ -1613,6 +1617,41 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
+    expect(
+      screen.getByRole("button", { name: "Save route" }),
+    ).not.toBeDisabled();
+  });
+
+  it("treats a terminal accommodation (generated overnight) as a day finish for the Save gate", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!, // keeps routeGeometry so the geometry gate passes
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h",
+              name: "Hotel",
+              type: "accommodation",
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+
+    render(<TripPlannerPage />);
+
+    // The day ends in an accommodation (no explicit `end`) — it must count as
+    // complete so an edited generated trip can still be saved.
     expect(
       screen.getByRole("button", { name: "Save route" }),
     ).not.toBeDisabled();

@@ -247,6 +247,7 @@ interface TripState {
    */
   saveDays: () => {
     dayNumber: number;
+    title: string | null;
     startLinked: boolean;
     waypoints: {
       lat: number;
@@ -366,6 +367,22 @@ function activePlannerSaveWaypoints(
     name: w.name,
     type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
+}
+
+/**
+ * A generated multi-day trip ends each non-final day at an overnight stop typed
+ * `accommodation` (backend `hotel`) rather than `end`. The manual save path
+ * requires an `end`, so when a day has no explicit end but terminates in an
+ * accommodation, re-type that terminal stop as the day's finish so it passes
+ * the per-day start→end validation and routes to the overnight location.
+ */
+export function normalizeDayFinish(waypoints: Waypoint[]): Waypoint[] {
+  if (waypoints.some((w) => w.type === "end")) return waypoints;
+  const lastIdx = waypoints.length - 1;
+  if (waypoints[lastIdx]?.type === "accommodation") {
+    return waypoints.map((w, i) => (i === lastIdx ? { ...w, type: "end" } : w));
+  }
+  return waypoints;
 }
 
 // ── Task 8: linked-start sync helper ─────────────────────────────────────────
@@ -971,6 +988,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       const days = activeTrip.days;
       const result: {
         dayNumber: number;
+        title: string | null;
         startLinked: boolean;
         waypoints: ReturnType<typeof activePlannerSaveWaypoints>;
       }[] = [];
@@ -986,8 +1004,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const predecessorSurvived = i > 0 && days[i - 1].waypoints.length > 0;
         result.push({
           dayNumber: result.length + 1, // renumber contiguously
+          // Send the title with the day so it follows the day through
+          // renumbering (the server can't map it back after a removal).
+          title: d.title ?? null,
           startLinked: predecessorSurvived ? (d.startLinked ?? false) : false,
-          waypoints: activePlannerSaveWaypoints(d.waypoints),
+          waypoints: activePlannerSaveWaypoints(
+            normalizeDayFinish(d.waypoints),
+          ),
         });
       }
       return result;

@@ -1120,12 +1120,6 @@ export class TripsService {
       const existingDays = await manager.find(TripDay, {
         where: { trip_id: tripId },
       });
-      // Carry existing per-day titles forward by day_number. The planner has no
-      // day-title editor, so a multi-day save must not wipe titles set at
-      // generation/import time for the days it isn't actively editing.
-      const titleByDayNumber = new Map(
-        existingDays.map((d) => [d.day_number, d.title] as const),
-      );
       if (existingDays.length > 0) {
         await manager.update(
           TripSuggestion,
@@ -1160,7 +1154,10 @@ export class TripsService {
           manager.create(TripDay, {
             trip_id: tripId,
             day_number: d.dayNumber,
-            title: titleByDayNumber.get(d.dayNumber) ?? null,
+            // Title comes from the payload (the companion sends each day's
+            // title), so it follows the day through client-side renumbering —
+            // a day_number lookup would mis-assign titles after a day removal.
+            title: d.title ?? null,
             start_linked: startLinked,
             distance_km: b.distance_km,
             estimated_time: b.estimated_time,

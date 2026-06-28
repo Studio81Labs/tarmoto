@@ -4054,6 +4054,7 @@ export interface components {
     };
     SaveRouteDayDto: {
       dayNumber: number;
+      title?: string | null;
       startLinked: boolean;
       waypoints: components["schemas"]["SaveRouteWaypointDto"][];
     };

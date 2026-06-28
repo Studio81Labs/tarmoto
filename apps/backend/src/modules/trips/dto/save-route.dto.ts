@@ -55,6 +55,12 @@ export class SaveRouteDayDto {
   @Min(1)
   dayNumber!: number;
 
+  @ApiProperty({ required: false, nullable: true, maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string | null;
+
   @ApiProperty()
   @IsBoolean()
   startLinked!: boolean;

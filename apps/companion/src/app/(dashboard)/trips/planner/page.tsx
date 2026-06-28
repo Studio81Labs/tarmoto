@@ -656,15 +656,19 @@ export default function TripPlannerPage() {
   ]);
   // ── Save Route (Task 11 / Task 9 multi-day gate) ────────────────────
   // Per-day completeness helper: "empty" = no waypoints, "incomplete" =
-  // has waypoints but missing start or end (or both), "complete" = has
-  // at least start + end + ≥2 routing waypoints.
+  // has waypoints but missing start or finish, "complete" = has a start and a
+  // finish with ≥2 points to route. A generated non-final day ends in a
+  // terminal `accommodation` (overnight) rather than `end`; that counts as the
+  // finish (saveDays normalizes it to `end` before the backend re-routes).
   const completeness = useCallback(
     (d: TripDay): "empty" | "incomplete" | "complete" => {
-      const routing = filterRoutingWaypoints(d.waypoints);
       if (d.waypoints.length === 0) return "empty";
-      const hasStart = routing.some((w) => w.type === "start");
-      const hasEnd = routing.some((w) => w.type === "end");
-      return hasStart && hasEnd && routing.length >= 2
+      const hasStart = d.waypoints.some((w) => w.type === "start");
+      const last = d.waypoints[d.waypoints.length - 1];
+      const hasFinish =
+        d.waypoints.some((w) => w.type === "end") ||
+        last?.type === "accommodation";
+      return hasStart && hasFinish && d.waypoints.length >= 2
         ? "complete"
         : "incomplete";
     },

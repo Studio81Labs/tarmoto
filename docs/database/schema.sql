@@ -277,6 +277,9 @@ CREATE TABLE trip_days (
     avg_quality     FLOAT,
     elevation_gain  FLOAT,
     estimated_time  INTERVAL,
+    -- Multi-day planner: true when this day's start mirrors the previous
+    -- day's end (the overnight link). Day 1 is always false.
+    start_linked    BOOLEAN NOT NULL DEFAULT FALSE,
     UNIQUE(trip_id, day_number)
 );
 

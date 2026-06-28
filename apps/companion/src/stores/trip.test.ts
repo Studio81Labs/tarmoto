@@ -643,6 +643,32 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(result[2]!.startLinked).toBe(true); // predecessor (day 2) survived
   });
 
+  it("saveDays sends the day title and normalizes a terminal accommodation to an end", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // day 1: start
+    // A generated-style overnight finish: terminal accommodation, no `end`.
+    s.addWaypoint(0, {
+      id: "hotel-1",
+      name: "Hotel",
+      type: "accommodation",
+      location: { lng: 2, lat: 2 },
+    });
+    const trip = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...trip,
+        days: [{ ...trip.days[0]!, title: "Leg A" }],
+      },
+    });
+
+    const days = useTripStore.getState().saveDays();
+    expect(days).toHaveLength(1);
+    expect(days[0]!.title).toBe("Leg A"); // title sent with the day
+    const types = days[0]!.waypoints.map((w) => w.type);
+    expect(types).toContain("end"); // terminal accommodation re-typed to end
+    expect(types).not.toContain("hotel");
+  });
+
   it("editing a Day 1 via does not re-stale a linked Day 2 (end unchanged)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
