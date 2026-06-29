@@ -19,12 +19,20 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "EditProfile">;
+
+const t = brandColorsLight;
 
 const DISPLAY_NAME_MAX = 100;
 const BIO_MAX = 500;
@@ -99,7 +107,7 @@ export default function EditProfileModal() {
           autoCapitalize="words"
           autoCorrect={false}
           placeholder="Your rider name"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={t.mute}
         />
       </View>
 
@@ -114,7 +122,7 @@ export default function EditProfileModal() {
           editable={!submitting}
           accessibilityLabel="Bio"
           placeholder="A few words about your riding"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={t.mute}
         />
         <Text style={styles.hint}>{`${bio.length} / ${BIO_MAX}`}</Text>
       </View>
@@ -129,7 +137,7 @@ export default function EditProfileModal() {
           editable={!submitting}
           accessibilityLabel="Home region"
           placeholder="Beskydy, Czech Republic"
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={t.mute}
         />
       </View>
 
@@ -144,7 +152,7 @@ export default function EditProfileModal() {
         accessibilityLabel="Save profile"
       >
         {submitting ? (
-          <ActivityIndicator color={colors.textInverse} />
+          <ActivityIndicator color={t.invFg} />
         ) : (
           <Text style={styles.saveLabel}>Save</Text>
         )}
@@ -164,69 +172,80 @@ export default function EditProfileModal() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: t.bg },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
   },
-  field: { gap: spacing.xs },
+  field: { gap: brandSpacing.s1 },
   label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
   },
   input: {
-    backgroundColor: colors.bgInput,
-    borderRadius: borderRadius.md,
+    backgroundColor: t.sunken,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    borderColor: t.line,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s3,
   },
   multiline: {
     minHeight: 96,
     textAlignVertical: "top",
   },
   hint: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textAlign: "right",
   },
   saveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.pill,
-    paddingVertical: spacing.md,
+    backgroundColor: t.invBg,
+    borderRadius: brandRadii.pill,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
     alignItems: "center",
-    marginTop: spacing.sm,
+    justifyContent: "center",
+    marginTop: brandSpacing.s2,
   },
   saveLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   cancelButton: {
-    paddingVertical: spacing.md,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
     alignItems: "center",
+    justifyContent: "center",
   },
   cancelLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   disabled: { opacity: 0.7 },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   empty: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyText: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
 });
