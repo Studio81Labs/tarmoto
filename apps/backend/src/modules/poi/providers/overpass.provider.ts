@@ -181,6 +181,45 @@ export class OverpassPoiProvider implements PoiProvider {
     return pois;
   }
 
+  async findPointsOfInterestInBbox(
+    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]> {
+    if (kinds.length === 0) return [];
+    // Overpass bbox filter is (south, west, north, east).
+    const box = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    // One regex per OSM tag key (amenity / tourism), same as the
+    // around-points query — Overpass QL can't OR across keys concisely.
+    const byKey = new Map<'amenity' | 'tourism', string[]>();
+    for (const kind of kinds) {
+      const { key, value } = POI_KIND_TAGS[kind];
+      const values = byKey.get(key) ?? [];
+      values.push(value);
+      byKey.set(key, values);
+    }
+    const clauses: string[] = [];
+    for (const [key, values] of byKey.entries()) {
+      const filter = values.join('|');
+      clauses.push(`  node["${key}"~"^(${filter})$"](${box});`);
+      clauses.push(`  way["${key}"~"^(${filter})$"](${box});`);
+    }
+    // No `out` limit: an import wants the full area, not a capped sample.
+    const query =
+      `[out:json][timeout:180];` +
+      `(` +
+      clauses.join('') +
+      `);` +
+      `out center tags;`;
+
+    const data = await this.runQuery(query);
+    const pois: PointOfInterest[] = [];
+    for (const element of data.elements ?? []) {
+      const poi = this.normalizePoi(element, kinds);
+      if (poi) pois.push(poi);
+    }
+    return pois;
+  }
+
   private async runQuery(query: string): Promise<OverpassResponse> {
     const controller = new AbortController();
     const timer = setTimeout(

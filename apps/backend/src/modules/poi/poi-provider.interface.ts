@@ -84,6 +84,18 @@ export interface PoiProvider {
     radiusKm: number,
     kinds: PoiKind[],
   ): Promise<PointOfInterest[]>;
+
+  /**
+   * Find all POIs of `kinds` within a bounding box — used by the offline
+   * POI import (#745) to mirror a region into the `pois` table, rather
+   * than the point/route-relative lookups above. Short-circuits to `[]`
+   * on an empty `kinds`. A provider failure throws so the caller can skip
+   * the upsert (leaving existing rows intact) instead of wiping the area.
+   */
+  findPointsOfInterestInBbox(
+    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]>;
 }
 
 /**

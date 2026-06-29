@@ -31,7 +31,7 @@ describe('jobs.constants', () => {
     // Drift here means a producer or processor will try to enqueue
     // into a queue that the rest of the system never registered.
     // #743 added the NAP closure poll queue (13th).
-    expect(ALL_QUEUE_NAMES).toHaveLength(13);
+    expect(ALL_QUEUE_NAMES).toHaveLength(14); // #745 added the POI import queue
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {

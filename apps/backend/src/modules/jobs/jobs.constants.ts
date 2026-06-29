@@ -116,6 +116,13 @@ export const QUEUE_NAMES = {
    * `TARMOTO_NAP_POLL_ENABLED=true` and NAP credentials are configured.
    */
   NAP_CLOSURE_POLL: 'nap.closure-poll',
+
+  /**
+   * Recurring (weekly). Mirrors POIs for the configured area into the
+   * `pois` table for offline use (#745). Dormant until
+   * `TARMOTO_POI_IMPORT_ENABLED=true`.
+   */
+  POI_IMPORT: 'poi.import',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -143,6 +150,7 @@ export const JOB_NAMES = {
   MODEL_EVAL_RECONCILE_RUN: 'run',
   MODEL_EVAL_AGREEMENT_RUN: 'run',
   NAP_CLOSURE_POLL_RUN: 'run',
+  POI_IMPORT_RUN: 'run',
 } as const;
 
 /**
@@ -166,4 +174,6 @@ export const RECURRING_PATTERNS = {
   WEEKLY_MON_0400: '0 4 * * 1',
   /** Weekly Monday at 05:00 — model-eval cross-device/bike agreement. */
   WEEKLY_MON_0500: '0 5 * * 1',
+  /** Weekly Sunday at 03:00 — offline POI import. */
+  WEEKLY_SUN_0300: '0 3 * * 0',
 } as const;

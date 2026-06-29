@@ -299,3 +299,54 @@ describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
     ).rejects.toThrow('Overpass API error: 406 Not Acceptable');
   });
 });
+
+describe('OverpassPoiProvider.findPointsOfInterestInBbox', () => {
+  const config = {
+    get: (_key: string, fallback: string) => fallback,
+  } as unknown as ConfigService;
+
+  let originalFetch: typeof fetch;
+  let capturedBody: string | null;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    capturedBody = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      capturedBody = typeof init?.body === 'string' ? init.body : '';
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ elements: [] }),
+      } as unknown as Response);
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('emits a (south,west,north,east) bbox filter for node + way', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findPointsOfInterestInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      ['restaurant', 'fuel_station'],
+    );
+
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    // Overpass bbox order is south,west,north,east.
+    expect(decoded).toContain('(49.3,18,49.75,18.9)');
+    // Both restaurant + fuel are `amenity`, so they share one regex.
+    expect(decoded).toContain('node["amenity"~"^(restaurant|fuel)$"]');
+    expect(decoded).toContain('way["amenity"~"^(restaurant|fuel)$"]');
+  });
+
+  it('short-circuits to an empty array on zero kinds (no fetch)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    const result = await provider.findPointsOfInterestInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      [],
+    );
+    expect(result).toEqual([]);
+    expect(capturedBody).toBeNull();
+  });
+});
