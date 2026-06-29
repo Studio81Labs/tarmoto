@@ -407,21 +407,37 @@ export class HazardsService {
   }
 
   /**
-   * Admin-initiated purge of the managed photo attached to a hazard report.
-   * Loads the hazard regardless of active/expiry/moderation state so the admin
-   * hard-delete path can clean up photos on any row. No ownership check is
-   * performed — the admin is already authorised; the path-traversal guard
-   * inside `deleteOwnedHazardPhoto` still applies. No-op when the hazard is
-   * not found or carries no managed photo.
+   * Admin hard-delete: load → delete row → only if delete succeeded, purge
+   * managed photo + broadcast dismissal.
+   *
+   * The ordering guarantee is: if `hazardRepo.delete` throws, neither the
+   * photo file nor WebSocket clients are touched — the DB row survives and
+   * can be retried. This mirrors the `dismiss()` cleanup order (which runs
+   * after `save`) but uses a hard `DELETE` instead of a soft
+   * `is_active = false` so the row is gone entirely.
+   *
+   * Returns `true` when the row was deleted, `false` when no row was found.
    */
-  async purgeManagedPhoto(hazardId: string): Promise<void> {
-    const hazard = await this.hazardRepo.findOne({ where: { id: hazardId } });
-    if (!hazard) return;
+  async adminHardDelete(id: string): Promise<boolean> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return false;
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    await this.hazardRepo.delete({ id });
+    // Only reached when delete did not throw — safe to clean up side-effects.
     await deleteOwnedHazardPhoto(
       hazard.photo_url,
       hazard.user_id,
       this.isTrustedManagedOrigin,
     );
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      ...response,
+      severity: 'dismissed',
+    });
+    return true;
   }
 
   /**

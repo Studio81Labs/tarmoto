@@ -58,6 +58,7 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
       query: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn().mockReturnValue({
         update: jest.fn().mockReturnThis(),
@@ -739,45 +740,73 @@ describe('HazardsService', () => {
     });
   });
 
-  describe('purgeManagedPhoto', () => {
-    it('loads the hazard by id regardless of active/expiry state and unlinks the photo', async () => {
+  describe('adminHardDelete', () => {
+    it('returns true, deletes the row, purges the photo, and emits a dismissed signal', async () => {
       const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
       await mkdir(tmpDir, { recursive: true });
-      const filename = `${mockHazard.user_id}-1700000000000-purge.jpg`;
+      const filename = `${mockHazard.user_id}-1700000000000-admin-del.jpg`;
       const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'purge-bytes');
+      await writeFile(filePath, 'admin-delete-bytes');
 
-      const hazardWithPhoto = {
+      const hazardWithRelations = {
         ...mockHazard,
         photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
       };
-      repo.findOne!.mockResolvedValueOnce(hazardWithPhoto as never);
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
 
-      await service.purgeManagedPhoto(mockHazard.id!);
+      const result = await service.adminHardDelete(mockHazard.id!);
 
+      expect(result).toBe(true);
       expect(repo.findOne).toHaveBeenCalledWith({
         where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
       });
+      expect(repo.delete).toHaveBeenCalledWith({ id: mockHazard.id });
+      // Photo was purged after the delete
       await expect(access(filePath)).rejects.toThrow();
+      // Broadcast emitted with severity:'dismissed'
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
     });
 
-    it('is a no-op when the hazard does not exist', async () => {
+    it('returns false and makes no changes when the hazard is not found', async () => {
       repo.findOne!.mockResolvedValueOnce(null);
 
-      await expect(
-        service.purgeManagedPhoto('nonexistent-id'),
-      ).resolves.toBeUndefined();
+      const result = await service.adminHardDelete('nonexistent-id');
+
+      expect(result).toBe(false);
+      expect(repo.delete).not.toHaveBeenCalled();
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when photo_url is null', async () => {
-      repo.findOne!.mockResolvedValueOnce({
-        ...mockHazard,
-        photo_url: null,
-      } as never);
+    it('does not purge the photo or emit a broadcast when hazardRepo.delete rejects', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-no-purge.jpg`;
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'should-stay');
 
-      await expect(
-        service.purgeManagedPhoto(mockHazard.id!),
-      ).resolves.toBeUndefined();
+      const hazardWithRelations = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+      repo.delete!.mockRejectedValueOnce(new Error('db constraint'));
+
+      await expect(service.adminHardDelete(mockHazard.id!)).rejects.toThrow(
+        'db constraint',
+      );
+
+      // File must still be intact — delete threw before cleanup was reached
+      await expect(access(filePath)).resolves.toBeUndefined();
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
     });
   });
 

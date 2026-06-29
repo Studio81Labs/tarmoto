@@ -137,19 +137,20 @@ export class AdminContentService {
   }
 
   async remove(type: ContentType, id: string): Promise<void> {
-    const { repo } = this.configFor(type);
-    // Purge managed photos BEFORE the row delete so the entity is still
-    // loadable. The per-service helpers already guard path traversal and
-    // swallow ENOENT / not-owned files, so a missing file won't 500.
+    // Hazard and Review delegate to their own services so that the DB row
+    // is deleted BEFORE any side-effects (media purge, broadcast). If the
+    // delete throws, the row survives and nothing is purged/broadcast.
     if (type === ContentType.Hazard) {
-      // Broadcast removal before the row is gone so lat/lng are still
-      // readable. purgeManagedPhoto is fine in either order — it only
-      // reads the row to find the filename.
-      await this.hazardsService.broadcastRemoval(id);
-      await this.hazardsService.purgeManagedPhoto(id);
-    } else if (type === ContentType.Review) {
-      await this.reviewsService.purgeManagedPhotos(id);
+      const deleted = await this.hazardsService.adminHardDelete(id);
+      if (!deleted) throw new NotFoundException('Content not found');
+      return;
     }
+    if (type === ContentType.Review) {
+      const deleted = await this.reviewsService.adminHardDelete(id);
+      if (!deleted) throw new NotFoundException('Content not found');
+      return;
+    }
+    const { repo } = this.configFor(type);
     const result = await repo.delete({ id });
     if (!result.affected) throw new NotFoundException('Content not found');
   }

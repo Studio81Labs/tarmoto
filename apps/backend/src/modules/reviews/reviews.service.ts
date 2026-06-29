@@ -333,21 +333,26 @@ export class ReviewsService {
   }
 
   /**
-   * Admin-initiated purge of all managed photos attached to a road review.
-   * Loads the review regardless of moderation state so the admin hard-delete
-   * path can clean up photos on any row. No ownership check is performed — the
-   * admin is already authorised; the key-ownership guard inside
-   * `deleteOwnedReviewPhotos` still applies. No-op when the review is not
-   * found or carries no managed photos.
+   * Admin hard-delete: load → remove row → only if remove succeeded, purge
+   * managed photos.
+   *
+   * The ordering guarantee mirrors `delete()`: photos are purged after the
+   * row is removed so a DB failure can't leave the row pointing at files we
+   * already deleted.
+   *
+   * Returns `true` when the row was deleted, `false` when no row was found.
    */
-  async purgeManagedPhotos(reviewId: string): Promise<void> {
-    const review = await this.reviewRepo.findOne({ where: { id: reviewId } });
-    if (!review) return;
+  async adminHardDelete(id: string): Promise<boolean> {
+    const review = await this.reviewRepo.findOne({ where: { id } });
+    if (!review) return false;
+    const photos = normalizeReviewPhotoList(review.photos);
+    await this.reviewRepo.remove(review);
     await this.deleteOwnedReviewPhotos(
-      normalizeReviewPhotoList(review.photos),
+      photos,
       review.road_segment_id,
       review.user_id,
     );
+    return true;
   }
 
   /**

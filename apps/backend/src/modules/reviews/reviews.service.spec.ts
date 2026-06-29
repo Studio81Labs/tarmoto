@@ -857,55 +857,49 @@ describe('ReviewsService', () => {
     });
   });
 
-  describe('purgeManagedPhotos', () => {
-    it('loads the review by id regardless of moderation state and deletes managed photos', async () => {
+  describe('adminHardDelete', () => {
+    it('returns true, removes the row, and purges managed photos', async () => {
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
-          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-purge.jpg',
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-admin-purge.jpg',
         ],
       });
 
-      await service.purgeManagedPhotos('review-1');
+      const result = await service.adminHardDelete('review-1');
 
+      expect(result).toBe(true);
       expect(reviewRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'review-1' },
       });
+      expect(reviewRepo.remove).toHaveBeenCalled();
       expect(storage.delete).toHaveBeenCalledWith(
-        'road-review-photos/seg-1-user-1-purge.jpg',
+        'road-review-photos/seg-1-user-1-admin-purge.jpg',
       );
     });
 
-    it('is a no-op when the review does not exist', async () => {
+    it('returns false when the review is not found', async () => {
       reviewRepo.findOne!.mockResolvedValueOnce(null);
 
-      await expect(
-        service.purgeManagedPhotos('nonexistent-id'),
-      ).resolves.toBeUndefined();
+      const result = await service.adminHardDelete('nonexistent-id');
+
+      expect(result).toBe(false);
+      expect(reviewRepo.remove).not.toHaveBeenCalled();
       expect(storage.delete).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when the review has no photos', async () => {
-      reviewRepo.findOne!.mockResolvedValueOnce({
-        ...mockReview,
-        photos: null,
-      });
-
-      await expect(
-        service.purgeManagedPhotos('review-1'),
-      ).resolves.toBeUndefined();
-      expect(storage.delete).not.toHaveBeenCalled();
-    });
-
-    it('does not delete a managed key belonging to a different user', async () => {
+    it('does not purge photos when reviewRepo.remove rejects', async () => {
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
-          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-should-stay.jpg',
         ],
       });
+      reviewRepo.remove!.mockRejectedValueOnce(new Error('db constraint'));
 
-      await service.purgeManagedPhotos('review-1');
+      await expect(service.adminHardDelete('review-1')).rejects.toThrow(
+        'db constraint',
+      );
 
       expect(storage.delete).not.toHaveBeenCalled();
     });
