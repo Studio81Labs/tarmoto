@@ -17,6 +17,7 @@ import {
 import {
   ContentItemDto,
   ContentListResponseDto,
+  ContentStatus,
   ListContentQueryDto,
 } from './dto/admin-content.dto.js';
 
@@ -172,7 +173,7 @@ export class AdminContentService {
         text: (row[config.textColumn] as string | null) ?? null,
         photoUrls: config.toPhotoUrls(row),
         createdAt: createdAt.toISOString(),
-        status: row.moderation_status as string,
+        status: row.moderation_status as ContentStatus,
         moderationReason: (row.moderation_reason as string | null) ?? null,
         moderatedAt: moderatedAt ? moderatedAt.toISOString() : null,
         location: config.toLocation(row),

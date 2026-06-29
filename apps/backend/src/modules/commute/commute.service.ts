@@ -420,6 +420,7 @@ export class CommuteService {
       `SELECT COUNT(*)::int AS count
        FROM hazard_reports hr
        WHERE hr.is_active = true AND hr.expires_at > NOW()
+         AND hr.moderation_status = 'visible'
          AND ST_DWithin(
            hr.location::geography,
            ST_MakeLine(
@@ -457,6 +458,7 @@ export class CommuteService {
       `SELECT COUNT(*)::int AS count
        FROM hazard_reports hr
        WHERE hr.is_active = true AND hr.expires_at > NOW()
+         AND hr.moderation_status = 'visible'
          AND ST_DWithin(
            hr.location::geography,
            ST_GeomFromText($1, 4326)::geography,

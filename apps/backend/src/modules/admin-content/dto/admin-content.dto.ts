@@ -12,6 +12,9 @@ import {
 import { Type } from 'class-transformer';
 import { ContentType } from '../content-types.js';
 
+export const CONTENT_STATUS_VALUES = ['visible', 'hidden'] as const;
+export type ContentStatus = (typeof CONTENT_STATUS_VALUES)[number];
+
 export const CONTENT_STATUS_FILTERS = ['visible', 'hidden', 'all'] as const;
 export type ContentStatusFilter = (typeof CONTENT_STATUS_FILTERS)[number];
 
@@ -71,7 +74,7 @@ export class ContentItemDto {
   @ApiProperty({ nullable: true }) text!: string | null;
   @ApiProperty({ type: [String] }) photoUrls!: string[];
   @ApiProperty() createdAt!: string;
-  @ApiProperty() status!: string;
+  @ApiProperty({ enum: CONTENT_STATUS_VALUES }) status!: ContentStatus;
   @ApiProperty({ nullable: true }) moderationReason!: string | null;
   @ApiProperty({ nullable: true }) moderatedAt!: string | null;
   @ApiProperty({ type: ContentLocationDto, nullable: true })

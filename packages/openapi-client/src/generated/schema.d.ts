@@ -5635,7 +5635,8 @@ export interface components {
       text: string | null;
       photoUrls: string[];
       createdAt: string;
-      status: string;
+      /** @enum {string} */
+      status: "visible" | "hidden";
       moderationReason: string | null;
       moderatedAt: string | null;
       location: components["schemas"]["ContentLocationDto"] | null;

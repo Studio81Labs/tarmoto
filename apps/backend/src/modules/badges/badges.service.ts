@@ -143,8 +143,12 @@ export class BadgesService {
         .where('r.user_id = :userId', { userId })
         .andWhere("r.status = 'completed'")
         .getRawOne<{ count: string }>(),
-      this.reviewRepo.count({ where: { user_id: userId } }),
-      this.hazardRepo.count({ where: { user_id: userId } }),
+      this.reviewRepo.count({
+        where: { user_id: userId, moderation_status: 'visible' },
+      }),
+      this.hazardRepo.count({
+        where: { user_id: userId, moderation_status: 'visible' },
+      }),
       this.sharedRideRepo.count({ where: { user_id: userId } }),
     ]);
 
