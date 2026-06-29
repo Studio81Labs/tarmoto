@@ -4,6 +4,7 @@ import {
   bboxFromVisibleBounds,
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
+  filterDismissedFromRest,
   FUN_ZONE_COLORS,
   FUN_ZONE_SCORE_BREAKS,
   funZoneFillStyle,
@@ -487,6 +488,62 @@ describe("hazardMarkerStyle", () => {
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.high);
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.medium);
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.low);
+  });
+});
+
+describe("filterDismissedFromRest", () => {
+  it("drops a REST hazard whose tombstone timestamp is >= fetchStartedAt", () => {
+    // Dismissal observed at t=200, fetch started at t=100 — the snapshot
+    // predates the admin action, so the hazard must be filtered out.
+    const dismissed = new Map<string, number>([["h-drop", 200]]);
+    const result = filterDismissedFromRest(
+      [makeHazard({ id: "h-keep" }), makeHazard({ id: "h-drop" })],
+      dismissed,
+      100,
+    );
+    expect(result.map((h) => h.id)).toEqual(["h-keep"]);
+    // Tombstone must be retained (dismissal is after fetchStartedAt, not spent).
+    expect(dismissed.has("h-drop")).toBe(true);
+  });
+
+  it("keeps a REST hazard whose tombstone timestamp is < fetchStartedAt and prunes the entry", () => {
+    // Dismissal observed at t=50, fetch started at t=100 — the server already
+    // excluded this hazard from its snapshot, so we keep the row (it won't be
+    // there) and prune the now-spent tombstone.
+    const dismissed = new Map<string, number>([["h-spent", 50]]);
+    const result = filterDismissedFromRest(
+      [makeHazard({ id: "h-normal" })],
+      dismissed,
+      100,
+    );
+    expect(result.map((h) => h.id)).toEqual(["h-normal"]);
+    // Spent tombstone must be pruned from the map.
+    expect(dismissed.has("h-spent")).toBe(false);
+  });
+
+  it("keeps a REST hazard with no tombstone entry at all", () => {
+    const dismissed = new Map<string, number>();
+    const result = filterDismissedFromRest(
+      [makeHazard({ id: "h-1" }), makeHazard({ id: "h-2" })],
+      dismissed,
+      1000,
+    );
+    expect(result).toHaveLength(2);
+  });
+
+  it("handles an empty REST result without throwing", () => {
+    const dismissed = new Map<string, number>([["h-1", 500]]);
+    expect(filterDismissedFromRest([], dismissed, 100)).toEqual([]);
+  });
+
+  it("drops a REST hazard dismissed exactly at fetchStartedAt (boundary: >= means drop)", () => {
+    const dismissed = new Map<string, number>([["h-boundary", 100]]);
+    const result = filterDismissedFromRest(
+      [makeHazard({ id: "h-boundary" })],
+      dismissed,
+      100,
+    );
+    expect(result).toHaveLength(0);
   });
 });
 

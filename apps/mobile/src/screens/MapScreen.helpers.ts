@@ -454,6 +454,27 @@ export const hazardMarkerStyle: CircleLayerStyle = {
 };
 
 /**
+ * Drop hazards from a REST snapshot that were dismissed (moderated/removed)
+ * at or after the fetch started — the snapshot predates the dismissal and
+ * may still carry them. Prunes spent tombstones (dismissed before the fetch
+ * started, so the server snapshot already excludes them). Pure: uses only
+ * the passed `fetchStartedAt`, never Date.now().
+ */
+export function filterDismissedFromRest(
+  restResult: Hazard[],
+  dismissedAt: Map<string, number>,
+  fetchStartedAt: number,
+): Hazard[] {
+  for (const [id, t] of dismissedAt) {
+    if (t < fetchStartedAt) dismissedAt.delete(id);
+  }
+  return restResult.filter((h) => {
+    const t = dismissedAt.get(h.id);
+    return t === undefined || t < fetchStartedAt;
+  });
+}
+
+/**
  * Apply a `hazard:new` WebSocket event to a local hazard list and
  * return the updated list (or the original list if nothing changed,
  * to keep `===` referential equality stable for memoization).
