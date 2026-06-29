@@ -467,7 +467,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="Challenges"
         component={ChallengesScreen}
-        options={{ title: "Challenges" }}
+        options={{ ...brandScreenOptions, title: "Challenges" }}
       />
       <ProfileStack.Screen
         name="PersonalRoadMap"

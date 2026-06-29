@@ -360,6 +360,17 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > `statusFg.success`. The `tierColor` helper is unchanged (only ever called
 > for earned badges now). Its sibling `ChallengesScreen` remains.
 >
+> **`ChallengesScreen`** (the US-29 challenge list — expandable cards with
+> meta pills, join-progress bar, Join CTA, and a top-5 leaderboard) closes the
+> Achievements sub-screens: every card, pill, and leaderboard row moves onto
+> cream + ink with a themed stack header. The meta pills are neutral `raised2`
+> with `dim` glyph/label; the join-progress bar uses `ACCENT_DARK` on the
+> `sunken` track; "Join challenge" is the ink CTA; the leaderboard rank is
+> mono, my-row is highlighted with a `raised2` fill and an `ACCENT_DARK` name;
+> the empty-state flag is the one small `ACCENT_DARK` accent. No shared
+> `@/components`, so no blast radius. **With this, the Achievements hub and
+> both its sub-screens (Badges, Challenges) are on the brand.**
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**
