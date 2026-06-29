@@ -92,6 +92,14 @@ describe('AdminContentService', () => {
     });
   });
 
+  it('list() drops a stored photo URL that fails the URL policy', async () => {
+    const qb = makeQb([{ ...HAZARD_ROW, photo_url: 'ftp://evil/x.jpg' }], 1);
+    const repo = makeRepo(qb);
+    const svc = build(repo, makeUserRepo());
+    const res = await svc.list({ type: ContentType.Hazard });
+    expect(res.rows[0].photoUrls).toEqual([]);
+  });
+
   it('list() applies a status filter when not "all"', async () => {
     const qb = makeQb([], 0);
     const repo = makeRepo(qb);
