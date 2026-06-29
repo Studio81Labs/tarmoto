@@ -319,6 +319,12 @@ export default function MapScreen() {
           // the stale entry from the REST response when it eventually lands.
           if (event.severity === "dismissed") {
             dismissedTombstonesRef.current.set(event.id, Date.now());
+          } else {
+            // A normal event (restore / confirm / create) supersedes any
+            // prior dismissal: clear the tombstone so an in-flight REST
+            // `.then` (whose snapshot predates the dismissal) doesn't filter
+            // the now-restored marker back out.
+            dismissedTombstonesRef.current.delete(event.id);
           }
           setHazards((prev) => applyHazardAlert(prev, event));
         },
