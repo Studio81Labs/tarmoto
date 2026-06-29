@@ -64,6 +64,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly modelEvalReconcile: Queue,
     @InjectQueue(QUEUE_NAMES.MODEL_EVAL_AGREEMENT)
     private readonly modelEvalAgreement: Queue,
+    @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
+    private readonly napClosurePoll: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -149,6 +151,12 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.MODEL_EVAL_AGREEMENT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_MON_0500,
         description: 'weekly model-eval cross-device/bike agreement (#496)',
+      },
+      {
+        queue: this.napClosurePoll,
+        name: JOB_NAMES.NAP_CLOSURE_POLL_RUN,
+        pattern: RECURRING_PATTERNS.EVERY_3_MINUTES,
+        description: 'NAP (NDIC) closure poll → road_closures (#743)',
       },
     ];
   }

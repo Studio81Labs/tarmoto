@@ -108,6 +108,14 @@ export const QUEUE_NAMES = {
    * cross-bike).
    */
   MODEL_EVAL_AGREEMENT: 'model-eval-agreement',
+
+  /**
+   * Recurring (~every 3 min). Pulls the Czech NAP (NDIC) DATEX II
+   * snapshot, parses it, and reconciles closures into `road_closures`
+   * with `source = 'official'` (#743). Dormant until
+   * `TARMOTO_NAP_POLL_ENABLED=true` and NAP credentials are configured.
+   */
+  NAP_CLOSURE_POLL: 'nap.closure-poll',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -134,6 +142,7 @@ export const JOB_NAMES = {
   WEATHER_ALERT_SWEEP_RUN: 'run',
   MODEL_EVAL_RECONCILE_RUN: 'run',
   MODEL_EVAL_AGREEMENT_RUN: 'run',
+  NAP_CLOSURE_POLL_RUN: 'run',
 } as const;
 
 /**
@@ -143,6 +152,8 @@ export const JOB_NAMES = {
 export const RECURRING_PATTERNS = {
   /** Top of every hour. */
   HOURLY: '0 * * * *',
+  /** Every 3 minutes (NAP closure poll). */
+  EVERY_3_MINUTES: '*/3 * * * *',
   /** Every 15 minutes (severe-weather sweep). */
   EVERY_15_MINUTES: '*/15 * * * *',
   /** Daily at 03:30. */
