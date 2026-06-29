@@ -371,6 +371,21 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > `@/components`, so no blast radius. **With this, the Achievements hub and
 > both its sub-screens (Badges, Challenges) are on the brand.**
 >
+> **`GroupRideScreen`** (the US-26 live group-ride screen — idle create/join
+> forms + active member map and list) is migrated next. It's a **light** screen
+> with an _embedded_ MapLibre map (not an always-dark immersive HUD), so the
+> chrome moves onto cream + ink while the **per-member dot colours**
+> (`MEMBER_COLORS`) are left untouched — they're the essential per-rider
+> encoding shared between the map dots and the member list (same treatment as
+> MapScreen's quality expressions). "Create" is the ink CTA, "Join" the
+> outlined ink secondary; the join code uses the mono family; End/Leave are
+> `statusFg.danger` outline buttons; the error banner uses `statusFg.danger`.
+> The map's member-label symbol keeps an ink-on-cream-halo (`t.fg`/`t.bg`)
+> for legibility over the basemap. No shared `@/components`, so no blast
+> radius. This clears the last light leaf screen; what remains is the
+> immersive dark cluster (RideActive, Navigation, CrashAlertOverlay) on the
+> night palette, plus Phase-4 cleanup.
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**

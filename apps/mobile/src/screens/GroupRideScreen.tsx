@@ -45,7 +45,13 @@ import {
   Map,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
@@ -75,6 +81,8 @@ const MEMBER_COLORS = [
 ];
 
 type Mode = "idle" | "active";
+
+const t = brandColorsLight;
 
 export default function GroupRideScreen() {
   const [mode, setMode] = useState<Mode>("idle");
@@ -400,7 +408,7 @@ export default function GroupRideScreen() {
         >
           <View style={styles.hero}>
             <View style={styles.heroIconWrap}>
-              <Icon name="account-group" size={32} color={colors.primary} />
+              <Icon name="account-group" size={32} color={t.fg} />
             </View>
             <Text style={styles.title}>Group ride</Text>
             <Text style={styles.subtitle}>
@@ -415,7 +423,7 @@ export default function GroupRideScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g. Sunday Dolomites"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={t.mute}
               value={name}
               onChangeText={setName}
               maxLength={100}
@@ -426,14 +434,10 @@ export default function GroupRideScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.textInverse} />
+                <ActivityIndicator color={t.invFg} />
               ) : (
                 <>
-                  <Icon
-                    name="plus-circle"
-                    size={18}
-                    color={colors.textInverse}
-                  />
+                  <Icon name="plus-circle" size={18} color={t.invFg} />
                   <Text style={styles.primaryBtnLabel}>Create</Text>
                 </>
               )}
@@ -446,7 +450,7 @@ export default function GroupRideScreen() {
             <TextInput
               style={[styles.input, styles.codeInput]}
               placeholder="ABCDEF"
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={t.mute}
               value={joinCode}
               onChangeText={(v) => setJoinCode(v.toUpperCase())}
               autoCapitalize="characters"
@@ -459,14 +463,10 @@ export default function GroupRideScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.primary} />
+                <ActivityIndicator color={t.fg} />
               ) : (
                 <>
-                  <Icon
-                    name="account-multiple-plus"
-                    size={18}
-                    color={colors.primary}
-                  />
+                  <Icon name="account-multiple-plus" size={18} color={t.fg} />
                   <Text style={styles.secondaryBtnLabel}>Join</Text>
                 </>
               )}
@@ -475,7 +475,7 @@ export default function GroupRideScreen() {
 
           {errorMessage ? (
             <View style={styles.errorBanner}>
-              <Icon name="alert-circle" size={18} color={colors.danger} />
+              <Icon name="alert-circle" size={18} color={statusFg.danger} />
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
@@ -503,13 +503,13 @@ export default function GroupRideScreen() {
               <Icon
                 name="stop-circle-outline"
                 size={16}
-                color={colors.danger}
+                color={statusFg.danger}
               />
               <Text style={styles.leaveLabel}>End</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity style={styles.leaveBtn} onPress={handleLeave}>
-            <Icon name="exit-to-app" size={16} color={colors.danger} />
+            <Icon name="exit-to-app" size={16} color={statusFg.danger} />
             <Text style={styles.leaveLabel}>Leave</Text>
           </TouchableOpacity>
         </View>
@@ -548,8 +548,11 @@ export default function GroupRideScreen() {
                 textField: ["get", "display_name"],
                 textSize: 11,
                 textOffset: [0, 1.4],
-                textColor: colors.textPrimary,
-                textHaloColor: colors.bg,
+                // Ink label with a cream halo so member names stay legible
+                // over the basemap. The dot colours below are the essential
+                // per-member encoding and are left as-is.
+                textColor: t.fg,
+                textHaloColor: t.bg,
                 textHaloWidth: 1.5,
               }}
             />
@@ -583,7 +586,7 @@ export default function GroupRideScreen() {
 
       {errorMessage ? (
         <View style={styles.errorBanner}>
-          <Icon name="alert-circle" size={18} color={colors.danger} />
+          <Icon name="alert-circle" size={18} color={statusFg.danger} />
           <Text style={styles.errorText}>{errorMessage}</Text>
         </View>
       ) : null}
@@ -592,16 +595,16 @@ export default function GroupRideScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.bg },
-  container: { flex: 1, backgroundColor: colors.bg },
+  flex: { flex: 1, backgroundColor: t.bg },
+  container: { flex: 1, backgroundColor: t.bg },
   idleContent: {
-    padding: spacing.lg,
-    gap: spacing.lg,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s4,
   },
   hero: {
     alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s4,
   },
   heroIconWrap: {
     width: 64,
@@ -609,53 +612,60 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   title: {
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
-    color: colors.textPrimary,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    color: t.fg,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     textAlign: "center",
-    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+    paddingHorizontal: brandSpacing.s3,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   sectionTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
-    color: colors.textPrimary,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
+    color: t.fg,
   },
   label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   input: {
-    backgroundColor: colors.bg,
+    backgroundColor: t.sunken,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
+    borderColor: t.line,
+    borderRadius: brandRadii.sm,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   codeInput: {
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontFamily: brandFonts.mono,
     letterSpacing: 4,
     textAlign: "center",
     textTransform: "uppercase",
@@ -664,90 +674,99 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bg,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: t.lineStrong,
   },
   secondaryBtnLabel: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   btnDisabled: { opacity: 0.6 },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    margin: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    margin: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.danger,
+    borderColor: statusFg.danger,
   },
   errorText: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   activeHeader: {
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
+    padding: brandSpacing.s4,
+    backgroundColor: t.raised,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    gap: spacing.xs,
+    borderBottomColor: t.line,
+    gap: brandSpacing.s1,
   },
   activeHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   activeName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   activeCode: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontSize: 13,
     letterSpacing: 2,
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontFamily: brandFonts.mono,
   },
   activeHint: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   leaveBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.danger,
+    borderColor: statusFg.danger,
   },
   leaveLabel: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   mapWrap: {
     flex: 1,
@@ -756,26 +775,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memberList: {
-    padding: spacing.md,
-    gap: spacing.xs,
-    backgroundColor: colors.bgCard,
+    padding: brandSpacing.s3,
+    gap: brandSpacing.s1,
+    backgroundColor: t.raised,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: t.line,
     maxHeight: 220,
   },
   memberListTitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    marginBottom: spacing.xs,
+    marginBottom: brandSpacing.s1,
   },
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
   },
   memberDot: {
     width: 12,
@@ -784,12 +804,14 @@ const styles = StyleSheet.create({
   },
   memberName: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "500",
   },
   memberMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
 });
