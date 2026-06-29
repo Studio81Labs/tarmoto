@@ -38,6 +38,7 @@ import {
   brandFonts,
   brandRadii,
   brandSpacing,
+  QUALITY_COLORS,
   statusFg,
 } from "@/theme/brand";
 import type { HazardType } from "@/types";
@@ -176,6 +177,13 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: statusFg.danger,
+    // The deep danger fill carries the disc on the cream MapScreen (~5.5:1)
+    // but only ~2.86:1 against the dark ride HUD background, so the shape
+    // would recede there. A brighter Q1-red ring clears 3:1 on the night
+    // surface (~5.9:1) and is a harmless subtle ring on cream — keeps the
+    // FAB legible on both without a surface-aware fork.
+    borderWidth: 2,
+    borderColor: QUALITY_COLORS[0],
     alignItems: "center",
     justifyContent: "center",
   },

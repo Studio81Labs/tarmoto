@@ -952,6 +952,12 @@ const styles = StyleSheet.create({
     paddingVertical: brandSpacing.s4,
     borderRadius: brandRadii.pill,
     backgroundColor: statusFg.danger,
+    // The deep danger fill keeps the cream label readable (~6:1) but only
+    // reaches ~2.86:1 against the night background, so the destructive pill
+    // would recede on the dark HUD. A brighter Q1-red ring delineates the
+    // control shape (~5.9:1 on the night surface).
+    borderWidth: 2,
+    borderColor: QUALITY_COLORS[0],
   },
   stopLabel: {
     color: t.fg,
