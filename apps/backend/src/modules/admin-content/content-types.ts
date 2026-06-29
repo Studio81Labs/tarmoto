@@ -9,8 +9,6 @@ export enum ContentType {
   TripMessage = 'trip_message',
 }
 
-export const CONTENT_TYPE_VALUES = Object.values(ContentType);
-
 export interface ContentTypeConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   entity: new () => any;

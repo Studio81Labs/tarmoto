@@ -4,6 +4,9 @@ import type { User } from '../../entities/user.entity.js';
 import type { RoadClosure } from '../../entities/road-closure.entity.js';
 import type { Ride } from '../../entities/ride.entity.js';
 import type { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import type { HazardReport } from '../../entities/hazard-report.entity.js';
+import type { RoadReview } from '../../entities/road-review.entity.js';
+import type { TripMessage } from '../../entities/trip-message.entity.js';
 
 function repoMock<T extends object>(
   overrides: Partial<Repository<T>> = {},
@@ -24,8 +27,25 @@ describe('AdminMetricsService.snapshot', () => {
     const flags = repoMock<FeatureFlag>({
       count: jest.fn().mockResolvedValue(3),
     });
+    const hazards = repoMock<HazardReport>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const reviews = repoMock<RoadReview>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const messages = repoMock<TripMessage>({
+      count: jest.fn().mockResolvedValue(0),
+    });
 
-    const service = new AdminMetricsService(users, closures, rides, flags);
+    const service = new AdminMetricsService(
+      users,
+      closures,
+      rides,
+      flags,
+      hazards,
+      reviews,
+      messages,
+    );
 
     const result = await service.snapshot();
 
@@ -46,11 +66,62 @@ describe('AdminMetricsService.snapshot', () => {
     const flags = repoMock<FeatureFlag>({
       count: jest.fn().mockResolvedValue(0),
     });
+    const hazards = repoMock<HazardReport>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const reviews = repoMock<RoadReview>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const messages = repoMock<TripMessage>({
+      count: jest.fn().mockResolvedValue(0),
+    });
 
-    const service = new AdminMetricsService(users, closures, rides, flags);
+    const service = new AdminMetricsService(
+      users,
+      closures,
+      rides,
+      flags,
+      hazards,
+      reviews,
+      messages,
+    );
 
     const result = await service.snapshot();
 
     expect(result.activeRides).toBe(0);
+  });
+
+  it('snapshot() includes hiddenContent summed across content tables', async () => {
+    const users = repoMock<User>({ count: jest.fn().mockResolvedValue(10) });
+    const closures = repoMock<RoadClosure>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const rides = repoMock<Ride>({ count: jest.fn().mockResolvedValue(0) });
+    const flags = repoMock<FeatureFlag>({
+      count: jest.fn().mockResolvedValue(0),
+    });
+    const hazards = repoMock<HazardReport>({
+      count: jest.fn().mockResolvedValue(2),
+    });
+    const reviews = repoMock<RoadReview>({
+      count: jest.fn().mockResolvedValue(1),
+    });
+    const messages = repoMock<TripMessage>({
+      count: jest.fn().mockResolvedValue(3),
+    });
+
+    const service = new AdminMetricsService(
+      users,
+      closures,
+      rides,
+      flags,
+      hazards,
+      reviews,
+      messages,
+    );
+
+    const result = await service.snapshot();
+
+    expect(result.hiddenContent).toBe(6);
   });
 });
