@@ -50,13 +50,18 @@ export class AddNapClosureReconciliation1784000000000 implements MigrationInterf
       DROP INDEX IF EXISTS uq_road_closures_source_external;
     `);
 
-    // Remove undecoded feed rows (geom IS NULL) BEFORE restoring the
-    // NOT NULL invariant. They only exist because of this migration, and
-    // the pre-migration app dereferences `geom.coordinates` with no null
-    // guard — leaving them (and a nullable geom) would turn public
-    // closure reads into 500s after a rollback. Operator rows always
-    // carry geometry, so only feed-imported rows are removed.
-    await queryRunner.query(`DELETE FROM road_closures WHERE geom IS NULL;`);
+    // Remove ALL feed-imported rows (source = 'official') BEFORE restoring
+    // the NOT NULL invariant and dropping the reconciliation columns.
+    // These rows only exist because of this migration, and the
+    // pre-migration app can't handle them: undecoded ones (geom IS NULL)
+    // would 500 on `geom.coordinates`, and deactivated ones
+    // (is_active = false) lose their only "hidden" marker when the column
+    // is dropped and would resurface on the public map whenever their time
+    // window is current. Operator-entered rows (source = 'operator') are
+    // untouched and always carry geometry.
+    await queryRunner.query(
+      `DELETE FROM road_closures WHERE source = 'official';`,
+    );
 
     await queryRunner.query(`
       ALTER TABLE road_closures
