@@ -371,18 +371,15 @@ function RideCard({
           <RideMetric
             label="Distance"
             value={formatDistanceKm(ride.distance_km)}
-            light
           />
           <RideMetric
             label="Duration"
             value={formatDurationMinutes(ride.duration_min)}
-            light
           />
           {/* Quality value stays ink: the ramp fails AA as text on the card. */}
           <RideMetric
             label="Quality"
             value={qHas ? qualityLabel(qScore) : "—"}
-            light
           />
         </View>
       </View>

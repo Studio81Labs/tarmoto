@@ -6,11 +6,10 @@
  * `@react-native-community/slider` dependency and matches the coarse
  * quality buckets riders actually reason about.
  *
- * Surface-aware: this is shared between the brand-migrated Settings screen
- * (`light`) and screens still on the legacy dark theme (e.g. TripCreate,
- * the default). Pass `light` only on the cream/white brand surfaces — the
- * default keeps the legacy dark-readable palette so unmigrated callers stay
- * legible.
+ * Renders on the cream/white brand surface (both callers — Settings and
+ * TripCreate — are migrated). The active value reads as ink text plus a
+ * quality-ramp swatch; the ramp lives on the swatch + selected pill rather
+ * than as text, so it stays AA-legible on white.
  */
 
 import React from "react";
@@ -21,16 +20,7 @@ import {
   View,
   AccessibilityRole,
 } from "react-native";
-import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  spacing,
-  MIN_QUALITY_BOUNDS,
-} from "@/theme";
+import { qualityLabel, MIN_QUALITY_BOUNDS } from "@/theme";
 import {
   brandColorsLight,
   brandFonts,
@@ -46,8 +36,6 @@ interface Props {
   label?: string;
   /** Extra helper text rendered below the pills. */
   helpText?: string;
-  /** Render on a light brand surface (cream/white). Default: legacy dark. */
-  light?: boolean;
 }
 
 const STEPS = [
@@ -63,35 +51,27 @@ export default function QualityThresholdSlider({
   onChange,
   label,
   helpText,
-  light = false,
 }: Props) {
   const active = Math.max(
     MIN_QUALITY_BOUNDS.min,
     Math.min(MIN_QUALITY_BOUNDS.max, Math.round(value)),
   );
   const activeLabel = qualityLabel(active);
-  const styles = light ? brandStyles : legacyStyles;
-  const rampColor = light ? qualityBrandColor : qualityColor;
+  const rampColor = qualityBrandColor;
 
   return (
     <View style={styles.container}>
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          {light ? (
-            // Value text stays ink for legibility on the light card; the
-            // quality colour reads from the swatch + the selected pill.
-            <View style={styles.valueRow}>
-              <View
-                style={[styles.swatch, { backgroundColor: rampColor(active) }]}
-              />
-              <Text style={styles.value}>{activeLabel}</Text>
-            </View>
-          ) : (
-            <Text style={[styles.value, { color: rampColor(active) }]}>
-              {activeLabel}
-            </Text>
-          )}
+          {/* Value text stays ink for legibility on the light card; the
+              quality colour reads from the swatch + the selected pill. */}
+          <View style={styles.valueRow}>
+            <View
+              style={[styles.swatch, { backgroundColor: rampColor(active) }]}
+            />
+            <Text style={styles.value}>{activeLabel}</Text>
+          </View>
         </View>
       ) : null}
 
@@ -133,47 +113,8 @@ export default function QualityThresholdSlider({
   );
 }
 
-// Legacy dark-surface styling — unchanged from the pre-brand component so
-// callers still on the dark theme (TripCreate) render exactly as before.
-const legacyStyles = StyleSheet.create({
-  container: { gap: spacing.sm },
-  labelRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-  },
-  label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  valueRow: { flexDirection: "row", alignItems: "center" },
-  swatch: { width: 0, height: 0 },
-  value: { fontSize: fontSize.md, fontWeight: fontWeight.bold },
-  pillRow: { flexDirection: "row", gap: spacing.sm },
-  pill: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pillText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-  },
-  pillTextSelected: { color: colors.textInverse },
-  help: { color: colors.textTertiary, fontSize: fontSize.xs },
-});
-
 // Brand light-surface styling (cream/white card).
-const brandStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: { gap: brandSpacing.s2 },
   labelRow: {
     flexDirection: "row",

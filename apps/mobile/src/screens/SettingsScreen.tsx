@@ -77,7 +77,6 @@ export default function SettingsScreen() {
           onChange={setMinQuality}
           label="Minimum quality"
           helpText={`Currently showing ${qualityLabel(minQuality)} and above.`}
-          light
         />
       </Card>
 

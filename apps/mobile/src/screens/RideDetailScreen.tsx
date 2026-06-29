@@ -292,20 +292,17 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
           label="Distance"
           value={formatDistanceKm(ride.distance_km)}
           size="lg"
-          light
         />
         <RideMetric
           label="Duration"
           value={formatDurationMinutes(ride.duration_min)}
           size="lg"
-          light
         />
         <View style={styles.qualityMetric}>
           <RideMetric
             label="Quality"
             value={qHas ? qualityLabel(qScore) : "—"}
             size="lg"
-            light
           />
           {qHas ? (
             <View

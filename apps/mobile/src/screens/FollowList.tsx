@@ -169,7 +169,7 @@ export default function FollowList({
           accessibilityRole="button"
           accessibilityLabel={`Open ${item.display_name}'s profile`}
         >
-          <Avatar name={item.display_name} size={44} light />
+          <Avatar name={item.display_name} size={44} />
           <View style={styles.rowBody}>
             <Text style={styles.rowName}>{item.display_name}</Text>
             <Text style={styles.rowMeta}>
