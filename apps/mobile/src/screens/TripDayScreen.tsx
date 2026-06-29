@@ -26,16 +26,16 @@ import {
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { meetsQualityThreshold, qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  meetsQualityThreshold,
-  qualityColorWithThreshold,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+  statusFg,
+  UNSCORED_COLOR,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { usePreferencesStore, useTripStore } from "@/stores";
 import type {
@@ -66,6 +66,8 @@ import {
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
 type IconName = ComponentProps<typeof Icon>["name"];
+
+const t = brandColorsLight;
 
 export default function TripDayScreen() {
   const { params } = useRoute<DayRoute>();
@@ -127,7 +129,7 @@ export default function TripDayScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -135,7 +137,7 @@ export default function TripDayScreen() {
   if (error || !trip) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" size={48} color={colors.danger} />
+        <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
         <Text style={styles.errorTitle}>Unable to load day</Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
       </View>
@@ -145,11 +147,7 @@ export default function TripDayScreen() {
   if (!day) {
     return (
       <View style={styles.centered}>
-        <Icon
-          name="calendar-remove-outline"
-          size={48}
-          color={colors.textTertiary}
-        />
+        <Icon name="calendar-remove-outline" size={48} color={t.dim} />
         <Text style={styles.errorTitle}>Day {dayNumber} not found</Text>
         <Text style={styles.errorBody}>
           The trip doesn't include this day. It may have been regenerated with a
@@ -160,9 +158,7 @@ export default function TripDayScreen() {
   }
 
   const qColor =
-    day.avg_quality > 0
-      ? qualityColorWithThreshold(day.avg_quality, minQuality)
-      : colors.textTertiary;
+    day.avg_quality > 0 ? qualityBrandColor(day.avg_quality) : UNSCORED_COLOR;
   // US-5: flag days whose aggregate quality sits below the rider's minimum
   // so trip planners notice a day that doesn't match their expectations
   // without having to scan every segment manually.
@@ -183,11 +179,7 @@ export default function TripDayScreen() {
         <Text style={styles.title}>{day.title ?? `Day ${day.day_number}`}</Text>
         {belowThreshold ? (
           <View style={styles.thresholdBadge}>
-            <Icon
-              name="eye-off-outline"
-              size={12}
-              color={colors.textSecondary}
-            />
+            <Icon name="eye-off-outline" size={12} color={t.dim} />
             <Text style={styles.thresholdBadgeLabel}>
               Below your minimum ({qualityLabel(minQuality)})
             </Text>
@@ -206,7 +198,7 @@ export default function TripDayScreen() {
           <Metric
             label="Quality"
             value={day.avg_quality > 0 ? qualityLabel(day.avg_quality) : "—"}
-            valueColor={qColor}
+            swatchColor={day.avg_quality > 0 ? qColor : undefined}
           />
         </View>
       </View>
@@ -285,7 +277,7 @@ function StartNavigationButton({
       accessibilityLabel="Start navigation"
       accessibilityState={{ disabled }}
     >
-      <Icon name="navigation-variant" size={22} color={colors.textInverse} />
+      <Icon name="navigation-variant" size={22} color={t.invFg} />
       <Text style={styles.navigateLabel}>Start navigation</Text>
     </TouchableOpacity>
   );
@@ -389,7 +381,7 @@ function FuelRangeWarning({
       accessibilityLabel={headline}
     >
       <View style={styles.fuelWarningHeader}>
-        <Icon name="gas-station-off" size={22} color={colors.warning} />
+        <Icon name="gas-station-off" size={22} color={statusFg.warning} />
         <Text style={styles.fuelWarningTitle}>{headline}</Text>
       </View>
       <Text style={styles.fuelWarningBody}>
@@ -427,11 +419,7 @@ function FuelRangeWarning({
                   key={`${idx}-station-${sIdx}`}
                   style={styles.fuelLegStationRow}
                 >
-                  <Icon
-                    name="gas-station"
-                    size={14}
-                    color={colors.textSecondary}
-                  />
+                  <Icon name="gas-station" size={14} color={t.dim} />
                   <Text style={styles.fuelLegStationName} numberOfLines={1}>
                     {stop.hint ? `${stop.name} · ${stop.hint}` : stop.name}
                   </Text>
@@ -555,7 +543,7 @@ function AccommodationsCard({
   return (
     <View style={styles.card}>
       <View style={styles.accommodationsHeader}>
-        <Icon name="bed-outline" size={20} color={colors.primary} />
+        <Icon name="bed-outline" size={20} color={t.fg} />
         <Text style={styles.sectionTitle}>Stays near day end</Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
@@ -566,7 +554,7 @@ function AccommodationsCard({
 
       {loading ? (
         <View style={styles.accommodationsEmpty}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={t.fg} />
         </View>
       ) : error ? (
         <Text style={styles.accommodationsEmptyBody}>{error}</Text>
@@ -601,7 +589,7 @@ function AccommodationRow({ item }: { item: Accommodation }) {
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
     >
       <View style={styles.accommodationIconWrap}>
-        <Icon name={icon} size={18} color={colors.primary} />
+        <Icon name={icon} size={18} color={t.dim} />
       </View>
       <View style={styles.accommodationBody}>
         <Text style={styles.accommodationName} numberOfLines={1}>
@@ -614,7 +602,7 @@ function AccommodationRow({ item }: { item: Accommodation }) {
       <Icon
         name="open-in-new"
         size={16}
-        color={colors.textTertiary}
+        color={t.dim}
         style={styles.accommodationChevron}
       />
     </TouchableOpacity>
@@ -677,11 +665,7 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
   return (
     <View style={styles.card}>
       <View style={styles.accommodationsHeader}>
-        <Icon
-          name="map-marker-radius-outline"
-          size={20}
-          color={colors.primary}
-        />
+        <Icon name="map-marker-radius-outline" size={20} color={t.fg} />
         <Text style={styles.sectionTitle}>Places near day end</Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
@@ -692,7 +676,7 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
 
       {loading ? (
         <View style={styles.accommodationsEmpty}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={t.fg} />
         </View>
       ) : error ? (
         <Text style={styles.accommodationsEmptyBody}>{error}</Text>
@@ -727,7 +711,7 @@ function PoiRow({ item }: { item: Poi }) {
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
     >
       <View style={styles.accommodationIconWrap}>
-        <Icon name={icon} size={18} color={colors.primary} />
+        <Icon name={icon} size={18} color={t.dim} />
       </View>
       <View style={styles.accommodationBody}>
         <Text style={styles.accommodationName} numberOfLines={1}>
@@ -740,7 +724,7 @@ function PoiRow({ item }: { item: Poi }) {
       <Icon
         name="open-in-new"
         size={16}
-        color={colors.textTertiary}
+        color={t.dim}
         style={styles.accommodationChevron}
       />
     </TouchableOpacity>
@@ -798,7 +782,7 @@ function HighlightRow({
   return (
     <View style={styles.highlightRow}>
       <View style={styles.highlightIconWrap}>
-        <Icon name={icon} size={20} color={colors.primary} />
+        <Icon name={icon} size={20} color={t.fg} />
       </View>
       <View style={styles.highlightBody}>
         <Text style={styles.highlightLabel}>{label}</Text>
@@ -823,7 +807,7 @@ function WaypointRow({
   const isFuel = waypoint.waypoint_type === "fuel";
   const iconName = (WAYPOINT_ICONS[waypoint.waypoint_type] ??
     "map-marker") as IconName;
-  const iconColor = isFuel ? colors.warning : colors.primary;
+  const iconColor = isFuel ? statusFg.warning : t.fg;
 
   return (
     <View style={styles.timelineRow}>
@@ -863,20 +847,26 @@ function WaypointRow({
 function Metric({
   label,
   value,
-  valueColor,
+  swatchColor,
 }: {
   label: string;
   value: string;
-  valueColor?: string;
+  // Ramp colour for the quality metric. Rendered as a swatch dot beside the
+  // ink value — the Q1–Q5 ramp fails AA as text on the cream card, so the
+  // colour lives on the swatch (rule #4) and the label stays ink.
+  swatchColor?: string;
 }) {
   return (
     <View style={styles.metric}>
       <Text style={styles.metricLabel}>{label}</Text>
-      <Text
-        style={[styles.metricValue, valueColor ? { color: valueColor } : null]}
-      >
-        {value}
-      </Text>
+      <View style={styles.metricValueRow}>
+        {swatchColor ? (
+          <View
+            style={[styles.qualitySwatch, { backgroundColor: swatchColor }]}
+          />
+        ) : null}
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -884,108 +874,128 @@ function Metric({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   errorTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
     textAlign: "center",
   },
   errorBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   cardBelowThreshold: {
     opacity: 0.7,
-    borderColor: colors.borderLight,
+    borderColor: t.lineStrong,
   },
   thresholdBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgElevated,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   thresholdBadgeLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   subLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   metricsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    columnGap: spacing.md,
-    rowGap: spacing.sm,
+    columnGap: brandSpacing.s3,
+    rowGap: brandSpacing.s2,
   },
   metric: {
     flex: 1,
     minWidth: 80,
   },
   metricLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
+  },
+  metricValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: brandSpacing.s1,
+    marginTop: 2,
   },
   metricValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    marginTop: 2,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  qualitySwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
   },
   highlightRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
     alignItems: "flex-start",
   },
   highlightIconWrap: {
@@ -994,31 +1004,34 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   highlightBody: {
     flex: 1,
     gap: 2,
   },
   highlightLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   highlightValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   highlightDetail: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   timelineRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   timelineGutter: {
     width: 32,
@@ -1030,103 +1043,111 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bgElevated,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   timelineBubbleFuel: {
-    borderColor: colors.warning,
-    backgroundColor: "rgba(234, 179, 8, 0.1)",
+    borderColor: statusFg.warning,
+    backgroundColor: t.raised2,
   },
   timelineLine: {
     flex: 1,
     width: 2,
-    backgroundColor: colors.border,
+    backgroundColor: t.line,
     marginTop: 4,
   },
   timelineBody: {
     flex: 1,
-    paddingBottom: spacing.md,
+    paddingBottom: brandSpacing.s3,
     gap: 2,
   },
   timelineHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   timelineTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   timelineMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   timelineNotes: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     marginTop: 4,
     lineHeight: 20,
   },
   fuelBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.warning,
+    borderRadius: brandRadii.sm,
+    backgroundColor: statusFg.warning,
   },
   fuelBadgeText: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 0.5,
   },
   navigateBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   navigateBtnDisabled: {
     opacity: 0.5,
   },
   navigateLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   fuelWarningCard: {
-    backgroundColor: colors.qualityAlpha.fair,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.warning,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    borderColor: statusFg.warning,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   fuelWarningHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   fuelWarningTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
     flex: 1,
   },
   fuelWarningBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     lineHeight: 18,
   },
   fuelLegRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingTop: spacing.xs,
+    gap: brandSpacing.s2,
+    paddingTop: brandSpacing.s1,
   },
   fuelLegBullet: {
     width: 8,
@@ -1134,77 +1155,85 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   fuelLegBulletOver: {
-    backgroundColor: colors.warning,
+    backgroundColor: statusFg.warning,
   },
   fuelLegBulletOk: {
-    backgroundColor: colors.textTertiary,
+    backgroundColor: t.dim,
   },
   fuelLegNames: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
   },
   fuelLegDistance: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
   },
   fuelLegDistanceOver: {
-    color: colors.warning,
+    color: statusFg.warning,
   },
   fuelLegStations: {
-    marginLeft: spacing.lg,
-    marginTop: spacing.xs,
-    gap: spacing.xs,
+    marginLeft: brandSpacing.s4,
+    marginTop: brandSpacing.s1,
+    gap: brandSpacing.s1,
   },
   fuelLegStationsLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   fuelLegStationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   fuelLegStationName: {
     flex: 1,
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   fuelLegStationDistance: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   accommodationsHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   accommodationsRadius: {
     marginLeft: "auto",
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   accommodationsEmpty: {
-    paddingVertical: spacing.md,
+    paddingVertical: brandSpacing.s3,
     alignItems: "center",
   },
   accommodationsEmptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     lineHeight: 20,
   },
   accommodationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
   },
   accommodationIconWrap: {
     width: 34,
@@ -1212,22 +1241,24 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   accommodationBody: {
     flex: 1,
     gap: 2,
   },
   accommodationName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   accommodationMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   accommodationChevron: {
-    marginLeft: spacing.xs,
+    marginLeft: brandSpacing.s1,
   },
 });
