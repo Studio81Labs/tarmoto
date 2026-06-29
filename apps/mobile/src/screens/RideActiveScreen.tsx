@@ -38,6 +38,7 @@ import React, {
 import {
   Alert,
   PermissionsAndroid,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -552,6 +553,7 @@ export default function RideActiveScreen() {
       ]}
       accessibilityLabel="Active ride HUD"
     >
+      <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
       <View style={styles.header}>
         <Icon
           name="record-circle-outline"

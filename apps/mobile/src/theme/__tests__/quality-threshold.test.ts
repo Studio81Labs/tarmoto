@@ -1,18 +1,15 @@
 /**
- * Quality threshold helpers — the shared primitives that decide whether a
+ * Quality threshold helper — the shared primitive that decides whether a
  * road segment passes the rider's minimum-quality filter (US-5).
  *
- * We lock in the boundary semantics (inclusive at the threshold) and the
- * "gray when excluded" color contract because the map overlay, the road
- * preview and the trip planner all depend on them.
+ * We lock in the boundary semantics (inclusive at the threshold) because the
+ * map overlay, the road preview and the trip planner all depend on them. The
+ * "gray when excluded" colour now comes from the brand ramp (the map overlay
+ * paints below-threshold segments in `UNSCORED_COLOR`); the colour contract is
+ * exercised in the MapScreen/RideScreens helper tests.
  */
 
-import {
-  colors,
-  meetsQualityThreshold,
-  qualityColor,
-  qualityColorWithThreshold,
-} from "../index";
+import { meetsQualityThreshold } from "../index";
 
 describe("meetsQualityThreshold", () => {
   it("passes when score sits inside the threshold label's bucket", () => {
@@ -50,20 +47,5 @@ describe("meetsQualityThreshold", () => {
   it("rejects non-finite scores so unknown segments are excluded", () => {
     expect(meetsQualityThreshold(Number.NaN, 1)).toBe(false);
     expect(meetsQualityThreshold(Number.POSITIVE_INFINITY, 1)).toBe(false);
-  });
-});
-
-describe("qualityColorWithThreshold", () => {
-  it("returns the bucket color when the segment meets the threshold", () => {
-    // 4.6 is in the "excellent" bucket, so it should match qualityColor.
-    expect(qualityColorWithThreshold(4.6, 3)).toBe(qualityColor(4.6));
-  });
-
-  it("returns the dim (tertiary text) color when below the threshold", () => {
-    expect(qualityColorWithThreshold(1.8, 3)).toBe(colors.textTertiary);
-  });
-
-  it("uses dim color for NaN so excluded segments never look vibrant", () => {
-    expect(qualityColorWithThreshold(Number.NaN, 2)).toBe(colors.textTertiary);
   });
 });

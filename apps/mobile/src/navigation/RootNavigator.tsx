@@ -14,7 +14,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
-import { colors } from "@/theme";
 import { ACCENT_DARK, brandColorsLight } from "@/theme/brand";
 import type { HazardType, LatLng, Waypoint } from "@/types";
 import { parseHazardTypeParam } from "@/services/hazardReportLink";
@@ -210,18 +209,9 @@ const linking: LinkingOptions<RootTabParamList> = {
   },
 };
 
-const screenOptions = {
-  headerStyle: { backgroundColor: colors.bgCard },
-  headerTintColor: colors.textPrimary,
-  headerTitleStyle: { fontWeight: "700" as const },
-  contentStyle: { backgroundColor: colors.bg },
-};
-
-// Cream + ink header for screens migrated onto the brand system, so a
-// brand screen isn't a light body under the legacy dark header. Applied
-// per-screen during the incremental migration (see
-// docs/design/mobile-spec/README.md); the shared chrome flips once enough
-// screens have moved across.
+// Cream + ink header — the shared chrome for every stack now that the whole
+// app has moved onto the brand system. Individual screens spread this to add
+// a title; the per-screen overrides remain so each can tweak its own header.
 const brandScreenOptions = {
   headerStyle: { backgroundColor: brandColorsLight.bg },
   headerTintColor: brandColorsLight.fg,
@@ -260,7 +250,7 @@ function tabBarStyleForRoute(route: {
 
 function HomeNavigator() {
   return (
-    <HomeStack.Navigator screenOptions={screenOptions}>
+    <HomeStack.Navigator screenOptions={brandScreenOptions}>
       <HomeStack.Screen
         name="Home"
         component={HomeScreen}
@@ -295,7 +285,7 @@ function HomeNavigator() {
 
 function MapNavigator() {
   return (
-    <MapStack.Navigator screenOptions={screenOptions}>
+    <MapStack.Navigator screenOptions={brandScreenOptions}>
       <MapStack.Screen
         name="Map"
         component={MapScreen}
@@ -321,7 +311,7 @@ function MapNavigator() {
 
 function RideNavigator() {
   return (
-    <RideStack.Navigator screenOptions={screenOptions}>
+    <RideStack.Navigator screenOptions={brandScreenOptions}>
       <RideStack.Screen
         name="RideStart"
         component={RideScreen}
@@ -357,7 +347,7 @@ function RideNavigator() {
 
 function TripsNavigator() {
   return (
-    <TripsStack.Navigator screenOptions={screenOptions}>
+    <TripsStack.Navigator screenOptions={brandScreenOptions}>
       <TripsStack.Screen
         name="TripsList"
         component={TripsScreen}
@@ -404,7 +394,7 @@ function TripsNavigator() {
 
 function ProfileNavigator() {
   return (
-    <ProfileStack.Navigator screenOptions={screenOptions}>
+    <ProfileStack.Navigator screenOptions={brandScreenOptions}>
       <ProfileStack.Screen
         name="Profile"
         component={ProfileScreen}

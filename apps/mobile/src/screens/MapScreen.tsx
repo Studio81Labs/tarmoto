@@ -71,15 +71,17 @@ import {
 } from "@/services/offlineTileLookup";
 import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
-// `colors` + the quality ramp helpers are kept because the legend swatches
-// must mirror the MapLibre overlay colours (which still use the legacy ramp
-// from `MapScreen.helpers`); only the overlay CHROME is re-skinned here.
-import { colors, qualityColor, qualityLabel } from "@/theme";
+// The brand quality ramp is imported so the legend swatches mirror the
+// MapLibre overlay colours (both now paint `QUALITY_COLORS` from
+// `MapScreen.helpers`).
+import { qualityLabel } from "@/theme";
 import {
   brandColorsLight,
   brandFonts,
   brandRadii,
   brandSpacing,
+  qualityBrandColor,
+  QUALITY_COLORS,
 } from "@/theme/brand";
 import {
   applyHazardAlert,
@@ -686,11 +688,11 @@ function QualityLegend({
   // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
   // and swatched in gray to match the map's below-threshold rendering.
   const buckets: Array<{ score: number; color: string; label: string }> = [
-    { score: 5, color: colors.quality.excellent, label: "Excellent" },
-    { score: 4, color: colors.quality.good, label: "Good" },
-    { score: 3, color: colors.quality.fair, label: "Fair" },
-    { score: 2, color: colors.quality.poor, label: "Poor" },
-    { score: 1, color: colors.quality.veryPoor, label: "Very poor" },
+    { score: 5, color: QUALITY_COLORS[4], label: "Excellent" },
+    { score: 4, color: QUALITY_COLORS[3], label: "Good" },
+    { score: 3, color: QUALITY_COLORS[2], label: "Fair" },
+    { score: 2, color: QUALITY_COLORS[1], label: "Poor" },
+    { score: 1, color: QUALITY_COLORS[0], label: "Very poor" },
   ];
   return (
     <View
@@ -851,7 +853,7 @@ function FunZoneCard({
   // Reuse the quality colour ramp — composite scores sit on the same 0-5
   // scale and the breakpoints match, so a separate function would just be a
   // drift risk if the buckets ever change.
-  const accent = qualityColor(zone.composite_score);
+  const accent = qualityBrandColor(zone.composite_score);
   // Push above whichever bottom legends are showing. Quality legend height
   // is measured (it grows when the offline row is active); passes legend
   // is still an approximate fixed height since its content never changes.
