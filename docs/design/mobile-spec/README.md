@@ -318,6 +318,17 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > the entire Trips cluster (Trips list, Create, Detail, Day, Join, Import) is
 > on the brand.**
 >
+> **`AchievementsScreen`** (the US-28/29/30 gamification hub — the entry point
+> into Badges / Challenges / Personal road map) is migrated next: title +
+> subtitle, the soft "some sources failed" warning, and the three navigation
+> hub cards move onto cream + ink with a themed stack header. The hub-card
+> icon discs are neutral `raised2` with ink glyphs (the three cards are equal
+> nav entries, so no accent moment); the chevron uses `t.faint`; the partial-
+> failure banner uses `statusFg.warning`. It shares no `@/components`, so no
+> blast radius. Its sub-screens are independent: `PersonalRoadMapScreen` is
+> already migrated; `BadgesScreen` / `ChallengesScreen` remain for their own
+> phases.
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**
