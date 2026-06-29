@@ -53,4 +53,12 @@ describe('poiImportConfig', () => {
     process.env[KEY] = '17.0,48.5,14.0,51.0'; // minLng > maxLng
     expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
   });
+
+  it('throws on a blank component instead of coercing it to 0', () => {
+    // `Number('')` is 0 — `14,,17,51` must not pass as a valid box.
+    process.env[KEY] = '14,,17,51';
+    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
+    process.env[KEY] = ',48.5,17,51';
+    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
+  });
 });

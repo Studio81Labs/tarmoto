@@ -31,9 +31,14 @@ export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
   // typo, against AGENTS.md's no-silent-fallback rule).
   let bbox = DEFAULT_BBOX;
   if (raw) {
-    const parts = raw.split(',').map(Number);
+    const tokens = raw.split(',');
+    const parts = tokens.map(Number);
     const valid =
-      parts.length === 4 &&
+      tokens.length === 4 &&
+      // Reject blank tokens up front — `Number('')` is 0, so `14,,17,51`
+      // would otherwise coerce to a valid-looking box and import a large
+      // unintended region instead of failing on the typo.
+      tokens.every((t) => t.trim() !== '') &&
       parts.every((n) => Number.isFinite(n)) &&
       parts[0] < parts[2] &&
       parts[1] < parts[3];
