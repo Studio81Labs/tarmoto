@@ -149,8 +149,9 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
               size="sm"
               loading={pendingId === row.id}
               onClick={() => {
-                const reason =
-                  window.prompt("Reason for hiding (optional):") ?? "";
+                const reason = window.prompt("Reason for hiding (optional):");
+                // Cancel (null) must abort — only OK (incl. empty string) hides.
+                if (reason === null) return;
                 runMutation(
                   () =>
                     hideMutation.mutate(

@@ -86,4 +86,11 @@ describe("ContentScreen", () => {
     });
     expect(mockRefetch).toHaveBeenCalled();
   });
+
+  it("does not hide when the reason prompt is cancelled", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    render(<ContentScreen currentRole="admin" />);
+    await userEvent.click(screen.getByRole("button", { name: /^hide$/i }));
+    expect(mockHide).not.toHaveBeenCalled();
+  });
 });
