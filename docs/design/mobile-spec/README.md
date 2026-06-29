@@ -345,6 +345,21 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > The stack header keeps `presentation: "modal"` and now also carries
 > `brandScreenOptions` (cream). No shared `@/components`, so no blast radius.
 >
+> **`BadgesScreen`** (the US-28 badge grid — earned / in-progress sections,
+> per-badge tier + progress-to-next) is migrated next. The metallic **tier
+> colours** (`tierColor`: bronze `#CD7F32`, silver `#C0C0C0`, gold `#FFD700`)
+> are the badge vocabulary but fail contrast as a glyph/text colour on cream
+> (silver ~1.5:1, gold ~1.4:1), so they're kept only as **fills**: the earned
+> badge disc and the tier pill are solid tier colour with an **ink** trophy /
+> label on top (ink clears ≥5:1 on all three metals); locked badges read as a
+> neutral cream disc with a `dim` outline trophy. All tier-named _text_ (the
+> "→ GOLD" next-tier label, the tier pill label) renders ink, and the
+> progress bar uses `ACCENT_DARK` (the "active progress" fill that clears 3:1
+> on the `sunken` track) rather than the pale next-tier metal. The empty-state
+> trophy is the one small `ACCENT_DARK` accent; the maxed label uses
+> `statusFg.success`. The `tierColor` helper is unchanged (only ever called
+> for earned badges now). Its sibling `ChallengesScreen` remains.
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**

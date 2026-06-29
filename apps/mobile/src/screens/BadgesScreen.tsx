@@ -22,7 +22,14 @@ import {
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import type { UserBadge } from "@/types";
 import {
   nextMilestone,
@@ -30,6 +37,8 @@ import {
   tierColor,
   tierRank,
 } from "./AchievementsScreen.helpers";
+
+const t = brandColorsLight;
 
 export default function BadgesScreen() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -71,7 +80,7 @@ export default function BadgesScreen() {
   if (badges === null && errorMessage === null) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -79,7 +88,7 @@ export default function BadgesScreen() {
   if (errorMessage && badges === null) {
     return (
       <View style={styles.centered}>
-        <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+        <Icon name="wifi-off" size={40} color={t.dim} />
         <Text style={styles.emptyTitle}>Can't load badges</Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
@@ -104,7 +113,7 @@ export default function BadgesScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void load(false)}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -140,7 +149,7 @@ export default function BadgesScreen() {
 function EmptyState() {
   return (
     <View style={styles.emptyCard}>
-      <Icon name="trophy-outline" size={48} color={colors.primary} />
+      <Icon name="trophy-outline" size={48} color={ACCENT_DARK} />
       <Text style={styles.emptyTitle}>No badges yet</Text>
       <Text style={styles.emptyBody}>
         Earn your first badge by completing a ride.
@@ -180,13 +189,17 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
       <View
         style={[
           styles.badgeIconWrap,
-          { backgroundColor: tierColor(badge.tier) + "33" },
+          // The metallic tier colour is the badge vocabulary — kept as a
+          // solid disc fill (earned) with an ink trophy on top, since silver
+          // (#C0C0C0) and gold (#FFD700) fail contrast as a glyph/text colour
+          // on cream. Locked badges read as a neutral cream disc.
+          { backgroundColor: earned ? tierColor(badge.tier) : t.raised2 },
         ]}
       >
         <Icon
           name={earned ? "trophy" : "trophy-outline"}
           size={28}
-          color={tierColor(badge.tier)}
+          color={earned ? t.fg : t.dim}
         />
       </View>
       <View style={styles.badgeBody}>
@@ -212,18 +225,16 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               <View
                 style={[
                   styles.progressFill,
-                  {
-                    width: `${Math.round(ratio * 100)}%`,
-                    backgroundColor: tierColor(next.tier),
-                  },
+                  // ACCENT_DARK reads as the "active progress" fill and clears
+                  // 3:1 on the sunken track — the next tier is named in the
+                  // label below, so the bar doesn't need the pale metallic.
+                  { width: `${Math.round(ratio * 100)}%` },
                 ]}
               />
             </View>
             <Text style={styles.progressLabel}>
               {Math.round(badge.progress.current)} / {Math.round(next.target)} →{" "}
-              <Text style={{ color: tierColor(next.tier) }}>
-                {next.tier.toUpperCase()}
-              </Text>
+              <Text style={styles.progressTier}>{next.tier.toUpperCase()}</Text>
             </Text>
           </>
         ) : (
@@ -245,63 +256,66 @@ export const __test = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   emptyCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xxl,
+    borderColor: t.line,
+    padding: brandSpacing.s6,
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   section: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   sectionTitle: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   sectionBody: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   badgeCard: {
     flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   badgeIconWrap: {
     width: 56,
@@ -318,48 +332,58 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   badgeName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
     flexShrink: 1,
   },
   badgeDesc: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   tierPill: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: brandRadii.sm,
   },
   tierLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 0.5,
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.bgInput,
+    backgroundColor: t.sunken,
     overflow: "hidden",
     marginTop: 4,
   },
   progressFill: {
     height: "100%",
     borderRadius: 3,
+    backgroundColor: ACCENT_DARK,
   },
   progressLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  progressTier: {
+    color: t.fg,
+    fontWeight: "700",
   },
   maxedLabel: {
-    color: colors.success,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: statusFg.success,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
