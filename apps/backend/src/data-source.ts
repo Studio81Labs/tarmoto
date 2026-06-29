@@ -106,6 +106,7 @@ import { AddTripDayStartLinked1718200000000 } from './migrations/1718200000000-A
 import { AddAdminConsoleFoundation1751000000000 } from './migrations/1751000000000-AddAdminConsoleFoundation.js';
 import { AddFeatureFlags1782000000000 } from './migrations/1782000000000-AddFeatureFlags.js';
 import { AddContentModeration1783000000000 } from './migrations/1783000000000-AddContentModeration.js';
+import { AddNapClosureReconciliation1784000000000 } from './migrations/1784000000000-AddNapClosureReconciliation.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -230,6 +231,7 @@ export const AppDataSource = new DataSource({
     AddAdminConsoleFoundation1751000000000,
     AddFeatureFlags1782000000000,
     AddContentModeration1783000000000,
+    AddNapClosureReconciliation1784000000000,
   ],
   synchronize: false,
 });

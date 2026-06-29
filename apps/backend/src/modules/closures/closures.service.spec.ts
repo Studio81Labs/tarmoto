@@ -29,6 +29,13 @@ const SAMPLE_CLOSURE: RoadClosure = {
   notes: null,
   source: 'operator',
   created_by: 'user-1',
+  external_id: null,
+  last_seen_at: null,
+  first_seen_at: null,
+  is_active: true,
+  validity_status: null,
+  needs_location_decoding: false,
+  raw_location_ref: null,
   created_at: new Date('2026-04-20T00:00:00Z'),
   updated_at: new Date('2026-04-20T00:00:00Z'),
 };
@@ -126,6 +133,24 @@ describe('ClosuresService', () => {
       );
     });
 
+    it('always excludes undecoded (null-geometry) feed rows', async () => {
+      await service.list({ include_past: true });
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
+    });
+
+    it('excludes deactivated feed rows on the default (live) path', async () => {
+      await service.list({});
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
+    });
+
+    it('does not apply the is_active filter when include_past is true', async () => {
+      await service.list({ include_past: true });
+      const calls = mockQb.andWhere.mock.calls as [string, unknown][];
+      expect(calls.some((c) => /is_active = true/.test(c[0]))).toBe(false);
+      // ...but undecoded rows are still excluded even in history view.
+      expect(calls.some((c) => /geom IS NOT NULL/.test(c[0]))).toBe(true);
+    });
+
     it('passes the parsed bbox into the spatial filter', async () => {
       await service.list({ bbox: '5,45,17,49' });
       expect(mockQb.andWhere).toHaveBeenCalledWith(
@@ -199,6 +224,33 @@ describe('ClosuresService', () => {
       await expect(service.getById('missing')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('throws NotFound for an undecoded (null-geometry) feed row', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        id: 'undecoded-1',
+        source: 'official',
+        external_id: 'ndic-123',
+        geom: null,
+        needs_location_decoding: true,
+      });
+      await expect(service.getById('undecoded-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('checkRoute', () => {
+    it('excludes undecoded and deactivated rows from the route check', async () => {
+      await service.checkRoute({
+        route: [
+          { lat: 50.0, lng: 17.0 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
     });
   });
 

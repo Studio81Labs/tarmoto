@@ -42,6 +42,11 @@ export class ClosuresService {
   async list(query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
     const qb = this.repo.createQueryBuilder('c').orderBy('c.starts_at', 'DESC');
 
+    // Undecoded Alert-C/OpenLR feed rows (#743) have no geometry — never
+    // surface them: they can't be rendered and `toDto` would crash on a
+    // null `geom`.
+    qb.andWhere('c.geom IS NOT NULL');
+
     if (query.bbox) {
       const parsed = this.parseBbox(query.bbox);
       qb.andWhere(
@@ -52,13 +57,16 @@ export class ClosuresService {
 
     // "include_past" opts out of the active-on filter entirely — the
     // default is to only return closures in effect right now so the
-    // planner map never shows history.
+    // planner map never shows history. A live closure must also be
+    // `is_active` — a feed row deactivated by the reconcile pass (dropped
+    // from the snapshot) is kept for audit but not shown.
     if (!query.include_past) {
       const activeOn = query.active_on ? new Date(query.active_on) : new Date();
-      qb.andWhere('c.starts_at <= :activeOn', { activeOn }).andWhere(
-        '(c.ends_at IS NULL OR c.ends_at >= :activeOn)',
-        { activeOn },
-      );
+      qb.andWhere('c.is_active = true')
+        .andWhere('c.starts_at <= :activeOn', { activeOn })
+        .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', {
+          activeOn,
+        });
     }
 
     if (query.severity) {
@@ -101,6 +109,10 @@ export class ClosuresService {
 
     const rows = await this.repo
       .createQueryBuilder('c')
+      // Skip undecoded feed rows (no geometry) and any closure
+      // deactivated by the reconcile pass (#743).
+      .andWhere('c.geom IS NOT NULL')
+      .andWhere('c.is_active = true')
       .andWhere(
         `ST_DWithin(
           c.geom::geography,
@@ -131,7 +143,10 @@ export class ClosuresService {
 
   async getById(id: string): Promise<RoadClosureDto> {
     const row = await this.repo.findOne({ where: { id } });
-    if (!row) {
+    // An undecoded feed row (no geometry) isn't publicly representable —
+    // `RoadClosureDto.geometry` is required and `toDto` reads
+    // `geom.coordinates` — so treat it as not found until decoded (#743).
+    if (!row || row.geom === null) {
       throw new NotFoundException('Closure not found');
     }
     return this.toDto(row);
@@ -230,12 +245,15 @@ export class ClosuresService {
   // ── helpers ──
 
   private toDto(r: RoadClosure): RoadClosureDto {
+    // Every caller filters/guards `geom IS NULL` (list, checkRoute,
+    // getById) and create/update always set geometry, so a non-null geom
+    // is an invariant here — undecoded feed rows (#743) never reach this.
     return {
       id: r.id,
       title: r.title,
       reason: r.reason,
       severity: r.severity,
-      geometry: r.geom.coordinates.map(([lng, lat]) => ({ lng, lat })),
+      geometry: r.geom!.coordinates.map(([lng, lat]) => ({ lng, lat })),
       detour: r.detour_geom
         ? r.detour_geom.coordinates.map(([lng, lat]) => ({ lng, lat }))
         : null,
