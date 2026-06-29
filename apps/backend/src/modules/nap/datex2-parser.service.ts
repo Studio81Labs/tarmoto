@@ -194,28 +194,37 @@ export class Datex2ParserService {
       };
     }
 
-    // 2) Single point by coordinates → degenerate 2-point line so it can
-    //    still be stored as a LineString (the column type) and buffered.
-    const pc = this.findFirst(group, 'pointCoordinates') as
-      | Record<string, unknown>
-      | undefined;
-    if (pc && pc.latitude != null && pc.longitude != null) {
-      const lng = Number(pc.longitude);
-      const lat = Number(pc.latitude);
+    // 2) Linear-by-coordinates extension (DATEX v2.3 roadworks shape):
+    //    explicit start + end points. Handle this BEFORE the single-point
+    //    fallback, which would otherwise grab only the start point's
+    //    `pointCoordinates` and store a zero-length line covering one end
+    //    of the closed stretch.
+    const start = this.pointFromContainer(
+      this.findFirst(group, 'linearCoordinatesStartPoint'),
+    );
+    const end = this.pointFromContainer(
+      this.findFirst(group, 'linearCoordinatesEndPoint'),
+    );
+    if (start && end) {
       return {
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [lng, lat],
-            [lng, lat],
-          ],
-        },
+        geometry: { type: 'LineString', coordinates: [start, end] },
         needsLocationDecoding: false,
         rawLocationRef: null,
       };
     }
 
-    // 3) Alert-C / OpenLR only → store, flag for decoding.
+    // 3) Single point by coordinates → degenerate 2-point line so it can
+    //    still be stored as a LineString (the column type) and buffered.
+    const pt = this.pointFromContainer(group);
+    if (pt) {
+      return {
+        geometry: { type: 'LineString', coordinates: [pt, pt] },
+        needsLocationDecoding: false,
+        rawLocationRef: null,
+      };
+    }
+
+    // 4) Alert-C / OpenLR only → store, flag for decoding.
     const alertC =
       this.findFirst(group, 'alertCLinear') ??
       this.findFirst(group, 'alertCPoint');
@@ -227,6 +236,21 @@ export class Datex2ParserService {
       needsLocationDecoding: true,
       rawLocationRef: alertC ?? openlr ?? null,
     };
+  }
+
+  /**
+   * Find the first `pointCoordinates` (lat/lon) anywhere inside a
+   * container and return it as a GeoJSON `[lon, lat]` pair, or null.
+   */
+  private pointFromContainer(node: unknown): [number, number] | null {
+    if (node == null || typeof node !== 'object') return null;
+    const pc = this.findFirst(node, 'pointCoordinates') as
+      | Record<string, unknown>
+      | undefined;
+    if (pc && pc.latitude != null && pc.longitude != null) {
+      return [Number(pc.longitude), Number(pc.latitude)];
+    }
+    return null;
   }
 
   private coordsFromLineString(node: unknown): [number, number][] | null {
