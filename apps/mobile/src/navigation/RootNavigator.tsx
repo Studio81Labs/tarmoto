@@ -438,7 +438,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="LinkAccount"
         component={LinkAccountScreen}
-        options={{ title: "Link account" }}
+        options={{ ...brandScreenOptions, title: "Link account" }}
       />
       <ProfileStack.Screen
         name="OfflineRegions"

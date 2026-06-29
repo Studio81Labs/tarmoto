@@ -15,9 +15,17 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
+
+const t = brandColorsLight;
 
 export default function LinkAccountScreen() {
   const route = useRoute<LinkAccountRoute>();
@@ -77,7 +85,7 @@ export default function LinkAccountScreen() {
       <View style={styles.container}>
         <View style={styles.hero}>
           <View style={styles.heroIcon}>
-            <Icon name="cellphone-link" size={28} color={colors.primary} />
+            <Icon name="cellphone-link" size={28} color={t.fg} />
           </View>
           <Text style={styles.title}>Link your Tarmoto account</Text>
           <Text style={styles.subtitle}>{helperText}</Text>
@@ -91,7 +99,7 @@ export default function LinkAccountScreen() {
             autoCorrect={false}
             keyboardType="email-address"
             placeholder="rider@example.com"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             style={styles.input}
             value={email}
             onChangeText={setEmail}
@@ -103,7 +111,7 @@ export default function LinkAccountScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="Your Tarmoto password"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             secureTextEntry
             style={styles.input}
             value={password}
@@ -129,14 +137,10 @@ export default function LinkAccountScreen() {
             style={[styles.button, submitting ? styles.buttonDisabled : null]}
           >
             {submitting ? (
-              <ActivityIndicator color={colors.textInverse} />
+              <ActivityIndicator color={t.invFg} />
             ) : (
               <>
-                <Icon
-                  name="login-variant"
-                  size={18}
-                  color={colors.textInverse}
-                />
+                <Icon name="login-variant" size={18} color={t.invFg} />
                 <Text style={styles.buttonLabel}>Link account</Text>
               </>
             )}
@@ -150,16 +154,16 @@ export default function LinkAccountScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   container: {
     flex: 1,
-    padding: spacing.xl,
-    gap: spacing.lg,
-    backgroundColor: colors.bg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    backgroundColor: t.bg,
   },
   hero: {
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   heroIcon: {
     width: 56,
@@ -167,71 +171,80 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
   },
   label: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   labelSpacing: {
-    marginTop: spacing.lg,
+    marginTop: brandSpacing.s4,
   },
   input: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.bgInput,
+    marginTop: brandSpacing.s2,
+    backgroundColor: t.sunken,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
+    borderColor: t.line,
+    borderRadius: brandRadii.sm,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   errorText: {
-    marginTop: spacing.md,
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    marginTop: brandSpacing.s3,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   successText: {
-    marginTop: spacing.md,
-    color: colors.success,
-    fontSize: fontSize.sm,
+    marginTop: brandSpacing.s3,
+    color: statusFg.success,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   button: {
-    marginTop: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
+    marginTop: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
