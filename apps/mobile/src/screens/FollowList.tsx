@@ -27,7 +27,13 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import Avatar from "@/components/Avatar";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
@@ -43,6 +49,8 @@ interface FollowListProps {
 }
 
 type Phase = "loading" | "ready" | "error";
+
+const t = brandColorsLight;
 
 export default function FollowList({
   userId,
@@ -106,7 +114,7 @@ export default function FollowList({
   if (phase === "loading" && items.length === 0) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={t.fg} />
       </View>
     );
   }
@@ -149,7 +157,7 @@ export default function FollowList({
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void load(true)}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
       renderItem={({ item }) => (
@@ -161,7 +169,7 @@ export default function FollowList({
           accessibilityRole="button"
           accessibilityLabel={`Open ${item.display_name}'s profile`}
         >
-          <Avatar name={item.display_name} size={44} />
+          <Avatar name={item.display_name} size={44} light />
           <View style={styles.rowBody}>
             <Text style={styles.rowName}>{item.display_name}</Text>
             <Text style={styles.rowMeta}>
@@ -175,55 +183,63 @@ export default function FollowList({
 }
 
 const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: colors.bg },
-  listContent: { padding: spacing.lg, gap: spacing.sm },
+  list: { flex: 1, backgroundColor: t.bg },
+  listContent: { padding: brandSpacing.s4, gap: brandSpacing.s2 },
   center: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s3,
+    minHeight: 64,
   },
   rowBody: { flex: 1, gap: 2 },
   rowName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   rowMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   emptyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     textAlign: "center",
   },
   retryButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   retryLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

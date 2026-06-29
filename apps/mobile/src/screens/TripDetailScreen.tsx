@@ -38,15 +38,17 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { tripGpxFileName, tripToGpx } from "@tarmoto/shared";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityColor,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+  statusFg,
+  UNSCORED_COLOR,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
 import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
@@ -69,6 +71,8 @@ import {
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
 type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
+
+const t = brandColorsLight;
 
 export default function TripDetailScreen() {
   const { params } = useRoute<DetailRoute>();
@@ -208,7 +212,7 @@ export default function TripDetailScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -216,7 +220,7 @@ export default function TripDetailScreen() {
   if (error || !trip) {
     return (
       <View style={styles.centered}>
-        <Icon name="alert-circle-outline" size={48} color={colors.danger} />
+        <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
         <Text style={styles.errorTitle}>Unable to load trip</Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
         <TouchableOpacity
@@ -240,7 +244,7 @@ export default function TripDetailScreen() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -293,15 +297,17 @@ function HeaderCard({
   totalKm: number;
   avgQ: number;
 }) {
-  const qColor = avgQ > 0 ? qualityColor(avgQ) : colors.textTertiary;
+  const statusColor = statusBadgeColor(trip.status);
   return (
     <View style={styles.card}>
       <View style={styles.titleRow}>
         <Text style={styles.title} numberOfLines={2}>
           {trip.title}
         </Text>
-        <View style={styles.statusPill}>
-          <Text style={styles.statusLabel}>{formatStatus(trip.status)}</Text>
+        <View style={[styles.statusPill, { borderColor: statusColor }]}>
+          <Text style={[styles.statusLabel, { color: statusColor }]}>
+            {formatStatus(trip.status)}
+          </Text>
         </View>
       </View>
       {trip.region ? <Text style={styles.region}>{trip.region}</Text> : null}
@@ -315,7 +321,7 @@ function HeaderCard({
         <Metric
           label="Quality"
           value={avgQ > 0 ? qualityLabel(avgQ) : "—"}
-          valueColor={qColor}
+          swatchColor={avgQ > 0 ? qualityBrandColor(avgQ) : undefined}
         />
       </View>
     </View>
@@ -332,7 +338,7 @@ function DayCard({
   onPress: () => void;
 }) {
   const qColor =
-    day.avg_quality > 0 ? qualityColor(day.avg_quality) : colors.textTertiary;
+    day.avg_quality > 0 ? qualityBrandColor(day.avg_quality) : UNSCORED_COLOR;
   const overnightStop = summarizeWaypoints(day.waypoints, isFinalDay)
     .overnightStops[0];
   return (
@@ -356,11 +362,11 @@ function DayCard({
             {Math.round(day.elevation_gain)} m
           </Text>
         </View>
-        <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+        <Icon name="chevron-right" size={22} color={t.faint} />
       </View>
       <View style={styles.qualityRow}>
-        <Icon name="road-variant" size={16} color={qColor} />
-        <Text style={[styles.qualityText, { color: qColor }]}>
+        <View style={[styles.qualitySwatch, { backgroundColor: qColor }]} />
+        <Text style={styles.qualityText}>
           {day.avg_quality > 0 ? qualityLabel(day.avg_quality) : "No data yet"}
         </Text>
         <Text style={styles.waypointCount}>
@@ -370,7 +376,7 @@ function DayCard({
       </View>
       {overnightStop ? (
         <View style={styles.overnightRow}>
-          <Icon name="bed-outline" size={15} color={colors.primary} />
+          <Icon name="bed-outline" size={15} color={t.dim} />
           <Text style={styles.overnightLabel} numberOfLines={1}>
             Overnight: {overnightStop.name ?? "Suggested stay"}
           </Text>
@@ -454,10 +460,10 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
       accessibilityState={{ busy }}
     >
       {busy ? (
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={t.fg} />
       ) : (
         <>
-          <Icon name="download-outline" size={20} color={colors.primary} />
+          <Icon name="download-outline" size={20} color={t.fg} />
           <Text style={styles.exportLabel}>Export GPX</Text>
         </>
       )}
@@ -497,7 +503,7 @@ function InviteCard({
   return (
     <View style={styles.card}>
       <View style={styles.inviteHeader}>
-        <Icon name="account-multiple-plus" size={20} color={colors.primary} />
+        <Icon name="account-multiple-plus" size={20} color={t.fg} />
         <Text style={styles.inviteHeaderLabel}>Invite riders</Text>
       </View>
       <Text style={styles.inviteBody}>
@@ -517,7 +523,7 @@ function InviteCard({
           accessibilityRole="button"
           accessibilityLabel="Share invite"
         >
-          <Icon name="share-variant" size={16} color={colors.textInverse} />
+          <Icon name="share-variant" size={16} color={t.invFg} />
           <Text style={styles.inviteShareLabel}>Share</Text>
         </TouchableOpacity>
       </View>
@@ -569,7 +575,7 @@ function MemberRow({ member }: { member: TripMember }) {
       accessibilityLabel={`Open ${member.display_name}'s profile`}
     >
       <View style={styles.memberAvatar}>
-        <Icon name="account" size={18} color={colors.primary} />
+        <Icon name="account" size={18} color={t.dim} />
       </View>
       <Text style={styles.memberName} numberOfLines={1}>
         {member.display_name}
@@ -594,14 +600,33 @@ function rolePriority(role: TripMember["role"]): number {
   }
 }
 
+// Role badge border + text. All clear AA / 3:1 on the white card:
+// `ACCENT_DARK` is the burnt-orange owner mark (the raw accent fails AA as
+// text), ink marks the admin, and `dim` is the neutral member fallback.
 function roleBadgeColor(role: TripMember["role"]): string {
   switch (role) {
     case "owner":
-      return colors.primary;
+      return ACCENT_DARK;
     case "admin":
-      return colors.info;
+      return t.fg;
     case "member":
-      return colors.textTertiary;
+      return t.dim;
+  }
+}
+
+// Status pill border + text, mirroring TripsScreen. All clear AA on the
+// white card: `ACCENT_DARK` is the active mark, `statusFg.*` cover
+// completed/planned, and `dim` is the neutral draft fallback.
+function statusBadgeColor(status: Trip["status"]): string {
+  switch (status) {
+    case "active":
+      return ACCENT_DARK;
+    case "completed":
+      return statusFg.success;
+    case "planned":
+      return statusFg.warning;
+    default:
+      return t.dim;
   }
 }
 
@@ -620,7 +645,7 @@ function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
       accessibilityLabel={headline}
     >
       <View style={styles.warningHeaderRow}>
-        <Icon name="alert-octagon" size={22} color={colors.danger} />
+        <Icon name="alert-octagon" size={22} color={statusFg.danger} />
         <Text style={styles.warningTitle}>{headline}</Text>
       </View>
       <Text style={styles.warningBody}>
@@ -645,21 +670,28 @@ function Metric({
   label,
   value,
   sub,
-  valueColor,
+  swatchColor,
 }: {
   label: string;
   value: string;
   sub?: string;
-  valueColor?: string;
+  // Ramp colour for quality metrics. Rendered as a swatch dot beside the
+  // ink value — the Q1–Q5 ramp fails AA as text on the cream card, so the
+  // colour lives on the swatch (rule #4 quality vocabulary) and the label
+  // stays ink.
+  swatchColor?: string;
 }) {
   return (
     <View style={styles.metric}>
       <Text style={styles.metricLabel}>{label}</Text>
-      <Text
-        style={[styles.metricValue, valueColor ? { color: valueColor } : null]}
-      >
-        {value}
-      </Text>
+      <View style={styles.metricValueRow}>
+        {swatchColor ? (
+          <View
+            style={[styles.qualitySwatch, { backgroundColor: swatchColor }]}
+          />
+        ) : null}
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
       {sub ? <Text style={styles.metricSub}>{sub}</Text> : null}
     </View>
   );
@@ -668,147 +700,171 @@ function Metric({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   errorTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   errorBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
   },
   primaryBtn: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    marginTop: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   primaryBtnLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   warningCard: {
-    backgroundColor: colors.qualityAlpha.veryPoor,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised2,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.danger,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    borderColor: statusFg.danger,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   warningHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   warningTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
     flex: 1,
   },
   warningBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     lineHeight: 18,
   },
   warningPassRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: spacing.xs,
+    paddingTop: brandSpacing.s1,
   },
   warningPassName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
     flex: 1,
-    paddingRight: spacing.sm,
+    paddingRight: brandSpacing.s2,
   },
   warningPassMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   title: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
   statusPill: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 4,
-    borderRadius: borderRadius.pill,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
   },
   statusLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    color: colors.primary,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   region: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   metricsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   metric: {
     flex: 1,
   },
   metricLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+  metricValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: brandSpacing.s1,
     marginTop: 4,
   },
+  metricValue: {
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
+  },
   metricSub: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     marginTop: 2,
+  },
+  qualitySwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -816,18 +872,20 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
   },
   sectionHeader: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
   },
   sectionHeaderMeta: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   dayHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   dayNumberBubble: {
     width: 36,
@@ -835,131 +893,149 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   dayNumber: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
   },
   dayHeaderText: {
     flex: 1,
     gap: 2,
   },
   dayTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "600",
   },
   dayMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   qualityRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   qualityText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "600",
   },
   waypointCount: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     marginLeft: "auto",
   },
   overnightRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   overnightLabel: {
     flex: 1,
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   emptyDaysTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   emptyDaysBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     lineHeight: 20,
   },
   inviteHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   inviteHeaderLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "600",
   },
   inviteBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     lineHeight: 20,
   },
   inviteCodeRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   inviteCode: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 16,
+    fontWeight: "700",
     letterSpacing: 1,
-    padding: spacing.md,
-    backgroundColor: colors.bgElevated,
-    borderRadius: borderRadius.md,
+    padding: brandSpacing.s3,
+    backgroundColor: t.sunken,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   inviteShareBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s4,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   inviteShareLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "700",
   },
   inviteError: {
-    color: colors.danger,
-    fontSize: fontSize.xs,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   exportBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.bgCard,
+    borderColor: t.lineStrong,
+    backgroundColor: t.raised,
   },
   exportLabel: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.xs,
+    gap: brandSpacing.s3,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s1,
   },
   memberAvatar: {
     width: 32,
@@ -967,23 +1043,25 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   memberName: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   roleBadge: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 2,
-    borderRadius: borderRadius.pill,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
   },
   roleLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    fontFamily: brandFonts.sans,
+    fontSize: 10,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },

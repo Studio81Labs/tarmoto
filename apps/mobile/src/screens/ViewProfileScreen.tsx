@@ -26,7 +26,13 @@ import {
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { ApiError, api } from "@/services/api";
 import Avatar from "@/components/Avatar";
 import StatTile from "@/components/StatTile";
@@ -38,6 +44,8 @@ import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
 type Phase = "loading" | "ready" | "error";
+
+const t = brandColorsLight;
 
 export default function ViewProfileScreen() {
   const { params } = useRoute<ViewRoute>();
@@ -159,7 +167,7 @@ export default function ViewProfileScreen() {
   if (phase === "loading" && !profile) {
     return (
       <View style={styles.empty}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={t.fg} />
       </View>
     );
   }
@@ -194,6 +202,7 @@ export default function ViewProfileScreen() {
           uri={profile.avatar_url}
           name={profile.display_name}
           size={88}
+          light
         />
         <Text style={styles.displayName}>{profile.display_name}</Text>
         {profile.follows_you === true ? (
@@ -206,11 +215,7 @@ export default function ViewProfileScreen() {
         </Text>
         {profile.home_region ? (
           <View style={styles.metaInline}>
-            <Icon
-              name="map-marker-outline"
-              size={14}
-              color={colors.textSecondary}
-            />
+            <Icon name="map-marker-outline" size={14} color={t.dim} />
             <Text style={styles.metaLine}>{profile.home_region}</Text>
           </View>
         ) : null}
@@ -234,9 +239,7 @@ export default function ViewProfileScreen() {
             {followPending ? (
               <ActivityIndicator
                 size="small"
-                color={
-                  profile.is_following ? colors.textPrimary : colors.textInverse
-                }
+                color={profile.is_following ? t.fg : t.invFg}
               />
             ) : (
               <>
@@ -247,11 +250,7 @@ export default function ViewProfileScreen() {
                       : "account-plus-outline"
                   }
                   size={16}
-                  color={
-                    profile.is_following
-                      ? colors.textPrimary
-                      : colors.textInverse
-                  }
+                  color={profile.is_following ? t.fg : t.invFg}
                 />
                 <Text
                   style={[
@@ -281,6 +280,7 @@ export default function ViewProfileScreen() {
             })
           }
           accessibilityLabel={`${profile.follower_count} followers, open list`}
+          light
         />
         <StatTile
           label="Following"
@@ -292,14 +292,20 @@ export default function ViewProfileScreen() {
             })
           }
           accessibilityLabel={`Following ${profile.following_count} riders, open list`}
+          light
         />
-        <StatTile label="Badges" value={formatCount(earnedBadges.length)} />
+        <StatTile
+          label="Badges"
+          value={formatCount(earnedBadges.length)}
+          light
+        />
       </View>
 
       <SharedRidesSection
         userId={profile.id}
         isSelf={profile.is_self}
         displayName={profile.display_name}
+        light
       />
 
       <View style={styles.badgesCard}>
@@ -312,7 +318,7 @@ export default function ViewProfileScreen() {
           <View style={styles.badgeGrid}>
             {earnedBadges.map((badge) => (
               <View key={badge.key} style={styles.badgePill}>
-                <Icon name="trophy-outline" size={14} color={colors.primary} />
+                <Icon name="trophy-outline" size={14} color={t.accent} />
                 <Text style={styles.badgeName}>{badge.name}</Text>
                 {badge.tier ? (
                   <Text style={styles.badgeTier}>{badge.tier}</Text>
@@ -327,154 +333,171 @@ export default function ViewProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: t.bg },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   empty: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   errorTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   header: {
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   displayName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
-    marginTop: spacing.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 24,
+    fontWeight: "800",
+    marginTop: brandSpacing.s2,
   },
   followsYouBadge: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: borderRadius.pill,
-    paddingHorizontal: spacing.md,
+    borderColor: t.line,
+    borderRadius: brandRadii.pill,
+    paddingHorizontal: brandSpacing.s3,
     paddingVertical: 2,
   },
   followsYouBadgeText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   metaLine: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   metaInline: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   bio: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
-    marginTop: spacing.sm,
+    marginTop: brandSpacing.s2,
     lineHeight: 20,
   },
+  // "Follow" reads as the solid ink primary action; "Following" flips to an
+  // outlined ink state.
   followButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
-    marginTop: spacing.md,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
+    marginTop: brandSpacing.s3,
     minWidth: 140,
     justifyContent: "center",
   },
   followingButton: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   disabled: {
     opacity: 0.6,
   },
   followLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   followingLabel: {
-    color: colors.textPrimary,
+    color: t.fg,
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   badgesCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   emptyHint: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   badgeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   badgePill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primaryAlpha15,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.borderFocus,
+    borderColor: t.line,
   },
   badgeName: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   badgeTier: {
-    color: colors.primary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     textAlign: "center",
   },
   retryButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   retryLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

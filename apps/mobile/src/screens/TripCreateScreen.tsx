@@ -29,14 +29,15 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  qualityLabel,
-  spacing,
-} from "@/theme";
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import { api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
@@ -53,6 +54,8 @@ import {
 } from "./TripScreens.helpers";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripCreate">;
+
+const t = brandColorsLight;
 
 export default function TripCreateScreen() {
   const navigation = useNavigation<Nav>();
@@ -308,14 +311,10 @@ export default function TripCreateScreen() {
           accessibilityState={{ busy: importing }}
         >
           {importing ? (
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={t.fg} />
           ) : (
             <>
-              <Icon
-                name="file-upload-outline"
-                size={20}
-                color={colors.primary}
-              />
+              <Icon name="file-upload-outline" size={20} color={t.fg} />
               <Text style={styles.importLabel}>Import GPX/KML</Text>
             </>
           )}
@@ -326,7 +325,7 @@ export default function TripCreateScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Beskydy weekend"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             value={title}
             onChangeText={setTitle}
             maxLength={80}
@@ -339,7 +338,7 @@ export default function TripCreateScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Moravia"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             value={region}
             onChangeText={setRegion}
             maxLength={60}
@@ -458,6 +457,7 @@ export default function TripCreateScreen() {
             below it show dimmed so you still see them as fallbacks.
           </Text>
           <QualityThresholdSlider
+            light
             value={tripMinQuality}
             onChange={handleQualityChange}
             label="Minimum quality"
@@ -484,7 +484,7 @@ export default function TripCreateScreen() {
             <Icon
               name={startIsLive ? "crosshairs-gps" : "map-marker-outline"}
               size={20}
-              color={startIsLive ? colors.primary : colors.textSecondary}
+              color={startIsLive ? ACCENT_DARK : t.dim}
             />
             <Text style={styles.startText}>
               {startIsLive ? "Your current location" : "Last map location"} ·{" "}
@@ -495,7 +495,7 @@ export default function TripCreateScreen() {
 
         {errorMessage ? (
           <View style={styles.errorBanner}>
-            <Icon name="alert-circle" size={18} color={colors.danger} />
+            <Icon name="alert-circle" size={18} color={statusFg.danger} />
             <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
         ) : null}
@@ -509,10 +509,10 @@ export default function TripCreateScreen() {
           accessibilityLabel="Generate trip"
         >
           {submitting ? (
-            <ActivityIndicator color={colors.textInverse} />
+            <ActivityIndicator color={t.invFg} />
           ) : (
             <>
-              <Icon name="auto-fix" size={20} color={colors.textInverse} />
+              <Icon name="auto-fix" size={20} color={t.invFg} />
               <Text style={styles.generateLabel}>Generate trip</Text>
             </>
           )}
@@ -525,193 +525,215 @@ export default function TripCreateScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.section,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   sectionSpacing: {
-    marginTop: spacing.sm,
+    marginTop: brandSpacing.s2,
   },
   sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   sectionBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   input: {
-    backgroundColor: colors.bgInput,
+    backgroundColor: t.sunken,
     borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.textPrimary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: fontSize.md,
+    borderColor: t.line,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    borderRadius: brandRadii.sm,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    fontSize: 14,
   },
   pillRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   pill: {
     minWidth: 44,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    minHeight: 44,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
   },
   wideFlexPill: {
     flex: 1,
     minWidth: 72,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    minHeight: 44,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: t.invBg,
+    borderColor: t.invBg,
   },
   pillText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   pillTextSelected: {
-    color: colors.textInverse,
+    color: t.invFg,
   },
   stackRow: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   stackPill: {
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
+    padding: brandSpacing.s3,
+    minHeight: 44,
+    justifyContent: "center",
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.bgElevated,
+    borderColor: t.line,
+    backgroundColor: t.raised2,
   },
   stackPillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: t.invBg,
+    borderColor: t.invBg,
   },
   stackPillTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   stackPillMeta: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     marginTop: 2,
   },
   stackPillMetaSelected: {
-    color: colors.textInverse,
+    color: t.invFg,
     opacity: 0.85,
   },
   resetRow: {
     alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
   },
   resetLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: ACCENT_DARK,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
   },
   startRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   startText: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    borderColor: statusFg.danger,
+    backgroundColor: t.raised2,
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   generateBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   generateBtnDisabled: {
     opacity: 0.5,
   },
   generateLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   importBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.bgCard,
+    borderColor: t.lineStrong,
+    backgroundColor: t.raised,
   },
   importBtnDisabled: {
     opacity: 0.5,
   },
   importLabel: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

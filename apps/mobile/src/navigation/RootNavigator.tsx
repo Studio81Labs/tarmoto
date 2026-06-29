@@ -366,7 +366,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="TripCreate"
         component={TripCreateScreen}
-        options={{ title: "Plan a Trip" }}
+        options={{ ...brandScreenOptions, title: "Plan a Trip" }}
       />
       <TripsStack.Screen
         name="TripJoin"
@@ -381,7 +381,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="TripDetail"
         component={TripDetailScreen}
-        options={{ title: "Trip" }}
+        options={{ ...brandScreenOptions, title: "Trip" }}
       />
       <TripsStack.Screen
         name="TripDay"
@@ -423,17 +423,17 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="ViewProfile"
         component={ViewProfileScreen}
-        options={{ title: "Rider" }}
+        options={{ ...brandScreenOptions, title: "Rider" }}
       />
       <ProfileStack.Screen
         name="Followers"
         component={FollowersScreen}
-        options={{ title: "Followers" }}
+        options={{ ...brandScreenOptions, title: "Followers" }}
       />
       <ProfileStack.Screen
         name="Following"
         component={FollowingScreen}
-        options={{ title: "Following" }}
+        options={{ ...brandScreenOptions, title: "Following" }}
       />
       <ProfileStack.Screen
         name="LinkAccount"
