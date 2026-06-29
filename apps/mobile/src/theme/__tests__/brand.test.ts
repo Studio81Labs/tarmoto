@@ -177,6 +177,32 @@ describe("statusFg", () => {
     expect(contrastRatio(QUALITY_COLORS[4], "#FFFFFF")).toBeLessThan(4.5);
     expect(contrastRatio(QUALITY_COLORS[1], "#FFFFFF")).toBeLessThan(4.5);
   });
+
+  it("the HUD FAB glyphs clear 3:1 on their respective discs", () => {
+    // SurfaceTagFab is an accent disc → ink glyph (cream would only reach
+    // ~2.5:1, below the non-text floor). HazardReportFab is a
+    // `statusFg.danger` disc → cream glyph (the inverse pairing). Both are
+    // non-text graphical objects needing >=3:1.
+    expect(
+      contrastRatio(brandColorsLight.invBg, ACCENT),
+    ).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(brandColorsLight.invFg, ACCENT)).toBeLessThan(3);
+    expect(
+      contrastRatio(brandColorsLight.invFg, statusFg.danger),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("danger controls on the night HUD need a Q1-red ring for shape contrast", () => {
+    // `statusFg.danger` is tuned as a fill for cream surfaces; on the near-
+    // black night background its shape edge is only ~2.86:1, below the 3:1
+    // control-shape floor. The Stop pill + hazard FAB add a brighter Q1-red
+    // ring, which clears it (~5.9:1) so the destructive control stays
+    // distinguishable in the riding UI.
+    expect(contrastRatio(statusFg.danger, brandColorsDark.bg)).toBeLessThan(3);
+    expect(
+      contrastRatio(QUALITY_COLORS[0], brandColorsDark.bg),
+    ).toBeGreaterThanOrEqual(3);
+  });
 });
 
 // Composite an `rgba(r,g,b,a)` string over an opaque hex background.

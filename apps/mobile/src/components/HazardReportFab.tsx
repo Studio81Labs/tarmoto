@@ -32,18 +32,23 @@ import {
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
+import { hazardIcons } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  hazardIcons,
-  shadows,
-  spacing,
-} from "@/theme";
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  QUALITY_COLORS,
+  statusFg,
+} from "@/theme/brand";
 import type { HazardType } from "@/types";
 
 type IconName = ComponentProps<typeof Icon>["name"];
+
+// The quick-pick is a modal dialog (dimmed backdrop) that pops over either
+// the cream MapScreen or the dark ride HUD, so it renders as a cream brand
+// dialog. The FAB disc itself is a brand deep-red, legible on both.
+const t = brandColorsLight;
 
 interface HazardReportFabProps {
   /**
@@ -116,7 +121,7 @@ export default function HazardReportFab({
         accessibilityLabel="Report hazard"
         accessibilityHint="Tap to report. Long-press for quick hazard types."
       >
-        <Icon name="alert-octagon" size={26} color={colors.textInverse} />
+        <Icon name="alert-octagon" size={26} color={t.invFg} />
       </TouchableOpacity>
 
       <Modal
@@ -151,7 +156,7 @@ export default function HazardReportFab({
                   <Icon
                     name={(hazardIcons[type] ?? "alert-circle") as IconName}
                     size={26}
-                    color={colors.primary}
+                    color={t.fg}
                   />
                   <Text style={styles.menuTileLabel}>
                     {HAZARD_TYPE_LABELS[type]}
@@ -171,62 +176,70 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.danger,
+    backgroundColor: statusFg.danger,
+    // The deep danger fill carries the disc on the cream MapScreen (~5.5:1)
+    // but only ~2.86:1 against the dark ride HUD background, so the shape
+    // would recede there. A brighter Q1-red ring clears 3:1 on the night
+    // surface (~5.9:1) and is a harmless subtle ring on cream — keeps the
+    // FAB legible on both without a surface-aware fork.
+    borderWidth: 2,
+    borderColor: QUALITY_COLORS[0],
     alignItems: "center",
     justifyContent: "center",
-    ...shadows.button,
   },
   menuBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.55)",
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    padding: brandSpacing.s5,
   },
   menuCard: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.card,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   menuTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   menuSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 18,
   },
   menuGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   menuTile: {
     flexBasis: "30%",
     flexGrow: 1,
     minHeight: 80,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgElevated,
+    paddingVertical: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s2,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   menuTileLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textAlign: "center",
   },
 });
