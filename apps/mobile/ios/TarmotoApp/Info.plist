@@ -128,5 +128,25 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!--
+	  Brand fonts (Phase 4 font-linking). Registered so CoreText loads the
+	  bundled static faces; iOS matches `fontWeight` to the nearest registered
+	  `usWeightClass`. The faces are added to the target's Copy Bundle Resources
+	  by the same `react-native-asset` run (see `TarmotoApp.xcodeproj`). Listed
+	  by family, ascending weight. Space Grotesk has no 800 (its axis caps at
+	  700), so `fontWeight: "800"` on the sans falls to the 700 Bold.
+	-->
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpaceGrotesk.ttf</string>
+		<string>SpaceGrotesk_medium.ttf</string>
+		<string>SpaceGrotesk_semibold.ttf</string>
+		<string>SpaceGrotesk_bold.ttf</string>
+		<string>JetBrainsMono.ttf</string>
+		<string>JetBrainsMono_medium.ttf</string>
+		<string>JetBrainsMono_semibold.ttf</string>
+		<string>JetBrainsMono_bold.ttf</string>
+		<string>JetBrainsMono_extrabold.ttf</string>
+	</array>
 </dict>
 </plist>

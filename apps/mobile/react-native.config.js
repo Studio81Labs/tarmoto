@@ -8,10 +8,23 @@
  * the variable sources — JetBrains Mono at 400/500/600/700/800 and Space
  * Grotesk at 400/500/600/700 (its `wght` axis caps at 700, so no 800). They're
  * named so Android resolves the Regular/Bold pair by basename and iOS matches
- * the rest by their internal family + `usWeightClass`. This entry tells
- * `npx react-native-asset` what to copy into the native projects; running that
- * linker, `pod install`, and an on-device check are the remaining dev-machine
- * work (see `assets/fonts/README.md`).
+ * the rest by their internal family + `usWeightClass`.
+ *
+ * The native artifacts from `npx react-native-asset` are committed: the iOS
+ * `UIAppFonts` + Copy Bundle Resources refs (`TarmotoApp/Info.plist`,
+ * `TarmotoApp.xcodeproj`) and the Android `app/src/main/assets/fonts/` copies.
+ * Re-run the linker only after adding/removing a face. Android's intermediate
+ * weights (500/600/800 — beyond the filename convention's Regular/Bold) are
+ * handled separately by the `res/font/` XML families registered in
+ * `MainApplication.kt` via `ReactFontManager.addCustomFont`. Remaining
+ * dev-machine work: `cd ios && pod install` and an on-device render check
+ * (see `assets/fonts/README.md`).
+ *
+ * NOTE: `./assets/ml` is listed for completeness but was deliberately NOT
+ * linked into the native projects — the TF Lite classifier is Metro-bundled
+ * and loaded via `react-native-fast-tflite`, so a native copy would just
+ * duplicate the model in the binary. If you re-run `react-native-asset`, scope
+ * it to fonts (or drop the ml native copies it produces).
  *
  * The variable-font sources deliberately live OUTSIDE this linked root, in
  * `assets/font-sources/` — `react-native-asset` walks the asset root

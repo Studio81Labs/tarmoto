@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brand sans (Space Grotesk) weight-aware family. RN's ReactFontManager reads
+  the `app:`-namespaced fontWeight/fontStyle variants (see
+  ReactFontManager.getTypeface) once this family is registered via
+  addCustomFont in MainApplication. Space Grotesk's axis caps at 700, so there
+  is no 800 — fontWeight "800" resolves to the nearest, the 700 Bold.
+-->
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font app:fontStyle="normal" app:fontWeight="400" app:font="@font/spacegrotesk_regular" />
+    <font app:fontStyle="normal" app:fontWeight="500" app:font="@font/spacegrotesk_medium" />
+    <font app:fontStyle="normal" app:fontWeight="600" app:font="@font/spacegrotesk_semibold" />
+    <font app:fontStyle="normal" app:fontWeight="700" app:font="@font/spacegrotesk_bold" />
+</font-family>
