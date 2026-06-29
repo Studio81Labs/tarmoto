@@ -86,6 +86,7 @@ import {
   bboxFromVisibleBounds,
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
+  mergeHazardsRest,
   FUN_ZONE_COLORS,
   funZoneFillStyle,
   funZoneLineStyle,
@@ -237,6 +238,22 @@ export default function MapScreen() {
   // covers — anything tighter would thrash the network on every settle
   // for no rider-visible benefit.
   const [hazards, setHazards] = useState<Hazard[]>([]);
+  // Tombstone map: id → ms timestamp when a `dismissed` WS event was observed.
+  // Passed to mergeHazardsRest so stale in-flight REST responses can't
+  // resurrect admin-moderated markers.
+  const dismissedTombstonesRef = useRef<Map<string, number>>(
+    // `Map` in this file is shadowed by the MapLibre react-native import;
+    // use globalThis to reach the built-in collection constructor.
+    new globalThis.Map<string, number>(),
+  );
+  // WS arrival map: id → ms timestamp when a non-dismissed `hazard:new`
+  // socket event was received. Passed to mergeHazardsRest so hazards that
+  // arrived during an in-flight REST fetch are not silently dropped when the
+  // REST response lands and replaces local state. Same globalThis.Map idiom
+  // as dismissedTombstonesRef — `Map` is shadowed by the MapLibre import.
+  const wsHazardArrivalRef = useRef<Map<string, number>>(
+    new globalThis.Map<string, number>(),
+  );
   // Snapshot of the (lat, lng) we last fetched hazards for. Compared
   // against current centre via a coarse great-circle distance to decide
   // whether the next settle warrants a refetch.
@@ -265,11 +282,20 @@ export default function MapScreen() {
     // next retry until the rider moved >5 km.
     const snapshot = { lat: center.lat, lng: center.lng };
     lastHazardFetchRef.current = snapshot;
+    const fetchStartedAt = Date.now();
     void api
       .getHazards(center.lat, center.lng)
       .then((next) => {
         if (cancelled) return;
-        setHazards(next);
+        setHazards((prev) =>
+          mergeHazardsRest(
+            next,
+            prev,
+            wsHazardArrivalRef.current,
+            dismissedTombstonesRef.current,
+            fetchStartedAt,
+          ),
+        );
       })
       .catch(() => {
         // Soft failure — clear our snapshot so the next settle retries
@@ -296,6 +322,28 @@ export default function MapScreen() {
       { lat: center.lat, lng: center.lng },
       {
         onHazard: (event) => {
+          // Record a tombstone for dismissed events regardless of whether the
+          // marker is currently in state — the race is specifically when it's
+          // absent (dismissed arrived while a REST fetch started before it was
+          // still in flight). The tombstone lets mergeHazardsRest drop the
+          // stale entry from the REST response when it eventually lands.
+          if (event.severity === "dismissed") {
+            dismissedTombstonesRef.current.set(event.id, Date.now());
+            // Clear any WS arrival entry for this id — the hazard is gone
+            // and a lingering entry would cause it to be re-preserved on
+            // the next REST response even though it was just dismissed.
+            wsHazardArrivalRef.current.delete(event.id);
+          } else {
+            // A normal event (restore / confirm / create) supersedes any
+            // prior dismissal: clear the tombstone so an in-flight REST
+            // `.then` (whose snapshot predates the dismissal) doesn't filter
+            // the now-restored marker back out.
+            dismissedTombstonesRef.current.delete(event.id);
+            // Record the WS arrival timestamp so mergeHazardsRest can
+            // preserve this hazard if a REST response lands while the
+            // server snapshot predates this event.
+            wsHazardArrivalRef.current.set(event.id, Date.now());
+          }
           setHazards((prev) => applyHazardAlert(prev, event));
         },
       },

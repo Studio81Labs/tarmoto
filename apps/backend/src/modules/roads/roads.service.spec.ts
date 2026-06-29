@@ -392,6 +392,51 @@ describe('RoadsService', () => {
       );
     });
 
+    it('road detail queries exclude hidden hazards and reviews', async () => {
+      const queries: string[] = [];
+      let callCount = 0;
+      (segmentRepo.query as jest.Mock).mockImplementation((sql: string) => {
+        queries.push(sql);
+        callCount++;
+        if (callCount === 1) {
+          // First call: segment lookup — must return a row to avoid NotFoundException.
+          return Promise.resolve([
+            {
+              id: 'seg-mod',
+              road_name: null,
+              road_number: null,
+              quality_score: null,
+              curviness_score: null,
+              surface_type: 'asphalt',
+              length_m: 100,
+              confidence: 0,
+              reading_count: 0,
+              last_updated: new Date(),
+              elevation_min: null,
+              elevation_max: null,
+              elevation_profile: null,
+              geojson: { coordinates: [[16.75, 49.1]] },
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await service.findById('seg-mod');
+
+      // queries[0] = segment lookup (before Promise.all)
+      // queries[1] = surface_readings breakdown
+      // queries[2] = hazard COUNT (bare column: moderation_status)
+      // queries[3] = hazard list (aliased as h: h.moderation_status)
+      // queries[4] = review aggregate COUNT/AVG (bare column: moderation_status)
+      // queries[5] = recent reviews list (aliased as rr: rr.moderation_status)
+      expect(queries[2]).toContain("moderation_status = 'visible'");
+      expect(queries[3]).toContain("h.moderation_status = 'visible'");
+      expect(queries[4]).toContain('AVG(rating)');
+      expect(queries[4]).toContain("moderation_status = 'visible'");
+      expect(queries[5]).toContain("rr.moderation_status = 'visible'");
+    });
+
     it('should handle segment with no readings', async () => {
       segmentRepo
         .query!.mockResolvedValueOnce([

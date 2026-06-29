@@ -29,7 +29,10 @@ import {
   HazardPhotoUploadResponseDto,
   sanitizeHazardPhotoUrl,
 } from './dto/hazard-photo.dto.js';
-import { EventsGateway } from '../events/events.gateway.js';
+import {
+  EventsGateway,
+  type HazardAlertPayload,
+} from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
 
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
@@ -131,7 +134,7 @@ const COMMUTE_HAZARD_BUFFER_M = 200;
 // filename. Suppressing the URL on the public response is the
 // targeted fix; the file itself stays on disk so the rider's own
 // review of their report (a future feature) can still surface it.
-const HAZARD_SELECT_BASE = `
+export const HAZARD_SELECT_BASE = `
   SELECT
     hr.id, hr.hazard_type, hr.severity, hr.note, hr.photo_url, hr.confirmations,
     hr.created_at, hr.expires_at,
@@ -146,6 +149,7 @@ const HAZARD_SELECT_BASE = `
   LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
   WHERE hr.is_active = true
     AND hr.expires_at > NOW()
+    AND hr.moderation_status = 'visible'
 `;
 
 @Injectable()
@@ -405,6 +409,122 @@ export class HazardsService {
     );
   }
 
+  /**
+   * Admin hard-delete: load → delete row → only if delete succeeded, purge
+   * managed photo + broadcast dismissal.
+   *
+   * The ordering guarantee is: if `hazardRepo.delete` throws, neither the
+   * photo file nor WebSocket clients are touched — the DB row survives and
+   * can be retried. This mirrors the `dismiss()` cleanup order (which runs
+   * after `save`) but uses a hard `DELETE` instead of a soft
+   * `is_active = false` so the row is gone entirely.
+   *
+   * Returns `true` when the row was deleted, `false` when no row was found.
+   */
+  async adminHardDelete(id: string): Promise<boolean> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return false;
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    await this.hazardRepo.delete({ id });
+    // Delete succeeded — the row is gone from public REST. Broadcast the
+    // removal FIRST so connected maps prune the marker even if the photo
+    // cleanup below then fails (e.g. an uploads-dir permission error):
+    // a storage error must not leave a stale marker on every client.
+    this.eventsGateway.emitHazardAlert(
+      response.lat,
+      response.lng,
+      this.toRemovalTombstone(response),
+    );
+    // Best-effort managed-photo cleanup; a failure here surfaces to the
+    // operator but no longer suppresses the removal broadcast above.
+    await deleteOwnedHazardPhoto(
+      hazard.photo_url,
+      hazard.user_id,
+      this.isTrustedManagedOrigin,
+    );
+    return true;
+  }
+
+  /**
+   * Broadcast a removal signal for any hazard the admin has hidden or
+   * hard-deleted so that connected map clients prune the marker
+   * immediately — without waiting for a REST refetch. Loads the row
+   * directly by id (no active/visible filter) because the row may
+   * already be hidden when this is called. No-op when the id is not
+   * found (e.g. a concurrent delete race).
+   */
+  async broadcastRemoval(hazardId: string): Promise<void> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id: hazardId },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return;
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    this.eventsGateway.emitHazardAlert(
+      response.lat,
+      response.lng,
+      this.toRemovalTombstone(response),
+    );
+  }
+
+  /**
+   * Build a redacted removal payload for an admin moderation action.
+   * Admin hide/delete targets abusive content, and the dismissed event
+   * fans out to every subscriber in the cell over the unauthenticated
+   * `subscribe:hazards` channel — so it must NOT echo the note /
+   * photo_url / reporter we are taking down. Clients key the removal off
+   * `id` (+ `severity: 'dismissed'`); `lat`/`lng` only route the event to
+   * the cell room. Every other field is nulled/zeroed. (The user-facing
+   * `dismiss()` keeps the full payload — that's the reporter removing
+   * their own content, not moderation of someone else's.)
+   */
+  private toRemovalTombstone(response: HazardResponseDto): HazardAlertPayload {
+    return {
+      id: response.id,
+      lat: response.lat,
+      lng: response.lng,
+      severity: 'dismissed',
+      hazard_type: '',
+      note: null,
+      confirmations: 0,
+      reporter: null,
+      road_name: null,
+      created_at: '',
+      expires_at: '',
+    };
+  }
+
+  /**
+   * Broadcast a normal `hazard:new` event (not dismissed) for a hazard that
+   * has just been admin-restored to visible. Only emits when the hazard is
+   * active, visible, and not yet expired — a restore on an already-expired or
+   * inactive row should not re-add a stale marker to live maps.
+   *
+   * No-op when the id is not found (e.g. concurrent delete race).
+   */
+  async broadcastRestore(hazardId: string): Promise<void> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id: hazardId },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return;
+    if (
+      !hazard.is_active ||
+      hazard.moderation_status !== 'visible' ||
+      hazard.expires_at.getTime() <= Date.now()
+    ) {
+      return;
+    }
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    this.emitHazardEvent(response);
+  }
+
   async expireOld(): Promise<number> {
     const result = await this.hazardRepo
       .createQueryBuilder()
@@ -420,9 +540,10 @@ export class HazardsService {
       .createQueryBuilder('hr')
       .leftJoinAndSelect('hr.user', 'user')
       .leftJoinAndSelect('hr.road_segment', 'road_segment')
-      .where('hr.id = :id AND hr.is_active = true AND hr.expires_at > NOW()', {
-        id: hazardId,
-      })
+      .where(
+        "hr.id = :id AND hr.is_active = true AND hr.expires_at > NOW() AND hr.moderation_status = 'visible'",
+        { id: hazardId },
+      )
       .getOne();
     if (!hazard) {
       throw new NotFoundException('Hazard not found or already expired');

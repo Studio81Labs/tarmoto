@@ -167,6 +167,7 @@ export class TilesService {
           WHERE hr.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
             AND hr.is_active = true
             AND hr.expires_at > NOW()
+            AND hr.moderation_status = 'visible'
         ) q
       )`,
       params: [0, 0, 0, 0],

@@ -3062,6 +3062,74 @@ export interface paths {
     patch: operations["AdminFlagsController_update"];
     trace?: never;
   };
+  "/api/v1/admin/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Browse user-generated content for moderation */
+    get: operations["AdminContentController_list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/content/{type}/{id}/hide": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Hide a content item from public surfaces */
+    post: operations["AdminContentController_hide"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/content/{type}/{id}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore a previously hidden content item */
+    post: operations["AdminContentController_restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/content/{type}/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Permanently delete a content item */
+    delete: operations["AdminContentController_remove"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/config/flags": {
     parameters: {
       query?: never;
@@ -5468,6 +5536,7 @@ export interface components {
       activeRides: number;
       featureFlags: number;
       closures: number;
+      hiddenContent: number;
     };
     AdminUserRowDto: {
       id: string;
@@ -5552,6 +5621,34 @@ export interface components {
       /** @description Toggle the flag. */
       enabled?: boolean;
       description?: string | null;
+    };
+    ContentLocationDto: {
+      lat: number;
+      lng: number;
+    };
+    ContentItemDto: {
+      /** @enum {string} */
+      type: "hazard" | "review" | "trip_message";
+      id: string;
+      authorId: string | null;
+      authorName: string | null;
+      text: string | null;
+      photoUrls: string[];
+      createdAt: string;
+      /** @enum {string} */
+      status: "visible" | "hidden";
+      moderationReason: string | null;
+      moderatedAt: string | null;
+      location: components["schemas"]["ContentLocationDto"] | null;
+    };
+    ContentListResponseDto: {
+      rows: components["schemas"]["ContentItemDto"][];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    HideContentDto: {
+      reason?: string | null;
     };
   };
   responses: never;
@@ -5933,6 +6030,12 @@ export type SchemaCreateFeatureFlagDto =
   components["schemas"]["CreateFeatureFlagDto"];
 export type SchemaUpdateFeatureFlagDto =
   components["schemas"]["UpdateFeatureFlagDto"];
+export type SchemaContentLocationDto =
+  components["schemas"]["ContentLocationDto"];
+export type SchemaContentItemDto = components["schemas"]["ContentItemDto"];
+export type SchemaContentListResponseDto =
+  components["schemas"]["ContentListResponseDto"];
+export type SchemaHideContentDto = components["schemas"]["HideContentDto"];
 export type $defs = Record<string, never>;
 export interface operations {
   AppController_getHello: {
@@ -11428,6 +11531,102 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["FeatureFlagDto"];
         };
+      };
+    };
+  };
+  AdminContentController_list: {
+    parameters: {
+      query: {
+        /** @description Content type to browse. */
+        type: "hazard" | "review" | "trip_message";
+        /** @description Filter by moderation status. Defaults to all. */
+        status?: "visible" | "hidden" | "all";
+        /** @description Substring match on the content text. */
+        q?: string;
+        page?: number;
+        pageSize?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContentListResponseDto"];
+        };
+      };
+    };
+  };
+  AdminContentController_hide: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        type: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["HideContentDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContentItemDto"];
+        };
+      };
+    };
+  };
+  AdminContentController_restore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        type: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContentItemDto"];
+        };
+      };
+    };
+  };
+  AdminContentController_remove: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        type: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

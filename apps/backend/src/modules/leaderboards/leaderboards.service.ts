@@ -63,6 +63,7 @@ const DIMENSIONS: readonly DimensionConfig[] = [
     sourceCte: `
       SELECT user_id, COUNT(*)::float AS value
       FROM hazard_reports
+      WHERE moderation_status = 'visible'
       GROUP BY user_id
     `,
   },

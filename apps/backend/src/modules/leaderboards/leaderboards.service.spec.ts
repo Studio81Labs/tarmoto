@@ -336,6 +336,16 @@ describe('LeaderboardsService', () => {
     expect(sql).toMatch(/extra_me/);
   });
 
+  it('hazards_reported CTE excludes hidden hazard_reports (moderation_status filter)', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({});
+
+    // Third query is the hazards_reported dimension — verify it carries the filter
+    const hazardSql = dataSource.query.mock.calls[2][0] as string;
+    expect(hazardSql).toContain("moderation_status = 'visible'");
+  });
+
   it('SQL ORDER BY after UNION only references columns in the SELECT lists', async () => {
     mockDimensions([], [], []);
 

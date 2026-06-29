@@ -31,6 +31,10 @@ export function OverviewScreen() {
           label="Closures"
           value={isPending ? "—" : (data?.closures ?? 0)}
         />
+        <MetricTile
+          label="Hidden content"
+          value={isPending ? "—" : (data?.hiddenContent ?? 0)}
+        />
       </div>
     </section>
   );

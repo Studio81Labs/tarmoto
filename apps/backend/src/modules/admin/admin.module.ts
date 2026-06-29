@@ -11,8 +11,11 @@ import { Ride } from '../../entities/ride.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
+import { TripMessage } from '../../entities/trip-message.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import { HazardsModule } from '../hazards/hazards.module.js';
+import { ReviewsModule } from '../reviews/reviews.module.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -26,6 +29,8 @@ import { AdminAdminsController } from '../admin-admins/admin-admins.controller.j
 import { AdminAdminsService } from '../admin-admins/admin-admins.service.js';
 import { AdminFlagsController } from '../admin-flags/admin-flags.controller.js';
 import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
+import { AdminContentController } from '../admin-content/admin-content.controller.js';
+import { AdminContentService } from '../admin-content/admin-content.service.js';
 
 @Module({
   imports: [
@@ -40,15 +45,19 @@ import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
       HazardReport,
       RoadReview,
       Trip,
+      TripMessage,
       CommuteRoute,
       FeatureFlag,
     ]),
+    HazardsModule,
+    ReviewsModule,
   ],
   controllers: [
     AdminMetricsController,
     AdminUsersController,
     AdminAdminsController,
     AdminFlagsController,
+    AdminContentController,
   ],
   providers: [
     AdminAuditService,
@@ -56,6 +65,7 @@ import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
     AdminUsersService,
     AdminAdminsService,
     AdminFlagsService,
+    AdminContentService,
     InternalGuard,
     { provide: APP_GUARD, useClass: InternalGuard },
     { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },

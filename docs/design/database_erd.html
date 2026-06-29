@@ -62,6 +62,8 @@ const { svg } = await mermaid.render('erd-svg', `erDiagram
 
   trips ||--o{ trip_days : planned_in
   trips ||--o{ trip_members : includes
+  trips ||--o{ trip_messages : has
+  users ||--o{ trip_messages : posts
   trip_days ||--o{ trip_waypoints : routed_through
 
   fun_zones ||--o{ fun_zone_roads : contains
@@ -147,6 +149,10 @@ const { svg } = await mermaid.render('erd-svg', `erDiagram
     int confirmations
     timestamp created_at
     timestamp expires_at
+    string moderation_status
+    string moderation_reason
+    uuid moderated_by FK
+    timestamp moderated_at
   }
 
   road_reviews {
@@ -157,6 +163,22 @@ const { svg } = await mermaid.render('erd-svg', `erDiagram
     string comment
     string bike_model
     timestamp created_at
+    string moderation_status
+    string moderation_reason
+    uuid moderated_by FK
+    timestamp moderated_at
+  }
+
+  trip_messages {
+    uuid id PK
+    uuid trip_id FK
+    uuid user_id FK
+    string body
+    timestamp created_at
+    string moderation_status
+    string moderation_reason
+    uuid moderated_by FK
+    timestamp moderated_at
   }
 
   trips {

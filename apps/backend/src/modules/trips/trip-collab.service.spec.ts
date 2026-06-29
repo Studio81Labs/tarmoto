@@ -838,14 +838,19 @@ describe('TripCollabService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('applies the default page size and no cursor predicate when none given', async () => {
+    it('applies the default page size and only the moderation filter when no cursor is given', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       const qb = mockMessagesQb();
 
       await service.listMessages(USER_ID, TRIP_ID, {});
 
       expect(qb.take).toHaveBeenCalledWith(50);
-      expect(qb.andWhere).not.toHaveBeenCalled();
+      // The only andWhere call at this point is the moderation-status filter;
+      // no keyset-cursor predicate is added when no before/before_id are given.
+      expect(qb.andWhere).toHaveBeenCalledTimes(1);
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        "m.moderation_status = 'visible'",
+      );
     });
 
     it('clamps limit to the server maximum', async () => {
@@ -885,6 +890,17 @@ describe('TripCollabService', () => {
 
       expect(qb.orderBy).toHaveBeenCalledWith('m.created_at', 'DESC');
       expect(qb.addOrderBy).toHaveBeenCalledWith('m.id', 'DESC');
+    });
+
+    it('listMessages excludes hidden messages', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      const qb = mockMessagesQb();
+
+      await service.listMessages(USER_ID, TRIP_ID, {});
+
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        "m.moderation_status = 'visible'",
+      );
     });
   });
 
