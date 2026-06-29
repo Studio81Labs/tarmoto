@@ -115,6 +115,36 @@ describe('Datex2ParserService', () => {
     });
   });
 
+  it('builds a line from linear start+end points (not a zero-length stub)', () => {
+    const xml = `<?xml version="1.0"?>
+      <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">
+        <d2:payloadPublication>
+          <d2:situation id="S">
+            <d2:situationRecord id="R" xsi:type="MaintenanceWorks">
+              <d2:groupOfLocations>
+                <d2:linearByCoordinatesExtension>
+                  <d2:linearCoordinatesStartPoint>
+                    <d2:pointCoordinates><d2:latitude>49.20</d2:latitude><d2:longitude>16.60</d2:longitude></d2:pointCoordinates>
+                  </d2:linearCoordinatesStartPoint>
+                  <d2:linearCoordinatesEndPoint>
+                    <d2:pointCoordinates><d2:latitude>49.25</d2:latitude><d2:longitude>16.70</d2:longitude></d2:pointCoordinates>
+                  </d2:linearCoordinatesEndPoint>
+                </d2:linearByCoordinatesExtension>
+              </d2:groupOfLocations>
+            </d2:situationRecord>
+          </d2:situation>
+        </d2:payloadPublication>
+      </d2:d2LogicalModel>`;
+    const [rec] = parser.parse(xml);
+    expect(rec.geometry).toEqual({
+      type: 'LineString',
+      coordinates: [
+        [16.6, 49.2],
+        [16.7, 49.25],
+      ],
+    });
+  });
+
   it('returns [] for a genuine publication with zero situations', () => {
     const empty = `<?xml version="1.0"?>
       <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">
