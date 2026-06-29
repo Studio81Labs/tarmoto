@@ -6,6 +6,7 @@ import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardsService } from '../hazards/hazards.service.js';
 import { WeatherService } from '../weather/weather.service.js';
+import { ClosuresService } from '../closures/closures.service.js';
 import type { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
 import type { WeatherResponseDto } from '../weather/dto/weather.dto.js';
 import {
@@ -38,7 +39,28 @@ export class CommuteService {
     private readonly routingProvider: RoutingProvider,
     private readonly hazardsService: HazardsService,
     private readonly weatherService: WeatherService,
+    private readonly closuresService: ClosuresService,
   ) {}
+
+  /**
+   * Bounding box around two endpoints, padded so closures just off the
+   * straight-line corridor (which a detour might still touch) are caught
+   * (#744). Keeps the closure query bounded — never the whole country.
+   */
+  private endpointBbox(
+    aLng: number,
+    aLat: number,
+    bLng: number,
+    bLat: number,
+  ): { minLng: number; minLat: number; maxLng: number; maxLat: number } {
+    const pad = 0.05; // ~5 km
+    return {
+      minLng: Math.min(aLng, bLng) - pad,
+      minLat: Math.min(aLat, bLat) - pad,
+      maxLng: Math.max(aLng, bLng) + pad,
+      maxLat: Math.max(aLat, bLat) + pad,
+    };
+  }
 
   async listRoutes(userId: string): Promise<CommuteRouteResponseDto[]> {
     const routes = await this.routeRepo.find({
@@ -319,17 +341,21 @@ export class CommuteService {
     const [originLng, originLat] = this.getCoords(route.origin);
     const [destLng, destLat] = this.getCoords(route.destination);
 
-    // Get hazard count on primary route and fetch alternatives in parallel
-    const [primaryHazardCount, rawAlternatives] = await Promise.all([
+    // Fetch hazard count + closure-exclusion polygons in parallel, then
+    // route around the closures (#744).
+    const bbox = this.endpointBbox(originLng, originLat, destLng, destLat);
+    const [primaryHazardCount, excludePolygons] = await Promise.all([
       this.countHazardsNearLine(route),
-      this.routingProvider.getAlternatives(
-        originLat,
-        originLng,
-        destLat,
-        destLng,
-        3,
-      ),
+      this.closuresService.exclusionPolygons(bbox),
     ]);
+    const rawAlternatives = await this.routingProvider.getAlternatives(
+      originLat,
+      originLng,
+      destLat,
+      destLng,
+      3,
+      { excludePolygons },
+    );
 
     // Enrich each alternative with hazard count and avg road quality
     const alternatives: AlternativeRouteDto[] = await Promise.all(
@@ -554,14 +580,17 @@ export class CommuteService {
     try {
       // includePrimary: true so we get the engine's main route (lowest
       // duration), not just alternatives. Asking for one route keeps
-      // the upstream payload small.
+      // the upstream payload small. Route around active full closures (#744).
+      const bbox = this.endpointBbox(originLng, originLat, destLng, destLat);
+      const excludePolygons =
+        await this.closuresService.exclusionPolygons(bbox);
       const candidates = await this.routingProvider.getAlternatives(
         originLat,
         originLng,
         destLat,
         destLng,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons },
       );
       resolved = candidates[0];
     } catch (err) {

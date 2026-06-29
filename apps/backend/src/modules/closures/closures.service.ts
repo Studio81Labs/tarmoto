@@ -25,6 +25,14 @@ const SEVERITY_RANK: Record<RoadClosureSeverity, number> = {
   advisory: 2,
 };
 
+/**
+ * Metres each `full` closure is buffered by when turned into a routing
+ * `exclude_polygon` (#744). Tight on purpose: we want to exclude the
+ * closed carriageway itself, not a wide swathe that would also block
+ * parallel open roads.
+ */
+const EXCLUSION_BUFFER_M = 25;
+
 interface BboxCoords {
   minLng: number;
   minLat: number;
@@ -139,6 +147,55 @@ export class ClosuresService {
       partial_count: countBy('partial'),
       advisory_count: countBy('advisory'),
     };
+  }
+
+  /**
+   * Buffered polygons for active **full** closures within `bbox`, for the
+   * router to avoid (#744). Each result is one closure's outer ring as
+   * `[lng, lat]` pairs (Valhalla `exclude_polygons` format). Only `full`
+   * closures are hard-excluded; partial/advisory stay warn-only via
+   * `checkRoute`. Bounded by `bbox` so a national closure set never bloats
+   * a single route request.
+   */
+  async exclusionPolygons(
+    bbox: BboxCoords,
+    activeOn: Date = new Date(),
+  ): Promise<Array<Array<[number, number]>>> {
+    const rows = await this.repo
+      .createQueryBuilder('c')
+      .select(
+        'ST_AsGeoJSON(ST_Buffer(c.geom::geography, :buffer)::geometry)',
+        'geojson',
+      )
+      .where('c.geom IS NOT NULL')
+      .andWhere('c.is_active = true')
+      .andWhere('c.severity = :full', { full: 'full' })
+      .andWhere('c.starts_at <= :activeOn', { activeOn })
+      .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', { activeOn })
+      .andWhere(
+        'ST_Intersects(c.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
+        bbox,
+      )
+      .setParameter('buffer', EXCLUSION_BUFFER_M)
+      .getRawMany<{ geojson: string | null }>();
+
+    const polygons: Array<Array<[number, number]>> = [];
+    for (const row of rows) {
+      if (!row.geojson) continue;
+      const geom = JSON.parse(row.geojson) as
+        | { type: 'Polygon'; coordinates: [number, number][][] }
+        | { type: 'MultiPolygon'; coordinates: [number, number][][][] };
+      // Buffering a line/point always yields a Polygon (or a MultiPolygon
+      // for self-touching geometry); take each outer ring.
+      if (geom.type === 'Polygon') {
+        if (geom.coordinates[0]) polygons.push(geom.coordinates[0]);
+      } else {
+        for (const poly of geom.coordinates) {
+          if (poly[0]) polygons.push(poly[0]);
+        }
+      }
+    }
+    return polygons;
   }
 
   async getById(id: string): Promise<RoadClosureDto> {

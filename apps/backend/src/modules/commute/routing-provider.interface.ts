@@ -40,6 +40,16 @@ export interface RoutingOptions {
    * **other** routes to compare against.
    */
   includePrimary?: boolean;
+  /**
+   * Polygons the route must avoid — buffered geometry of active **full**
+   * road closures in the route area (#744). Each entry is one polygon's
+   * outer ring as `[lng, lat]` pairs, matching Valhalla's
+   * `exclude_polygons` format. Engines that can't honour polygon
+   * exclusions (OSRM) silently ignore this, per the no-op contract above.
+   * Partial/advisory closures are NOT excluded here — they surface as
+   * warnings via `ClosuresService.checkRoute()`.
+   */
+  excludePolygons?: Array<Array<[number, number]>>;
 }
 
 /**

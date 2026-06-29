@@ -20,6 +20,7 @@ import {
 } from '../commute/routing-provider.interface.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { ClosuresService } from '../closures/closures.service.js';
 import { TripsService } from './trips.service.js';
 import { GenerateTripResponseDto } from './dto/generate-trip-response.dto.js';
 import {
@@ -120,6 +121,7 @@ export class TripGeneratorService {
     private readonly events: EventsGateway,
     private readonly activity: TripActivityService,
     private readonly enrichment: RouteEnrichmentService,
+    private readonly closuresService: ClosuresService,
   ) {}
 
   /**
@@ -187,9 +189,18 @@ export class TripGeneratorService {
     // OSRM demo honours `motorway`; toll exclusion needs a custom
     // build), but we always plumb the flags so a self-hosted backend
     // gets the rider's intent.
+    // Route every day's legs around active full closures in the trip area
+    // (#744). Fetched once for the whole trip bbox and reused across days.
+    const excludePolygons = await this.closuresService.exclusionPolygons({
+      minLng: bbox[0],
+      minLat: bbox[1],
+      maxLng: bbox[2],
+      maxLat: bbox[3],
+    });
     const routingOptions: RoutingOptions = {
       avoidHighways: dto.avoid_highways,
       avoidTolls: dto.avoid_tolls,
+      excludePolygons,
       // Score the primary route too, not just the alternatives — many
       // rural / mountain legs have a single OSRM-returned route and
       // dropping the primary would otherwise leave us with an empty

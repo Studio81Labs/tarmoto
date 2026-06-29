@@ -77,15 +77,23 @@ describe('ClosuresService', () => {
   let repo: Partial<jest.Mocked<Repository<RoadClosure>>>;
 
   const mockQb = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    setParameter: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
+    getRawMany: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {
+    mockQb.select.mockClear();
+    mockQb.where.mockClear();
     mockQb.andWhere.mockClear();
     mockQb.orderBy.mockClear();
+    mockQb.setParameter.mockClear();
     mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
+    mockQb.getRawMany.mockReset().mockResolvedValue([]);
 
     repo = {
       createQueryBuilder: jest.fn().mockReturnValue(mockQb),
@@ -268,6 +276,74 @@ describe('ClosuresService', () => {
       });
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
+    });
+  });
+
+  describe('exclusionPolygons (#744)', () => {
+    const bbox = { minLng: 16, minLat: 49, maxLng: 17, maxLat: 50 };
+
+    it('queries only active full closures in the bbox, buffered', async () => {
+      await service.exclusionPolygons(bbox);
+
+      expect(mockQb.select).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Buffer(c.geom::geography'),
+        'geojson',
+      );
+      expect(mockQb.where).toHaveBeenCalledWith('c.geom IS NOT NULL');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.severity = :full', {
+        full: 'full',
+      });
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Intersects'),
+        bbox,
+      );
+      expect(mockQb.setParameter).toHaveBeenCalledWith('buffer', 25);
+    });
+
+    it('returns the outer ring of each buffered Polygon', async () => {
+      const ring: [number, number][] = [
+        [16.6, 49.2],
+        [16.7, 49.2],
+        [16.7, 49.25],
+        [16.6, 49.2],
+      ];
+      mockQb.getRawMany.mockResolvedValueOnce([
+        { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
+      ]);
+      const polygons = await service.exclusionPolygons(bbox);
+      expect(polygons).toEqual([ring]);
+    });
+
+    it('flattens a MultiPolygon into one ring per part and skips null geom', async () => {
+      const ringA: [number, number][] = [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 0],
+      ];
+      const ringB: [number, number][] = [
+        [2, 2],
+        [3, 2],
+        [3, 3],
+        [2, 2],
+      ];
+      mockQb.getRawMany.mockResolvedValueOnce([
+        {
+          geojson: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [[ringA], [ringB]],
+          }),
+        },
+        { geojson: null },
+      ]);
+      const polygons = await service.exclusionPolygons(bbox);
+      expect(polygons).toEqual([ringA, ringB]);
+    });
+
+    it('returns [] when there are no full closures in the area', async () => {
+      mockQb.getRawMany.mockResolvedValueOnce([]);
+      expect(await service.exclusionPolygons(bbox)).toEqual([]);
     });
   });
 
