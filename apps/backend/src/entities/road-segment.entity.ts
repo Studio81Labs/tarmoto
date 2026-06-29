@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  Check,
   Index,
   OneToMany,
 } from 'typeorm';
@@ -17,6 +18,13 @@ import { RoadReview } from './road-review.entity.js';
 @Index('uq_road_segments_osm_identity', ['osm_way_id', 'segment_index'], {
   unique: true,
 })
+// OSM identity is all-or-nothing: a half-populated `(osm_way_id, NULL)`
+// would slip past the unique index (NULLs don't conflict) and let a
+// re-import upsert insert a duplicate instead of preserving the UUID (#751).
+@Check(
+  'chk_road_segments_osm_identity',
+  '("osm_way_id" IS NULL) = ("segment_index" IS NULL)',
+)
 export class RoadSegment {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
