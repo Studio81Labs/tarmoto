@@ -71,9 +71,9 @@ import {
 } from "@/services/offlineTileLookup";
 import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
-// `colors` + the quality ramp helpers are kept because the legend swatches
-// must mirror the MapLibre overlay colours (which still use the legacy ramp
-// from `MapScreen.helpers`); only the overlay CHROME is re-skinned here.
+// The brand quality ramp is imported so the legend swatches mirror the
+// MapLibre overlay colours (both now paint `QUALITY_COLORS` from
+// `MapScreen.helpers`).
 import { qualityLabel } from "@/theme";
 import {
   brandColorsLight,

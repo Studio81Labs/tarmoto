@@ -233,9 +233,9 @@ describe("passMarkerStyle", () => {
     expect(expr[expr.length - 1]).toBe(PASS_STATUS_COLORS.unknown);
   });
 
-  it("uses brand status colours for the three statuses (no hardcoded hex drift)", () => {
-    expect(PASS_STATUS_COLORS.open).toBe(statusFg.success);
-    expect(PASS_STATUS_COLORS.closed).toBe(statusFg.danger);
+  it("uses bright quality-ramp fills for the three statuses (legible on the dark legend, no hardcoded hex drift)", () => {
+    expect(PASS_STATUS_COLORS.open).toBe(QUALITY_COLORS[4]);
+    expect(PASS_STATUS_COLORS.closed).toBe(QUALITY_COLORS[0]);
     expect(PASS_STATUS_COLORS.unknown).toBe(UNSCORED_COLOR);
   });
 

@@ -167,10 +167,16 @@ export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
 
 // ── US-11 mountain passes ──
 
-/** Status → marker fill color. Mirrors PASS_LEGEND copy below. */
+/**
+ * Status → marker fill color. These render both as map markers on the light
+ * basemap AND as dots on the dark `INK_PILL` passes legend, so they use the
+ * bright quality-ramp green/red (not the deep `statusFg` text tones, which
+ * only reach ~2.9:1 on the ink legend): Q5 green = open, Q1 red = closed,
+ * neutral grey = unknown. The ink marker ring carries the edge on the basemap.
+ */
 export const PASS_STATUS_COLORS: Record<PassStatus, string> = {
-  open: statusFg.success,
-  closed: statusFg.danger,
+  open: QUALITY_COLORS[4],
+  closed: QUALITY_COLORS[0],
   unknown: UNSCORED_COLOR,
 };
 

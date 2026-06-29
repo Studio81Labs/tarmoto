@@ -34,7 +34,13 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -224,6 +230,11 @@ export default function NavigationScreen() {
   if (polyline.length < 2) {
     return (
       <View style={styles.empty}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={t.bg}
+          translucent
+        />
         <Icon name="map-marker-off-outline" size={48} color={t.mute} />
         <Text style={styles.emptyTitle}>No route to navigate</Text>
         <Text style={styles.emptyBody}>
@@ -262,6 +273,7 @@ export default function NavigationScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
       <Map
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
