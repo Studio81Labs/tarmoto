@@ -154,6 +154,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // Tracks when each WS-delivered hazard arrived, so an in-flight REST
     // fetch whose snapshot predates the arrival doesn't overwrite it.
     const wsHazardArrivalRef = useRef<Map<string, number>>(new Map());
+    // Tombstone map: id → ms timestamp when a `dismissed` WS event was
+    // observed. Passed to mergeHazardsWithInFlightWsArrivals to filter stale
+    // REST responses that would otherwise resurrect moderated markers.
+    const dismissedTombstonesRef = useRef<Map<string, number>>(new Map());
     const [hazardsRevision, setHazardsRevision] = useState(0);
     const [hazardNow, setHazardNow] = useState(() => Date.now());
     const realtimeStatus = useRealtimeStore((s) => s.status);
@@ -413,6 +417,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             rawHazardsRef.current,
             wsHazardArrivalRef.current,
             fetchStartedAt,
+            dismissedTombstonesRef.current,
           );
           setHazardsRevision((r) => r + 1);
         } catch (err) {
@@ -451,11 +456,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       const unsubscribe = onHazardNew((hazard) => {
         const result = applyHazardWsEvent(rawHazardsRef.current, hazard);
         if (result.action === "ignore") return;
+        if (result.action === "tombstone") {
+          // Hazard wasn't in the local list yet, but admin dismissed it.
+          // Record the tombstone so any stale in-flight REST response that
+          // returns this id can be filtered before it resurrects the marker.
+          dismissedTombstonesRef.current.set(result.dismissedId, Date.now());
+          return;
+        }
         if (result.action === "remove") {
           // Moderation removal — prune the marker immediately without
-          // waiting for the next REST refetch.
+          // waiting for the next REST refetch, and tombstone the id so any
+          // concurrent in-flight REST fetch can't re-add it.
           rawHazardsRef.current = result.list;
           wsHazardArrivalRef.current.delete(hazard.id);
+          dismissedTombstonesRef.current.set(result.dismissedId, Date.now());
           setHazardsRevision((r) => r + 1);
           return;
         }

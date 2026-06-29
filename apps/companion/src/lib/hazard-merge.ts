@@ -4,9 +4,11 @@ import type { HazardResponse } from "@/lib/api";
  * Apply a single WebSocket `hazard:new` event to the current local list.
  *
  * A `severity === 'dismissed'` event is a moderation removal signal:
- *   - If the hazard is not in the list, return `{ action: 'ignore' }`.
- *   - Otherwise return `{ action: 'remove', list }` — caller should also
- *     clean the WS arrival timestamp entry for this id.
+ *   - If the hazard is not in the list, return `{ action: 'tombstone', dismissedId }` —
+ *     caller should record the tombstone so stale in-flight REST responses can be
+ *     filtered before they resurrect the moderated marker.
+ *   - Otherwise return `{ action: 'remove', list, dismissedId }` — caller should also
+ *     clean the WS arrival timestamp entry for this id and record the tombstone.
  *
  * A normal (non-dismissed) event deduplicates and appends:
  *   - If already in the list, return `{ action: 'ignore' }`.
@@ -16,17 +18,21 @@ import type { HazardResponse } from "@/lib/api";
 export type HazardWsAction =
   | { action: "ignore" }
   | { action: "append"; list: HazardResponse[] }
-  | { action: "remove"; list: HazardResponse[] };
+  | { action: "remove"; list: HazardResponse[]; dismissedId: string }
+  | { action: "tombstone"; dismissedId: string };
 
 export function applyHazardWsEvent(
   existing: HazardResponse[],
   hazard: HazardResponse,
 ): HazardWsAction {
   if (hazard.severity === "dismissed") {
-    if (!existing.some((h) => h.id === hazard.id)) return { action: "ignore" };
+    if (!existing.some((h) => h.id === hazard.id)) {
+      return { action: "tombstone", dismissedId: hazard.id };
+    }
     return {
       action: "remove",
       list: existing.filter((h) => h.id !== hazard.id),
+      dismissedId: hazard.id,
     };
   }
   if (existing.some((h) => h.id === hazard.id)) return { action: "ignore" };
@@ -43,14 +49,39 @@ export function applyHazardWsEvent(
  *
  * WS-origin hazards already present in the REST result are dropped from
  * `wsArrivalAt` so subsequent REST fetches don't re-preserve them.
+ *
+ * `dismissedAt` maps hazard id → ms timestamp when the dismissal was first
+ * observed locally. Any hazard present in the REST result whose entry in
+ * `dismissedAt` is >= `fetchStartedAt` is silently dropped — the REST
+ * snapshot was taken before the admin dismissed it, so including it would
+ * resurrect a moderated marker. Tombstone entries whose timestamp is
+ * < `fetchStartedAt` are pruned: the fetch started after the dismissal,
+ * so the server already excluded the hazard and the entry is spent.
+ *
+ * Do NOT call Date.now() inside this function — use `fetchStartedAt` as
+ * the only time reference so the function stays pure and testable.
  */
 export function mergeHazardsWithInFlightWsArrivals(
   restResult: HazardResponse[],
   current: HazardResponse[],
   wsArrivalAt: Map<string, number>,
   fetchStartedAt: number,
+  dismissedAt: Map<string, number>,
 ): HazardResponse[] {
-  const restIds = new Set(restResult.map((h) => h.id));
+  // Drop hazards from the REST result that were dismissed after the fetch
+  // started — the snapshot predates the admin action, so the data is stale.
+  const filteredRest = restResult.filter((h) => {
+    const t = dismissedAt.get(h.id);
+    return t === undefined || t < fetchStartedAt;
+  });
+
+  // Prune spent tombstones: dismissal occurred before this fetch started, so
+  // the server already excluded the hazard from the snapshot.
+  for (const [id, t] of dismissedAt) {
+    if (t < fetchStartedAt) dismissedAt.delete(id);
+  }
+
+  const restIds = new Set(filteredRest.map((h) => h.id));
   const preserved = current.filter((h) => {
     const arrivedAt = wsArrivalAt.get(h.id);
     return (
@@ -63,5 +94,5 @@ export function mergeHazardsWithInFlightWsArrivals(
   // their arrival timestamps so the map doesn't leak entries for every
   // hazard ever seen.
   for (const id of restIds) wsArrivalAt.delete(id);
-  return [...restResult, ...preserved];
+  return [...filteredRest, ...preserved];
 }
