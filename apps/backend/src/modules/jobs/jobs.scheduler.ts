@@ -66,6 +66,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly modelEvalAgreement: Queue,
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
+    @InjectQueue(QUEUE_NAMES.POI_IMPORT)
+    private readonly poiImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -157,6 +159,12 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.NAP_CLOSURE_POLL_RUN,
         pattern: RECURRING_PATTERNS.EVERY_3_MINUTES,
         description: 'NAP (NDIC) closure poll → road_closures (#743)',
+      },
+      {
+        queue: this.poiImport,
+        name: JOB_NAMES.POI_IMPORT_RUN,
+        pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300,
+        description: 'weekly offline POI import → pois (#745)',
       },
     ];
   }

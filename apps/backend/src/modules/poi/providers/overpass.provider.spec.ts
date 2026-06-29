@@ -299,3 +299,123 @@ describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
     ).rejects.toThrow('Overpass API error: 406 Not Acceptable');
   });
 });
+
+describe('OverpassPoiProvider.findImportPoisInBbox', () => {
+  const config = {
+    get: (_key: string, fallback: string) => fallback,
+  } as unknown as ConfigService;
+
+  let originalFetch: typeof fetch;
+  let capturedBody: string | null;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    capturedBody = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      capturedBody = typeof init?.body === 'string' ? init.body : '';
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ elements: [] }),
+      } as unknown as Response);
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('queries the full §7 storage tag set across amenity/tourism/highway/shop', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findImportPoisInBbox({
+      minLng: 18,
+      minLat: 49.3,
+      maxLng: 18.9,
+      maxLat: 49.75,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    // Overpass bbox order is south,west,north,east.
+    expect(decoded).toContain('(49.3,18,49.75,18.9)');
+    // The documented superset, not just the live POI_KINDS.
+    expect(decoded).toMatch(
+      /amenity"~"\^\((restaurant|cafe|fast_food|fuel|ice_cream)(\|(restaurant|cafe|fast_food|fuel|ice_cream))*\)/,
+    );
+    expect(decoded).toContain('fast_food');
+    expect(decoded).toContain('tourism"~"^(viewpoint)$"');
+    expect(decoded).toContain('highway"~"^(rest_area|services)$"');
+    expect(decoded).toContain('shop"~"^(ice_cream)$"');
+    // node + way + relation — multipolygon rest areas / viewpoint sites
+    // are modeled as relations.
+    expect(decoded).toContain('node["tourism"~"^(viewpoint)$"]');
+    expect(decoded).toContain('way["tourism"~"^(viewpoint)$"]');
+    expect(decoded).toContain('relation["tourism"~"^(viewpoint)$"]');
+  });
+
+  it('maps each element to its §7 kind (incl. highway services → rest_area)', async () => {
+    const elements = [
+      {
+        type: 'node',
+        id: 1,
+        lat: 49.5,
+        lon: 18.4,
+        tags: { amenity: 'fast_food', name: 'Burger' },
+      },
+      {
+        type: 'way',
+        id: 2,
+        center: { lat: 49.6, lon: 18.5 },
+        tags: { highway: 'services', name: 'Rest' },
+      },
+      {
+        type: 'node',
+        id: 3,
+        lat: 49.7,
+        lon: 18.6,
+        tags: { shop: 'ice_cream' },
+      },
+    ];
+    const fetchStub = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ elements }),
+    });
+    globalThis.fetch = fetchStub;
+    const provider = new OverpassPoiProvider(config);
+    const result = await provider.findImportPoisInBbox({
+      minLng: 18,
+      minLat: 49.3,
+      maxLng: 18.9,
+      maxLat: 49.75,
+    });
+    expect(result.map((p) => p.kind)).toEqual([
+      'fast_food',
+      'rest_area',
+      'ice_cream',
+    ]);
+    expect(result[0].external_id).toBe('osm:node:1');
+  });
+
+  it('queries tourism accommodations in a bbox (node/way/relation)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findAccommodationsInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      ['hotel', 'camp_site'],
+    );
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    expect(decoded).toContain('(49.3,18,49.75,18.9)');
+    expect(decoded).toContain('node["tourism"~"^(hotel|camp_site)$"]');
+    expect(decoded).toContain('way["tourism"~"^(hotel|camp_site)$"]');
+    expect(decoded).toContain('relation["tourism"~"^(hotel|camp_site)$"]');
+  });
+
+  it('short-circuits accommodations on zero kinds (no fetch)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    const result = await provider.findAccommodationsInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      [],
+    );
+    expect(result).toEqual([]);
+    expect(capturedBody).toBeNull();
+  });
+});

@@ -7,6 +7,7 @@ import { PasswordResetToken } from './entities/password-reset-token.entity.js';
 import { AccountDeletionLog } from './entities/account-deletion-log.entity.js';
 import { CrashAlert } from './entities/crash-alert.entity.js';
 import { RoadSegment } from './entities/road-segment.entity.js';
+import { Poi } from './entities/poi.entity.js';
 import { SurfaceReading } from './entities/surface-reading.entity.js';
 import { Ride } from './entities/ride.entity.js';
 import { RideSegment } from './entities/ride-segment.entity.js';
@@ -109,6 +110,7 @@ import { AddContentModeration1783000000000 } from './migrations/1783000000000-Ad
 import { AddNapClosureReconciliation1784000000000 } from './migrations/1784000000000-AddNapClosureReconciliation.js';
 import { ClearEndedGroupRideLocations1785000000000 } from './migrations/1785000000000-ClearEndedGroupRideLocations.js';
 import { AddRoadSegmentOsmIdentity1786000000000 } from './migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
+import { AddPois1787000000000 } from './migrations/1787000000000-AddPois.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -125,6 +127,7 @@ export const AppDataSource = new DataSource({
     AccountDeletionLog,
     CrashAlert,
     RoadSegment,
+    Poi,
     SurfaceReading,
     Ride,
     RideSegment,
@@ -236,6 +239,7 @@ export const AppDataSource = new DataSource({
     AddNapClosureReconciliation1784000000000,
     ClearEndedGroupRideLocations1785000000000,
     AddRoadSegmentOsmIdentity1786000000000,
+    AddPois1787000000000,
   ],
   synchronize: false,
 });
