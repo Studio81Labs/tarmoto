@@ -371,7 +371,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="TripJoin"
         component={JoinTripScreen}
-        options={{ title: "Join a Trip" }}
+        options={{ ...brandScreenOptions, title: "Join a Trip" }}
       />
       <TripsStack.Screen
         name="TripImport"
