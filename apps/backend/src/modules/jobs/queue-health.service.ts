@@ -73,6 +73,8 @@ export class QueueHealthService {
     private readonly modelEvalReconcile: Queue,
     @InjectQueue(QUEUE_NAMES.MODEL_EVAL_AGREEMENT)
     private readonly modelEvalAgreement: Queue,
+    @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
+    private readonly napClosurePoll: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -89,6 +91,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.WEATHER_ALERT_SWEEP]: this.weatherAlertSweep,
       [QUEUE_NAMES.MODEL_EVAL_RECONCILE]: this.modelEvalReconcile,
       [QUEUE_NAMES.MODEL_EVAL_AGREEMENT]: this.modelEvalAgreement,
+      [QUEUE_NAMES.NAP_CLOSURE_POLL]: this.napClosurePoll,
     };
   }
 

@@ -47,6 +47,7 @@ import { RoutingModule } from './modules/routing/routing.module.js';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
 import { ClientConfigModule } from './modules/client-config/client-config.module.js';
+import { NapModule } from './modules/nap/nap.module.js';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { ClientConfigModule } from './modules/client-config/client-config.module
     PoiModule,
     GeocodeModule,
     ClosuresModule,
+    NapModule,
     PushModule,
     RoutingModule,
     AdminAuthModule,
