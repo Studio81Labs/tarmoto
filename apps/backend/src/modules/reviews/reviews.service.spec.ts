@@ -1304,6 +1304,20 @@ describe('ReviewsService', () => {
       ).rejects.toThrow(ConflictException);
       expect(voteInsert.execute).not.toHaveBeenCalled();
     });
+
+    it('rejects a vote on a hidden (moderated) review', async () => {
+      // The lookup filters moderation_status='visible', so a hidden review
+      // resolves to null → NotFound, and no vote is recorded.
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.castVote('viewer-1', 'review-2', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-2', moderation_status: 'visible' },
+      });
+      expect(voteInsert.execute).not.toHaveBeenCalled();
+    });
   });
 
   describe('clearVote', () => {
@@ -1342,6 +1356,18 @@ describe('ReviewsService', () => {
       await expect(service.clearVote('viewer-1', 'missing')).rejects.toThrow(
         NotFoundException,
       );
+      expect(voteRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('rejects clearing a vote on a hidden (moderated) review', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.clearVote('viewer-1', 'review-2')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-2', moderation_status: 'visible' },
+      });
       expect(voteRepo.delete).not.toHaveBeenCalled();
     });
   });

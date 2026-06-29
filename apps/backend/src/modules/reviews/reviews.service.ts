@@ -521,7 +521,7 @@ export class ReviewsService {
     isHelpful: boolean,
   ): Promise<ReviewVoteResultDto> {
     const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
+      where: { id: reviewId, moderation_status: 'visible' },
     });
     if (!review) {
       throw new NotFoundException('Review not found');
@@ -560,7 +560,7 @@ export class ReviewsService {
     reviewId: string,
   ): Promise<ReviewVoteResultDto> {
     const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
+      where: { id: reviewId, moderation_status: 'visible' },
     });
     if (!review) {
       throw new NotFoundException('Review not found');
