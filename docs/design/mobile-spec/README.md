@@ -337,6 +337,14 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > the ink CTA; the error uses `statusFg.danger` and the success message
 > `statusFg.success`. No shared `@/components`, so no blast radius.
 >
+> **`EditProfileModal`** (the US-27 own-profile editor — display name, bio,
+> home region) is migrated next: the form fields, character hint, validation/
+> error text, and Save/Cancel buttons move onto cream + ink. The inputs use
+> the sans family on `sunken` fields with `mute` placeholders; "Save" is the
+> ink CTA and "Cancel" a ghost (dim ink label); errors use `statusFg.danger`.
+> The stack header keeps `presentation: "modal"` and now also carries
+> `brandScreenOptions` (cream). No shared `@/components`, so no blast radius.
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**
