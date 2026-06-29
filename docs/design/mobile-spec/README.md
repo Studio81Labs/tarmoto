@@ -474,6 +474,21 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 - When the last screen is migrated, fold `theme/brand.ts` into `@/theme`
   and retire the legacy palette.
 
+> **`VehicleDisplaySurface`** (the CarPlay / Android Auto nav card) was the
+> last non-map product surface still on the legacy cyan palette. Migrated onto
+> the brand **night palette** (it's an always-dark in-vehicle surface, like the
+> ride HUDs): dark cards, cream text, mono numeric values; the route line is
+> the **accent** (off-route → Q2 amber); status banners/badges use the bright
+> Q-ramp fills (Q5 green / Q1 red) with **ink** labels (ink clears on both
+> fills; a cream label would fail on the green). The projection-geometry
+> helper test is unchanged. **Remaining for a full palette retirement:** the
+> map's quality ramp + the essential-graphic ramp helpers
+> (`MapScreen`/`MapScreen.helpers`, `RideScreens.helpers`) still import the
+> legacy `colors`/`qualityColor` — those colours are deliberately preserved
+> (rider-facing map encoding, asserted by helper tests), so finishing the
+> retirement means a product/design decision on whether the map adopts the
+> canonical brand Q1–Q5 ramp.
+
 > **Dead surface-aware paths pruned.** With every screen migrated, the five
 > shared atoms that were made surface-aware during the migration
 > (`Avatar`, `StatTile`, `RideMetric`, `SharedRidesSection`,
