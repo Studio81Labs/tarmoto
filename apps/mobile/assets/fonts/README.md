@@ -12,8 +12,11 @@ mobile brand migration — see `docs/design/mobile-spec/README.md`).
 | **JetBrains Mono** Regular | `JetBrainsMono.ttf`      | 400    | `fontFamily: "JetBrainsMono"`     |
 | **JetBrains Mono** Bold    | `JetBrainsMono_bold.ttf` | 700    | `"JetBrainsMono"` + `weight: 700` |
 
-The variable-font **sources** are kept under `variable-src/` for re-instancing;
-they are not bundled.
+The variable-font **sources** live in `../font-sources/` (outside this linked
+asset root) for re-instancing; they are not bundled — `react-native-asset`
+walks `./assets/fonts` recursively, so anything left here would be linked, and
+the variable JetBrains Mono would collide with the static Regular's PostScript
+name on iOS.
 
 > **Status: static faces generated, not yet linked.** The four static faces
 > above were instanced from the variable sources (step 1 of the procedure
@@ -63,7 +66,7 @@ Steps 1, 2, 3a, and 5 are **done** (committed). The residual is the
 native-build half that can't be run/validated headless — steps 3b, 4, 6.
 
 1. ✅ Instance static weights from each variable font (Regular 400 + Bold 700
-   per family) — `assets/fonts/variable-src/` → `*.ttf` here. The repeatable
+   per family) — `../font-sources/*.ttf` → `*.ttf` here. The repeatable
    generator script is described below.
 2. ✅ Named for Android's convention with matching internal family names:
    `SpaceGrotesk.ttf` / `SpaceGrotesk_bold.ttf`, `JetBrainsMono.ttf` /
@@ -86,4 +89,4 @@ The faces were instanced with `fontTools` — pin the `wght` axis to 400/700,
 set `OS/2.usWeightClass` + the bold `fsSelection`/`macStyle` bits, and rewrite
 the `name` table family/subfamily/full/PostScript IDs to the no-space family
 name so iOS resolves `fontFamily: "SpaceGrotesk"` / `"JetBrainsMono"`. Re-run
-against the sources in `variable-src/` if the upstream fonts are updated.
+against the sources in `../font-sources/` if the upstream fonts are updated.
