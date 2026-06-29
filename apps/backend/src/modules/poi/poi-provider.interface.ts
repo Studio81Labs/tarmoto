@@ -33,6 +33,24 @@ export interface PointOfInterest {
 }
 
 /**
+ * A POI fetched by the offline import (#745). Distinct from
+ * `PointOfInterest` because the storage tag set (§7) is a **superset** of
+ * the live `PoiKind` enum — it also covers `fast_food`, `rest_area`, and
+ * `ice_cream`, which aren't live `/poi` categories. `kind` is therefore a
+ * free-form string written straight to `pois.kind`, decoupled from the
+ * live API so widening the store never changes the read enum.
+ */
+export interface ImportedPoi {
+  external_id: string;
+  name: string | null;
+  kind: string;
+  lat: number;
+  lng: number;
+  website: string | null;
+  phone: string | null;
+}
+
+/**
  * Abstract POI provider interface for overnight-stay and along-route POI
  * lookups. Implement this to add a new source (Overpass, Booking.com,
  * Mapbox, etc.).
@@ -86,16 +104,20 @@ export interface PoiProvider {
   ): Promise<PointOfInterest[]>;
 
   /**
-   * Find all POIs of `kinds` within a bounding box — used by the offline
-   * POI import (#745) to mirror a region into the `pois` table, rather
-   * than the point/route-relative lookups above. Short-circuits to `[]`
-   * on an empty `kinds`. A provider failure throws so the caller can skip
-   * the upsert (leaving existing rows intact) instead of wiping the area.
+   * Fetch every POI in the §7 storage tag set within a bounding box — used
+   * by the offline import (#745) to mirror a region into the `pois` table,
+   * rather than the point/route-relative lookups above. Covers the full
+   * documented set (food incl. `fast_food`, fuel, viewpoints, rest areas,
+   * ice cream), a superset of the live `PoiKind` enum. A provider failure
+   * throws so the caller can skip the upsert (leaving existing rows intact)
+   * instead of wiping the area.
    */
-  findPointsOfInterestInBbox(
-    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
-    kinds: PoiKind[],
-  ): Promise<PointOfInterest[]>;
+  findImportPoisInBbox(bbox: {
+    minLng: number;
+    minLat: number;
+    maxLng: number;
+    maxLat: number;
+  }): Promise<ImportedPoi[]>;
 
   /**
    * Accommodation equivalent of `findPointsOfInterestInBbox` — fetches

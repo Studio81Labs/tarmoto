@@ -5,7 +5,6 @@ import { Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
 import { POI_PROVIDER, type PoiProvider } from './poi-provider.interface.js';
-import { POI_KINDS } from './dto/point-of-interest.dto.js';
 import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
 import { poiImportConfig } from './poi-import.config.js';
 
@@ -68,9 +67,7 @@ export class PoiImportService {
     // `/accommodations` contract so the offline store can't drop hotels
     // / campsites.
     const [pois, accommodations] = await Promise.all([
-      this.provider.findPointsOfInterestInBbox(this.config.bbox, [
-        ...POI_KINDS,
-      ]),
+      this.provider.findImportPoisInBbox(this.config.bbox),
       this.provider.findAccommodationsInBbox(this.config.bbox, [
         ...ACCOMMODATION_KINDS,
       ]),
