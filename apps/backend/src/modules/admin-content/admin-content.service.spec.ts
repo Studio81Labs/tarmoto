@@ -121,6 +121,16 @@ describe('AdminContentService', () => {
     expect(statusCalls).toHaveLength(0);
   });
 
+  it('list() defaults to a "visible" filter when status is omitted', async () => {
+    const qb = makeQb([], 0);
+    const repo = makeRepo(qb);
+    const svc = build(repo, makeUserRepo());
+    await svc.list({ type: ContentType.Hazard });
+    expect(qb.andWhere).toHaveBeenCalledWith('c.moderation_status = :status', {
+      status: 'visible',
+    });
+  });
+
   it('list() escapes LIKE wildcards in the search term', async () => {
     const qb = makeQb([], 0);
     const repo = makeRepo(qb);

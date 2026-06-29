@@ -80,8 +80,13 @@ export class AdminContentService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
-    if (query.status && query.status !== 'all') {
-      qb.andWhere('c.moderation_status = :status', { status: query.status });
+    // Default to 'visible' (not 'all') so simply opening a tab is served by
+    // the (moderation_status, created_at) index for both the ordered page
+    // and the count — an unfiltered 'all' listing would force a full-table
+    // count/sort. 'all'/'hidden' remain explicit, deliberate selections.
+    const status = query.status ?? 'visible';
+    if (status !== 'all') {
+      qb.andWhere('c.moderation_status = :status', { status });
     }
     const term = query.q?.trim();
     if (term) {

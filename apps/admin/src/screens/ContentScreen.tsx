@@ -42,7 +42,10 @@ function readErrorMessage(err: unknown, fallback: string): string {
 
 export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
   const [type, setType] = useState<ContentTypeParam>("hazard");
-  const [status, setStatus] = useState<ContentStatusParam>("all");
+  // Default to "visible" so the initial load is index-served (the backend
+  // only indexes (moderation_status, created_at)); "all"/"hidden" are
+  // explicit picks.
+  const [status, setStatus] = useState<ContentStatusParam>("visible");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pendingId, setPendingId] = useState<string | null>(null);
