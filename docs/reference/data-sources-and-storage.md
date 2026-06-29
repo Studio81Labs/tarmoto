@@ -52,10 +52,11 @@ Our own data. Nothing here is bought; this is the defensible asset. Quality is *
 
 Live, short-lived, must reconcile + expire. **This is the layer with no ingestion yet.**
 
-| Datum                                 | Real table                                              | Source                                                                       | Storage       | Refresh                               | TTL                                                                                                                       | Notes                                                         |
-| ------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Road closures / roadworks / incidents | `road_closures` (`source: operator \| osm \| official`) | Operator (now) + **Czech NAP/NDIC DATEX II (`official`) — NOT YET INGESTED** | PostGIS       | Operator: on submit. NAP: poll ~3 min | Deactivate when absent from snapshot **or** `ends_at < now`; keep history for audit — **requires new columns (see §8.1)** | Feeds both the map overlay and route avoidance. See §6 + §8.1 |
-| Weather alerts                        | `weather_alert_dispatches` (dispatch log only)          | Weather API                                                                  | Redis / cache | On-demand per planned route           | Minutes (ephemeral)                                                                                                       | Not persisted as a map layer today                            |
+| Datum                                                         | Real table                                              | Source                                                                       | Storage                                   | Refresh                                      | TTL                                                                                                                       | Notes                                                                         |
+| ------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Road closures / roadworks / incidents                         | `road_closures` (`source: operator \| osm \| official`) | Operator (now) + **Czech NAP/NDIC DATEX II (`official`) — NOT YET INGESTED** | PostGIS                                   | Operator: on submit. NAP: poll ~3 min        | Deactivate when absent from snapshot **or** `ends_at < now`; keep history for audit — **requires new columns (see §8.1)** | Feeds both the map overlay and route avoidance. See §6 + §8.1                 |
+| Weather **samples** (severe conditions at a rider position)   | none — in-memory per-sweep cache                        | OpenWeatherMap                                                               | none (memoised ~1 km cell per sweep tick) | Severe-weather sweep every 15 min            | Ephemeral (lives only for the tick)                                                                                       | Not persisted; not a map layer                                                |
+| Weather alert **dispatch ledger** (per-(user, kind) cooldown) | `weather_alert_dispatches`                              | Derived (one row per push sent)                                              | **PostGIS**                               | Written after each push; read before sending | **60-min cooldown** per (user, kind); rows retained (prune later)                                                         | Stops a rider being re-paged inside one storm cell — **persisted, not Redis** |
 
 > **Why `road_closures`, not a new `road_events` table:** the entity already documents `source` as `operator | osm | official` for exactly this — "future sources (OSM, official feeds) populate the same table." The NAP scraper must write here with `source='official'`, mapping NDIC categories → the existing `reason` / `severity` enums.
 
@@ -67,8 +68,8 @@ The single most-confused thing. Every datum above falls into exactly one:
 
 1. **Recompute, no row TTL** — segment enrichment (`quality_score`, `curviness_score`, `surface_type`). Rebuilt from sources; quality is **recency-weighted** (old passes lose weight, never deleted).
 2. **Reconcile + expire** — `road_closures` from NAP. Poll ~3 min; a snapshot is the _full_ current truth, so absent ⇒ `active=false`; also expire when `ends_at < now`. History retained.
-3. **Time-decay** — `hazard_reports`. Expire via `expires_at` unless re-confirmed. **Decide the value: proposed 48 h base, refreshed on each confirmation** (see §8.4).
-4. **Ephemeral** — weather alerts, live group location. Redis, seconds–minutes, never persisted to Postgres.
+3. **Time-decay** — `hazard_reports`. **Already a contract, not a proposal:** per-type base from `EXPIRY_HOURS` (pothole & roadworks 72 h; gravel, flooding, ice 48 h; oil_spill, animals, police, other 24 h), and `HazardsService.confirm()` extends `expires_at` by **+24 h per distinct confirmer** (not a reset). A sweep deactivates when `expires_at < now`.
+4. **Ephemeral** — weather _samples_ (per-sweep, never persisted) and live group location (Redis, seconds). Note the weather **dispatch ledger** is the exception — it's a persisted Postgres cooldown record, not ephemeral (see §3).
 
 Plus **slow refresh, no TTL** for the static base (§1): weekly–monthly OSM/Overture re-import, overwrite in place.
 
@@ -166,10 +167,9 @@ POIs are fetched **live from Overpass per request** today. That's the **MVP** de
 
 **Post-MVP (gated on the offline-packs feature):** store POIs in a `pois` PostGIS table refreshed on a periodic import, so they ship in offline packs (and gain a tileable layer + spatial joins as a side effect). Add a scheduled import that queries the §7 tag sets (Overpass, Overture gap-fill) and upserts `pois` by stable external id; switch `poi.service` read paths from per-request Overpass to the table; keep the existing `PoiProvider` as the _import_ source. Overwrite in place — no row TTL. → _Issue: POI import + offline storage (post-MVP)._
 
-### 8.4 Range TTLs need decided values
+### 8.4 One TTL still undecided
 
-- Hazard decay: **proposed 48 h base, reset on confirmation** — confirm.
-- Raw `surface_readings` retention before prune: **proposed 90 days** — confirm against the ML re-aggregation window.
+- Raw `surface_readings` retention before prune: **proposed 90 days** — confirm against the ML re-aggregation window. (Hazard decay is **not** open — it's the per-type `EXPIRY_HOURS` + `confirm()` +24 h contract documented in §4; the weather dispatch cooldown is the 60-min window in §3.)
 
 ---
 
