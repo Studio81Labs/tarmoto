@@ -349,7 +349,7 @@ function RideNavigator() {
       <RideStack.Screen
         name="GroupRide"
         component={GroupRideScreen}
-        options={{ title: "Group Ride" }}
+        options={{ ...brandScreenOptions, title: "Group Ride" }}
       />
     </RideStack.Navigator>
   );
