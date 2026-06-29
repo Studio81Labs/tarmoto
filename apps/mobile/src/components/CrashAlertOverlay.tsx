@@ -28,11 +28,26 @@ import {
   AppState,
   type AppStateStatus,
 } from "react-native";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  QUALITY_COLORS,
+} from "@/theme/brand";
 import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
+
+const t = brandColorsLight;
+/**
+ * Full-bleed crash background — the Q1 ("avoid") ramp red. The spec calls
+ * for a Q1-red countdown; ink text clears ~6.6:1 on it (white would only
+ * reach ~3.3:1), so headlines/countdown/subhead render ink and the primary
+ * "I'm OK" button is a cream raised surface with an ink label.
+ */
+const CRASH_BG = QUALITY_COLORS[0];
 
 const COUNTDOWN_TICK_MS = 250;
 /** Pulse cadence while the overlay is up — matches alarm-clock timing. */
@@ -422,57 +437,66 @@ export default function CrashAlertOverlay({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.danger,
+    backgroundColor: CRASH_BG,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.lg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
   },
   headline: {
-    color: colors.textInverse,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.black,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 32,
+    fontWeight: "800",
     letterSpacing: 1,
     textAlign: "center",
   },
   subhead: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "600",
     textAlign: "center",
   },
   countdown: {
-    color: colors.textInverse,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
     fontSize: 160,
     lineHeight: 170,
-    fontWeight: fontWeight.black,
+    fontWeight: "800",
   },
   cancelBtn: {
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.xxxl,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.textInverse,
+    marginTop: brandSpacing.s5,
+    paddingHorizontal: brandSpacing.s8,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invFg,
     minWidth: 280,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   cancelLabel: {
-    color: colors.danger,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.black,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "800",
     letterSpacing: 1,
   },
   dismissBtn: {
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
+    marginTop: brandSpacing.s4,
+    paddingHorizontal: brandSpacing.s5,
+    paddingVertical: brandSpacing.s3,
+    minHeight: 44,
+    justifyContent: "center",
+    borderRadius: brandRadii.pill,
     borderWidth: 2,
-    borderColor: colors.textInverse,
+    borderColor: t.fg,
   },
   dismissLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

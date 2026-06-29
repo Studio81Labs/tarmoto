@@ -144,7 +144,7 @@ without a clean 1:1 today are noted.
 | `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen` ✅, `TripsScreen` ✅, `TripDetailScreen` ✅, `TripDayScreen` ✅, `JoinTripScreen` ✅, `TripImportScreen` ✅ | The quick round-trip generator + result is new product surface; align styling. Entire Trips cluster migrated. ✅                  |
 | `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                                                                                         | Always-dark immersive HUD.                                                                                                        |
 | `HazardScreen` (report)                    | `HazardReportScreen` ✅                                                                                                        | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                  |
-| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component)                                                                                                | Full-bleed Q1-red countdown.                                                                                                      |
+| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component) ✅                                                                                             | Full-bleed Q1-red countdown. Migrated: Q1 ramp red bg, ink text/countdown, cream primary button.                                  |
 | `PostRideScreen` (summary)                 | `RideDetailScreen` ✅, `RideScreen` ✅                                                                                         | Hero metrics, quality breakdown, elevation, splits, badges. Both migrated; `RideScreen` is the Ride-tab history list + start CTA. |
 | `ProfileScreen`                            | `ProfileScreen` ✅, `PersonalRoadMapScreen` ✅                                                                                 | Stats grid, explored-roads map, settings rows. Both migrated.                                                                     |
 
@@ -385,6 +385,20 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > radius. This clears the last light leaf screen; what remains is the
 > immersive dark cluster (RideActive, Navigation, CrashAlertOverlay) on the
 > night palette, plus Phase-4 cleanup.
+>
+> **`CrashAlertOverlay`** (the US-12 full-bleed crash countdown) opens the
+> immersive cluster. It's neither cream nor the night palette — the spec calls
+> for a **full-bleed Q1-red countdown**, so the background is the Q1 ramp red
+> (`QUALITY_COLORS[0]` = `#E05A3C`). Text legibility drove the foreground
+> choice: **ink** clears ~6.6:1 on that red (white reaches only ~3.3:1), so the
+> headline, subhead, and the giant mono countdown all render ink, and the
+> primary "I'm OK — cancel" / "RETRY" button is a **cream raised surface with
+> an ink label** (matching the legacy white-button intent in brand tokens);
+> the secondary "Dismiss" is an ink-outlined ghost. The countdown number uses
+> the mono family (a stamp number). All crash-flow behaviour (countdown,
+> auto-dispatch, retry/dismiss, haptics/TTS) and accessibility labels are
+> unchanged. It's a full-screen `Modal` component, so there's no stack header
+> to theme.
 >
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
