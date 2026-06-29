@@ -153,7 +153,8 @@ export class RoadsService {
         `SELECT COUNT(*)::int AS count
         FROM hazard_reports
         WHERE road_segment_id = $1
-          AND is_active = true AND expires_at > $2`,
+          AND is_active = true AND expires_at > $2
+          AND moderation_status = 'visible'`,
         [segmentId, asOf],
       ),
       // Top-N most-recent active hazards with reporter + road name. Joining

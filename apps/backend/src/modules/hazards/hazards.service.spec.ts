@@ -717,6 +717,26 @@ describe('HazardsService', () => {
     it('HAZARD_SELECT_BASE filters on moderation_status', () => {
       expect(HAZARD_SELECT_BASE).toContain("hr.moderation_status = 'visible'");
     });
+
+    it('findActiveHazard passes moderation_status = visible to the query builder (tested via dismiss)', async () => {
+      // findActiveHazard is private; dismiss is the simplest public caller.
+      // Assert that the .where() clause passed to the query builder contains
+      // the moderation gate so removing it would break this test.
+      const whereSpy = jest.fn().mockReturnThis();
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: whereSpy,
+        getOne: jest.fn().mockResolvedValue(mockHazard),
+      };
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
+
+      await service.dismiss(mockHazard.id!);
+
+      expect(whereSpy).toHaveBeenCalledWith(
+        expect.stringContaining("moderation_status = 'visible'"),
+        expect.any(Object),
+      );
+    });
   });
 
   describe('dismiss cleanup', () => {

@@ -424,11 +424,17 @@ describe('RoadsService', () => {
 
       await service.findById('seg-mod');
 
-      const joined = queries.join('\n---\n');
-      expect(joined).toContain("h.moderation_status = 'visible'");
-      expect(joined).toMatch(
-        /road_reviews[\s\S]*moderation_status = 'visible'/,
-      );
+      // queries[0] = segment lookup (before Promise.all)
+      // queries[1] = surface_readings breakdown
+      // queries[2] = hazard COUNT (bare column: moderation_status)
+      // queries[3] = hazard list (aliased as h: h.moderation_status)
+      // queries[4] = review aggregate COUNT/AVG (bare column: moderation_status)
+      // queries[5] = recent reviews list (aliased as rr: rr.moderation_status)
+      expect(queries[2]).toContain("moderation_status = 'visible'");
+      expect(queries[3]).toContain("h.moderation_status = 'visible'");
+      expect(queries[4]).toContain('AVG(rating)');
+      expect(queries[4]).toContain("moderation_status = 'visible'");
+      expect(queries[5]).toContain("rr.moderation_status = 'visible'");
     });
 
     it('should handle segment with no readings', async () => {
