@@ -43,6 +43,7 @@ function makeHazardsSvc(overrides: Record<string, unknown> = {}) {
   return {
     purgeManagedPhoto: jest.fn().mockResolvedValue(undefined),
     broadcastRemoval: jest.fn().mockResolvedValue(undefined),
+    broadcastRestore: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -293,6 +294,28 @@ describe('AdminContentService', () => {
     );
     await svc.remove(ContentType.TripMessage, 'tm1');
     expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
+  });
+
+  it('restore(hazard) calls broadcastRestore after the update succeeds', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    await svc.restore(ContentType.Hazard, 'h1');
+    expect(hazardsSvc.broadcastRestore).toHaveBeenCalledWith('h1');
+  });
+
+  it('restore(review) does NOT call broadcastRestore', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(makeRepo(makeQb([], 0)), makeUserRepo(), hazardsSvc);
+    await svc.restore(ContentType.Review, 'r1');
+    expect(hazardsSvc.broadcastRestore).not.toHaveBeenCalled();
+  });
+
+  it('restore(trip_message) does NOT call broadcastRestore', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(makeRepo(makeQb([], 0)), makeUserRepo(), hazardsSvc);
+    await svc.restore(ContentType.TripMessage, 'tm1');
+    expect(hazardsSvc.broadcastRestore).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown content type', async () => {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { HazardResponse } from "@/lib/api";
-import { mergeHazardsWithInFlightWsArrivals } from "../hazard-merge";
+import {
+  applyHazardWsEvent,
+  mergeHazardsWithInFlightWsArrivals,
+} from "../hazard-merge";
 
 function hazard(id: string): HazardResponse {
   return {
@@ -18,6 +21,42 @@ function hazard(id: string): HazardResponse {
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   };
 }
+
+describe("applyHazardWsEvent", () => {
+  it("appends a normal hazard not yet in the list", () => {
+    const result = applyHazardWsEvent([hazard("a")], hazard("b"));
+    expect(result.action).toBe("append");
+    if (result.action === "append") {
+      expect(result.list.map((h) => h.id)).toEqual(["a", "b"]);
+    }
+  });
+
+  it("ignores a normal hazard already in the list (deduplicate)", () => {
+    const result = applyHazardWsEvent([hazard("a"), hazard("b")], hazard("a"));
+    expect(result.action).toBe("ignore");
+  });
+
+  it("removes a dismissed hazard that is present in the list", () => {
+    const dismissed = { ...hazard("a"), severity: "dismissed" };
+    const result = applyHazardWsEvent([hazard("a"), hazard("b")], dismissed);
+    expect(result.action).toBe("remove");
+    if (result.action === "remove") {
+      expect(result.list.map((h) => h.id)).toEqual(["b"]);
+    }
+  });
+
+  it("ignores a dismissed event for a hazard NOT in the list", () => {
+    const dismissed = { ...hazard("x"), severity: "dismissed" };
+    const result = applyHazardWsEvent([hazard("a"), hazard("b")], dismissed);
+    expect(result.action).toBe("ignore");
+  });
+
+  it("ignores a dismissed event when the list is empty", () => {
+    const dismissed = { ...hazard("a"), severity: "dismissed" };
+    const result = applyHazardWsEvent([], dismissed);
+    expect(result.action).toBe("ignore");
+  });
+});
 
 describe("mergeHazardsWithInFlightWsArrivals", () => {
   it("returns REST result verbatim when nothing arrived via WebSocket", () => {

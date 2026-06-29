@@ -130,6 +130,9 @@ export class AdminContentService {
       },
     );
     if (!result.affected) throw new NotFoundException('Content not found');
+    if (type === ContentType.Hazard) {
+      await this.hazardsService.broadcastRestore(id);
+    }
     return this.getOne(type, id);
   }
 

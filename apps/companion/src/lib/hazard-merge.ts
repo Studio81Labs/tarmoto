@@ -1,6 +1,39 @@
 import type { HazardResponse } from "@/lib/api";
 
 /**
+ * Apply a single WebSocket `hazard:new` event to the current local list.
+ *
+ * A `severity === 'dismissed'` event is a moderation removal signal:
+ *   - If the hazard is not in the list, return `{ action: 'ignore' }`.
+ *   - Otherwise return `{ action: 'remove', list }` — caller should also
+ *     clean the WS arrival timestamp entry for this id.
+ *
+ * A normal (non-dismissed) event deduplicates and appends:
+ *   - If already in the list, return `{ action: 'ignore' }`.
+ *   - Otherwise return `{ action: 'append', list }` — caller should record
+ *     the WS arrival timestamp.
+ */
+export type HazardWsAction =
+  | { action: "ignore" }
+  | { action: "append"; list: HazardResponse[] }
+  | { action: "remove"; list: HazardResponse[] };
+
+export function applyHazardWsEvent(
+  existing: HazardResponse[],
+  hazard: HazardResponse,
+): HazardWsAction {
+  if (hazard.severity === "dismissed") {
+    if (!existing.some((h) => h.id === hazard.id)) return { action: "ignore" };
+    return {
+      action: "remove",
+      list: existing.filter((h) => h.id !== hazard.id),
+    };
+  }
+  if (existing.some((h) => h.id === hazard.id)) return { action: "ignore" };
+  return { action: "append", list: [...existing, hazard] };
+}
+
+/**
  * Merge a REST hazard snapshot with any WebSocket-delivered hazards that
  * arrived after the REST fetch started. The REST snapshot is taken
  * server-side at some point between `fetchStartedAt` and the response

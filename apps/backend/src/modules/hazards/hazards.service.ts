@@ -446,6 +446,32 @@ export class HazardsService {
     });
   }
 
+  /**
+   * Broadcast a normal `hazard:new` event (not dismissed) for a hazard that
+   * has just been admin-restored to visible. Only emits when the hazard is
+   * active, visible, and not yet expired — a restore on an already-expired or
+   * inactive row should not re-add a stale marker to live maps.
+   *
+   * No-op when the id is not found (e.g. concurrent delete race).
+   */
+  async broadcastRestore(hazardId: string): Promise<void> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id: hazardId },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return;
+    if (
+      !hazard.is_active ||
+      hazard.moderation_status !== 'visible' ||
+      hazard.expires_at.getTime() <= Date.now()
+    ) {
+      return;
+    }
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    this.emitHazardEvent(response);
+  }
+
   async expireOld(): Promise<number> {
     const result = await this.hazardRepo
       .createQueryBuilder()

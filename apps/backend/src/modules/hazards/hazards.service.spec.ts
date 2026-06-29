@@ -812,6 +812,84 @@ describe('HazardsService', () => {
     });
   });
 
+  describe('broadcastRestore', () => {
+    const visibleActiveHazard = {
+      ...mockHazard,
+      is_active: true,
+      moderation_status: 'visible',
+      expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000), // 72 h from now
+      user: { display_name: 'TestRider' },
+      road_segment: null,
+    };
+
+    it('emits a normal hazard event (not dismissed) for a visible, active, unexpired hazard', async () => {
+      repo.findOne!.mockResolvedValueOnce(visibleActiveHazard as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
+      });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({
+          id: mockHazard.id,
+          severity: 'medium', // normal severity — NOT 'dismissed'
+        }),
+      );
+      // Confirm the emitted payload does NOT carry 'dismissed'
+      const call = eventsGateway.emitHazardAlert.mock.calls[0] as [
+        number,
+        number,
+        { severity: string },
+      ];
+      expect(call[2].severity).not.toBe('dismissed');
+    });
+
+    it('is a no-op when the hazard id is not found', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      await service.broadcastRestore('nonexistent-id');
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard is hidden (moderation_status !== visible)', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        moderation_status: 'hidden',
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard is inactive (is_active = false)', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        is_active: false,
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard has expired', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        expires_at: new Date(Date.now() - 1000), // 1 second in the past
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('dismiss cleanup', () => {
     it('should unlink the managed photo file when dismissing a hazard that owns one', async () => {
       const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');

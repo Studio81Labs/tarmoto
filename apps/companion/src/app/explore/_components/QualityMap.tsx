@@ -30,7 +30,10 @@ import {
 } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { onHazardNew, subscribeHazards } from "@/lib/socket";
-import { mergeHazardsWithInFlightWsArrivals } from "@/lib/hazard-merge";
+import {
+  applyHazardWsEvent,
+  mergeHazardsWithInFlightWsArrivals,
+} from "@/lib/hazard-merge";
 import { useRealtimeStore } from "@/stores/realtime";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
@@ -446,12 +449,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       }, HAZARD_FETCH_DEBOUNCE_MS);
 
       const unsubscribe = onHazardNew((hazard) => {
-        // Deduplicate against the existing list; the viewport REST fetch may
-        // race with the broadcast and return the same row.
-        const existing = rawHazardsRef.current;
-        if (existing.some((h) => h.id === hazard.id)) return;
+        const result = applyHazardWsEvent(rawHazardsRef.current, hazard);
+        if (result.action === "ignore") return;
+        if (result.action === "remove") {
+          // Moderation removal — prune the marker immediately without
+          // waiting for the next REST refetch.
+          rawHazardsRef.current = result.list;
+          wsHazardArrivalRef.current.delete(hazard.id);
+          setHazardsRevision((r) => r + 1);
+          return;
+        }
+        // Normal append: deduplicate against the existing list so the
+        // viewport REST fetch race doesn't produce duplicate markers.
         wsHazardArrivalRef.current.set(hazard.id, Date.now());
-        rawHazardsRef.current = [...existing, hazard];
+        rawHazardsRef.current = result.list;
         setHazardsRevision((r) => r + 1);
       });
 
