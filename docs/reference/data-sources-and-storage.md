@@ -110,7 +110,8 @@ Sourcing detail for the feeds above. Endpoints, licenses, and the CZ launch bbox
 
 - Endpoint: `https://overpass-api.de/api/interpreter` (self-host from a Geofabrik extract for production volume).
 - CZ/Beskydy starter bbox (Overpass order `south,west,north,east`): `49.30, 18.00, 49.75, 18.90`.
-- Tags: fuel `amenity=fuel`; accommodation `tourism=hotel|guest_house|motel|hostel|chalet|apartment`; food `amenity=restaurant|cafe|fast_food`; viewpoints `tourism=viewpoint`; rest areas `highway=rest_area|services`; ice cream `amenity=ice_cream`/`shop=ice_cream`.
+- Tags: fuel `amenity=fuel`; accommodation `tourism=hotel|guest_house|motel|hostel|chalet|apartment|camp_site`; food `amenity=restaurant|cafe|fast_food`; viewpoints `tourism=viewpoint`; rest areas `highway=rest_area|services`; ice cream `amenity=ice_cream`/`shop=ice_cream`.
+- **Don't hand-maintain the accommodation tag set here** — the live contract is `ACCOMMODATION_KINDS` in `@tarmoto/shared` (today: hotel, guest_house, motel, hostel, chalet, apartment, **camp_site**), which `OverpassPoiProvider` already builds its tourism regex from. The stored/offline importer (§8.3) must source the kind list from `ACCOMMODATION_KINDS`, not a copied list, so offline POIs can't diverge from `/accommodations?kinds=…` (e.g. dropping campgrounds).
 - **Worldwide gap-fill:** Overture Places (CDLA Permissive v2.0, stable GERS IDs). **Caution:** conflating Overture _into one DB with_ OSM can force ODbL — keep them as separate joinable layers.
 
 ### Dynamic events — Czech NAP (NDIC)
