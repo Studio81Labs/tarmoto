@@ -177,6 +177,20 @@ describe("statusFg", () => {
     expect(contrastRatio(QUALITY_COLORS[4], "#FFFFFF")).toBeLessThan(4.5);
     expect(contrastRatio(QUALITY_COLORS[1], "#FFFFFF")).toBeLessThan(4.5);
   });
+
+  it("the HUD FAB glyphs clear 3:1 on their respective discs", () => {
+    // SurfaceTagFab is an accent disc → ink glyph (cream would only reach
+    // ~2.5:1, below the non-text floor). HazardReportFab is a
+    // `statusFg.danger` disc → cream glyph (the inverse pairing). Both are
+    // non-text graphical objects needing >=3:1.
+    expect(
+      contrastRatio(brandColorsLight.invBg, ACCENT),
+    ).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(brandColorsLight.invFg, ACCENT)).toBeLessThan(3);
+    expect(
+      contrastRatio(brandColorsLight.invFg, statusFg.danger),
+    ).toBeGreaterThanOrEqual(3);
+  });
 });
 
 // Composite an `rgba(r,g,b,a)` string over an opaque hex background.

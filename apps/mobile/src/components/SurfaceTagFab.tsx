@@ -11,7 +11,8 @@
  * ground truth to train against. The FAB is intentionally distinct
  * from the hazard FAB:
  *
- *   - blue (info colour) instead of red — different action class
+ *   - accent disc (with an ink glyph) instead of the red hazard disc —
+ *     a different action class
  *   - "road-variant" icon instead of "alert-octagon"
  *   - second tile-tap is a confirmation, not a navigation, so the
  *     rider stays on the HUD throughout
@@ -45,7 +46,8 @@ type IconName = ComponentProps<typeof Icon>["name"];
 
 // The tag picker is a modal dialog over the dark ride HUD → a cream brand
 // dialog. The FAB disc is the accent (distinct from the red hazard FAB),
-// with an ink glyph (ink on accent clears ~6.7:1).
+// with an ink glyph: ink (`invBg`) on the accent disc clears ~7.4:1, whereas
+// a cream glyph would only reach ~2.5:1 — below the 3:1 non-text floor.
 const t = brandColorsLight;
 
 const HAPTIC_OPTIONS = {
@@ -102,7 +104,7 @@ export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
         accessibilityLabel="Tag road surface"
         accessibilityHint="Open the surface tagging menu to label the road you are on right now."
       >
-        <Icon name="road-variant" size={26} color={t.invFg} />
+        <Icon name="road-variant" size={26} color={t.invBg} />
       </TouchableOpacity>
 
       <Modal
