@@ -1,6 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ContentScreen } from "./ContentScreen.js";
+
+const mockHide = vi.fn();
+const mockRestore = vi.fn();
+const mockDelete = vi.fn();
+const mockRefetch = vi.fn();
 
 vi.mock("../data/useAdminContent.js", () => ({
   useAdminContentList: () => ({
@@ -26,14 +32,21 @@ vi.mock("../data/useAdminContent.js", () => ({
     },
     isPending: false,
     error: null,
-    refetch: vi.fn(),
+    refetch: mockRefetch,
   }),
-  useHideContent: () => ({ mutate: vi.fn(), isPending: false }),
-  useRestoreContent: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteContent: () => ({ mutate: vi.fn(), isPending: false }),
+  useHideContent: () => ({ mutate: mockHide, isPending: false }),
+  useRestoreContent: () => ({ mutate: mockRestore, isPending: false }),
+  useDeleteContent: () => ({ mutate: mockDelete, isPending: false }),
 }));
 
 describe("ContentScreen", () => {
+  beforeEach(() => {
+    mockHide.mockClear();
+    mockRestore.mockClear();
+    mockDelete.mockClear();
+    mockRefetch.mockClear();
+  });
+
   it("renders content rows", () => {
     render(<ContentScreen currentRole="admin" />);
     expect(screen.getByText("Alice")).toBeInTheDocument();
@@ -48,5 +61,29 @@ describe("ContentScreen", () => {
   it("shows the delete control for admin-level admins", () => {
     render(<ContentScreen currentRole="admin" />);
     expect(screen.getByText("Delete")).toBeInTheDocument();
+  });
+
+  it("Hide button invokes hide mutation with correct path params and body, and onSuccess refetches", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("spam");
+    render(<ContentScreen currentRole="admin" />);
+    await userEvent.click(screen.getByRole("button", { name: /^hide$/i }));
+
+    expect(mockHide).toHaveBeenCalledWith(
+      {
+        params: { path: { type: "hazard", id: "h1" } },
+        body: { reason: "spam" },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    // Invoke the captured onSuccess and verify refetch is called
+    const [, { onSuccess }] = mockHide.mock.calls[0] as [
+      unknown,
+      { onSuccess: () => void },
+    ];
+    act(() => {
+      onSuccess();
+    });
+    expect(mockRefetch).toHaveBeenCalled();
   });
 });

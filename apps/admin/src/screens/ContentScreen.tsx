@@ -247,8 +247,10 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
         <Select
           value={status}
           onChange={(v) => {
-            setStatus(v as ContentStatusParam);
-            setPage(1);
+            if (v === "all" || v === "visible" || v === "hidden") {
+              setStatus(v);
+              setPage(1);
+            }
           }}
           ariaLabel="Status filter"
         >
