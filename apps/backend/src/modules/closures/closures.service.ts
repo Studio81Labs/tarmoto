@@ -143,10 +143,13 @@ export class ClosuresService {
 
   async getById(id: string): Promise<RoadClosureDto> {
     const row = await this.repo.findOne({ where: { id } });
-    // An undecoded feed row (no geometry) isn't publicly representable —
-    // `RoadClosureDto.geometry` is required and `toDto` reads
-    // `geom.coordinates` — so treat it as not found until decoded (#743).
-    if (!row || row.geom === null) {
+    // Detail lookups must match the live list/route-check paths: hide
+    // undecoded feed rows (no geometry — `RoadClosureDto.geometry` is
+    // required and `toDto` reads `geom.coordinates`) AND rows the
+    // reconcile pass deactivated (dropped from the feed snapshot), so a
+    // cached/bookmarked URL can't surface a stale closure the map hides
+    // (#743). Inactive history belongs behind an explicit admin path.
+    if (!row || row.geom === null || row.is_active === false) {
       throw new NotFoundException('Closure not found');
     }
     return this.toDto(row);

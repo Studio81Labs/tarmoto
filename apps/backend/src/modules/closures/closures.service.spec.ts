@@ -239,6 +239,19 @@ describe('ClosuresService', () => {
         NotFoundException,
       );
     });
+
+    it('throws NotFound for a deactivated feed row (dropped from snapshot)', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        id: 'inactive-1',
+        source: 'official',
+        external_id: 'ndic-456',
+        is_active: false,
+      });
+      await expect(service.getById('inactive-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
   });
 
   describe('checkRoute', () => {
