@@ -58,6 +58,7 @@ import { AddCommunityEngagement1718100000000 } from '../../migrations/1718100000
 import { AddTripDayStartLinked1718200000000 } from '../../migrations/1718200000000-AddTripDayStartLinked.js';
 import { AddAdminConsoleFoundation1751000000000 } from '../../migrations/1751000000000-AddAdminConsoleFoundation.js';
 import { AddFeatureFlags1782000000000 } from '../../migrations/1782000000000-AddFeatureFlags.js';
+import { AddContentModeration1783000000000 } from '../../migrations/1783000000000-AddContentModeration.js';
 import {
   User,
   UserContact,
@@ -250,6 +251,7 @@ const entities = [
             AddTripDayStartLinked1718200000000,
             AddAdminConsoleFoundation1751000000000,
             AddFeatureFlags1782000000000,
+            AddContentModeration1783000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

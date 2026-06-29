@@ -35,6 +35,18 @@ export class TripMessage {
   @Column({ type: 'text' })
   body!: string;
 
+  @Column({ type: 'varchar', length: 16, default: 'visible' })
+  moderation_status!: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  moderation_reason!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  moderated_by!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  moderated_at!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
