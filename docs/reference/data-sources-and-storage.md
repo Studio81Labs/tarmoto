@@ -52,10 +52,10 @@ Our own data. Nothing here is bought; this is the defensible asset. Quality is *
 
 Live, short-lived, must reconcile + expire. **This is the layer with no ingestion yet.**
 
-| Datum                                 | Real table                                              | Source                                                                       | Storage       | Refresh                               | TTL                                                                                 | Notes                                                         |
-| ------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Road closures / roadworks / incidents | `road_closures` (`source: operator \| osm \| official`) | Operator (now) + **Czech NAP/NDIC DATEX II (`official`) — NOT YET INGESTED** | PostGIS       | Operator: on submit. NAP: poll ~3 min | Deactivate when absent from snapshot **or** `ends_at < now`; keep history for audit | Feeds both the map overlay and route avoidance. See §6 + §8.1 |
-| Weather alerts                        | `weather_alert_dispatches` (dispatch log only)          | Weather API                                                                  | Redis / cache | On-demand per planned route           | Minutes (ephemeral)                                                                 | Not persisted as a map layer today                            |
+| Datum                                 | Real table                                              | Source                                                                       | Storage       | Refresh                               | TTL                                                                                                                       | Notes                                                         |
+| ------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Road closures / roadworks / incidents | `road_closures` (`source: operator \| osm \| official`) | Operator (now) + **Czech NAP/NDIC DATEX II (`official`) — NOT YET INGESTED** | PostGIS       | Operator: on submit. NAP: poll ~3 min | Deactivate when absent from snapshot **or** `ends_at < now`; keep history for audit — **requires new columns (see §8.1)** | Feeds both the map overlay and route avoidance. See §6 + §8.1 |
+| Weather alerts                        | `weather_alert_dispatches` (dispatch log only)          | Weather API                                                                  | Redis / cache | On-demand per planned route           | Minutes (ephemeral)                                                                                                       | Not persisted as a map layer today                            |
 
 > **Why `road_closures`, not a new `road_events` table:** the entity already documents `source` as `operator | osm | official` for exactly this — "future sources (OSM, official feeds) populate the same table." The NAP scraper must write here with `source='official'`, mapping NDIC categories → the existing `reason` / `severity` enums.
 
@@ -142,7 +142,19 @@ What stands between today's schema and "clear data on the map + in routes."
 
 ### 8.1 No external ingestion into `road_closures`
 
-`road_closures` is operator-entered only. Nothing fills `source='official'`. **Action:** a scheduled NAP poller (pull → parse DATEX II → reconcile by `last_seen_at`/snapshot → write `road_closures` with `source='official'`). Pattern reference: the `tarmoto-nap-events` example (poll → parse → reconcile → serve). Build it **inside `apps/backend`** against the existing table, not as a parallel service/table. → _Issue: NAP closure ingestion._
+`road_closures` is operator-entered only. Nothing fills `source='official'`. **Action:** a scheduled NAP poller (pull → parse DATEX II → reconcile against the current snapshot → write `road_closures` with `source='official'`). Pattern reference: the `tarmoto-nap-events` example (poll → parse → reconcile → serve). Build it **inside `apps/backend`** against the existing table, not as a parallel service/table. → _Issue: NAP closure ingestion (#743)._
+
+**Required schema migration — the current entity can't be reconciled as-is.** Today `RoadClosure` carries only the time window plus `source`, and `ClosuresService` derives "active" purely from `starts_at <= now AND (ends_at IS NULL OR ends_at >= now)`. There is **no way to detect a closure that vanished from a snapshot** (no external id, no last-seen stamp) and **no way to deactivate one while keeping it for audit** (no active flag) — an `official` closure with `ends_at = null` that disappears from the feed would otherwise stay visible forever. The feed-reconciliation columns must be added before the poller can work:
+
+| Column                                           | Purpose                                                                                     |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `external_id` (+ unique `(source, external_id)`) | Stable upsert key per feed situation                                                        |
+| `last_seen_at`                                   | Stamped to the batch time on every snapshot the row appears in                              |
+| `is_active` (bool)                               | Set `false` when absent from the latest snapshot or `ends_at < now`; row retained for audit |
+| `first_seen_at`                                  | When the situation first entered the feed                                                   |
+| `validity_status` (nullable)                     | DATEX validity passthrough, optional                                                        |
+
+Operator-entered rows keep working unchanged: they have no `external_id`, are never touched by the reconcile pass, and stay window-derived. Reads must treat a closure as live when `is_active` is not `false` **and** within its window, so both sources coexist.
 
 ### 8.2 Closures are not avoided during routing
 
