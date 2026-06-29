@@ -510,7 +510,6 @@ const styles = StyleSheet.create({
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 13,
-    fontStyle: "italic",
   },
   leaderboard: {
     gap: brandSpacing.s2,

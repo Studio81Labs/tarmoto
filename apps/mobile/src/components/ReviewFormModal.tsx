@@ -1005,7 +1005,6 @@ const styles = StyleSheet.create({
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 11,
-    fontStyle: "italic",
   },
   photoButtons: {
     flexDirection: "row",

@@ -1176,7 +1176,6 @@ const styles = StyleSheet.create({
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 11,
-    fontStyle: "italic",
   },
   headerTitle: {
     color: t.fg,
@@ -1393,7 +1392,6 @@ const styles = StyleSheet.create({
     color: statusFg.warning,
     fontFamily: brandFonts.sans,
     fontSize: 11,
-    fontStyle: "italic",
   },
   reviewAuthorRow: {
     flexDirection: "row",
@@ -1527,12 +1525,10 @@ const styles = StyleSheet.create({
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 13,
-    fontStyle: "italic",
   },
   emptyInline: {
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 11,
-    fontStyle: "italic",
   },
 });

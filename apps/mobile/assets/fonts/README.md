@@ -33,6 +33,16 @@ All faces in a family share the internal family name (`"SpaceGrotesk"` /
 > tokens could be dropped to `700`. JetBrains Mono's axis does reach 800, so its
 > ExtraBold is a real face.
 
+> **Upright only — no italics.** Both families are vendored as upright `wght`
+> sources, so no italic faces are instanced. RN 0.85 can't honour
+> `fontStyle: "italic"` on these without a registered italic face: Android
+> probes `<family>_italic.ttf` (absent → system-italic fallback in the wrong
+> family) and iOS filters the registered family to italics before matching
+> (none → collapses to upright). The brand sans therefore carries emphasis with
+> **weight + colour**, not slant — the few decorative italic labels that existed
+> were dropped to upright. Don't add `fontStyle: "italic"` to a brand-font style
+> unless a real italic face is sourced and linked first.
+
 The variable-font **sources** live in `../font-sources/` (outside this linked
 asset root) for re-instancing; they are not bundled — `react-native-asset`
 walks `./assets/fonts` recursively, so anything left here would be linked, and
