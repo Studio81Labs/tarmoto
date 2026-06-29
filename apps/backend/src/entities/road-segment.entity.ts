@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  Check,
   Index,
   OneToMany,
 } from 'typeorm';
@@ -14,6 +15,16 @@ import { RoadReview } from './road-review.entity.js';
 @Index('idx_road_segments_geom', ['geom'], { spatial: true })
 @Index('idx_road_segments_quality', ['quality_score'])
 @Index('idx_road_segments_curviness', ['curviness_score'])
+@Index('uq_road_segments_osm_identity', ['osm_way_id', 'segment_index'], {
+  unique: true,
+})
+// OSM identity is all-or-nothing: a half-populated `(osm_way_id, NULL)`
+// would slip past the unique index (NULLs don't conflict) and let a
+// re-import upsert insert a duplicate instead of preserving the UUID (#751).
+@Check(
+  'chk_road_segments_osm_identity',
+  '("osm_way_id" IS NULL) = ("segment_index" IS NULL)',
+)
 export class RoadSegment {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -23,6 +34,24 @@ export class RoadSegment {
 
   @Column({ type: 'float' })
   length_m!: number;
+
+  /**
+   * Stable identity for weekly/monthly OSM re-imports (#751): the source
+   * OSM way id plus the segment's ordinal within that way (a way is split
+   * into ~100 m segments). A re-importer upserts on
+   * `(osm_way_id, segment_index)` so a segment's UUID — and every
+   * `surface_readings` / `road_reviews` / `hazard_reports` /
+   * `fun_zone_road` row that references it — survives the re-import.
+   *
+   * Nullable because rows seeded before the first OSM import (and demo
+   * data) carry no OSM identity; a plain unique index treats those NULLs
+   * as distinct so they coexist. TypeORM returns `bigint` as a string.
+   */
+  @Column({ type: 'bigint', nullable: true })
+  osm_way_id!: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  segment_index!: number | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   road_name!: string | null;

@@ -61,6 +61,7 @@ import { AddFeatureFlags1782000000000 } from '../../migrations/1782000000000-Add
 import { AddContentModeration1783000000000 } from '../../migrations/1783000000000-AddContentModeration.js';
 import { AddNapClosureReconciliation1784000000000 } from '../../migrations/1784000000000-AddNapClosureReconciliation.js';
 import { ClearEndedGroupRideLocations1785000000000 } from '../../migrations/1785000000000-ClearEndedGroupRideLocations.js';
+import { AddRoadSegmentOsmIdentity1786000000000 } from '../../migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 import {
   User,
   UserContact,
@@ -256,6 +257,7 @@ const entities = [
             AddContentModeration1783000000000,
             AddNapClosureReconciliation1784000000000,
             ClearEndedGroupRideLocations1785000000000,
+            AddRoadSegmentOsmIdentity1786000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
