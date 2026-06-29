@@ -108,6 +108,7 @@ import { AddFeatureFlags1782000000000 } from './migrations/1782000000000-AddFeat
 import { AddContentModeration1783000000000 } from './migrations/1783000000000-AddContentModeration.js';
 import { AddNapClosureReconciliation1784000000000 } from './migrations/1784000000000-AddNapClosureReconciliation.js';
 import { ClearEndedGroupRideLocations1785000000000 } from './migrations/1785000000000-ClearEndedGroupRideLocations.js';
+import { AddRoadSegmentOsmIdentity1786000000000 } from './migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -234,6 +235,7 @@ export const AppDataSource = new DataSource({
     AddContentModeration1783000000000,
     AddNapClosureReconciliation1784000000000,
     ClearEndedGroupRideLocations1785000000000,
+    AddRoadSegmentOsmIdentity1786000000000,
   ],
   synchronize: false,
 });
