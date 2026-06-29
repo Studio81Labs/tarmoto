@@ -32,7 +32,13 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = ComponentProps<typeof Icon>["name"];
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  ACCENT_DARK,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+} from "@/theme/brand";
 import type {
   Challenge,
   ChallengeDetail,
@@ -45,6 +51,8 @@ import {
   metricUnit,
   rankChallenges,
 } from "./AchievementsScreen.helpers";
+
+const t = brandColorsLight;
 
 export default function ChallengesScreen() {
   const myUserId = useAuthStore((s) => s.user?.id ?? null);
@@ -118,7 +126,7 @@ export default function ChallengesScreen() {
   if (challenges === null && errorMessage === null) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={t.fg} />
       </View>
     );
   }
@@ -126,7 +134,7 @@ export default function ChallengesScreen() {
   if (errorMessage && challenges === null) {
     return (
       <View style={styles.centered}>
-        <Icon name="wifi-off" size={40} color={colors.textTertiary} />
+        <Icon name="wifi-off" size={40} color={t.dim} />
         <Text style={styles.emptyTitle}>Can't load challenges</Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
@@ -143,7 +151,7 @@ export default function ChallengesScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void load(false)}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -172,7 +180,7 @@ export default function ChallengesScreen() {
 function EmptyState() {
   return (
     <View style={styles.emptyCard}>
-      <Icon name="flag-outline" size={48} color={colors.primary} />
+      <Icon name="flag-outline" size={48} color={ACCENT_DARK} />
       <Text style={styles.emptyTitle}>No active challenges</Text>
       <Text style={styles.emptyBody}>
         Check back soon — new challenges launch regularly.
@@ -221,7 +229,7 @@ function ChallengeCard({
           <Icon
             name={expanded ? "chevron-up" : "chevron-down"}
             size={22}
-            color={colors.textTertiary}
+            color={t.faint}
           />
         </View>
         <Text style={styles.cardBody}>{challenge.description}</Text>
@@ -256,7 +264,7 @@ function ChallengeCard({
       {expanded ? (
         <View style={styles.expanded}>
           {!detail ? (
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={t.fg} />
           ) : (
             <>
               {!joined ? (
@@ -271,14 +279,10 @@ function ChallengeCard({
                   accessibilityLabel={`Join challenge ${challenge.title}`}
                 >
                   {isJoining ? (
-                    <ActivityIndicator color={colors.textInverse} />
+                    <ActivityIndicator color={t.invFg} />
                   ) : (
                     <>
-                      <Icon
-                        name="flag-checkered"
-                        size={18}
-                        color={colors.textInverse}
-                      />
+                      <Icon name="flag-checkered" size={18} color={t.invFg} />
                       <Text style={styles.joinLabel}>Join challenge</Text>
                     </>
                   )}
@@ -302,7 +306,7 @@ function ChallengeCard({
 function MetaPill({ icon, label }: { icon: IconName; label: string }) {
   return (
     <View style={styles.metaPill}>
-      <Icon name={icon} size={14} color={colors.textSecondary} />
+      <Icon name={icon} size={14} color={t.dim} />
       <Text style={styles.metaLabel}>{label}</Text>
     </View>
   );
@@ -367,75 +371,79 @@ export const __test = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
   },
   emptyCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xxl,
+    borderColor: t.line,
+    padding: brandSpacing.s6,
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     overflow: "hidden",
   },
   cardHeader: {
-    padding: spacing.lg,
-    gap: spacing.sm,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   cardTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
     flexShrink: 1,
   },
   cardBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 20,
   },
   metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
+    gap: brandSpacing.s2,
+    marginTop: brandSpacing.s2,
   },
   metaPill: {
     flexDirection: "row",
@@ -443,101 +451,110 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bgInput,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised2,
   },
   metaLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.bgInput,
+    backgroundColor: t.sunken,
     overflow: "hidden",
-    marginTop: spacing.sm,
+    marginTop: brandSpacing.s2,
   },
   progressFill: {
     height: "100%",
     borderRadius: 3,
-    backgroundColor: colors.primary,
+    backgroundColor: ACCENT_DARK,
   },
   progressLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     marginTop: 2,
   },
   expanded: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: spacing.md,
+    paddingHorizontal: brandSpacing.s4,
+    paddingBottom: brandSpacing.s4,
+    gap: brandSpacing.s3,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
+    borderTopColor: t.line,
+    paddingTop: brandSpacing.s3,
   },
   joinBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   joinBtnDisabled: {
     opacity: 0.6,
   },
   joinLabel: {
-    color: colors.textInverse,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontWeight: "700",
+    fontSize: 14,
   },
   emptyLeaderboard: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     fontStyle: "italic",
   },
   leaderboard: {
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   leaderboardTitle: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
   },
   lbRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
     paddingVertical: 6,
   },
   lbRowMe: {
-    backgroundColor: colors.primaryAlpha08,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.sm,
+    backgroundColor: t.raised2,
+    paddingHorizontal: brandSpacing.s2,
+    borderRadius: brandRadii.sm,
   },
   lbRank: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 13,
+    fontWeight: "700",
     width: 32,
   },
   lbName: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   lbNameMe: {
-    color: colors.primary,
-    fontWeight: fontWeight.semibold,
+    color: ACCENT_DARK,
+    fontWeight: "700",
   },
   lbProgress: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
