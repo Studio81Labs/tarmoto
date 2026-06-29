@@ -150,6 +150,48 @@ describe('NapReconcileService', () => {
     expect(result.needsDecoding).toBe(1);
   });
 
+  it('preserves an already-decoded geometry when the feed still lacks coords', async () => {
+    const decoded = {
+      type: 'LineString',
+      coordinates: [
+        [16.6, 49.2],
+        [16.7, 49.25],
+      ],
+    };
+    // The stored row was decoded out-of-band: it has geometry and is no
+    // longer flagged.
+    txRepo.find.mockResolvedValueOnce([
+      {
+        external_id: 'ndic-tmc',
+        first_seen_at: new Date('2026-06-01T00:00:00Z'),
+        geom: decoded,
+        needs_location_decoding: false,
+      },
+    ]);
+    const result = await service.reconcile([
+      situation({
+        externalId: 'ndic-tmc',
+        geometry: null,
+        needsLocationDecoding: true,
+        rawLocationRef: { alertC: 'code' },
+      }),
+    ]);
+
+    const row = upsertedRow();
+    expect(row.geom).toEqual(decoded); // not overwritten back to null
+    expect(row.needs_location_decoding).toBe(false);
+    expect(result.needsDecoding).toBe(0);
+  });
+
+  it('chunks a large snapshot into multiple upserts (param-limit safety)', async () => {
+    const many = Array.from({ length: 600 }, (_, i) =>
+      situation({ externalId: `ndic-${i}` }),
+    );
+    await service.reconcile(many);
+    // 600 rows / 500-per-chunk = 2 upsert statements.
+    expect(txRepo.upsert).toHaveBeenCalledTimes(2);
+  });
+
   it('writes is_active=false for a suspended DATEX situation', async () => {
     await service.reconcile([situation({ validityStatus: 'suspended' })]);
     expect(upsertedRow().is_active).toBe(false);
