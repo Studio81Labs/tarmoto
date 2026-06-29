@@ -453,7 +453,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="Achievements"
         component={AchievementsScreen}
-        options={{ title: "Achievements" }}
+        options={{ ...brandScreenOptions, title: "Achievements" }}
       />
       <ProfileStack.Screen
         name="Badges"

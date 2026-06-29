@@ -28,10 +28,18 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierRank } from "./AchievementsScreen.helpers";
+
+const t = brandColorsLight;
 
 type AchievementsNav = NativeStackNavigationProp<
   ProfileStackParamList,
@@ -137,7 +145,7 @@ export default function AchievementsScreen() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void load(false)}
-          tintColor={colors.primary}
+          tintColor={t.fg}
         />
       }
     >
@@ -216,13 +224,13 @@ function HubCard({
       accessibilityLabel={`Open ${title}`}
     >
       <View style={styles.cardIcon}>
-        <Icon name={icon} size={22} color={colors.primary} />
+        <Icon name={icon} size={22} color={t.fg} />
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle}>{title}</Text>
         <Text style={styles.cardBodyText}>{body}</Text>
       </View>
-      <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+      <Icon name="chevron-right" size={22} color={t.faint} />
     </TouchableOpacity>
   );
 }
@@ -232,42 +240,48 @@ function HubCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s8,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    lineHeight: 22,
   },
   errorBanner: {
-    color: colors.warning,
-    fontSize: fontSize.sm,
+    color: statusFg.warning,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     fontStyle: "italic",
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    minHeight: 44,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   cardIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -276,12 +290,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   cardTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   cardBodyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
 });
