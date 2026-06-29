@@ -739,6 +739,48 @@ describe('HazardsService', () => {
     });
   });
 
+  describe('purgeManagedPhoto', () => {
+    it('loads the hazard by id regardless of active/expiry state and unlinks the photo', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-purge.jpg`;
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'purge-bytes');
+
+      const hazardWithPhoto = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithPhoto as never);
+
+      await service.purgeManagedPhoto(mockHazard.id!);
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+      });
+      await expect(access(filePath)).rejects.toThrow();
+    });
+
+    it('is a no-op when the hazard does not exist', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.purgeManagedPhoto('nonexistent-id'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('is a no-op when photo_url is null', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...mockHazard,
+        photo_url: null,
+      } as never);
+
+      await expect(
+        service.purgeManagedPhoto(mockHazard.id!),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('dismiss cleanup', () => {
     it('should unlink the managed photo file when dismissing a hazard that owns one', async () => {
       const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');

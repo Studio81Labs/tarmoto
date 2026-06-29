@@ -10,7 +10,6 @@ export enum ContentType {
 }
 
 export interface ContentTypeConfig {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   entity: new () => any;
   /** audit log target_type written by setAdminAuditTarget */
   auditTargetType: string;

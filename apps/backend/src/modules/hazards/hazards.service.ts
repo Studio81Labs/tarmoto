@@ -406,6 +406,24 @@ export class HazardsService {
     );
   }
 
+  /**
+   * Admin-initiated purge of the managed photo attached to a hazard report.
+   * Loads the hazard regardless of active/expiry/moderation state so the admin
+   * hard-delete path can clean up photos on any row. No ownership check is
+   * performed — the admin is already authorised; the path-traversal guard
+   * inside `deleteOwnedHazardPhoto` still applies. No-op when the hazard is
+   * not found or carries no managed photo.
+   */
+  async purgeManagedPhoto(hazardId: string): Promise<void> {
+    const hazard = await this.hazardRepo.findOne({ where: { id: hazardId } });
+    if (!hazard) return;
+    await deleteOwnedHazardPhoto(
+      hazard.photo_url,
+      hazard.user_id,
+      this.isTrustedManagedOrigin,
+    );
+  }
+
   async expireOld(): Promise<number> {
     const result = await this.hazardRepo
       .createQueryBuilder()

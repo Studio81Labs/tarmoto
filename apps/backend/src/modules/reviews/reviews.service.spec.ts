@@ -857,6 +857,60 @@ describe('ReviewsService', () => {
     });
   });
 
+  describe('purgeManagedPhotos', () => {
+    it('loads the review by id regardless of moderation state and deletes managed photos', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-purge.jpg',
+        ],
+      });
+
+      await service.purgeManagedPhotos('review-1');
+
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-1' },
+      });
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-purge.jpg',
+      );
+    });
+
+    it('is a no-op when the review does not exist', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.purgeManagedPhotos('nonexistent-id'),
+      ).resolves.toBeUndefined();
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the review has no photos', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: null,
+      });
+
+      await expect(
+        service.purgeManagedPhotos('review-1'),
+      ).resolves.toBeUndefined();
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('does not delete a managed key belonging to a different user', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
+        ],
+      });
+
+      await service.purgeManagedPhotos('review-1');
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('uploadPhotos', () => {
     const fileA = {
       mimetype: 'image/jpeg',

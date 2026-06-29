@@ -39,7 +39,26 @@ function makeUserRepo() {
   };
 }
 
-function build(hazardRepo: object, userRepo: object) {
+function makeHazardsSvc(overrides: Record<string, unknown> = {}) {
+  return {
+    purgeManagedPhoto: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function makeReviewsSvc(overrides: Record<string, unknown> = {}) {
+  return {
+    purgeManagedPhotos: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function build(
+  hazardRepo: object,
+  userRepo: object,
+  hazardsSvc: object = makeHazardsSvc(),
+  reviewsSvc: object = makeReviewsSvc(),
+) {
   // review + trip repos unused in these cases — pass minimal stubs
   const stub = makeRepo(makeQb([], 0));
   return new AdminContentService(
@@ -47,6 +66,8 @@ function build(hazardRepo: object, userRepo: object) {
     stub as never,
     stub as never,
     userRepo as never,
+    hazardsSvc as never,
+    reviewsSvc as never,
   );
 }
 
@@ -147,6 +168,48 @@ describe('AdminContentService', () => {
     await expect(svc.remove(ContentType.Hazard, 'nope')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('remove(hazard) calls purgeManagedPhoto before deleting', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const reviewsSvc = makeReviewsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc, reviewsSvc);
+    await svc.remove(ContentType.Hazard, 'h1');
+    expect(hazardsSvc.purgeManagedPhoto).toHaveBeenCalledWith('h1');
+    expect(reviewsSvc.purgeManagedPhotos).not.toHaveBeenCalled();
+    expect(repo.delete).toHaveBeenCalledWith({ id: 'h1' });
+  });
+
+  it('remove(review) calls purgeManagedPhotos before deleting', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const reviewsSvc = makeReviewsSvc();
+    const svc = build(
+      makeRepo(makeQb([], 0)),
+      makeUserRepo(),
+      hazardsSvc,
+      reviewsSvc,
+    );
+    await svc.remove(ContentType.Review, 'r1');
+    expect(reviewsSvc.purgeManagedPhotos).toHaveBeenCalledWith('r1');
+    expect(hazardsSvc.purgeManagedPhoto).not.toHaveBeenCalled();
+    // delete is issued on the internal stub repo for the review type — purge ordering is
+    // the key contract being verified here.
+  });
+
+  it('remove(trip_message) calls neither purge helper', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const reviewsSvc = makeReviewsSvc();
+    const svc = build(
+      makeRepo(makeQb([], 0)),
+      makeUserRepo(),
+      hazardsSvc,
+      reviewsSvc,
+    );
+    await svc.remove(ContentType.TripMessage, 'tm1');
+    expect(hazardsSvc.purgeManagedPhoto).not.toHaveBeenCalled();
+    expect(reviewsSvc.purgeManagedPhotos).not.toHaveBeenCalled();
+    // delete is issued on the internal stub repo for the trip_message type.
   });
 
   it('rejects an unknown content type', async () => {

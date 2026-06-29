@@ -14,6 +14,8 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import { HazardsModule } from '../hazards/hazards.module.js';
+import { ReviewsModule } from '../reviews/reviews.module.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -47,6 +49,8 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
       CommuteRoute,
       FeatureFlag,
     ]),
+    HazardsModule,
+    ReviewsModule,
   ],
   controllers: [
     AdminMetricsController,

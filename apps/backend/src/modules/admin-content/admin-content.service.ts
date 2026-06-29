@@ -9,6 +9,8 @@ import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { HazardsService } from '../hazards/hazards.service.js';
+import { ReviewsService } from '../reviews/reviews.service.js';
 import {
   CONTENT_TYPES,
   ContentType,
@@ -42,11 +44,13 @@ export class AdminContentService {
     messages: Repository<TripMessage>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    private readonly hazardsService: HazardsService,
+    private readonly reviewsService: ReviewsService,
   ) {
     this.repos = {
-      [ContentType.Hazard]: hazards as Repository<ObjectLiteral>,
-      [ContentType.Review]: reviews as Repository<ObjectLiteral>,
-      [ContentType.TripMessage]: messages as Repository<ObjectLiteral>,
+      [ContentType.Hazard]: hazards,
+      [ContentType.Review]: reviews,
+      [ContentType.TripMessage]: messages,
     };
   }
 
@@ -128,6 +132,14 @@ export class AdminContentService {
 
   async remove(type: ContentType, id: string): Promise<void> {
     const { repo } = this.configFor(type);
+    // Purge managed photos BEFORE the row delete so the entity is still
+    // loadable. The per-service helpers already guard path traversal and
+    // swallow ENOENT / not-owned files, so a missing file won't 500.
+    if (type === ContentType.Hazard) {
+      await this.hazardsService.purgeManagedPhoto(id);
+    } else if (type === ContentType.Review) {
+      await this.reviewsService.purgeManagedPhotos(id);
+    }
     const result = await repo.delete({ id });
     if (!result.affected) throw new NotFoundException('Content not found');
   }
