@@ -418,7 +418,11 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="EditProfile"
         component={EditProfileModal}
-        options={{ title: "Edit profile", presentation: "modal" }}
+        options={{
+          ...brandScreenOptions,
+          title: "Edit profile",
+          presentation: "modal",
+        }}
       />
       <ProfileStack.Screen
         name="ViewProfile"
