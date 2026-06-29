@@ -13,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
-import { HazardsService } from './hazards.service.js';
+import { HazardsService, HAZARD_SELECT_BASE } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -710,6 +710,12 @@ describe('HazardsService', () => {
       await expect(
         service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('hidden hazards are excluded from public reads', () => {
+    it('HAZARD_SELECT_BASE filters on moderation_status', () => {
+      expect(HAZARD_SELECT_BASE).toContain("hr.moderation_status = 'visible'");
     });
   });
 

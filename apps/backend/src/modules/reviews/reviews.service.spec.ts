@@ -173,7 +173,7 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(reviewRepo.find).toHaveBeenCalledWith({
-        where: { road_segment_id: 'seg-1' },
+        where: { road_segment_id: 'seg-1', moderation_status: 'visible' },
         relations: ['user'],
         order: { created_at: 'DESC' },
       });
@@ -231,6 +231,19 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(result).toHaveLength(0);
+    });
+
+    it('listForSegment only returns visible reviews', async () => {
+      await service.listForSegment('seg-1');
+      expect(reviewRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          where: expect.objectContaining({
+            road_segment_id: 'seg-1',
+            moderation_status: 'visible',
+          }),
+        }),
+      );
     });
 
     it('should mask user_display_name when the author has been soft-deleted', async () => {

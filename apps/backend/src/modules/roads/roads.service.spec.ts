@@ -392,6 +392,45 @@ describe('RoadsService', () => {
       );
     });
 
+    it('road detail queries exclude hidden hazards and reviews', async () => {
+      const queries: string[] = [];
+      let callCount = 0;
+      (segmentRepo.query as jest.Mock).mockImplementation((sql: string) => {
+        queries.push(sql);
+        callCount++;
+        if (callCount === 1) {
+          // First call: segment lookup — must return a row to avoid NotFoundException.
+          return Promise.resolve([
+            {
+              id: 'seg-mod',
+              road_name: null,
+              road_number: null,
+              quality_score: null,
+              curviness_score: null,
+              surface_type: 'asphalt',
+              length_m: 100,
+              confidence: 0,
+              reading_count: 0,
+              last_updated: new Date(),
+              elevation_min: null,
+              elevation_max: null,
+              elevation_profile: null,
+              geojson: { coordinates: [[16.75, 49.1]] },
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await service.findById('seg-mod');
+
+      const joined = queries.join('\n---\n');
+      expect(joined).toContain("h.moderation_status = 'visible'");
+      expect(joined).toMatch(
+        /road_reviews[\s\S]*moderation_status = 'visible'/,
+      );
+    });
+
     it('should handle segment with no readings', async () => {
       segmentRepo
         .query!.mockResolvedValueOnce([

@@ -159,7 +159,7 @@ export class ReviewsService {
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
     const reviews = await this.reviewRepo.find({
-      where: { road_segment_id: segmentId },
+      where: { road_segment_id: segmentId, moderation_status: 'visible' },
       relations: ['user'],
       order: { created_at: 'DESC' },
     });

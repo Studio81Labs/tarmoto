@@ -131,7 +131,7 @@ const COMMUTE_HAZARD_BUFFER_M = 200;
 // filename. Suppressing the URL on the public response is the
 // targeted fix; the file itself stays on disk so the rider's own
 // review of their report (a future feature) can still surface it.
-const HAZARD_SELECT_BASE = `
+export const HAZARD_SELECT_BASE = `
   SELECT
     hr.id, hr.hazard_type, hr.severity, hr.note, hr.photo_url, hr.confirmations,
     hr.created_at, hr.expires_at,
@@ -146,6 +146,7 @@ const HAZARD_SELECT_BASE = `
   LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
   WHERE hr.is_active = true
     AND hr.expires_at > NOW()
+    AND hr.moderation_status = 'visible'
 `;
 
 @Injectable()
@@ -420,9 +421,10 @@ export class HazardsService {
       .createQueryBuilder('hr')
       .leftJoinAndSelect('hr.user', 'user')
       .leftJoinAndSelect('hr.road_segment', 'road_segment')
-      .where('hr.id = :id AND hr.is_active = true AND hr.expires_at > NOW()', {
-        id: hazardId,
-      })
+      .where(
+        "hr.id = :id AND hr.is_active = true AND hr.expires_at > NOW() AND hr.moderation_status = 'visible'",
+        { id: hazardId },
+      )
       .getOne();
     if (!hazard) {
       throw new NotFoundException('Hazard not found or already expired');
