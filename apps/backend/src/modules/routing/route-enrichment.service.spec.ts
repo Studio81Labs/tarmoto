@@ -59,7 +59,7 @@ describe('RouteEnrichmentService.aggregate', () => {
     ]);
 
     // Third query issued is the hazard count — check it carries the moderation filter
-    const hazardSql = String(query.mock.calls[2][0]);
+    const hazardSql = String((query.mock.calls[2] as unknown[])[0]);
     expect(hazardSql).toContain("moderation_status = 'visible'");
   });
 

@@ -84,7 +84,7 @@ describe('AdminContentService', () => {
     const repo = makeRepo(qb);
     const svc = build(repo, makeUserRepo());
     await svc.list({ type: ContentType.Hazard, status: 'all' });
-    const statusCalls = qb.andWhere.mock.calls.filter((c) =>
+    const statusCalls = qb.andWhere.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('moderation_status'),
     );
     expect(statusCalls).toHaveLength(0);
