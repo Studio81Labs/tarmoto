@@ -862,6 +862,16 @@ describe('HazardsService', () => {
         16.75,
         expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
       );
+      // The removal payload must be REDACTED — the dismissed event fans out
+      // to unauthenticated cell subscribers, so it must not re-broadcast the
+      // abusive note / reporter / photo we're moderating away.
+      const payload = (
+        eventsGateway.emitHazardAlert.mock.calls[0] as unknown[]
+      )[2] as Record<string, unknown>;
+      expect(payload.note).toBeNull();
+      expect(payload.reporter).toBeNull();
+      expect(payload.road_name).toBeNull();
+      expect(payload).not.toHaveProperty('photo_url');
     });
 
     it('is a no-op (emit NOT called) when the hazard id is not found', async () => {

@@ -29,7 +29,10 @@ import {
   HazardPhotoUploadResponseDto,
   sanitizeHazardPhotoUrl,
 } from './dto/hazard-photo.dto.js';
-import { EventsGateway } from '../events/events.gateway.js';
+import {
+  EventsGateway,
+  type HazardAlertPayload,
+} from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
 
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
@@ -431,10 +434,11 @@ export class HazardsService {
     // removal FIRST so connected maps prune the marker even if the photo
     // cleanup below then fails (e.g. an uploads-dir permission error):
     // a storage error must not leave a stale marker on every client.
-    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
-      ...response,
-      severity: 'dismissed',
-    });
+    this.eventsGateway.emitHazardAlert(
+      response.lat,
+      response.lng,
+      this.toRemovalTombstone(response),
+    );
     // Best-effort managed-photo cleanup; a failure here surfaces to the
     // operator but no longer suppresses the removal broadcast above.
     await deleteOwnedHazardPhoto(
@@ -461,10 +465,38 @@ export class HazardsService {
     if (!hazard) return;
     const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
     const response = this.toResponse(hazard, { reporterIsPrivate });
-    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
-      ...response,
+    this.eventsGateway.emitHazardAlert(
+      response.lat,
+      response.lng,
+      this.toRemovalTombstone(response),
+    );
+  }
+
+  /**
+   * Build a redacted removal payload for an admin moderation action.
+   * Admin hide/delete targets abusive content, and the dismissed event
+   * fans out to every subscriber in the cell over the unauthenticated
+   * `subscribe:hazards` channel — so it must NOT echo the note /
+   * photo_url / reporter we are taking down. Clients key the removal off
+   * `id` (+ `severity: 'dismissed'`); `lat`/`lng` only route the event to
+   * the cell room. Every other field is nulled/zeroed. (The user-facing
+   * `dismiss()` keeps the full payload — that's the reporter removing
+   * their own content, not moderation of someone else's.)
+   */
+  private toRemovalTombstone(response: HazardResponseDto): HazardAlertPayload {
+    return {
+      id: response.id,
+      lat: response.lat,
+      lng: response.lng,
       severity: 'dismissed',
-    });
+      hazard_type: '',
+      note: null,
+      confirmations: 0,
+      reporter: null,
+      road_name: null,
+      created_at: '',
+      expires_at: '',
+    };
   }
 
   /**
