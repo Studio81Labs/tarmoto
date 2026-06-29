@@ -13,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
-import { HazardsService } from './hazards.service.js';
+import { HazardsService, HAZARD_SELECT_BASE } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -58,6 +58,7 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
       query: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn().mockReturnValue({
         update: jest.fn().mockReturnThis(),
@@ -710,6 +711,253 @@ describe('HazardsService', () => {
       await expect(
         service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('hidden hazards are excluded from public reads', () => {
+    it('HAZARD_SELECT_BASE filters on moderation_status', () => {
+      expect(HAZARD_SELECT_BASE).toContain("hr.moderation_status = 'visible'");
+    });
+
+    it('findActiveHazard passes moderation_status = visible to the query builder (tested via dismiss)', async () => {
+      // findActiveHazard is private; dismiss is the simplest public caller.
+      // Assert that the .where() clause passed to the query builder contains
+      // the moderation gate so removing it would break this test.
+      const whereSpy = jest.fn().mockReturnThis();
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: whereSpy,
+        getOne: jest.fn().mockResolvedValue(mockHazard),
+      };
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
+
+      await service.dismiss(mockHazard.id!);
+
+      expect(whereSpy).toHaveBeenCalledWith(
+        expect.stringContaining("moderation_status = 'visible'"),
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe('adminHardDelete', () => {
+    it('returns true, deletes the row, purges the photo, and emits a dismissed signal', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-admin-del.jpg`;
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'admin-delete-bytes');
+
+      const hazardWithRelations = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+
+      const result = await service.adminHardDelete(mockHazard.id!);
+
+      expect(result).toBe(true);
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
+      });
+      expect(repo.delete).toHaveBeenCalledWith({ id: mockHazard.id });
+      // Photo was purged after the delete
+      await expect(access(filePath)).rejects.toThrow();
+      // Broadcast emitted with severity:'dismissed'
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
+    });
+
+    it('returns false and makes no changes when the hazard is not found', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      const result = await service.adminHardDelete('nonexistent-id');
+
+      expect(result).toBe(false);
+      expect(repo.delete).not.toHaveBeenCalled();
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('does not purge the photo or emit a broadcast when hazardRepo.delete rejects', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-no-purge.jpg`;
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'should-stay');
+
+      const hazardWithRelations = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+      repo.delete!.mockRejectedValueOnce(new Error('db constraint'));
+
+      await expect(service.adminHardDelete(mockHazard.id!)).rejects.toThrow(
+        'db constraint',
+      );
+
+      // File must still be intact — delete threw before cleanup was reached
+      await expect(access(filePath)).resolves.toBeUndefined();
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('still emits the removal broadcast when photo cleanup fails after the row delete', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-purge-fail.jpg`;
+      // A directory at the managed path makes unlink throw EISDIR/EPERM
+      // (a non-ENOENT error deleteOwnedHazardPhoto rethrows), simulating an
+      // uploads-dir failure after the DB row is already gone.
+      const dirAsFile = join(tmpDir, filename);
+      await mkdir(dirAsFile, { recursive: true });
+
+      const hazardWithRelations = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+
+      await expect(service.adminHardDelete(mockHazard.id!)).rejects.toThrow();
+
+      // Row delete succeeded and the dismissal was broadcast BEFORE the
+      // purge threw, so connected maps still prune the marker.
+      expect(repo.delete).toHaveBeenCalledWith({ id: mockHazard.id });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
+
+      await rm(dirAsFile, { recursive: true, force: true });
+    });
+  });
+
+  describe('broadcastRemoval', () => {
+    it('loads the hazard by id and emits a dismissed signal', async () => {
+      const hazardWithRelations = {
+        ...mockHazard,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+
+      await service.broadcastRemoval(mockHazard.id!);
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
+      });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
+      // The removal payload must be REDACTED — the dismissed event fans out
+      // to unauthenticated cell subscribers, so it must not re-broadcast the
+      // abusive note / reporter / photo we're moderating away.
+      const payload = (
+        eventsGateway.emitHazardAlert.mock.calls[0] as unknown[]
+      )[2] as Record<string, unknown>;
+      expect(payload.note).toBeNull();
+      expect(payload.reporter).toBeNull();
+      expect(payload.road_name).toBeNull();
+      expect(payload).not.toHaveProperty('photo_url');
+    });
+
+    it('is a no-op (emit NOT called) when the hazard id is not found', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      await service.broadcastRemoval('nonexistent-id');
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('broadcastRestore', () => {
+    const visibleActiveHazard = {
+      ...mockHazard,
+      is_active: true,
+      moderation_status: 'visible',
+      expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000), // 72 h from now
+      user: { display_name: 'TestRider' },
+      road_segment: null,
+    };
+
+    it('emits a normal hazard event (not dismissed) for a visible, active, unexpired hazard', async () => {
+      repo.findOne!.mockResolvedValueOnce(visibleActiveHazard as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
+      });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({
+          id: mockHazard.id,
+          severity: 'medium', // normal severity — NOT 'dismissed'
+        }),
+      );
+      // Confirm the emitted payload does NOT carry 'dismissed'
+      const call = eventsGateway.emitHazardAlert.mock.calls[0] as [
+        number,
+        number,
+        { severity: string },
+      ];
+      expect(call[2].severity).not.toBe('dismissed');
+    });
+
+    it('is a no-op when the hazard id is not found', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      await service.broadcastRestore('nonexistent-id');
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard is hidden (moderation_status !== visible)', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        moderation_status: 'hidden',
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard is inactive (is_active = false)', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        is_active: false,
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the hazard has expired', async () => {
+      repo.findOne!.mockResolvedValueOnce({
+        ...visibleActiveHazard,
+        expires_at: new Date(Date.now() - 1000), // 1 second in the past
+      } as never);
+
+      await service.broadcastRestore(mockHazard.id!);
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
     });
   });
 

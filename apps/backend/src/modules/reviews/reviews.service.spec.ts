@@ -173,7 +173,7 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(reviewRepo.find).toHaveBeenCalledWith({
-        where: { road_segment_id: 'seg-1' },
+        where: { road_segment_id: 'seg-1', moderation_status: 'visible' },
         relations: ['user'],
         order: { created_at: 'DESC' },
       });
@@ -231,6 +231,33 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(result).toHaveLength(0);
+    });
+
+    it('listForSegment only returns visible reviews', async () => {
+      await service.listForSegment('seg-1');
+      expect(reviewRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          where: expect.objectContaining({
+            road_segment_id: 'seg-1',
+            moderation_status: 'visible',
+          }),
+        }),
+      );
+    });
+
+    it("surfaces the viewer's OWN review even when hidden (self-view exemption)", async () => {
+      await service.listForSegment('seg-1', 'user-1');
+      // Authenticated: visible-to-all OR the viewer's own rows (any status),
+      // so a rider can still edit/delete their own moderated review.
+      expect(reviewRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: [
+            { road_segment_id: 'seg-1', moderation_status: 'visible' },
+            { road_segment_id: 'seg-1', user_id: 'user-1' },
+          ],
+        }),
+      );
     });
 
     it('should mask user_display_name when the author has been soft-deleted', async () => {
@@ -844,6 +871,54 @@ describe('ReviewsService', () => {
     });
   });
 
+  describe('adminHardDelete', () => {
+    it('returns true, removes the row, and purges managed photos', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-admin-purge.jpg',
+        ],
+      });
+
+      const result = await service.adminHardDelete('review-1');
+
+      expect(result).toBe(true);
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-1' },
+      });
+      expect(reviewRepo.remove).toHaveBeenCalled();
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-admin-purge.jpg',
+      );
+    });
+
+    it('returns false when the review is not found', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      const result = await service.adminHardDelete('nonexistent-id');
+
+      expect(result).toBe(false);
+      expect(reviewRepo.remove).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('does not purge photos when reviewRepo.remove rejects', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-should-stay.jpg',
+        ],
+      });
+      reviewRepo.remove!.mockRejectedValueOnce(new Error('db constraint'));
+
+      await expect(service.adminHardDelete('review-1')).rejects.toThrow(
+        'db constraint',
+      );
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('uploadPhotos', () => {
     const fileA = {
       mimetype: 'image/jpeg',
@@ -1237,6 +1312,20 @@ describe('ReviewsService', () => {
       ).rejects.toThrow(ConflictException);
       expect(voteInsert.execute).not.toHaveBeenCalled();
     });
+
+    it('rejects a vote on a hidden (moderated) review', async () => {
+      // The lookup filters moderation_status='visible', so a hidden review
+      // resolves to null → NotFound, and no vote is recorded.
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.castVote('viewer-1', 'review-2', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-2', moderation_status: 'visible' },
+      });
+      expect(voteInsert.execute).not.toHaveBeenCalled();
+    });
   });
 
   describe('clearVote', () => {
@@ -1275,6 +1364,18 @@ describe('ReviewsService', () => {
       await expect(service.clearVote('viewer-1', 'missing')).rejects.toThrow(
         NotFoundException,
       );
+      expect(voteRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('rejects clearing a vote on a hidden (moderated) review', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.clearVote('viewer-1', 'review-2')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'review-2', moderation_status: 'visible' },
+      });
       expect(voteRepo.delete).not.toHaveBeenCalled();
     });
   });

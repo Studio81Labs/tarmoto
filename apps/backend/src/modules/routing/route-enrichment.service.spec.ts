@@ -37,6 +37,32 @@ describe('RouteEnrichmentService.aggregate', () => {
     expect(query).toHaveBeenCalledTimes(4);
   });
 
+  it('hazard count query excludes hidden hazards (moderation_status filter)', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          avg_quality: 3.5,
+          avg_curviness: 4.0,
+          elevation_span: 200,
+          total_length_m: 10000,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
+    const ds = { query } as unknown as DataSource;
+
+    await new RouteEnrichmentService(ds).aggregate([
+      { lat: 50.08, lng: 14.42 },
+      { lat: 50.1, lng: 14.5 },
+    ]);
+
+    // Third query issued is the hazard count — check it carries the moderation filter
+    const hazardSql = String((query.mock.calls[2] as unknown[])[0]);
+    expect(hazardSql).toContain("moderation_status = 'visible'");
+  });
+
   it('returns empty metrics without querying for degenerate geometry', async () => {
     const query = jest.fn();
     const ds = { query } as unknown as DataSource;

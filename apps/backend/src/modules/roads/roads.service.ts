@@ -153,7 +153,8 @@ export class RoadsService {
         `SELECT COUNT(*)::int AS count
         FROM hazard_reports
         WHERE road_segment_id = $1
-          AND is_active = true AND expires_at > $2`,
+          AND is_active = true AND expires_at > $2
+          AND moderation_status = 'visible'`,
         [segmentId, asOf],
       ),
       // Top-N most-recent active hazards with reporter + road name. Joining
@@ -183,6 +184,7 @@ export class RoadsService {
         LEFT JOIN road_segments rs ON rs.id = h.road_segment_id
         WHERE h.road_segment_id = $1
           AND h.is_active = true AND h.expires_at > $2
+          AND h.moderation_status = 'visible'
         ORDER BY h.created_at DESC
         LIMIT $3`,
         [segmentId, asOf, ACTIVE_HAZARD_LIMIT],
@@ -190,7 +192,8 @@ export class RoadsService {
       this.segmentRepo.query(
         `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
         FROM road_reviews
-        WHERE road_segment_id = $1`,
+        WHERE road_segment_id = $1
+          AND moderation_status = 'visible'`,
         [segmentId],
       ),
       this.segmentRepo.query(
@@ -229,6 +232,7 @@ export class RoadsService {
           WHERE v.road_review_id = rr.id
         ) vc ON true
         WHERE rr.road_segment_id = $1
+          AND rr.moderation_status = 'visible'
         ORDER BY rr.created_at DESC
         LIMIT $2`,
         [segmentId, RECENT_REVIEW_LIMIT],

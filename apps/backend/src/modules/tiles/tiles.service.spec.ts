@@ -142,5 +142,12 @@ describe('TilesService', () => {
       expect(sql).toContain('is_active = true');
       expect(sql).toContain('expires_at > NOW()');
     });
+
+    it('should exclude hidden hazards from the MVT layer (moderation_status filter)', async () => {
+      await service.getTile(10, 550, 335, 'hazards');
+
+      const sql = segmentRepo.query!.mock.calls[0][0];
+      expect(sql).toContain("moderation_status = 'visible'");
+    });
   });
 });

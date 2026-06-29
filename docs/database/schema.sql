@@ -212,12 +212,19 @@ CREATE TABLE hazard_reports (
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at      TIMESTAMPTZ NOT NULL,    -- auto-expiry: 24-72h based on type
-    confirmed_at    TIMESTAMPTZ              -- last confirmation timestamp
+    confirmed_at    TIMESTAMPTZ,             -- last confirmation timestamp
+    -- Admin moderation (Phase 4): 'visible' | 'hidden'. Hidden rows are
+    -- excluded from every public read path; the row is retained for audit.
+    moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
+    moderation_reason VARCHAR(500),
+    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    moderated_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_hazard_reports_location ON hazard_reports USING GIST(location);
 CREATE INDEX idx_hazard_reports_active ON hazard_reports(is_active, expires_at);
 CREATE INDEX idx_hazard_reports_segment ON hazard_reports(road_segment_id);
+CREATE INDEX idx_hazard_reports_moderation ON hazard_reports(moderation_status, created_at);
 
 -- ============================================================
 -- ROAD REVIEWS
@@ -231,11 +238,19 @@ CREATE TABLE road_reviews (
     comment         TEXT,
     bike_model      VARCHAR(100),
     photos          TEXT[],                  -- S3 URLs
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Admin moderation (Phase 4): 'visible' | 'hidden'. Hidden reviews are
+    -- excluded from public lists + rating aggregates (the author still sees
+    -- their own); the row is retained for audit.
+    moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
+    moderation_reason VARCHAR(500),
+    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    moderated_at    TIMESTAMPTZ
 );
 
 CREATE INDEX idx_road_reviews_segment ON road_reviews(road_segment_id);
 CREATE UNIQUE INDEX idx_road_reviews_unique ON road_reviews(user_id, road_segment_id);
+CREATE INDEX idx_road_reviews_moderation ON road_reviews(moderation_status, created_at);
 
 -- ============================================================
 -- TRIPS & COLLABORATIVE PLANNING
@@ -296,6 +311,25 @@ CREATE TABLE trip_waypoints (
 );
 
 CREATE INDEX idx_trip_waypoints_day ON trip_waypoints(trip_day_id, sequence);
+
+-- Per-trip chat. The keyset pagination index lives in the
+-- AddTripCollaboration migration; the moderation columns were added in
+-- Phase 4 (AddContentModeration).
+CREATE TABLE trip_messages (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    trip_id         UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body            TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Admin moderation (Phase 4): 'visible' | 'hidden'. Hidden messages are
+    -- excluded from the trip chat fetch; the row is retained for audit.
+    moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
+    moderation_reason VARCHAR(500),
+    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    moderated_at    TIMESTAMPTZ
+);
+
+CREATE INDEX idx_trip_messages_moderation ON trip_messages(moderation_status, created_at);
 
 -- ============================================================
 -- FUN ZONES (auto-discovered clusters of great roads)

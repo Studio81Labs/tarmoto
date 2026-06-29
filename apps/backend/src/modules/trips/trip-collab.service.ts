@@ -478,6 +478,7 @@ export class TripCollabService {
       .createQueryBuilder('m')
       .leftJoinAndSelect('m.author', 'author')
       .where('m.trip_id = :tripId', { tripId })
+      .andWhere("m.moderation_status = 'visible'")
       .orderBy('m.created_at', 'DESC')
       .addOrderBy('m.id', 'DESC')
       .take(limit);

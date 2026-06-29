@@ -288,6 +288,46 @@ describe('BadgesService', () => {
     });
   });
 
+  describe('moderation filter on review / hazard counts', () => {
+    it('reviews_written count passes moderation_status=visible so hidden reviews are excluded', async () => {
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '0' })
+        .mockResolvedValueOnce({ max: '0' })
+        .mockResolvedValueOnce({ count: '0' });
+      rideRepo.count!.mockResolvedValueOnce(0);
+      reviewRepo.count.mockResolvedValueOnce(0);
+      hazardRepo.count.mockResolvedValueOnce(0);
+      sharedRideRepo.count.mockResolvedValueOnce(0);
+
+      await service.computeStats('user-1');
+
+      expect(reviewRepo.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ moderation_status: 'visible' }),
+        }),
+      );
+    });
+
+    it('hazards_reported count passes moderation_status=visible so hidden hazards are excluded', async () => {
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '0' })
+        .mockResolvedValueOnce({ max: '0' })
+        .mockResolvedValueOnce({ count: '0' });
+      rideRepo.count!.mockResolvedValueOnce(0);
+      reviewRepo.count.mockResolvedValueOnce(0);
+      hazardRepo.count.mockResolvedValueOnce(0);
+      sharedRideRepo.count.mockResolvedValueOnce(0);
+
+      await service.computeStats('user-1');
+
+      expect(hazardRepo.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ moderation_status: 'visible' }),
+        }),
+      );
+    });
+  });
+
   describe('computeProgression', () => {
     it('derives XP / level / tier from the rider stats', async () => {
       jest.spyOn(service, 'computeStats').mockResolvedValueOnce({

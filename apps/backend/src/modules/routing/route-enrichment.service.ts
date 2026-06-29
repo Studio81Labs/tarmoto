@@ -117,6 +117,7 @@ export class RouteEnrichmentService {
           `SELECT COUNT(*)::int AS count
            FROM hazard_reports h
            WHERE h.is_active = true AND h.expires_at > NOW()
+             AND h.moderation_status = 'visible'
              AND ST_DWithin(
                h.location::geography,
                ST_GeomFromText($1, 4326)::geography,

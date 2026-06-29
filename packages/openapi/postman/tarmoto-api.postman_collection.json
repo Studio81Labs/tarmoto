@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "549e339d-6de3-46a8-b8ce-806293fc46d4",
+    "_postman_id": "b6efd2eb-f73c-4639-a3b8-a645eca5295b",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1961,6 +1961,38 @@
           }
         },
         {
+          "name": "Persist a manually-built route (server re-routes from waypoints)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "route"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    {\n      \"dayNumber\": 0,\n      \"title\": \"\",\n      \"startLinked\": false,\n      \"waypoints\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0,\n          \"name\": \"\",\n          \"type\": \"start\"\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1,\n          \"name\": \"\",\n          \"type\": \"start\"\n        }\n      ]\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Replace an existing trip with a parsed GPX/KML route",
           "request": {
             "method": "PUT",
@@ -2562,6 +2594,34 @@
       ]
     },
     {
+      "name": "community-trips",
+      "item": [
+        {
+          "name": "Read-only trip detail for a non-member, when the trip is exposed via a discoverable collection. Masks the invite code and member roster.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/community/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "community", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "trip-shares",
       "item": [
         {
@@ -2826,6 +2886,37 @@
                   "disabled": true
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "routing",
+      "item": [
+        {
+          "name": "Road-snapped route through waypoints (live planner preview)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/routing/route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "routing", "route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -5284,6 +5375,643 @@
                   "value": ""
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin-auth",
+      "item": [
+        {
+          "name": "Public admin auth config (pre-auth)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "config"]
+            }
+          }
+        },
+        {
+          "name": "Admin password login (dev / fallback)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"\",\n  \"password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Rotate the admin session tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Current admin session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Revoke the admin session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Begin GitHub OAuth",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/sso/github/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "sso", "github", "start"]
+            }
+          }
+        },
+        {
+          "name": "GitHub OAuth callback",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/sso/github/callback",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "auth",
+                "sso",
+                "github",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "state",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "code",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "admin",
+      "item": [
+        {
+          "name": "Admin overview metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "List app users (paginated, searchable)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "users"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Substring match on email or display_name.",
+                  "disabled": true
+                },
+                {
+                  "key": "deleted",
+                  "value": "",
+                  "description": "Filter by soft-deleted state.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "subscription",
+                  "value": "",
+                  "description": "Filter by subscription_tier OR subscription_status value. Valid examples: free | premium | pro | active | trialing | past_due | canceled.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "App user detail + activity counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Soft-delete an app user",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Restore a soft-deleted app user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:id/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "users", ":id", "restore"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List admin (staff) accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/admins",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "admins"]
+            }
+          }
+        },
+        {
+          "name": "Create an admin account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/admins",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "admins"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"\",\n  \"role\": \"read_only\",\n  \"mode\": \"password\",\n  \"password\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Change an admin role / enable-disable",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/admins/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "admins", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"read_only\",\n  \"active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List feature flags",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "flags"]
+            }
+          }
+        },
+        {
+          "name": "Create a feature flag",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "flags"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"group_rides\",\n  \"enabled\": false,\n  \"description\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update a feature flag (enabled / description)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/flags/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "flags", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false,\n  \"description\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a feature flag",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/flags/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "flags", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Browse user-generated content for moderation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "content"],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "Content type to browse.",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by moderation status. Defaults to all.",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Substring match on the content text.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hide a content item from public surfaces",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id/hide",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "content", ":type", ":id", "hide"],
+              "variable": [
+                {
+                  "key": "type",
+                  "value": ""
+                },
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Restore a previously hidden content item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id/restore",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "content",
+                ":type",
+                ":id",
+                "restore"
+              ],
+              "variable": [
+                {
+                  "key": "type",
+                  "value": ""
+                },
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Permanently delete a content item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "content", ":type", ":id"],
+              "variable": [
+                {
+                  "key": "type",
+                  "value": ""
+                },
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "config",
+      "item": [
+        {
+          "name": "Public feature-flag map (key → enabled)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "flags"]
             }
           }
         }

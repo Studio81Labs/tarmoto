@@ -5,4 +5,5 @@ export class AdminMetricsDto {
   @ApiProperty() activeRides!: number;
   @ApiProperty() featureFlags!: number;
   @ApiProperty() closures!: number;
+  @ApiProperty() hiddenContent!: number;
 }

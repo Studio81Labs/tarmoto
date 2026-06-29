@@ -454,6 +454,85 @@ export const hazardMarkerStyle: CircleLayerStyle = {
 };
 
 /**
+ * Drop hazards from a REST snapshot that were dismissed (moderated/removed)
+ * at or after the fetch started — the snapshot predates the dismissal and
+ * may still carry them. Prunes spent tombstones (dismissed before the fetch
+ * started, so the server snapshot already excludes them). Pure: uses only
+ * the passed `fetchStartedAt`, never Date.now().
+ */
+export function filterDismissedFromRest(
+  restResult: Hazard[],
+  dismissedAt: Map<string, number>,
+  fetchStartedAt: number,
+): Hazard[] {
+  for (const [id, t] of dismissedAt) {
+    if (t < fetchStartedAt) dismissedAt.delete(id);
+  }
+  return restResult.filter((h) => {
+    const t = dismissedAt.get(h.id);
+    return t === undefined || t < fetchStartedAt;
+  });
+}
+
+/**
+ * Merge a REST hazard snapshot with:
+ *   (a) dismissal filtering — hazards in `restResult` whose `dismissedAt`
+ *       entry is >= `fetchStartedAt` are dropped (the snapshot predates the
+ *       admin action). Spent tombstones (t < fetchStartedAt) are pruned.
+ *   (b) WS arrival preservation — hazards currently in `current` that
+ *       arrived via WebSocket at or after `fetchStartedAt` and are NOT
+ *       already in the (filtered) REST result are appended so they don't
+ *       disappear when the REST response overwrites local state. WS arrival
+ *       entries for ids already covered by REST are cleared to avoid stale
+ *       entries accumulating across many fetches.
+ *
+ * Pure: call with `fetchStartedAt = Date.now()` at the call site; never
+ * calls Date.now() itself so the function stays testable in isolation.
+ *
+ * Mirrors `mergeHazardsWithInFlightWsArrivals` in
+ * `apps/companion/src/lib/hazard-merge.ts` — keep the two in sync.
+ */
+export function mergeHazardsRest(
+  restResult: Hazard[],
+  current: Hazard[],
+  wsArrivalAt: Map<string, number>,
+  dismissedAt: Map<string, number>,
+  fetchStartedAt: number,
+): Hazard[] {
+  // Drop REST hazards dismissed after the fetch started — the snapshot
+  // predates the admin action and would resurrect a moderated marker.
+  const filteredRest = restResult.filter((h) => {
+    const t = dismissedAt.get(h.id);
+    return t === undefined || t < fetchStartedAt;
+  });
+
+  // Prune spent tombstones: the dismissal occurred before this fetch
+  // started, so the server already excluded the hazard from its snapshot.
+  for (const [id, t] of dismissedAt) {
+    if (t < fetchStartedAt) dismissedAt.delete(id);
+  }
+
+  const restIds = new Set(filteredRest.map((h) => h.id));
+
+  // Preserve current hazards that arrived via WS during the in-flight fetch
+  // window and aren't already in the REST result.
+  const preserved = current.filter((h) => {
+    const arrivedAt = wsArrivalAt.get(h.id);
+    return (
+      arrivedAt !== undefined &&
+      arrivedAt >= fetchStartedAt &&
+      !restIds.has(h.id)
+    );
+  });
+
+  // Hazards now covered by REST no longer need WS preservation — clear
+  // their arrival entries so the map doesn't grow unboundedly.
+  for (const id of restIds) wsArrivalAt.delete(id);
+
+  return [...filteredRest, ...preserved];
+}
+
+/**
  * Apply a `hazard:new` WebSocket event to a local hazard list and
  * return the updated list (or the original list if nothing changed,
  * to keep `===` referential equality stable for memoization).

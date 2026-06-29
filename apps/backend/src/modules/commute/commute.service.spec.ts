@@ -932,6 +932,49 @@ describe('CommuteService', () => {
     });
   });
 
+  describe('countHazardsNearLine (moderation filter)', () => {
+    it('excludes hidden hazards from the straight-line count (moderation_status filter)', async () => {
+      // getAlternatives triggers countHazardsNearLine for the primary route
+      // when route_geom is absent (falls back to origin→destination line).
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+      };
+      routeRepo.findOne!.mockResolvedValueOnce(legacy);
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{ getAlternatives: jest.Mock }>;
+      routingProvider.getAlternatives.mockResolvedValueOnce([]);
+      routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
+
+      await service.getAlternatives('user-1');
+
+      const hazardCall = routeRepo.query!.mock.calls.find((c) =>
+        String(c[0]).includes('hazard_reports'),
+      );
+      expect(hazardCall).toBeDefined();
+      expect(String(hazardCall![0])).toContain("moderation_status = 'visible'");
+    });
+  });
+
+  describe('countHazardsAlongGeometry (moderation filter)', () => {
+    it('excludes hidden hazards from the polyline count (moderation_status filter)', async () => {
+      // getAlternatives triggers countHazardsAlongGeometry for the primary
+      // when route_geom is populated (the normal path).
+      routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
+
+      await service.getAlternatives('user-1');
+
+      const hazardCall = routeRepo.query!.mock.calls.find((c) =>
+        String(c[0]).includes('hazard_reports'),
+      );
+      expect(hazardCall).toBeDefined();
+      expect(String(hazardCall![0])).toContain("moderation_status = 'visible'");
+    });
+  });
+
   describe('parseIntervalMinutes', () => {
     // The parser sees both shapes at runtime: pg's default returns a
     // PostgresInterval object, but TypeORM types the column as string,

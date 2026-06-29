@@ -158,8 +158,21 @@ export class ReviewsService {
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
+    // Hidden (moderated) reviews stay out of the public list, but a rider
+    // must still see their OWN hidden review — otherwise the mobile form
+    // reads its absence as "create mode", the POST trips the unique
+    // (user_id, road_segment_id) constraint (409), and the conflict reload
+    // (this same list) can't surface the row to switch to edit/delete,
+    // trapping the rider. Self-view exemption mirrors the privacy mask one
+    // below: visible to everyone, plus the viewer's own rows regardless of
+    // moderation_status.
     const reviews = await this.reviewRepo.find({
-      where: { road_segment_id: segmentId },
+      where: viewerUserId
+        ? [
+            { road_segment_id: segmentId, moderation_status: 'visible' },
+            { road_segment_id: segmentId, user_id: viewerUserId },
+          ]
+        : { road_segment_id: segmentId, moderation_status: 'visible' },
       relations: ['user'],
       order: { created_at: 'DESC' },
     });
@@ -333,6 +346,29 @@ export class ReviewsService {
   }
 
   /**
+   * Admin hard-delete: load → remove row → only if remove succeeded, purge
+   * managed photos.
+   *
+   * The ordering guarantee mirrors `delete()`: photos are purged after the
+   * row is removed so a DB failure can't leave the row pointing at files we
+   * already deleted.
+   *
+   * Returns `true` when the row was deleted, `false` when no row was found.
+   */
+  async adminHardDelete(id: string): Promise<boolean> {
+    const review = await this.reviewRepo.findOne({ where: { id } });
+    if (!review) return false;
+    const photos = normalizeReviewPhotoList(review.photos);
+    await this.reviewRepo.remove(review);
+    await this.deleteOwnedReviewPhotos(
+      photos,
+      review.road_segment_id,
+      review.user_id,
+    );
+    return true;
+  }
+
+  /**
    * Persist uploaded review photo files to object storage and return the
    * URLs the caller should submit on the next `POST/PUT
    * /roads/:id/reviews`.
@@ -503,7 +539,7 @@ export class ReviewsService {
     isHelpful: boolean,
   ): Promise<ReviewVoteResultDto> {
     const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
+      where: { id: reviewId, moderation_status: 'visible' },
     });
     if (!review) {
       throw new NotFoundException('Review not found');
@@ -542,7 +578,7 @@ export class ReviewsService {
     reviewId: string,
   ): Promise<ReviewVoteResultDto> {
     const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
+      where: { id: reviewId, moderation_status: 'visible' },
     });
     if (!review) {
       throw new NotFoundException('Review not found');
