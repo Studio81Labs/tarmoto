@@ -208,6 +208,22 @@ export class GroupRidesService {
   private async endRideInternal(groupRideId: string): Promise<void> {
     const at = new Date();
     await this.groupRideRepo.update({ id: groupRideId }, { ended_at: at });
+    // Wipe each member's last-known position + breadcrumb buffer when the
+    // ride ends (#752). Live location is operational only while the ride
+    // is active (the weather sweep already reads it only for `ended_at IS
+    // NULL` rides) — keeping it on an ended ride is a privacy hole, since
+    // these fields are never otherwise aged out.
+    await this.memberRepo.update(
+      { group_ride_id: groupRideId },
+      {
+        last_lat: null,
+        last_lng: null,
+        last_speed: null,
+        last_heading: null,
+        last_position_at: null,
+        recent_path: [],
+      },
+    );
     this.events.broadcastToGroupRide(groupRideId, 'group:ended', {
       group_ride_id: groupRideId,
       at: at.toISOString(),

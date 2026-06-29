@@ -90,6 +90,7 @@ describe('GroupRidesService', () => {
       find: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       save: jest.fn().mockImplementation((entity: unknown) =>
         Promise.resolve({
           ...(entity as object),
@@ -381,6 +382,24 @@ describe('GroupRidesService', () => {
         RIDE_ID,
         'group:ended',
         expect.any(Object),
+      );
+    });
+
+    it('wipes every member location + breadcrumb buffer on end (#752)', async () => {
+      groupRideRepo.findOne.mockResolvedValue(makeRide());
+
+      await service.end(OWNER_ID, RIDE_ID);
+
+      expect(memberRepo.update).toHaveBeenCalledWith(
+        { group_ride_id: RIDE_ID },
+        {
+          last_lat: null,
+          last_lng: null,
+          last_speed: null,
+          last_heading: null,
+          last_position_at: null,
+          recent_path: [],
+        },
       );
     });
   });
