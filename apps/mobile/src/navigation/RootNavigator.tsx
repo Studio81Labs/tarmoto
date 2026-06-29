@@ -423,17 +423,17 @@ function ProfileNavigator() {
       <ProfileStack.Screen
         name="ViewProfile"
         component={ViewProfileScreen}
-        options={{ title: "Rider" }}
+        options={{ ...brandScreenOptions, title: "Rider" }}
       />
       <ProfileStack.Screen
         name="Followers"
         component={FollowersScreen}
-        options={{ title: "Followers" }}
+        options={{ ...brandScreenOptions, title: "Followers" }}
       />
       <ProfileStack.Screen
         name="Following"
         component={FollowingScreen}
-        options={{ title: "Following" }}
+        options={{ ...brandScreenOptions, title: "Following" }}
       />
       <ProfileStack.Screen
         name="LinkAccount"
