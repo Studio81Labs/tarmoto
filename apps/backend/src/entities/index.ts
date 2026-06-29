@@ -41,6 +41,7 @@ export { Challenge } from './challenge.entity.js';
 export { ChallengeEntry } from './challenge-entry.entity.js';
 export { MountainPass } from './mountain-pass.entity.js';
 export { RoadClosure } from './road-closure.entity.js';
+export { Poi } from './poi.entity.js';
 export { DataExportRequest } from './data-export-request.entity.js';
 export type { DataExportStatus } from './data-export-request.entity.js';
 export { GroupRide } from './group-ride.entity.js';

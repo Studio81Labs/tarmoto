@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type {
   PoiProvider,
   AccommodationPoi,
+  ImportedPoi,
   PointOfInterest,
 } from '../poi-provider.interface.js';
 import {
@@ -26,6 +27,39 @@ interface OverpassResponse {
 
 const KIND_SET = new Set<string>(ACCOMMODATION_KINDS);
 const OVERPASS_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * The offline import (#745) is a full-area, uncapped query (`[timeout:180]`
+ * server-side), so it needs a far longer client abort than the
+ * request-time lookups — otherwise a legitimately slow regional import is
+ * cancelled after 10 s and the weekly job never completes. Slightly above
+ * the server timeout so the server's own limit is the one that fires.
+ */
+const OVERPASS_IMPORT_TIMEOUT_MS = 190_000;
+
+/**
+ * The §7 storage tag set for the offline import (#745) — a **superset** of
+ * the live `POI_KIND_TAGS` that also covers `fast_food`, rest areas, and
+ * ice cream. Decoupled from `PoiKind` on purpose: these `kind` strings are
+ * written straight to `pois.kind` and must not change the live `/poi`
+ * enum. Order matters — the first matching entry wins in
+ * `normalizeImportedPoi`, so a dual-tagged element gets a stable category.
+ * `highway=rest_area` and `highway=services` both map to `rest_area`.
+ */
+const IMPORT_POI_TAGS: ReadonlyArray<{
+  key: string;
+  value: string;
+  kind: string;
+}> = [
+  { key: 'amenity', value: 'restaurant', kind: 'restaurant' },
+  { key: 'amenity', value: 'cafe', kind: 'cafe' },
+  { key: 'amenity', value: 'fast_food', kind: 'fast_food' },
+  { key: 'amenity', value: 'fuel', kind: 'fuel_station' },
+  { key: 'amenity', value: 'ice_cream', kind: 'ice_cream' },
+  { key: 'shop', value: 'ice_cream', kind: 'ice_cream' },
+  { key: 'tourism', value: 'viewpoint', kind: 'viewpoint' },
+  { key: 'highway', value: 'rest_area', kind: 'rest_area' },
+  { key: 'highway', value: 'services', kind: 'rest_area' },
+];
 
 /**
  * Map our `PoiKind` to the OSM tag key + regex of allowed values that
@@ -181,12 +215,103 @@ export class OverpassPoiProvider implements PoiProvider {
     return pois;
   }
 
-  private async runQuery(query: string): Promise<OverpassResponse> {
+  async findImportPoisInBbox(bbox: {
+    minLng: number;
+    minLat: number;
+    maxLng: number;
+    maxLat: number;
+  }): Promise<ImportedPoi[]> {
+    // Overpass bbox filter is (south, west, north, east).
+    const box = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    // One regex per OSM tag key — Overpass QL can't OR across keys
+    // concisely. The §7 storage set spans amenity / tourism / highway /
+    // shop, so group the tag values by key.
+    const byKey = new Map<string, string[]>();
+    for (const { key, value } of IMPORT_POI_TAGS) {
+      const values = byKey.get(key) ?? [];
+      values.push(value);
+      byKey.set(key, values);
+    }
+    const clauses: string[] = [];
+    for (const [key, values] of byKey.entries()) {
+      const filter = [...new Set(values)].join('|');
+      // node + way + relation: some §7 POIs (multipolygon service/rest
+      // areas, viewpoint sites) are modeled as relations. `out center`
+      // gives them a representative point, same as the accommodation path.
+      clauses.push(`  node["${key}"~"^(${filter})$"](${box});`);
+      clauses.push(`  way["${key}"~"^(${filter})$"](${box});`);
+      clauses.push(`  relation["${key}"~"^(${filter})$"](${box});`);
+    }
+    // No `out` limit: an import wants the full area, not a capped sample.
+    const query =
+      `[out:json][timeout:180];` +
+      `(` +
+      clauses.join('') +
+      `);` +
+      `out center tags;`;
+
+    const data = await this.runQuery(query, OVERPASS_IMPORT_TIMEOUT_MS);
+    const pois: ImportedPoi[] = [];
+    for (const element of data.elements ?? []) {
+      const poi = this.normalizeImportedPoi(element);
+      if (poi) pois.push(poi);
+    }
+    return pois;
+  }
+
+  /** Map an OSM element to the first §7 import kind whose tag it carries. */
+  private normalizeImportedPoi(element: OverpassElement): ImportedPoi | null {
+    const tags = element.tags ?? {};
+    const match = IMPORT_POI_TAGS.find((t) => tags[t.key] === t.value);
+    if (!match) return null;
+    const lat = element.lat ?? element.center?.lat;
+    const lng = element.lon ?? element.center?.lon;
+    if (lat === undefined || lng === undefined) return null;
+    return {
+      external_id: `osm:${element.type}:${element.id}`,
+      name: tags.name ?? tags['name:en'] ?? null,
+      kind: match.kind,
+      lat,
+      lng,
+      website: tags.website ?? tags['contact:website'] ?? null,
+      phone: tags.phone ?? tags['contact:phone'] ?? null,
+    };
+  }
+
+  async findAccommodationsInBbox(
+    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    kinds: AccommodationKind[],
+  ): Promise<AccommodationPoi[]> {
+    if (kinds.length === 0) return [];
+    // Overpass bbox filter is (south, west, north, east).
+    const box = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    const tourismFilter = Array.from(new Set(kinds)).join('|');
+    // node + way + relation: camp sites are points, hotels are buildings.
+    const query =
+      `[out:json][timeout:180];` +
+      `(` +
+      `  node["tourism"~"^(${tourismFilter})$"](${box});` +
+      `  way["tourism"~"^(${tourismFilter})$"](${box});` +
+      `  relation["tourism"~"^(${tourismFilter})$"](${box});` +
+      `);` +
+      `out center tags;`;
+
+    const data = await this.runQuery(query, OVERPASS_IMPORT_TIMEOUT_MS);
+    const pois: AccommodationPoi[] = [];
+    const requested = new Set<AccommodationKind>(kinds);
+    for (const element of data.elements ?? []) {
+      const poi = this.normalizeAccommodation(element);
+      if (poi && requested.has(poi.kind)) pois.push(poi);
+    }
+    return pois;
+  }
+
+  private async runQuery(
+    query: string,
+    timeoutMs: number = OVERPASS_FETCH_TIMEOUT_MS,
+  ): Promise<OverpassResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      OVERPASS_FETCH_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await fetch(this.endpoint, {

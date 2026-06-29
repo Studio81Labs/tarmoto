@@ -30,8 +30,10 @@ import { WeatherAlertSweepProcessor } from './processors/weather-alert-sweep.pro
 import { ModelEvalReconcileProcessor } from './processors/model-eval-reconcile.processor.js';
 import { ModelEvalAgreementProcessor } from './processors/model-eval-agreement.processor.js';
 import { NapClosurePollProcessor } from './processors/nap-closure-poll.processor.js';
+import { PoiImportProcessor } from './processors/poi-import.processor.js';
 import { ModelEvalModule } from '../model-eval/index.js';
 import { NapModule } from '../nap/nap.module.js';
+import { PoiModule } from '../poi/poi.module.js';
 
 const JOBS_CONFIG_PROVIDER: Provider = {
   provide: JOBS_CONFIG_TOKEN,
@@ -53,6 +55,7 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   ModelEvalReconcileProcessor,
   ModelEvalAgreementProcessor,
   NapClosurePollProcessor,
+  PoiImportProcessor,
 ];
 
 /**
@@ -107,6 +110,7 @@ export class JobsModule {
         WeatherModule,
         ModelEvalModule,
         NapModule,
+        PoiModule,
         BullModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],
