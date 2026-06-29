@@ -26,7 +26,10 @@ export class AddPois1787000000000 implements MigrationInterface {
         kind VARCHAR(32) NOT NULL,
         name VARCHAR(255),
         website VARCHAR(512),
-        phone VARCHAR(64),
+        -- Wide enough for OSM's semicolon-separated multi-number phone
+        -- tags; the import also truncates to these widths defensively so a
+        -- pathological upstream value can never fail the whole upsert chunk.
+        phone VARCHAR(255),
         geom GEOMETRY(Point, 4326) NOT NULL,
         last_imported_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -138,6 +138,17 @@ describe('PoiImportService', () => {
     expect(result).toEqual({ fetched: 3, upserted: 3 });
   });
 
+  it('truncates over-long tags so a long phone never fails the upsert', async () => {
+    const longPhone = Array(50).fill('+420 555 111 222').join('; '); // > 255
+    provider.findPointsOfInterestInBbox.mockResolvedValueOnce([
+      poi({ external_id: 'node/1', phone: longPhone }),
+    ]);
+    await service.import();
+    const phone = upsertedRows()[0].phone as string;
+    expect(phone.length).toBe(255);
+    expect(longPhone.startsWith(phone)).toBe(true);
+  });
+
   it('dedupes by external_id so a re-import is idempotent', async () => {
     provider.findPointsOfInterestInBbox.mockResolvedValueOnce([
       poi({ external_id: 'node/1', name: 'Old' }),

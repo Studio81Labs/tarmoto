@@ -7,6 +7,7 @@ import { PasswordResetToken } from './entities/password-reset-token.entity.js';
 import { AccountDeletionLog } from './entities/account-deletion-log.entity.js';
 import { CrashAlert } from './entities/crash-alert.entity.js';
 import { RoadSegment } from './entities/road-segment.entity.js';
+import { Poi } from './entities/poi.entity.js';
 import { SurfaceReading } from './entities/surface-reading.entity.js';
 import { Ride } from './entities/ride.entity.js';
 import { RideSegment } from './entities/ride-segment.entity.js';
@@ -126,6 +127,7 @@ export const AppDataSource = new DataSource({
     AccountDeletionLog,
     CrashAlert,
     RoadSegment,
+    Poi,
     SurfaceReading,
     Ride,
     RideSegment,

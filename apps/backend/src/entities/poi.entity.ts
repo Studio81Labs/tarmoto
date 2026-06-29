@@ -47,7 +47,7 @@ export class Poi {
   @Column({ type: 'varchar', length: 512, nullable: true })
   website!: string | null;
 
-  @Column({ type: 'varchar', length: 64, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   phone!: string | null;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })

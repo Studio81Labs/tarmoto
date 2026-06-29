@@ -19,6 +19,15 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/** `pois` text-column widths — truncate to these so an over-long OSM tag
+ * (e.g. a semicolon-separated phone list) can never fail the upsert. */
+const COLUMN_LIMITS = { name: 255, website: 512, phone: 255 } as const;
+
+function clamp(value: string | null, max: number): string | null {
+  if (value === null) return null;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
 export interface PoiImportResult {
   fetched: number;
   upserted: number;
@@ -84,9 +93,9 @@ export class PoiImportService {
         source: 'osm',
         external_id: p.external_id,
         kind: p.kind,
-        name: p.name,
-        website: p.website,
-        phone: p.phone,
+        name: clamp(p.name, COLUMN_LIMITS.name),
+        website: clamp(p.website, COLUMN_LIMITS.website),
+        phone: clamp(p.phone, COLUMN_LIMITS.phone),
         geom: { type: 'Point', coordinates: [p.lng, p.lat] },
         last_imported_at: batchTime,
       });
