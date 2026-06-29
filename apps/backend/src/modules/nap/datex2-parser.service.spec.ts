@@ -115,6 +115,26 @@ describe('Datex2ParserService', () => {
     });
   });
 
+  it('classifies a lane closure as partial, not full (lane cue wins over "closed")', () => {
+    const xml = `<?xml version="1.0"?>
+      <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">
+        <d2:payloadPublication>
+          <d2:situation id="S">
+            <d2:situationRecord id="R" xsi:type="MaintenanceWorks">
+              <d2:generalPublicComment>
+                <d2:comment><d2:values><d2:value>Right lane closed for resurfacing</d2:value></d2:values></d2:comment>
+              </d2:generalPublicComment>
+              <d2:groupOfLocations>
+                <d2:gmlLineString><d2:posList>49.20 16.60 49.25 16.70</d2:posList></d2:gmlLineString>
+              </d2:groupOfLocations>
+            </d2:situationRecord>
+          </d2:situation>
+        </d2:payloadPublication>
+      </d2:d2LogicalModel>`;
+    const [rec] = parser.parse(xml);
+    expect(rec.severity).toBe('partial');
+  });
+
   it('builds a line from linear start+end points (not a zero-length stub)', () => {
     const xml = `<?xml version="1.0"?>
       <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">

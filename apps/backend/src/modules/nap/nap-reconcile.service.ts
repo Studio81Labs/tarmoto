@@ -116,6 +116,7 @@ export class NapReconcileService {
               first_seen_at: true,
               geom: true,
               needs_location_decoding: true,
+              raw_location_ref: true,
             },
           })),
         );
@@ -128,15 +129,21 @@ export class NapReconcileService {
       //    coordinates for, PRESERVE an existing decoded geometry instead
       //    of overwriting it back to null every poll — otherwise a row
       //    decoded out-of-band (the whole point of raw_location_ref)
-      //    would vanish from public reads on the next ~3-min tick.
+      //    would vanish from public reads on the next ~3-min tick. BUT only
+      //    when the raw location reference is unchanged: if the feed item
+      //    now points at a different location, the old geometry is stale,
+      //    so reset to null + needs decoding to trigger a fresh decode.
       let needsDecoding = 0;
       const rows = deduped.map((s) => {
         const ex = existingByExt.get(s.externalId);
         let geom: GeoJSON.LineString | null = s.geometry;
         let needsLocationDecoding = false;
         if (!s.geometry) {
-          if (ex?.geom) {
-            geom = ex.geom; // keep the already-decoded geometry
+          const sameLocation =
+            JSON.stringify(ex?.raw_location_ref ?? null) ===
+            JSON.stringify(s.rawLocationRef ?? null);
+          if (ex?.geom && sameLocation) {
+            geom = ex.geom; // same location, already decoded — keep it
           } else {
             geom = null;
             needsLocationDecoding = true;

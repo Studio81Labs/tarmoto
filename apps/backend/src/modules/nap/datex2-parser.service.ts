@@ -124,19 +124,24 @@ export class Datex2ParserService {
   ): { reason: RoadClosureReason; severity: RoadClosureSeverity } {
     const type = (rawType ?? '').toLowerCase();
     const text = this.collectStrings(rec).join(' ').toLowerCase();
-    const isFullClosure =
-      /\b(carriagewayclosed|roadclosed|carriagewayclosures|closed|closure)\b/.test(
-        text,
-      );
     const isLaneRestriction =
       /\b(lane|laneclosures|carriagewayrestriction|narrowlanes|contraflow)\b/.test(
         text,
       );
+    // An unambiguous whole-road closure. The generic `closed`/`closure`
+    // tokens only count when there's NO lane cue — otherwise "right lane
+    // closed" would be mis-ranked as a full closure (over actual full
+    // closures) in /closures/check-route counts.
+    const isFullClosure =
+      /\b(carriagewayclosed|roadclosed|carriagewayclosures)\b/.test(text) ||
+      (!isLaneRestriction && /\b(closed|closure)\b/.test(text));
 
-    const severityFor = (full: RoadClosureSeverity): RoadClosureSeverity => {
+    const severityFor = (
+      fallback: RoadClosureSeverity,
+    ): RoadClosureSeverity => {
       if (isFullClosure) return 'full';
       if (isLaneRestriction) return 'partial';
-      return full;
+      return fallback;
     };
 
     if (type.includes('accident')) {
