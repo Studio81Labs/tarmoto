@@ -48,7 +48,17 @@ export class AddNapClosureReconciliation1784000000000 implements MigrationInterf
     await queryRunner.query(`
       DROP INDEX IF EXISTS idx_road_closures_source_active;
       DROP INDEX IF EXISTS uq_road_closures_source_external;
+    `);
 
+    // Remove undecoded feed rows (geom IS NULL) BEFORE restoring the
+    // NOT NULL invariant. They only exist because of this migration, and
+    // the pre-migration app dereferences `geom.coordinates` with no null
+    // guard — leaving them (and a nullable geom) would turn public
+    // closure reads into 500s after a rollback. Operator rows always
+    // carry geometry, so only feed-imported rows are removed.
+    await queryRunner.query(`DELETE FROM road_closures WHERE geom IS NULL;`);
+
+    await queryRunner.query(`
       ALTER TABLE road_closures
         DROP COLUMN IF EXISTS raw_location_ref,
         DROP COLUMN IF EXISTS needs_location_decoding,
@@ -57,18 +67,8 @@ export class AddNapClosureReconciliation1784000000000 implements MigrationInterf
         DROP COLUMN IF EXISTS first_seen_at,
         DROP COLUMN IF EXISTS last_seen_at,
         DROP COLUMN IF EXISTS external_id;
-    `);
 
-    // Restore the NOT NULL constraint only if no undecoded rows exist;
-    // otherwise leave geom nullable so the down migration can't fail on
-    // feed-imported rows. Operator rows always have geometry.
-    await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM road_closures WHERE geom IS NULL) THEN
-          ALTER TABLE road_closures ALTER COLUMN geom SET NOT NULL;
-        END IF;
-      END $$;
+      ALTER TABLE road_closures ALTER COLUMN geom SET NOT NULL;
     `);
   }
 }
