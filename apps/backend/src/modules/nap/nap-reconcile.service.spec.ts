@@ -42,11 +42,15 @@ describe('NapReconcileService', () => {
   let updateWhere: jest.Mock;
   let updateAndWhere: jest.Mock;
   let txRepo: {
-    findOne: jest.Mock;
-    merge: jest.Mock;
-    save: jest.Mock;
-    create: jest.Mock;
+    find: jest.Mock;
+    upsert: jest.Mock;
     createQueryBuilder: jest.Mock;
+  };
+
+  // The single row passed to the (mocked) bulk upsert.
+  const upsertedRow = (): Record<string, unknown> => {
+    const calls = txRepo.upsert.mock.calls as Record<string, unknown>[][][];
+    return calls[0][0][0];
   };
   let dataSource: Pick<DataSource, 'transaction'>;
   let service: NapReconcileService;
@@ -63,19 +67,13 @@ describe('NapReconcileService', () => {
       execute: updateExecute,
     };
     txRepo = {
-      findOne: jest.fn().mockResolvedValue(null),
-      merge: jest.fn(
-        (target: Record<string, unknown>, src: Record<string, unknown>) => {
-          Object.assign(target, src);
-        },
-      ),
-      save: jest.fn((r: unknown) => Promise.resolve(r)),
-      create: jest.fn((d: unknown) => d),
+      find: jest.fn().mockResolvedValue([]),
+      upsert: jest.fn().mockResolvedValue({}),
       createQueryBuilder: jest.fn(() => updateQb),
     };
     const manager = { getRepository: () => txRepo };
     dataSource = {
-      transaction: jest.fn((cb: (m: typeof manager) => Promise<number>) =>
+      transaction: jest.fn((cb: (m: typeof manager) => Promise<unknown>) =>
         cb(manager),
       ),
     } as unknown as Pick<DataSource, 'transaction'>;
@@ -87,10 +85,21 @@ describe('NapReconcileService', () => {
     );
   });
 
-  it('inserts a new situation with feed bookkeeping', async () => {
+  it('bulk-upserts a new situation with feed bookkeeping', async () => {
     const result = await service.reconcile([situation()]);
 
-    expect(txRepo.create).toHaveBeenCalledWith(
+    // One bulk upsert keyed on the partial unique index — not a
+    // findOne+save per record.
+    expect(txRepo.upsert).toHaveBeenCalledTimes(1);
+    const upsertArgs = txRepo.upsert.mock.calls[0] as [unknown, unknown];
+    expect(upsertArgs[1]).toEqual(
+      expect.objectContaining({
+        conflictPaths: ['source', 'external_id'],
+        indexPredicate: 'external_id IS NOT NULL',
+      }),
+    );
+    const row = upsertedRow();
+    expect(row).toEqual(
       expect.objectContaining({
         source: 'official',
         external_id: 'ndic-1',
@@ -101,23 +110,23 @@ describe('NapReconcileService', () => {
         severity: 'full',
       }),
     );
-    const createCalls = txRepo.create.mock.calls as Record<string, unknown>[][];
-    const created = createCalls[0][0];
-    expect(created.first_seen_at).toBeInstanceOf(Date);
-    expect(created.last_seen_at).toEqual(created.first_seen_at);
+    expect(row.first_seen_at).toBeInstanceOf(Date);
+    expect(row.last_seen_at).toEqual(row.first_seen_at);
     expect(result.inserted).toBe(1);
     expect(result.updated).toBe(0);
   });
 
-  it('updates an existing row by (source, external_id) without re-inserting', async () => {
-    txRepo.findOne.mockResolvedValueOnce({ id: 'x', source: 'official' });
+  it('preloads existing rows, counts them as updates, and preserves first_seen_at', async () => {
+    const originalFirstSeen = new Date('2026-06-01T00:00:00Z');
+    txRepo.find.mockResolvedValueOnce([
+      { external_id: 'ndic-1', first_seen_at: originalFirstSeen },
+    ]);
     const result = await service.reconcile([situation()]);
 
-    expect(txRepo.merge).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'x' }),
-      expect.objectContaining({ is_active: true, reason: 'closure' }),
-    );
-    expect(txRepo.create).not.toHaveBeenCalled();
+    expect(txRepo.find).toHaveBeenCalledTimes(1);
+    // Upserted row keeps the original first_seen_at rather than resetting
+    // it to the batch time.
+    expect(upsertedRow().first_seen_at).toEqual(originalFirstSeen);
     expect(result.updated).toBe(1);
     expect(result.inserted).toBe(0);
   });
@@ -132,7 +141,7 @@ describe('NapReconcileService', () => {
       }),
     ]);
 
-    expect(txRepo.create).toHaveBeenCalledWith(
+    expect(upsertedRow()).toEqual(
       expect.objectContaining({
         geom: null,
         needs_location_decoding: true,
@@ -157,7 +166,6 @@ describe('NapReconcileService', () => {
 
   it('falls back to the batch time when a situation has no start time', async () => {
     await service.reconcile([situation({ startsAt: null })]);
-    const createCalls = txRepo.create.mock.calls as Record<string, unknown>[][];
-    expect(createCalls[0][0].starts_at).toBeInstanceOf(Date);
+    expect(upsertedRow().starts_at).toBeInstanceOf(Date);
   });
 });
