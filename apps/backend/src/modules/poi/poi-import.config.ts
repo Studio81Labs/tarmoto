@@ -24,16 +24,32 @@ const DEFAULT_BBOX = {
 };
 
 export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
-  const raw = process.env.TARMOTO_POI_IMPORT_BBOX ?? '';
-  const parts = raw.split(',').map(Number);
-  const valid =
-    parts.length === 4 &&
-    parts.every((n) => Number.isFinite(n)) &&
-    parts[0] < parts[2] &&
-    parts[1] < parts[3];
-  const bbox = valid
-    ? { minLng: parts[0], minLat: parts[1], maxLng: parts[2], maxLat: parts[3] }
-    : DEFAULT_BBOX;
+  const raw = process.env.TARMOTO_POI_IMPORT_BBOX?.trim();
+  // Default only when unset/blank. A present-but-malformed value is a
+  // configuration error — silently falling back to the CZ/Beskydy default
+  // would import the wrong region as that environment's data (and hides a
+  // typo, against AGENTS.md's no-silent-fallback rule).
+  let bbox = DEFAULT_BBOX;
+  if (raw) {
+    const parts = raw.split(',').map(Number);
+    const valid =
+      parts.length === 4 &&
+      parts.every((n) => Number.isFinite(n)) &&
+      parts[0] < parts[2] &&
+      parts[1] < parts[3];
+    if (!valid) {
+      throw new Error(
+        `Invalid TARMOTO_POI_IMPORT_BBOX="${raw}" — expected ` +
+          `"minLng,minLat,maxLng,maxLat" with minLng<maxLng and minLat<maxLat`,
+      );
+    }
+    bbox = {
+      minLng: parts[0],
+      minLat: parts[1],
+      maxLng: parts[2],
+      maxLat: parts[3],
+    };
+  }
 
   return {
     enabled:

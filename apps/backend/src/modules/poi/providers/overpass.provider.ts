@@ -235,8 +235,12 @@ export class OverpassPoiProvider implements PoiProvider {
     const clauses: string[] = [];
     for (const [key, values] of byKey.entries()) {
       const filter = [...new Set(values)].join('|');
+      // node + way + relation: some §7 POIs (multipolygon service/rest
+      // areas, viewpoint sites) are modeled as relations. `out center`
+      // gives them a representative point, same as the accommodation path.
       clauses.push(`  node["${key}"~"^(${filter})$"](${box});`);
       clauses.push(`  way["${key}"~"^(${filter})$"](${box});`);
+      clauses.push(`  relation["${key}"~"^(${filter})$"](${box});`);
     }
     // No `out` limit: an import wants the full area, not a capped sample.
     const query =

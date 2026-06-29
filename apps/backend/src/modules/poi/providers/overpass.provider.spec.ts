@@ -345,6 +345,11 @@ describe('OverpassPoiProvider.findImportPoisInBbox', () => {
     expect(decoded).toContain('tourism"~"^(viewpoint)$"');
     expect(decoded).toContain('highway"~"^(rest_area|services)$"');
     expect(decoded).toContain('shop"~"^(ice_cream)$"');
+    // node + way + relation — multipolygon rest areas / viewpoint sites
+    // are modeled as relations.
+    expect(decoded).toContain('node["tourism"~"^(viewpoint)$"]');
+    expect(decoded).toContain('way["tourism"~"^(viewpoint)$"]');
+    expect(decoded).toContain('relation["tourism"~"^(viewpoint)$"]');
   });
 
   it('maps each element to its §7 kind (incl. highway services → rest_area)', async () => {
