@@ -1,20 +1,32 @@
-# Brand fonts (source — not yet linked)
+# Brand fonts (static faces generated — native link + device check pending)
 
 The Tarmoto brand typefaces, vendored for the mobile app (Phase 2 of the
 mobile brand migration — see `docs/design/mobile-spec/README.md`).
 
-| Family             | File                                  | Variable axis  |
-| ------------------ | ------------------------------------- | -------------- |
-| **Space Grotesk**  | `SpaceGrotesk-VariableFont_wght.ttf`  | `wght` 300–700 |
-| **JetBrains Mono** | `JetBrainsMono-VariableFont_wght.ttf` | `wght` 100–800 |
+## What's here
 
-> **Status: source only.** These `.ttf` files are checked in so the linking
-> work has its inputs, but the app does **not** load them yet. `brand.ts`
-> still uses placeholder family names and brand text falls back to the
-> platform sans/mono (leaning on `fontWeight`). Wiring them up correctly
-> needs a native build + device validation, which can't be done in the
-> headless environment these were added from — so it's deliberately split
-> into a follow-up done on a dev machine.
+| Face                       | File                     | Weight | Resolves as                       |
+| -------------------------- | ------------------------ | ------ | --------------------------------- |
+| **Space Grotesk** Regular  | `SpaceGrotesk.ttf`       | 400    | `fontFamily: "SpaceGrotesk"`      |
+| **Space Grotesk** Bold     | `SpaceGrotesk_bold.ttf`  | 700    | `"SpaceGrotesk"` + `weight: 700`  |
+| **JetBrains Mono** Regular | `JetBrainsMono.ttf`      | 400    | `fontFamily: "JetBrainsMono"`     |
+| **JetBrains Mono** Bold    | `JetBrainsMono_bold.ttf` | 700    | `"JetBrainsMono"` + `weight: 700` |
+
+The variable-font **sources** are kept under `variable-src/` for re-instancing;
+they are not bundled.
+
+> **Status: static faces generated, not yet linked.** The four static faces
+> above were instanced from the variable sources (step 1 of the procedure
+> below) with the Android filename convention and matching internal family
+> names, and `react-native.config.js` already lists `./assets/fonts`. `brand.ts`
+> already references `"SpaceGrotesk"` / `"JetBrainsMono"`. **Still pending — a
+> dev-machine step that can't be done/validated headless:** running
+> `npx react-native-asset` to generate + commit the native artifacts
+> (Android `assets/fonts` copies, iOS Xcode refs + `Info.plist` `UIAppFonts`),
+> `pod install`, and an **on-device check** that brand text renders the bundled
+> faces (not a system fallback) on both platforms. Until that lands, brand text
+> still falls back to the platform sans/mono (graceful — `fontWeight` carries
+> emphasis).
 
 ## Licensing
 
@@ -47,18 +59,31 @@ real build:
 
 ## Procedure to enable them (on a dev machine)
 
-1. Instance static weights from each variable font (e.g. with
-   `fonttools varLib.instancer`): a Regular (400) and Bold (700) per family.
-2. Name them for Android's convention and set matching internal family
-   names, e.g. `SpaceGrotesk.ttf` / `SpaceGrotesk_bold.ttf`,
-   `JetBrainsMono.ttf` / `JetBrainsMono_bold.ttf`.
-3. Add `./assets/fonts` to `assets` in `react-native.config.js`, run
-   `npx react-native-asset`, then `cd ios && pod install`.
-4. Commit everything the linker generated (Android `assets/fonts`, iOS
+Steps 1, 2, 3a, and 5 are **done** (committed). The residual is the
+native-build half that can't be run/validated headless — steps 3b, 4, 6.
+
+1. ✅ Instance static weights from each variable font (Regular 400 + Bold 700
+   per family) — `assets/fonts/variable-src/` → `*.ttf` here. The repeatable
+   generator script is described below.
+2. ✅ Named for Android's convention with matching internal family names:
+   `SpaceGrotesk.ttf` / `SpaceGrotesk_bold.ttf`, `JetBrainsMono.ttf` /
+   `JetBrainsMono_bold.ttf` (verify with
+   `python3 -c "from fontTools import ttLib; t=ttLib.TTFont('SpaceGrotesk_bold.ttf'); print(t['name'].getDebugName(1), t['OS/2'].usWeightClass)"`).
+3. **a)** ✅ `./assets/fonts` is listed in `react-native.config.js`.
+   **b)** ⬜ Run `npx react-native-asset`, then `cd ios && pod install`.
+4. ⬜ Commit everything the linker generated (Android `assets/fonts`, iOS
    project refs + `UIAppFonts`).
-5. Set `brandFonts.sans` / `.mono` to the resolvable family names
-   (`"SpaceGrotesk"` / `"JetBrainsMono"`, matching the basenames — these
-   resolve on Android and register under the same name on iOS).
-6. **Validate on a device/simulator** that `<Text style={{ fontFamily:
-"SpaceGrotesk", fontWeight: "700" }}>` renders the bundled bold face, not
-   a system fallback, on **both** platforms.
+5. ✅ `brandFonts.sans` / `.mono` are already `"SpaceGrotesk"` /
+   `"JetBrainsMono"` (matching the basenames — these resolve on Android and
+   register under the same name on iOS).
+6. ⬜ **Validate on a device/simulator** that `<Text style={{ fontFamily:
+"SpaceGrotesk", fontWeight: "700" }}>` renders the bundled bold face, not a
+   system fallback, on **both** platforms.
+
+### Regenerating the static faces
+
+The faces were instanced with `fontTools` — pin the `wght` axis to 400/700,
+set `OS/2.usWeightClass` + the bold `fsSelection`/`macStyle` bits, and rewrite
+the `name` table family/subfamily/full/PostScript IDs to the no-space family
+name so iOS resolves `fontFamily: "SpaceGrotesk"` / `"JetBrainsMono"`. Re-run
+against the sources in `variable-src/` if the upstream fonts are updated.
