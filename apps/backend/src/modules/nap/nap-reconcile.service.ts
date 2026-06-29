@@ -93,13 +93,15 @@ export class NapReconcileService {
           needs_location_decoding: s.needsLocationDecoding,
           raw_location_ref: s.rawLocationRef ?? null,
           // A situation present in the snapshot is live UNLESS DATEX marks
-          // it `suspended` — the public read paths filter on `is_active` +
-          // the time window, not `validity_status`, so a suspended record
-          // with geometry would otherwise show on the map and in
-          // route-closure warnings. `active` and
+          // it `suspended` or `planned` (planned = not in force yet) — the
+          // public read paths filter on `is_active` + the time window, not
+          // `validity_status`, so such a record with geometry (and a start
+          // time already reached or omitted) would otherwise show on the
+          // map and in route-closure warnings. `active` and
           // `definedByValidityTimeSpecification` stay active (the window
           // governs the latter).
-          is_active: s.validityStatus !== 'suspended',
+          is_active:
+            s.validityStatus !== 'suspended' && s.validityStatus !== 'planned',
           last_seen_at: batchTime,
           source,
           external_id: s.externalId,

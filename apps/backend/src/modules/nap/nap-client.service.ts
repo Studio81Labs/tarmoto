@@ -20,7 +20,6 @@ import { napConfig } from './nap.config.js';
 export class NapClientService {
   private readonly logger = new Logger(NapClientService.name);
   private tls: { cert: Buffer; key: Buffer } | undefined;
-  private tlsLoaded = false;
 
   constructor(
     @Inject(napConfig.KEY)
@@ -69,17 +68,22 @@ export class NapClientService {
     });
   }
 
-  /** Read + memoise the mutual-TLS client cert, if configured. */
+  /**
+   * Read the mutual-TLS client cert, if configured, memoising only on
+   * SUCCESS. A failed read (bad path, permissions, secret mounted late)
+   * is NOT cached — it propagates so the poll fails with the real error,
+   * and the next poll retries the read, letting a fixed secret recover
+   * without a worker restart. When no cert is configured this is a cheap
+   * no-op every call (no fs touch).
+   */
   private loadClientCert(): { cert: Buffer; key: Buffer } | undefined {
-    if (this.tlsLoaded) return this.tls;
-    this.tlsLoaded = true;
+    if (this.tls) return this.tls;
     const { clientCertPath, clientKeyPath } = this.config;
-    if (clientCertPath && clientKeyPath) {
-      this.tls = {
-        cert: fs.readFileSync(clientCertPath),
-        key: fs.readFileSync(clientKeyPath),
-      };
-    }
+    if (!clientCertPath || !clientKeyPath) return undefined;
+    this.tls = {
+      cert: fs.readFileSync(clientCertPath),
+      key: fs.readFileSync(clientKeyPath),
+    };
     return this.tls;
   }
 }

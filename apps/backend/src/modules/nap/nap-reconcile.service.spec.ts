@@ -156,6 +156,11 @@ describe('NapReconcileService', () => {
     expect(upsertedRow().is_active).toBe(false);
   });
 
+  it('writes is_active=false for a planned (not-yet-in-force) situation', async () => {
+    await service.reconcile([situation({ validityStatus: 'planned' })]);
+    expect(upsertedRow().is_active).toBe(false);
+  });
+
   it('keeps is_active=true for active / time-window-governed situations', async () => {
     await service.reconcile([
       situation({ validityStatus: 'definedByValidityTimeSpecification' }),
