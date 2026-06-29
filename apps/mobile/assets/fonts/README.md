@@ -1,4 +1,4 @@
-# Brand fonts (static faces generated — native link + device check pending)
+# Brand fonts (linked — `pod install` + Android multi-weight + device check pending)
 
 The Tarmoto brand typefaces, vendored for the mobile app (Phase 2 of the
 mobile brand migration — see `docs/design/mobile-spec/README.md`).
@@ -49,28 +49,33 @@ walks `./assets/fonts` recursively, so anything left here would be linked, and
 the variable JetBrains Mono would collide with the static Regular's PostScript
 name on iOS.
 
-> **Status: static faces generated, not yet linked.** The faces above were
-> instanced from the variable sources at the five weights the app uses, with
-> matching internal family names; `react-native.config.js` lists
-> `./assets/fonts` and `brand.ts` already references `"SpaceGrotesk"` /
-> `"JetBrainsMono"`. **Still pending — a dev-machine step that can't be
-> done/validated headless:**
+> **Status: linked — native artifacts committed.** `npx react-native-asset`
+> was run (scoped to `./assets/fonts`) and its output is committed:
 >
-> - `npx react-native-asset` to generate + commit the native artifacts
->   (Android `assets/fonts` copies, iOS Xcode refs + `Info.plist` `UIAppFonts`),
->   then `pod install`.
-> - **Cross-platform weight resolution.** iOS/CoreText matches `fontWeight` to
->   the nearest registered `usWeightClass`, so all five weights render once
->   registered. **Android** `ReactFontManager`'s filename convention only
->   auto-resolves Regular (`<family>.ttf`) and Bold (`<family>_bold.ttf`) — the
->   500/600/800 faces need weight-aware wiring (an `@font` XML family or RN's
->   weighted-typeface path) or 500/600 will fall to Regular and 800 to Bold on
->   Android. Wire + verify this during the link step.
+> - **iOS** — `TarmotoApp/Info.plist` `UIAppFonts` lists all nine faces and
+>   `TarmotoApp.xcodeproj` adds them to the target's Copy Bundle Resources. Once
+>   built, CoreText registers all nine and matches `fontWeight` to the nearest
+>   `usWeightClass`, so every weight renders.
+> - **Android** — the nine faces are copied to `app/src/main/assets/fonts/`.
+>   `ReactFontManager`'s filename convention resolves Regular (`<family>.ttf`)
+>   and Bold (`<family>_bold.ttf`) from these immediately.
+>
+> **Still pending — dev-machine steps that can't be run/validated headless:**
+>
+> - `cd ios && pod install` (regenerate the Pods workspace; not required for the
+>   font assets themselves but part of a normal native bootstrap).
+> - **Android multi-weight wiring.** The filename convention only covers
+>   Regular/Bold, so `fontWeight` 500/600/800 still collapse to Regular/Bold on
+>   Android. Wiring the dedicated faces needs an `@font` XML family in
+>   `res/font/` (or `ReactFontManager.addCustomFont`) **and** a family-name that
+>   resolves on both platforms — Android resource names are lowercased, so this
+>   interacts with the `"SpaceGrotesk"` / `"JetBrainsMono"` strings in `brand.ts`
+>   and must be verified on a build, not done blind. Left as a scoped follow-up.
 > - An **on-device check** on both platforms that 500/600/700/800 brand text
 >   render distinctly (not collapsed to Regular/Bold, not a system fallback).
 >
-> Until that lands, brand text falls back to the platform sans/mono (graceful —
-> the system font honours `fontWeight`, so weights look correct today).
+> Until a build runs, brand text falls back to the platform sans/mono (graceful
+> — the system font honours `fontWeight`, so weights look correct today).
 
 ## Licensing
 
@@ -103,8 +108,9 @@ real build:
 
 ## Procedure to enable them (on a dev machine)
 
-Steps 1, 2, 3a, and 5 are **done** (committed). The residual is the
-native-build half that can't be run/validated headless — steps 3b, 4, 6.
+Steps 1–5 are **done** (committed). The residual is the on-device half (step 6)
+plus the Android multi-weight wiring (step 4b), which can't be validated
+headless.
 
 1. ✅ Instance the static weights the app uses from `../font-sources/*.ttf`
    with matching internal family names — JetBrains Mono 400/500/600/700/800,
@@ -115,12 +121,17 @@ native-build half that can't be run/validated headless — steps 3b, 4, 6.
    (`<family>_bold.ttf`) pair; the 500/600/800 faces carry their `usWeightClass`
    for iOS nearest-weight matching.
 3. **a)** ✅ `./assets/fonts` is listed in `react-native.config.js`.
-   **b)** ⬜ Run `npx react-native-asset`, then `cd ios && pod install`.
-4. ⬜ Commit everything the linker generated (Android `assets/fonts`, iOS
+   **b)** ✅ Ran `npx react-native-asset` (scoped to fonts) and committed the
+   native artifacts — Android `app/src/main/assets/fonts/` copies, iOS
+   `Info.plist` `UIAppFonts` + `TarmotoApp.xcodeproj` Copy Bundle Resources
+   refs, and the `link-assets-manifest.json` tracking files. ⬜ `cd ios && pod
+install` still needs running on a Mac as part of a normal native bootstrap.
+4. ✅ Committed everything the linker generated (Android `assets/fonts`, iOS
    project refs + `UIAppFonts`).
    ⬜ **Android multi-weight:** wire weight-aware resolution for 500/600/800
-   (an `@font` XML family or RN's weighted-typeface path) — the filename
-   convention alone only covers Regular/Bold on Android.
+   (an `@font` XML family in `res/font/` or `ReactFontManager.addCustomFont`) —
+   the filename convention alone only covers Regular/Bold on Android, and the
+   resource-name/`brand.ts`-family interaction must be verified on a build.
 5. ✅ `brandFonts.sans` / `.mono` are already `"SpaceGrotesk"` /
    `"JetBrainsMono"` (matching the basenames — these resolve on Android and
    register under the same name on iOS).
