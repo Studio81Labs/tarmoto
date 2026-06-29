@@ -4072,6 +4072,7 @@ export interface components {
       curviness_score: number;
       scenic_score: number;
       estimated_time_min: number;
+      start_linked: boolean;
       /** @description Polyline points (lat/lng) of the day route. */
       route_geometry: components["schemas"]["LatLngResponseDto"][];
       waypoints: components["schemas"]["TripWaypointDto"][];
@@ -4138,6 +4139,12 @@ export interface components {
         | "hotel"
         | "photo";
     };
+    SaveRouteDayDto: {
+      dayNumber: number;
+      title?: string | null;
+      startLinked: boolean;
+      waypoints: components["schemas"]["SaveRouteWaypointDto"][];
+    };
     RouteOptionsDto: {
       avoid_highways?: boolean;
       avoid_tolls?: boolean;
@@ -4147,7 +4154,7 @@ export interface components {
       surfaces?: string[];
     };
     SaveRouteDto: {
-      waypoints: components["schemas"]["SaveRouteWaypointDto"][];
+      days: components["schemas"]["SaveRouteDayDto"][];
       options?: components["schemas"]["RouteOptionsDto"];
     };
     FromShareTripDto: {
@@ -5630,6 +5637,7 @@ export type SchemaImportTripWaypointDto =
 export type SchemaImportTripDto = components["schemas"]["ImportTripDto"];
 export type SchemaSaveRouteWaypointDto =
   components["schemas"]["SaveRouteWaypointDto"];
+export type SchemaSaveRouteDayDto = components["schemas"]["SaveRouteDayDto"];
 export type SchemaRouteOptionsDto = components["schemas"]["RouteOptionsDto"];
 export type SchemaSaveRouteDto = components["schemas"]["SaveRouteDto"];
 export type SchemaFromShareTripDto = components["schemas"]["FromShareTripDto"];

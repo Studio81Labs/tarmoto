@@ -36,9 +36,33 @@ describe("usePlannerRouting", () => {
     // waitFor relies on real setTimeout for its polling loop; restore before waiting.
     vi.useRealTimers();
     await waitFor(() =>
-      expect(onResult).toHaveBeenCalledWith({ geometry: [], distance_km: 5 }),
+      expect(onResult).toHaveBeenCalledWith(
+        { geometry: [], distance_km: 5 },
+        null,
+      ),
     );
     expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("echoes back the requestKey that was current when the request fired", async () => {
+    routeMock.mockResolvedValueOnce({
+      data: { geometry: [], distance_km: 7 },
+    } as never);
+    const onResult = vi.fn();
+    // requestKey = 2 (e.g. the planner day this request was built for).
+    renderHook(() => usePlannerRouting(wp(2), {}, onResult, vi.fn(), true, 2));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    vi.useRealTimers();
+    // The key is passed back so the caller can apply the result to the day the
+    // request was fired for, even if the selection changed before it resolved.
+    await waitFor(() =>
+      expect(onResult).toHaveBeenCalledWith(
+        { geometry: [], distance_km: 7 },
+        2,
+      ),
+    );
   });
 
   it("does NOT call routingApi.route when enabled=false, even with ≥2 waypoints", () => {

@@ -43,6 +43,27 @@ vi.mock("@/stores/trip", () => ({
   useTripStore: Object.assign(vi.fn(), {
     getState: vi.fn(),
   }),
+  MAX_TRIP_DAYS: 14,
+  // Mirror the real pure helper: re-type a terminal accommodation to `end`
+  // when the day has no explicit end (generated overnight day).
+  normalizeDayFinish: (waypoints: { type: string }[]) => {
+    if (waypoints.some((w) => w.type === "end")) return waypoints;
+    const lastIdx = waypoints.length - 1;
+    if (waypoints[lastIdx]?.type === "accommodation") {
+      return waypoints.map((w, i) =>
+        i === lastIdx ? { ...w, type: "end" } : w,
+      );
+    }
+    return waypoints;
+  },
+  // Mirror the real helper: the day's finish is its `end`, or a terminal
+  // accommodation (generated overnight) when there's no explicit end.
+  dayFinishWaypoint: (waypoints: { type: string }[]) => {
+    const end = waypoints.find((w) => w.type === "end");
+    if (end) return end;
+    const last = waypoints[waypoints.length - 1];
+    return last?.type === "accommodation" ? last : undefined;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -258,14 +279,19 @@ type TripStoreSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   routeDirty: boolean;
-  routePreviewStale: boolean;
+  stalePreviewDays: number[];
+  selectedDayIndex: number;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
-  undoStack: Array<{ trip: Trip | null; dirty: boolean }>;
-  redoStack: Array<{ trip: Trip | null; dirty: boolean }>;
+  undoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
+  redoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
+  setSelectedDay: (index: number) => void;
+  addDay: () => void;
+  removeDay: (index: number) => void;
+  relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
@@ -302,7 +328,18 @@ type TripStoreSnapshot = {
     name?: string;
     type: BackendWaypointType;
   }[];
-  applyRouteResult: (result: unknown) => void;
+  saveDays: () => {
+    dayNumber: number;
+    title: string | null;
+    startLinked: boolean;
+    waypoints: {
+      lat: number;
+      lng: number;
+      name?: string;
+      type: BackendWaypointType;
+    }[];
+  }[];
+  applyRouteResult: (dayNumber: number, result: unknown) => void;
   resetForTest: () => void;
 };
 
@@ -408,7 +445,8 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
-      routePreviewStale: false,
+      stalePreviewDays: [],
+      selectedDayIndex: 0,
       draftPlannerParameters: null,
       focusedSegmentId: null,
       hoveredSegmentId: null,
@@ -417,6 +455,10 @@ describe("TripPlannerPage", () => {
       setTrips: vi.fn(),
       setActiveTrip,
       setGenerating,
+      setSelectedDay: vi.fn(),
+      addDay: vi.fn(),
+      removeDay: vi.fn(),
+      relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
@@ -445,6 +487,27 @@ describe("TripPlannerPage", () => {
           lng: 10.57,
           name: "Prato allo Stelvio",
           type: "end" as BackendWaypointType,
+        },
+      ]),
+      saveDays: vi.fn(() => [
+        {
+          dayNumber: 1,
+          title: null,
+          startLinked: false,
+          waypoints: [
+            {
+              lat: 46.47,
+              lng: 10.37,
+              name: "Bormio",
+              type: "start" as BackendWaypointType,
+            },
+            {
+              lat: 46.61,
+              lng: 10.57,
+              name: "Prato allo Stelvio",
+              type: "end" as BackendWaypointType,
+            },
+          ],
         },
       ]),
       applyRouteResult: vi.fn(),
@@ -1144,23 +1207,6 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
-  it("disables Save route when the active day has no route geometry yet", () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          // Two waypoints present but routing hasn't resolved geometry yet
-          routeGeometry: null as never,
-        },
-      ],
-    };
-
-    render(<TripPlannerPage />);
-
-    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
-  });
-
   it("enables Save route when waypoints + geometry are present AND the draft is dirty", () => {
     // activeTrip fixture has 2 waypoints + routeGeometry
     storeState.activeTrip = activeTrip;
@@ -1174,11 +1220,11 @@ describe("TripPlannerPage", () => {
   });
 
   it("disables Save route while the preview is stale (mid routing debounce)", () => {
-    // Edited (routeDirty) with geometry present, but routePreviewStale=true →
+    // Edited (routeDirty) with geometry present, but stalePreviewDays non-empty →
     // the displayed geometry is from the pre-edit waypoints; Save must wait.
     storeState.activeTrip = activeTrip;
     storeState.routeDirty = true;
-    storeState.routePreviewStale = true;
+    storeState.stalePreviewDays = [1];
 
     render(<TripPlannerPage />);
 
@@ -1225,7 +1271,7 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
   });
 
-  it("calls tripsApi.saveRoute with store waypoints, creates trip on first save, and shows success toast", async () => {
+  it("calls tripsApi.saveRoute with days[], creates trip on first save, and shows success toast", async () => {
     storeState.activeTrip = activeTrip;
     storeState.routeDirty = true;
 
@@ -1240,15 +1286,25 @@ describe("TripPlannerPage", () => {
 
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Best fit" }),
+        expect.objectContaining({ title: "Best fit", num_days: 1 }),
       ),
     );
     expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
       "server-trip-1",
       expect.objectContaining({
-        waypoints: expect.arrayContaining([
-          expect.objectContaining({ lat: 46.47, lng: 10.37, type: "start" }),
-          expect.objectContaining({ lat: 46.61, lng: 10.57, type: "end" }),
+        days: expect.arrayContaining([
+          expect.objectContaining({
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: expect.arrayContaining([
+              expect.objectContaining({
+                lat: 46.47,
+                lng: 10.37,
+                type: "start",
+              }),
+              expect.objectContaining({ lat: 46.61, lng: 10.57, type: "end" }),
+            ]),
+          }),
         ]),
         options: expect.objectContaining({
           avoid_highways: true,
@@ -1261,6 +1317,103 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("saves a multi-day payload with days[] and num_days from day count", async () => {
+    // Two non-empty days — saveDays() returns 2 entries.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          title: "Day 2",
+          startLinked: true,
+          waypoints: [
+            {
+              id: "wp-d2-start",
+              name: "Prato allo Stelvio",
+              type: "start",
+              location: { lng: 10.57, lat: 46.61 },
+            },
+            {
+              id: "wp-d2-end",
+              name: "Innsbruck",
+              type: "end",
+              location: { lng: 11.39, lat: 47.27 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+    // Override saveDays to return a 2-day payload.
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        title: null,
+        startLinked: false,
+        waypoints: [
+          {
+            lat: 46.47,
+            lng: 10.37,
+            name: "Bormio",
+            type: "start" as BackendWaypointType,
+          },
+          {
+            lat: 46.61,
+            lng: 10.57,
+            name: "Prato allo Stelvio",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+      {
+        dayNumber: 2,
+        title: null,
+        startLinked: true,
+        waypoints: [
+          {
+            lat: 46.61,
+            lng: 10.57,
+            name: "Prato allo Stelvio",
+            type: "start" as BackendWaypointType,
+          },
+          {
+            lat: 47.27,
+            lng: 11.39,
+            name: "Innsbruck",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+    ]);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ num_days: 2 }),
+      ),
+    );
+    expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        days: expect.arrayContaining([
+          expect.objectContaining({ dayNumber: 1 }),
+          expect.objectContaining({ dayNumber: 2 }),
+        ]),
+      }),
+    );
   });
 
   it("uses the existing server trip id on subsequent Save route calls without creating a duplicate", async () => {
@@ -1305,27 +1458,40 @@ describe("TripPlannerPage", () => {
     ).toBeInTheDocument();
   });
 
-  // ── Live routing gate (routeDirty fix) ──────────────────────────────
+  // ── Live routing gate (per-day stale gate) ──────────────────────────
 
-  it("does NOT call usePlannerRouting with enabled=true when a trip WITH geometry is opened and routeDirty is false", () => {
+  it("does NOT call usePlannerRouting with enabled=true when routeDirty is false", () => {
     // Simulate opening an existing saved trip that already has geometry.
-    // routeDirty is false (default), activeDayRouteGeometry is non-null.
+    // routeDirty is false (default) — liveRouteEnabled = false && ... = false.
     storeState.activeTrip = activeTrip; // has routeGeometry
     storeState.routeDirty = false;
+    storeState.stalePreviewDays = [1];
 
     render(<TripPlannerPage />);
 
-    // usePlannerRouting should have been called with enabled=false
-    // (liveRouteEnabled = routeDirty || !activeDayRouteGeometry = false || false = false)
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // The 5th argument is `enabled`
     expect(lastCall?.[4]).toBe(false);
   });
 
-  it("calls usePlannerRouting with enabled=true when routeDirty is true", () => {
-    storeState.activeTrip = activeTrip; // has routeGeometry
-    storeState.routeDirty = true; // rider has edited
+  it("does NOT call usePlannerRouting with enabled=true when the day is not stale", () => {
+    // routeDirty=true but stalePreviewDays is empty — no day needs routing.
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // day 1 is fresh
+
+    render(<TripPlannerPage />);
+
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall?.[4]).toBe(false);
+  });
+
+  it("calls usePlannerRouting with enabled=true when routeDirty and selected day is stale", () => {
+    storeState.activeTrip = activeTrip; // day 1 present
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1]; // day 1 is stale
 
     render(<TripPlannerPage />);
 
@@ -1334,20 +1500,68 @@ describe("TripPlannerPage", () => {
     expect(lastCall?.[4]).toBe(true);
   });
 
-  it("calls usePlannerRouting with enabled=true when the active day has no geometry yet (fresh draft)", () => {
-    // A fresh draft has waypoints but no geometry yet
+  it("routes start→overnight for an accommodation-terminated day (live inputs match Save)", () => {
     storeState.activeTrip = {
       ...activeTrip,
-      days: [{ ...activeTrip.days[0]!, routeGeometry: null as never }],
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h",
+              name: "Hotel",
+              type: "accommodation",
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+      ],
     };
-    storeState.routeDirty = false;
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1];
+
+    render(<TripPlannerPage />);
+
+    // The terminal accommodation is normalized to the day's finish, so the
+    // live-routing inputs (arg 0) carry BOTH points — the preview routes to the
+    // overnight, matching the route saveDays/the backend will persist.
+    const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
+    expect(lastCall?.[0]).toEqual([
+      { lat: 46, lng: 10 },
+      { lat: 46.5, lng: 11 },
+    ]);
+  });
+
+  it("does NOT route the selected day when a different day is stale", () => {
+    // selectedDayIndex=0 (day 1) but only day 2 is stale — day 1 is fresh.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [],
+          routeGeometry: undefined,
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 0; // viewing day 1
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [2]; // only day 2 stale
 
     render(<TripPlannerPage />);
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    // liveRouteEnabled = false || !null = false || true = true
-    expect(lastCall?.[4]).toBe(true);
+    // day 1 is not in stalePreviewDays so enabled=false
+    expect(lastCall?.[4]).toBe(false);
   });
 
   it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {
@@ -1358,5 +1572,247 @@ describe("TripPlannerPage", () => {
 
     fireEvent.click(screen.getByLabelText("Avoid highways"));
     expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Task 9: Dynamic day tabs + multi-day save gate ───────────────────
+
+  it("renders one tab per trip day and switches the selected day via store", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          title: "Day 2",
+          waypoints: [],
+          routeGeometry: undefined,
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 0;
+
+    render(<TripPlannerPage />);
+
+    // Both day tabs are rendered (sidebar + floating footer each render tabs,
+    // so we check count ≥ 2 for each day label)
+    const day1Buttons = screen.getAllByRole("button", { name: /Day 1/i });
+    const day2Buttons = screen.getAllByRole("button", { name: /Day 2/i });
+    expect(day1Buttons.length).toBeGreaterThanOrEqual(1);
+    expect(day2Buttons.length).toBeGreaterThanOrEqual(1);
+
+    // Click the first Day 2 tab (sidebar) — should call store setSelectedDay(1)
+    fireEvent.click(day2Buttons[0]!);
+    expect(storeState.setSelectedDay).toHaveBeenCalledWith(1);
+  });
+
+  it("disables Save route when any day is incomplete (has waypoints but missing end)", () => {
+    // Day 1 complete, Day 2 has only a start — incomplete blocks save
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete: start + end
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [10.37, 46.47],
+              [10.57, 46.61],
+            ],
+          },
+          waypoints: [
+            {
+              id: "wp-d2-start",
+              name: "Start only",
+              type: "start",
+              location: { lng: 10.37, lat: 46.47 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("disables Save route while a day preview is stale", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [1]; // day 1 is stale
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("enables Save route when all non-empty days are complete and no day is stale", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!, // complete: start + end + routeGeometry
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [],
+          distanceKm: 0,
+          routeGeometry: undefined,
+        }, // empty day — does not block save
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // all fresh
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Save route" }),
+    ).not.toBeDisabled();
+  });
+
+  it("disables Save route when a complete-by-waypoints day has no previewed geometry", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!, // valid start/end waypoints…
+          routeGeometry: undefined, // …but never previewed (e.g. a loaded share)
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = []; // not stale → would otherwise pass
+
+    render(<TripPlannerPage />);
+
+    // Geometry-less day must NOT pass the gate — otherwise Save would submit a
+    // leg the backend routes without the rider ever previewing it.
+    expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+  });
+
+  it("treats a terminal accommodation (generated overnight) as a day finish for the Save gate", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!, // keeps routeGeometry so the geometry gate passes
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h",
+              name: "Hotel",
+              type: "accommodation",
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    storeState.stalePreviewDays = [];
+
+    render(<TripPlannerPage />);
+
+    // The day ends in an accommodation (no explicit `end`) — it must count as
+    // complete so an edited generated trip can still be saved.
+    expect(
+      screen.getByRole("button", { name: "Save route" }),
+    ).not.toBeDisabled();
+  });
+
+  it("offers relink when the predecessor finishes at a terminal accommodation", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 1,
+          waypoints: [
+            {
+              id: "s1",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "h1",
+              name: "Hotel",
+              type: "accommodation", // generated overnight finish, no `end`
+              location: { lng: 11, lat: 46.5 },
+            },
+          ],
+        },
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          startLinked: false, // link broken by a manual start edit
+          waypoints: [
+            {
+              id: "s2",
+              name: "Start",
+              type: "start",
+              location: { lng: 12, lat: 47 },
+            },
+            {
+              id: "e2",
+              name: "End",
+              type: "end",
+              location: { lng: 13, lat: 47.5 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    // Day 2 must offer "Link to previous day" even though day 1 finishes at an
+    // accommodation rather than an explicit end.
+    expect(
+      screen.getByRole("button", { name: "Link to previous day" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Add day button and disables it at 14 days (MAX_TRIP_DAYS)", () => {
+    // Create a 14-day trip (max)
+    const days = Array.from({ length: 14 }, (_, i) => ({
+      ...activeTrip.days[0]!,
+      dayNumber: i + 1,
+      title: `Day ${i + 1}`,
+      waypoints: i === 0 ? activeTrip.days[0]!.waypoints : [],
+    }));
+    storeState.activeTrip = { ...activeTrip, days };
+
+    render(<TripPlannerPage />);
+
+    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
+    expect(addDayBtn).toBeInTheDocument();
+    expect(addDayBtn).toBeDisabled();
+  });
+
+  it("calls addDay when Add day button is clicked (below 14 days)", () => {
+    storeState.activeTrip = activeTrip; // 1 day
+
+    render(<TripPlannerPage />);
+
+    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
+    expect(addDayBtn).not.toBeDisabled();
+    fireEvent.click(addDayBtn);
+    expect(storeState.addDay).toHaveBeenCalledTimes(1);
   });
 });

@@ -186,6 +186,8 @@ export interface TripDay {
   avgQuality: number;
   overnightStop?: POI;
   segments?: RoutePreviewSegment[];
+  /** True when this day's start is linked to the previous day's end (multi-day planner). */
+  startLinked?: boolean;
 }
 
 /**
