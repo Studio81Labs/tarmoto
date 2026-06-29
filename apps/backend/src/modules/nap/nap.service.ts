@@ -51,11 +51,16 @@ export class NapService {
       this.lastResult = result;
       return result;
     } catch (err) {
+      // Do NOT swallow real failures into a null "skip". A fetch/auth,
+      // parse (malformed snapshot), or DB error must propagate so the
+      // BullMQ job fails — honouring the configured attempts/backoff and
+      // surfacing on /jobs/health — rather than completing as if nothing
+      // ran. Only disabled/overlap return null above (genuine skips).
       this.logger.error(
         `NAP poll failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
-      return null;
+      throw err;
     } finally {
       this.running = false;
     }

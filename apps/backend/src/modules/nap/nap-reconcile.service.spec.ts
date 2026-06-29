@@ -151,6 +151,18 @@ describe('NapReconcileService', () => {
     expect(result.needsDecoding).toBe(1);
   });
 
+  it('writes is_active=false for a suspended DATEX situation', async () => {
+    await service.reconcile([situation({ validityStatus: 'suspended' })]);
+    expect(upsertedRow().is_active).toBe(false);
+  });
+
+  it('keeps is_active=true for active / time-window-governed situations', async () => {
+    await service.reconcile([
+      situation({ validityStatus: 'definedByValidityTimeSpecification' }),
+    ]);
+    expect(upsertedRow().is_active).toBe(true);
+  });
+
   it('deactivates feed rows absent from the snapshot and reports the count', async () => {
     updateExecute.mockResolvedValueOnce({ affected: 3 });
     const result = await service.reconcile([situation()]);
