@@ -48,6 +48,15 @@ export class NapClientService {
           const status = res.statusCode ?? 0;
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
+          // If the server/proxy drops the connection after headers, the
+          // response stream emits `error`/`aborted` instead of `end`.
+          // Reject on those so the promise always settles — otherwise the
+          // poll never reaches `finally`, the in-process guard stays set,
+          // and every later tick is skipped.
+          res.on('error', reject);
+          res.on('aborted', () =>
+            reject(new Error('NAP snapshot response aborted by server')),
+          );
           res.on('end', () => {
             const body = Buffer.concat(chunks).toString('utf8');
             if (status < 200 || status >= 300) {
