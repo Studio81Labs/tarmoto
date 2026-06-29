@@ -5,6 +5,7 @@ import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { WeatherModule } from '../weather/weather.module.js';
+import { ClosuresModule } from '../closures/index.js';
 import { CommuteController } from './commute.controller.js';
 import { CommuteService } from './commute.service.js';
 import {
@@ -47,6 +48,7 @@ export function routingProviderFactory(
     TypeOrmModule.forFeature([CommuteRoute, Ride]),
     HazardsModule,
     WeatherModule,
+    ClosuresModule,
   ],
   controllers: [CommuteController],
   providers: [

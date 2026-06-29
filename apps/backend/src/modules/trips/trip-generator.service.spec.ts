@@ -13,6 +13,7 @@ import type { RouteAlternative } from '../commute/routing-provider.interface.js'
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
+import { ClosuresService } from '../closures/closures.service.js';
 
 const USER_ID = '00000000-0000-0000-0000-000000000001';
 const TRIP_ID = '11111111-1111-1111-1111-111111111111';
@@ -182,6 +183,10 @@ describe('TripGeneratorService', () => {
         { provide: TripsService, useValue: tripsService },
         { provide: EventsGateway, useValue: events },
         { provide: TripActivityService, useValue: activity },
+        {
+          provide: ClosuresService,
+          useValue: { exclusionPolygons: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 

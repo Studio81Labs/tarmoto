@@ -65,12 +65,19 @@ export class ValhallaProvider implements RoutingProvider {
     const costing: Record<string, number> = {};
     if (options?.avoidHighways) costing.use_highways = 0;
     if (options?.avoidTolls) costing.use_tolls = 0;
+    // Closure avoidance (#744): Valhalla's `exclude_polygons` is an array
+    // of polygons, each an array of `[lon, lat]` pairs. Our rings are
+    // already `[lng, lat]` (== `[lon, lat]`), so pass them through.
+    const excludePolygons = options?.excludePolygons;
     return JSON.stringify({
       locations: locations.map((w) => ({ lat: w.lat, lon: w.lng })),
       costing: 'auto',
       directions_options: { units: 'kilometers' },
       ...(Object.keys(costing).length
         ? { costing_options: { auto: costing } }
+        : {}),
+      ...(excludePolygons && excludePolygons.length
+        ? { exclude_polygons: excludePolygons }
         : {}),
       ...(alternates && alternates > 0 ? { alternates } : {}),
     });
