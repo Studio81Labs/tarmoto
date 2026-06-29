@@ -28,12 +28,20 @@ import {
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
+
+const t = brandColorsLight;
 
 export default function JoinTripScreen() {
   const navigation = useNavigation<Nav>();
@@ -88,11 +96,7 @@ export default function JoinTripScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.heroIconWrap}>
-            <Icon
-              name="account-multiple-plus"
-              size={28}
-              color={colors.primary}
-            />
+            <Icon name="account-multiple-plus" size={28} color={t.fg} />
           </View>
           <Text style={styles.title}>Join a trip</Text>
           <Text style={styles.subtitle}>
@@ -107,7 +111,7 @@ export default function JoinTripScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. 8f3d0c1e-..."
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             value={tripId}
             onChangeText={setTripId}
             autoCapitalize="none"
@@ -119,7 +123,7 @@ export default function JoinTripScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. TARMOTO-42"
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={t.mute}
             value={inviteCode}
             onChangeText={setInviteCode}
             autoCapitalize="characters"
@@ -131,7 +135,7 @@ export default function JoinTripScreen() {
 
         {errorMessage ? (
           <View style={styles.errorBanner}>
-            <Icon name="alert-circle" size={18} color={colors.danger} />
+            <Icon name="alert-circle" size={18} color={statusFg.danger} />
             <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
         ) : null}
@@ -145,10 +149,10 @@ export default function JoinTripScreen() {
           accessibilityLabel="Join trip"
         >
           {submitting ? (
-            <ActivityIndicator color={colors.textInverse} />
+            <ActivityIndicator color={t.invFg} />
           ) : (
             <>
-              <Icon name="login-variant" size={20} color={colors.textInverse} />
+              <Icon name="login-variant" size={20} color={t.invFg} />
               <Text style={styles.joinLabel}>Join trip</Text>
             </>
           )}
@@ -161,19 +165,19 @@ export default function JoinTripScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    paddingBottom: spacing.section,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
+    paddingBottom: brandSpacing.s10,
   },
   hero: {
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   heroIconWrap: {
     width: 56,
@@ -181,74 +185,82 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h1,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     lineHeight: 22,
   },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   label: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   labelSpacing: {
-    marginTop: spacing.sm,
+    marginTop: brandSpacing.s2,
   },
   input: {
-    backgroundColor: colors.bgInput,
+    backgroundColor: t.sunken,
     borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.textPrimary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: fontSize.md,
+    borderColor: t.line,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    borderRadius: brandRadii.sm,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    fontSize: 14,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.sm,
     borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: "rgba(239, 68, 68, 0.08)",
+    borderColor: statusFg.danger,
+    backgroundColor: t.raised2,
   },
   errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
+    color: statusFg.danger,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   joinBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.primary,
+    gap: brandSpacing.s2,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.invBg,
   },
   joinBtnDisabled: {
     opacity: 0.5,
   },
   joinLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
 });
