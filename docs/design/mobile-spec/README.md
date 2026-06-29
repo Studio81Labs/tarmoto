@@ -94,15 +94,16 @@ existing screen changes appearance yet:
 
 Space Grotesk and JetBrains Mono (OFL 1.1) are vendored under
 [`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/). The
-**static Regular(400) + Bold(700) faces are now generated** from the variable
-sources, named for Android's filename convention with matching internal family
-names (`SpaceGrotesk[/_bold].ttf`, `JetBrainsMono[/_bold].ttf`), and
+**five static weights the app uses (400/500/600/700/800) are now generated**
+per family from the variable sources, with matching internal family names, and
 `react-native.config.js` lists the folder; `brand.ts` already references the
 resolvable family names. **Still pending — the native-build half that can't be
 run/validated headless:** `npx react-native-asset` to generate + commit the
 native artifacts (Android copies, iOS Xcode refs + `Info.plist` `UIAppFonts`),
-`pod install`, and an on-device render check on both platforms. Until that
-lands, brand text falls back gracefully to the platform sans/mono. The fonts
+`pod install`, **Android weight-aware resolution for 500/600/800** (the
+filename convention only auto-covers Regular/Bold there), and an on-device
+render check on both platforms. Until that lands, brand text falls back
+gracefully to the platform sans/mono. The fonts
 [README](../../../apps/mobile/assets/fonts/README.md) tracks the remaining
 dev-machine steps.
 
