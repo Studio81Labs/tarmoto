@@ -42,6 +42,7 @@ function makeUserRepo() {
 function makeHazardsSvc(overrides: Record<string, unknown> = {}) {
   return {
     purgeManagedPhoto: jest.fn().mockResolvedValue(undefined),
+    broadcastRemoval: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -210,6 +211,88 @@ describe('AdminContentService', () => {
     expect(hazardsSvc.purgeManagedPhoto).not.toHaveBeenCalled();
     expect(reviewsSvc.purgeManagedPhotos).not.toHaveBeenCalled();
     // delete is issued on the internal stub repo for the trip_message type.
+  });
+
+  it('hide(hazard) calls broadcastRemoval after the update succeeds', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    await svc.hide(ContentType.Hazard, 'h1', 'admin-9', 'spam');
+    expect(hazardsSvc.broadcastRemoval).toHaveBeenCalledWith('h1');
+  });
+
+  it('hide(hazard) does NOT call broadcastRemoval when the row is missing', async () => {
+    const repo = makeRepo(makeQb([], 0), {
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+    });
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    await expect(
+      svc.hide(ContentType.Hazard, 'nope', 'admin-9', null),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
+  });
+
+  it('hide(review) does NOT call broadcastRemoval', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    await svc.hide(ContentType.Review, 'r1', 'admin-9', null);
+    expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
+  });
+
+  it('hide(trip_message) does NOT call broadcastRemoval', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    await svc.hide(ContentType.TripMessage, 'tm1', 'admin-9', null);
+    expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
+  });
+
+  it('remove(hazard) calls broadcastRemoval before delete', async () => {
+    const repo = makeRepo(makeQb([], 0));
+    const hazardsSvc = makeHazardsSvc();
+    const svc = build(repo, makeUserRepo(), hazardsSvc);
+    const callOrder: string[] = [];
+    hazardsSvc.broadcastRemoval.mockImplementation(() => {
+      callOrder.push('broadcast');
+      return Promise.resolve();
+    });
+    repo.delete.mockImplementation(() => {
+      callOrder.push('delete');
+      return Promise.resolve({ affected: 1 });
+    });
+    await svc.remove(ContentType.Hazard, 'h1');
+    expect(hazardsSvc.broadcastRemoval).toHaveBeenCalledWith('h1');
+    expect(callOrder.indexOf('broadcast')).toBeLessThan(
+      callOrder.indexOf('delete'),
+    );
+  });
+
+  it('remove(review) does NOT call broadcastRemoval', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const reviewsSvc = makeReviewsSvc();
+    const svc = build(
+      makeRepo(makeQb([], 0)),
+      makeUserRepo(),
+      hazardsSvc,
+      reviewsSvc,
+    );
+    await svc.remove(ContentType.Review, 'r1');
+    expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
+  });
+
+  it('remove(trip_message) does NOT call broadcastRemoval', async () => {
+    const hazardsSvc = makeHazardsSvc();
+    const reviewsSvc = makeReviewsSvc();
+    const svc = build(
+      makeRepo(makeQb([], 0)),
+      makeUserRepo(),
+      hazardsSvc,
+      reviewsSvc,
+    );
+    await svc.remove(ContentType.TripMessage, 'tm1');
+    expect(hazardsSvc.broadcastRemoval).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown content type', async () => {

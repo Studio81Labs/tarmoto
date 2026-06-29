@@ -112,6 +112,9 @@ export class AdminContentService {
       },
     );
     if (!result.affected) throw new NotFoundException('Content not found');
+    if (type === ContentType.Hazard) {
+      await this.hazardsService.broadcastRemoval(id);
+    }
     return this.getOne(type, id);
   }
 
@@ -136,6 +139,10 @@ export class AdminContentService {
     // loadable. The per-service helpers already guard path traversal and
     // swallow ENOENT / not-owned files, so a missing file won't 500.
     if (type === ContentType.Hazard) {
+      // Broadcast removal before the row is gone so lat/lng are still
+      // readable. purgeManagedPhoto is fine in either order — it only
+      // reads the row to find the filename.
+      await this.hazardsService.broadcastRemoval(id);
       await this.hazardsService.purgeManagedPhoto(id);
     } else if (type === ContentType.Review) {
       await this.reviewsService.purgeManagedPhotos(id);

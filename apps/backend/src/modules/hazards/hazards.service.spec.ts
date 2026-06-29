@@ -781,6 +781,37 @@ describe('HazardsService', () => {
     });
   });
 
+  describe('broadcastRemoval', () => {
+    it('loads the hazard by id and emits a dismissed signal', async () => {
+      const hazardWithRelations = {
+        ...mockHazard,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+
+      await service.broadcastRemoval(mockHazard.id!);
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { id: mockHazard.id },
+        relations: ['user', 'road_segment'],
+      });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
+    });
+
+    it('is a no-op (emit NOT called) when the hazard id is not found', async () => {
+      repo.findOne!.mockResolvedValueOnce(null);
+
+      await service.broadcastRemoval('nonexistent-id');
+
+      expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('dismiss cleanup', () => {
     it('should unlink the managed photo file when dismissing a hazard that owns one', async () => {
       const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');

@@ -424,6 +424,28 @@ export class HazardsService {
     );
   }
 
+  /**
+   * Broadcast a removal signal for any hazard the admin has hidden or
+   * hard-deleted so that connected map clients prune the marker
+   * immediately — without waiting for a REST refetch. Loads the row
+   * directly by id (no active/visible filter) because the row may
+   * already be hidden when this is called. No-op when the id is not
+   * found (e.g. a concurrent delete race).
+   */
+  async broadcastRemoval(hazardId: string): Promise<void> {
+    const hazard = await this.hazardRepo.findOne({
+      where: { id: hazardId },
+      relations: ['user', 'road_segment'],
+    });
+    if (!hazard) return;
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      ...response,
+      severity: 'dismissed',
+    });
+  }
+
   async expireOld(): Promise<number> {
     const result = await this.hazardRepo
       .createQueryBuilder()
