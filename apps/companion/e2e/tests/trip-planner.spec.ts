@@ -122,6 +122,140 @@ test.describe("trip planner", () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
+  // Multi-day flow: seed a two-day trip directly (day 2 linked), open the
+  // planner, dirty the route, Save, then reload and verify both day tabs
+  // are restored and day 2 is still linked.
+  //
+  // We seed a pre-built 2-day trip rather than driving the "Add day" +
+  // map-click flow in Playwright because the planner's day-2 hint overlay
+  // intercepts pointer events on the canvas until dismissed, making a
+  // reliable waypoint-placement sequence fragile across retries. The
+  // important coverage here is:
+  //   a) the mock backend accepts the multi-day PUT /route shape,
+  //   b) `saveDays()` correctly serialises `startLinked` per day, and
+  //   c) the reloaded planner shows 2 day tabs with day 2 linked.
+  test("building, saving, and reloading a two-day trip restores both days and linked state", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    // Seed a 2-day trip: day 1 has a complete routed geometry; day 2 has
+    // a linked start (day 1 end) and its own end, so both are "complete"
+    // and the planner can save without prompting for more waypoints.
+    const trip = await mockApi.seedTrip(user, {
+      title: "Two-day Alps",
+      days: [
+        {
+          route_geometry: [
+            { lat: 46.47, lng: 10.37 },
+            { lat: 46.55, lng: 10.45 },
+            { lat: 46.63, lng: 10.52 },
+          ],
+          waypoints: [
+            { lat: 46.47, lng: 10.37, name: "Start", type: "start" },
+            { lat: 46.63, lng: 10.52, name: "Finish Day 1", type: "end" },
+          ],
+          start_linked: false,
+          distance_km: 80,
+        },
+        {
+          route_geometry: [
+            { lat: 46.63, lng: 10.52 },
+            { lat: 46.71, lng: 10.6 },
+            { lat: 46.79, lng: 10.68 },
+          ],
+          waypoints: [
+            // Linked start: same coords as day 1's end.
+            { lat: 46.63, lng: 10.52, name: "Day 2 Start", type: "start" },
+            { lat: 46.79, lng: 10.68, name: "Finish Day 2", type: "end" },
+          ],
+          start_linked: true,
+          distance_km: 85,
+        },
+      ],
+    });
+
+    await page.goto(`/trips/planner?tripId=${trip.id}`);
+
+    // Wait for the map and trip heading.
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(
+      page.getByRole("heading", { name: /two-day alps/i }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Both day tabs should be visible on open.
+    await expect(
+      page.getByRole("button", { name: /Day 1/i }).first(),
+    ).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(
+      page.getByRole("button", { name: /Day 2/i }).first(),
+    ).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Day 2 is linked — the "Link to previous day" button must NOT appear
+    // (it only renders when startLinked === false for day index ≥ 1).
+    await expect(
+      page.getByRole("button", { name: /link to previous day/i }),
+    ).not.toBeVisible();
+
+    // Toggle "Avoid highways" to dirty the route. Toggling marks ALL days
+    // stale and fires live routing for the selected day (day 1). We wait
+    // 1.5 s — enough for the 300 ms debounce + near-instant mock response
+    // to clear day 1 from stalePreviewDays — then switch to day 2 so live
+    // routing fires + clears day 2. Only once stalePreviewDays is empty
+    // does "Save route" enable.
+    await page.getByText(/avoid highways/i).click();
+
+    // Give day-1 routing time to complete (300 ms debounce + mock latency).
+    await page.waitForTimeout(1_500);
+
+    // Click day 2 so live routing fires for it too.
+    await page.getByRole("button", { name: /Day 2/i }).first().click();
+
+    // "Save route" should become enabled once both day routes have settled.
+    const saveRouteBtn = page.getByRole("button", { name: /save route/i });
+    await expect(saveRouteBtn).toBeEnabled({ timeout: 10_000 });
+    await saveRouteBtn.click();
+
+    // Success toast.
+    await expect(page.getByText(/route saved/i)).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Reload the planner using the same trip id — verifies that the saved
+    // multi-day state round-trips through the mock backend correctly.
+    await page.goto(`/trips/planner?tripId=${trip.id}`);
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(
+      page.getByRole("heading", { name: /two-day alps/i }).first(),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Both day tabs must be present after reload.
+    await expect(
+      page.getByRole("button", { name: /Day 1/i }).first(),
+    ).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(
+      page.getByRole("button", { name: /Day 2/i }).first(),
+    ).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Day 2 is still linked after the save + reload round-trip. The "Link
+    // to previous day" button is absent because startLinked stayed true.
+    await expect(
+      page.getByRole("button", { name: /link to previous day/i }),
+    ).not.toBeVisible();
+  });
+
   // T4 (segment sidebar) is **blocked at e2e**.
   //
   // The `SegmentSidebar` keys off `activeTrip.days[i].segments`, but the

@@ -3,6 +3,7 @@ import {
   buildTripPlannerRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
+  DAY_COLORS,
   getTripPlannerBounds,
 } from "../trip-planner-map";
 
@@ -198,6 +199,76 @@ describe("buildTripPlannerRouteCollection", () => {
 
     expect(collection.features).toHaveLength(0);
   });
+
+  it("emits one route feature per day with a stable color and selected flag", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 1);
+
+    expect(collection.features).toHaveLength(2);
+
+    const day1 = collection.features[0]!;
+    expect(day1.properties.dayNumber).toBe(1);
+    expect(day1.properties.color).toBe(DAY_COLORS[0]);
+    expect(day1.properties.selected).toBe(true);
+
+    const day2 = collection.features[1]!;
+    expect(day2.properties.dayNumber).toBe(2);
+    expect(day2.properties.color).toBe(DAY_COLORS[1]);
+    expect(day2.properties.selected).toBe(false);
+  });
+
+  it("marks every day as selected when no selectedDayNumber is provided", () => {
+    const collection = buildTripPlannerRouteCollection(trip());
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0]!.properties.selected).toBe(true);
+    expect(collection.features[1]!.properties.selected).toBe(true);
+  });
+
+  it("emits only the selected day when focusSelectedDay is true", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 2, true);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]!.properties.dayNumber).toBe(2);
+    expect(collection.features[0]!.properties.selected).toBe(true);
+  });
+
+  it("emits all days when focusSelectedDay is false", () => {
+    const collection = buildTripPlannerRouteCollection(trip(), 1, false);
+
+    expect(collection.features).toHaveLength(2);
+  });
+
+  it("cycles colors when a trip has more days than DAY_COLORS", () => {
+    const manyDayTrip = trip({
+      days: Array.from({ length: DAY_COLORS.length + 1 }, (_, i) => ({
+        dayNumber: i + 1,
+        title: `Day ${i + 1}`,
+        distanceKm: 100,
+        durationMinutes: 120,
+        elevationGain: 400,
+        avgQuality: 4,
+        waypoints: [
+          {
+            id: `start-${i + 1}`,
+            name: "Start",
+            location: { lng: 14 + i * 0.1, lat: 50 },
+            type: "start" as const,
+          },
+          {
+            id: `end-${i + 1}`,
+            name: "End",
+            location: { lng: 14 + i * 0.1 + 0.05, lat: 50.1 },
+            type: "end" as const,
+          },
+        ],
+      })),
+    });
+
+    const collection = buildTripPlannerRouteCollection(manyDayTrip);
+    const lastFeature = collection.features[DAY_COLORS.length]!;
+    // Day (DAY_COLORS.length + 1) wraps back to index 0
+    expect(lastFeature.properties.color).toBe(DAY_COLORS[0]);
+  });
 });
 
 describe("buildTripPlannerWaypointCollection", () => {
@@ -225,6 +296,176 @@ describe("buildTripPlannerWaypointCollection", () => {
         label: "Decin",
       },
     });
+  });
+
+  it("emits only the selected day's markers in focus mode", () => {
+    const all = buildTripPlannerWaypointCollection(trip());
+    const focused = buildTripPlannerWaypointCollection(trip(), 2, true);
+    // Focus mode must drop other days' markers (they're also the drag source),
+    // so the map is truly isolated to the selected day.
+    expect(focused.features.length).toBeGreaterThan(0);
+    expect(focused.features.length).toBeLessThan(all.features.length);
+    expect(focused.features.every((f) => f.properties.dayNumber === 2)).toBe(
+      true,
+    );
+  });
+
+  it("suppresses a linked day's start so the shared overnight stop renders once", () => {
+    // Day 1 ends at the overnight stop; day 2 has startLinked: true and its
+    // start waypoint is at the same physical point. The builder must emit the
+    // overnight stop exactly once (as day 1's end) and omit day 2's start.
+    const overnightLng = 14.61;
+    const overnightLat = 50.19;
+    const overnightTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day one",
+          distanceKm: 120,
+          durationMinutes: 180,
+          elevationGain: 800,
+          avgQuality: 4.1,
+          waypoints: [
+            {
+              id: "start-1",
+              name: "Start",
+              location: { lng: 14.41, lat: 50.08 },
+              type: "start",
+            },
+            {
+              id: "end-1",
+              name: "Overnight stop",
+              location: { lng: overnightLng, lat: overnightLat },
+              type: "end",
+            },
+          ],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          startLinked: true,
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Overnight stop",
+              location: { lng: overnightLng, lat: overnightLat },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    });
+
+    const collection = buildTripPlannerWaypointCollection(overnightTrip);
+
+    // Naive total: 4 waypoints across 2 days. Deduped: 3 (linked start omitted).
+    expect(collection.features).toHaveLength(3);
+
+    // The overnight point must appear exactly once — as day 1's end.
+    const overnightFeatures = collection.features.filter(
+      (f) =>
+        f.geometry.coordinates[0] === overnightLng &&
+        f.geometry.coordinates[1] === overnightLat,
+    );
+    expect(overnightFeatures).toHaveLength(1);
+    expect(overnightFeatures[0]?.properties).toMatchObject({
+      dayNumber: 1,
+      waypointId: "end-1",
+      waypointType: "end",
+    });
+
+    // Day 2's linked start must be absent.
+    const linkedStart = collection.features.find(
+      (f) => f.properties.waypointId === "start-2",
+    );
+    expect(linkedStart).toBeUndefined();
+  });
+
+  it("renders a focused linked day's start (predecessor isn't drawn in focus mode)", () => {
+    const overnightTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day one",
+          distanceKm: 120,
+          durationMinutes: 180,
+          elevationGain: 800,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "start-1",
+              name: "Start",
+              location: { lng: 14.41, lat: 50.08 },
+              type: "start",
+            },
+            {
+              id: "end-1",
+              name: "Overnight",
+              location: { lng: 14.61, lat: 50.19 },
+              type: "end",
+            },
+          ],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          startLinked: true,
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Overnight",
+              location: { lng: 14.61, lat: 50.19 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    });
+
+    // Non-focus: the linked start is suppressed (drawn as day 1's end).
+    const all = buildTripPlannerWaypointCollection(overnightTrip);
+    expect(
+      all.features.find((f) => f.properties.waypointId === "start-2"),
+    ).toBeUndefined();
+
+    // Focus on day 2: day 1 isn't drawn, so day 2's linked start MUST render —
+    // otherwise the focused leg has no overnight/start marker at all.
+    const focused = buildTripPlannerWaypointCollection(overnightTrip, 2, true);
+    expect(
+      focused.features.find((f) => f.properties.waypointId === "start-2"),
+    ).toBeDefined();
+    expect(focused.features.every((f) => f.properties.dayNumber === 2)).toBe(
+      true,
+    );
+  });
+
+  it("does not suppress a non-linked day's start", () => {
+    // When startLinked is false/undefined, the start waypoint must still render.
+    const collection = buildTripPlannerWaypointCollection(trip());
+    const day2Start = collection.features.find(
+      (f) => f.properties.waypointId === "start-2",
+    );
+    expect(day2Start).toBeDefined();
   });
 
   it("falls back to a stable label when waypoint type is an empty string", () => {

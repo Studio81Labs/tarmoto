@@ -52,6 +52,9 @@ export class TripDay {
   @Column({ type: 'float', nullable: true })
   scenic_score!: number | null;
 
+  @Column({ type: 'boolean', default: false })
+  start_linked!: boolean;
+
   @Column({ type: 'interval', nullable: true })
   estimated_time!: string | null;
 

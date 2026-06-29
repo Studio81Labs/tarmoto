@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -36,7 +36,7 @@ import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
-import { SaveRouteDto } from './dto/save-route.dto.js';
+import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   PublicTripDetailDto,
@@ -209,6 +209,7 @@ export class TripsService {
               curviness_score: day.curviness_score,
               scenic_score: day.scenic_score,
               estimated_time: day.estimated_time,
+              start_linked: day.start_linked,
             }),
           );
 
@@ -570,6 +571,25 @@ export class TripsService {
       for (let i = 0; i < days.length; i++) {
         const parsed = days[i];
         const dayNumber = i + 1;
+        // Normalize the (client-supplied) overnight link like manual saves: day
+        // 1 is never linked, and a successor is only linked when its start
+        // actually sits on the previous SURVIVING day's end. Empty days were
+        // dropped above, so the original predecessor may no longer be adjacent.
+        const startWp = parsed.waypoints.find(
+          (w) => w.waypoint_type === 'start',
+        );
+        // A generated predecessor finishes at a terminal accommodation, not an
+        // explicit `end` — treat that as the finish so a valid shared link is
+        // kept (otherwise the trip reloads with a duplicate overnight marker).
+        const prevEndWp =
+          i > 0 ? snapshotDayFinish(days[i - 1].waypoints) : undefined;
+        const startLinked =
+          i > 0 &&
+          parsed.startLinked === true &&
+          !!startWp &&
+          !!prevEndWp &&
+          startWp.lat === prevEndWp.lat &&
+          startWp.lng === prevEndWp.lng;
         const day = manager.create(TripDay, {
           trip_id: savedTrip.id,
           day_number: dayNumber,
@@ -594,6 +614,7 @@ export class TripsService {
                   coordinates: parsed.geometry.map((p) => [p.lng, p.lat]),
                 }
               : null,
+          start_linked: startLinked,
         });
         const savedDay = await manager.save(day);
 
@@ -604,7 +625,9 @@ export class TripsService {
               sequence: idx,
               location: latLngToPoint({ lat: w.lat, lng: w.lng }),
               name: w.name ?? null,
-              waypoint_type: w.waypoint_type,
+              // Persist backend vocabulary so the companion remaps stays on
+              // reload (a raw `accommodation` would fall through to `via`).
+              waypoint_type: canonicalSnapshotWaypointType(w.waypoint_type),
             }),
           );
           await manager.save(rows);
@@ -983,12 +1006,77 @@ export class TripsService {
   }
 
   /**
-   * US-road-route: persist a manually-built road route for day 1.
+   * Validate ordering, route, and enrich ONE day. Throws
+   * BadRequestException / BadGatewayException on failure so a single bad day
+   * aborts the whole save before the transaction starts.
+   */
+  private async buildDayRoute(
+    day: SaveRouteDayDto,
+    options: SaveRouteDto['options'],
+  ): Promise<{
+    distance_km: number;
+    estimated_time: string;
+    avg_quality: number | null;
+    curviness_score: number | null;
+    scenic_score: number | null;
+    elevation_gain: number;
+    elevation_loss: number;
+    route_geom: { type: 'LineString'; coordinates: number[][] };
+  }> {
+    const startCount = day.waypoints.filter((w) => w.type === 'start').length;
+    const endCount = day.waypoints.filter((w) => w.type === 'end').length;
+    if (startCount !== 1 || endCount !== 1) {
+      throw new BadRequestException(
+        `Day ${day.dayNumber} must have exactly one start and one end waypoint`,
+      );
+    }
+    const routing = day.waypoints.filter((w) =>
+      ['start', 'via', 'end'].includes(w.type),
+    );
+    if (
+      routing[0]?.type !== 'start' ||
+      routing[routing.length - 1]?.type !== 'end'
+    ) {
+      throw new BadRequestException(
+        `Day ${day.dayNumber} waypoints must be ordered from start to end`,
+      );
+    }
+    const route = await this.routingProvider.route(
+      routing.map((w) => ({ lat: w.lat, lng: w.lng })),
+      {
+        avoidHighways: options?.avoid_highways,
+        avoidTolls: options?.avoid_tolls,
+      },
+    );
+    if (!route) {
+      throw new BadGatewayException(`No road route for day ${day.dayNumber}`);
+    }
+    const m = await this.enrichment.aggregate(route.geometry);
+    return {
+      distance_km: Number(route.distance_km.toFixed(2)),
+      estimated_time: `${Math.round(route.duration_min)} minutes`,
+      avg_quality: m.avgQuality,
+      curviness_score: m.curvinessScore,
+      scenic_score: m.scenicScore,
+      elevation_gain: Math.round(m.elevationGain),
+      elevation_loss: Math.round(m.elevationLoss),
+      route_geom: {
+        type: 'LineString',
+        coordinates: route.geometry.map((p) => [p.lng, p.lat]),
+      },
+    };
+  }
+
+  /**
+   * US-road-route: persist manually-built road routes for all days.
    *
    * The endpoint is the single source of truth — client geometry is never
-   * trusted. We accept ordered waypoints, re-route them server-side via
-   * the configured routing provider (Valhalla), enrich the result via
-   * PostGIS, then replace day 1 in a transaction.
+   * trusted. We accept ordered waypoints per day, re-route them server-side
+   * via the configured routing provider (Valhalla), enrich the results via
+   * PostGIS, then replace ALL days in a single transaction.
+   *
+   * Routing happens BEFORE the transaction so a 502 from any day aborts
+   * cleanly with no partial writes.
    *
    * Any trip member may call this (not just owner/admin) because the
    * route-building flow is collaborative — all members can contribute a
@@ -1007,60 +1095,20 @@ export class TripsService {
     });
     if (!member) throw new NotFoundException('Trip not found');
 
-    // Require EXACTLY ONE start and ONE end so the API can't persist a planned
-    // day with no finish — or with duplicate starts/ends that the companion's
-    // edit helpers (which only replace the first match) would keep round-
-    // tripping. The frontend gates this too, but the API is the source of truth
-    // for direct/mobile clients.
-    const startCount = dto.waypoints.filter((w) => w.type === 'start').length;
-    const endCount = dto.waypoints.filter((w) => w.type === 'end').length;
-    if (startCount !== 1 || endCount !== 1) {
-      throw new BadRequestException(
-        'A route must have exactly one start and one end waypoint',
-      );
-    }
+    // Renumber contiguously (defensive — client already drops empties).
+    const days = dto.days.map((d, i) => ({ ...d, dayNumber: i + 1 }));
 
-    // 2. Road-snap from routing waypoints only (start/via/end) — non-routing
-    //    stops (fuel, food, coffee, hotel, photo) are persisted as waypoints
-    //    but do not affect the road geometry. Never trust client geometry.
-    const routingWaypoints = dto.waypoints.filter((w) =>
-      ['start', 'via', 'end'].includes(w.type),
+    // 2. Route + enrich each day up front so a routing failure (502) aborts
+    //    the whole save before the transaction starts — no partial writes.
+    const built = await Promise.all(
+      days.map((d) => this.buildDayRoute(d, dto.options)),
     );
-    // The routing subset must be ordered start ... end. The count check above
-    // allows shapes like `end, via, start` or `start, end, via`; this filter
-    // preserves submission order for Valhalla and persistence, so without an
-    // order check the saved trip could reload with the finish in the middle or
-    // at the wrong end.
-    if (
-      routingWaypoints[0]?.type !== 'start' ||
-      routingWaypoints[routingWaypoints.length - 1]?.type !== 'end'
-    ) {
-      throw new BadRequestException(
-        'Route waypoints must be ordered from start to end',
-      );
-    }
-    const route = await this.routingProvider.route(
-      routingWaypoints.map((w) => ({ lat: w.lat, lng: w.lng })),
-      {
-        avoidHighways: dto.options?.avoid_highways,
-        avoidTolls: dto.options?.avoid_tolls,
-      },
-    );
-    if (!route)
-      throw new BadGatewayException('No road route between these points');
 
-    const m = await this.enrichment.aggregate(route.geometry);
-
-    // 3. Persist day 1 + its waypoints in a single transaction.
-    //    Mirrors TripGeneratorService.persistSelected: delete existing
-    //    day 1, insert a fresh TripDay + TripWaypoint rows. We use
-    //    `dataSource.transaction` via the tripRepo manager (the same
-    //    pattern the generator uses) so the geometry object form matches
-    //    what TypeORM + the PostGIS column type expect.
+    // 3. Replace ALL days + their waypoints in a single transaction.
     await this.tripRepo.manager.transaction(async (manager) => {
       // Take a pessimistic row lock first so concurrent saves to the same
       // trip serialize (last-writer-wins) — mirrors replaceWithImportedRoute.
-      // Without it, two callers can both delete + reinsert day 1 and race the
+      // Without it, two callers can both delete + reinsert and race the
       // `(trip_id, day_number)` unique constraint, surfacing a 500 instead.
       const locked = await manager.findOne(Trip, {
         where: { id: tripId },
@@ -1068,74 +1116,84 @@ export class TripsService {
       });
       if (!locked) throw new NotFoundException('Trip not found');
 
-      // Decouple day-1 suggestions from the day before deleting it —
-      // mirrors replaceWithImportedRoute which NULLs trip_day_id first so
-      // open collaboration suggestions survive the cascade. Without this,
-      // deleting the TripDay cascades to TripSuggestion rows (onDelete:
-      // CASCADE) and permanently removes in-flight suggestions.
-      //
-      // Scope the NULL-out to only day-1's suggestions — day-2+ suggestions
-      // must keep their trip_day_id intact because only day 1 is being replaced.
-      const existingDay1 = await manager.findOne(TripDay, {
-        where: { trip_id: tripId, day_number: 1 },
+      // Decouple ALL suggestions on this trip's days before deleting them —
+      // mirrors Phase 1's day-1 unscoping but across every day. NULLing
+      // trip_day_id first prevents the onDelete: CASCADE from permanently
+      // removing in-flight collaboration suggestions.
+      const existingDays = await manager.find(TripDay, {
+        where: { trip_id: tripId },
       });
-      if (existingDay1) {
+      if (existingDays.length > 0) {
         await manager.update(
           TripSuggestion,
-          { trip_day_id: existingDay1.id },
+          { trip_day_id: In(existingDays.map((d) => d.id)) },
           { trip_day_id: null },
         );
+        await manager.delete(TripDay, { trip_id: tripId });
       }
 
-      // Delete day 1 only — leave other days untouched.
-      await manager.delete(TripDay, { trip_id: tripId, day_number: 1 });
-
-      // Persist day 1 — column form mirrors generator's `persistSelected`
-      // (lines 567-587 of trip-generator.service.ts): route_geom as a
-      // GeoJSON object `{ type, coordinates }` in [lng, lat] order;
-      // estimated_time as `'N minutes'` interval string.
-      const day = manager.create(TripDay, {
-        trip_id: tripId,
-        day_number: 1,
-        distance_km: Number(route.distance_km.toFixed(2)),
-        estimated_time: `${Math.round(route.duration_min)} minutes`,
-        avg_quality: m.avgQuality,
-        curviness_score: m.curvinessScore,
-        scenic_score: m.scenicScore,
-        elevation_gain: Math.round(m.elevationGain),
-        elevation_loss: Math.round(m.elevationLoss),
-        route_geom: {
-          type: 'LineString',
-          coordinates: route.geometry.map((p) => [p.lng, p.lat]),
-        },
-      });
-      const savedDay = await manager.save(day);
-
-      // Persist ALL submitted waypoints (including non-routing stops such as
-      // fuel, food, coffee, hotel, photo) in submission order so riders don't
-      // lose stops they placed before hitting Save. The routing geometry above
-      // was computed from the start/via/end subset only.
-      // Location uses `latLngToPoint` — the same helper the generator and
-      // importFromRoute use for `trip_waypoints.location`.
-      const waypointRows = dto.waypoints.map((w, idx) =>
-        manager.create(TripWaypoint, {
-          trip_day_id: savedDay.id,
-          sequence: idx,
-          location: latLngToPoint({ lat: w.lat, lng: w.lng }),
-          name: w.name ?? null,
-          waypoint_type: w.type,
-        }),
-      );
-      if (waypointRows.length > 0) {
-        await manager.save(waypointRows);
+      // Insert fresh TripDay + TripWaypoint rows for every submitted day.
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        const b = built[i];
+        // Normalize the overnight-link flag rather than trusting the client:
+        // day 1 is never linked, and a successor is only linked if its start
+        // actually sits on the previous day's end. A direct/mobile client could
+        // otherwise persist an impossible link the companion later trusts to
+        // hide markers and resync starts.
+        const startWp = d.waypoints.find((w) => w.type === 'start');
+        const prevEndWp =
+          i > 0
+            ? days[i - 1].waypoints.find((w) => w.type === 'end')
+            : undefined;
+        const startLinked =
+          i > 0 &&
+          d.startLinked === true &&
+          !!startWp &&
+          !!prevEndWp &&
+          startWp.lat === prevEndWp.lat &&
+          startWp.lng === prevEndWp.lng;
+        const dayRow = await manager.save(
+          manager.create(TripDay, {
+            trip_id: tripId,
+            day_number: d.dayNumber,
+            // Title comes from the payload (the companion sends each day's
+            // title), so it follows the day through client-side renumbering —
+            // a day_number lookup would mis-assign titles after a day removal.
+            title: d.title ?? null,
+            start_linked: startLinked,
+            distance_km: b.distance_km,
+            estimated_time: b.estimated_time,
+            avg_quality: b.avg_quality,
+            curviness_score: b.curviness_score,
+            scenic_score: b.scenic_score,
+            elevation_gain: b.elevation_gain,
+            elevation_loss: b.elevation_loss,
+            route_geom: b.route_geom,
+          }),
+        );
+        // Persist ALL submitted waypoints (including non-routing stops such as
+        // fuel, food, coffee, hotel, photo) in submission order so riders don't
+        // lose stops they placed before hitting Save.
+        const waypointRows = d.waypoints.map((w, idx) =>
+          manager.create(TripWaypoint, {
+            trip_day_id: dayRow.id,
+            sequence: idx,
+            location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+            name: w.name ?? null,
+            waypoint_type: w.type,
+          }),
+        );
+        if (waypointRows.length > 0) {
+          await manager.save(waypointRows);
+        }
       }
 
-      // Flip trip status to planned (it was likely draft before
-      // a route was saved). Mirrors the generator's status update.
+      // Flip trip status to planned and update num_days + updated_at.
       await manager.update(
         Trip,
         { id: tripId },
-        { status: 'planned', updated_at: new Date() },
+        { status: 'planned', num_days: days.length, updated_at: new Date() },
       );
     });
 
@@ -1402,6 +1460,7 @@ export class TripsService {
       curviness_score: d.curviness_score ?? 0,
       scenic_score: d.scenic_score ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
+      start_linked: d.start_linked ?? false,
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
         // `location` is NOT NULL in the schema, but the shared helper
@@ -1591,6 +1650,38 @@ interface BuiltWaypoint {
   waypoint_type: BuiltWaypointType;
 }
 
+/**
+ * The waypoint that finishes a snapshot day: its explicit `end`, or — for a
+ * generated overnight day with no explicit end — its terminal `accommodation`.
+ * Returns `undefined` when the day has no finish. Used by the from-share link
+ * normalizer so a generated predecessor (accommodation-terminated) validates a
+ * successor's `startLinked` instead of clearing it.
+ */
+function snapshotDayFinish(
+  waypoints: BuiltWaypoint[],
+): BuiltWaypoint | undefined {
+  // A TERMINAL accommodation (a stay appended after an explicit end) is the
+  // finish — mirror the companion's `dayFinishWaypoint`, else a snapshot shaped
+  // [start, end, accommodation] validates startLinked against the stale end and
+  // clears a valid overnight link on import.
+  const last = waypoints[waypoints.length - 1];
+  if (last?.waypoint_type === 'accommodation') return last;
+  return waypoints.find((w) => w.waypoint_type === 'end');
+}
+
+/**
+ * Snapshots carry companion-local stop vocabulary (`accommodation`, `rest`),
+ * but persisted rows and `TripWaypointDto`/`tripFromDetail` speak the backend
+ * vocabulary (`hotel`, `coffee`). Canonicalize stay/rest types on import so a
+ * reloaded shared trip maps the overnight back to a stay (not `via`) — which
+ * also keeps the `start_linked` boundary intact. Shared types pass through.
+ */
+function canonicalSnapshotWaypointType(type: BuiltWaypointType): string {
+  if (type === 'accommodation') return 'hotel';
+  if (type === 'rest') return 'coffee';
+  return type;
+}
+
 const SAME_POINT_EPSILON = 1e-5;
 
 function samePoint(
@@ -1620,6 +1711,7 @@ interface ParsedSnapshotDay {
   elevation_gain: number | null;
   geometry: Array<{ lat: number; lng: number }>;
   waypoints: BuiltWaypoint[];
+  startLinked: boolean;
 }
 
 // Snapshot waypoints round-trip the same vocabulary the backend
@@ -1703,6 +1795,8 @@ function parseSnapshotDay(raw: unknown): ParsedSnapshotDay {
 
   const geometry = parseSnapshotGeometry(day.routeGeometry);
   const waypoints = parseSnapshotWaypoints(day.waypoints);
+  // Companion snapshots carry the overnight link flag as `startLinked`.
+  const startLinked = day.startLinked === true;
 
   // Recompute distance from geometry when the snapshot didn't carry it
   // (older shares predating the per-day distance field) — the trip-list
@@ -1721,6 +1815,7 @@ function parseSnapshotDay(raw: unknown): ParsedSnapshotDay {
     elevation_gain,
     geometry,
     waypoints,
+    startLinked,
   };
 }
 

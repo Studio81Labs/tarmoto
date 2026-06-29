@@ -198,6 +198,57 @@ describe("tripFromDetail", () => {
     expect(trip.days[0]!.overnightStop).toBeUndefined();
   });
 
+  it("infers a non-final day's overnight from its end when the stay was normalized to an end", () => {
+    const detail = makeDetail();
+    const base = detail.days[0]!;
+    const mkDay = (
+      n: number,
+      start: { lat: number; lng: number },
+      end: { lat: number; lng: number },
+    ) => ({
+      ...base,
+      id: `d-${n}`,
+      day_number: n,
+      // No `hotel` — a manual save normalized the stay to a routed `end`.
+      waypoints: [
+        {
+          ...base.waypoints[0]!,
+          id: `s-${n}`,
+          sequence: 0,
+          lat: start.lat,
+          lng: start.lng,
+          waypoint_type: "start",
+          name: "Start",
+        },
+        {
+          ...base.waypoints[0]!,
+          id: `e-${n}`,
+          sequence: 1,
+          lat: end.lat,
+          lng: end.lng,
+          waypoint_type: "end",
+          name: `Day ${n} finish`,
+        },
+      ],
+    });
+    const trip = tripFromDetail({
+      ...detail,
+      num_days: 2,
+      days: [
+        mkDay(1, { lat: 46, lng: 10 }, { lat: 46.5, lng: 10.5 }),
+        mkDay(2, { lat: 46.5, lng: 10.5 }, { lat: 47, lng: 11 }),
+      ],
+    });
+
+    // Day 1 (non-final): its end IS the overnight boundary.
+    expect(trip.days[0]!.overnightStop).toMatchObject({
+      type: "accommodation",
+      location: { lat: 46.5, lng: 10.5 },
+    });
+    // Day 2 (final): its end is the trip finish, not an overnight.
+    expect(trip.days[1]!.overnightStop).toBeUndefined();
+  });
+
   it("converts route_geometry {lat,lng}[] into GeoJSON [lng,lat][] tuples", () => {
     const trip = tripFromDetail(makeDetail());
     const geom = trip.days[0]!.routeGeometry!;

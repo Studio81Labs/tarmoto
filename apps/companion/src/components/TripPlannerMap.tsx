@@ -52,7 +52,7 @@ import {
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "@/lib/trip-planner-map";
-import { useTripStore } from "@/stores/trip";
+import { useTripStore, dayFinishWaypoint } from "@/stores/trip";
 import {
   buildPlacementMenu,
   type PlacementActionId,
@@ -123,6 +123,11 @@ interface TripPlannerMapProps {
     location: { lng: number; lat: number },
   ) => void;
   selectedDayNumber?: number;
+  /**
+   * When true, only the selected day's route is rendered on the map.
+   * When false (default), all days are shown color-coded.
+   */
+  focusSelectedDay?: boolean;
   /** Live cursors from other collaborators keyed by user id. */
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   /**
@@ -162,6 +167,7 @@ export const TripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -182,6 +188,7 @@ export const TripPlannerMap = forwardRef<
         onAddWaypoint={onAddWaypoint}
         onMoveWaypoint={onMoveWaypoint}
         selectedDayNumber={selectedDayNumber}
+        focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
         onCursorMove={onCursorMove}
@@ -199,6 +206,7 @@ export const TripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
+      focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
@@ -220,6 +228,7 @@ const FetchedTripPlannerMap = forwardRef<
       location: { lng: number; lat: number },
     ) => void;
     selectedDayNumber?: number;
+    focusSelectedDay?: boolean;
     collaboratorCursors?: Map<string, CollaboratorCursor>;
     suggestions?: TripSuggestion[];
     onCursorMove?: (lat: number, lng: number) => void;
@@ -234,6 +243,7 @@ const FetchedTripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -256,6 +266,7 @@ const FetchedTripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
+      focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       onCursorMove={onCursorMove}
@@ -279,6 +290,7 @@ const TripPlannerMapContent = forwardRef<
       location: { lng: number; lat: number },
     ) => void;
     selectedDayNumber?: number;
+    focusSelectedDay?: boolean;
     collaboratorCursors?: Map<string, CollaboratorCursor>;
     suggestions?: TripSuggestion[];
     onCursorMove?: (lat: number, lng: number) => void;
@@ -295,6 +307,7 @@ const TripPlannerMapContent = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     selectedDayNumber,
+    focusSelectedDay,
     collaboratorCursors,
     suggestions,
     onCursorMove,
@@ -367,11 +380,20 @@ const TripPlannerMapContent = forwardRef<
   // ── Context-menu waypoint placement (Task 10) ────────────────────────────
   // Task 9 store actions for context-menu placement.
   const placeWaypoint = useTripStore((s) => s.placeWaypoint);
-  // Derive hasStart / hasEnd from the active planner day (day 0).
+  // Derive hasStart / hasEnd from the SELECTED planner day (placement targets
+  // the selected day via the store), not day 0 — otherwise the menu on Day 2
+  // would offer Day 1's actions and the rider could never set Day 2's start.
   const activeTrip = useTripStore((s) => s.activeTrip);
-  const activeDayWaypoints = activeTrip?.days[0]?.waypoints ?? [];
-  const hasStart = activeDayWaypoints.some((w) => w.type === "start");
-  const hasEnd = activeDayWaypoints.some((w) => w.type === "end");
+  const selectedDayWaypoints =
+    (selectedDayNumber != null
+      ? activeTrip?.days.find((d) => d.dayNumber === selectedDayNumber)
+      : activeTrip?.days[0]
+    )?.waypoints ?? [];
+  const hasStart = selectedDayWaypoints.some((w) => w.type === "start");
+  // A terminal accommodation (generated overnight) counts as the day's finish,
+  // so the menu offers "Add via" (inserted before it) instead of the no-end
+  // actions — otherwise a via would land after the overnight and un-terminate it.
+  const hasEnd = !!dayFinishWaypoint(selectedDayWaypoints);
 
   // Context menu state: screen position + the snapped geo coord the menu acts on.
   const [contextMenu, setContextMenu] = useState<{
@@ -398,12 +420,22 @@ const TripPlannerMapContent = forwardRef<
   );
   // ─────────────────────────────────────────────────────────────────────────
   const routeCollection = useMemo(
-    () => buildTripPlannerRouteCollection(trip),
-    [trip],
+    () =>
+      buildTripPlannerRouteCollection(
+        trip,
+        selectedDayNumber,
+        focusSelectedDay,
+      ),
+    [trip, selectedDayNumber, focusSelectedDay],
   );
   const waypointCollection = useMemo(
-    () => buildTripPlannerWaypointCollection(trip),
-    [trip],
+    () =>
+      buildTripPlannerWaypointCollection(
+        trip,
+        selectedDayNumber,
+        focusSelectedDay,
+      ),
+    [trip, selectedDayNumber, focusSelectedDay],
   );
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
   const waypointCount = waypointCollection.features.length;
@@ -1574,11 +1606,17 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       type: "line",
       source: ROUTE_SOURCE,
       paint: {
-        // Ink route on the cream basemap (was near-white #F8FAFC, tuned for the
-        // old dark map and invisible on cream).
-        "line-color": "#0E0E10",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 6],
-        "line-opacity": 0.9,
+        // Each day's route carries its own stable color from DAY_COLORS.
+        "line-color": ["get", "color"],
+        // Selected day is rendered wider and fully opaque; non-selected days are
+        // thinner and dimmed so the focused day is always visually dominant.
+        "line-width": [
+          "case",
+          ["get", "selected"],
+          ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 7],
+          ["interpolate", ["linear"], ["zoom"], 6, 1.5, 10, 3, 14, 4],
+        ],
+        "line-opacity": ["case", ["get", "selected"], 1, 0.45],
       },
     });
   }

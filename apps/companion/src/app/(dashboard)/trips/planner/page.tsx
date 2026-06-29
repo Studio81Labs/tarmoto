@@ -4,17 +4,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
-import { useTripStore } from "@/stores/trip";
+import {
+  useTripStore,
+  MAX_TRIP_DAYS,
+  normalizeDayFinish,
+  dayFinishWaypoint,
+} from "@/stores/trip";
 import {
   ArrowLeft,
   Save,
   Clock3,
   GripVertical,
+  Link2,
   MapPin,
   Milestone,
+  Plus,
   ShieldCheck,
   RotateCcw,
   RotateCw,
+  Trash2,
   Users,
   Upload,
   FileUp,
@@ -55,7 +63,13 @@ import {
   type TripDetailMember,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
-import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
+import type {
+  SurfaceType,
+  Trip,
+  TripDay,
+  TripParameters,
+  Waypoint,
+} from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 /**
  * TripPlannerPage — Full-screen map-based trip planner.
@@ -179,6 +193,9 @@ export default function TripPlannerPage() {
   // The map's per-trip-id auto-fit suppresses these by design to
   // preserve user zoom/pan during waypoint edits (#559).
   const [fitRouteToken, setFitRouteToken] = useState(0);
+  // When true, the map renders only the selected day's route so the rider
+  // can focus on a single leg without other days' colors cluttering the view.
+  const [focusSelectedDay, setFocusSelectedDay] = useState(false);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -192,16 +209,22 @@ export default function TripPlannerPage() {
   const setGenerating = useTripStore((s) => s.setGenerating);
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const routeDirty = useTripStore((s) => s.routeDirty);
-  const routePreviewStale = useTripStore((s) => s.routePreviewStale);
+  const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const setDraftPlannerParameters = useTripStore(
     (s) => s.setDraftPlannerParameters,
   );
+  // ── Multi-day store selectors ────────────────────────────────────────
+  const selectedDayIndex = useTripStore((s) => s.selectedDayIndex);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
+  const addDay = useTripStore((s) => s.addDay);
+  const removeDay = useTripStore((s) => s.removeDay);
+  const relinkDayStart = useTripStore((s) => s.relinkDayStart);
   // Stable selector identity — the store fn is recreated each call, but
-  // we select the *day 0 waypoints array* so useMemo below only fires
+  // we select the *selected day's waypoints array* so useMemo below only fires
   // when the waypoints array actually changes (reference equality).
   const activeDayWaypoints = useTripStore(
-    (s) => s.activeTrip?.days[0]?.waypoints ?? null,
+    (s) => s.activeTrip?.days[s.selectedDayIndex]?.waypoints ?? null,
   );
   const selectedOption = useMemo(
     () =>
@@ -215,7 +238,6 @@ export default function TripPlannerPage() {
   const appendPlannerWaypoint = useTripStore((s) => s.appendPlannerWaypoint);
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
   const moveWaypoint = useTripStore((s) => s.moveWaypoint);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
@@ -225,10 +247,17 @@ export default function TripPlannerPage() {
   // array reference rather than by calling `getState()` inside render.
   const routingWaypoints = useMemo(() => {
     if (!activeDayWaypoints) return [] as { lat: number; lng: number }[];
-    return filterRoutingWaypoints(activeDayWaypoints).map((w) => ({
-      lat: w.location.lat,
-      lng: w.location.lng,
-    }));
+    // Normalize a terminal accommodation (generated overnight) to the day's
+    // finish FIRST — the same transform saveDays applies — so the live preview
+    // routes start→overnight and matches what the backend persists. Without
+    // this, an accommodation-terminated day has <2 routing points (its preview
+    // can't refresh / clear stale) yet Save would persist an unpreviewed route.
+    return filterRoutingWaypoints(normalizeDayFinish(activeDayWaypoints)).map(
+      (w) => ({
+        lat: w.location.lat,
+        lng: w.location.lng,
+      }),
+    );
   }, [activeDayWaypoints]);
   const routeOptions = useMemo(
     () => ({
@@ -238,18 +267,41 @@ export default function TripPlannerPage() {
     }),
     [avoidHighways, avoidTolls, avoidUnpaved],
   );
-  // Gate live routing: only fire Valhalla when the rider has made an
-  // edit (routeDirty) OR the active day has no persisted geometry yet
-  // (a fresh draft that hasn't been routed). This prevents an existing
-  // saved trip from being silently re-routed on open before any edits.
-  const activeDayRouteGeometry = activeTrip?.days[0]?.routeGeometry ?? null;
-  const liveRouteEnabled = routeDirty || !activeDayRouteGeometry;
+  // Gate live routing: only route when the selected day is stale (has
+  // unsent edits since last applyRouteResult) AND the route is dirty.
+  // This prevents an existing saved trip from being silently re-routed
+  // on open before any edits, and restricts routing to the selected day.
+  //
+  // Phase 2 note: when the rider switches to a stale neighbor day, that
+  // day's staleness was set by a prior edit-cascade — the routing hook
+  // fires automatically because `selectedDay.dayNumber` appears in
+  // `stalePreviewDays`. This is the intended behavior for phase 2.
+  const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  const liveRouteEnabled =
+    routeDirty &&
+    selectedDay !== null &&
+    stalePreviewDays.includes(selectedDay.dayNumber);
+  const handleRouteResult = useCallback(
+    (
+      result: Parameters<typeof applyRouteResult>[1],
+      requestDayNumber: number | null,
+    ) => {
+      // Apply geometry to the day the request was FIRED for (passed back by the
+      // hook), not the live `selectedDay` — the rider may have switched tabs
+      // before this response resolved, which would otherwise corrupt the
+      // now-current day and clear its stale flag.
+      if (requestDayNumber == null) return;
+      applyRouteResult(requestDayNumber, result);
+    },
+    [applyRouteResult],
+  );
   const { routing } = usePlannerRouting(
     routingWaypoints,
     routeOptions,
-    applyRouteResult,
+    handleRouteResult,
     (msg) => toast.error(msg),
     liveRouteEnabled,
+    selectedDay?.dayNumber ?? null,
   );
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
@@ -473,7 +525,7 @@ export default function TripPlannerPage() {
   );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
-  const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
   type TimelineDayLike = {
     dayNumber: number;
     title?: string;
@@ -491,15 +543,6 @@ export default function TripPlannerPage() {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
-  useEffect(() => {
-    if (!activeTrip) {
-      setSelectedDayIndex(0);
-      return;
-    }
-    if (selectedDayIndex > activeTrip.days.length - 1) {
-      setSelectedDayIndex(Math.max(0, activeTrip.days.length - 1));
-    }
-  }, [activeTrip, selectedDayIndex]);
   const handleSave = useCallback(async () => {
     if (!displayedTrip || saving || isGenerating || generationLockRef.current) {
       return;
@@ -623,34 +666,43 @@ export default function TripPlannerPage() {
     selectedOptionId,
     serverTripId,
   ]);
-  // ── Save Route (Task 11) ─────────────────────────────────────────
-  // Enabled only when the active draft has at least 2 routing waypoints
-  // and the first day carries route geometry (i.e. the live hook already
-  // resolved a route). Calls PUT /trips/:id/route — creates the server
-  // trip on first save if one doesn't exist yet.
-  // Require `routeDirty` so a no-op Save on an unedited loaded trip can't
-  // trigger the destructive reroute path (PUT /route recomputes from the
-  // waypoints and would overwrite canonical/imported geometry). A fresh draft
-  // and any real edit both set `routeDirty`, so those still save.
-  // A routed pair can be start+via (no finish), which would persist a day with
-  // no `end` despite the UI requiring "start and end" — gate Save on both.
-  const hasStartAndEnd = useMemo(() => {
-    const wps = activeDayWaypoints ?? [];
-    return (
-      wps.some((w) => w.type === "start") && wps.some((w) => w.type === "end")
-    );
-  }, [activeDayWaypoints]);
-  // Only allow saving when the displayed geometry was computed for the CURRENT
-  // routing inputs. After an edit the store keeps the pre-edit geometry until
-  // the live hook reroutes (300ms debounce + fetch); `routePreviewStale` is true
-  // during that window (and after a preview failure), so a quick click can't
-  // persist a route whose displayed geometry belongs to stale waypoints.
+  // ── Save Route (Task 11 / Task 9 multi-day gate) ────────────────────
+  // Per-day completeness helper: "empty" = no waypoints, "incomplete" =
+  // has waypoints but missing start/finish OR a previewed route, "complete" =
+  // a start, a finish (≥2 points), AND `routeGeometry`. A generated non-final
+  // day ends in a terminal `accommodation` (overnight) rather than `end`; that
+  // counts as the finish (saveDays normalizes it to `end` before re-route).
+  // Geometry is REQUIRED for "complete": a share/imported day can carry valid
+  // start/end waypoints but no preview, and without this it would slip past the
+  // save gate and let the backend route a leg the rider never previewed.
+  const completeness = useCallback(
+    (d: TripDay): "empty" | "incomplete" | "complete" => {
+      if (d.waypoints.length === 0) return "empty";
+      const hasStart = d.waypoints.some((w) => w.type === "start");
+      const hasFinish = !!dayFinishWaypoint(d.waypoints);
+      return hasStart &&
+        hasFinish &&
+        d.waypoints.length >= 2 &&
+        !!d.routeGeometry
+        ? "complete"
+        : "incomplete";
+    },
+    [],
+  );
+  const dayStates = useMemo(
+    () => (activeTrip?.days ?? []).map(completeness),
+    [activeTrip, completeness],
+  );
+  // Only allow saving when:
+  // - at least one day is "complete" (has start + end + geometry)
+  // - no day is "incomplete" (partial = blocks save until rider fixes it)
+  // - no day preview is stale (geometry is current for all days)
+  // - the route has been edited (routeDirty guards no-op saves on loaded trips)
   const canSaveRoute =
-    routingWaypoints.length >= 2 &&
-    hasStartAndEnd &&
-    activeDayRouteGeometry !== null &&
-    routeDirty &&
-    !routePreviewStale;
+    dayStates.some((s) => s === "complete") &&
+    !dayStates.some((s) => s === "incomplete") &&
+    stalePreviewDays.length === 0 &&
+    routeDirty;
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;
@@ -659,11 +711,11 @@ export default function TripPlannerPage() {
     // in place rather than duplicated.
     const currentTrip = activeTripRef.current;
     const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
-    // Use the store's saveWaypoints() to derive the canonical waypoint list.
+    // Use the store's saveDays() to derive the canonical per-day payload.
     // Calling getState() inside a click handler / useCallback is safe Zustand
     // pattern — it reads current state without subscribing to re-renders.
-    const wps = useTripStore.getState().saveWaypoints();
-    if (wps.length < 2) {
+    const days = useTripStore.getState().saveDays();
+    if (days.length === 0) {
       toast.error(t("Add at least a start and end before saving."));
       return;
     }
@@ -674,9 +726,8 @@ export default function TripPlannerPage() {
       if (!tripId) {
         // No server trip yet — create metadata first (same pattern as
         // handleSave) so we have a backend id to PUT the route against.
-        // Override num_days to 1: the manual route save only persists day 1,
-        // so the trip metadata must reflect that — not the plannerParams.days
-        // default (3) which would leave 3-day metadata with one TripDay.
+        // num_days reflects the actual non-empty day count from saveDays so
+        // the trip metadata stays consistent with the persisted day payload.
         const basePayload = {
           ...(currentTrip
             ? buildTripMetadataPayload(currentTrip, plannerParams)
@@ -686,7 +737,7 @@ export default function TripPlannerPage() {
                 >[0],
                 plannerParams,
               )),
-          num_days: 1,
+          num_days: days.length,
         };
         const { data: created } = await tripsApi.create(basePayload);
         tripId =
@@ -698,14 +749,8 @@ export default function TripPlannerPage() {
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
       }
-      const routeWaypoints = wps.map((wp) => ({
-        lat: wp.lat,
-        lng: wp.lng,
-        ...(wp.name ? { name: wp.name } : {}),
-        type: wp.type,
-      }));
       const { data } = await tripsApi.saveRoute(tripId, {
-        waypoints: routeWaypoints,
+        days,
         options: routeOptions,
       });
       const hydrated = tripFromDetail(
@@ -1274,57 +1319,120 @@ export default function TripPlannerPage() {
           <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
             {timelineDays.map((day, i) => {
               const isActive = !!activeTrip && selectedDayIndex === i;
+              // startLinked is only present on real TripDay objects (not placeholders)
+              const startLinked =
+                "startLinked" in day ? day.startLinked : undefined;
+              // Only offer relink once the predecessor actually has a finish to
+              // mirror — an explicit `end` OR a terminal accommodation (a
+              // generated overnight day). Relinking with no predecessor finish
+              // would form an invalid link (the store guards this too, so the
+              // button would otherwise be a no-op).
+              const prevHasFinish = !!dayFinishWaypoint(
+                activeTrip?.days[i - 1]?.waypoints ?? [],
+              );
+              const showRelink =
+                !!activeTrip &&
+                i >= 1 &&
+                startLinked === false &&
+                prevHasFinish;
               return (
-                <button
+                <div
                   key={day.dayNumber}
-                  type="button"
-                  onClick={() => {
-                    if (!activeTrip) return;
-                    setSelectedDayIndex(i);
-                  }}
-                  disabled={!activeTrip}
-                  aria-pressed={isActive}
-                  aria-label={`Day ${day.dayNumber}${day.title ? ` ${day.title}` : ""}`}
-                  className={`rounded-[12px] border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isActive
-                      ? "border-ink bg-ink text-cream"
-                      : "border-line bg-cream text-ink hover:border-line-strong"
-                  }`}
+                  className="relative flex flex-col gap-1"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div
-                        className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] font-mono text-[11px] font-bold ${
-                          isActive
-                            ? "bg-cream/15 text-cream"
-                            : "bg-paper text-ink"
-                        }`}
-                      >
-                        {String(day.dayNumber).padStart(2, "0")}
-                      </div>
-                      <div className="truncate text-[13px] font-bold">
-                        {day.title ? day.title : `${t("Day")} ${day.dayNumber}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div
-                    className={`mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] ${
-                      isActive ? "text-cream/70" : "text-fg-dim"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeTrip) return;
+                      setSelectedDay(i);
+                    }}
+                    disabled={!activeTrip}
+                    aria-pressed={isActive}
+                    aria-label={`Day ${day.dayNumber}${day.title ? ` ${day.title}` : ""}`}
+                    className={`rounded-[12px] border p-3 pr-9 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isActive
+                        ? "border-ink bg-ink text-cream"
+                        : "border-line bg-cream text-ink hover:border-line-strong"
                     }`}
                   >
-                    {day.distanceKm ? (
-                      <span>{Math.round(day.distanceKm)} KM</span>
-                    ) : null}
-                    {day.elevationGain ? (
-                      <span>↗ {Math.round(day.elevationGain)}M</span>
-                    ) : null}
-                    {day.durationMinutes ? (
-                      <span>{formatDuration(day.durationMinutes)}</span>
-                    ) : null}
-                  </div>
-                </button>
+                    <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div
+                          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] font-mono text-[11px] font-bold ${
+                            isActive
+                              ? "bg-cream/15 text-cream"
+                              : "bg-paper text-ink"
+                          }`}
+                        >
+                          {String(day.dayNumber).padStart(2, "0")}
+                        </div>
+                        <div className="truncate text-[13px] font-bold">
+                          {day.title
+                            ? day.title
+                            : `${t("Day")} ${day.dayNumber}`}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      className={`mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] ${
+                        isActive ? "text-cream/70" : "text-fg-dim"
+                      }`}
+                    >
+                      {day.distanceKm ? (
+                        <span>{Math.round(day.distanceKm)} KM</span>
+                      ) : null}
+                      {day.elevationGain ? (
+                        <span>↗ {Math.round(day.elevationGain)}M</span>
+                      ) : null}
+                      {day.durationMinutes ? (
+                        <span>{formatDuration(day.durationMinutes)}</span>
+                      ) : null}
+                    </div>
+                  </button>
+                  {/* Per-day remove button — sibling of tab button, absolutely positioned top-right */}
+                  {!!activeTrip && activeTrip.days.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeDay(i);
+                      }}
+                      aria-label={t("Remove day {n}", { n: day.dayNumber })}
+                      className={`absolute right-2 top-2 z-10 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] transition hover:opacity-70 ${
+                        isActive ? "text-cream/70" : "text-fg-dim"
+                      }`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                  {/* "Link to previous day" — shown for days ≥1 where the
+                      rider manually broke the start link */}
+                  {showRelink && (
+                    <button
+                      type="button"
+                      onClick={() => relinkDayStart(i)}
+                      className="flex items-center gap-1.5 rounded-[8px] border border-line px-3 py-1.5 text-left text-[11px] text-fg-dim transition hover:border-line-strong hover:text-ink"
+                    >
+                      <Link2 size={11} />
+                      {t("Link to previous day")}
+                    </button>
+                  )}
+                </div>
               );
             })}
+            {/* "+ Add day" button — shown only when an active trip exists */}
+            {!!activeTrip && (
+              <button
+                type="button"
+                onClick={addDay}
+                disabled={activeTrip.days.length >= MAX_TRIP_DAYS}
+                aria-label={t("Add day")}
+                className="flex items-center gap-1.5 rounded-[12px] border border-dashed border-line px-3 py-2.5 text-[13px] text-fg-dim transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus size={14} />
+                {t("Add day")}
+              </button>
+            )}
           </div>
         </aside>
 
@@ -1345,6 +1453,7 @@ export default function TripPlannerPage() {
               closuresData={closuresData}
               passesData={passesData}
               selectedDayNumber={selectedDay?.dayNumber ?? 1}
+              focusSelectedDay={focusSelectedDay}
               onAddWaypoint={(location) =>
                 appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
               }
@@ -1356,6 +1465,32 @@ export default function TripPlannerPage() {
               onCursorMove={serverTripId ? collabSession.emitCursor : undefined}
               fitRouteToken={fitRouteToken}
             />
+            {/* Focus-day toggle — only meaningful when there are multiple
+                days to distinguish. Hidden on a single-day trip to keep
+                the map chrome minimal. */}
+            {activeTrip && activeTrip.days.length > 1 && (
+              <div className="absolute bottom-4 right-4 z-20">
+                <button
+                  type="button"
+                  aria-pressed={focusSelectedDay}
+                  aria-label={
+                    focusSelectedDay
+                      ? t("Show all days")
+                      : t("Focus selected day")
+                  }
+                  onClick={() => setFocusSelectedDay((v) => !v)}
+                  className={`flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition ${
+                    focusSelectedDay
+                      ? "border-ink bg-ink text-cream"
+                      : "border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink"
+                  }`}
+                >
+                  {focusSelectedDay
+                    ? t("Show all days")
+                    : t("Focus selected day")}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Drop overlay */}
@@ -1413,7 +1548,7 @@ export default function TripPlannerPage() {
                     <button
                       key={day.dayNumber}
                       type="button"
-                      onClick={() => setSelectedDayIndex(i)}
+                      onClick={() => setSelectedDay(i)}
                       aria-pressed={isActive}
                       className={`rounded-[10px] border p-2.5 text-left transition ${
                         isActive

@@ -168,7 +168,10 @@ export default function TripDayScreen() {
   // without having to scan every segment manually.
   const belowThreshold =
     day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
-  const summary = summarizeWaypoints(day.waypoints);
+  const summary = summarizeWaypoints(
+    day.waypoints,
+    isLastDay(trip?.days ?? [], day.day_number),
+  );
   const fuelRange = summarizeFuelRange(day, fuelRangeKm, fuelStations);
 
   return (
