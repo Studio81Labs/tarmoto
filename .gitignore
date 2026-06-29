@@ -99,3 +99,6 @@ _tmp/
 
 # Self-hosted Valhalla tiles + extract (large; built on first container start)
 infra/valhalla/custom_files/
+
+# Backend runtime upload storage (hazard/review photos written at runtime)
+apps/backend/uploads/

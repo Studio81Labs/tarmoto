@@ -54,10 +54,12 @@ describe("FeatureFlagsScreen", () => {
     );
   });
 
-  it("create form submits with correct body and calls refetch + resets fields on success", async () => {
+  it("create dialog submits with correct body, refetches, closes, and resets fields on success", async () => {
     const user = userEvent.setup();
     render(<FeatureFlagsScreen />);
 
+    // The form lives in a dialog opened from the header action.
+    await user.click(screen.getByRole("button", { name: /new flag/i }));
     await user.type(
       screen.getByRole("textbox", { name: /key/i }),
       "new_feature",
@@ -79,7 +81,7 @@ describe("FeatureFlagsScreen", () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
 
-    // Invoke the captured onSuccess and verify refetch is called + inputs reset
+    // onSuccess refetches and closes the dialog (fields unmount).
     const [, { onSuccess }] = mockCreate.mock.calls[0] as [
       unknown,
       { onSuccess: () => void },
@@ -88,6 +90,12 @@ describe("FeatureFlagsScreen", () => {
       onSuccess();
     });
     expect(mockRefetch).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("textbox", { name: /key/i }),
+    ).not.toBeInTheDocument();
+
+    // Re-opening shows the reset (empty) form.
+    await user.click(screen.getByRole("button", { name: /new flag/i }));
     expect(
       (screen.getByRole("textbox", { name: /key/i }) as HTMLInputElement).value,
     ).toBe("");

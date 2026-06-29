@@ -9,6 +9,7 @@ import {
   PageHeader,
   Pill,
   Select,
+  Textarea,
 } from "@tarmoto/ui";
 import type { AdminRole } from "../lib/roleRank.js";
 import { canAccess } from "../lib/roleRank.js";
@@ -20,6 +21,7 @@ import {
   useHideContent,
   useRestoreContent,
 } from "../data/useAdminContent.js";
+import { Dialog } from "../components/Dialog.js";
 
 type ContentItem = components["schemas"]["ContentItemDto"];
 
@@ -50,6 +52,10 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
   const [page, setPage] = useState(1);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Hide/delete now run through confirm dialogs rather than window.prompt/confirm.
+  const [hideTarget, setHideTarget] = useState<ContentItem | null>(null);
+  const [hideReason, setHideReason] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ContentItem | null>(null);
 
   const { data, isPending, error, refetch } = useAdminContentList({
     type,
@@ -71,6 +77,46 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
     setPendingId(id);
     setActionError(null);
     mutate();
+  }
+
+  function confirmHide() {
+    if (!hideTarget) return;
+    const id = hideTarget.id;
+    const reason = hideReason.trim();
+    setPendingId(id);
+    setActionError(null);
+    hideMutation.mutate(
+      { params: { path: { type, id } }, body: { reason: reason || null } },
+      {
+        onSuccess: () => {
+          setHideTarget(null);
+          setHideReason("");
+          void refetch();
+        },
+        onError: (err: unknown) =>
+          setActionError(readErrorMessage(err, "Failed to hide.")),
+        onSettled: () => setPendingId(null),
+      },
+    );
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setPendingId(id);
+    setActionError(null);
+    deleteMutation.mutate(
+      { params: { path: { type, id } } },
+      {
+        onSuccess: () => {
+          setDeleteTarget(null);
+          void refetch();
+        },
+        onError: (err: unknown) =>
+          setActionError(readErrorMessage(err, "Failed to delete.")),
+        onSettled: () => setPendingId(null),
+      },
+    );
   }
 
   const columns: ReadonlyArray<DataTableColumn<ContentItem>> = [
@@ -172,27 +218,9 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
               size="sm"
               loading={pendingId === row.id}
               onClick={() => {
-                const reason = window.prompt("Reason for hiding (optional):");
-                // Cancel (null) must abort — only OK (incl. empty string) hides.
-                if (reason === null) return;
-                runMutation(
-                  () =>
-                    hideMutation.mutate(
-                      {
-                        params: { path: { type, id: row.id } },
-                        body: { reason: reason || null },
-                      },
-                      {
-                        onSuccess: () => void refetch(),
-                        onError: (err: unknown) =>
-                          setActionError(
-                            readErrorMessage(err, "Failed to hide."),
-                          ),
-                        onSettled: () => setPendingId(null),
-                      },
-                    ),
-                  row.id,
-                );
+                setHideReason("");
+                setActionError(null);
+                setHideTarget(row);
               }}
             >
               Hide
@@ -204,22 +232,8 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
               size="sm"
               loading={pendingId === row.id}
               onClick={() => {
-                if (!window.confirm("Permanently delete this content?")) return;
-                runMutation(
-                  () =>
-                    deleteMutation.mutate(
-                      { params: { path: { type, id: row.id } } },
-                      {
-                        onSuccess: () => void refetch(),
-                        onError: (err: unknown) =>
-                          setActionError(
-                            readErrorMessage(err, "Failed to delete."),
-                          ),
-                        onSettled: () => setPendingId(null),
-                      },
-                    ),
-                  row.id,
-                );
+                setActionError(null);
+                setDeleteTarget(row);
               }}
             >
               Delete
@@ -257,31 +271,35 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Input
-          value={q}
-          onChange={(v) => {
-            setQ(v);
-            setPage(1);
-          }}
-          placeholder="Search text"
-          ariaLabel="Search content text"
-          type="search"
-        />
-        <Select
-          value={status}
-          onChange={(v) => {
-            if (v === "all" || v === "visible" || v === "hidden") {
-              setStatus(v);
+      <div className="mb-4 flex items-end gap-3">
+        <div className="w-64">
+          <Input
+            value={q}
+            onChange={(v) => {
+              setQ(v);
               setPage(1);
-            }
-          }}
-          ariaLabel="Status filter"
-        >
-          <option value="all">All</option>
-          <option value="visible">Visible</option>
-          <option value="hidden">Hidden</option>
-        </Select>
+            }}
+            placeholder="Search text"
+            ariaLabel="Search content text"
+            type="search"
+          />
+        </div>
+        <div className="w-40">
+          <Select
+            value={status}
+            onChange={(v) => {
+              if (v === "all" || v === "visible" || v === "hidden") {
+                setStatus(v);
+                setPage(1);
+              }
+            }}
+            ariaLabel="Status filter"
+          >
+            <option value="all">All</option>
+            <option value="visible">Visible</option>
+            <option value="hidden">Hidden</option>
+          </Select>
+        </div>
       </div>
 
       {actionError ? (
@@ -322,6 +340,82 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
           Next
         </Button>
       </div>
+
+      <Dialog
+        open={hideTarget !== null}
+        title="Hide content"
+        onClose={() => setHideTarget(null)}
+        busy={hideMutation.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setHideTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger-solid"
+              size="sm"
+              loading={hideMutation.isPending}
+              onClick={confirmHide}
+            >
+              Hide
+            </Button>
+          </>
+        }
+      >
+        {actionError ? (
+          <Alert intent="danger" title={actionError} className="mb-4" compact />
+        ) : null}
+        <p className="mb-3 text-[13px] leading-relaxed text-fg-dim">
+          This pulls the item from public surfaces immediately. You can restore
+          it later. An optional reason is recorded in the audit log.
+        </p>
+        <Textarea
+          value={hideReason}
+          onChange={setHideReason}
+          rows={3}
+          placeholder="Reason (optional) — e.g. spam, abusive language"
+          ariaLabel="Reason for hiding"
+        />
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        title="Delete content"
+        onClose={() => setDeleteTarget(null)}
+        busy={deleteMutation.isPending}
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger-solid"
+              size="sm"
+              loading={deleteMutation.isPending}
+              onClick={confirmDelete}
+            >
+              Delete permanently
+            </Button>
+          </>
+        }
+      >
+        {actionError ? (
+          <Alert intent="danger" title={actionError} className="mb-4" compact />
+        ) : null}
+        <p className="text-[13px] leading-relaxed text-fg-dim">
+          This permanently deletes the item and its attachments. This cannot be
+          undone.
+        </p>
+      </Dialog>
     </section>
   );
 }
