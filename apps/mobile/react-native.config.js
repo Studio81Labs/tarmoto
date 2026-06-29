@@ -13,9 +13,12 @@
  * The native artifacts from `npx react-native-asset` are committed: the iOS
  * `UIAppFonts` + Copy Bundle Resources refs (`TarmotoApp/Info.plist`,
  * `TarmotoApp.xcodeproj`) and the Android `app/src/main/assets/fonts/` copies.
- * Re-run the linker only after adding/removing a face. Remaining dev-machine
- * work: `cd ios && pod install`, Android weight-aware wiring for 500/600/800,
- * and an on-device render check (see `assets/fonts/README.md`).
+ * Re-run the linker only after adding/removing a face. Android's intermediate
+ * weights (500/600/800 — beyond the filename convention's Regular/Bold) are
+ * handled separately by the `res/font/` XML families registered in
+ * `MainApplication.kt` via `ReactFontManager.addCustomFont`. Remaining
+ * dev-machine work: `cd ios && pod install` and an on-device render check
+ * (see `assets/fonts/README.md`).
  *
  * NOTE: `./assets/ml` is listed for completeness but was deliberately NOT
  * linked into the native projects — the TF Lite classifier is Metro-bundled
