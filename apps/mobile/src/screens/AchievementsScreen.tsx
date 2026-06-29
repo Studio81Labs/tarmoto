@@ -264,7 +264,6 @@ const styles = StyleSheet.create({
     color: statusFg.warning,
     fontFamily: brandFonts.sans,
     fontSize: 13,
-    fontStyle: "italic",
   },
   card: {
     flexDirection: "row",

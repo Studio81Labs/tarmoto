@@ -92,16 +92,20 @@ existing screen changes appearance yet:
 
 ### Fonts — source vendored, linking deferred
 
-Space Grotesk and JetBrains Mono (both variable `.ttf`, OFL 1.1) are checked
-in as **source** under
-[`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/), but they
-are **not linked yet** — `brand.ts` still uses placeholder family names and
-text falls back to the platform sans/mono. Linking them correctly needs
-static-weight instancing, Android filename-based resolution, committed native
-build artifacts, and on-device validation — none of which can be done/verified
-in a headless environment. The fonts
-[README](../../../apps/mobile/assets/fonts/README.md) documents the full
-dev-machine procedure. Tracked as a Phase 2 follow-up.
+Space Grotesk and JetBrains Mono (OFL 1.1) are vendored under
+[`apps/mobile/assets/fonts/`](../../../apps/mobile/assets/fonts/). The
+**five static weights the app uses (400/500/600/700/800) are now generated**
+per family from the variable sources, with matching internal family names, and
+`react-native.config.js` lists the folder; `brand.ts` already references the
+resolvable family names. **Still pending — the native-build half that can't be
+run/validated headless:** `npx react-native-asset` to generate + commit the
+native artifacts (Android copies, iOS Xcode refs + `Info.plist` `UIAppFonts`),
+`pod install`, **Android weight-aware resolution for 500/600/800** (the
+filename convention only auto-covers Regular/Bold there), and an on-device
+render check on both platforms. Until that lands, brand text falls back
+gracefully to the platform sans/mono. The fonts
+[README](../../../apps/mobile/assets/fonts/README.md) tracks the remaining
+dev-machine steps.
 
 ## Migration plan
 

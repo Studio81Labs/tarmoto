@@ -498,7 +498,6 @@ const styles = StyleSheet.create({
     color: t.dim,
     fontFamily: brandFonts.sans,
     fontSize: 13,
-    fontStyle: "italic",
   },
   emptyCard: {
     backgroundColor: t.raised,
