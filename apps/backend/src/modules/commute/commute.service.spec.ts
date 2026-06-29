@@ -8,6 +8,7 @@ import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardsService } from '../hazards/hazards.service.js';
 import { WeatherService } from '../weather/weather.service.js';
+import { ClosuresService } from '../closures/closures.service.js';
 import { ROUTING_PROVIDER } from './routing-provider.interface.js';
 
 const mockTransactionManager = {
@@ -138,6 +139,13 @@ describe('CommuteService', () => {
             version: 'osrm-v1',
           },
         },
+        {
+          provide: ClosuresService,
+          useValue: {
+            // Default: no closures in the area.
+            exclusionPolygons: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -190,7 +198,7 @@ describe('CommuteService', () => {
         49.1,
         16.75,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons: [] },
       );
       // The persisted UPDATE goes through routeRepo.query.
       expect(routeRepo.query).toHaveBeenCalledWith(
@@ -295,7 +303,7 @@ describe('CommuteService', () => {
         49.1,
         16.75,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons: [] },
       );
       // Engine version is written atomically with the cache payload —
       // the UPDATE bind list is [wkt, distance_km, duration_min,
@@ -417,7 +425,7 @@ describe('CommuteService', () => {
         49.1,
         16.75,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons: [] },
       );
       expect(routeRepo.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE commute_routes'),
@@ -685,7 +693,7 @@ describe('CommuteService', () => {
         49.1,
         16.75,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons: [] },
       );
       expect(result.route.route_geometry).toHaveLength(3);
       expect(result.route.avg_duration_min).toBe(18);
@@ -924,7 +932,7 @@ describe('CommuteService', () => {
         49.1,
         16.75,
         1,
-        { includePrimary: true },
+        { includePrimary: true, excludePolygons: [] },
       );
       expect(result.primary_route.route_geometry).toHaveLength(3);
       expect(result.primary_route.avg_duration_min).toBe(18);

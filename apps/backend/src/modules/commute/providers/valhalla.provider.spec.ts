@@ -41,6 +41,7 @@ interface ValhallaRequestBody {
   costing: string;
   costing_options?: { auto?: { use_highways?: number; use_tolls?: number } };
   alternates?: number;
+  exclude_polygons?: Array<Array<[number, number]>>;
 }
 
 /** Build a mock fetch Response returning JSON. */
@@ -123,6 +124,70 @@ describe('ValhallaProvider.route', () => {
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
     const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
     expect(body.costing_options?.auto?.use_highways).toBe(0);
+  });
+
+  it('passes excludePolygons through as exclude_polygons (#744)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        trip: {
+          legs: [
+            {
+              shape: encodePolyline6([
+                [0, 0],
+                [1, 1],
+              ]),
+              summary: { length: 1, time: 60 },
+            },
+          ],
+          summary: { length: 1, time: 60 },
+        },
+      }),
+    );
+    const ring: Array<[number, number]> = [
+      [16.6, 49.2],
+      [16.7, 49.2],
+      [16.7, 49.25],
+      [16.6, 49.2],
+    ];
+    await makeProvider().route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { excludePolygons: [ring] },
+    );
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    expect(body.exclude_polygons).toEqual([ring]);
+  });
+
+  it('omits exclude_polygons when no closures are passed', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        trip: {
+          legs: [
+            {
+              shape: encodePolyline6([
+                [0, 0],
+                [1, 1],
+              ]),
+              summary: { length: 1, time: 60 },
+            },
+          ],
+          summary: { length: 1, time: 60 },
+        },
+      }),
+    );
+    await makeProvider().route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { excludePolygons: [] },
+    );
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    expect(body.exclude_polygons).toBeUndefined();
   });
 
   it('returns null when Valhalla cannot route', async () => {

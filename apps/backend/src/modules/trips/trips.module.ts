@@ -19,6 +19,7 @@ import { EventsModule } from '../events/events.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripSharesModule } from '../trip-shares/trip-shares.module.js';
 import { RoutingModule } from '../routing/routing.module.js';
+import { ClosuresModule } from '../closures/index.js';
 import { TripsController } from './trips.controller.js';
 import { CommunityTripsController } from './community-trips.controller.js';
 import { TripsService } from './trips.service.js';
@@ -59,6 +60,9 @@ import { TripCollabService } from './trip-collab.service.js';
     // RoutingModule owns RouteEnrichmentService as the single instance;
     // importing it here makes the export available to TripGeneratorService.
     RoutingModule,
+    // ClosuresModule exports ClosuresService so the generator can route
+    // around active full closures (#744).
+    ClosuresModule,
   ],
   controllers: [
     TripsController,
