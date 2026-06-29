@@ -29,7 +29,9 @@ import { LocationRetentionSweepProcessor } from './processors/location-retention
 import { WeatherAlertSweepProcessor } from './processors/weather-alert-sweep.processor.js';
 import { ModelEvalReconcileProcessor } from './processors/model-eval-reconcile.processor.js';
 import { ModelEvalAgreementProcessor } from './processors/model-eval-agreement.processor.js';
+import { NapClosurePollProcessor } from './processors/nap-closure-poll.processor.js';
 import { ModelEvalModule } from '../model-eval/index.js';
+import { NapModule } from '../nap/nap.module.js';
 
 const JOBS_CONFIG_PROVIDER: Provider = {
   provide: JOBS_CONFIG_TOKEN,
@@ -50,6 +52,7 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   WeatherAlertSweepProcessor,
   ModelEvalReconcileProcessor,
   ModelEvalAgreementProcessor,
+  NapClosurePollProcessor,
 ];
 
 /**
@@ -103,6 +106,7 @@ export class JobsModule {
         PushModule,
         WeatherModule,
         ModelEvalModule,
+        NapModule,
         BullModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],
