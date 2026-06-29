@@ -349,4 +349,28 @@ describe('OverpassPoiProvider.findPointsOfInterestInBbox', () => {
     expect(result).toEqual([]);
     expect(capturedBody).toBeNull();
   });
+
+  it('queries tourism accommodations in a bbox (node/way/relation)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findAccommodationsInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      ['hotel', 'camp_site'],
+    );
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    expect(decoded).toContain('(49.3,18,49.75,18.9)');
+    expect(decoded).toContain('node["tourism"~"^(hotel|camp_site)$"]');
+    expect(decoded).toContain('way["tourism"~"^(hotel|camp_site)$"]');
+    expect(decoded).toContain('relation["tourism"~"^(hotel|camp_site)$"]');
+  });
+
+  it('short-circuits accommodations on zero kinds (no fetch)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    const result = await provider.findAccommodationsInBbox(
+      { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+      [],
+    );
+    expect(result).toEqual([]);
+    expect(capturedBody).toBeNull();
+  });
 });

@@ -96,6 +96,18 @@ export interface PoiProvider {
     bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
     kinds: PoiKind[],
   ): Promise<PointOfInterest[]>;
+
+  /**
+   * Accommodation equivalent of `findPointsOfInterestInBbox` — fetches
+   * hotels / campsites etc. within a bounding box for the offline import
+   * (#745), so the stored POI set stays aligned with `/accommodations`.
+   * Same contract: short-circuits on empty `kinds`, throws on a provider
+   * failure so the caller can skip the upsert (leaving existing rows).
+   */
+  findAccommodationsInBbox(
+    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    kinds: AccommodationKind[],
+  ): Promise<AccommodationPoi[]>;
 }
 
 /**

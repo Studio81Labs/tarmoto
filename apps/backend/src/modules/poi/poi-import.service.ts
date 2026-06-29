@@ -6,6 +6,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { Poi } from '../../entities/poi.entity.js';
 import { POI_PROVIDER, type PoiProvider } from './poi-provider.interface.js';
 import { POI_KINDS } from './dto/point-of-interest.dto.js';
+import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
 import { poiImportConfig } from './poi-import.config.js';
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
@@ -52,16 +53,33 @@ export class PoiImportService {
   }
 
   async import(): Promise<PoiImportResult> {
-    const pois = await this.provider.findPointsOfInterestInBbox(
-      this.config.bbox,
-      [...POI_KINDS],
-    );
+    // Fetch POIs + accommodations together. Promise.all so a failure on
+    // either aborts before any write (the outage-safety contract) rather
+    // than half-importing — and the accommodation kinds reuse the
+    // `/accommodations` contract so the offline store can't drop hotels
+    // / campsites.
+    const [pois, accommodations] = await Promise.all([
+      this.provider.findPointsOfInterestInBbox(this.config.bbox, [
+        ...POI_KINDS,
+      ]),
+      this.provider.findAccommodationsInBbox(this.config.bbox, [
+        ...ACCOMMODATION_KINDS,
+      ]),
+    ]);
 
     const batchTime = new Date();
     // Dedupe by external id (a duplicate id in one snapshot would make a
     // single upsert touch the same row twice and abort the batch).
     const byExternalId = new Map<string, QueryDeepPartialEntity<Poi>>();
-    for (const p of pois) {
+    const add = (p: {
+      external_id: string;
+      kind: string;
+      name: string | null;
+      website: string | null;
+      phone: string | null;
+      lat: number;
+      lng: number;
+    }): void => {
       byExternalId.set(p.external_id, {
         source: 'osm',
         external_id: p.external_id,
@@ -72,7 +90,9 @@ export class PoiImportService {
         geom: { type: 'Point', coordinates: [p.lng, p.lat] },
         last_imported_at: batchTime,
       });
-    }
+    };
+    for (const p of pois) add(p);
+    for (const a of accommodations) add(a);
     const rows = [...byExternalId.values()];
 
     for (const part of chunk(rows, UPSERT_CHUNK)) {
@@ -83,9 +103,12 @@ export class PoiImportService {
       }
     }
 
+    const fetched = pois.length + accommodations.length;
     this.logger.log(
-      `POI import (osm): fetched=${pois.length} upserted=${rows.length}`,
+      `POI import (osm): fetched=${fetched} ` +
+        `(poi=${pois.length} accommodation=${accommodations.length}) ` +
+        `upserted=${rows.length}`,
     );
-    return { fetched: pois.length, upserted: rows.length };
+    return { fetched, upserted: rows.length };
   }
 }

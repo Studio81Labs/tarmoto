@@ -1,7 +1,11 @@
 import { Repository } from 'typeorm';
 import { PoiImportService } from './poi-import.service.js';
 import { Poi } from '../../entities/poi.entity.js';
-import type { PoiProvider, PointOfInterest } from './poi-provider.interface.js';
+import type {
+  AccommodationPoi,
+  PoiProvider,
+  PointOfInterest,
+} from './poi-provider.interface.js';
 import type { PoiImportConfig } from './poi-import.config.js';
 
 const CONFIG: PoiImportConfig = {
@@ -23,13 +27,33 @@ function poi(over: Partial<PointOfInterest> = {}): PointOfInterest {
   };
 }
 
+function accommodation(over: Partial<AccommodationPoi> = {}): AccommodationPoi {
+  return {
+    external_id: 'way/10',
+    name: 'Hotel Beskyd',
+    kind: 'hotel',
+    lat: 49.55,
+    lng: 18.45,
+    website: null,
+    phone: null,
+    stars: 3,
+    ...over,
+  };
+}
+
 describe('PoiImportService', () => {
-  let provider: { findPointsOfInterestInBbox: jest.Mock };
+  let provider: {
+    findPointsOfInterestInBbox: jest.Mock;
+    findAccommodationsInBbox: jest.Mock;
+  };
   let repo: { upsert: jest.Mock };
   let service: PoiImportService;
 
   beforeEach(() => {
-    provider = { findPointsOfInterestInBbox: jest.fn().mockResolvedValue([]) };
+    provider = {
+      findPointsOfInterestInBbox: jest.fn().mockResolvedValue([]),
+      findAccommodationsInBbox: jest.fn().mockResolvedValue([]),
+    };
     repo = { upsert: jest.fn().mockResolvedValue({}) };
     service = new PoiImportService(
       provider as unknown as PoiProvider,
@@ -77,6 +101,41 @@ describe('PoiImportService', () => {
     );
     expect(rows[0].last_imported_at).toBeInstanceOf(Date);
     expect(result).toEqual({ fetched: 2, upserted: 2 });
+  });
+
+  it('imports accommodations alongside POIs so hotels/campsites are stored', async () => {
+    provider.findPointsOfInterestInBbox.mockResolvedValueOnce([
+      poi({ external_id: 'node/1' }),
+    ]);
+    provider.findAccommodationsInBbox.mockResolvedValueOnce([
+      accommodation({ external_id: 'way/10', kind: 'hotel' }),
+      accommodation({
+        external_id: 'node/9',
+        kind: 'camp_site',
+        lat: 49.7,
+        lng: 18.8,
+      }),
+    ]);
+
+    const result = await service.import();
+
+    expect(provider.findAccommodationsInBbox).toHaveBeenCalledWith(
+      CONFIG.bbox,
+      expect.arrayContaining(['hotel', 'camp_site', 'guest_house']),
+    );
+    const rows = upsertedRows();
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          external_id: 'way/10',
+          kind: 'hotel',
+          geom: { type: 'Point', coordinates: [18.45, 49.55] },
+        }),
+        expect.objectContaining({ external_id: 'node/9', kind: 'camp_site' }),
+      ]),
+    );
+    expect(result).toEqual({ fetched: 3, upserted: 3 });
   });
 
   it('dedupes by external_id so a re-import is idempotent', async () => {

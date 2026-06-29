@@ -26,6 +26,14 @@ interface OverpassResponse {
 
 const KIND_SET = new Set<string>(ACCOMMODATION_KINDS);
 const OVERPASS_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * The offline import (#745) is a full-area, uncapped query (`[timeout:180]`
+ * server-side), so it needs a far longer client abort than the
+ * request-time lookups — otherwise a legitimately slow regional import is
+ * cancelled after 10 s and the weekly job never completes. Slightly above
+ * the server timeout so the server's own limit is the one that fires.
+ */
+const OVERPASS_IMPORT_TIMEOUT_MS = 190_000;
 
 /**
  * Map our `PoiKind` to the OSM tag key + regex of allowed values that
@@ -211,7 +219,7 @@ export class OverpassPoiProvider implements PoiProvider {
       `);` +
       `out center tags;`;
 
-    const data = await this.runQuery(query);
+    const data = await this.runQuery(query, OVERPASS_IMPORT_TIMEOUT_MS);
     const pois: PointOfInterest[] = [];
     for (const element of data.elements ?? []) {
       const poi = this.normalizePoi(element, kinds);
@@ -220,12 +228,40 @@ export class OverpassPoiProvider implements PoiProvider {
     return pois;
   }
 
-  private async runQuery(query: string): Promise<OverpassResponse> {
+  async findAccommodationsInBbox(
+    bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+    kinds: AccommodationKind[],
+  ): Promise<AccommodationPoi[]> {
+    if (kinds.length === 0) return [];
+    // Overpass bbox filter is (south, west, north, east).
+    const box = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    const tourismFilter = Array.from(new Set(kinds)).join('|');
+    // node + way + relation: camp sites are points, hotels are buildings.
+    const query =
+      `[out:json][timeout:180];` +
+      `(` +
+      `  node["tourism"~"^(${tourismFilter})$"](${box});` +
+      `  way["tourism"~"^(${tourismFilter})$"](${box});` +
+      `  relation["tourism"~"^(${tourismFilter})$"](${box});` +
+      `);` +
+      `out center tags;`;
+
+    const data = await this.runQuery(query, OVERPASS_IMPORT_TIMEOUT_MS);
+    const pois: AccommodationPoi[] = [];
+    const requested = new Set<AccommodationKind>(kinds);
+    for (const element of data.elements ?? []) {
+      const poi = this.normalizeAccommodation(element);
+      if (poi && requested.has(poi.kind)) pois.push(poi);
+    }
+    return pois;
+  }
+
+  private async runQuery(
+    query: string,
+    timeoutMs: number = OVERPASS_FETCH_TIMEOUT_MS,
+  ): Promise<OverpassResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      OVERPASS_FETCH_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await fetch(this.endpoint, {
