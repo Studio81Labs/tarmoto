@@ -457,7 +457,6 @@ export default function TripCreateScreen() {
             below it show dimmed so you still see them as fallbacks.
           </Text>
           <QualityThresholdSlider
-            light
             value={tripMinQuality}
             onChange={handleQualityChange}
             label="Minimum quality"

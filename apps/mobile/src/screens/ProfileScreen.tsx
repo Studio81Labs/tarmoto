@@ -254,7 +254,7 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel="Change avatar"
         >
-          <Avatar uri={avatarUrl} name={displayName} size={88} light />
+          <Avatar uri={avatarUrl} name={displayName} size={88} />
           <View style={styles.avatarBadge}>
             {/* Ink glyph on the accent badge: ~6.7:1, clears the 3:1
                 non-text floor (cream-on-accent was only ~2.5:1). */}
@@ -293,7 +293,6 @@ export default function ProfileScreen() {
             })
           }
           accessibilityLabel={`${followerCount} followers, open list`}
-          light
         />
         <StatTile
           label="Following"
@@ -305,14 +304,12 @@ export default function ProfileScreen() {
             })
           }
           accessibilityLabel={`Following ${followingCount} riders, open list`}
-          light
         />
         <StatTile
           label="Badges"
           value={formatCount(earnedBadges.length)}
           onPress={() => navigation.navigate("Achievements")}
           accessibilityLabel={`${earnedBadges.length} badges earned, open achievements`}
-          light
         />
       </View>
 
@@ -321,7 +318,6 @@ export default function ProfileScreen() {
         isSelf
         displayName={displayName}
         refreshKey={sharedRidesRefreshKey}
-        light
       />
 
       <View style={styles.actionsCard}>

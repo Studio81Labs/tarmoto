@@ -6,7 +6,6 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import {
   brandColorsLight,
   brandFonts,
@@ -24,12 +23,6 @@ interface StatTileProps {
   /** Style override for the outer container, used when callers compose it
    *  inside a custom row layout (e.g. spacing between sibling tiles). */
   containerStyle?: ViewStyle;
-  /**
-   * Render on a light brand surface (cream/white card). Default: legacy dark.
-   * Shared with the still-legacy ViewProfileScreen, so the default must stay
-   * the dark-theme look.
-   */
-  light?: boolean;
 }
 
 /**
@@ -46,9 +39,7 @@ export default function StatTile({
   onPress,
   accessibilityLabel,
   containerStyle,
-  light = false,
 }: StatTileProps) {
-  const styles = light ? brandStyles : legacyStyles;
   if (onPress) {
     return (
       <TouchableOpacity
@@ -73,33 +64,9 @@ export default function StatTile({
   );
 }
 
-// Legacy dark-surface styling — unchanged so the still-legacy
-// ViewProfileScreen renders exactly as before.
-const legacyStyles = StyleSheet.create({
-  tile: {
-    flex: 1,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  value: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-  },
-  label: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-  },
-});
-
 // Brand light-surface styling (white card on cream). Mono value reads as a
 // "stamp" number; `dim` label clears AA on white.
-const brandStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   tile: {
     flex: 1,
     backgroundColor: brandColorsLight.raised,

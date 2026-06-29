@@ -202,7 +202,6 @@ export default function ViewProfileScreen() {
           uri={profile.avatar_url}
           name={profile.display_name}
           size={88}
-          light
         />
         <Text style={styles.displayName}>{profile.display_name}</Text>
         {profile.follows_you === true ? (
@@ -280,7 +279,6 @@ export default function ViewProfileScreen() {
             })
           }
           accessibilityLabel={`${profile.follower_count} followers, open list`}
-          light
         />
         <StatTile
           label="Following"
@@ -292,20 +290,14 @@ export default function ViewProfileScreen() {
             })
           }
           accessibilityLabel={`Following ${profile.following_count} riders, open list`}
-          light
         />
-        <StatTile
-          label="Badges"
-          value={formatCount(earnedBadges.length)}
-          light
-        />
+        <StatTile label="Badges" value={formatCount(earnedBadges.length)} />
       </View>
 
       <SharedRidesSection
         userId={profile.id}
         isSelf={profile.is_self}
         displayName={profile.display_name}
-        light
       />
 
       <View style={styles.badgesCard}>

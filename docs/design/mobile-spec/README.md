@@ -470,6 +470,19 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 - When the last screen is migrated, fold `theme/brand.ts` into `@/theme`
   and retire the legacy palette.
 
+> **Dead surface-aware paths pruned.** With every screen migrated, the five
+> shared atoms that were made surface-aware during the migration
+> (`Avatar`, `StatTile`, `RideMetric`, `SharedRidesSection`,
+> `QualityThresholdSlider`) no longer had any default-legacy callers — every
+> call site passed `light`. Their dual `legacyStyles`/`brandStyles` split, the
+> vestigial `light` prop, and the now-unused legacy `@/theme` colour imports
+> were removed; each atom now renders the brand styling unconditionally, and
+> the `light` prop was dropped from every call site. No visual change (callers
+> already rendered the brand path). **Still open:** folding `theme/brand.ts`
+> into `@/theme` and retiring the remaining legacy palette (the map colour
+> expressions + a handful of essential-graphic ramp helpers still import it),
+> plus the deferred font-linking (dev-machine task).
+
 ## Workflow
 
 - One PR per phase. Each PR cites its phase and links the relevant

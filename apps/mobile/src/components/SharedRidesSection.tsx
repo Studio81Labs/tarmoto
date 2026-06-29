@@ -27,7 +27,6 @@ import React, { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import {
   brandColorsLight,
   brandFonts,
@@ -54,12 +53,6 @@ interface SharedRidesSectionProps {
    * change (number bump or new object reference) triggers a reload.
    */
   refreshKey?: number;
-  /**
-   * Render on a light brand surface (cream/white card). Default: legacy dark.
-   * Shared with the still-legacy ViewProfileScreen, so the default must stay
-   * the dark-theme look.
-   */
-  light?: boolean;
 }
 
 type Phase = "loading" | "ready" | "error";
@@ -71,9 +64,7 @@ export default function SharedRidesSection({
   isSelf,
   displayName,
   refreshKey,
-  light = false,
 }: SharedRidesSectionProps) {
-  const styles = light ? brandStyles : legacyStyles;
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -137,9 +128,7 @@ export default function SharedRidesSection({
 
       {phase === "loading" ? (
         <View style={styles.placeholder}>
-          <ActivityIndicator
-            color={light ? brandColorsLight.fg : colors.primary}
-          />
+          <ActivityIndicator color={brandColorsLight.fg} />
         </View>
       ) : phase === "error" ? (
         <Text style={styles.errorText}>{errorMessage}</Text>
@@ -152,12 +141,7 @@ export default function SharedRidesSection({
       ) : (
         <View style={styles.list}>
           {items.map((ride) => (
-            <SharedRideRow
-              key={ride.share_token}
-              ride={ride}
-              isSelf={isSelf}
-              light={light}
-            />
+            <SharedRideRow key={ride.share_token} ride={ride} isSelf={isSelf} />
           ))}
         </View>
       )}
@@ -168,11 +152,9 @@ export default function SharedRidesSection({
 interface SharedRideRowProps {
   ride: UserSharedRide;
   isSelf: boolean;
-  light: boolean;
 }
 
-function SharedRideRow({ ride, isSelf, light }: SharedRideRowProps) {
-  const styles = light ? brandStyles : legacyStyles;
+function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
   const showPrivatePill = isSelf && !ride.is_public;
   return (
     <View
@@ -183,11 +165,7 @@ function SharedRideRow({ ride, isSelf, light }: SharedRideRowProps) {
         <Text style={styles.rowDate}>{formatRideDate(ride.started_at)}</Text>
         {showPrivatePill ? (
           <View style={styles.privatePill}>
-            <Icon
-              name="lock-outline"
-              size={11}
-              color={light ? brandColorsLight.dim : colors.textSecondary}
-            />
+            <Icon name="lock-outline" size={11} color={brandColorsLight.dim} />
             <Text style={styles.privatePillLabel}>Private</Text>
           </View>
         ) : null}
@@ -196,33 +174,21 @@ function SharedRideRow({ ride, isSelf, light }: SharedRideRowProps) {
         <RowMetric
           label="Distance"
           value={formatDistanceKm(ride.distance_km)}
-          light={light}
         />
         <RowMetric
           label="Duration"
           value={formatDurationMinutes(ride.duration_min)}
-          light={light}
         />
         <RowMetric
           label="Views"
           value={`${Math.max(0, Math.round(ride.view_count))}`}
-          light={light}
         />
       </View>
     </View>
   );
 }
 
-function RowMetric({
-  label,
-  value,
-  light,
-}: {
-  label: string;
-  value: string;
-  light: boolean;
-}) {
-  const styles = light ? brandStyles : legacyStyles;
+function RowMetric({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.metric}>
       <Text style={styles.metricValue}>{value}</Text>
@@ -231,92 +197,10 @@ function RowMetric({
   );
 }
 
-// Legacy dark-surface styling — unchanged so the still-legacy
-// ViewProfileScreen renders exactly as before.
-const legacyStyles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
-  },
-  placeholder: {
-    paddingVertical: spacing.lg,
-    alignItems: "center",
-  },
-  emptyHint: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: fontSize.sm,
-  },
-  list: {
-    gap: spacing.md,
-  },
-  row: {
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: spacing.sm,
-  },
-  rowHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  rowDate: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-  },
-  privatePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  privatePillLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    textTransform: "uppercase",
-  },
-  rowMetrics: {
-    flexDirection: "row",
-    gap: spacing.lg,
-  },
-  metric: {
-    alignItems: "flex-start",
-  },
-  metricValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-  },
-  metricLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-  },
-});
-
 // Brand light-surface styling (white card on cream). Metric values use the
 // mono "stamp" family (numbers); `dim` labels/hints clear AA on white and
 // `statusFg.danger` keeps errors legible without the raw quality red.
-const brandStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   card: {
     backgroundColor: brandColorsLight.raised,
     borderRadius: brandRadii.md,
