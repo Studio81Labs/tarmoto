@@ -5,16 +5,21 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `road_closures` alongside operator-entered rows.
  *
  * Adds the reconciliation columns the poller needs (`external_id` +
- * partial unique `(source, external_id)`, `last_seen_at`,
- * `first_seen_at`, `is_active`, `validity_status`) and the decoding
- * columns for Alert-C (TMC) / OpenLR linear closures that arrive with no
- * coordinates (`needs_location_decoding`, `raw_location_ref`), and makes
- * `geom` nullable so those undecoded rows can be stored rather than
- * dropped.
+ * unique `(source, external_id)`, `last_seen_at`, `first_seen_at`,
+ * `is_active`, `validity_status`) and the decoding columns for Alert-C
+ * (TMC) / OpenLR linear closures that arrive with no coordinates
+ * (`needs_location_decoding`, `raw_location_ref`), and makes `geom`
+ * nullable so those undecoded rows can be stored rather than dropped.
  *
- * The unique index is partial (`WHERE external_id IS NOT NULL`) so the
- * many operator rows — which have no `external_id` — are unaffected,
- * while each feed situation upserts on `(source, external_id)`.
+ * The `(source, external_id)` unique index is intentionally NOT partial.
+ * A plain unique index already lets the many operator rows coexist —
+ * their `external_id` is NULL and Postgres treats NULLs as distinct, so
+ * they never collide — while each feed situation still upserts on
+ * `(source, external_id)`. A partial `WHERE external_id IS NOT NULL`
+ * index would force every `ON CONFLICT (source, external_id)` /
+ * TypeORM `conflictPaths` consumer to also carry the matching predicate
+ * or fail with "no matching unique constraint"; a plain index avoids
+ * that footgun.
  */
 export class AddNapClosureReconciliation1784000000000 implements MigrationInterface {
   name = 'AddNapClosureReconciliation1784000000000';
@@ -32,8 +37,7 @@ export class AddNapClosureReconciliation1784000000000 implements MigrationInterf
         ADD COLUMN raw_location_ref JSONB;
 
       CREATE UNIQUE INDEX uq_road_closures_source_external
-        ON road_closures (source, external_id)
-        WHERE external_id IS NOT NULL;
+        ON road_closures (source, external_id);
 
       CREATE INDEX idx_road_closures_source_active
         ON road_closures (source, is_active);
