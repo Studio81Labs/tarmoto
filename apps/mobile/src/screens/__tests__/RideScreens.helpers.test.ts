@@ -28,7 +28,7 @@ import {
   surfaceIcon,
   surfaceLabel,
 } from "../RideScreens.helpers";
-import { colors, qualityColor } from "@/theme";
+import { qualityBrandColor, UNSCORED_COLOR } from "@/theme/brand";
 
 describe("formatRideDate", () => {
   it("formats ISO timestamps with month, day, year, and HH:MM", () => {
@@ -308,7 +308,7 @@ describe("rideRouteFeatureCollection", () => {
 
 describe("rideRouteLineColorExpression", () => {
   // Walk the buckets and confirm the polyline always agrees with the
-  // shared `qualityColor` mapping. A regression here used to make the
+  // shared `qualityBrandColor` mapping. A regression here used to make the
   // map disagree with the histogram on the same screen.
   function evaluate(value: number): string {
     const expr = rideRouteLineColorExpression();
@@ -325,13 +325,13 @@ describe("rideRouteLineColorExpression", () => {
     return result;
   }
 
-  it("renders the no-data sentinel as the tertiary text colour", () => {
-    expect(evaluate(NO_QUALITY_READING)).toBe(colors.textTertiary);
+  it("renders the no-data sentinel as the neutral unscored colour", () => {
+    expect(evaluate(NO_QUALITY_READING)).toBe(UNSCORED_COLOR);
   });
 
-  it("agrees with qualityColor across all five buckets", () => {
+  it("agrees with qualityBrandColor across all five buckets", () => {
     for (const score of [0.5, 1.4, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 4.9]) {
-      expect(evaluate(score)).toBe(qualityColor(score));
+      expect(evaluate(score)).toBe(qualityBrandColor(score));
     }
   });
 });

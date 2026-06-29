@@ -16,7 +16,13 @@ import type {
   LineLayerStyle,
 } from "@maplibre/maplibre-react-native";
 import { API_BASE_URL } from "@/config";
-import { colors, MIN_QUALITY_BOUNDS } from "@/theme";
+import { MIN_QUALITY_BOUNDS } from "@/theme";
+import {
+  brandColorsLight,
+  QUALITY_COLORS,
+  statusFg,
+  UNSCORED_COLOR,
+} from "@/theme/brand";
 import type {
   FunZone,
   Hazard,
@@ -51,9 +57,9 @@ export function getQualityTileUrlTemplate(
 export const DEV_MAP_STYLE_URL = "https://demotiles.maplibre.org/style.json";
 
 /**
- * Quality-score bucket boundaries. Mirror theme.qualityColor()'s half-point
- * thresholds so the overlay colour matches every other surface in the app
- * (segment cards, commute card, ride active screen).
+ * Quality-score bucket boundaries. Mirror the brand `qualityIndex` half-point
+ * buckets (Math.round on a 1..5 score) so the overlay colour matches every
+ * other surface in the app (segment cards, commute card, ride active screen).
  */
 export const QUALITY_STEP_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
 
@@ -78,15 +84,15 @@ export const qualityLineStyle: LineLayerStyle = {
   lineColor: [
     "step",
     ["get", "quality_score"],
-    colors.quality.veryPoor,
+    QUALITY_COLORS[0],
     QUALITY_STEP_BREAKS[0],
-    colors.quality.poor,
+    QUALITY_COLORS[1],
     QUALITY_STEP_BREAKS[1],
-    colors.quality.fair,
+    QUALITY_COLORS[2],
     QUALITY_STEP_BREAKS[2],
-    colors.quality.good,
+    QUALITY_COLORS[3],
     QUALITY_STEP_BREAKS[3],
-    colors.quality.excellent,
+    QUALITY_COLORS[4],
   ],
   lineWidth: [
     "interpolate",
@@ -126,11 +132,12 @@ export const BELOW_THRESHOLD_OPACITY = 0.2;
 /**
  * US-5: build the road-quality line style with the rider's minimum-quality
  * threshold baked into the style expressions. Segments below the threshold
- * are painted in `textTertiary` gray and faded to `BELOW_THRESHOLD_OPACITY`.
+ * are painted in the neutral unscored grey and faded to
+ * `BELOW_THRESHOLD_OPACITY`.
  *
  * We compare against `minQuality - 0.5` to match the half-point buckets that
- * `qualityLabel` / `qualityColor` use: a "Fair or better" filter (minQuality
- * 3) must keep a 2.8-scored segment — it still labels as "Fair".
+ * `qualityLabel` / the brand quality ramp use: a "Fair or better" filter
+ * (minQuality 3) must keep a 2.8-scored segment — it still labels as "Fair".
  *
  * When `minQuality` is at or below the minimum bound (1), no filtering is
  * needed and we return the baseline `qualityLineStyle` untouched so the step
@@ -146,7 +153,7 @@ export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
     lineColor: [
       "case",
       ["<", ["get", "quality_score"], threshold],
-      colors.textTertiary,
+      UNSCORED_COLOR,
       qualityLineStyle.lineColor,
     ] as LineLayerStyle["lineColor"],
     lineOpacity: [
@@ -162,9 +169,9 @@ export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
 
 /** Status → marker fill color. Mirrors PASS_LEGEND copy below. */
 export const PASS_STATUS_COLORS: Record<PassStatus, string> = {
-  open: colors.success,
-  closed: colors.danger,
-  unknown: colors.textTertiary,
+  open: statusFg.success,
+  closed: statusFg.danger,
+  unknown: UNSCORED_COLOR,
 };
 
 /** Status → human label used in the legend and trip warning copy. */
@@ -218,7 +225,7 @@ export const passMarkerStyle: CircleLayerStyle = {
     PASS_STATUS_COLORS.unknown,
   ],
   circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 5, 10, 7, 14, 10],
-  circleStrokeColor: colors.bg,
+  circleStrokeColor: brandColorsLight.fg,
   circleStrokeWidth: 2,
   circleOpacity: 0.95,
 };
@@ -227,11 +234,11 @@ export const passMarkerStyle: CircleLayerStyle = {
 //
 // Composite scores come back as floats on a rough 0-5 scale (see
 // `roads.service.spec.ts` seeds), mirroring the road-quality score. We reuse
-// the quality colour ramp + half-point breaks so zones feel consistent with
-// every other score surface in the app: a "4.5+" fun zone reads as Excellent,
-// same as a 4.5+ road segment.
+// the brand quality colour ramp + half-point breaks so zones feel consistent
+// with every other score surface in the app: a "4.5+" fun zone reads as the
+// same Q5, same as a 4.5+ road segment.
 
-/** Composite-score bucket boundaries. Mirror theme.qualityColor(). */
+/** Composite-score bucket boundaries. Mirror the brand quality buckets. */
 export const FUN_ZONE_SCORE_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
 
 /** Ordered (worst → best) score → colour mapping for the fun-zone layer. */
@@ -242,11 +249,11 @@ export const FUN_ZONE_COLORS: {
   good: string;
   excellent: string;
 } = {
-  veryPoor: colors.quality.veryPoor,
-  poor: colors.quality.poor,
-  fair: colors.quality.fair,
-  good: colors.quality.good,
-  excellent: colors.quality.excellent,
+  veryPoor: QUALITY_COLORS[0],
+  poor: QUALITY_COLORS[1],
+  fair: QUALITY_COLORS[2],
+  good: QUALITY_COLORS[3],
+  excellent: QUALITY_COLORS[4],
 };
 
 /**
@@ -398,12 +405,13 @@ export const funZoneLineStyle: LineLayerStyle = {
 /**
  * Severity → marker fill color. Mirrors `severityColor` in CommuteScreen
  * so a hazard pin on the map and its row in the commute list always
- * read the same.
+ * read the same. Low severity has no brand "info" tone (the palette is
+ * cream/ink + the three status colours), so it reads as neutral ink.
  */
 export const HAZARD_SEVERITY_COLORS: Record<Severity, string> = {
-  high: colors.danger,
-  medium: colors.warning,
-  low: colors.info,
+  high: statusFg.danger,
+  medium: statusFg.warning,
+  low: brandColorsLight.dim,
 };
 
 /**
@@ -448,7 +456,7 @@ export const hazardMarkerStyle: CircleLayerStyle = {
     HAZARD_SEVERITY_COLORS.low,
   ],
   circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 4, 10, 6, 14, 9],
-  circleStrokeColor: colors.bg,
+  circleStrokeColor: brandColorsLight.fg,
   circleStrokeWidth: 2,
   circleOpacity: 0.9,
 };

@@ -3,12 +3,14 @@
 Canonical reference for the Tarmoto **mobile** app's visual system, plus the
 plan to bring `apps/mobile` into alignment with it.
 
-> The mobile app was built before the brand design system was finalised. It
-> runs on a legacy cyan-on-dark palette (`#0ED3CF` primary, `#070A10`
-> background, system fonts) that predates the canonical cream + ink brand.
-> This folder is the single source of truth for what the app should look
-> like, and the living plan for getting it there — the same arrangement the
-> web companion uses in [`../companion-spec/`](../companion-spec/).
+> The mobile app was built before the brand design system was finalised, on a
+> legacy cyan-on-dark palette (`#0ED3CF` primary, `#070A10` background, system
+> fonts) that predated the canonical cream + ink brand. Every product surface
+> has since been migrated onto the brand system and the legacy palette deleted
+> (the map quality ramp was the last holdout — see Phase 4). This folder is the
+> single source of truth for what the app should look like, and the record of
+> how it got there — the same arrangement the web companion uses in
+> [`../companion-spec/`](../companion-spec/).
 
 ## Source
 
@@ -83,8 +85,10 @@ existing screen changes appearance yet:
 - **Tokens** — [`apps/mobile/src/theme/brand.ts`](../../../apps/mobile/src/theme/brand.ts):
   the cream/ink light palette, the night palette, the `#FF6A1A` accent, the
   Q1–Q5 ramp (`QUALITY_COLORS` + labels), radii, spacing, and the intended
-  type families. Mirrors `colors_and_type.css` + `mobile/tokens.jsx`. The
-  legacy `@/theme` palette is untouched.
+  type families. Mirrors `colors_and_type.css` + `mobile/tokens.jsx`. This is
+  now the **single source of truth** for design tokens — the legacy `@/theme`
+  cyan palette was deleted once every surface (the map quality ramp last) moved
+  across; `@/theme` now holds only colour-free neutral domain helpers.
 - **Atoms** — [`apps/mobile/src/components/brand/`](../../../apps/mobile/src/components/brand/):
   `Stamp`, `QualityBars`, `Chip`, `Metric`, `BrandButton`, and the geometric
   `BrandIcon` set — ported 1:1 from `mobile/tokens.jsx` to React Native +
@@ -233,13 +237,15 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 >
 > `MapScreen` (the **Map tab root** explorer) is map-heavy: the MapLibre
 > basemap, the quality vector overlay, and the hazard/pass/fun-zone markers
-> are their own surface, so the **map colour expressions and
-> `MapScreen.helpers` are deliberately untouched** (the quality ramp is the
-> essential road-quality encoding, and the helper tests assert those exact
-> colours). Only the **chrome floating over the map** is re-skinned, onto the
+> are their own surface, so at this phase the **map colour expressions and
+> `MapScreen.helpers` were left untouched** (the quality ramp is the essential
+> road-quality encoding, and the helper tests assert those exact colours). Only
+> the **chrome floating over the map** is re-skinned here, onto the
 > dark-overlay-pill pattern: the toggle FABs, the quality/passes/fun-zone
 > legends, and the fun-zone detail card become ink pills/cards with cream
 > labels, so the ramp swatches and the accent-active toggle pop at ≥6:1.
+> _(The map ramp colours themselves were migrated to the brand Q1–Q5 ramp in
+> the Phase-4 cleanup — see below.)_
 > `HazardReportFab` is shared with the still-legacy `RideActiveScreen`, so it
 > is left as-is. **With all five tab roots now on the brand, the bottom tab
 > bar can flip next.**
@@ -471,8 +477,12 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 
 - Once a screen no longer references the legacy `@/theme` cyan palette,
   prune its dead token usage.
-- When the last screen is migrated, fold `theme/brand.ts` into `@/theme`
-  and retire the legacy palette.
+- **Done:** with the last consumer (the map quality ramp) migrated, the legacy
+  cyan `colors` palette + `qualityColor` ramp + dead legacy design tokens were
+  deleted; `brand.ts` is the single source of truth for design tokens and
+  `@/theme` is now colour-free neutral domain helpers (see the map-ramp note
+  below). Folding `brand.ts`'s tokens under the `@/theme` path is now an
+  optional cosmetic move — nothing legacy remains to retire.
 
 > **`VehicleDisplaySurface`** (the CarPlay / Android Auto nav card) was the
 > last non-map product surface still on the legacy cyan palette. Migrated onto
@@ -481,13 +491,9 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > the **accent** (off-route → Q2 amber); status banners/badges use the bright
 > Q-ramp fills (Q5 green / Q1 red) with **ink** labels (ink clears on both
 > fills; a cream label would fail on the green). The projection-geometry
-> helper test is unchanged. **Remaining for a full palette retirement:** the
-> map's quality ramp + the essential-graphic ramp helpers
-> (`MapScreen`/`MapScreen.helpers`, `RideScreens.helpers`) still import the
-> legacy `colors`/`qualityColor` — those colours are deliberately preserved
-> (rider-facing map encoding, asserted by helper tests), so finishing the
-> retirement means a product/design decision on whether the map adopts the
-> canonical brand Q1–Q5 ramp.
+> helper test is unchanged. **The map's quality ramp was the last legacy holdout
+> — now migrated (see "Map quality ramp → brand Q1–Q5" below), retiring the
+> legacy palette entirely.**
 
 > **Dead surface-aware paths pruned.** With every screen migrated, the five
 > shared atoms that were made surface-aware during the migration
@@ -497,10 +503,31 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > vestigial `light` prop, and the now-unused legacy `@/theme` colour imports
 > were removed; each atom now renders the brand styling unconditionally, and
 > the `light` prop was dropped from every call site. No visual change (callers
-> already rendered the brand path). **Still open:** folding `theme/brand.ts`
-> into `@/theme` and retiring the remaining legacy palette (the map colour
-> expressions + a handful of essential-graphic ramp helpers still import it),
-> plus the deferred font-linking (dev-machine task).
+> already rendered the brand path).
+
+> **Map quality ramp → brand Q1–Q5 (legacy palette fully retired).** The map's
+> rider-facing quality encoding was the final consumer of the legacy cyan
+> palette. The road-quality line, the fun-zone fill/outline, the ride-route
+> polyline, and the quality legend now paint from the canonical brand
+> `QUALITY_COLORS` ramp (Q1 `#E05A3C` → Q5 `#6FD38A`) via `qualityBrandColor` /
+> `QUALITY_COLORS` — a deliberate rider-visible colour change, and the helper
+> tests (`MapScreen.helpers`, `RideScreens.helpers`) were updated to assert the
+> brand ramp. The non-quality map colours that also lived on `colors` moved to
+> brand tokens too: pass-status + hazard-severity markers use `statusFg.*`
+> (low-severity has no brand "info" blue, so it reads as neutral ink `dim`,
+> mirroring `CommuteScreen.severityColor`); below-threshold / no-data / locked
+> states use the neutral `UNSCORED_COLOR`; marker contrast rings use brand ink
+> (`fg`). With that, the legacy cyan `colors` object, its `qualityColor` /
+> `qualityColorWithThreshold` ramp, and the now-dead legacy design tokens
+> (`fonts`/`fontSize`/`fontWeight`/`spacing`/`borderRadius`/`shadows`) were
+> deleted — `@/theme` is now a colour-free module of neutral domain helpers
+> (quality labels/thresholds, the fuel-range grid, hazard icons, duration
+> formatting) and **`brand.ts` is the single source of truth for design
+> tokens**. The shared stack chrome flipped to `brandScreenOptions` (the legacy
+> dark default `screenOptions` is gone) and the root `StatusBar` is now
+> dark-content on cream. **Still open:** the deferred font-linking (dev-machine
+> task); folding `theme/brand.ts`'s tokens under `@/theme` is now cosmetic
+> (nothing legacy remains to retire).
 
 ## Workflow
 

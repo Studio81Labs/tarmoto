@@ -21,7 +21,12 @@ import {
   passesToFeatureCollection,
   qualityLineStyle,
 } from "../MapScreen.helpers";
-import { colors } from "@/theme";
+import {
+  brandColorsLight,
+  QUALITY_COLORS,
+  statusFg,
+  UNSCORED_COLOR,
+} from "@/theme/brand";
 import type {
   FunZone,
   Hazard,
@@ -74,19 +79,19 @@ describe("getQualityTileUrlTemplate", () => {
 });
 
 describe("qualityLineStyle", () => {
-  it("uses theme quality colours in ascending-score order", () => {
+  it("uses brand quality colours in ascending-score order", () => {
     // step: default, t1, c1, t2, c2, t3, c3, t4, c4
     const expr = qualityLineStyle.lineColor as unknown as unknown[];
     expect(expr[0]).toBe("step");
-    expect(expr[2]).toBe(colors.quality.veryPoor);
+    expect(expr[2]).toBe(QUALITY_COLORS[0]);
     expect(expr[3]).toBe(QUALITY_STEP_BREAKS[0]);
-    expect(expr[4]).toBe(colors.quality.poor);
+    expect(expr[4]).toBe(QUALITY_COLORS[1]);
     expect(expr[5]).toBe(QUALITY_STEP_BREAKS[1]);
-    expect(expr[6]).toBe(colors.quality.fair);
+    expect(expr[6]).toBe(QUALITY_COLORS[2]);
     expect(expr[7]).toBe(QUALITY_STEP_BREAKS[2]);
-    expect(expr[8]).toBe(colors.quality.good);
+    expect(expr[8]).toBe(QUALITY_COLORS[3]);
     expect(expr[9]).toBe(QUALITY_STEP_BREAKS[3]);
-    expect(expr[10]).toBe(colors.quality.excellent);
+    expect(expr[10]).toBe(QUALITY_COLORS[4]);
   });
 
   it("reads quality_score from the vector-tile feature", () => {
@@ -94,9 +99,9 @@ describe("qualityLineStyle", () => {
     expect(expr[1]).toEqual(["get", "quality_score"]);
   });
 
-  it("keeps step thresholds sorted and matching theme half-point buckets", () => {
-    // theme.qualityColor() bucketing: ≥4.5 excellent, ≥3.5 good, ≥2.5 fair,
-    // ≥1.5 poor, else very poor. The step expression fires the color for a
+  it("keeps step thresholds sorted and matching the brand half-point buckets", () => {
+    // Brand quality bucketing (Math.round on a 1..5 score): ≥4.5 Q5, ≥3.5 Q4,
+    // ≥2.5 Q3, ≥1.5 Q2, else Q1. The step expression fires the color for a
     // threshold when `quality_score >= threshold`, so the same breaks apply.
     expect(QUALITY_STEP_BREAKS).toEqual([1.5, 2.5, 3.5, 4.5]);
     const sorted = [...QUALITY_STEP_BREAKS].sort((a, b) => a - b);
@@ -156,8 +161,8 @@ describe("buildQualityLineStyle (US-5 minimum-quality filter)", () => {
     expect(expr[0]).toBe("case");
     // Condition: quality_score < (minQuality - 0.5) = 2.5
     expect(expr[1]).toEqual(["<", ["get", "quality_score"], 2.5]);
-    // Gray fill for segments below threshold.
-    expect(expr[2]).toBe(colors.textTertiary);
+    // Neutral unscored fill for segments below threshold.
+    expect(expr[2]).toBe(UNSCORED_COLOR);
     // Fallback: the baseline step expression untouched.
     expect(expr[3]).toBe(qualityLineStyle.lineColor);
   });
@@ -228,10 +233,10 @@ describe("passMarkerStyle", () => {
     expect(expr[expr.length - 1]).toBe(PASS_STATUS_COLORS.unknown);
   });
 
-  it("uses theme colours for the three statuses (no hardcoded hex drift)", () => {
-    expect(PASS_STATUS_COLORS.open).toBe(colors.success);
-    expect(PASS_STATUS_COLORS.closed).toBe(colors.danger);
-    expect(PASS_STATUS_COLORS.unknown).toBe(colors.textTertiary);
+  it("uses brand status colours for the three statuses (no hardcoded hex drift)", () => {
+    expect(PASS_STATUS_COLORS.open).toBe(statusFg.success);
+    expect(PASS_STATUS_COLORS.closed).toBe(statusFg.danger);
+    expect(PASS_STATUS_COLORS.unknown).toBe(UNSCORED_COLOR);
   });
 
   it("scales marker radius with zoom so passes are visible at country level", () => {
@@ -405,11 +410,11 @@ describe("funZoneFillStyle / funZoneLineStyle", () => {
     // A 4.5+ fun zone must show in the same excellent-green as a 4.5+ road
     // segment — keeps the visual contract across every score surface.
     expect(FUN_ZONE_COLORS).toEqual({
-      veryPoor: colors.quality.veryPoor,
-      poor: colors.quality.poor,
-      fair: colors.quality.fair,
-      good: colors.quality.good,
-      excellent: colors.quality.excellent,
+      veryPoor: QUALITY_COLORS[0],
+      poor: QUALITY_COLORS[1],
+      fair: QUALITY_COLORS[2],
+      good: QUALITY_COLORS[3],
+      excellent: QUALITY_COLORS[4],
     });
     expect(FUN_ZONE_SCORE_BREAKS).toEqual(QUALITY_STEP_BREAKS);
   });
@@ -489,6 +494,18 @@ describe("hazardMarkerStyle", () => {
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.high);
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.medium);
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.low);
+  });
+
+  it("maps severity onto brand status tones (low = neutral ink, no info blue)", () => {
+    // Mirrors CommuteScreen.severityColor so a pin and its commute-list row
+    // always read the same.
+    expect(HAZARD_SEVERITY_COLORS.high).toBe(statusFg.danger);
+    expect(HAZARD_SEVERITY_COLORS.medium).toBe(statusFg.warning);
+    expect(HAZARD_SEVERITY_COLORS.low).toBe(brandColorsLight.dim);
+  });
+
+  it("rings the marker in brand ink so it separates from the basemap", () => {
+    expect(hazardMarkerStyle.circleStrokeColor).toBe(brandColorsLight.fg);
   });
 });
 

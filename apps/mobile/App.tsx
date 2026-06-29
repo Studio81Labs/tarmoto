@@ -11,7 +11,7 @@ import RootNavigator from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
-import { colors } from "@/theme";
+import { brandColorsLight } from "@/theme/brand";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -47,8 +47,8 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar
-          barStyle="light-content"
-          backgroundColor={colors.bg}
+          barStyle="dark-content"
+          backgroundColor={brandColorsLight.bg}
           translucent
         />
         <RootNavigator />

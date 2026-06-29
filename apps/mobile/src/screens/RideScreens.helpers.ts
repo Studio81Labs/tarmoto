@@ -16,7 +16,7 @@ import {
 
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
-import { colors } from "@/theme";
+import { QUALITY_COLORS, UNSCORED_COLOR } from "@/theme/brand";
 
 /**
  * Format an ISO timestamp as "Apr 17, 2026 · 14:32" for ride-history rows.
@@ -171,35 +171,35 @@ export function qualityScoreFromClass(
 export const NO_QUALITY_READING = -1;
 
 /**
- * MapLibre `step` expression that maps `quality_reading` to the shared
- * 5-class quality palette. The boundaries match `qualityColor` exactly
- * — `value ≥ 4.5` is excellent, `≥ 3.5` is good, etc — so the polyline
- * agrees with the histogram and summary badge on the same screen.
+ * MapLibre `step` expression that maps `quality_reading` to the shared brand
+ * 5-class quality ramp. The boundaries match the brand quality buckets exactly
+ * — `value ≥ 4.5` is Q5, `≥ 3.5` is Q4, etc — so the polyline agrees with the
+ * histogram and summary badge on the same screen.
  *
  * Branches (post-coalesce, with `NO_QUALITY_READING = -1` as the
  * sentinel for unmapped legs):
- *   - value < 0   → no-data tertiary
- *   - 0..1.5      → veryPoor
- *   - 1.5..2.5    → poor
- *   - 2.5..3.5    → fair
- *   - 3.5..4.5    → good
- *   - ≥ 4.5       → excellent
+ *   - value < 0   → no-data (neutral unscored grey)
+ *   - 0..1.5      → Q1
+ *   - 1.5..2.5    → Q2
+ *   - 2.5..3.5    → Q3
+ *   - 3.5..4.5    → Q4
+ *   - ≥ 4.5       → Q5
  */
 export function rideRouteLineColorExpression(): unknown[] {
   return [
     "step",
     ["coalesce", ["get", "quality_reading"], NO_QUALITY_READING],
-    colors.textTertiary,
+    UNSCORED_COLOR,
     0,
-    colors.quality.veryPoor,
+    QUALITY_COLORS[0],
     1.5,
-    colors.quality.poor,
+    QUALITY_COLORS[1],
     2.5,
-    colors.quality.fair,
+    QUALITY_COLORS[2],
     3.5,
-    colors.quality.good,
+    QUALITY_COLORS[3],
     4.5,
-    colors.quality.excellent,
+    QUALITY_COLORS[4],
   ];
 }
 

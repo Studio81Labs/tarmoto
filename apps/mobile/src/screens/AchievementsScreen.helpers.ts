@@ -12,7 +12,7 @@ import type {
   RiddenSegment,
   UnriddenSegment,
 } from "@/types";
-import { colors } from "@/theme";
+import { UNSCORED_COLOR } from "@/theme/brand";
 
 // ── Badge tier helpers ──
 
@@ -37,13 +37,13 @@ export const TIER_COLORS: Record<BadgeTier, string> = {
 
 /**
  * Pick the colour for a badge's current tier. Locked badges (tier === null)
- * read as the tertiary text colour so the locked state looks dim against
+ * read as the neutral unscored grey so the locked state looks dim against
  * the row background.
  */
 export function tierColor(tier: string | null): string {
-  if (!tier) return colors.textTertiary;
+  if (!tier) return UNSCORED_COLOR;
   const known = TIER_COLORS[tier as BadgeTier];
-  return known ?? colors.textTertiary;
+  return known ?? UNSCORED_COLOR;
 }
 
 /**
