@@ -376,7 +376,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="TripImport"
         component={TripImportScreen}
-        options={{ title: "Import shared trip" }}
+        options={{ ...brandScreenOptions, title: "Import shared trip" }}
       />
       <TripsStack.Screen
         name="TripDetail"
