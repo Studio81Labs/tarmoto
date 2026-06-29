@@ -121,14 +121,17 @@ describe('AdminContentService', () => {
     expect(statusCalls).toHaveLength(0);
   });
 
-  it('list() defaults to a "visible" filter when status is omitted', async () => {
+  it('list() defaults to "all" (no status filter) when status is omitted', async () => {
+    // API contract: omitting status returns the full moderation queue. The
+    // SPA opts into 'visible' explicitly for its index-served default tab.
     const qb = makeQb([], 0);
     const repo = makeRepo(qb);
     const svc = build(repo, makeUserRepo());
     await svc.list({ type: ContentType.Hazard });
-    expect(qb.andWhere).toHaveBeenCalledWith('c.moderation_status = :status', {
-      status: 'visible',
-    });
+    const statusCalls = qb.andWhere.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('moderation_status'),
+    );
+    expect(statusCalls).toHaveLength(0);
   });
 
   it('list() escapes LIKE wildcards in the search term', async () => {

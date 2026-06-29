@@ -80,13 +80,14 @@ export class AdminContentService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
-    // Default to 'visible' (not 'all') so simply opening a tab is served by
-    // the (moderation_status, created_at) index for both the ordered page
-    // and the count — an unfiltered 'all' listing would force a full-table
-    // count/sort. 'all'/'hidden' remain explicit, deliberate selections.
-    const status = query.status ?? 'visible';
-    if (status !== 'all') {
-      qb.andWhere('c.moderation_status = :status', { status });
+    // API default is 'all' (the documented contract — a script omitting
+    // `status` gets the full moderation queue, not a silently filtered
+    // subset). The SPA defaults its tab to 'visible' and always sends an
+    // explicit status, so the tab-open path is served by the
+    // (moderation_status, created_at) index; only a deliberate 'all'
+    // selection does an unfiltered scan.
+    if (query.status && query.status !== 'all') {
+      qb.andWhere('c.moderation_status = :status', { status: query.status });
     }
     const term = query.q?.trim();
     if (term) {
