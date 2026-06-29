@@ -12,7 +12,7 @@ export const routes: AdminRoute[] = [
   { key: "overview", label: "Overview", minRole: "read_only" },
   { key: "users", label: "Users", minRole: "support" },
   { key: "administrators", label: "Administrators", minRole: "admin" },
-  { key: "feature-flags", label: "Feature Flags" },
+  { key: "feature-flags", label: "Feature Flags", minRole: "admin" },
   { key: "content", label: "Content" },
 ];
 

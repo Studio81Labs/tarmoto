@@ -57,6 +57,7 @@ import { AddCommuteRoutingEngineVersion1718000000000 } from '../../migrations/17
 import { AddCommunityEngagement1718100000000 } from '../../migrations/1718100000000-AddCommunityEngagement.js';
 import { AddTripDayStartLinked1718200000000 } from '../../migrations/1718200000000-AddTripDayStartLinked.js';
 import { AddAdminConsoleFoundation1751000000000 } from '../../migrations/1751000000000-AddAdminConsoleFoundation.js';
+import { AddFeatureFlags1782000000000 } from '../../migrations/1782000000000-AddFeatureFlags.js';
 import {
   User,
   UserContact,
@@ -111,6 +112,7 @@ import {
   AdminSession,
   AdminRefreshToken,
   AdminAuditLog,
+  FeatureFlag,
 } from '../../entities/index.js';
 
 const entities = [
@@ -167,6 +169,7 @@ const entities = [
   AdminSession,
   AdminRefreshToken,
   AdminAuditLog,
+  FeatureFlag,
 ];
 
 @Module({
@@ -246,6 +249,7 @@ const entities = [
             AddCommunityEngagement1718100000000,
             AddTripDayStartLinked1718200000000,
             AddAdminConsoleFoundation1751000000000,
+            AddFeatureFlags1782000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
