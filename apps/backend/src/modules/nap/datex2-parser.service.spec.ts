@@ -80,7 +80,20 @@ describe('Datex2ParserService', () => {
     expect(works.rawLocationRef).not.toBeNull();
   });
 
-  it('returns an empty list when the publication envelope is missing', () => {
-    expect(parser.parse('<x:foo xmlns:x="urn:x"><x:bar/></x:foo>')).toEqual([]);
+  it('throws (does not return []) when the envelope is unrecognizable', () => {
+    // A 200 that is auth/proxy HTML or a wrong profile must NOT look like
+    // a verified-empty snapshot — otherwise reconcile would deactivate
+    // every official closure.
+    expect(() =>
+      parser.parse('<html><body>Login required</body></html>'),
+    ).toThrow(/Unrecognized NAP snapshot/);
+  });
+
+  it('returns [] for a genuine publication with zero situations', () => {
+    const empty = `<?xml version="1.0"?>
+      <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">
+        <d2:payloadPublication/>
+      </d2:d2LogicalModel>`;
+    expect(parser.parse(empty)).toEqual([]);
   });
 });

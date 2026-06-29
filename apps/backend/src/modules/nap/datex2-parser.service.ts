@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { XMLParser } from 'fast-xml-parser';
 import type {
   NapSituation,
@@ -21,8 +21,6 @@ import type {
  */
 @Injectable()
 export class Datex2ParserService {
-  private readonly logger = new Logger(Datex2ParserService.name);
-
   private readonly parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
@@ -43,16 +41,25 @@ export class Datex2ParserService {
         'payloadPublication',
       ]);
 
-    if (!publication) {
-      this.logger.warn(
-        'No payloadPublication found in NAP snapshot — check schema/namespaces',
+    // THROW (don't return []) when the `payloadPublication` element is
+    // absent — a 200 that's an auth/proxy HTML page, a schema change, or
+    // a wrong profile would otherwise look like a verified-empty snapshot
+    // and make the reconcile pass deactivate every official closure. The
+    // poller catches this and skips reconcile. A *present but empty*
+    // publication (`payloadPublication` with zero situations, which
+    // fast-xml-parser yields as '') is a real empty feed → returns [].
+    if (publication == null) {
+      throw new Error(
+        'Unrecognized NAP snapshot: no payloadPublication envelope ' +
+          '(auth/proxy HTML, schema change, or unexpected profile?)',
       );
-      return [];
     }
 
     const out: NapSituation[] = [];
     for (const situation of this.asArray(
-      (publication as Record<string, unknown>).situation,
+      typeof publication === 'object'
+        ? (publication as Record<string, unknown>).situation
+        : undefined,
     )) {
       const sit = situation as Record<string, unknown>;
       for (const rec of this.asArray(sit.situationRecord)) {
