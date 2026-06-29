@@ -8,6 +8,7 @@ import { TopBar } from "../components/layout/TopBar.js";
 import { OverviewScreen } from "../screens/OverviewScreen.js";
 import { UsersScreen } from "../screens/UsersScreen.js";
 import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
+import { FeatureFlagsScreen } from "../screens/FeatureFlagsScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 import { canAccess } from "../lib/roleRank.js";
 
@@ -89,6 +90,8 @@ export function App() {
               currentRole={currentUser.role}
               currentAdminId={currentUser.id}
             />
+          ) : active === "feature-flags" ? (
+            <FeatureFlagsScreen />
           ) : (
             <section>
               <Heading as="h2">

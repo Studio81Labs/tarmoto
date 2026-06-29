@@ -3026,6 +3026,59 @@ export interface paths {
     patch: operations["AdminAdminsController_patch"];
     trace?: never;
   };
+  "/api/v1/admin/flags": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List feature flags */
+    get: operations["AdminFlagsController_list"];
+    put?: never;
+    /** Create a feature flag */
+    post: operations["AdminFlagsController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/flags/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete a feature flag */
+    delete: operations["AdminFlagsController_remove"];
+    options?: never;
+    head?: never;
+    /** Update a feature flag (enabled / description) */
+    patch: operations["AdminFlagsController_update"];
+    trace?: never;
+  };
+  "/api/v1/config/flags": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Public feature-flag map (key → enabled) */
+    get: operations["ClientConfigController_flags"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5478,6 +5531,28 @@ export interface components {
       /** @description true = active, false = disabled */
       active?: boolean;
     };
+    FeatureFlagDto: {
+      id: string;
+      key: string;
+      enabled: boolean;
+      description: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+    CreateFeatureFlagDto: {
+      /**
+       * @description Unique flag key (lowercase snake_case).
+       * @example group_rides
+       */
+      key: string;
+      enabled?: boolean;
+      description?: string | null;
+    };
+    UpdateFeatureFlagDto: {
+      /** @description Toggle the flag. */
+      enabled?: boolean;
+      description?: string | null;
+    };
   };
   responses: never;
   parameters: never;
@@ -5853,6 +5928,11 @@ export type SchemaAdminUserDetailDto =
 export type SchemaAdminRowDto = components["schemas"]["AdminRowDto"];
 export type SchemaCreateAdminDto = components["schemas"]["CreateAdminDto"];
 export type SchemaPatchAdminDto = components["schemas"]["PatchAdminDto"];
+export type SchemaFeatureFlagDto = components["schemas"]["FeatureFlagDto"];
+export type SchemaCreateFeatureFlagDto =
+  components["schemas"]["CreateFeatureFlagDto"];
+export type SchemaUpdateFeatureFlagDto =
+  components["schemas"]["UpdateFeatureFlagDto"];
 export type $defs = Record<string, never>;
 export interface operations {
   AppController_getHello: {
@@ -11261,6 +11341,113 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AdminRowDto"];
+        };
+      };
+    };
+  };
+  AdminFlagsController_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeatureFlagDto"][];
+        };
+      };
+    };
+  };
+  AdminFlagsController_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateFeatureFlagDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeatureFlagDto"];
+        };
+      };
+    };
+  };
+  AdminFlagsController_remove: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  AdminFlagsController_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateFeatureFlagDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeatureFlagDto"];
+        };
+      };
+    };
+  };
+  ClientConfigController_flags: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: boolean;
+          };
         };
       };
     };

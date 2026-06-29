@@ -46,6 +46,7 @@ import { AdminUser } from './entities/admin-user.entity.js';
 import { AdminSession } from './entities/admin-session.entity.js';
 import { AdminRefreshToken } from './entities/admin-refresh-token.entity.js';
 import { AdminAuditLog } from './entities/admin-audit-log.entity.js';
+import { FeatureFlag } from './entities/feature-flag.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -103,6 +104,7 @@ import { AddCommuteRoutingEngineVersion1718000000000 } from './migrations/171800
 import { AddCommunityEngagement1718100000000 } from './migrations/1718100000000-AddCommunityEngagement.js';
 import { AddTripDayStartLinked1718200000000 } from './migrations/1718200000000-AddTripDayStartLinked.js';
 import { AddAdminConsoleFoundation1751000000000 } from './migrations/1751000000000-AddAdminConsoleFoundation.js';
+import { AddFeatureFlags1782000000000 } from './migrations/1782000000000-AddFeatureFlags.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -158,6 +160,7 @@ export const AppDataSource = new DataSource({
     AdminSession,
     AdminRefreshToken,
     AdminAuditLog,
+    FeatureFlag,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -224,6 +227,7 @@ export const AppDataSource = new DataSource({
     AddCommunityEngagement1718100000000,
     AddTripDayStartLinked1718200000000,
     AddAdminConsoleFoundation1751000000000,
+    AddFeatureFlags1782000000000,
   ],
   synchronize: false,
 });

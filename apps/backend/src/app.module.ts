@@ -46,6 +46,7 @@ import { ModelEvalModule } from './modules/model-eval/index.js';
 import { RoutingModule } from './modules/routing/routing.module.js';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { ClientConfigModule } from './modules/client-config/client-config.module.js';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { AdminModule } from './modules/admin/admin.module.js';
     RoutingModule,
     AdminAuthModule,
     AdminModule,
+    ClientConfigModule,
   ],
   controllers: [AppController],
   // Global APP_GUARD throttles every route by `(ip, user_id)` instead
