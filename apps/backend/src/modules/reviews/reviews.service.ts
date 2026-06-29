@@ -158,8 +158,21 @@ export class ReviewsService {
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
+    // Hidden (moderated) reviews stay out of the public list, but a rider
+    // must still see their OWN hidden review — otherwise the mobile form
+    // reads its absence as "create mode", the POST trips the unique
+    // (user_id, road_segment_id) constraint (409), and the conflict reload
+    // (this same list) can't surface the row to switch to edit/delete,
+    // trapping the rider. Self-view exemption mirrors the privacy mask one
+    // below: visible to everyone, plus the viewer's own rows regardless of
+    // moderation_status.
     const reviews = await this.reviewRepo.find({
-      where: { road_segment_id: segmentId, moderation_status: 'visible' },
+      where: viewerUserId
+        ? [
+            { road_segment_id: segmentId, moderation_status: 'visible' },
+            { road_segment_id: segmentId, user_id: viewerUserId },
+          ]
+        : { road_segment_id: segmentId, moderation_status: 'visible' },
       relations: ['user'],
       order: { created_at: 'DESC' },
     });

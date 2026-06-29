@@ -246,6 +246,20 @@ describe('ReviewsService', () => {
       );
     });
 
+    it("surfaces the viewer's OWN review even when hidden (self-view exemption)", async () => {
+      await service.listForSegment('seg-1', 'user-1');
+      // Authenticated: visible-to-all OR the viewer's own rows (any status),
+      // so a rider can still edit/delete their own moderated review.
+      expect(reviewRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: [
+            { road_segment_id: 'seg-1', moderation_status: 'visible' },
+            { road_segment_id: 'seg-1', user_id: 'user-1' },
+          ],
+        }),
+      );
+    });
+
     it('should mask user_display_name when the author has been soft-deleted', async () => {
       reviewRepo.find!.mockResolvedValueOnce([
         { ...mockReview, user: undefined } as unknown as RoadReview,
