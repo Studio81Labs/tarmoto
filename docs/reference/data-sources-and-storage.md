@@ -94,7 +94,7 @@ Overlays served as GeoJSON on top of the tiles:
 ## 6. How the route builder consumes this
 
 - **Base graph** — `RoutingProvider` abstraction (`routing-provider.interface.ts`), OSRM today, Valhalla-ready. Versioned so cached polylines invalidate on engine swaps.
-- **Preference scoring** — `trip-generator.service` already scores candidate routes by **curviness**, **surface mix**, and a **quality filter** per segment. This is the per-segment moat data driving route _selection_.
+- **Preference scoring** — `scoreRoute()` ranks candidates on **quality, curviness, scenic, speed, distance-fit, and a hazard penalty**. **Surface is _not_ a scoring term:** `surfaceMixMetres` is used only as an **optional hard filter** (`isSurfaceMixMostlyAllowed` drops candidates when the request sets `surfaces` / `avoid_unpaved`). So changing `road_segments.surface_type` won't shift default route ranking — surface seed/offline work must treat it as filtering + map enrichment, not a ranking input (adding a surface scoring term would be a separate change).
 - **Avoidance** — `RoutingOptions` currently exposes only `avoidHighways` / `avoidTolls`.
 - **POIs are _not_ a generator input.** `trips.module` doesn't import `PoiModule`; `TripGeneratorService.buildDay()` synthesizes fuel/hotel waypoints from the route geometry (`planFuelStopIndices`), not from POI data. Real POIs are surfaced only by the separate `/poi/along-route` **stop-suggestion** endpoint, which the planner UI calls — they don't feed generated itineraries. Wiring stored POIs into generation is a **future gap**, not current behavior; the offline-POI work (§8.3) should not assume it.
 
