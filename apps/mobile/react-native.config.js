@@ -4,10 +4,11 @@
  * `react-native-fast-tflite` resolves the metro asset URL through this
  * registration.
  *
- * `./assets/fonts` carries ONLY the four static-weight brand faces
- * (`SpaceGrotesk[/_bold].ttf`, `JetBrainsMono[/_bold].ttf`) — Regular(400) +
- * Bold(700) instanced from the variable sources, named so Android resolves by
- * basename and iOS by the matching internal family. This entry tells
+ * `./assets/fonts` carries ONLY the static-weight brand faces instanced from
+ * the variable sources — JetBrains Mono at 400/500/600/700/800 and Space
+ * Grotesk at 400/500/600/700 (its `wght` axis caps at 700, so no 800). They're
+ * named so Android resolves the Regular/Bold pair by basename and iOS matches
+ * the rest by their internal family + `usWeightClass`. This entry tells
  * `npx react-native-asset` what to copy into the native projects; running that
  * linker, `pod install`, and an on-device check are the remaining dev-machine
  * work (see `assets/fonts/README.md`).

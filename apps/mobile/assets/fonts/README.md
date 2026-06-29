@@ -5,21 +5,33 @@ mobile brand migration — see `docs/design/mobile-spec/README.md`).
 
 ## What's here
 
-Five static weights per family — the set the app actually uses
-(`fontWeight` 400/500/600/700/800 across the brand styles):
+The static weights the app uses (`fontWeight` 400/500/600/700/800 across the
+brand styles), instanced from each family's variable `wght` axis:
 
-| File                         | usWeightClass | `fontWeight` it serves |
-| ---------------------------- | ------------- | ---------------------- |
-| `SpaceGrotesk.ttf`           | 400           | 400 (Regular)          |
-| `SpaceGrotesk_medium.ttf`    | 500           | 500 (Medium)           |
-| `SpaceGrotesk_semibold.ttf`  | 600           | 600 (SemiBold)         |
-| `SpaceGrotesk_bold.ttf`      | 700           | 700 (Bold)             |
-| `SpaceGrotesk_extrabold.ttf` | 800           | 800 (ExtraBold)        |
-| `JetBrainsMono*.ttf`         | 400–800       | same five weights      |
+| File                          | usWeightClass | `fontWeight` it serves |
+| ----------------------------- | ------------- | ---------------------- |
+| `SpaceGrotesk.ttf`            | 400           | 400 (Regular)          |
+| `SpaceGrotesk_medium.ttf`     | 500           | 500 (Medium)           |
+| `SpaceGrotesk_semibold.ttf`   | 600           | 600 (SemiBold)         |
+| `SpaceGrotesk_bold.ttf`       | 700           | 700 (Bold) + 800       |
+| `JetBrainsMono.ttf`           | 400           | 400 (Regular)          |
+| `JetBrainsMono_medium.ttf`    | 500           | 500 (Medium)           |
+| `JetBrainsMono_semibold.ttf`  | 600           | 600 (SemiBold)         |
+| `JetBrainsMono_bold.ttf`      | 700           | 700 (Bold)             |
+| `JetBrainsMono_extrabold.ttf` | 800           | 800 (ExtraBold)        |
 
 All faces in a family share the internal family name (`"SpaceGrotesk"` /
 `"JetBrainsMono"`) and differ by `usWeightClass`, so `fontFamily` +
 `fontWeight` resolves the right face.
+
+> **Space Grotesk has no `800`.** Its variable `wght` axis caps at **700**, so
+> there's no distinct extra-bold — instancing at 800 would just relabel the 700
+> outlines. The brand sans styles that use `fontWeight: "800"` (e.g. screen
+> titles) therefore render at the **700 Bold** (the heaviest real weight). If
+> the design wants a genuinely heavier sans title, that needs a real 800-capable
+> Space Grotesk source (a design/sourcing decision) — otherwise the sans `800`
+> tokens could be dropped to `700`. JetBrains Mono's axis does reach 800, so its
+> ExtraBold is a real face.
 
 The variable-font **sources** live in `../font-sources/` (outside this linked
 asset root) for re-instancing; they are not bundled — `react-native-asset`
@@ -84,8 +96,9 @@ real build:
 Steps 1, 2, 3a, and 5 are **done** (committed). The residual is the
 native-build half that can't be run/validated headless — steps 3b, 4, 6.
 
-1. ✅ Instance the five static weights the app uses (400/500/600/700/800) per
-   family from `../font-sources/*.ttf`, with matching internal family names.
+1. ✅ Instance the static weights the app uses from `../font-sources/*.ttf`
+   with matching internal family names — JetBrains Mono 400/500/600/700/800,
+   Space Grotesk 400/500/600/700 (its `wght` axis caps at 700, so no 800).
    The repeatable generator script is described below; verify with
    `python3 -c "from fontTools import ttLib; t=ttLib.TTFont('SpaceGrotesk_semibold.ttf'); print(t['name'].getDebugName(1), t['OS/2'].usWeightClass)"`.
 2. ✅ Named so Android auto-resolves the Regular (`<family>.ttf`) + Bold
@@ -107,9 +120,10 @@ native-build half that can't be run/validated headless — steps 3b, 4, 6.
 
 ### Regenerating the static faces
 
-The faces were instanced with `fontTools` — pin the `wght` axis to each of
-400/500/600/700/800, set `OS/2.usWeightClass` (+ the bold `fsSelection`/
-`macStyle` bits on the 700 face only), and rewrite
+The faces were instanced with `fontTools` — pin the `wght` axis to each weight
+the family supports (JetBrains Mono 400/500/600/700/800, Space Grotesk
+400/500/600/700 — its axis caps at 700), set `OS/2.usWeightClass` (+ the bold
+`fsSelection`/`macStyle` bits on the 700 face only), and rewrite
 the `name` table family/subfamily/full/PostScript IDs to the no-space family
 name so iOS resolves `fontFamily: "SpaceGrotesk"` / `"JetBrainsMono"`. Re-run
 against the sources in `../font-sources/` if the upstream fonts are updated.
