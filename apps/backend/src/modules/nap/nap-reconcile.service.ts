@@ -77,10 +77,10 @@ export class NapReconcileService {
           existing.map((r) => [r.external_id as string, r.first_seen_at]),
         );
 
-        // 2) Bulk upsert by (source, external_id). The unique index is
-        //    partial (WHERE external_id IS NOT NULL), so the predicate
-        //    must match it. first_seen_at is set from the preload, so an
-        //    update preserves the original and an insert stamps batchTime.
+        // 2) Bulk upsert by (source, external_id) — the plain unique
+        //    index added in the schema migration. first_seen_at is set
+        //    from the preload, so an update preserves the original and an
+        //    insert stamps batchTime.
         const rows = deduped.map((s) => ({
           title: s.title,
           reason: s.reason,
@@ -117,10 +117,7 @@ export class NapReconcileService {
           // `unknown` raw_location_ref / geom-union fields structurally.
           await repo.upsert(
             rows as unknown as QueryDeepPartialEntity<RoadClosure>[],
-            {
-              conflictPaths: ['source', 'external_id'],
-              indexPredicate: 'external_id IS NOT NULL',
-            },
+            { conflictPaths: ['source', 'external_id'] },
           );
         }
 

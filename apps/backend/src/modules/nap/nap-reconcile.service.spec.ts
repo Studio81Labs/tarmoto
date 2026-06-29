@@ -88,14 +88,13 @@ describe('NapReconcileService', () => {
   it('bulk-upserts a new situation with feed bookkeeping', async () => {
     const result = await service.reconcile([situation()]);
 
-    // One bulk upsert keyed on the partial unique index — not a
-    // findOne+save per record.
+    // One bulk upsert keyed on the (source, external_id) unique index —
+    // not a findOne+save per record.
     expect(txRepo.upsert).toHaveBeenCalledTimes(1);
     const upsertArgs = txRepo.upsert.mock.calls[0] as [unknown, unknown];
     expect(upsertArgs[1]).toEqual(
       expect.objectContaining({
         conflictPaths: ['source', 'external_id'],
-        indexPredicate: 'external_id IS NOT NULL',
       }),
     );
     const row = upsertedRow();
