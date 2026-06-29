@@ -329,6 +329,14 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > already migrated; `BadgesScreen` / `ChallengesScreen` remain for their own
 > phases.
 >
+> **`LinkAccountScreen`** (the Profile-stack "link this phone to your Tarmoto
+> account" sign-in form) is migrated next: hero, the email/password inputs,
+> error + success messages, and the Link CTA move onto cream + ink with a
+> themed stack header. The inputs use the sans family on `sunken` fields with
+> `mute` placeholders; the hero disc is neutral `raised2`; "Link account" is
+> the ink CTA; the error uses `statusFg.danger` and the success message
+> `statusFg.success`. No shared `@/components`, so no blast radius.
+>
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
 > Settings-local deps), so they're clean, low-risk sweeps. **Profile**
