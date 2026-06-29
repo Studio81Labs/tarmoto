@@ -229,9 +229,26 @@ describe('NapReconcileService', () => {
     expect(upsertedRow().is_active).toBe(false);
   });
 
-  it('writes is_active=false for a planned (not-yet-in-force) situation', async () => {
-    await service.reconcile([situation({ validityStatus: 'planned' })]);
+  it('writes is_active=false for a planned situation with a past/reached start', async () => {
+    await service.reconcile([
+      situation({
+        validityStatus: 'planned',
+        startsAt: new Date('2020-01-01T00:00:00Z'), // already reached
+      }),
+    ]);
     expect(upsertedRow().is_active).toBe(false);
+  });
+
+  it('keeps a planned situation with a FUTURE start active (so it can be previewed)', async () => {
+    await service.reconcile([
+      situation({
+        validityStatus: 'planned',
+        startsAt: new Date('2099-01-01T00:00:00Z'), // future window
+      }),
+    ]);
+    // is_active stays true; the active_on time-window hides it now but
+    // surfaces it for a future-date preview.
+    expect(upsertedRow().is_active).toBe(true);
   });
 
   it('keeps is_active=true for active / time-window-governed situations', async () => {
@@ -239,6 +256,20 @@ describe('NapReconcileService', () => {
       situation({ validityStatus: 'definedByValidityTimeSpecification' }),
     ]);
     expect(upsertedRow().is_active).toBe(true);
+  });
+
+  it('preserves the existing starts_at on update when the feed omits a start time', async () => {
+    const originalStart = new Date('2026-05-01T00:00:00Z');
+    txRepo.find.mockResolvedValueOnce([
+      {
+        external_id: 'ndic-1',
+        first_seen_at: new Date('2026-05-01T00:00:00Z'),
+        starts_at: originalStart,
+      },
+    ]);
+    await service.reconcile([situation({ startsAt: null })]);
+    // Not pushed forward to the batch time.
+    expect(upsertedRow().starts_at).toEqual(originalStart);
   });
 
   it('deactivates feed rows absent from the snapshot and reports the count', async () => {

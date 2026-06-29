@@ -94,6 +94,7 @@ export class NapReconcileService {
             select: {
               external_id: true,
               first_seen_at: true,
+              starts_at: true,
               geom: true,
               needs_location_decoding: true,
               raw_location_ref: true,
@@ -131,27 +132,43 @@ export class NapReconcileService {
         }
         if (needsLocationDecoding) needsDecoding++;
 
+        // Preserve the existing start time on update when the feed omits
+        // one — otherwise a continuously-present no-start closure would
+        // have its `starts_at` pushed forward to the batch time every
+        // poll, making `active_on` queries for earlier instants miss it
+        // and churning the `starts_at DESC` order.
+        const startsAt = s.startsAt ?? ex?.starts_at ?? batchTime;
+
+        // A snapshot row is live UNLESS DATEX marks it `suspended`, or it
+        // is `planned` without a *future* start. The read paths filter on
+        // `is_active` THEN the `active_on` window — so a planned closure
+        // with a real future window stays `is_active = true` and the
+        // window correctly hides it now while still allowing future-date
+        // previews; a planned row with a reached/omitted start (where the
+        // window would otherwise show it now) is forced inactive.
+        // `active` / `definedByValidityTimeSpecification` stay active.
+        const startsInFuture = startsAt.getTime() > batchTime.getTime();
+        let isActive: boolean;
+        if (s.validityStatus === 'suspended') {
+          isActive = false;
+        } else if (s.validityStatus === 'planned') {
+          isActive = startsInFuture;
+        } else {
+          isActive = true;
+        }
+
         return {
           title: s.title,
           reason: s.reason,
           severity: s.severity,
           geom,
           country_code: this.config.countryCode,
-          starts_at: s.startsAt ?? batchTime,
+          starts_at: startsAt,
           ends_at: s.endsAt,
           validity_status: s.validityStatus,
           needs_location_decoding: needsLocationDecoding,
           raw_location_ref: s.rawLocationRef ?? null,
-          // A situation present in the snapshot is live UNLESS DATEX
-          // marks it `suspended` or `planned` (planned = not in force
-          // yet) — the public read paths filter on `is_active` + the
-          // time window, not `validity_status`, so such a record with
-          // geometry (and a reached/omitted start time) would otherwise
-          // show on the map and in route-closure warnings. `active` and
-          // `definedByValidityTimeSpecification` stay active (the window
-          // governs the latter).
-          is_active:
-            s.validityStatus !== 'suspended' && s.validityStatus !== 'planned',
+          is_active: isActive,
           last_seen_at: batchTime,
           source,
           external_id: s.externalId,
