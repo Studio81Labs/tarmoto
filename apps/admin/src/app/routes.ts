@@ -13,7 +13,7 @@ export const routes: AdminRoute[] = [
   { key: "users", label: "Users", minRole: "support" },
   { key: "administrators", label: "Administrators", minRole: "admin" },
   { key: "feature-flags", label: "Feature Flags", minRole: "admin" },
-  { key: "content", label: "Content" },
+  { key: "content", label: "Content", minRole: "support" },
 ];
 
 function currentKey(): string {

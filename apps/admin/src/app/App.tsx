@@ -9,6 +9,7 @@ import { OverviewScreen } from "../screens/OverviewScreen.js";
 import { UsersScreen } from "../screens/UsersScreen.js";
 import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
 import { FeatureFlagsScreen } from "../screens/FeatureFlagsScreen.js";
+import { ContentScreen } from "../screens/ContentScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 import { canAccess } from "../lib/roleRank.js";
 
@@ -92,6 +93,8 @@ export function App() {
             />
           ) : active === "feature-flags" ? (
             <FeatureFlagsScreen />
+          ) : active === "content" ? (
+            <ContentScreen currentRole={currentUser.role} />
           ) : (
             <section>
               <Heading as="h2">
