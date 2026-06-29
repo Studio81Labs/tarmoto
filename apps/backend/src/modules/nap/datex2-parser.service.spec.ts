@@ -89,6 +89,32 @@ describe('Datex2ParserService', () => {
     ).toThrow(/Unrecognized NAP snapshot/);
   });
 
+  it('steps a 3D posList by its srsDimension (height does not bleed in)', () => {
+    const xml = `<?xml version="1.0"?>
+      <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">
+        <d2:payloadPublication>
+          <d2:situation id="S">
+            <d2:situationRecord id="R" xsi:type="RoadOrCarriagewayOrLaneManagement">
+              <d2:roadOrCarriagewayOrLaneManagementType>carriagewayClosed</d2:roadOrCarriagewayOrLaneManagementType>
+              <d2:groupOfLocations>
+                <d2:gmlLineString>
+                  <d2:posList srsDimension="3">49.20 16.60 300 49.25 16.70 310</d2:posList>
+                </d2:gmlLineString>
+              </d2:groupOfLocations>
+            </d2:situationRecord>
+          </d2:situation>
+        </d2:payloadPublication>
+      </d2:d2LogicalModel>`;
+    const [rec] = parser.parse(xml);
+    expect(rec.geometry).toEqual({
+      type: 'LineString',
+      coordinates: [
+        [16.6, 49.2],
+        [16.7, 49.25],
+      ],
+    });
+  });
+
   it('returns [] for a genuine publication with zero situations', () => {
     const empty = `<?xml version="1.0"?>
       <d2:d2LogicalModel xmlns:d2="http://datex2.eu/schema/2/2_0">

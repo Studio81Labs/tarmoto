@@ -233,12 +233,15 @@ export class Datex2ParserService {
     if (!node || typeof node !== 'object') return null;
     const n = node as Record<string, unknown>;
 
-    // GML posList: "lat lon lat lon ..." → GeoJSON wants [lon, lat].
-    const posList = (n.posList ?? n['#text']) as string | undefined;
-    if (typeof posList === 'string') {
-      const nums = posList.trim().split(/\s+/).map(Number);
+    // GML posList: "lat lon [height] lat lon [height] ..." → GeoJSON wants
+    // [lon, lat]. Tuples are `srsDimension` wide (default 2); a 3D posList
+    // (`lat lon height`) must be stepped by 3 or the height bleeds into
+    // the next point's lat/lon and the closure lands in the wrong place.
+    const { text, dim } = this.readPosList(n);
+    if (text !== null) {
+      const nums = text.trim().split(/\s+/).map(Number);
       const out: [number, number][] = [];
-      for (let i = 0; i + 1 < nums.length; i += 2) {
+      for (let i = 0; i + 1 < nums.length; i += dim) {
         out.push([nums[i + 1], nums[i]]);
       }
       return out.length ? out : null;
@@ -251,6 +254,41 @@ export class Datex2ParserService {
         (p) => [Number(p.longitude), Number(p.latitude)] as [number, number],
       );
     return points.length ? points : null;
+  }
+
+  /**
+   * Extract the posList text and its `srsDimension` (tuple width). The
+   * attribute can sit on the LineString node or on the posList element
+   * itself (fast-xml-parser turns `<posList srsDimension="3">…` into
+   * `{ '@_srsDimension': '3', '#text': '…' }`). Defaults to 2.
+   */
+  private readPosList(n: Record<string, unknown>): {
+    text: string | null;
+    dim: number;
+  } {
+    const parseDim = (v: unknown): number | null => {
+      const d =
+        typeof v === 'string' || typeof v === 'number' ? Number(v) : NaN;
+      return Number.isInteger(d) && d >= 2 ? d : null;
+    };
+    const nodeDim = parseDim(n['@_srsDimension']);
+
+    const posList = n.posList;
+    if (typeof posList === 'string') {
+      return { text: posList, dim: nodeDim ?? 2 };
+    }
+    if (posList && typeof posList === 'object') {
+      const p = posList as Record<string, unknown>;
+      return {
+        text: typeof p['#text'] === 'string' ? p['#text'] : null,
+        dim: parseDim(p['@_srsDimension']) ?? nodeDim ?? 2,
+      };
+    }
+    // The node itself may be the posList element (text + attribute).
+    if (typeof n['#text'] === 'string') {
+      return { text: n['#text'], dim: nodeDim ?? 2 };
+    }
+    return { text: null, dim: nodeDim ?? 2 };
   }
 
   private extractComment(rec: Record<string, unknown>): string | null {
