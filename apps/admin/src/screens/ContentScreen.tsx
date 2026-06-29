@@ -92,9 +92,29 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
     {
       key: "photos",
       label: "Photos",
-      size: "80px",
+      size: "160px",
       render: (row) =>
-        row.photoUrls.length ? String(row.photoUrls.length) : "—",
+        row.photoUrls.length ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {row.photoUrls.map((url, i) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open photo ${i + 1}`}
+              >
+                <img
+                  src={url}
+                  alt={`Attachment ${i + 1}`}
+                  className="h-9 w-9 rounded border border-line object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        ) : (
+          "—"
+        ),
     },
     {
       key: "status",

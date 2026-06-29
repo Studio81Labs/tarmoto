@@ -18,7 +18,7 @@ vi.mock("../data/useAdminContent.js", () => ({
           authorId: "u1",
           authorName: "Alice",
           text: "pothole",
-          photoUrls: [],
+          photoUrls: ["https://cdn.tarmoto.app/hazard-photos/p1.jpg"],
           createdAt: "2026-01-01T00:00:00Z",
           status: "visible",
           moderationReason: null,
@@ -51,6 +51,16 @@ describe("ContentScreen", () => {
     render(<ContentScreen currentRole="admin" />);
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("pothole")).toBeInTheDocument();
+  });
+
+  it("renders attachment thumbnails linking to the photo URL", () => {
+    render(<ContentScreen currentRole="admin" />);
+    const link = screen.getByRole("link", { name: /attachment 1/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://cdn.tarmoto.app/hazard-photos/p1.jpg",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
   });
 
   it("hides the delete control for support-level admins", () => {
