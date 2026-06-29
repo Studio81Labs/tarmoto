@@ -51,17 +51,17 @@ import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import DeviceInfo from "react-native-device-info";
 import HazardReportFab from "@/components/HazardReportFab";
 import SurfaceTagFab from "@/components/SurfaceTagFab";
+import { meetsQualityThreshold, qualityLabel } from "@/theme";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  meetsQualityThreshold,
-  qualityColor,
-  qualityLabel,
-  shadows,
-  spacing,
-} from "@/theme";
+  ACCENT,
+  brandColorsDark,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  qualityBrandColor,
+  QUALITY_COLORS,
+  statusFg,
+} from "@/theme/brand";
 import { useFormattedDuration, useKeepAwake } from "@/hooks";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
@@ -87,6 +87,13 @@ type RideActiveNav = NativeStackNavigationProp<
   "RideActive"
 >;
 type IconName = ComponentProps<typeof Icon>["name"];
+
+// Always-dark immersive HUD → the brand night palette. On this near-black
+// surface the Q1–Q5 ramp clears AA as text/icon, so the quality card keeps
+// the ramp directly (rule #4) rather than the swatch-dot treatment that the
+// cream surfaces need.
+const t = brandColorsDark;
+const RECORDING_RED = QUALITY_COLORS[0];
 
 const HAPTIC_CONFIG = {
   enableVibrateFallback: true,
@@ -534,19 +541,22 @@ export default function RideActiveScreen() {
   const distanceLabel = formatDistanceKm(distance);
   const hasQuality = currentQuality !== null;
   const qLabel = hasQuality ? qualityLabel(qualityScore) : "Listening…";
-  const qColor = hasQuality ? qualityColor(qualityScore) : colors.textTertiary;
+  const qColor = hasQuality ? qualityBrandColor(qualityScore) : t.dim;
   const surface = currentQuality?.surface_type ?? null;
 
   return (
     <View
-      style={[styles.container, { paddingBottom: spacing.xl + insets.bottom }]}
+      style={[
+        styles.container,
+        { paddingBottom: brandSpacing.s5 + insets.bottom },
+      ]}
       accessibilityLabel="Active ride HUD"
     >
       <View style={styles.header}>
         <Icon
           name="record-circle-outline"
           size={14}
-          color={colors.danger}
+          color={RECORDING_RED}
           accessibilityElementsHidden
         />
         <Text style={styles.headerLabel}>RECORDING</Text>
@@ -557,14 +567,14 @@ export default function RideActiveScreen() {
           accessibilityLabel="Open group ride"
           style={styles.groupRideToggle}
         >
-          <Icon name="account-group" size={20} color={colors.primary} />
+          <Icon name="account-group" size={20} color={ACCENT} />
         </TouchableOpacity>
         <VoiceMuteToggle />
       </View>
 
       {startError ? (
         <View style={styles.warningBanner}>
-          <Icon name="cloud-off-outline" size={16} color={colors.warning} />
+          <Icon name="cloud-off-outline" size={16} color={QUALITY_COLORS[1]} />
           <Text style={styles.warningText}>{startError}</Text>
         </View>
       ) : null}
@@ -574,7 +584,7 @@ export default function RideActiveScreen() {
           style={styles.bikeChip}
           accessibilityLabel={`Active bike ${activeBike.make} ${activeBike.model}`}
         >
-          <Icon name="motorbike" size={16} color={colors.primary} />
+          <Icon name="motorbike" size={16} color={t.dim} />
           <Text style={styles.bikeChipText} numberOfLines={1}>
             {`${activeBike.make} ${activeBike.model}`.trim()}
           </Text>
@@ -607,7 +617,7 @@ export default function RideActiveScreen() {
         <View
           style={[
             styles.qualityIconWrap,
-            { backgroundColor: hasQuality ? qColor + "22" : colors.bgElevated },
+            { backgroundColor: hasQuality ? qColor + "22" : t.raised2 },
           ]}
         >
           <Icon
@@ -646,13 +656,13 @@ export default function RideActiveScreen() {
           accessibilityRole="button"
           accessibilityLabel="Recalibrate lean angle"
         >
-          <Icon name="crosshairs-gps" size={18} color={colors.primary} />
+          <Icon name="crosshairs-gps" size={18} color={ACCENT} />
           <Text style={styles.calibrateBtnLabel}>Calibrate</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.segmentRow}>
-        <Icon name="counter" size={18} color={colors.textTertiary} />
+        <Icon name="counter" size={18} color={t.mute} />
         <Text style={styles.segmentText}>
           {segmentCount} segment{segmentCount === 1 ? "" : "s"} recorded
         </Text>
@@ -667,7 +677,7 @@ export default function RideActiveScreen() {
         accessibilityLabel="Stop ride"
         disabled={isStopping}
       >
-        <Icon name="stop-circle" size={22} color={colors.textInverse} />
+        <Icon name="stop-circle" size={22} color={t.fg} />
         <Text style={styles.stopLabel}>
           {isStopping ? "Stopping…" : "Stop ride"}
         </Text>
@@ -710,7 +720,7 @@ function VoiceMuteToggle() {
       <Icon
         name={muted ? "volume-off" : "volume-high"}
         size={20}
-        color={muted ? colors.textTertiary : colors.primary}
+        color={muted ? t.mute : ACCENT}
       />
     </TouchableOpacity>
   );
@@ -719,15 +729,15 @@ function VoiceMuteToggle() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
-    padding: spacing.xl,
-    gap: spacing.lg,
+    backgroundColor: t.bg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s4,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingTop: spacing.md,
+    gap: brandSpacing.s2,
+    paddingTop: brandSpacing.s3,
   },
   headerSpacer: {
     flex: 1,
@@ -738,9 +748,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   groupRideToggle: {
     width: 40,
@@ -748,97 +758,104 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   headerLabel: {
-    color: colors.danger,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    color: RECORDING_RED,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "700",
     letterSpacing: 1,
   },
   warningBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s2,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.warning,
+    borderColor: QUALITY_COLORS[1],
   },
   warningText: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     flex: 1,
   },
   bikeChip: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s1,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.lg,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   bikeChipText: {
-    color: colors.textPrimary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "600",
     maxWidth: 240,
   },
   speedBlock: {
     alignItems: "center",
-    paddingVertical: spacing.lg,
+    paddingVertical: brandSpacing.s4,
   },
   speedValue: {
-    color: colors.textPrimary,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
     fontSize: 120,
-    fontWeight: fontWeight.black,
+    fontWeight: "800",
     lineHeight: 130,
   },
   speedUnit: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "600",
     letterSpacing: 1,
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
   },
   statBlock: {
     flex: 1,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
+    padding: brandSpacing.s4,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   statLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
-    marginTop: spacing.xs,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 24,
+    fontWeight: "700",
+    marginTop: brandSpacing.s1,
   },
   qualityCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    borderRadius: brandRadii.lg,
+    backgroundColor: t.raised,
     borderWidth: 1,
   },
   qualityIconWrap: {
@@ -853,67 +870,75 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   qualityLabel: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
   },
   qualitySurface: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   leanRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s4,
+    borderRadius: brandRadii.lg,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   leanBlock: {
     flex: 1,
     gap: 2,
   },
   leanLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     letterSpacing: 0.6,
   },
   leanValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 24,
+    fontWeight: "700",
   },
   leanHint: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   calibrateBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.pill,
+    gap: brandSpacing.s1,
+    minHeight: 44,
+    paddingVertical: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.bgCard,
+    borderColor: ACCENT,
+    backgroundColor: t.raised,
   },
   calibrateBtnLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    color: ACCENT,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
   },
   segmentRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   segmentText: {
-    color: colors.textTertiary,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "500",
   },
   stopBtnSpacer: {
     flex: 1,
@@ -922,31 +947,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.danger,
-    ...shadows.button,
+    gap: brandSpacing.s2,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s4,
+    borderRadius: brandRadii.pill,
+    backgroundColor: statusFg.danger,
+    // The deep danger fill keeps the cream label readable (~6:1) but only
+    // reaches ~2.86:1 against the night background, so the destructive pill
+    // would recede on the dark HUD. A brighter Q1-red ring delineates the
+    // control shape (~5.9:1 on the night surface).
+    borderWidth: 2,
+    borderColor: QUALITY_COLORS[0],
   },
   stopLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   hazardFab: {
     position: "absolute",
-    right: spacing.lg,
+    right: brandSpacing.s4,
     // Sit above the Stop-ride pill so a long-press on the FAB doesn't
     // overlap the destructive Stop-ride hitbox.
-    bottom: spacing.section + spacing.lg,
+    bottom: brandSpacing.s10 + brandSpacing.s4,
   },
   // Research issue #7 — second FAB stacked above the hazard FAB so
   // both are reachable with a thumb on a handlebar mount. Using a
-  // 60+spacing.md offset matches the FAB diameter (60) plus the gap
-  // we want between the two pills.
+  // 60+s3 offset matches the FAB diameter (60) plus the gap we want
+  // between the two pills.
   surfaceTagFab: {
     position: "absolute",
-    right: spacing.lg,
-    bottom: spacing.section + spacing.lg + 60 + spacing.md,
+    right: brandSpacing.s4,
+    bottom: brandSpacing.s10 + brandSpacing.s4 + 60 + brandSpacing.s3,
   },
 });

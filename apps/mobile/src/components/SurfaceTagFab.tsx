@@ -11,7 +11,8 @@
  * ground truth to train against. The FAB is intentionally distinct
  * from the hazard FAB:
  *
- *   - blue (info colour) instead of red — different action class
+ *   - accent disc (with an ink glyph) instead of the red hazard disc —
+ *     a different action class
  *   - "road-variant" icon instead of "alert-octagon"
  *   - second tile-tap is a confirmation, not a navigation, so the
  *     rider stays on the HUD throughout
@@ -34,15 +35,20 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import { SURFACE_LABELS, type SurfaceLabel } from "@tarmoto/shared";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  shadows,
-  spacing,
-} from "@/theme";
+  ACCENT,
+  brandColorsLight,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+} from "@/theme/brand";
 
 type IconName = ComponentProps<typeof Icon>["name"];
+
+// The tag picker is a modal dialog over the dark ride HUD → a cream brand
+// dialog. The FAB disc is the accent (distinct from the red hazard FAB),
+// with an ink glyph: ink (`invBg`) on the accent disc clears ~7.4:1, whereas
+// a cream glyph would only reach ~2.5:1 — below the 3:1 non-text floor.
+const t = brandColorsLight;
 
 const HAPTIC_OPTIONS = {
   enableVibrateFallback: true,
@@ -98,7 +104,7 @@ export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
         accessibilityLabel="Tag road surface"
         accessibilityHint="Open the surface tagging menu to label the road you are on right now."
       >
-        <Icon name="road-variant" size={26} color={colors.textInverse} />
+        <Icon name="road-variant" size={26} color={t.invBg} />
       </TouchableOpacity>
 
       <Modal
@@ -129,11 +135,7 @@ export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
                     accessibilityRole="button"
                     accessibilityLabel={`Tag as ${display.title}`}
                   >
-                    <Icon
-                      name={display.icon}
-                      size={26}
-                      color={colors.primary}
-                    />
+                    <Icon name={display.icon} size={26} color={t.fg} />
                     <Text style={styles.menuTileLabel}>{display.title}</Text>
                   </TouchableOpacity>
                 );
@@ -151,62 +153,63 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.info,
+    backgroundColor: ACCENT,
     alignItems: "center",
     justifyContent: "center",
-    ...shadows.button,
   },
   menuBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.55)",
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    padding: brandSpacing.s5,
   },
   menuCard: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
+    backgroundColor: t.raised,
+    borderRadius: brandRadii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.card,
+    borderColor: t.line,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   menuTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "700",
   },
   menuSubtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
     lineHeight: 18,
   },
   menuGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   menuTile: {
     flexBasis: "30%",
     flexGrow: 1,
     minHeight: 80,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgElevated,
+    paddingVertical: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s2,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
+    gap: brandSpacing.s1,
   },
   menuTileLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
     textAlign: "center",
   },
 });
