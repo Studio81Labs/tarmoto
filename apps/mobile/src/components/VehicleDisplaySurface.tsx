@@ -1,10 +1,19 @@
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
-import { colors, fontSize, fontWeight, spacing } from "@/theme";
+import {
+  ACCENT,
+  brandColorsDark,
+  brandFonts,
+  brandSpacing,
+  QUALITY_COLORS,
+} from "@/theme/brand";
 import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
 import { MANEUVER_LABELS } from "@/services/navigation";
+
+// Always-dark in-vehicle (CarPlay / Android Auto) nav card → night palette.
+const t = brandColorsDark;
 
 const CARD_WIDTH = 320;
 const CARD_HEIGHT = 176;
@@ -139,7 +148,7 @@ export default function VehicleDisplaySurface() {
           <Svg width={CARD_WIDTH} height={CARD_HEIGHT}>
             <Path
               d={projection.path}
-              stroke={snapshot.offRoute ? colors.warning : colors.primary}
+              stroke={snapshot.offRoute ? QUALITY_COLORS[1] : ACCENT}
               strokeWidth={8}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -150,8 +159,8 @@ export default function VehicleDisplaySurface() {
                 cx={projection.marker.x}
                 cy={projection.marker.y}
                 r={7}
-                fill={colors.white}
-                stroke={colors.bg}
+                fill={t.fg}
+                stroke={t.bg}
                 strokeWidth={3}
               />
             ) : null}
@@ -229,41 +238,44 @@ function Stat({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
-    padding: spacing.lg,
-    gap: spacing.md,
+    backgroundColor: t.bg,
+    padding: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   empty: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "600",
   },
   header: {
     gap: 2,
   },
   kicker: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   title: {
-    color: colors.textPrimary,
-    fontSize: fontSize.h2,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 22,
+    fontWeight: "800",
   },
   mapCard: {
     borderRadius: 18,
     overflow: "hidden",
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: t.line,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -274,90 +286,101 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   routeFallbackText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
   },
   overlayCard: {
     position: "absolute",
-    left: spacing.md,
-    bottom: spacing.md,
-    right: spacing.md,
+    left: brandSpacing.s3,
+    bottom: brandSpacing.s3,
+    right: brandSpacing.s3,
     borderRadius: 14,
-    backgroundColor: "rgba(7, 10, 16, 0.92)",
+    backgroundColor: "rgba(14, 14, 16, 0.92)",
     borderWidth: 1,
-    borderColor: colors.borderLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderColor: t.line,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
   },
   overlayDistance: {
-    color: colors.white,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
     fontSize: 28,
-    fontWeight: fontWeight.black,
+    fontWeight: "800",
   },
   overlayLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 16,
+    fontWeight: "600",
   },
   overlayRoad: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
   },
   offRouteBadge: {
     position: "absolute",
-    top: spacing.md,
-    left: spacing.md,
+    top: brandSpacing.s3,
+    left: brandSpacing.s3,
     borderRadius: 999,
-    backgroundColor: colors.danger,
-    paddingHorizontal: spacing.sm,
+    backgroundColor: QUALITY_COLORS[0],
+    paddingHorizontal: brandSpacing.s2,
     paddingVertical: 6,
   },
   offRouteLabel: {
-    color: colors.white,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "700",
   },
   banner: {
     position: "absolute",
-    top: spacing.md,
-    right: spacing.md,
+    top: brandSpacing.s3,
+    right: brandSpacing.s3,
     maxWidth: 220,
     borderRadius: 12,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: brandSpacing.s2,
+    paddingVertical: brandSpacing.s1,
   },
   bannerSuccess: {
-    backgroundColor: colors.success,
+    backgroundColor: QUALITY_COLORS[4],
   },
   bannerDanger: {
-    backgroundColor: colors.danger,
+    backgroundColor: QUALITY_COLORS[0],
   },
   bannerLabel: {
-    color: colors.white,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    // Ink reads on both the bright Q5 green and Q1 red banner fills (the
+    // bright ramp colours clear shape contrast on the dark card; ink clears
+    // text contrast on the fills — a cream label would fail on the green).
+    color: t.invFg,
+    fontFamily: brandFonts.sans,
+    fontSize: 12,
+    fontWeight: "700",
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: brandSpacing.s2,
   },
   stat: {
     flex: 1,
     borderRadius: 14,
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderColor: t.line,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
   },
   statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 14,
+    fontWeight: "700",
   },
   statLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
