@@ -143,12 +143,16 @@ describe('ClosuresService', () => {
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
     });
 
-    it('does not apply the is_active filter when include_past is true', async () => {
+    it('still excludes inactive feed rows when include_past is true', async () => {
       await service.list({ include_past: true });
       const calls = mockQb.andWhere.mock.calls as [string, unknown][];
-      expect(calls.some((c) => /is_active = true/.test(c[0]))).toBe(false);
-      // ...but undecoded rows are still excluded even in history view.
+      // include_past drops ONLY the time-window filter, not is_active /
+      // geom — inactive feed history must not be exposed publicly.
+      expect(calls.some((c) => /is_active = true/.test(c[0]))).toBe(true);
       expect(calls.some((c) => /geom IS NOT NULL/.test(c[0]))).toBe(true);
+      expect(calls.some((c) => /starts_at <= :activeOn/.test(c[0]))).toBe(
+        false,
+      );
     });
 
     it('passes the parsed bbox into the spatial filter', async () => {

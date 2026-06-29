@@ -44,8 +44,11 @@ export class ClosuresService {
 
     // Undecoded Alert-C/OpenLR feed rows (#743) have no geometry — never
     // surface them: they can't be rendered and `toDto` would crash on a
-    // null `geom`.
-    qb.andWhere('c.geom IS NOT NULL');
+    // null `geom`. And a feed row the reconcile pass deactivated (dropped
+    // from the snapshot) is kept for audit but is NOT public — this filter
+    // is unconditional, so `include_past` can't expose inactive feed
+    // history. (Inactive history would belong behind an admin endpoint.)
+    qb.andWhere('c.geom IS NOT NULL').andWhere('c.is_active = true');
 
     if (query.bbox) {
       const parsed = this.parseBbox(query.bbox);
@@ -55,18 +58,15 @@ export class ClosuresService {
       );
     }
 
-    // "include_past" opts out of the active-on filter entirely — the
-    // default is to only return closures in effect right now so the
-    // planner map never shows history. A live closure must also be
-    // `is_active` — a feed row deactivated by the reconcile pass (dropped
-    // from the snapshot) is kept for audit but not shown.
+    // "include_past" opts out of ONLY the active-on time-window filter —
+    // the default is to return closures in effect right now so the planner
+    // map never shows history.
     if (!query.include_past) {
       const activeOn = query.active_on ? new Date(query.active_on) : new Date();
-      qb.andWhere('c.is_active = true')
-        .andWhere('c.starts_at <= :activeOn', { activeOn })
-        .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', {
-          activeOn,
-        });
+      qb.andWhere('c.starts_at <= :activeOn', { activeOn }).andWhere(
+        '(c.ends_at IS NULL OR c.ends_at >= :activeOn)',
+        { activeOn },
+      );
     }
 
     if (query.severity) {
