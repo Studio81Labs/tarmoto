@@ -15,6 +15,7 @@ import {
   useDeleteFlag,
   useUpdateFlag,
 } from "../data/useAdminFlags.js";
+import { Dialog } from "../components/Dialog.js";
 
 type FeatureFlag = components["schemas"]["FeatureFlagDto"];
 
@@ -36,6 +37,7 @@ export function FeatureFlagsScreen() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   // New-flag form state
+  const [addOpen, setAddOpen] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
@@ -137,6 +139,7 @@ export function FeatureFlagsScreen() {
         onSuccess: () => {
           setNewKey("");
           setNewDescription("");
+          setAddOpen(false);
           void refetch();
         },
         onError: (err: unknown) => {
@@ -159,7 +162,23 @@ export function FeatureFlagsScreen() {
 
   return (
     <section>
-      <PageHeader title="Feature Flags" />
+      <PageHeader
+        title="Feature Flags"
+        right={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setNewKey("");
+              setNewDescription("");
+              setCreateError(null);
+              setAddOpen(true);
+            }}
+          >
+            New Flag
+          </Button>
+        }
+      />
       {error ? (
         <Alert
           intent="danger"
@@ -167,12 +186,41 @@ export function FeatureFlagsScreen() {
           className="mb-4"
         />
       ) : null}
-      <div className="mb-8 max-w-md rounded-xl border border-line bg-paper p-5">
-        <h3 className="mb-4 text-sm font-semibold text-ink">New Flag</h3>
+
+      <Dialog
+        open={addOpen}
+        title="New Feature Flag"
+        onClose={() => setAddOpen(false)}
+        busy={createMutation.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setAddOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="new-flag-form"
+              variant="primary"
+              size="sm"
+              loading={createMutation.isPending}
+            >
+              Create Flag
+            </Button>
+          </>
+        }
+      >
         {createError ? (
           <Alert intent="danger" title={createError} className="mb-4" compact />
         ) : null}
-        <form onSubmit={handleCreate} className="flex flex-col gap-3">
+        <form
+          id="new-flag-form"
+          onSubmit={handleCreate}
+          className="flex flex-col gap-3"
+        >
           <Input
             value={newKey}
             onChange={setNewKey}
@@ -185,15 +233,9 @@ export function FeatureFlagsScreen() {
             placeholder="Optional description"
             ariaLabel="Description"
           />
-          <Button
-            type="submit"
-            variant="primary"
-            loading={createMutation.isPending}
-          >
-            Create Flag
-          </Button>
         </form>
-      </div>
+      </Dialog>
+
       {actionError ? (
         <Alert intent="danger" title={actionError} className="mb-4" compact />
       ) : null}

@@ -16,6 +16,7 @@ import {
   usePatchAdmin,
 } from "../data/useAdminAdmins.js";
 import { ROLE_RANK } from "../lib/roleRank.js";
+import { Dialog } from "../components/Dialog.js";
 
 type AdminRow = components["schemas"]["AdminRowDto"];
 type AdminRoleType = AdminRow["role"];
@@ -95,6 +96,7 @@ export function AdministratorsScreen({
   const [createError, setCreateError] = useState<string | null>(null);
 
   // New-admin form state
+  const [addOpen, setAddOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<AdminRoleType>("support");
   const [newMode, setNewMode] = useState<AdminMode>("sso-only");
@@ -232,6 +234,7 @@ export function AdministratorsScreen({
           setNewPassword("");
           setNewRole("support");
           setNewMode("sso-only");
+          setAddOpen(false);
           void refetch();
         },
         onError: (err: unknown) => {
@@ -263,7 +266,25 @@ export function AdministratorsScreen({
 
   return (
     <section>
-      <PageHeader title="Administrators" />
+      <PageHeader
+        title="Administrators"
+        right={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setNewEmail("");
+              setNewPassword("");
+              setNewRole("support");
+              setNewMode("sso-only");
+              setCreateError(null);
+              setAddOpen(true);
+            }}
+          >
+            Add Administrator
+          </Button>
+        }
+      />
       {error ? (
         <Alert
           intent="danger"
@@ -286,12 +307,40 @@ export function AdministratorsScreen({
         }
         ariaLabel="Administrators"
       />
-      <div className="mt-8 max-w-md rounded-xl border border-line bg-paper p-5">
-        <h3 className="mb-4 text-sm font-semibold text-ink">New Admin</h3>
+      <Dialog
+        open={addOpen}
+        title="Add Administrator"
+        onClose={() => setAddOpen(false)}
+        busy={createMutation.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setAddOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="new-admin-form"
+              variant="primary"
+              size="sm"
+              loading={createMutation.isPending}
+            >
+              Add Administrator
+            </Button>
+          </>
+        }
+      >
         {createError ? (
           <Alert intent="danger" title={createError} className="mb-4" compact />
         ) : null}
-        <form onSubmit={handleCreate} className="flex flex-col gap-3">
+        <form
+          id="new-admin-form"
+          onSubmit={handleCreate}
+          className="flex flex-col gap-3"
+        >
           <Input
             value={newEmail}
             onChange={setNewEmail}
@@ -328,15 +377,8 @@ export function AdministratorsScreen({
               className="w-full rounded-lg border border-line-strong bg-paper px-3 py-2 font-sans text-sm text-ink placeholder:text-fg-mute transition focus:border-accent focus:outline-none"
             />
           ) : null}
-          <Button
-            type="submit"
-            variant="primary"
-            loading={createMutation.isPending}
-          >
-            Add Admin
-          </Button>
         </form>
-      </div>
+      </Dialog>
     </section>
   );
 }

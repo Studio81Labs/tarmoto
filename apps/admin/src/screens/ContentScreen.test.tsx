@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ContentScreen } from "./ContentScreen.js";
 
@@ -73,10 +73,19 @@ describe("ContentScreen", () => {
     expect(screen.getByText("Delete")).toBeInTheDocument();
   });
 
-  it("Hide button invokes hide mutation with correct path params and body, and onSuccess refetches", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("spam");
+  it("Hide opens a dialog that hides with the entered reason and refetches on success", async () => {
+    const user = userEvent.setup();
     render(<ContentScreen currentRole="admin" />);
-    await userEvent.click(screen.getByRole("button", { name: /^hide$/i }));
+    // Row action opens the confirm dialog (no mutation yet).
+    await user.click(screen.getByRole("button", { name: /^hide$/i }));
+    expect(mockHide).not.toHaveBeenCalled();
+
+    await user.type(
+      screen.getByRole("textbox", { name: /reason for hiding/i }),
+      "spam",
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^hide$/i }));
 
     expect(mockHide).toHaveBeenCalledWith(
       {
@@ -86,7 +95,6 @@ describe("ContentScreen", () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
 
-    // Invoke the captured onSuccess and verify refetch is called
     const [, { onSuccess }] = mockHide.mock.calls[0] as [
       unknown,
       { onSuccess: () => void },
@@ -97,10 +105,12 @@ describe("ContentScreen", () => {
     expect(mockRefetch).toHaveBeenCalled();
   });
 
-  it("does not hide when the reason prompt is cancelled", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue(null);
+  it("Cancel in the hide dialog does not hide", async () => {
+    const user = userEvent.setup();
     render(<ContentScreen currentRole="admin" />);
-    await userEvent.click(screen.getByRole("button", { name: /^hide$/i }));
+    await user.click(screen.getByRole("button", { name: /^hide$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
     expect(mockHide).not.toHaveBeenCalled();
   });
 });

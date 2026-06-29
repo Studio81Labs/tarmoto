@@ -68,7 +68,7 @@ export function App() {
     canAccess(currentUser.role, activeRoute.minRole);
 
   return (
-    <div className="flex min-h-dvh bg-cream">
+    <div className="flex h-dvh overflow-hidden bg-cream">
       <Sidebar routes={visibleRoutes} active={active} onNavigate={navigate} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
@@ -76,7 +76,7 @@ export function App() {
           role={currentUser.role}
           onLogout={auth.logout}
         />
-        <main className="flex-1 overflow-auto p-6">
+        <main className="min-h-0 flex-1 overflow-auto p-6">
           {!canViewActive ? (
             <Alert
               intent="warning"
