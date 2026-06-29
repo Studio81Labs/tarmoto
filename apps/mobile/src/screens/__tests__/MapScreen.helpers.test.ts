@@ -5,6 +5,7 @@ import {
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
   filterDismissedFromRest,
+  mergeHazardsRest,
   FUN_ZONE_COLORS,
   FUN_ZONE_SCORE_BREAKS,
   funZoneFillStyle,
@@ -584,5 +585,171 @@ describe("applyHazardAlert", () => {
       severity: "dismissed" as const,
     };
     expect(applyHazardAlert(list, event)).toBe(list);
+  });
+});
+
+// ── mergeHazardsRest ─────────────────────────────────────────────────────────
+// Mirrors the companion's hazard-merge.test.ts cases, adapted to the mobile
+// Hazard type and MapScreen.helpers harness.
+
+describe("mergeHazardsRest", () => {
+  it("returns REST result verbatim when there are no WS arrivals or dismissals", () => {
+    const wsArrivalAt = new Map<string, number>();
+    const dismissedAt = new Map<string, number>();
+    const rest = [makeHazard({ id: "a" }), makeHazard({ id: "b" })];
+    const merged = mergeHazardsRest(rest, [], wsArrivalAt, dismissedAt, 1_000);
+    expect(merged.map((h) => h.id)).toEqual(["a", "b"]);
+  });
+
+  it("preserves a current hazard whose wsArrivalAt >= fetchStartedAt and is NOT in restResult", () => {
+    // Core race: hazard "ws-late" arrived via socket AFTER the REST fetch
+    // started. The REST snapshot predates it, so it won't be in the
+    // response — we must keep it from local state.
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>([["ws-late", 1_500]]);
+    const dismissedAt = new Map<string, number>();
+    const current = [makeHazard({ id: "ws-late" })];
+    const restResult = [makeHazard({ id: "rest-1" })];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      current,
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["rest-1", "ws-late"]);
+  });
+
+  it("drops a current hazard whose wsArrivalAt < fetchStartedAt and is NOT in restResult (stale)", () => {
+    // WS arrival predates the fetch — the server had time to include it
+    // in its snapshot. Its absence from REST means it's gone server-side;
+    // drop it rather than re-preserving a phantom.
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>([["ws-stale", 500]]);
+    const dismissedAt = new Map<string, number>();
+    const current = [makeHazard({ id: "ws-stale" })];
+    const restResult = [makeHazard({ id: "rest-1" })];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      current,
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["rest-1"]);
+  });
+
+  it("drops a dismissed-tombstoned hazard from restResult when tombstone t >= fetchStartedAt", () => {
+    // Dismissal at t=1_500 (after fetch started at t=1_000): REST snapshot
+    // predates the admin action, so the hazard is in the REST result but
+    // must be filtered before it replaces local state.
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>();
+    const dismissedAt = new Map<string, number>([["h-dismissed", 1_500]]);
+    const restResult = [
+      makeHazard({ id: "h-dismissed" }),
+      makeHazard({ id: "h-ok" }),
+    ];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      [],
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["h-ok"]);
+    // Tombstone is still live (dismissal >= fetchStartedAt).
+    expect(dismissedAt.has("h-dismissed")).toBe(true);
+  });
+
+  it("prunes a spent tombstone when its t < fetchStartedAt", () => {
+    // Dismissal at t=500 (before fetch started at t=2_000): the server
+    // already excluded the hazard from its snapshot — the tombstone entry
+    // is no longer needed and should be pruned to avoid map growth.
+    const fetchStartedAt = 2_000;
+    const wsArrivalAt = new Map<string, number>();
+    const dismissedAt = new Map<string, number>([["h-spent", 500]]);
+    const restResult = [makeHazard({ id: "h-other" })];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      [],
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["h-other"]);
+    // Spent tombstone must be pruned.
+    expect(dismissedAt.has("h-spent")).toBe(false);
+  });
+
+  it("prunes the wsArrivalAt entry once a WS-arrived hazard appears in REST", () => {
+    // The server eventually catches up and includes the hazard in its REST
+    // snapshot. At that point we no longer need the arrival entry — clear
+    // it so a future REST fetch that doesn't return the hazard won't
+    // re-preserve a now-authoritative absence.
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>([["ws-1", 1_500]]);
+    const dismissedAt = new Map<string, number>();
+    const current = [makeHazard({ id: "ws-1" })];
+    const restResult = [makeHazard({ id: "ws-1" })];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      current,
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    // Present once (from REST, not doubled).
+    expect(merged.map((h) => h.id)).toEqual(["ws-1"]);
+    // Arrival entry cleared since REST now covers it.
+    expect(wsArrivalAt.has("ws-1")).toBe(false);
+  });
+
+  it("does not preserve a current hazard with no wsArrivalAt entry (no WS origin)", () => {
+    // A hazard in current state but with no wsArrivalAt entry was loaded
+    // from a prior REST response, not via socket — don't carry it forward
+    // if REST no longer returns it (it may have expired server-side).
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>();
+    const dismissedAt = new Map<string, number>();
+    const current = [makeHazard({ id: "orphan" })];
+    const restResult = [makeHazard({ id: "rest-1" })];
+
+    const merged = mergeHazardsRest(
+      restResult,
+      current,
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["rest-1"]);
+  });
+
+  it("handles an empty REST result with a late WS arrival (preserve only the WS hazard)", () => {
+    const fetchStartedAt = 1_000;
+    const wsArrivalAt = new Map<string, number>([["ws-only", 1_200]]);
+    const dismissedAt = new Map<string, number>();
+    const current = [makeHazard({ id: "ws-only" })];
+
+    const merged = mergeHazardsRest(
+      [],
+      current,
+      wsArrivalAt,
+      dismissedAt,
+      fetchStartedAt,
+    );
+
+    expect(merged.map((h) => h.id)).toEqual(["ws-only"]);
   });
 });
