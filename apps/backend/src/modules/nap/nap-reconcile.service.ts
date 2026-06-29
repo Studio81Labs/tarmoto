@@ -43,16 +43,6 @@ import type {
 const UPSERT_CHUNK = 500;
 /** Max ids per preload `IN (...)` query (one bind parameter each). */
 const PRELOAD_CHUNK = 1000;
-/**
- * Postgres transaction-level advisory-lock key for the NAP reconcile.
- * In a multi-worker deployment the in-process overlap guard isn't enough:
- * two processes could reconcile concurrently and an older snapshot
- * finishing last would stamp a newer `last_seen_at` and re-activate
- * closures the newer snapshot had removed. This lock serialises reconciles
- * across processes; a tick that can't acquire it skips (no deactivation),
- * and the next tick re-fetches a fresh snapshot. Auto-released at COMMIT.
- */
-const RECONCILE_ADVISORY_LOCK_KEY = 743074307;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -86,22 +76,12 @@ export class NapReconcileService {
     const deduped = [...byExternalId.values()];
     const externalIds = [...byExternalId.keys()];
 
+    // Cross-process serialisation is handled one level up by NapService,
+    // which holds a session advisory lock across the whole fetch→parse→
+    // reconcile cycle — so this pass can assume it's the only reconcile
+    // running.
     const result = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(RoadClosure);
-
-      // 0) Serialise reconciles across worker processes. If another
-      //    process holds the lock, skip this tick entirely (no upsert, no
-      //    deactivation) rather than interleave two snapshots.
-      const lock = await manager.query<Array<{ locked: boolean }>>(
-        'SELECT pg_try_advisory_xact_lock($1) AS locked',
-        [RECONCILE_ADVISORY_LOCK_KEY],
-      );
-      if (!lock[0]?.locked) {
-        this.logger.warn(
-          'NAP reconcile skipped: advisory lock held by another worker',
-        );
-        return null;
-      }
 
       // 1) Preload existing feed rows (chunked `IN (...)`) so we can keep
       //    each row's original first_seen_at, count inserts vs updates,
@@ -221,18 +201,15 @@ export class NapReconcileService {
 
     const summary: NapReconcileResult = {
       parsed: situations.length,
-      inserted: result?.inserted ?? 0,
-      updated: result?.updated ?? 0,
-      deactivated: result?.deactivated ?? 0,
-      // When the reconcile is skipped (lock not acquired), nothing was
-      // examined — report 0 rather than the would-be count.
-      needsDecoding: result?.needsDecoding ?? 0,
+      inserted: result.inserted,
+      updated: result.updated,
+      deactivated: result.deactivated,
+      needsDecoding: result.needsDecoding,
     };
     this.logger.log(
-      `NAP reconcile (${source})${result ? '' : ' [skipped: locked]'}: ` +
-        `parsed=${summary.parsed} inserted=${summary.inserted} ` +
-        `updated=${summary.updated} deactivated=${summary.deactivated} ` +
-        `needsDecoding=${summary.needsDecoding}`,
+      `NAP reconcile (${source}): parsed=${summary.parsed} ` +
+        `inserted=${summary.inserted} updated=${summary.updated} ` +
+        `deactivated=${summary.deactivated} needsDecoding=${summary.needsDecoding}`,
     );
     return summary;
   }

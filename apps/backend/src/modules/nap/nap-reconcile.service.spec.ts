@@ -41,7 +41,6 @@ describe('NapReconcileService', () => {
   let updateExecute: jest.Mock;
   let updateWhere: jest.Mock;
   let updateAndWhere: jest.Mock;
-  let managerQuery: jest.Mock;
   let txRepo: {
     find: jest.Mock;
     upsert: jest.Mock;
@@ -72,9 +71,7 @@ describe('NapReconcileService', () => {
       upsert: jest.fn().mockResolvedValue({}),
       createQueryBuilder: jest.fn(() => updateQb),
     };
-    // Advisory lock acquired by default.
-    managerQuery = jest.fn().mockResolvedValue([{ locked: true }]);
-    const manager = { getRepository: () => txRepo, query: managerQuery };
+    const manager = { getRepository: () => txRepo };
     dataSource = {
       transaction: jest.fn((cb: (m: typeof manager) => Promise<unknown>) =>
         cb(manager),
@@ -260,29 +257,5 @@ describe('NapReconcileService', () => {
   it('falls back to the batch time when a situation has no start time', async () => {
     await service.reconcile([situation({ startsAt: null })]);
     expect(upsertedRow().starts_at).toBeInstanceOf(Date);
-  });
-
-  it('skips entirely when the advisory lock is held by another worker', async () => {
-    managerQuery.mockResolvedValueOnce([{ locked: false }]);
-    const result = await service.reconcile([situation()]);
-
-    // No upsert, no deactivation — the other worker owns this tick.
-    expect(txRepo.upsert).not.toHaveBeenCalled();
-    expect(updateExecute).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      parsed: 1,
-      inserted: 0,
-      updated: 0,
-      deactivated: 0,
-      needsDecoding: 0,
-    });
-  });
-
-  it('acquires a transaction-scoped advisory lock before reconciling', async () => {
-    await service.reconcile([situation()]);
-    expect(managerQuery).toHaveBeenCalledWith(
-      expect.stringContaining('pg_try_advisory_xact_lock'),
-      expect.any(Array),
-    );
   });
 });
