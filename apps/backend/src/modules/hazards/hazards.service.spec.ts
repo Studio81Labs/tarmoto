@@ -808,6 +808,38 @@ describe('HazardsService', () => {
       await expect(access(filePath)).resolves.toBeUndefined();
       expect(eventsGateway.emitHazardAlert).not.toHaveBeenCalled();
     });
+
+    it('still emits the removal broadcast when photo cleanup fails after the row delete', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = `${mockHazard.user_id}-1700000000000-purge-fail.jpg`;
+      // A directory at the managed path makes unlink throw EISDIR/EPERM
+      // (a non-ENOENT error deleteOwnedHazardPhoto rethrows), simulating an
+      // uploads-dir failure after the DB row is already gone.
+      const dirAsFile = join(tmpDir, filename);
+      await mkdir(dirAsFile, { recursive: true });
+
+      const hazardWithRelations = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        user: { display_name: 'TestRider' },
+        road_segment: null,
+      };
+      repo.findOne!.mockResolvedValueOnce(hazardWithRelations as never);
+
+      await expect(service.adminHardDelete(mockHazard.id!)).rejects.toThrow();
+
+      // Row delete succeeded and the dismissal was broadcast BEFORE the
+      // purge threw, so connected maps still prune the marker.
+      expect(repo.delete).toHaveBeenCalledWith({ id: mockHazard.id });
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ severity: 'dismissed', id: mockHazard.id }),
+      );
+
+      await rm(dirAsFile, { recursive: true, force: true });
+    });
   });
 
   describe('broadcastRemoval', () => {

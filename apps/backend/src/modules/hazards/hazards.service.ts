@@ -427,16 +427,21 @@ export class HazardsService {
     const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
     const response = this.toResponse(hazard, { reporterIsPrivate });
     await this.hazardRepo.delete({ id });
-    // Only reached when delete did not throw — safe to clean up side-effects.
+    // Delete succeeded — the row is gone from public REST. Broadcast the
+    // removal FIRST so connected maps prune the marker even if the photo
+    // cleanup below then fails (e.g. an uploads-dir permission error):
+    // a storage error must not leave a stale marker on every client.
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      ...response,
+      severity: 'dismissed',
+    });
+    // Best-effort managed-photo cleanup; a failure here surfaces to the
+    // operator but no longer suppresses the removal broadcast above.
     await deleteOwnedHazardPhoto(
       hazard.photo_url,
       hazard.user_id,
       this.isTrustedManagedOrigin,
     );
-    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
-      ...response,
-      severity: 'dismissed',
-    });
     return true;
   }
 
