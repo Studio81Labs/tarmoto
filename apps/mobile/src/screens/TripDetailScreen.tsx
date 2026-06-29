@@ -62,6 +62,7 @@ import {
   formatStatus,
   routeGeometrySignature,
   summarizeWaypoints,
+  isLastDay,
   sumDistance,
   tripToGpxInput,
 } from "./TripScreens.helpers";
@@ -274,6 +275,7 @@ export default function TripDetailScreen() {
           <DayCard
             key={day.id}
             day={day}
+            isFinalDay={isLastDay(trip.days, day.day_number)}
             onPress={() => openDay(day.day_number)}
           />
         ))
@@ -320,10 +322,19 @@ function HeaderCard({
   );
 }
 
-function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
+function DayCard({
+  day,
+  isFinalDay,
+  onPress,
+}: {
+  day: TripDay;
+  isFinalDay: boolean;
+  onPress: () => void;
+}) {
   const qColor =
     day.avg_quality > 0 ? qualityColor(day.avg_quality) : colors.textTertiary;
-  const overnightStop = summarizeWaypoints(day.waypoints).overnightStops[0];
+  const overnightStop = summarizeWaypoints(day.waypoints, isFinalDay)
+    .overnightStops[0];
   return (
     <TouchableOpacity
       style={styles.card}

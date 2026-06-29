@@ -587,62 +587,77 @@ export function buildApp(): Express {
     res.status(201).json({ id });
   });
 
-  // Seed a full trip (with optional route geometry on day 1) so e2e tests
-  // can open a trip via `?tripId=` without driving the context-menu flow.
-  // The route snapshot is stored in `trip.snapshot.days` exactly as the
-  // `/generate` endpoint does, so `serializeTripDetail` → `tripFromDetail`
-  // picks it up immediately. The auth token is required (mirrors the real
-  // POST /trips gate) so the seeded trip is owned by a real user.
+  // Seed a full trip (with optional route geometry on day 1, or multiple
+  // days via the `days` array) so e2e tests can open a trip via `?tripId=`
+  // without driving the context-menu flow. The route snapshot is stored in
+  // `trip.snapshot.days` exactly as the `/generate` endpoint does, so
+  // `serializeTripDetail` → `tripFromDetail` picks it up immediately. The
+  // auth token is required (mirrors the real POST /trips gate) so the
+  // seeded trip is owned by a real user.
+  //
+  // Two calling conventions:
+  //   • Single-day (legacy): `{ route_geometry, waypoints, distance_km? }`
+  //   • Multi-day (new): `{ days: [{ route_geometry, waypoints,
+  //     start_linked?, distance_km? }] }`
   app.post("/__test__/seed-trip", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const body = req.body ?? {};
     const id = String(body.id ?? randomUUID());
     const now = new Date().toISOString();
-    // Build optional day-1 route geometry from the request body. If
-    // `route_geometry` is supplied we embed a day-1 TripDay snapshot that
-    // `serializedTripDays` will hand back to `tripFromDetail`.
-    const routeGeometry: Array<{ lat: number; lng: number }> = Array.isArray(
-      body.route_geometry,
-    )
-      ? body.route_geometry
-      : [];
-    const waypoints: Array<{
-      id: string;
-      sequence: number;
-      lat: number;
-      lng: number;
-      name: string | null;
-      waypoint_type: string;
-      road_segment_id: null;
-      notes: null;
-      duration_min: null;
-    }> = Array.isArray(body.waypoints)
-      ? (
-          body.waypoints as Array<{
-            lat: number;
-            lng: number;
-            name?: string | null;
-            type?: string;
-          }>
-        ).map((wp, i) => ({
-          id: `seeded-wp-${id}-${i}`,
-          sequence: i,
-          lat: Number(wp.lat),
-          lng: Number(wp.lng),
-          name: wp.name ?? null,
-          waypoint_type: wp.type ?? (i === 0 ? "start" : "end"),
-          road_segment_id: null,
-          notes: null,
-          duration_min: null,
-        }))
-      : [];
-    const hasRoute = routeGeometry.length >= 2;
-    const distanceKm = hasRoute ? Number(body.distance_km ?? 125) : 0;
-    const day1 = hasRoute
-      ? {
-          id: `seeded-day-${id}-1`,
-          day_number: 1,
-          title: "Day 1",
+
+    // Helper: serialize a raw waypoint array into TripDetailWaypoint shape.
+    function serializeWaypoints(
+      rawWps: Array<{
+        lat: number;
+        lng: number;
+        name?: string | null;
+        type?: string;
+      }>,
+      tripId: string,
+      dayIndex: number,
+    ) {
+      return rawWps.map((wp, i) => ({
+        id: `seeded-wp-${tripId}-d${dayIndex + 1}-${i}`,
+        sequence: i,
+        lat: Number(wp.lat),
+        lng: Number(wp.lng),
+        name: wp.name ?? null,
+        waypoint_type: wp.type ?? (i === 0 ? "start" : "end"),
+        road_segment_id: null,
+        notes: null,
+        duration_min: null,
+      }));
+    }
+
+    let snapshotDays: unknown[] = [];
+
+    if (Array.isArray(body.days)) {
+      // ── Multi-day path ──────────────────────────────────────────────
+      type RawDay = {
+        route_geometry?: Array<{ lat: number; lng: number }>;
+        waypoints?: Array<{
+          lat: number;
+          lng: number;
+          name?: string | null;
+          type?: string;
+        }>;
+        start_linked?: boolean;
+        distance_km?: number;
+      };
+      const rawDays = body.days as RawDay[];
+      snapshotDays = rawDays.map((d, di) => {
+        const geo: Array<{ lat: number; lng: number }> = Array.isArray(
+          d.route_geometry,
+        )
+          ? d.route_geometry
+          : [];
+        const wps = Array.isArray(d.waypoints) ? d.waypoints : [];
+        const distanceKm = Number(d.distance_km ?? 125);
+        return {
+          id: `seeded-day-${id}-${di + 1}`,
+          day_number: di + 1,
+          title: `Day ${di + 1}`,
+          start_linked: d.start_linked ?? false,
           distance_km: distanceKm,
           avg_quality: 4.2,
           elevation_gain: Math.round(distanceKm * 6),
@@ -650,22 +665,59 @@ export function buildApp(): Express {
           curviness_score: 74,
           scenic_score: 80,
           estimated_time_min: Math.round(distanceKm * 1.2),
-          route_geometry: routeGeometry,
-          waypoints,
-        }
-      : null;
+          route_geometry: geo,
+          waypoints: serializeWaypoints(wps, id, di),
+        };
+      });
+    } else {
+      // ── Single-day path (legacy) ────────────────────────────────────
+      const routeGeometry: Array<{ lat: number; lng: number }> = Array.isArray(
+        body.route_geometry,
+      )
+        ? body.route_geometry
+        : [];
+      const rawWaypoints: Array<{
+        lat: number;
+        lng: number;
+        name?: string | null;
+        type?: string;
+      }> = Array.isArray(body.waypoints) ? body.waypoints : [];
+      const hasRoute = routeGeometry.length >= 2;
+      const distanceKm = hasRoute ? Number(body.distance_km ?? 125) : 0;
+      if (hasRoute) {
+        snapshotDays = [
+          {
+            id: `seeded-day-${id}-1`,
+            day_number: 1,
+            title: "Day 1",
+            start_linked: false,
+            distance_km: distanceKm,
+            avg_quality: 4.2,
+            elevation_gain: Math.round(distanceKm * 6),
+            elevation_loss: Math.round(distanceKm * 4),
+            curviness_score: 74,
+            scenic_score: 80,
+            estimated_time_min: Math.round(distanceKm * 1.2),
+            route_geometry: routeGeometry,
+            waypoints: serializeWaypoints(rawWaypoints, id, 0),
+          },
+        ];
+      }
+    }
+
+    const numDays = snapshotDays.length > 0 ? snapshotDays.length : 1;
     const trip: import("./state").MockTrip = {
       id,
       owner_id: session.user_id,
       title: String(body.title ?? "Seeded trip"),
-      num_days: 1,
+      num_days: numDays,
       daily_km_min: 100,
       daily_km_max: 300,
       min_quality: 3,
       road_preference: "mixed",
       status: "planned" as const,
       members: [session.user_id],
-      snapshot: day1 ? { days: [day1] } : {},
+      snapshot: snapshotDays.length > 0 ? { days: snapshotDays } : {},
       created_at: now,
       updated_at: now,
     };
@@ -1135,9 +1187,14 @@ export function buildApp(): Express {
   });
 
   // PUT /trips/:tripId/route — saves the manual live-route to an existing
-  // trip. Mirrors `TripsController.saveRoute`: accepts `{ waypoints,
-  // options? }`, re-routes (mock: derives geometry from waypoints), stores
-  // day 1, and returns the updated trip detail. 404 for unknown trip or
+  // trip. Accepts two shapes:
+  //   • NEW (multi-day, Phase 2): `{ days: [{ dayNumber, startLinked,
+  //     waypoints }], options? }` — each entry is one persisted day.
+  //   • OLD (single-day, Phase 1): `{ waypoints, options? }` — kept for
+  //     backward compat so earlier trip-planner specs continue to pass.
+  // In both cases the mock re-derives route geometry from the submitted
+  // waypoints and returns a full TripDetailDto with per-day
+  // `start_linked` and `route_geometry`. 404 for unknown trip or
   // non-member caller.
   app.put(
     "/api/v1/trips/:tripId/route",
@@ -1154,6 +1211,125 @@ export function buildApp(): Express {
         res.status(404).json({ message: "not-found" });
         return;
       }
+
+      // Helper: build a route geometry polyline from a set of waypoints.
+      function buildGeometry(
+        wps: Array<{ lat: number; lng: number }>,
+      ): Array<{ lat: number; lng: number }> {
+        const geo: Array<{ lat: number; lng: number }> = [];
+        for (let i = 0; i < wps.length - 1; i++) {
+          const a = wps[i]!;
+          const b = wps[i + 1]!;
+          geo.push({ lat: a.lat, lng: a.lng });
+          geo.push({
+            lat: a.lat + (b.lat - a.lat) * 0.5,
+            lng: a.lng + (b.lng - a.lng) * 0.5,
+          });
+        }
+        geo.push({
+          lat: wps[wps.length - 1]!.lat,
+          lng: wps[wps.length - 1]!.lng,
+        });
+        return geo;
+      }
+
+      // Helper: approximate distance in km for a waypoint list.
+      function approxDistanceKm(
+        wps: Array<{ lat: number; lng: number }>,
+      ): number {
+        let d = 0;
+        for (let i = 0; i < wps.length - 1; i++) {
+          const a = wps[i]!;
+          const b = wps[i + 1]!;
+          const dlat = (b.lat - a.lat) * 111;
+          const dlng =
+            (b.lng - a.lng) *
+            111 *
+            Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+          d += Math.hypot(dlat, dlng);
+        }
+        return Math.round(d * 10) / 10;
+      }
+
+      // Detect new multi-day shape: body carries a `days` array.
+      const daysInput = Array.isArray(req.body?.days) ? req.body.days : null;
+
+      if (daysInput !== null) {
+        // ── NEW multi-day path ────────────────────────────────────────
+        type DayInput = {
+          dayNumber: number;
+          startLinked?: boolean;
+          waypoints: Array<{
+            lat: number;
+            lng: number;
+            name?: string | null;
+            type?: string;
+          }>;
+        };
+        const inputDays = daysInput as DayInput[];
+        if (inputDays.length === 0) {
+          res.status(400).json({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "days must have at least one entry",
+          });
+          return;
+        }
+        // Each day must have ≥2 waypoints (mirrors backend SaveRouteDayDto validation).
+        for (let di = 0; di < inputDays.length; di++) {
+          if ((inputDays[di]!.waypoints ?? []).length < 2) {
+            res.status(400).json({
+              statusCode: 400,
+              error: "Bad Request",
+              message: `days[${di}].waypoints must have at least 2 points`,
+            });
+            return;
+          }
+        }
+        const savedDays = inputDays.map((d, di) => {
+          const wps = d.waypoints;
+          const geometry = buildGeometry(wps);
+          const distanceKm = approxDistanceKm(wps);
+          return {
+            id: `route-day-${tripId}-${di + 1}`,
+            day_number: di + 1,
+            title: `Day ${di + 1}`,
+            start_linked: d.startLinked ?? false,
+            distance_km: distanceKm,
+            avg_quality: 4.2,
+            elevation_gain: Math.round(distanceKm * 6),
+            elevation_loss: Math.round(distanceKm * 4),
+            curviness_score: 74,
+            scenic_score: 80,
+            estimated_time_min: Math.round(distanceKm * 1.2),
+            route_geometry: geometry,
+            waypoints: wps.map((wp, i) => ({
+              id: `route-wp-${tripId}-d${di + 1}-${i}`,
+              sequence: i,
+              lat: Number(wp.lat),
+              lng: Number(wp.lng),
+              name: wp.name ?? null,
+              waypoint_type: wp.type ?? (i === 0 ? "start" : "end"),
+              road_segment_id: null,
+              notes: null,
+              duration_min: null,
+            })),
+          };
+        });
+        const updated: import("./state").MockTrip = {
+          ...trip,
+          num_days: savedDays.length,
+          status: "planned" as const,
+          snapshot: { ...trip.snapshot, days: savedDays },
+          updated_at: new Date().toISOString(),
+        };
+        state.trips.set(tripId, updated);
+        pushActivity(tripId, session.user_id, "trip_updated", {});
+        res.json(serializeTripDetail(updated));
+        return;
+      }
+
+      // ── OLD single-day path (backward compat) ─────────────────────
       const waypoints = (req.body?.waypoints ?? []) as Array<{
         lat: number;
         lng: number;
@@ -1168,37 +1344,13 @@ export function buildApp(): Express {
         });
         return;
       }
-      // Build route geometry spanning the waypoints.
-      const geometry: Array<{ lat: number; lng: number }> = [];
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        const a = waypoints[i]!;
-        const b = waypoints[i + 1]!;
-        geometry.push({ lat: a.lat, lng: a.lng });
-        geometry.push({
-          lat: a.lat + (b.lat - a.lat) * 0.5,
-          lng: a.lng + (b.lng - a.lng) * 0.5,
-        });
-      }
-      geometry.push({
-        lat: waypoints[waypoints.length - 1]!.lat,
-        lng: waypoints[waypoints.length - 1]!.lng,
-      });
-      let distanceKm = 0;
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        const a = waypoints[i]!;
-        const b = waypoints[i + 1]!;
-        const dlat = (b.lat - a.lat) * 111;
-        const dlng =
-          (b.lng - a.lng) *
-          111 *
-          Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
-        distanceKm += Math.hypot(dlat, dlng);
-      }
-      distanceKm = Math.round(distanceKm * 10) / 10;
+      const geometry = buildGeometry(waypoints);
+      const distanceKm = approxDistanceKm(waypoints);
       const day1 = {
         id: `route-day-${tripId}-1`,
         day_number: 1,
         title: "Day 1",
+        start_linked: false,
         distance_km: distanceKm,
         avg_quality: 4.2,
         elevation_gain: Math.round(distanceKm * 6),

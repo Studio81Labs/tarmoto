@@ -321,6 +321,101 @@ describe("TripPlannerMap", () => {
     expect(mockMap.queryRenderedFeatures).toHaveBeenCalled();
   });
 
+  it("bases the placement menu on the SELECTED day, not day 0", () => {
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string") return mockMap;
+      eventHandlers.set(
+        event,
+        (maybeHandler ?? layerOrHandler) as (event: unknown) => void,
+      );
+      return mockMap;
+    });
+    mockMap.off.mockImplementation((event) => {
+      eventHandlers.delete(event);
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    // Day 1 is complete (start + end); day 2 is empty. With Day 2 selected, the
+    // menu must offer "Set start here" — NOT day 1's "Set as new start".
+    useTripStore.setState({
+      activeTrip: {
+        id: "t-2day",
+        name: "Two day",
+        status: "draft",
+        num_days: 2,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        parameters: {
+          days: 2,
+          dailyKmTarget: 250,
+          roadPreference: "mixed",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [{ userId: "u", displayName: "You", role: "owner" }],
+        days: [
+          {
+            dayNumber: 1,
+            waypoints: [
+              {
+                id: "w1",
+                type: "start",
+                name: "Start",
+                location: { lng: 14.4, lat: 50.1 },
+              },
+              {
+                id: "w2",
+                type: "end",
+                name: "End",
+                location: { lng: 14.5, lat: 50.2 },
+              },
+            ],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+          },
+          {
+            dayNumber: 2,
+            waypoints: [],
+            distanceKm: 0,
+            durationMinutes: 0,
+            elevationGain: 0,
+            avgQuality: 0,
+            segments: [],
+          },
+        ],
+      } as never,
+    });
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        selectedDayNumber={2}
+        onMoveWaypoint={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      eventHandlers.get("contextmenu")?.({
+        preventDefault: vi.fn(),
+        point: { x: 180, y: 140 },
+        lngLat: { lng: 14.435, lat: 50.106 },
+        originalEvent: { clientX: 180, clientY: 140 },
+      });
+    });
+
+    expect(screen.getByText("Set start here")).toBeInTheDocument();
+    expect(screen.queryByText("Set as new start")).not.toBeInTheDocument();
+  });
+
   it("does not install the placement context menu on a read-only (non-editable) map", () => {
     // A read-only map (e.g. the trip-detail page) passes no onMoveWaypoint, so
     // the placement listeners must NOT install — a right-click there must not
@@ -1921,5 +2016,69 @@ describe("TripPlannerMap", () => {
     expect(
       screen.getByText("No route closures or pass warnings for this month."),
     ).toBeInTheDocument();
+  });
+
+  it("passes N day features to the route source for a multi-day trip", async () => {
+    const multiDayTrip: Trip = {
+      ...trip(),
+      num_days: 2,
+      days: [
+        {
+          ...trip().days[0]!,
+          dayNumber: 1,
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 98,
+          durationMinutes: 150,
+          elevationGain: 620,
+          avgQuality: 3.8,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [14.7, 50.25],
+              [14.82, 50.3],
+              [14.95, 50.36],
+            ],
+          },
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Louny",
+              location: { lng: 14.71, lat: 50.24 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "Decin",
+              location: { lng: 14.98, lat: 50.37 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <TripPlannerMap trip={multiDayTrip} month={7} selectedDayNumber={1} />,
+    );
+
+    // Wait for the sync effect (triggered after ready=true) to push the
+    // route collection to the mock source — the route source receives 2
+    // addSource calls: one empty from ensurePlannerLayers and one with
+    // the real data from the syncGeoJsonSource effect.
+    await waitFor(() => {
+      const routeSourceCalls = mockMap.addSource.mock.calls.filter(
+        ([sourceId]) => sourceId === "trip-planner-route",
+      );
+      const features = routeSourceCalls
+        .map(
+          (call) =>
+            (call[1] as { data: { features: unknown[] } }).data.features,
+        )
+        .find((f) => f.length > 0);
+      expect(features).toHaveLength(2);
+    });
   });
 });

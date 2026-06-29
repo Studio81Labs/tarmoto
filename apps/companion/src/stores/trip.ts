@@ -1,4 +1,7 @@
 import { create } from "zustand";
+
+/** Maximum number of days in a multi-day trip (companion mirror of the backend cap). */
+export const MAX_TRIP_DAYS = 14;
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
@@ -71,11 +74,13 @@ function appendPlannerWaypointToDay(
 ): TripDay {
   const waypoints = [...day.waypoints];
   const id = `planner-${day.dayNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const endIndex = waypoints.findIndex((w) => w.type === "end");
+  // Insertion target relative to the day's finish (explicit end OR a terminal
+  // accommodation). `length` means "no finish yet" → this click sets it.
+  const insertAt = viaInsertIndex(waypoints);
 
   if (waypoints.length === 0) {
     waypoints.push({ id, name: "Start", location, type: "start" });
-  } else if (endIndex === -1) {
+  } else if (insertAt === waypoints.length) {
     waypoints.push({ id, name: "Finish", location, type: "end" });
   } else {
     const viaCount =
@@ -87,7 +92,7 @@ function appendPlannerWaypointToDay(
           w.type === "photo" ||
           w.type === "accommodation",
       ).length + 1;
-    waypoints.splice(endIndex, 0, {
+    waypoints.splice(insertAt, 0, {
       id,
       name: `Via ${viaCount}`,
       location,
@@ -133,13 +138,20 @@ interface TripState {
   routeDirty: boolean;
 
   /**
-   * True from the moment a routing input changes (waypoint edit or avoid-option
-   * toggle) until the live hook writes a fresh route via applyRouteResult. The
-   * store keeps the pre-edit geometry during the routing debounce; this gates
-   * Save route so a quick click can't persist stale (un-previewed) geometry.
-   * Reset to false on load (setActiveTrip) and on applyRouteResult.
+   * Day numbers (1-based) whose route preview is stale — i.e. routing inputs
+   * changed since the last `applyRouteResult` for that day. Replaces the
+   * former boolean `routePreviewStale`. Empty means every day's preview is
+   * fresh. Reset to `[]` on `setActiveTrip`; populated per-mutation as waypoint
+   * edits are isolated to a specific day (Tasks 7–9 refine per-day targeting;
+   * in Phase 1 / Task 6 we approximate with the selected day).
    */
-  routePreviewStale: boolean;
+  stalePreviewDays: number[];
+
+  /** Index into `activeTrip.days` for the currently-selected planner day. */
+  selectedDayIndex: number;
+
+  /** Select a planner day by index. */
+  setSelectedDay: (index: number) => void;
 
   /**
    * The planner controls' current parameters, mirrored from the page so the
@@ -202,12 +214,12 @@ interface TripState {
   ) => void;
 
   /**
-   * Change the type of a waypoint on the active planner day (day 0).
+   * Change the type of a waypoint on the active planner day (selected day).
    */
   setWaypointType: (waypointId: string, type: Waypoint["type"]) => void;
 
   /**
-   * Remove a waypoint by id from the active planner day (day 0).
+   * Remove a waypoint by id from the active planner day (selected day).
    * Distinct from the existing `removeWaypoint(dayIndex, waypointId)`.
    */
   removeWaypointById: (waypointId: string) => void;
@@ -231,11 +243,48 @@ interface TripState {
   }[];
 
   /**
-   * Write server-side route geometry + stats into the active planner day.
-   * Geometry now ONLY comes from this action — synthetic rebuild is no
-   * longer invoked by the placeWaypoint path.
+   * Per-day save payload for PUT /trips/:id/route. Empty days (no waypoints)
+   * are dropped; remaining days are renumbered contiguously 1..M. Waypoint
+   * types are mapped via `LOCAL_TO_BACKEND_WAYPOINT_TYPE`.
    */
-  applyRouteResult: (result: RouteResponse) => void;
+  saveDays: () => {
+    dayNumber: number;
+    title: string | null;
+    startLinked: boolean;
+    waypoints: {
+      lat: number;
+      lng: number;
+      name?: string;
+      type: BackendWaypointType;
+    }[];
+  }[];
+
+  /**
+   * Write server-side route geometry + stats into the day identified by
+   * `dayNumber`. Clears that day's stale flag. The caller (live routing hook)
+   * passes the day it routed so concurrent multi-day routing lands in the
+   * correct slot regardless of `selectedDayIndex` at call time.
+   */
+  applyRouteResult: (dayNumber: number, result: RouteResponse) => void;
+
+  /**
+   * Append a new day to the active trip (capped at MAX_TRIP_DAYS). The new
+   * day is linked to the previous day's end and is immediately selected.
+   */
+  addDay: () => void;
+
+  /**
+   * Remove the day at the given index from the active trip (min 1 day).
+   * Renumbers all remaining days contiguously and re-evaluates the boundary
+   * at the removed index so linked days stay consistent.
+   */
+  removeDay: (index: number) => void;
+
+  /**
+   * Re-link the day at `index` to the previous day's end so overnight
+   * boundaries stay in sync. index must be ≥ 1.
+   */
+  relinkDayStart: (index: number) => void;
 
   /**
    * Reset to initial state — used only by tests.
@@ -252,6 +301,8 @@ interface TripState {
 interface TripHistoryEntry {
   trip: Trip | null;
   dirty: boolean;
+  /** The exact `stalePreviewDays` at snapshot time, restored verbatim on undo/redo. */
+  stale: number[];
 }
 
 interface TripStoreHistory {
@@ -320,6 +371,152 @@ function activePlannerSaveWaypoints(
   }));
 }
 
+/**
+ * A generated multi-day trip ends each non-final day at an overnight stop typed
+ * `accommodation` (backend `hotel`) rather than `end`. The manual save path
+ * requires an `end`, so when a day has no explicit end but terminates in an
+ * accommodation, re-type that terminal stop as the day's finish so it passes
+ * the per-day start→end validation and routes to the overnight location.
+ */
+export function normalizeDayFinish(waypoints: Waypoint[]): Waypoint[] {
+  const lastIdx = waypoints.length - 1;
+  // A terminal accommodation IS the day's finish — even when an earlier explicit
+  // `end` OR an earlier stay exists (a replacement overnight added after one).
+  // Re-type the terminal stay to `end` and demote ANY earlier `end`/
+  // `accommodation` to a via, so the day keeps exactly one finish and one
+  // overnight: otherwise the stale earlier stay persists as `hotel` and
+  // `tripFromDetail` would derive the overnight from it instead of the new one.
+  if (waypoints[lastIdx]?.type !== "accommodation") return waypoints;
+  return waypoints.map((w, i) => {
+    if (i === lastIdx) return { ...w, type: "end" };
+    if (w.type === "end" || w.type === "accommodation")
+      return { ...w, type: "via" };
+    return w;
+  });
+}
+
+/**
+ * The waypoint that finishes a day's route: a TERMINAL `accommodation` (a
+ * generated overnight, or a stay added after an explicit end) takes precedence,
+ * otherwise the explicit `end`. Returns `undefined` when the day has no finish.
+ * Use this anywhere a predecessor's finish coordinates drive linked-start sync
+ * so accommodation-terminated days behave like `end`-terminated ones.
+ */
+export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
+  const last = waypoints[waypoints.length - 1];
+  if (last?.type === "accommodation") return last;
+  return waypoints.find((w) => w.type === "end");
+}
+
+/**
+ * Index at which to insert a via so it lands BEFORE the day's finish (explicit
+ * `end` or terminal `accommodation`). Returns `waypoints.length` (append) when
+ * the day has no finish yet — keeping a generated overnight day's accommodation
+ * terminal instead of stranding the via after it.
+ */
+function viaInsertIndex(waypoints: Waypoint[]): number {
+  const finish = dayFinishWaypoint(waypoints);
+  return finish ? waypoints.indexOf(finish) : waypoints.length;
+}
+
+// ── Task 8: linked-start sync helper ─────────────────────────────────────────
+
+/**
+ * After mutating day at `idx`, if it changed its `end`, push that end into the
+ * next day's start when the next day is linked, marking both days stale.
+ * Returns `{ days, stale }` — thread the returned stale array through.
+ */
+function syncLinkedStart(
+  days: TripDay[],
+  idx: number,
+  staleDays: number[],
+): { days: TripDay[]; stale: number[] } {
+  const next = days[idx + 1];
+  if (!next || !next.startLinked) return { days, stale: staleDays };
+  // A generated predecessor finishes at a terminal accommodation (overnight),
+  // not an explicit `end` — treat that as the finish so moving it cascades.
+  const end = dayFinishWaypoint(days[idx].waypoints);
+  const nextWaypoints = [...next.waypoints];
+  const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
+  if (!end) {
+    // The predecessor no longer has a finish to mirror (e.g. its terminal stay
+    // was dragged off the end). The link is no longer valid: clear it so the
+    // successor's start isn't suppressed as "linked" with nothing behind it,
+    // and a later predecessor finish can't overwrite it. Don't re-stale — the
+    // successor's existing start location is unchanged, only the flag.
+    const cleared = [...days];
+    cleared[idx + 1] = { ...next, startLinked: false };
+    return { days: cleared, stale: staleDays };
+  }
+  // If the linked start already mirrors the predecessor's end, the edit didn't
+  // move the end (e.g. a via/POI change) — don't rewrite or re-stale the
+  // successor, or it would sit in stalePreviewDays with unchanged routing
+  // inputs and wedge the Save gate until the rider visits it.
+  const existingStart = startIdx >= 0 ? nextWaypoints[startIdx] : undefined;
+  if (
+    existingStart &&
+    existingStart.location.lng === end.location.lng &&
+    existingStart.location.lat === end.location.lat
+  ) {
+    return { days, stale: staleDays };
+  }
+  const seededStart: Waypoint = {
+    id: nextWaypoints[startIdx]?.id ?? `link-${next.dayNumber}`,
+    name: "Start",
+    type: "start",
+    location: { ...end.location },
+  };
+  if (startIdx >= 0) nextWaypoints[startIdx] = seededStart;
+  else nextWaypoints.unshift(seededStart);
+  const updated = [...days];
+  updated[idx + 1] = updatePlannerDayRoute(
+    { ...next, waypoints: nextWaypoints },
+    nextWaypoints,
+    undefined,
+  );
+  return { days: updated, stale: markDayStale(staleDays, next.dayNumber) };
+}
+
+/**
+ * Shared post-commit boilerplate for the context-menu mutations
+ * (`placeWaypoint` / `setWaypointType` / `removeWaypointById`). Takes the
+ * `commitTripChange` result (already confirmed `!== state`), marks the edited
+ * day `idx` stale, runs `syncLinkedStart` to mirror the edited end into the next
+ * linked day, and returns the `{ activeTrip, routeDirty, stalePreviewDays }`
+ * slice to spread over the committed result. The single `committed` cast lives
+ * here so the three callers don't each repeat it.
+ */
+function applyPostCommitSync(
+  committed:
+    | Partial<TripState & TripStoreHistory>
+    | (TripState & TripStoreHistory),
+  state: TripState & TripStoreHistory,
+  idx: number,
+): {
+  activeTrip: Trip | null | undefined;
+  routeDirty: true;
+  stalePreviewDays: number[];
+} {
+  const committedTrip = (committed as { activeTrip?: Trip | null }).activeTrip;
+  const updatedDays = committedTrip?.days ?? [];
+  const staleAfterCommit = markDayStale(
+    state.stalePreviewDays,
+    updatedDays[idx]?.dayNumber ?? 1,
+  );
+  const { days: syncedDays, stale: syncedStale } = syncLinkedStart(
+    updatedDays,
+    idx,
+    staleAfterCommit,
+  );
+  return {
+    activeTrip: committedTrip
+      ? { ...committedTrip, days: syncedDays }
+      : committedTrip,
+    routeDirty: true,
+    stalePreviewDays: syncedStale,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const useTripStore = create<TripState & TripStoreHistory>(
@@ -331,7 +528,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
-    routePreviewStale: false,
+    stalePreviewDays: [],
+    selectedDayIndex: 0,
     draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
@@ -346,7 +544,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set({
         activeTrip,
         routeDirty: false,
-        routePreviewStale: false,
+        stalePreviewDays: [],
+        selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -354,8 +553,27 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
       }),
+    setSelectedDay: (index) => set({ selectedDayIndex: index }),
     setGenerating: (isGenerating) => set({ isGenerating }),
-    markRouteDirty: () => set({ routeDirty: true, routePreviewStale: true }),
+    markRouteDirty: () =>
+      set((s) => ({
+        routeDirty: true,
+        // Avoid-option toggles are trip-level, but only mark ROUTABLE days
+        // (>=2 routing waypoints) stale. Empty/under-specified days can't be
+        // re-routed by the live hook (it bails for <2 routing waypoints), so
+        // marking them would leave a stale flag that never clears and wedges
+        // the Save gate (which requires stalePreviewDays to be empty).
+        // Normalize a terminal accommodation to its finish first, so generated
+        // overnight days (start + accommodation) are correctly routable and get
+        // re-previewed — otherwise Save could persist an unpreviewed reroute.
+        stalePreviewDays: (s.activeTrip?.days ?? [])
+          .filter(
+            (d) =>
+              filterRoutingWaypoints(normalizeDayFinish(d.waypoints)).length >=
+              2,
+          )
+          .map((d) => d.dayNumber),
+      })),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),
 
@@ -363,8 +581,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
 
     addWaypoint: (dayIndex, waypoint) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -379,16 +597,22 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
+        });
+        if (committed === state) return state;
         // Adding a waypoint (e.g. a suggested overnight stay from
-        // TripStopsPanel) is a route edit — mark dirty so Save route enables.
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        // TripStopsPanel) is a route edit — mark dirty + stale, AND cascade
+        // through syncLinkedStart so adding a terminal accommodation re-seeds
+        // and re-stales the linked successor's start (else Save persists a
+        // boundary the backend will clear for mismatched coordinates).
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     appendPlannerWaypoint: (dayIndex, location, parameters) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           const baseTrip =
             activeTrip ??
             createPlannerDraftTrip(new Date().toISOString(), parameters);
@@ -408,10 +632,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        });
+        if (committed === state) return state;
+        // Use the shared post-commit sync (like placeWaypoint/moveWaypoint) so
+        // appending this day's finish cascades into the next linked day's
+        // start — otherwise a successor added via "Add day" before the finish
+        // existed stays empty and gets dropped on save.
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
       set((state) => ({
@@ -421,10 +652,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
           const waypoints = [...day.waypoints];
-          const endIndex = waypoints.findIndex(
-            (existing) => existing.type === "end",
-          );
-          const insertionIndex = endIndex >= 0 ? endIndex : waypoints.length;
+          // Insert before the day's finish (explicit end OR a terminal
+          // accommodation), so a stop added to a generated overnight day keeps
+          // the accommodation terminal instead of landing after it.
+          const insertionIndex = viaInsertIndex(waypoints);
           waypoints.splice(insertionIndex, 0, waypoint);
           days[dayIndex] = updatePlannerDayRoute(
             day,
@@ -440,7 +671,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
         // edit — mark dirty so they enable Save route (gated on routeDirty).
         routeDirty: true,
-        routePreviewStale: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+        ),
       })),
 
     removeWaypoint: (dayIndex, waypointId) =>
@@ -496,8 +730,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 activeTrip.days.length,
               )
             : activeTrip.parameters;
+          // Dragging a linked successor's start (a marker visible only in focus
+          // mode) breaks the link — same as placing a new start via the menu —
+          // so a later predecessor-end edit won't overwrite the rider's chosen
+          // start as if the link were intact.
+          const breakLink =
+            previous.type === "start" &&
+            dayIndex >= 1 &&
+            day.startLinked === true;
           days[dayIndex] = updatePlannerDayRoute(
-            day,
+            breakLink ? { ...day, startLinked: false } : day,
             waypoints,
             nextParameters,
           );
@@ -510,14 +752,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         });
         // Only mark dirty if the move actually changed state (no-op moves
         // return the same state reference from commitTripChange). A real move
-        // also makes the displayed geometry stale until the live hook reroutes.
+        // makes the DRAGGED day's geometry stale (not the selected day's — a
+        // marker drag can target any day) and, if it moved an end, cascades the
+        // new location into the next linked day's start. Reuse the shared
+        // post-commit sync so the drag handler matches the context-menu edits.
         if (result === state) return state;
-        return { ...result, routeDirty: true, routePreviewStale: true };
+        return { ...result, ...applyPostCommitSync(result, state, dayIndex) };
       }),
 
     reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
           const day = activeTrip.days[dayIndex];
           if (!day) return activeTrip;
@@ -537,10 +782,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        });
+        if (committed === state) return state;
+        // Cascade through the shared post-commit sync: reordering can change the
+        // day's effective finish (e.g. dragging a terminal accommodation before
+        // the explicit end), which must re-seed AND re-stale the linked
+        // successor's start — otherwise Save persists a broken boundary.
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, dayIndex),
+        };
+      }),
 
     undo: () =>
       set((state) => {
@@ -549,16 +801,34 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const undoStack = state.undoStack.slice(0, -1);
         const redoStack = trimHistory([
           ...state.redoStack,
-          { trip: state.activeTrip, dirty: state.routeDirty },
+          {
+            trip: state.activeTrip,
+            dirty: state.routeDirty,
+            stale: state.stalePreviewDays,
+          },
         ]);
         return {
           activeTrip: previous.trip,
           // Restore the dirty flag captured with this snapshot so undoing back
           // to the loaded route also clears routeDirty (re-disabling Save).
           routeDirty: previous.dirty,
-          // The restored waypoints will be re-routed by the live hook; mark the
-          // preview stale until that lands so Save can't persist old geometry.
-          routePreviewStale: true,
+          // Restore the EXACT stale set captured with this snapshot — not a
+          // reconstruction from all routable days, which would over-stale
+          // untouched days. Live routing only runs the selected day, so an
+          // over-stale untouched day could never clear and would wedge Save.
+          // (A clean snapshot captured an empty set, so this also re-disables
+          // Save when undoing back to the loaded route.)
+          stalePreviewDays: previous.stale,
+          // Clamp the selection into the restored day range — undoing back to
+          // fewer days must not leave selectedDayIndex past the end (which would
+          // render "Day N of M<N" and make the next placement recreate a day).
+          selectedDayIndex: Math.max(
+            0,
+            Math.min(
+              state.selectedDayIndex,
+              (previous.trip?.days.length ?? 1) - 1,
+            ),
+          ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -575,12 +845,21 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         const redoStack = state.redoStack.slice(0, -1);
         const undoStack = trimHistory([
           ...state.undoStack,
-          { trip: state.activeTrip, dirty: state.routeDirty },
+          {
+            trip: state.activeTrip,
+            dirty: state.routeDirty,
+            stale: state.stalePreviewDays,
+          },
         ]);
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
-          routePreviewStale: true,
+          // Restore the exact stale set captured with this snapshot (see undo).
+          stalePreviewDays: next.stale,
+          selectedDayIndex: Math.max(
+            0,
+            Math.min(state.selectedDayIndex, (next.trip?.days.length ?? 1) - 1),
+          ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
           undoStack,
@@ -593,20 +872,27 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
     placeWaypoint: (coords, action, parameters) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
+          const isDraftCreation = activeTrip === null;
           const baseTrip =
             activeTrip ??
             createPlannerDraftTrip(new Date().toISOString(), parameters);
-          const days = ensurePlannerDays(baseTrip.days, 1);
-          const day = days[0]!;
+          // New drafts always start on day index 0. For an existing trip, target
+          // the currently selected day so the rider's active day receives the edit.
+          const idx = isDraftCreation ? 0 : state.selectedDayIndex;
+          const days = ensurePlannerDays(baseTrip.days, idx + 1);
+          const day = days[idx]!;
           const waypoints = [...day.waypoints];
 
           const newWaypoint: Waypoint = {
-            id: `planner-0-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `planner-${idx}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             location: { lng: coords.lng, lat: coords.lat },
             type: "via",
           };
+
+          // Track whether we need to break the link (manual start placement on day ≥ 1)
+          let breakLink = false;
 
           if (action === "set-start" || action === "set-new-start") {
             const startIndex = waypoints.findIndex((w) => w.type === "start");
@@ -622,24 +908,43 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 name: "Start",
               });
             }
+            // Manual start placement on a non-first day breaks the overnight link.
+            if (idx >= 1) breakLink = true;
           } else if (action === "set-end" || action === "set-new-end") {
-            const endIndex = waypoints.findIndex((w) => w.type === "end");
-            if (endIndex >= 0) {
-              waypoints[endIndex] = {
-                ...waypoints[endIndex]!,
+            // Setting a new finish overrides the day's CURRENT finish in place —
+            // an explicit `end` OR a terminal accommodation (generated
+            // overnight) — and demotes any other explicit end to a via. Without
+            // this, a `start → accommodation` day keeps the stale overnight and
+            // appends a second finish after it.
+            const finish = dayFinishWaypoint(waypoints);
+            if (finish) {
+              const finishIdx = waypoints.indexOf(finish);
+              for (let i = 0; i < waypoints.length; i++) {
+                if (i !== finishIdx && waypoints[i]!.type === "end") {
+                  waypoints[i] = { ...waypoints[i]!, type: "via" };
+                }
+              }
+              waypoints[finishIdx] = {
+                ...finish,
+                type: "end",
+                name: finish.type === "end" ? finish.name : "Finish",
                 location: { lng: coords.lng, lat: coords.lat },
               };
             } else {
               waypoints.push({ ...newWaypoint, type: "end", name: "Finish" });
             }
           } else {
-            // add-via: insert before end, or append if no end
-            const endIndex = waypoints.findIndex((w) => w.type === "end");
-            const insertAt = endIndex >= 0 ? endIndex : waypoints.length;
+            // add-via: insert before the day's finish (explicit end OR a
+            // terminal accommodation on a generated overnight day), else append.
+            const insertAt = viaInsertIndex(waypoints);
             waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
           }
 
-          days[0] = updatePlannerDayRoute(day, waypoints, baseTrip.parameters);
+          days[idx] = updatePlannerDayRoute(
+            breakLink ? { ...day, startLinked: false } : day,
+            waypoints,
+            baseTrip.parameters,
+          );
           // Keep the trip's parameters in sync with the planner controls the
           // rider set before this first placement (mirrors appendPlannerWaypoint)
           // so creating the draft here doesn't reset days/km/avoid options.
@@ -656,16 +961,22 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             parameters: nextParameters,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        });
+
+        if (committed === state) return state;
+
+        // After writing days[idx], sync the linked start on the next day if applicable.
+        // Use state.activeTrip (pre-commit) to determine if this was a draft creation.
+        const idx = state.activeTrip === null ? 0 : state.selectedDayIndex;
+        return { ...committed, ...applyPostCommitSync(committed, state, idx) };
+      }),
 
     setWaypointType: (waypointId, type) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const day = activeTrip.days[0];
+          const idx = state.selectedDayIndex;
+          const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const waypointIndex = day.waypoints.findIndex(
             (w) => w.id === waypointId,
@@ -674,8 +985,13 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const waypoints = [...day.waypoints];
           waypoints[waypointIndex] = { ...waypoints[waypointIndex]!, type };
           const days = [...activeTrip.days];
-          days[0] = updatePlannerDayRoute(
-            day,
+          // Promoting a waypoint to `start` on a non-first day is a manual
+          // start override — break the overnight link so a later edit to the
+          // predecessor's end doesn't silently overwrite the rider's choice
+          // (same semantics as placeWaypoint's `breakLink`).
+          const breakLink = type === "start" && idx >= 1;
+          days[idx] = updatePlannerDayRoute(
+            breakLink ? { ...day, startLinked: false } : day,
             waypoints,
             activeTrip.parameters,
           );
@@ -684,19 +1000,25 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        });
+
+        if (committed === state) return state;
+
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
+        };
+      }),
 
     removeWaypointById: (waypointId) =>
-      set((state) => ({
-        ...commitTripChange(state, (activeTrip) => {
+      set((state) => {
+        const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const day = activeTrip.days[0];
+          const idx = state.selectedDayIndex;
+          const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
-          days[0] = updatePlannerDayRoute(
+          days[idx] = updatePlannerDayRoute(
             day,
             day.waypoints.filter((w) => w.id !== waypointId),
             activeTrip.parameters,
@@ -706,35 +1028,77 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           };
-        }),
-        routeDirty: true,
-        routePreviewStale: true,
-      })),
+        });
+
+        if (committed === state) return state;
+
+        return {
+          ...committed,
+          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
+        };
+      }),
 
     routingWaypoints: () => {
-      const { activeTrip } = get();
+      const { activeTrip, selectedDayIndex } = get();
       if (!activeTrip) return [];
-      const day = activeTrip.days[0];
+      const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
       return activePlannerRoutingWaypoints(day.waypoints);
     },
 
     saveWaypoints: () => {
-      const { activeTrip } = get();
+      const { activeTrip, selectedDayIndex } = get();
       if (!activeTrip) return [];
-      const day = activeTrip.days[0];
+      const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
       return activePlannerSaveWaypoints(day.waypoints);
     },
 
-    applyRouteResult: (result) =>
+    saveDays: () => {
+      const { activeTrip } = get();
+      if (!activeTrip) return [];
+      const days = activeTrip.days;
+      const result: {
+        dayNumber: number;
+        title: string | null;
+        startLinked: boolean;
+        waypoints: ReturnType<typeof activePlannerSaveWaypoints>;
+      }[] = [];
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        if (d.waypoints.length === 0) continue; // drop empties
+        // A link is only valid if the day's ORIGINAL immediate predecessor
+        // survived the empty-day filter (and this isn't the new first day).
+        // Otherwise the start was seeded from a dropped day's end and no longer
+        // mirrors the new predecessor — persisting startLinked:true would make
+        // the map hide its start marker and let a future predecessor-end edit
+        // overwrite a start that was never linked to it.
+        const predecessorSurvived = i > 0 && days[i - 1].waypoints.length > 0;
+        result.push({
+          dayNumber: result.length + 1, // renumber contiguously
+          // Send the title with the day so it follows the day through
+          // renumbering (the server can't map it back after a removal).
+          title: d.title ?? null,
+          startLinked: predecessorSurvived ? (d.startLinked ?? false) : false,
+          waypoints: activePlannerSaveWaypoints(
+            normalizeDayFinish(d.waypoints),
+          ),
+        });
+      }
+      return result;
+    },
+
+    applyRouteResult: (dayNumber, result) =>
       set((state) => {
         const { activeTrip } = state;
         if (!activeTrip) return state;
-        const day = activeTrip.days[0];
-        if (!day) return state;
+        const dayIndex = activeTrip.days.findIndex(
+          (d) => d.dayNumber === dayNumber,
+        );
+        if (dayIndex < 0) return state;
+        const day = activeTrip.days[dayIndex]!;
         const days = [...activeTrip.days];
-        days[0] = {
+        days[dayIndex] = {
           ...day,
           routeGeometry: {
             type: "LineString",
@@ -747,13 +1111,172 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         };
         return {
           ...state,
-          // Geometry now matches the current routing inputs — preview is fresh.
-          routePreviewStale: false,
+          // Geometry now matches the current routing inputs — clear this day's stale flag.
+          stalePreviewDays: clearDayStale(state.stalePreviewDays, dayNumber),
           activeTrip: {
             ...activeTrip,
             days,
             updatedAt: new Date().toISOString(),
           },
+        };
+      }),
+
+    addDay: () =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip) return state;
+        if (trip.days.length >= MAX_TRIP_DAYS) return state;
+        const prev = trip.days[trip.days.length - 1];
+        // A metadata-only server draft can have zero days (the create/promote
+        // path mints the trip before any route day is saved). In that case
+        // create day 1 — unlinked, no seeded start — instead of dereferencing
+        // a missing predecessor.
+        const newDay = createEmptyPlannerDay(prev ? prev.dayNumber + 1 : 1);
+        if (prev) {
+          // Only mark the new day linked once the predecessor actually has a
+          // finish to mirror — an explicit `end` or a terminal accommodation.
+          // Linking with no finish leaves an unseeded "linked" start; the next
+          // map click would fill it WITHOUT clearing the link, so outside focus
+          // the map would suppress it and a later predecessor finish overwrite
+          // it. The rider can relink (button is gated the same way) once day N-1
+          // has a finish.
+          const prevEnd = dayFinishWaypoint(prev.waypoints);
+          newDay.startLinked = !!prevEnd;
+          if (prevEnd) {
+            newDay.waypoints = [
+              {
+                id: `link-${newDay.dayNumber}`,
+                name: "Start",
+                type: "start",
+                location: { ...prevEnd.location },
+              },
+            ];
+          }
+        }
+        // Route through commitTripChange so the addition is snapshotted onto
+        // the undo stack AND the redo stack is cleared — otherwise a Redo left
+        // over from a prior undo could be pressed and drop the new day.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: [...activeTrip.days, newDay],
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
+        return {
+          ...committed,
+          selectedDayIndex: trip.days.length, // select the new day
+          routeDirty: true,
+        };
+      }),
+
+    removeDay: (index) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip || trip.days.length <= 1) return state; // min 1
+        const days = trip.days
+          .filter((_, i) => i !== index)
+          .map((d, i) => ({ ...d, dayNumber: i + 1 })); // renumber contiguously
+        // The new first day has no predecessor to mirror — a dangling
+        // `startLinked` would let a future cascade re-seed from nothing, so
+        // clear it. (Covers the index===0 removal case the boundary re-eval
+        // below skips.)
+        if (days[0]?.startLinked) {
+          days[0] = { ...days[0], startLinked: false };
+        }
+        // Remap stale day numbers to the renumbered days: the removed day's
+        // number (index + 1) drops out, and any stale day above it shifts down
+        // by one. Without this, removing Day 2 while Day 3 is stale leaves an
+        // orphaned `3` that no day can clear, wedging the Save gate.
+        const stale = state.stalePreviewDays
+          .filter((d) => d !== index + 1)
+          .map((d) => (d > index + 1 ? d - 1 : d));
+        // re-evaluate the boundary at `index`: if the day now at `index` is
+        // linked, re-seed from its new predecessor — but only when that
+        // predecessor actually has a finish. If it doesn't, the link is no
+        // longer valid (syncLinkedStart would no-op and leave startLinked true,
+        // hiding the successor's start and letting a later predecessor finish
+        // overwrite it), so clear it.
+        let result = { days, stale };
+        if (index > 0 && index < days.length && days[index]!.startLinked) {
+          if (dayFinishWaypoint(days[index - 1]!.waypoints)) {
+            result = syncLinkedStart(days, index - 1, stale);
+          } else {
+            const cleared = [...days];
+            cleared[index] = { ...cleared[index]!, startLinked: false };
+            result = { days: cleared, stale };
+          }
+        }
+        // Keep the SAME logical day selected: removing a day BEFORE the
+        // selected one shifts it down by one. Then clamp into range (e.g. when
+        // the selected day itself, or the last day, was removed).
+        const shifted =
+          index < state.selectedDayIndex
+            ? state.selectedDayIndex - 1
+            : state.selectedDayIndex;
+        const selectedDayIndex = Math.max(
+          0,
+          Math.min(shifted, result.days.length - 1),
+        );
+        // Route through commitTripChange so the deletion is snapshotted onto
+        // the undo stack (a populated day's waypoints/geometry are otherwise
+        // unrecoverable until reload) and canUndo is updated.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: result.days,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
+        return {
+          ...committed,
+          stalePreviewDays: result.stale,
+          selectedDayIndex,
+          routeDirty: true,
+        };
+      }),
+
+    relinkDayStart: (index) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip || index < 1) return state;
+        // No predecessor end to mirror → can't form a valid link. Setting
+        // startLinked:true would make the map hide this day's start with no
+        // shared end drawn, and a later predecessor-finish edit would overwrite
+        // the rider's manual start. Leave the link off until day N-1 has a
+        // finish — an explicit `end` or a terminal accommodation (overnight).
+        const prevEnd = dayFinishWaypoint(
+          trip.days[index - 1]?.waypoints ?? [],
+        );
+        if (!prevEnd) return state;
+        const days = trip.days.map((d, i) =>
+          i === index ? { ...d, startLinked: true } : d,
+        );
+        const { days: synced, stale } = syncLinkedStart(
+          days,
+          index - 1,
+          state.stalePreviewDays,
+        );
+        // Route through commitTripChange so the re-link (which restores the
+        // start coordinate to the predecessor's end) is snapshotted onto the
+        // undo stack — otherwise Undo can't recover the rider's manual start.
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                days: synced,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
+        return {
+          ...committed,
+          stalePreviewDays: stale,
+          routeDirty: true,
         };
       }),
 
@@ -766,7 +1289,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
         routeDirty: false,
-        routePreviewStale: false,
+        stalePreviewDays: [],
+        selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
         undoStack: [],
@@ -774,6 +1298,18 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       }),
   }),
 );
+
+/**
+ * Returns true when the given day number has a stale route preview (i.e. routing
+ * inputs changed since the last `applyRouteResult` for that day). Use this
+ * instead of reading `stalePreviewDays` directly to keep the check encapsulated.
+ */
+export function isDayStale(
+  stalePreviewDays: number[],
+  dayNumber: number,
+): boolean {
+  return stalePreviewDays.includes(dayNumber);
+}
 
 export function flattenSegments(trip: Trip | null): RoutePreviewSegment[] {
   if (!trip) return [];
@@ -796,7 +1332,11 @@ function commitTripChange(
   // value to restore on undo).
   const undoStack = trimHistory([
     ...state.undoStack,
-    { trip: state.activeTrip, dirty: state.routeDirty },
+    {
+      trip: state.activeTrip,
+      dirty: state.routeDirty,
+      stale: state.stalePreviewDays,
+    },
   ]);
   return {
     activeTrip: nextTrip,
@@ -807,10 +1347,18 @@ function commitTripChange(
   };
 }
 
+function markDayStale(staleDays: number[], dayNumber: number): number[] {
+  return staleDays.includes(dayNumber) ? staleDays : [...staleDays, dayNumber];
+}
+
+function clearDayStale(staleDays: number[], dayNumber: number): number[] {
+  return staleDays.filter((n) => n !== dayNumber);
+}
+
 function updatePlannerDayRoute(
   day: Trip["days"][number],
   waypoints: Waypoint[],
-  _parameters: Trip["parameters"],
+  _parameters?: Trip["parameters"],
 ) {
   // Geometry is driven exclusively by applyRouteResult (live routing hook).
   // We never synthesize geometry here — just update the waypoint list and
@@ -818,7 +1366,9 @@ function updatePlannerDayRoute(
   // UNLESS the set is no longer routable (<2 routing waypoints): the live hook
   // returns early without calling applyRouteResult, so we must clear the stale
   // route-derived fields here or the map/sidebar keep showing the old route.
-  if (filterRoutingWaypoints(waypoints).length < 2) {
+  // Normalize a terminal accommodation first so a generated overnight day
+  // (start + accommodation) counts as routable and keeps its geometry.
+  if (filterRoutingWaypoints(normalizeDayFinish(waypoints)).length < 2) {
     return {
       ...day,
       waypoints,

@@ -180,6 +180,9 @@ export class TripDayDto {
   @ApiProperty()
   estimated_time_min!: number;
 
+  @ApiProperty()
+  start_linked!: boolean;
+
   @ApiProperty({
     type: [LatLngResponseDto],
     description: 'Polyline points (lat/lng) of the day route.',

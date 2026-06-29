@@ -348,15 +348,30 @@ This is the flagship web feature. The full-screen trip planner provides a dramat
 - ✅ **US-39:** As a rider, I want to export my planned route as GPX for Garmin devices, as a shareable link, or push it directly to the Tarmoto mobile app so that the transition from planning to riding is seamless.
 - ✅ **US-40:** As a rider, I want to see seasonal road closures, mountain pass status, and construction zones on the planner map so that I don't plan trips around unavailable roads.
 
+**Multi-Day Planning (Phase 2):**
+
+Phase 2 extends manual route planning to support multi-day trips. Riders build itineraries day-by-day on a tabbed interface, with live per-day routing and an intelligent overnight link that chains consecutive days:
+
+- **Day tabs:** Switchable tabs for each day (1–14 days max), with summary distance/duration. Controls to add or remove days.
+- **Chained overnight link:** Day N+1's start location automatically mirrors day N's end location and re-routes live when the end is edited. Riders can override this link by placing a new start, or relink using an affordance.
+- **All days on map:** All days render color-coded by day number, with the selected day emphasized and interactive. A focus toggle isolates the selected day for clarity.
+- **Per-day live routing:** Editing waypoints on the selected day triggers a live route update via Valhalla for that day only. Cascading overnight edits re-route both days.
+- **Completeness gating:** Save is enabled only when ≥1 day is complete (has valid start→end and routable waypoints) and zero days are incomplete (partially placed waypoints). Empty days are auto-dropped on save; remaining days are renumbered (1..N).
+- **Link state persistence:** A `start_linked` flag per day encodes whether that day's start is chained to the previous day's end. On reload, the link state and all route geometry restore.
+
+Out of scope for Phase 2: automated multi-day route generation (Calimoto-style round-trip optimization) and motorcycle-specific routing profiles (curvy roads). These remain planned for a later phase.
+
 **Key UX elements:**
 
-| Element           | Description                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| Map canvas        | Full-screen MapLibre GL JS with road quality heatmap, Fun Zone clusters, and route overlay |
-| Segment sidebar   | Scrollable list of Road Preview Cards, each expandable for full detail                     |
-| Parameter panel   | Collapsible panel for trip settings: days, km/day, road preferences, avoidance             |
-| Collaboration bar | Shows connected group members, their cursor positions on the map, and pending suggestions  |
-| Timeline strip    | Bottom strip showing daily route breakdown with distance, elevation, and stops per day     |
+| Element           | Description                                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Map canvas        | Full-screen MapLibre GL JS with road quality heatmap, Fun Zone clusters, and route overlay (all days color-coded) |
+| Day tabs          | Tab bar for each day with distance/duration summary, "+" to add, remove control per day                           |
+| Segment sidebar   | Scrollable list of Road Preview Cards, each expandable for full detail                                            |
+| Parameter panel   | Collapsible panel for trip settings: days, km/day, road preferences, avoidance                                    |
+| Collaboration bar | Shows connected group members, their cursor positions on the map, and pending suggestions                         |
+| Focus toggle      | Toggle to show all days or isolate the selected day on the map                                                    |
+| Overnight link UI | "Link to previous day" affordance when start is unlinked; clicking re-links and re-seeds start from predecessor   |
 
 #### 9.2.2 WEB-EPIC 2: Road Quality Explorer
 
