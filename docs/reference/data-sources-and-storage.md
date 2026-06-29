@@ -39,12 +39,12 @@ Public base data. Slow refresh, overwritten in place, **no row-level expiry**.
 
 Our own data. Nothing here is bought; this is the defensible asset. Quality is **denormalized onto `road_segments`**, not a separate table.
 
-| Datum                                                                                        | Real table                                                                             | Source                           | Storage                                      | Refresh                           | TTL                                                                                                             | Notes                                            |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Raw per-window sensor readings (IRI, vibration, classification, device/calibration metadata) | `surface_readings`                                                                     | Rider devices                    | PostGIS (+ raw 50 Hz to object store/ingest) | Per ride upload                   | Prune raw windows after a fixed window; **aggregates kept**                                                     | Anonymisable; carries no quality decision itself |
-| Aggregated road quality + confidence                                                         | `road_segments.quality_score`, `.confidence`, `.reading_count`, `.last_filtered_count` | Pipeline over `surface_readings` | PostGIS                                      | Re-aggregate continuously/nightly | none — **recency-weighted** (old passes decay in _weight_, not deleted)                                         | The core asset; overwrites the surface seed      |
-| Hazard reports (pothole, gravel, oil, animal, police)                                        | `hazard_reports`                                                                       | Users (one-tap)                  | PostGIS (+ Redis push fan-out)               | Real-time                         | **`expires_at` time-decay unless re-confirmed** (`is_active`, `confirmations`, `confirmed_at` already modelled) | Indexed `(is_active, expires_at)`                |
-| Road ratings + reviews                                                                       | `road_reviews` + `road_review_vote`                                                    | Users                            | PostGIS (+ object store for photos)          | On submit                         | none                                                                                                            | User-owned; honour deletion                      |
+| Datum                                                                                        | Real table                                                                             | Source                           | Storage                                      | Refresh                           | TTL                                                                                                               | Notes                                            |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Raw per-window sensor readings (IRI, vibration, classification, device/calibration metadata) | `surface_readings`                                                                     | Rider devices                    | PostGIS (+ raw 50 Hz to object store/ingest) | Per ride upload                   | **Per-user `location_retention`** (3 months … forever) via `LocationRetentionSweepProcessor`; **aggregates kept** | Anonymisable; carries no quality decision itself |
+| Aggregated road quality + confidence                                                         | `road_segments.quality_score`, `.confidence`, `.reading_count`, `.last_filtered_count` | Pipeline over `surface_readings` | PostGIS                                      | Re-aggregate continuously/nightly | none — **recency-weighted** (old passes decay in _weight_, not deleted)                                           | The core asset; overwrites the surface seed      |
+| Hazard reports (pothole, gravel, oil, animal, police)                                        | `hazard_reports`                                                                       | Users (one-tap)                  | PostGIS (+ Redis push fan-out)               | Real-time                         | **`expires_at` time-decay unless re-confirmed** (`is_active`, `confirmations`, `confirmed_at` already modelled)   | Indexed `(is_active, expires_at)`                |
+| Road ratings + reviews                                                                       | `road_reviews` + `road_review_vote`                                                    | Users                            | PostGIS (+ object store for photos)          | On submit                         | none                                                                                                              | User-owned; honour deletion                      |
 
 ---
 
@@ -116,7 +116,7 @@ Sourcing detail for the feeds above. Endpoints, licenses, and the CZ launch bbox
 
 - Registry: `https://registr.dopravniinfo.cz` (provider NDIC/ŘSD). Free, requires registration. Format: DATEX II (XML).
 - **Start with the pull snapshot** `cz-ndic_d2-common-pull` (one HTTP GET → all currently-valid situations). Move to the push feed `cz-ndic_d2-common` only when sub-minute freshness is needed.
-- **Location decoding caveat:** point events often carry WGS84 directly; linear closures are frequently **Alert-C (TMC) / OpenLR** with no coordinates — store them flagged for decoding rather than dropping (the example does this via `needs_location_decoding`).
+- **Location decoding caveat:** point events often carry WGS84 directly; linear closures are frequently **Alert-C (TMC) / OpenLR** with no coordinates — store them flagged for decoding rather than dropping (the example does this via `needs_location_decoding`). This requires the **nullable `geom` + `needs_location_decoding` + `raw_location_ref`** columns in §8.1 — `RoadClosure.geom` is non-null today, so without them these records would fail to insert or be dropped.
 - **Scaling Europe:** GraphHopper `open-traffic-collection` (per-country DATEX II catalog); NAPSPAN (`napspan.com`) normalises ~24 NAPs to one GeoJSON schema (paid; worth it past ~3 countries).
 
 ### Surface / quality seed
@@ -147,15 +147,18 @@ What stands between today's schema and "clear data on the map + in routes."
 
 **Required schema migration — the current entity can't be reconciled as-is.** Today `RoadClosure` carries only the time window plus `source`, and `ClosuresService` derives "active" purely from `starts_at <= now AND (ends_at IS NULL OR ends_at >= now)`. There is **no way to detect a closure that vanished from a snapshot** (no external id, no last-seen stamp) and **no way to deactivate one while keeping it for audit** (no active flag) — an `official` closure with `ends_at = null` that disappears from the feed would otherwise stay visible forever. The feed-reconciliation columns must be added before the poller can work:
 
-| Column                                           | Purpose                                                                                     |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `external_id` (+ unique `(source, external_id)`) | Stable upsert key per feed situation                                                        |
-| `last_seen_at`                                   | Stamped to the batch time on every snapshot the row appears in                              |
-| `is_active` (bool)                               | Set `false` when absent from the latest snapshot or `ends_at < now`; row retained for audit |
-| `first_seen_at`                                  | When the situation first entered the feed                                                   |
-| `validity_status` (nullable)                     | DATEX validity passthrough, optional                                                        |
+| Column                                           | Purpose                                                                                                                                                              |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `external_id` (+ unique `(source, external_id)`) | Stable upsert key per feed situation                                                                                                                                 |
+| `last_seen_at`                                   | Stamped to the batch time on every snapshot the row appears in                                                                                                       |
+| `is_active` (bool)                               | Set `false` when absent from the latest snapshot or `ends_at < now`; row retained for audit                                                                          |
+| `first_seen_at`                                  | When the situation first entered the feed                                                                                                                            |
+| `validity_status` (nullable)                     | DATEX validity passthrough, optional                                                                                                                                 |
+| **`geom` made nullable**                         | Today `RoadClosure.geom` is a **non-null** `LineString`; Alert-C (TMC) / OpenLR closures arrive with no coordinates and must be storable with `geom = null` (see §7) |
+| `needs_location_decoding` (bool)                 | `true` when only TMC/OpenLR refs were present and no geometry could be resolved; excluded from map + routing until decoded                                           |
+| `raw_location_ref` (jsonb, nullable)             | Raw location reference captured for later decoding                                                                                                                   |
 
-Operator-entered rows keep working unchanged: they have no `external_id`, are never touched by the reconcile pass, and stay window-derived. Reads must treat a closure as live when `is_active` is not `false` **and** within its window, so both sources coexist.
+Operator-entered rows keep working unchanged: they have no `external_id`, are never touched by the reconcile pass, always carry geometry, and stay window-derived. Reads must treat a closure as live when `is_active` is not `false` **and** within its window, so both sources coexist. Map + routing reads must also exclude `needs_location_decoding = true` / `geom IS NULL` rows until they're decoded.
 
 ### 8.2 Closures are not avoided during routing
 
@@ -167,9 +170,12 @@ POIs are fetched **live from Overpass per request** today. That's the **MVP** de
 
 **Post-MVP (gated on the offline-packs feature):** store POIs in a `pois` PostGIS table refreshed on a periodic import, so they ship in offline packs (and gain a tileable layer + spatial joins as a side effect). Add a scheduled import that queries the §7 tag sets (Overpass, Overture gap-fill) and upserts `pois` by stable external id; switch `poi.service` read paths from per-request Overpass to the table; keep the existing `PoiProvider` as the _import_ source. Overwrite in place — no row TTL. → _Issue: POI import + offline storage (post-MVP)._
 
-### 8.4 One TTL still undecided
+### 8.4 No open TTLs — but one constraint to respect
 
-- Raw `surface_readings` retention before prune: **proposed 90 days** — confirm against the ML re-aggregation window. (Hazard decay is **not** open — it's the per-type `EXPIRY_HOURS` + `confirm()` +24 h contract documented in §4; the weather dispatch cooldown is the 60-min window in §3.)
+Both TTLs that earlier drafts called "undecided" are already governed by existing contracts:
+
+- **Raw `surface_readings` retention is per-user `location_retention`**, not a flat value. `LocationRetentionSweepProcessor` deletes a rider's raw readings (and `ride_tag_events`) according to their saved bucket — `3months` / `6months` / `1year` (default) / `2years` / `forever` — while **keeping the recency-weighted aggregates**. A prune job must **not** impose a global 90-day cap; that would discard readings for riders who chose a longer window. **Constraint:** the ML re-aggregation window must fit inside the **shortest** bucket (3 months) so a `3months` rider's data is still aggregated before deletion.
+- Hazard decay is the per-type `EXPIRY_HOURS` + `confirm()` +24 h contract (§4); the weather dispatch cooldown is the 60-min window (§3).
 
 ---
 
