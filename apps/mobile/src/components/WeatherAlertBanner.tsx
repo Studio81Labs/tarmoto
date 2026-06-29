@@ -19,16 +19,18 @@ import {
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  shadows,
-  spacing,
-} from "@/theme";
+  brandColorsDark,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  QUALITY_COLORS,
+} from "@/theme/brand";
 import type { WeatherAlert, WeatherAlertSeverity } from "@/types";
 
 type IconName = ComponentProps<typeof Icon>["name"];
+
+// Rendered over the night-palette NavigationScreen → dark surface tokens.
+const t = brandColorsDark;
 
 const KIND_ICON: Record<WeatherAlert["kind"], IconName> = {
   storm: "weather-lightning-rainy",
@@ -47,10 +49,13 @@ const SEVERITY_RANK: Record<WeatherAlertSeverity, number> = {
   info: 1,
 };
 
+// Severity accent for the leading icon + left border on the dark banner /
+// sheet rows. Each clears 3:1 on the dark surface: the Q1 ramp red and Q2
+// amber escalate critical/warning, and `info` reads as a neutral cream.
 function severityColor(severity: WeatherAlertSeverity): string {
-  if (severity === "critical") return colors.danger;
-  if (severity === "warning") return colors.warning;
-  return colors.info;
+  if (severity === "critical") return QUALITY_COLORS[0];
+  if (severity === "warning") return QUALITY_COLORS[1];
+  return t.fg;
 }
 
 export interface WeatherAlertBannerProps {
@@ -80,7 +85,7 @@ export function WeatherAlertBanner({
   if (sortedAlerts.length === 0) return null;
   const top = sortedAlerts[0];
   const additionalCount = sortedAlerts.length - 1;
-  const bg = severityColor(top.severity);
+  const accent = severityColor(top.severity);
 
   return (
     <>
@@ -89,12 +94,12 @@ export function WeatherAlertBanner({
         accessibilityLabel={`Weather alert: ${top.title}. Tap for details.`}
         accessibilityLiveRegion="polite"
         onPress={onOpenDetail}
-        style={[styles.banner, { backgroundColor: bg }]}
+        style={[styles.banner, { borderLeftColor: accent }]}
       >
         <Icon
           name={KIND_ICON[top.kind] ?? "weather-cloudy-alert"}
           size={20}
-          color={colors.textInverse}
+          color={accent}
         />
         <View style={styles.bannerBody}>
           <Text style={styles.bannerTitle} numberOfLines={1}>
@@ -106,7 +111,7 @@ export function WeatherAlertBanner({
               : top.message}
           </Text>
         </View>
-        <Icon name="chevron-right" size={18} color={colors.textInverse} />
+        <Icon name="chevron-right" size={18} color={t.dim} />
       </TouchableOpacity>
 
       <Modal
@@ -125,7 +130,7 @@ export function WeatherAlertBanner({
                 accessibilityLabel="Close weather alerts"
                 style={styles.sheetClose}
               >
-                <Icon name="close" size={20} color={colors.textPrimary} />
+                <Icon name="close" size={20} color={t.fg} />
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.sheetList}>
@@ -168,24 +173,28 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    ...shadows.card,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
+    borderWidth: 1,
+    borderColor: t.line,
+    borderLeftWidth: 4,
   },
   bannerBody: {
     flex: 1,
   },
   bannerTitle: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   bannerMessage: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
-    opacity: 0.9,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
   },
   backdrop: {
     flex: 1,
@@ -193,60 +202,66 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
   },
   sheet: {
-    backgroundColor: colors.bgCard,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl,
+    backgroundColor: t.raised,
+    borderTopLeftRadius: brandRadii.lg,
+    borderTopRightRadius: brandRadii.lg,
+    borderWidth: 1,
+    borderColor: t.line,
+    paddingHorizontal: brandSpacing.s4,
+    paddingTop: brandSpacing.s3,
+    paddingBottom: brandSpacing.s8,
     maxHeight: "75%",
   },
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingBottom: spacing.md,
+    paddingBottom: brandSpacing.s3,
   },
   sheetTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
   },
   sheetClose: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   sheetList: {
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: brandSpacing.s3,
+    paddingVertical: brandSpacing.s2,
   },
   sheetRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.md,
-    padding: spacing.md,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s3,
     borderLeftWidth: 4,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.bg,
+    borderRadius: brandRadii.sm,
+    backgroundColor: t.raised2,
   },
   sheetRowBody: {
     flex: 1,
     gap: 2,
   },
   sheetRowTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   sheetRowMessage: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   sheetRowDistance: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.mono,
+    fontSize: 11,
     marginTop: 4,
   },
 });

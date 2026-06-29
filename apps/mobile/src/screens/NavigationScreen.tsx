@@ -47,13 +47,13 @@ import {
   UserLocation,
 } from "@maplibre/maplibre-react-native";
 import {
-  borderRadius,
-  colors,
-  fontSize,
-  fontWeight,
-  shadows,
-  spacing,
-} from "@/theme";
+  ACCENT,
+  brandColorsDark,
+  brandFonts,
+  brandRadii,
+  brandSpacing,
+  statusFg,
+} from "@/theme/brand";
 import { useKeepAwake, useRouteWeatherAlerts } from "@/hooks";
 import { useNavigationSession } from "@/hooks/useNavigationSession";
 import { useVehicleNavigationDisplay } from "@/hooks/useVehicleNavigationDisplay";
@@ -83,6 +83,10 @@ type Nav = NativeStackNavigationProp<
   "Navigate"
 >;
 type IconName = ComponentProps<typeof Icon>["name"];
+
+// Immersive HUD over a live map → the brand night palette. Dark cards with
+// cream text, the accent for the planned route + active controls.
+const t = brandColorsDark;
 
 const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
   depart: "navigation-variant",
@@ -220,11 +224,7 @@ export default function NavigationScreen() {
   if (polyline.length < 2) {
     return (
       <View style={styles.empty}>
-        <Icon
-          name="map-marker-off-outline"
-          size={48}
-          color={colors.textTertiary}
-        />
+        <Icon name="map-marker-off-outline" size={48} color={t.mute} />
         <Text style={styles.emptyTitle}>No route to navigate</Text>
         <Text style={styles.emptyBody}>
           {params.source === "trip-day"
@@ -283,7 +283,7 @@ export default function NavigationScreen() {
             id="nav-route-line"
             source="nav-route"
             style={{
-              lineColor: colors.primary,
+              lineColor: ACCENT,
               lineWidth: 6,
               lineCap: "round",
               lineJoin: "round",
@@ -312,7 +312,10 @@ export default function NavigationScreen() {
 
       <View
         pointerEvents="box-none"
-        style={[styles.bottomOverlay, { bottom: spacing.xl + insets.bottom }]}
+        style={[
+          styles.bottomOverlay,
+          { bottom: brandSpacing.s5 + insets.bottom },
+        ]}
       >
         <View style={styles.statsRow}>
           <Stat
@@ -338,7 +341,7 @@ export default function NavigationScreen() {
             <Icon
               name={voiceEnabled ? "volume-high" : "volume-off"}
               size={22}
-              color={voiceEnabled ? colors.textInverse : colors.textPrimary}
+              color={voiceEnabled ? t.invFg : t.fg}
             />
           </TouchableOpacity>
 
@@ -348,7 +351,7 @@ export default function NavigationScreen() {
             accessibilityRole="button"
             accessibilityLabel="End navigation"
           >
-            <Icon name="close" size={18} color={colors.textInverse} />
+            <Icon name="close" size={18} color={t.fg} />
             <Text style={styles.endLabel}>End</Text>
           </TouchableOpacity>
         </View>
@@ -356,7 +359,7 @@ export default function NavigationScreen() {
 
       {!liveLocation ? (
         <View style={styles.searchingBadge} pointerEvents="none">
-          <Icon name="crosshairs-gps" size={14} color={colors.textInverse} />
+          <Icon name="crosshairs-gps" size={14} color={t.fg} />
           <Text style={styles.searchingLabel}>Acquiring GPS…</Text>
         </View>
       ) : null}
@@ -390,7 +393,7 @@ function NextManeuverCard({
   return (
     <View style={styles.maneuverCard}>
       <View style={styles.maneuverIconWrap}>
-        <Icon name={icon} size={38} color={colors.primary} />
+        <Icon name={icon} size={38} color={ACCENT} />
       </View>
       <View style={styles.maneuverBody}>
         <Text style={styles.maneuverDistance}>{distance}</Text>
@@ -410,7 +413,7 @@ function NextManeuverCard({
 function OffRouteBanner({ distanceM }: { distanceM: number }) {
   return (
     <View style={styles.offRouteBanner} accessibilityLiveRegion="polite">
-      <Icon name="alert-octagon" size={18} color={colors.textInverse} />
+      <Icon name="alert-octagon" size={18} color={t.fg} />
       <View style={styles.offRouteBody}>
         <Text style={styles.offRouteTitle}>Off route</Text>
         <Text style={styles.offRouteBodyText}>
@@ -488,42 +491,41 @@ function formatMeters(m: number): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.bg,
   },
   map: {
     flex: 1,
   },
   topOverlay: {
     position: "absolute",
-    top: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    gap: spacing.sm,
+    top: brandSpacing.s5,
+    left: brandSpacing.s4,
+    right: brandSpacing.s4,
+    gap: brandSpacing.s2,
   },
   bottomOverlay: {
     position: "absolute",
-    bottom: spacing.xl,
-    left: spacing.lg,
-    right: spacing.lg,
-    gap: spacing.md,
+    bottom: brandSpacing.s5,
+    left: brandSpacing.s4,
+    right: brandSpacing.s4,
+    gap: brandSpacing.s3,
   },
   maneuverCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s3,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.lg,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: t.line,
   },
   maneuverIconWrap: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primaryAlpha15,
+    backgroundColor: t.raised2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -532,72 +534,77 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   maneuverDistance: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.black,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 28,
+    fontWeight: "800",
     lineHeight: 34,
   },
   maneuverLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
   maneuverRoad: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
   },
   offRouteBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.danger,
-    ...shadows.card,
+    gap: brandSpacing.s2,
+    paddingHorizontal: brandSpacing.s4,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: statusFg.danger,
   },
   offRouteBody: {
     flex: 1,
   },
   offRouteTitle: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   offRouteBodyText: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     opacity: 0.9,
   },
   statsRow: {
     flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.bgCard,
+    gap: brandSpacing.s3,
+    padding: brandSpacing.s3,
+    borderRadius: brandRadii.md,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: t.line,
   },
   stat: {
     flex: 1,
   },
   statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.mono,
+    fontSize: 16,
+    fontWeight: "700",
   },
   statLabel: {
-    color: colors.textTertiary,
-    fontSize: fontSize.xs,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    fontWeight: fontWeight.semibold,
+    fontWeight: "600",
     marginTop: 2,
   },
   actionsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: brandSpacing.s3,
     alignItems: "center",
   },
   iconFab: {
@@ -606,74 +613,83 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.primary,
-    ...shadows.card,
+    backgroundColor: ACCENT,
   },
   iconFabMuted: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: t.raised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.line,
   },
   endBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.danger,
+    gap: brandSpacing.s2,
+    minHeight: 48,
+    paddingVertical: brandSpacing.s3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: statusFg.danger,
   },
   endLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "700",
   },
   searchingBadge: {
     position: "absolute",
-    top: spacing.xl,
+    top: brandSpacing.s5,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.textPrimary,
+    paddingHorizontal: brandSpacing.s3,
+    paddingVertical: brandSpacing.s1,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.raised,
+    borderWidth: 1,
+    borderColor: t.line,
   },
   searchingLabel: {
-    color: colors.textInverse,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 11,
+    fontWeight: "600",
   },
   empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
-    backgroundColor: colors.bg,
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
+    backgroundColor: t.bg,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
   },
   emptyBody: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
     textAlign: "center",
   },
   endSecondary: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.pill,
+    paddingHorizontal: brandSpacing.s5,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: brandSpacing.s2,
+    borderRadius: brandRadii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.lineStrong,
   },
   endSecondaryLabel: {
-    color: colors.textPrimary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

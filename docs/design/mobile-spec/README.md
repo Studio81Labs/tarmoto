@@ -136,17 +136,17 @@ screen migrated yet.
 The mobile prototype's screens map onto the existing app as follows. Screens
 without a clean 1:1 today are noted.
 
-| Canonical screen (`source/mobile`)         | App screen(s)                                                                                                                  | Notes                                                                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet)                                                                       | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                        |
-| `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen` ✅, `MapScreen`                                                                               | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` + `CommuteScreen` migrated; `MapScreen` + bottom nav remain. |
-| `ExplorerScreen` (road quality explorer)   | `MapScreen` ✅, `RoadPreviewScreen` ✅                                                                                         | Map + filter chips + segment detail sheet. Both migrated, plus the `ReviewFormModal` composer opened from RoadPreview. ✅         |
-| `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen` ✅, `TripsScreen` ✅, `TripDetailScreen` ✅, `TripDayScreen` ✅, `JoinTripScreen` ✅, `TripImportScreen` ✅ | The quick round-trip generator + result is new product surface; align styling. Entire Trips cluster migrated. ✅                  |
-| `RideScreen` (turn-by-turn HUD)            | `NavigationScreen`, `RideActiveScreen`                                                                                         | Always-dark immersive HUD.                                                                                                        |
-| `HazardScreen` (report)                    | `HazardReportScreen` ✅                                                                                                        | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                  |
-| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component) ✅                                                                                             | Full-bleed Q1-red countdown. Migrated: Q1 ramp red bg, ink text/countdown, cream primary button.                                  |
-| `PostRideScreen` (summary)                 | `RideDetailScreen` ✅, `RideScreen` ✅                                                                                         | Hero metrics, quality breakdown, elevation, splits, badges. Both migrated; `RideScreen` is the Ride-tab history list + start CTA. |
-| `ProfileScreen`                            | `ProfileScreen` ✅, `PersonalRoadMapScreen` ✅                                                                                 | Stats grid, explored-roads map, settings rows. Both migrated.                                                                     |
+| Canonical screen (`source/mobile`)         | App screen(s)                                                                                                                  | Notes                                                                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AuthScreen` (welcome / sign in / sign up) | `LinkAccountScreen` + (no dedicated welcome/sign-up yet)                                                                       | Welcome hero over the map is new; sign-in/up forms map onto the auth flow.                                                                  |
+| `HomeScreen` (map-first / list-first)      | `HomeScreen` ✅, `CommuteScreen` ✅, `MapScreen`                                                                               | Commute card, suggested ride, stat strip, nearby roads. `HomeScreen` + `CommuteScreen` migrated; `MapScreen` + bottom nav remain.           |
+| `ExplorerScreen` (road quality explorer)   | `MapScreen` ✅, `RoadPreviewScreen` ✅                                                                                         | Map + filter chips + segment detail sheet. Both migrated, plus the `ReviewFormModal` composer opened from RoadPreview. ✅                   |
+| `PlannerScreen` / `RouteResultScreen`      | `TripCreateScreen` ✅, `TripsScreen` ✅, `TripDetailScreen` ✅, `TripDayScreen` ✅, `JoinTripScreen` ✅, `TripImportScreen` ✅ | The quick round-trip generator + result is new product surface; align styling. Entire Trips cluster migrated. ✅                            |
+| `RideScreen` (turn-by-turn HUD)            | `NavigationScreen` ✅, `RideActiveScreen`                                                                                      | Always-dark immersive HUD (brand **night palette**). `NavigationScreen` migrated with its `WeatherAlertBanner`; `RideActiveScreen` remains. |
+| `HazardScreen` (report)                    | `HazardReportScreen` ✅                                                                                                        | Type grid + severity + location card. Migrated (self-contained, no shared deps).                                                            |
+| `CrashScreen` (crash detection)            | `CrashAlertOverlay` (component) ✅                                                                                             | Full-bleed Q1-red countdown. Migrated: Q1 ramp red bg, ink text/countdown, cream primary button.                                            |
+| `PostRideScreen` (summary)                 | `RideDetailScreen` ✅, `RideScreen` ✅                                                                                         | Hero metrics, quality breakdown, elevation, splits, badges. Both migrated; `RideScreen` is the Ride-tab history list + start CTA.           |
+| `ProfileScreen`                            | `ProfileScreen` ✅, `PersonalRoadMapScreen` ✅                                                                                 | Stats grid, explored-roads map, settings rows. Both migrated.                                                                               |
 
 Order (smallest blast radius first): **Settings ✅ → Hazard report ✅ →
 Emergency contacts ✅ → Offline maps ✅ → Profile ✅ → Post-ride summary ✅ →
@@ -399,6 +399,22 @@ navigation ✅** (the brand tab bar) all landed as their own steps.
 > auto-dispatch, retry/dismiss, haptics/TTS) and accessibility labels are
 > unchanged. It's a full-screen `Modal` component, so there's no stack header
 > to theme.
+>
+> **`NavigationScreen`** (US-16 turn-by-turn HUD) is the **first night-palette
+> screen** — it establishes the `brandColorsDark` pattern for the immersive
+> surfaces. The cards float over a MapLibre map, so they become solid **dark**
+> cards (`dark.raised` + `dark.line`, no shadows per rule #5) with cream text;
+> the planned route line and the next-turn arrow are the **accent**; the active
+> voice FAB is accent with an ink glyph (muted → dark card + cream glyph); the
+> giant maneuver distance + the stat values use the mono family. Off-route and
+> End use a `statusFg.danger` fill with cream text. Its exclusive
+> `WeatherAlertBanner` moves with it: instead of a fully severity-coloured fill
+> it becomes a dark card with a severity-coloured leading icon + left border
+> (critical → Q1 red, warning → Q2 amber, info → cream), matching its own
+> detail-sheet rows; the detail sheet is a dark night surface. The map symbol/
+> line expressions are brand-coloured (accent route) but otherwise the map is
+> left to its basemap. No stack header (full-screen modal route). `RideActiveScreen`
+> is the last HUD screen on the night palette.
 >
 > **Resequencing note:** Hazard report, Emergency contacts, and Offline maps
 > were migrated before Profile — each is self-contained (or has only
