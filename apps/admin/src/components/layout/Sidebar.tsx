@@ -1,4 +1,4 @@
-import { Heading } from "@tarmoto/ui";
+import { TarmotoMark } from "@tarmoto/ui";
 import type { AdminRoute } from "../../app/routes.js";
 
 interface SidebarProps {
@@ -10,12 +10,27 @@ interface SidebarProps {
 export function Sidebar({ routes, active, onNavigate }: SidebarProps) {
   return (
     <nav
-      className="flex h-full w-56 shrink-0 flex-col border-r border-line bg-cream px-4 py-6"
+      className="flex h-full w-56 shrink-0 flex-col gap-5 border-r border-ink/10 bg-ink px-4 py-6 text-cream"
       aria-label="Admin sections"
     >
-      <Heading as="div" size="sm" className="mb-6 px-2">
-        Tarmoto Admin
-      </Heading>
+      {/* Brand — accent mark + product name with the "admin console" stamp,
+          mirroring the companion sidebar's logo treatment. */}
+      <div className="flex items-center gap-2.5 px-1.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-accent">
+          <TarmotoMark size={20} />
+        </span>
+        <span className="leading-tight">
+          <span className="block text-[15px] font-extrabold tracking-tight text-cream">
+            TARMOTO
+          </span>
+          <span className="block text-[10px] font-bold uppercase tracking-[1.5px] text-cream/50">
+            Admin Console
+          </span>
+        </span>
+      </div>
+
+      <div className="h-px bg-cream/10" />
+
       <ul className="flex flex-col gap-1">
         {routes.map((route) => (
           <li key={route.key}>
@@ -24,8 +39,8 @@ export function Sidebar({ routes, active, onNavigate }: SidebarProps) {
               className={[
                 "w-full rounded-lg px-3 py-2 text-left text-[13px] font-bold transition-colors",
                 active === route.key
-                  ? "bg-ink text-cream"
-                  : "text-ink hover:bg-paper",
+                  ? "bg-accent text-ink"
+                  : "text-cream hover:bg-cream/5",
               ].join(" ")}
               aria-current={active === route.key ? "page" : undefined}
               onClick={() => onNavigate(route.key)}
