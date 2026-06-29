@@ -161,14 +161,15 @@ describe('NapReconcileService', () => {
         [16.7, 49.25],
       ],
     };
-    // The stored row was decoded out-of-band: it has geometry and is no
-    // longer flagged.
+    // The stored row was decoded out-of-band: it has geometry, is no
+    // longer flagged, and carries the SAME raw location reference.
     txRepo.find.mockResolvedValueOnce([
       {
         external_id: 'ndic-tmc',
         first_seen_at: new Date('2026-06-01T00:00:00Z'),
         geom: decoded,
         needs_location_decoding: false,
+        raw_location_ref: { alertC: 'code' },
       },
     ]);
     const result = await service.reconcile([
@@ -184,6 +185,37 @@ describe('NapReconcileService', () => {
     expect(row.geom).toEqual(decoded); // not overwritten back to null
     expect(row.needs_location_decoding).toBe(false);
     expect(result.needsDecoding).toBe(0);
+  });
+
+  it('drops a stale decoded geometry when the raw location reference changes', async () => {
+    txRepo.find.mockResolvedValueOnce([
+      {
+        external_id: 'ndic-tmc',
+        first_seen_at: new Date('2026-06-01T00:00:00Z'),
+        geom: {
+          type: 'LineString',
+          coordinates: [
+            [16.6, 49.2],
+            [16.7, 49.25],
+          ],
+        },
+        needs_location_decoding: false,
+        raw_location_ref: { alertC: 'OLD' },
+      },
+    ]);
+    const result = await service.reconcile([
+      situation({
+        externalId: 'ndic-tmc',
+        geometry: null,
+        needsLocationDecoding: true,
+        rawLocationRef: { alertC: 'NEW' }, // location moved
+      }),
+    ]);
+
+    const row = upsertedRow();
+    expect(row.geom).toBeNull(); // stale geometry not preserved
+    expect(row.needs_location_decoding).toBe(true);
+    expect(result.needsDecoding).toBe(1);
   });
 
   it('chunks a large snapshot into multiple upserts (param-limit safety)', async () => {
