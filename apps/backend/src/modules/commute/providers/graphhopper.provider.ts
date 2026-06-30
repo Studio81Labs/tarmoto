@@ -73,21 +73,26 @@ export class GraphHopperProvider implements RoutingProvider {
     const explicitBase = config
       .get<string>('TARMOTO_GRAPHHOPPER_BASE_URL')
       ?.trim();
-    // We're on the hosted Directions API only when no explicit base URL is
-    // set AND an API key is — an explicit base wins (the request goes there
-    // even if a leftover/proxy key is also present).
-    const usingHostedApi = !explicitBase && this.apiKey !== undefined;
     this.baseUrl =
       explicitBase ||
-      (usingHostedApi
-        ? 'https://graphhopper.com/api/1'
-        : 'http://localhost:8989');
+      (this.apiKey ? 'https://graphhopper.com/api/1' : 'http://localhost:8989');
     this.profile =
       config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE')?.trim() || 'car';
+    // Are we actually hitting the hosted Directions API? Detect from the
+    // RESOLVED endpoint host, not "no explicit base" — an explicit
+    // `…/api/1` URL with a key is still hosted, and a self-hosted base with
+    // a leftover key is not.
+    const usingHostedApi = ((): boolean => {
+      try {
+        const host = new URL(this.baseUrl).hostname.toLowerCase();
+        return host === 'graphhopper.com' || host.endsWith('.graphhopper.com');
+      } catch {
+        return false;
+      }
+    })();
     // Explicit flag wins; otherwise default to true only when we actually
-    // hit the hosted API (which ships the `toll` encoded value) — NOT merely
-    // when a key exists, since an explicit self-hosted base routes to a graph
-    // that likely lacks `toll`. Self-hosted operators add `toll` to
+    // hit the hosted API (which ships the `toll` encoded value). A
+    // self-hosted graph likely lacks `toll`, so operators must add it to
     // `graph.encoded_values` and set the flag.
     const tollFlag = config
       .get<string>('TARMOTO_GRAPHHOPPER_TOLL_ENABLED')

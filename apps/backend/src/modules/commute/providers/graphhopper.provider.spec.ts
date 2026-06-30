@@ -143,6 +143,26 @@ describe('GraphHopperProvider.route', () => {
     });
   });
 
+  it('enables the toll rule for an EXPLICIT hosted base URL + key', async () => {
+    // Detected from the resolved host (graphhopper.com), not "no explicit
+    // base" — these requests still hit the hosted API, which has `toll`.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
+    await makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'https://graphhopper.com/api/1',
+      TARMOTO_GRAPHHOPPER_API_KEY: 'k',
+    }).route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { avoidTolls: true },
+    );
+    expect(bodyOf(fetchMock).custom_model?.priority).toContainEqual({
+      if: 'toll == ALL || toll == HGV',
+      multiply_by: 0,
+    });
+  });
+
   it('no-ops avoidTolls on a self-hosted graph without the toll encoded value', async () => {
     // Default self-hosted (no API key, no flag): referencing `toll` would
     // make GraphHopper reject the request, so the flag is dropped and a
