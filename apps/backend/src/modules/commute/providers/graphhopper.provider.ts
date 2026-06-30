@@ -50,14 +50,23 @@ export class GraphHopperProvider implements RoutingProvider {
   readonly version = 'graphhopper-v1';
 
   constructor(config: ConfigService) {
-    this.apiKey = config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY');
+    // Normalize blank/whitespace env values to unset (templated env files
+    // often emit `TARMOTO_GRAPHHOPPER_BASE_URL=`), matching how the factory
+    // already treats them — otherwise a blank base URL would survive `??`
+    // and the provider would fetch a relative `/route?key=...`.
+    this.apiKey =
+      config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY')?.trim() || undefined;
+    const explicitBase = config
+      .get<string>('TARMOTO_GRAPHHOPPER_BASE_URL')
+      ?.trim();
     // An explicit base URL wins. Otherwise default to the hosted Directions
     // API when an API key is set (the key-only hosted path), and to the
     // local self-hosted port when it isn't.
     this.baseUrl =
-      config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL') ??
+      explicitBase ||
       (this.apiKey ? 'https://graphhopper.com/api/1' : 'http://localhost:8989');
-    this.profile = config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE') ?? 'car';
+    this.profile =
+      config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE')?.trim() || 'car';
   }
 
   /** Build the `custom_model` (+ areas) for the avoidance options, or null. */
