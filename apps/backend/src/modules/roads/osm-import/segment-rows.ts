@@ -50,17 +50,24 @@ export function waySegmentRows(way: OsmWay): RoadSegmentRow[] {
   if (!isDrivableHighway(way.tags)) return [];
   const fields = roadFieldsFromTags(way.tags);
   const osm_way_id = String(way.id);
-  return segmentWay(way.coords).map((seg, index) => ({
-    osm_way_id,
-    segment_index: index, // 0-based ordinal within the way (#751)
-    geom: {
-      type: 'LineString',
-      coordinates: seg.coords.map((p) => [p.lng, p.lat]), // GeoJSON [lng, lat]
-    },
-    length_m: seg.length_m,
-    curviness_score: seg.curviness_score,
-    ...fields,
-  }));
+  return (
+    segmentWay(way.coords)
+      // Drop zero-length segments (a way whose nodes are all coincident) so no
+      // degenerate `length_m = 0` LineString reaches distance-weighted scoring or
+      // spatial queries. Index AFTER filtering keeps `segment_index` contiguous.
+      .filter((seg) => seg.length_m > 0)
+      .map((seg, index) => ({
+        osm_way_id,
+        segment_index: index, // 0-based ordinal within the way (#751)
+        geom: {
+          type: 'LineString',
+          coordinates: seg.coords.map((p) => [p.lng, p.lat]), // GeoJSON [lng, lat]
+        },
+        length_m: seg.length_m,
+        curviness_score: seg.curviness_score,
+        ...fields,
+      }))
+  );
 }
 
 /**

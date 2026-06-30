@@ -35,6 +35,20 @@ describe('waySegmentRows', () => {
     ).toEqual([]);
   });
 
+  it('drops zero-length segments (all-coincident nodes)', () => {
+    expect(
+      waySegmentRows({
+        id: 1,
+        tags: { highway: 'residential' },
+        coords: [
+          { lat: 50, lng: 14 },
+          { lat: 50, lng: 14 },
+          { lat: 50, lng: 14 },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
   it('emits one row per ~100 m segment with sequential 0-based segment_index', () => {
     const rows = waySegmentRows({
       id: 42,
