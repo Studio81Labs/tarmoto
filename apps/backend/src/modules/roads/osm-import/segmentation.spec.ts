@@ -194,4 +194,19 @@ describe('segmentWay', () => {
     // The corner contributes curviness somewhere — not all segments straight.
     expect(segs.some((s) => s.curviness_score > 0)).toBe(true);
   });
+
+  it('attributes a corner that lands EXACTLY on a segment boundary', () => {
+    // target == the exact A→B length, so the split lands on the corner vertex B
+    // and B is duplicated at the boundary. The first (2-point) segment must
+    // still pick up the turn via a DISTINCT context point, not score 0.
+    const m = 1 / 111_320;
+    const A = { lat: 50, lng: 14 };
+    const B = { lat: 50 + 100 * m, lng: 14 };
+    const C = { lat: 50 + 100 * m, lng: 14 + 140 * m };
+    const target = polylineLengthMeters([A, B]);
+    const segs = segmentWay([A, B, C], target);
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    expect(segs[0].coords).toHaveLength(2); // the boundary-ending segment
+    expect(segs[0].curviness_score).toBeGreaterThan(0); // corner not dropped
+  });
 });

@@ -117,6 +117,33 @@ function turnDeg(b1: number, b2: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
+/** Two points at the same location (zero-length leg between them). */
+function coincident(a: LatLng, b: LatLng): boolean {
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng) === 0;
+}
+
+/** Last point in `coords` not coincident with `ref` (the neighbour just
+ *  outside a segment's start, skipping any duplicated boundary vertices). */
+function lastDistinctFrom(
+  coords: readonly LatLng[],
+  ref: LatLng,
+): LatLng | undefined {
+  for (let i = coords.length - 1; i >= 0; i--) {
+    if (!coincident(coords[i], ref)) return coords[i];
+  }
+  return undefined;
+}
+
+/** First point in `coords` not coincident with `ref` (the neighbour just
+ *  outside a segment's end). */
+function firstDistinctFrom(
+  coords: readonly LatLng[],
+  ref: LatLng,
+): LatLng | undefined {
+  for (const p of coords) if (!coincident(p, ref)) return p;
+  return undefined;
+}
+
 /**
  * Drop consecutive zero-length legs (duplicate OSM nodes, or an exact
  * boundary duplicate from splitting). `bearingDeg` on identical points is
@@ -193,11 +220,15 @@ export function segmentWay(
   return segments.map((seg, i) => {
     const prev = segments[i - 1];
     const next = segments[i + 1];
-    // `prev`'s last point == `seg`'s first (shared boundary), so the neighbour
-    // just outside this segment's start is `prev`'s second-to-last point;
-    // similarly the point past the end is `next`'s second point.
-    const before = prev ? prev[prev.length - 2] : undefined;
-    const after = next ? next[1] : undefined;
+    // The neighbour just outside each end is the nearest point in the adjacent
+    // segment that is DISTINCT from this segment's boundary vertex — not blindly
+    // `prev[-2]`/`next[1]`, because a split landing exactly on an OSM vertex
+    // leaves that vertex duplicated at the boundary, and a coincident context
+    // point contributes no turn (would lose the corner it's meant to attribute).
+    const before = prev ? lastDistinctFrom(prev, seg[0]) : undefined;
+    const after = next
+      ? firstDistinctFrom(next, seg[seg.length - 1])
+      : undefined;
     const context = [
       ...(before ? [before] : []),
       ...seg,
