@@ -33,11 +33,18 @@ const DRIVABLE_HIGHWAYS = new Set([
 ]);
 
 /** Whether a way should be imported as a road segment. */
+/**
+ * OSM access keys, broad → specific, that exclude a motorcycle when set to
+ * `no`. We check the whole chain (not just `access`/`motor_vehicle`) so a way
+ * tagged e.g. `vehicle=no` or `motorcycle=no` isn't imported as rideable.
+ */
+const ACCESS_KEYS = ['access', 'vehicle', 'motor_vehicle', 'motorcycle'];
+
 export function isDrivableHighway(tags: OsmTags): boolean {
   const hw = tags.highway;
   if (!hw || !DRIVABLE_HIGHWAYS.has(hw)) return false;
-  // Explicitly closed to motor vehicles → not a routable road for us.
-  if (tags.motor_vehicle === 'no' || tags.access === 'no') return false;
+  // Any access key on the motorcycle chain set to `no` closes the way to us.
+  if (ACCESS_KEYS.some((k) => tags[k] === 'no')) return false;
   return true;
 }
 

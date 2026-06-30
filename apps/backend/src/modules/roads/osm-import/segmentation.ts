@@ -108,24 +108,79 @@ function turnDeg(b1: number, b2: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
-/**
- * Curviness of a polyline on a 0–5 scale (straight ≈ 0, twisty ≥ 3). Computed
- * as total heading change per km, calibrated by
- * `DEG_PER_KM_PER_CURVINESS_POINT` and clamped to 5. Tunable — callers
- * threshold on the value, not its exact magnitude.
- */
-export function curvinessScore(coords: readonly LatLng[]): number {
-  if (coords.length < 3) return 0;
-  let totalTurn = 0;
+/** Sum of absolute heading changes (degrees) at the interior vertices. */
+function totalHeadingChangeDeg(coords: readonly LatLng[]): number {
+  let total = 0;
   for (let i = 1; i < coords.length - 1; i++) {
-    totalTurn += turnDeg(
+    total += turnDeg(
       bearingDeg(coords[i - 1], coords[i]),
       bearingDeg(coords[i], coords[i + 1]),
     );
   }
-  const km = polylineLengthMeters(coords) / 1000;
+  return total;
+}
+
+/** Map heading-change-per-km to the 0–5 curviness scale (clamped, 2 dp). */
+function scoreFromTurn(totalTurnDeg: number, lengthM: number): number {
+  const km = lengthM / 1000;
   if (km <= 0) return 0;
-  const degPerKm = totalTurn / km;
-  const score = degPerKm / DEG_PER_KM_PER_CURVINESS_POINT;
+  const score = totalTurnDeg / km / DEG_PER_KM_PER_CURVINESS_POINT;
   return Math.round(Math.min(5, score) * 100) / 100;
+}
+
+/**
+ * Curviness of a standalone polyline on a 0–5 scale (straight ≈ 0, twisty ≥ 3)
+ * — total heading change per km, calibrated by `DEG_PER_KM_PER_CURVINESS_POINT`
+ * and clamped to 5. Tunable — callers threshold on the value, not its exact
+ * magnitude. For per-segment scoring use `segmentWay`, which preserves the
+ * turns at segment boundaries this function (on its own) can't see.
+ */
+export function curvinessScore(coords: readonly LatLng[]): number {
+  if (coords.length < 3) return 0;
+  return scoreFromTurn(
+    totalHeadingChangeDeg(coords),
+    polylineLengthMeters(coords),
+  );
+}
+
+export interface WaySegment {
+  coords: LatLng[];
+  length_m: number;
+  curviness_score: number;
+}
+
+/**
+ * Split a way into ~`targetMeters` segments AND score each one's curviness
+ * with **boundary context**: a bend that lands on (or near) a segment boundary
+ * would otherwise be lost — each side becomes a straight 2-point segment. So a
+ * segment's curviness is computed over its own coords plus the neighbouring
+ * vertex just outside each end, while normalising by the segment's own length.
+ * A boundary bend is therefore counted in both adjacent segments (both ~100 m
+ * stretches around a corner are genuinely curvy), never dropped.
+ */
+export function segmentWay(
+  coords: readonly LatLng[],
+  targetMeters: number = SEGMENT_TARGET_METERS,
+): WaySegment[] {
+  const segments = splitIntoSegments(coords, targetMeters);
+  return segments.map((seg, i) => {
+    const prev = segments[i - 1];
+    const next = segments[i + 1];
+    // `prev`'s last point == `seg`'s first (shared boundary), so the neighbour
+    // just outside this segment's start is `prev`'s second-to-last point;
+    // similarly the point past the end is `next`'s second point.
+    const before = prev ? prev[prev.length - 2] : undefined;
+    const after = next ? next[1] : undefined;
+    const context = [
+      ...(before ? [before] : []),
+      ...seg,
+      ...(after ? [after] : []),
+    ];
+    const length_m = polylineLengthMeters(seg);
+    return {
+      coords: seg,
+      length_m,
+      curviness_score: scoreFromTurn(totalHeadingChangeDeg(context), length_m),
+    };
+  });
 }

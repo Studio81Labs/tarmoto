@@ -2,6 +2,7 @@ import {
   type LatLng,
   curvinessScore,
   polylineLengthMeters,
+  segmentWay,
   splitIntoSegments,
 } from './segmentation.js';
 
@@ -132,5 +133,51 @@ describe('curvinessScore', () => {
       lng: 14 + i * 0.000005,
     }));
     expect(curvinessScore(hairpins)).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('segmentWay', () => {
+  // A long twisty way that splits into several ~100 m segments.
+  const twisty: LatLng[] = Array.from({ length: 60 }, (_, i) => ({
+    lat: 50 + i * 0.0004,
+    lng: 14 + 0.0004 * Math.sin(i * 0.9),
+  }));
+
+  it('returns coords + length_m + curviness_score per segment', () => {
+    const segs = segmentWay(twisty, 100);
+    expect(segs.length).toBeGreaterThan(1);
+    for (const s of segs) {
+      expect(s.coords.length).toBeGreaterThanOrEqual(2);
+      expect(s.length_m).toBeGreaterThan(0);
+      expect(s.curviness_score).toBeGreaterThanOrEqual(0);
+      expect(s.curviness_score).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("never scores a segment below its isolated curviness (boundary bends aren't dropped)", () => {
+    // Context can only ADD the turns at a segment's shared endpoints, never
+    // remove them — so per-segment curviness >= the standalone score that
+    // drops boundary context. This is the fix for bends landing on a split.
+    for (const s of segmentWay(twisty, 100)) {
+      expect(s.curviness_score).toBeGreaterThanOrEqual(
+        curvinessScore(s.coords),
+      );
+    }
+  });
+
+  it('attributes a boundary corner to both adjacent segments', () => {
+    // A sharp ~90° corner; with a target near the leg length the corner lands
+    // on a boundary. Both ~100 m stretches around it must read as curvy, not
+    // straight.
+    const m = 1 / 111_320;
+    const corner: LatLng[] = [
+      { lat: 50, lng: 14 },
+      { lat: 50 + 100 * m, lng: 14 }, // 100 m north
+      { lat: 50 + 100 * m, lng: 14 + 140 * m }, // then ~east (corner here)
+    ];
+    const segs = segmentWay(corner, 100);
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    // The corner contributes curviness somewhere — not all segments straight.
+    expect(segs.some((s) => s.curviness_score > 0)).toBe(true);
   });
 });

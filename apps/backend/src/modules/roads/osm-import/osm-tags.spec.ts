@@ -24,13 +24,18 @@ describe('isDrivableHighway', () => {
     expect(isDrivableHighway({})).toBe(false);
   });
 
-  it('rejects ways closed to motor vehicles', () => {
-    expect(isDrivableHighway({ highway: 'service', motor_vehicle: 'no' })).toBe(
-      false,
-    );
-    expect(isDrivableHighway({ highway: 'residential', access: 'no' })).toBe(
-      false,
-    );
+  it('rejects ways closed on any motorcycle access key', () => {
+    for (const key of ['access', 'vehicle', 'motor_vehicle', 'motorcycle']) {
+      expect(isDrivableHighway({ highway: 'residential', [key]: 'no' })).toBe(
+        false,
+      );
+    }
+  });
+
+  it('still accepts a drivable way with a non-"no" access value', () => {
+    expect(
+      isDrivableHighway({ highway: 'residential', access: 'destination' }),
+    ).toBe(true);
   });
 });
 
