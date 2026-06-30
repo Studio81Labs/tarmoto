@@ -1610,11 +1610,22 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "line-color": ["get", "color"],
         // Selected day is rendered wider and fully opaque; non-selected days are
         // thinner and dimmed so the focused day is always visually dominant.
+        // MapLibre allows only ONE zoom-based subexpression and it must be the
+        // outermost, so the zoom interpolation stays at the top and the
+        // selected/dimmed width is a data-driven `case` in each stop value. A
+        // `case` wrapping two zoom interpolations throws ("Only one zoom-based
+        // step or interpolate subexpression may be used") and aborts the whole
+        // layer setup, so the route line never renders.
         "line-width": [
-          "case",
-          ["get", "selected"],
-          ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 7],
-          ["interpolate", ["linear"], ["zoom"], 6, 1.5, 10, 3, 14, 4],
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          ["case", ["get", "selected"], 3, 1.5],
+          10,
+          ["case", ["get", "selected"], 5, 3],
+          14,
+          ["case", ["get", "selected"], 7, 4],
         ],
         "line-opacity": ["case", ["get", "selected"], 1, 0.45],
       },

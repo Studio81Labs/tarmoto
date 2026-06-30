@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { expression } from "@maplibre/maplibre-gl-style-spec";
 import { TripPlannerMap } from "./TripPlannerMap";
 import type { Trip } from "@/lib/types";
 import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
@@ -1117,6 +1118,33 @@ describe("TripPlannerMap", () => {
         type: "line",
       }),
     );
+  });
+
+  it("uses a MapLibre-valid line-width for the route line (one zoom subexpression)", () => {
+    // Regression for #719: the route line's `line-width` was a `case`
+    // wrapping two zoom interpolations, which MapLibre rejects ("Only one
+    // zoom-based step or interpolate subexpression may be used"). That
+    // threw at addLayer and aborted the whole planner layer setup, so no
+    // route ever rendered. Compile it with MapLibre's real parser here so
+    // any future invalid expression fails the test rather than the map.
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const routeLayer = mockMap.addLayer.mock.calls
+      .map((c) => c[0] as { id?: string; paint?: Record<string, unknown> })
+      .find((l) => l?.id === "trip-planner-route-line");
+    expect(routeLayer).toBeDefined();
+
+    // createPropertyExpression (not createExpression) enforces the zoom-curve
+    // rule that this bug violated.
+    const compiled = expression.createPropertyExpression(
+      routeLayer!.paint!["line-width"],
+      {
+        type: "number",
+        "property-type": "data-driven",
+        expression: { interpolated: true, parameters: ["zoom", "feature"] },
+      } as Parameters<typeof expression.createPropertyExpression>[1],
+    );
+    expect(compiled.result).toBe("success");
   });
 
   it("publishes the focused segment's geometry as a highlight feature", async () => {
