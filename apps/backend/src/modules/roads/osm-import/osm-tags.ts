@@ -32,19 +32,27 @@ const DRIVABLE_HIGHWAYS = new Set([
   'track',
 ]);
 
-/** Whether a way should be imported as a road segment. */
 /**
- * OSM access keys, broad → specific, that exclude a motorcycle when set to
- * `no`. We check the whole chain (not just `access`/`motor_vehicle`) so a way
- * tagged e.g. `vehicle=no` or `motorcycle=no` isn't imported as rideable.
+ * OSM access keys, broad → specific, that can exclude a motorcycle. We check
+ * the whole chain (not just `access`/`motor_vehicle`) so a way tagged e.g.
+ * `vehicle=no` or `motorcycle=private` isn't imported as rideable.
  */
 const ACCESS_KEYS = ['access', 'vehicle', 'motor_vehicle', 'motorcycle'];
 
+/**
+ * Access values that close a way to ordinary riders: `no` (forbidden) and
+ * `private` (driveways / forestry roads riders shouldn't be routed onto).
+ * `destination` is intentionally NOT excluded — those roads are reachable for
+ * trips that end on them.
+ */
+const CLOSED_ACCESS = new Set(['no', 'private']);
+
+/** Whether a way should be imported as a road segment. */
 export function isDrivableHighway(tags: OsmTags): boolean {
   const hw = tags.highway;
   if (!hw || !DRIVABLE_HIGHWAYS.has(hw)) return false;
-  // Any access key on the motorcycle chain set to `no` closes the way to us.
-  if (ACCESS_KEYS.some((k) => tags[k] === 'no')) return false;
+  // A closed value on any key of the motorcycle access chain shuts us out.
+  if (ACCESS_KEYS.some((k) => CLOSED_ACCESS.has(tags[k] ?? ''))) return false;
   return true;
 }
 

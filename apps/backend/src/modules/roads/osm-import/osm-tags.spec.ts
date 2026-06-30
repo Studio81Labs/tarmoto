@@ -32,7 +32,15 @@ describe('isDrivableHighway', () => {
     }
   });
 
-  it('still accepts a drivable way with a non-"no" access value', () => {
+  it('rejects ways with a private access value (driveways / forestry)', () => {
+    for (const key of ['access', 'vehicle', 'motor_vehicle', 'motorcycle']) {
+      expect(isDrivableHighway({ highway: 'track', [key]: 'private' })).toBe(
+        false,
+      );
+    }
+  });
+
+  it('still accepts a drivable way with a destination access value', () => {
     expect(
       isDrivableHighway({ highway: 'residential', access: 'destination' }),
     ).toBe(true);

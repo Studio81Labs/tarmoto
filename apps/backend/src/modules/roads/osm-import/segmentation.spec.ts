@@ -134,6 +134,20 @@ describe('curvinessScore', () => {
     }));
     expect(curvinessScore(hairpins)).toBeLessThanOrEqual(5);
   });
+
+  it('ignores duplicate consecutive nodes (no phantom turns)', () => {
+    // A straight east-west line with a duplicated middle vertex must still
+    // score 0 — bearingDeg on identical points is undefined and would
+    // otherwise inject phantom 90° turns.
+    const m = 1 / 111_320;
+    const straightEW: LatLng[] = [
+      { lat: 50, lng: 14 },
+      { lat: 50, lng: 14 + 100 * m },
+      { lat: 50, lng: 14 + 100 * m }, // exact duplicate
+      { lat: 50, lng: 14 + 200 * m },
+    ];
+    expect(curvinessScore(straightEW)).toBe(0);
+  });
 });
 
 describe('segmentWay', () => {

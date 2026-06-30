@@ -108,8 +108,26 @@ function turnDeg(b1: number, b2: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
+/**
+ * Drop consecutive zero-length legs (duplicate OSM nodes, or an exact
+ * boundary duplicate from splitting). `bearingDeg` on identical points is
+ * undefined (returns 0), which would otherwise inject phantom turns and
+ * inflate curviness on an otherwise straight road.
+ */
+function withoutZeroLengthLegs(coords: readonly LatLng[]): LatLng[] {
+  const out: LatLng[] = [];
+  for (const p of coords) {
+    const last = out[out.length - 1];
+    if (!last || haversineMeters(last.lat, last.lng, p.lat, p.lng) > 0) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 /** Sum of absolute heading changes (degrees) at the interior vertices. */
-function totalHeadingChangeDeg(coords: readonly LatLng[]): number {
+function totalHeadingChangeDeg(raw: readonly LatLng[]): number {
+  const coords = withoutZeroLengthLegs(raw);
   let total = 0;
   for (let i = 1; i < coords.length - 1; i++) {
     total += turnDeg(
