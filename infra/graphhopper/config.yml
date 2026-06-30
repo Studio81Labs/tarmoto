@@ -1,0 +1,55 @@
+# GraphHopper config for the self-hosted Tarmoto routing engine (ADR-0004).
+#
+# This is a STARTING TEMPLATE derived from GraphHopper's upstream
+# `config-example.yml`. The one Tarmoto-specific requirement is the set of
+# `graph.encoded_values` below — keep `road_class` and `toll` (and ideally
+# `surface`) so the backend's request-time custom models work:
+#   - avoid_highways → needs `road_class`
+#   - avoid_tolls    → needs `toll`   (else the rule is silently dropped; see
+#                      TARMOTO_GRAPHHOPPER_TOLL_ENABLED in the README)
+#   - future road-quality / curvy weighting → will use `surface` + an
+#                      imported custom encoded value (the moat work, ADR-0004)
+#
+# Config schema changes between GraphHopper majors. Pin the image tag in the
+# compose service and diff this file against the `config-example.yml` shipped
+# with that version if the container fails to start.
+graphhopper:
+  # Input + graph cache live in the mounted /data volume (git-ignored).
+  datareader.file: /data/czech-republic-latest.osm.pbf
+  graph.location: /data/graph-cache
+
+  # Encoded values exposed to custom models. The vehicle's access/speed
+  # values (`car_access`, `car_average_speed`) power the base car weighting;
+  # the rest are what Tarmoto's avoidances + future weighting reference.
+  graph.encoded_values: car_access, car_average_speed, road_class, road_environment, max_speed, toll, surface, road_access
+
+  profiles:
+    - name: car
+      # `custom` weighting so the backend can send request-time custom_model
+      # bodies (avoidances now; road-quality weighting later).
+      custom_model:
+        distance_influence: 70
+
+  # Speed mode (Contraction Hierarchies) for the car profile → fast plain
+  # routes, and `algorithm=alternative_route` works WITHOUT `ch.disable`
+  # (the filter-less commute/trip path). Custom-model requests arrive with
+  # `ch.disable: true` and are served in flexible mode.
+  profiles_ch:
+    - profile: car
+
+  # Hybrid (Landmarks) keeps flexible / custom-model queries fast.
+  profiles_lm:
+    - profile: car
+
+  import.osm.ignored_highways: footway,cycleway,path,pedestrian,steps,bridleway
+
+# Bind to all interfaces so the host (and the backend container) can reach it.
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 0.0.0.0

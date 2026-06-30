@@ -1,0 +1,3 @@
+# OSM extract + built graph cache — multi-GB, regenerated on first run.
+*.osm.pbf
+graph-cache/

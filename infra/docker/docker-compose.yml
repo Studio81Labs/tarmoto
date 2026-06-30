@@ -103,6 +103,28 @@ services:
       server_threads: "2"
     restart: unless-stopped
 
+  graphhopper:
+    container_name: tarmoto-graphhopper
+    # Same opt-in `routing` profile as Valhalla: a plain `docker compose up -d`
+    # (`pnpm db:up`) skips it so a DB boot never triggers the heavy first-run
+    # graph import. Start explicitly with `--profile routing up graphhopper`.
+    #
+    # The strategic engine (ADR-0004): request-time `custom_model` avoidances
+    # today, our own road-quality weighting later. Unlike the Valhalla image,
+    # GraphHopper does NOT auto-download the OSM extract — drop
+    # `czech-republic-latest.osm.pbf` into infra/graphhopper first (see its
+    # README). Pin the tag to keep the config schema in sync with the image.
+    profiles: ["routing"]
+    image: israelhikingmap/graphhopper:latest
+    ports:
+      - "8989:8989"
+    volumes:
+      - ../graphhopper:/data
+    # First run imports the PBF into /data/graph-cache (slow, one-time); later
+    # runs reuse it. `datareader.file` / `graph.location` are set in config.yml.
+    command: ["--host", "0.0.0.0", "-c", "/data/config.yml"]
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
