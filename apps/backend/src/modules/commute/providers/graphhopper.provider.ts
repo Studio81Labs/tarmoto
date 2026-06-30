@@ -50,10 +50,13 @@ export class GraphHopperProvider implements RoutingProvider {
   readonly version = 'graphhopper-v1';
 
   constructor(config: ConfigService) {
+    this.apiKey = config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY');
+    // An explicit base URL wins. Otherwise default to the hosted Directions
+    // API when an API key is set (the key-only hosted path), and to the
+    // local self-hosted port when it isn't.
     this.baseUrl =
       config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL') ??
-      'http://localhost:8989';
-    this.apiKey = config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY');
+      (this.apiKey ? 'https://graphhopper.com/api/1' : 'http://localhost:8989');
     this.profile = config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE') ?? 'car';
   }
 

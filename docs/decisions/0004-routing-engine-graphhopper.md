@@ -21,7 +21,7 @@ The genuinely expensive work — conflating `road_segments` quality/curviness on
 
 ## Decision
 
-Adopt **GraphHopper** as the strategic routing engine for road-filter and quality-weighted routing, added as a third `RoutingProvider` behind the existing seam. Selection precedence in `routingProviderFactory` becomes **GraphHopper (`TARMOTO_GRAPHHOPPER_BASE_URL`) → Valhalla (`TARMOTO_VALHALLA_BASE_URL`) → OSRM**. OSRM stays the zero-config default so `pnpm db:up` still routes out of the box; GraphHopper and Valhalla remain opt-in.
+Adopt **GraphHopper** as the strategic routing engine for road-filter and quality-weighted routing, added as a third `RoutingProvider` behind the existing seam. Selection precedence in `routingProviderFactory` becomes **GraphHopper → Valhalla (`TARMOTO_VALHALLA_BASE_URL`) → OSRM**. GraphHopper is selected by **either** `TARMOTO_GRAPHHOPPER_BASE_URL` (self-hosted) **or** `TARMOTO_GRAPHHOPPER_API_KEY` (hosted Directions API) — the key-only hosted setup must not be silently ignored. OSRM stays the zero-config default so `pnpm db:up` still routes out of the box; GraphHopper and Valhalla remain opt-in.
 
 `RoutingOptions` map to a GraphHopper `custom_model`:
 
@@ -29,7 +29,7 @@ Adopt **GraphHopper** as the strategic routing engine for road-filter and qualit
 - `avoidTolls` → `priority` rule zeroing `toll != NO`
 - `excludePolygons` (#744) → `custom_model.areas` polygons + a `priority` rule zeroing anything `in_<area>`
 
-Self-hosted by default (`http://localhost:8989`); `TARMOTO_GRAPHHOPPER_API_KEY` switches to the hosted GraphHopper Directions API for a zero-infra trial. We request `points_encoded: false` to consume GeoJSON directly.
+Self-hosted by default (`http://localhost:8989`); setting `TARMOTO_GRAPHHOPPER_API_KEY` alone both selects GraphHopper and defaults its base URL to the hosted GraphHopper Directions API (`https://graphhopper.com/api/1`) for a zero-infra trial — an explicit `TARMOTO_GRAPHHOPPER_BASE_URL` always wins. We request `points_encoded: false` to consume GeoJSON directly.
 
 This ADR covers the _provider_. The data-conflation pipeline (mapping `road_segments` quality → a GraphHopper encoded value) and turning quality-weighting on are deliberately separate, later work.
 

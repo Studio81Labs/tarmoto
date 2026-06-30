@@ -28,6 +28,17 @@ describe('routingProviderFactory', () => {
     ).toBe(graphhopper);
   });
 
+  it('selects GraphHopper when only the API key is set (hosted Directions API)', () => {
+    expect(
+      routingProviderFactory(
+        config({ TARMOTO_GRAPHHOPPER_API_KEY: 'k' }),
+        osrm,
+        valhalla,
+        graphhopper,
+      ),
+    ).toBe(graphhopper);
+  });
+
   it('uses Valhalla when only TARMOTO_VALHALLA_BASE_URL is configured', () => {
     expect(
       routingProviderFactory(

@@ -29,6 +29,9 @@ import { GraphHopperProvider } from './providers/graphhopper.provider.js';
  *
  * Precedence: GraphHopper (ADR-0004 — request-time `custom_model` avoidances,
  * and the future home for our own road-quality weighting) → Valhalla → OSRM.
+ * GraphHopper is selected by EITHER its base URL (self-hosted) OR its API key
+ * (hosted Directions API, whose base URL the provider defaults), so the
+ * key-only hosted setup isn't silently ignored.
  */
 export function routingProviderFactory(
   config: ConfigService,
@@ -36,7 +39,12 @@ export function routingProviderFactory(
   valhalla: ValhallaProvider,
   graphhopper: GraphHopperProvider,
 ): RoutingProvider {
-  if (config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL')) return graphhopper;
+  if (
+    config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL') ||
+    config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY')
+  ) {
+    return graphhopper;
+  }
   if (config.get<string>('TARMOTO_VALHALLA_BASE_URL')) return valhalla;
   return osrm;
 }

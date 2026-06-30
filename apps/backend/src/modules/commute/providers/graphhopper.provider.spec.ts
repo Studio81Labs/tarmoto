@@ -225,6 +225,16 @@ describe('GraphHopperProvider.route', () => {
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe('https://graphhopper.com/api/1/route?key=secret%20key');
   });
+
+  it('defaults to the hosted base URL when only the API key is set', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
+    await makeProvider({ TARMOTO_GRAPHHOPPER_API_KEY: 'k' }).route([
+      { lat: 0, lng: 0 },
+      { lat: 1, lng: 1 },
+    ]);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('https://graphhopper.com/api/1/route?key=k');
+  });
 });
 
 describe('GraphHopperProvider.getAlternatives', () => {
