@@ -33,9 +33,9 @@ describe('OsmImportService', () => {
   const valuesOnCall = (n: number): RoadSegmentRow[] =>
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
-  /** The `(overwriteColumns, conflictColumns)` args of the first `.orUpdate()`. */
-  const firstOrUpdate = (): [string[], string[]] =>
-    qb.orUpdate.mock.calls[0] as [string[], string[]];
+  /** The args of the first `.orUpdate()` call. */
+  const firstOrUpdate = (): [string[], string[], { [k: string]: boolean }] =>
+    qb.orUpdate.mock.calls[0] as [string[], string[], { [k: string]: boolean }];
 
   beforeEach(async () => {
     qb = {
@@ -88,6 +88,15 @@ describe('OsmImportService', () => {
     );
     // …but the seed is still present in the inserted row.
     expect(valuesOnCall(0)[0]).toHaveProperty('surface_type');
+  });
+
+  it('skips no-op conflict updates (IS DISTINCT FROM predicate)', async () => {
+    await service.importFrom([straightWay(1)]);
+
+    // Avoids rewriting unchanged segments on a periodic re-import (WAL churn).
+    expect(firstOrUpdate()[2]).toMatchObject({
+      skipUpdateIfNoValuesChanged: true,
+    });
   });
 
   it('never writes the crowdsourced columns (preserves quality / id on re-import)', async () => {

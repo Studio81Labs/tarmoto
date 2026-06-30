@@ -88,7 +88,14 @@ export class OsmImportService {
       .insert()
       .into(RoadSegment)
       .values(rows)
-      .orUpdate(OVERWRITE_ON_CONFLICT, ['osm_way_id', 'segment_index'])
+      .orUpdate(OVERWRITE_ON_CONFLICT, ['osm_way_id', 'segment_index'], {
+        // A weekly re-import re-sends mostly-identical rows. Without this, every
+        // conflict emits an unconditional DO UPDATE — needless row locks + WAL
+        // churn on a national snapshot. This adds a `col IS DISTINCT FROM
+        // EXCLUDED.col` predicate over the overwrite columns so unchanged
+        // segments are skipped.
+        skipUpdateIfNoValuesChanged: true,
+      })
       .execute();
   }
 }
