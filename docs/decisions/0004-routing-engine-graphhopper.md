@@ -26,7 +26,7 @@ Adopt **GraphHopper** as the strategic routing engine for road-filter and qualit
 `RoutingOptions` map to a GraphHopper `custom_model`:
 
 - `avoidHighways` → `priority` rule zeroing `road_class == MOTORWAY`
-- `avoidTolls` → `priority` rule zeroing `toll == ALL || toll == HGV` (GraphHopper's actual toll values; `toll != NO` would also match untagged `MISSING` edges and exclude most of the graph → no route)
+- `avoidTolls` → `priority` rule zeroing `toll == ALL || toll == HGV` (GraphHopper's actual toll values; `toll != NO` would also match untagged `MISSING` edges and exclude most of the graph → no route). Requires the `toll` encoded value — present on the hosted API but **not** in a self-hosted `config-example.yml` graph, where referencing it would make GraphHopper reject the request. Gated by `TARMOTO_GRAPHHOPPER_TOLL_ENABLED` (default: on for the hosted API, off for self-hosted); when unavailable, `avoidTolls` is a silent no-op (the `RoutingProvider` contract for an avoidance the engine can't honour) rather than a no-route failure. Self-hosted operators add `toll` to `graph.encoded_values` and set the flag.
 - `excludePolygons` (#744) → `custom_model.areas` polygons + a `priority` rule zeroing anything `in_<area>`
 
 `ch.disable: true` (flexible mode) is sent only when a custom model is present; `algorithm=alternative_route` runs under Contraction Hierarchies, so filter-less commute/trip alternatives don't force flexible mode (which a CH-only server profile would reject).

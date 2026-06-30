@@ -32,7 +32,11 @@ interface GraphHopperResponse {
  * `RoutingOptions` map as:
  *  - `avoidHighways` → `priority` rule zeroing `road_class == MOTORWAY`
  *  - `avoidTolls`    → `priority` rule zeroing `toll == ALL || toll == HGV`
- *    (GraphHopper's actual toll values — `MISSING`/`NO` are untolled)
+ *    (GraphHopper's actual toll values — `MISSING`/`NO` are untolled).
+ *    Requires the `toll` encoded value, which the hosted API has but a
+ *    self-hosted `config-example.yml` graph does not; gated by
+ *    `TARMOTO_GRAPHHOPPER_TOLL_ENABLED` (default: on for hosted, off for
+ *    self-hosted). When unavailable, avoidTolls is a silent no-op.
  *  - `excludePolygons` (#744) → `custom_model.areas` polygons + a
  *    `priority` rule zeroing anything `in_<area>`
  *
@@ -46,6 +50,15 @@ export class GraphHopperProvider implements RoutingProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
   private readonly profile: string;
+  // Whether the configured graph exposes the `toll` encoded value. The
+  // hosted Directions API does; a self-hosted graph from the upstream
+  // `config-example.yml` does NOT, and referencing an unknown encoded value
+  // makes GraphHopper reject the whole request. Gate the avoidTolls rule on
+  // this: when off, avoidTolls is a silent no-op (the `RoutingProvider`
+  // contract for an avoidance the engine can't honour) instead of a
+  // no-route failure.
+  private readonly tollSupported: boolean;
+
   // Bump when the request shape / weighting changes enough that previously
   // cached polylines (#361) should be re-resolved.
   readonly version = 'graphhopper-v1';
@@ -68,6 +81,19 @@ export class GraphHopperProvider implements RoutingProvider {
       (this.apiKey ? 'https://graphhopper.com/api/1' : 'http://localhost:8989');
     this.profile =
       config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE')?.trim() || 'car';
+    // Explicit flag wins; otherwise default to true only for the hosted API
+    // (which ships the `toll` encoded value) and false for self-hosted,
+    // where the operator must add `toll` to `graph.encoded_values` first.
+    const tollFlag = config
+      .get<string>('TARMOTO_GRAPHHOPPER_TOLL_ENABLED')
+      ?.trim()
+      .toLowerCase();
+    this.tollSupported =
+      tollFlag === 'true'
+        ? true
+        : tollFlag === 'false'
+          ? false
+          : this.apiKey !== undefined;
   }
 
   /** Build the `custom_model` (+ areas) for the avoidance options, or null. */
@@ -78,11 +104,19 @@ export class GraphHopperProvider implements RoutingProvider {
     if (options?.avoidHighways) {
       priority.push({ if: 'road_class == MOTORWAY', multiply_by: 0 });
     }
-    if (options?.avoidTolls) {
+    if (options?.avoidTolls && this.tollSupported) {
       // Match GraphHopper's actual toll values, NOT `toll != NO`: most
       // untolled OSM roads have no toll tag (`toll == MISSING`), so
       // `!= NO` would exclude nearly the whole graph and return no route.
       priority.push({ if: 'toll == ALL || toll == HGV', multiply_by: 0 });
+    } else if (options?.avoidTolls) {
+      // No-op per the RoutingProvider contract: the graph has no `toll`
+      // encoded value, so referencing it would make GraphHopper reject the
+      // request. Better to route without honouring the flag than no route.
+      this.logger.debug(
+        'avoidTolls ignored: GraphHopper graph has no `toll` encoded value ' +
+          '(set TARMOTO_GRAPHHOPPER_TOLL_ENABLED=true once provisioned)',
+      );
     }
     const polygons = options?.excludePolygons ?? [];
     const features = polygons.map((ring, i) => {

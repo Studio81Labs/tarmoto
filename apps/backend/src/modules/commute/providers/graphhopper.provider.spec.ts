@@ -111,9 +111,12 @@ describe('GraphHopperProvider.route', () => {
     ]);
   });
 
-  it('avoidTolls → matches actual toll values, not toll != NO (avoids MISSING)', async () => {
+  it('avoidTolls → matches actual toll values when toll is enabled', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
-    await makeProvider().route(
+    await makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'http://gh.test',
+      TARMOTO_GRAPHHOPPER_TOLL_ENABLED: 'true',
+    }).route(
       [
         { lat: 0, lng: 0 },
         { lat: 1, lng: 1 },
@@ -123,6 +126,47 @@ describe('GraphHopperProvider.route', () => {
     expect(bodyOf(fetchMock).custom_model?.priority).toEqual([
       { if: 'toll == ALL || toll == HGV', multiply_by: 0 },
     ]);
+  });
+
+  it('enables the toll rule by default on the hosted API', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
+    await makeProvider({ TARMOTO_GRAPHHOPPER_API_KEY: 'k' }).route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { avoidTolls: true },
+    );
+    expect(bodyOf(fetchMock).custom_model?.priority).toContainEqual({
+      if: 'toll == ALL || toll == HGV',
+      multiply_by: 0,
+    });
+  });
+
+  it('no-ops avoidTolls on a self-hosted graph without the toll encoded value', async () => {
+    // Default self-hosted (no API key, no flag): referencing `toll` would
+    // make GraphHopper reject the request, so the flag is dropped and a
+    // plain route is produced (RoutingProvider no-op contract).
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paths: [
+          path([
+            [0, 0],
+            [1, 1],
+          ]),
+        ],
+      }),
+    );
+    await makeProvider().route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { avoidTolls: true },
+    );
+    const body = bodyOf(fetchMock);
+    expect(body.custom_model).toBeUndefined();
+    expect(body['ch.disable']).toBeUndefined();
   });
 
   it('excludePolygons → custom_model areas + a priority rule per polygon (#744)', async () => {
