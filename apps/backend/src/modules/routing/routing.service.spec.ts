@@ -47,7 +47,7 @@ describe('RoutingService.route', () => {
         { lat: 50.08, lng: 14.42 },
         { lat: 50.1, lng: 14.5 },
       ],
-      { avoidHighways: true, avoidTolls: undefined },
+      { avoidHighways: true, avoidTolls: undefined, preferQuality: undefined },
     );
     expect(res).toEqual({
       geometry: [
@@ -60,6 +60,38 @@ describe('RoutingService.route', () => {
       curviness_score: 6.1,
       elevation_gain_m: 540,
       surface_mix: { asphalt: 82000 },
+    });
+  });
+
+  it('maps prefer_quality through to the provider (#779)', async () => {
+    provider.route.mockResolvedValueOnce({
+      distance_km: 1,
+      duration_min: 1,
+      geometry: [
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ],
+    });
+    enrichment.aggregate.mockResolvedValueOnce({
+      avgQuality: 0,
+      curvinessScore: 0,
+      scenicScore: 0,
+      elevationGain: 0,
+      elevationLoss: 0,
+      hazardCount: 0,
+      surfaceMixMetres: {},
+    });
+    await service.route({
+      waypoints: [
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ],
+      options: { prefer_quality: true },
+    });
+    expect(provider.route).toHaveBeenCalledWith(expect.anything(), {
+      avoidHighways: undefined,
+      avoidTolls: undefined,
+      preferQuality: true,
     });
   });
 

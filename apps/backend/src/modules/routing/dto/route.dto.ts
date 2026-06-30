@@ -46,6 +46,15 @@ export class RouteOptionsDto {
   @ApiProperty({
     required: false,
     description:
+      'Prefer good-surface roads using crowdsourced quality (GraphHopper ' +
+      'only; no-op until conflation is provisioned — ADR-0005 / #779).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  prefer_quality?: boolean;
+  @ApiProperty({
+    required: false,
+    description:
       'Reserved — accepted but not yet applied to live routing (phase 1).',
   })
   @IsOptional()

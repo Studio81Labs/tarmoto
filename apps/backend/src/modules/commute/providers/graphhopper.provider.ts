@@ -39,6 +39,10 @@ interface GraphHopperResponse {
  *    self-hosted). When unavailable, avoidTolls is a silent no-op.
  *  - `excludePolygons` (#744) → `custom_model.areas` polygons + a
  *    `priority` rule zeroing anything `in_<area>`
+ *  - `preferQuality` (#779, ADR-0005) → `priority` rule de-weighting poor
+ *    `smoothness` (our quality conflated onto it). Gated by
+ *    `TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off); no-op until the
+ *    conflation job has injected it.
  *
  * Self-hosted by default (`TARMOTO_GRAPHHOPPER_BASE_URL`,
  * e.g. `http://localhost:8989`); set `TARMOTO_GRAPHHOPPER_API_KEY` to use
@@ -58,6 +62,11 @@ export class GraphHopperProvider implements RoutingProvider {
   // contract for an avoidance the engine can't honour) instead of a
   // no-route failure.
   private readonly tollSupported: boolean;
+  // Whether the graph exposes a usable `smoothness` encoded value carrying
+  // our conflated road quality (ADR-0005). Off by default until the
+  // conflation job has injected it; when off, preferQuality is a silent
+  // no-op (same contract as toll) rather than a no-route failure.
+  private readonly qualitySupported: boolean;
 
   // Bump when the request shape / weighting changes enough that previously
   // cached polylines (#361) should be re-resolved.
@@ -104,6 +113,13 @@ export class GraphHopperProvider implements RoutingProvider {
         : tollFlag === 'false'
           ? false
           : usingHostedApi;
+    // Quality weighting is opt-in everywhere (default off): it's only useful
+    // once the conflation job has injected our quality into `smoothness`, and
+    // referencing the value before it's in `graph.encoded_values` would make
+    // GraphHopper reject the request.
+    this.qualitySupported =
+      config.get<string>('TARMOTO_GRAPHHOPPER_QUALITY_ENABLED')?.trim() ===
+      'true';
   }
 
   /** Build the `custom_model` (+ areas) for the avoidance options, or null. */
@@ -126,6 +142,22 @@ export class GraphHopperProvider implements RoutingProvider {
       this.logger.debug(
         'avoidTolls ignored: GraphHopper graph has no `toll` encoded value ' +
           '(set TARMOTO_GRAPHHOPPER_TOLL_ENABLED=true once provisioned)',
+      );
+    }
+    if (options?.preferQuality && this.qualitySupported) {
+      // Prefer good-surface roads via our quality conflated onto `smoothness`
+      // (ADR-0005): de-weight the poor tiers. Unknown / `MISSING` stays
+      // neutral (multiply_by 1), so segments without crowdsourced data are
+      // never penalised.
+      priority.push({
+        if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == VERY_HORRIBLE || smoothness == IMPASSABLE',
+        multiply_by: 0.3,
+      });
+    } else if (options?.preferQuality) {
+      this.logger.debug(
+        'preferQuality ignored: GraphHopper graph has no conflated ' +
+          '`smoothness` quality (set TARMOTO_GRAPHHOPPER_QUALITY_ENABLED=true ' +
+          'once the conflation job has run)',
       );
     }
     const polygons = options?.excludePolygons ?? [];

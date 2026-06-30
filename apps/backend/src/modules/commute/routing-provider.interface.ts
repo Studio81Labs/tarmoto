@@ -50,6 +50,15 @@ export interface RoutingOptions {
    * warnings via `ClosuresService.checkRoute()`.
    */
   excludePolygons?: Array<Array<[number, number]>>;
+  /**
+   * Prefer good-surface roads using Tarmoto's crowdsourced quality, mapped
+   * onto GraphHopper's `smoothness` encoded value (ADR-0005, #779). Engines
+   * that can't honour it (OSRM, Valhalla) silently ignore this, per the
+   * no-op contract above; GraphHopper also no-ops it unless the `smoothness`
+   * value has been provisioned (`TARMOTO_GRAPHHOPPER_QUALITY_ENABLED`).
+   * Segments without crowdsourced data stay neutral — never penalised.
+   */
+  preferQuality?: boolean;
 }
 
 /**
