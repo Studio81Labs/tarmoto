@@ -40,10 +40,30 @@ describe('isDrivableHighway', () => {
     }
   });
 
-  it('still accepts a drivable way with a destination access value', () => {
-    expect(
-      isDrivableHighway({ highway: 'residential', access: 'destination' }),
-    ).toBe(true);
+  it('rejects restricted-but-not-"no" access values (allowlist)', () => {
+    for (const v of [
+      'agricultural',
+      'forestry',
+      'delivery',
+      'customers',
+      'permit',
+    ]) {
+      expect(isDrivableHighway({ highway: 'track', access: v })).toBe(false);
+    }
+  });
+
+  it('accepts the public-access values + destination', () => {
+    for (const v of [
+      'yes',
+      'permissive',
+      'designated',
+      'public',
+      'destination',
+    ]) {
+      expect(isDrivableHighway({ highway: 'residential', access: v })).toBe(
+        true,
+      );
+    }
   });
 
   it('honours a specific motorcycle allow over a broad restriction', () => {

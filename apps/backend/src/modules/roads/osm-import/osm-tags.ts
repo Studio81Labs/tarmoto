@@ -46,12 +46,19 @@ const ACCESS_KEYS_SPECIFIC_FIRST = [
 ];
 
 /**
- * Access values that close a way to ordinary riders: `no` (forbidden) and
- * `private` (driveways / forestry roads riders shouldn't be routed onto).
- * `destination` is intentionally NOT excluded — those roads are reachable for
- * trips that end on them.
+ * Access values that grant an ordinary rider passage. An **allowlist** (not a
+ * denylist of `no`/`private`) so restricted values like `agricultural`,
+ * `forestry`, `delivery`, `customers`, `permit`, `military` are excluded too.
+ * `destination` is included intentionally — those roads are reachable for
+ * trips that end on them. An untagged way is open by default (most roads).
  */
-const CLOSED_ACCESS = new Set(['no', 'private']);
+const OPEN_ACCESS = new Set([
+  'yes',
+  'permissive',
+  'designated',
+  'public',
+  'destination',
+]);
 
 /** Whether a way should be imported as a road segment. */
 export function isDrivableHighway(tags: OsmTags): boolean {
@@ -61,7 +68,7 @@ export function isDrivableHighway(tags: OsmTags): boolean {
   // precedence), so `motorcycle=yes` re-opens a way broadly tagged `access=no`.
   for (const key of ACCESS_KEYS_SPECIFIC_FIRST) {
     const value = tags[key];
-    if (value !== undefined) return !CLOSED_ACCESS.has(value);
+    if (value !== undefined) return OPEN_ACCESS.has(value);
   }
   return true; // no access tags → open
 }
