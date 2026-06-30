@@ -122,26 +122,36 @@ function coincident(a: LatLng, b: LatLng): boolean {
   return haversineMeters(a.lat, a.lng, b.lat, b.lng) === 0;
 }
 
-/** Last point in `coords` not coincident with `ref` (the neighbour just
- *  outside a segment's start, skipping any duplicated boundary vertices). */
-function lastDistinctFrom(
+/**
+ * Up to `n` successive non-coincident points scanned from one end of an
+ * adjacent segment, skipping duplicated boundary vertices. Used to give a
+ * segment's curviness enough context that the vertex just past its boundary
+ * (a corner landing on OR just beyond the split) becomes an INTERIOR vertex
+ * whose turn is actually computed — one point isn't enough when the corner
+ * itself is that first distinct vertex. Returned nearest-boundary-last for
+ * `fromEnd=false` and nearest-boundary-first for `fromEnd=true`, so the caller
+ * can splice them in geometric order.
+ */
+function distinctContext(
   coords: readonly LatLng[],
   ref: LatLng,
-): LatLng | undefined {
-  for (let i = coords.length - 1; i >= 0; i--) {
-    if (!coincident(coords[i], ref)) return coords[i];
+  fromEnd: boolean,
+  n = 2,
+): LatLng[] {
+  const order = fromEnd
+    ? coords.slice().reverse() // scan inward from the shared boundary
+    : coords.slice();
+  const picked: LatLng[] = [];
+  let prevRef = ref;
+  for (const p of order) {
+    if (!coincident(p, prevRef)) {
+      picked.push(p);
+      prevRef = p;
+      if (picked.length === n) break;
+    }
   }
-  return undefined;
-}
-
-/** First point in `coords` not coincident with `ref` (the neighbour just
- *  outside a segment's end). */
-function firstDistinctFrom(
-  coords: readonly LatLng[],
-  ref: LatLng,
-): LatLng | undefined {
-  for (const p of coords) if (!coincident(p, ref)) return p;
-  return undefined;
+  // `fromEnd` scanned inward → reverse back to geometric (outer→inner) order.
+  return fromEnd ? picked.reverse() : picked;
 }
 
 /**
@@ -220,20 +230,15 @@ export function segmentWay(
   return segments.map((seg, i) => {
     const prev = segments[i - 1];
     const next = segments[i + 1];
-    // The neighbour just outside each end is the nearest point in the adjacent
-    // segment that is DISTINCT from this segment's boundary vertex — not blindly
-    // `prev[-2]`/`next[1]`, because a split landing exactly on an OSM vertex
-    // leaves that vertex duplicated at the boundary, and a coincident context
-    // point contributes no turn (would lose the corner it's meant to attribute).
-    const before = prev ? lastDistinctFrom(prev, seg[0]) : undefined;
-    const after = next
-      ? firstDistinctFrom(next, seg[seg.length - 1])
-      : undefined;
-    const context = [
-      ...(before ? [before] : []),
-      ...seg,
-      ...(after ? [after] : []),
-    ];
+    // Pull up to TWO distinct points from each neighbouring segment (skipping
+    // duplicated boundary vertices) so a corner landing on OR just past the
+    // split becomes an interior vertex of this context — one point isn't
+    // enough when that first distinct vertex IS the corner (it would land as
+    // the last point, whose turn isn't computed). Both ~100 m stretches around
+    // a corner therefore read as curvy.
+    const before = prev ? distinctContext(prev, seg[0], true) : [];
+    const after = next ? distinctContext(next, seg[seg.length - 1], false) : [];
+    const context = [...before, ...seg, ...after];
     const length_m = polylineLengthMeters(seg);
     return {
       coords: seg,

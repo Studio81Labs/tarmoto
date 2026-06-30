@@ -209,4 +209,17 @@ describe('segmentWay', () => {
     expect(segs[0].coords).toHaveLength(2); // the boundary-ending segment
     expect(segs[0].curviness_score).toBeGreaterThan(0); // corner not dropped
   });
+
+  it('attributes a corner that lands JUST PAST a boundary to the approach segment', () => {
+    // A→B is 101 m with a 100 m target, so the split lands ~1 m before the
+    // corner vertex B. The ~100 m approach segment must still read as curvy
+    // (the corner is reached via the two-point boundary context), not straight.
+    const m = 1 / 111_320;
+    const A = { lat: 50, lng: 14 };
+    const B = { lat: 50 + 101 * m, lng: 14 };
+    const C = { lat: 50 + 101 * m, lng: 14 + 140 * m };
+    const segs = segmentWay([A, B, C], 100);
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    expect(segs[0].curviness_score).toBeGreaterThan(0);
+  });
 });
