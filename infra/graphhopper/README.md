@@ -47,5 +47,5 @@ To use the hosted GraphHopper Directions API instead (zero infra), set `TARMOTO_
 
 ## Caveats
 
-- **Config schema changes between GraphHopper majors.** This `config.yml` is a starting template; pin the image tag in the compose service and diff against the `config-example.yml` shipped with that version if the container fails to start.
+- **The image is pinned** to `israelhikingmap/graphhopper:10.0` in the compose service (its `latest` is a nightly from GraphHopper master). `config.yml` targets that version's schema — when bumping the tag, diff `config.yml` against the `config-example.yml` shipped with the new image and re-test, since the config / custom-model schema changes between GraphHopper majors.
 - The first import needs a few GB of RAM/disk for a country extract. Smaller extracts (e.g. a single region) import faster for local dev.
