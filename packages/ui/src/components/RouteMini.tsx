@@ -48,8 +48,11 @@ export function RouteMini({
       Math.floor(t * (SAMPLES.length - 1)),
     );
     const f = t * (SAMPLES.length - 1) - i;
-    const [x0, y0] = SAMPLES[i];
-    const [x1, y1] = SAMPLES[i + 1];
+    const from = SAMPLES[i];
+    const to = SAMPLES[i + 1];
+    if (!from || !to) return null;
+    const [x0, y0] = from;
+    const [x1, y1] = to;
     return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f };
   })();
 
