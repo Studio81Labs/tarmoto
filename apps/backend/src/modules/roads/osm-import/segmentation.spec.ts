@@ -85,6 +85,23 @@ describe('splitIntoSegments', () => {
     const sum = split.reduce((n, s) => n + polylineLengthMeters(s), 0);
     expect(Math.abs(sum - total)).toBeLessThan(total * 0.01);
   });
+
+  it('splits a way crossing the antimeridian without going the long way', () => {
+    // ~200 m edge straddling the date line (179.999° → -179.999°).
+    const a: LatLng = { lat: 0, lng: 179.999 };
+    const b: LatLng = { lat: 0, lng: -179.999 };
+    const total = polylineLengthMeters([a, b]);
+    expect(total).toBeLessThan(500); // short edge, NOT half the globe
+    const segs = splitIntoSegments([a, b], 100);
+    // Every interpolated point stays near ±180°, never near 0°.
+    for (const seg of segs) {
+      for (const p of seg) {
+        expect(Math.abs(p.lng)).toBeGreaterThan(179);
+      }
+    }
+    const sum = segs.reduce((n, s) => n + polylineLengthMeters(s), 0);
+    expect(Math.abs(sum - total)).toBeLessThan(total * 0.01);
+  });
 });
 
 describe('curvinessScore', () => {

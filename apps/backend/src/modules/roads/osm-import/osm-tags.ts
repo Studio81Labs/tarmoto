@@ -60,17 +60,43 @@ const OPEN_ACCESS = new Set([
   'destination',
 ]);
 
+/**
+ * `service=*` subtypes that are private driveways / parking aisles / yards
+ * rather than the rideable road network. Imported only with an EXPLICIT public
+ * access value (default-open does not apply to them), so they don't flood
+ * `road_segments` with non-public short stubs.
+ */
+const NON_PUBLIC_SERVICE = new Set([
+  'driveway',
+  'parking_aisle',
+  'drive-through',
+  'emergency_access',
+  'slipway',
+]);
+
 /** Whether a way should be imported as a road segment. */
 export function isDrivableHighway(tags: OsmTags): boolean {
   const hw = tags.highway;
   if (!hw || !DRIVABLE_HIGHWAYS.has(hw)) return false;
-  // Resolve effective access from the most-specific key present (OSM
-  // precedence), so `motorcycle=yes` re-opens a way broadly tagged `access=no`.
+
+  // Effective access from the most-specific key present (OSM precedence), so
+  // `motorcycle=yes` re-opens a way broadly tagged `access=no`.
+  let access: string | undefined;
   for (const key of ACCESS_KEYS_SPECIFIC_FIRST) {
-    const value = tags[key];
-    if (value !== undefined) return OPEN_ACCESS.has(value);
+    if (tags[key] !== undefined) {
+      access = tags[key];
+      break;
+    }
   }
-  return true; // no access tags → open
+  const explicitlyOpen = access !== undefined && OPEN_ACCESS.has(access);
+  if (access !== undefined && !explicitlyOpen) return false; // closed/restricted
+
+  // Private-ish service subtypes need an explicit public access value — the
+  // default-open assumption doesn't hold for driveways / parking aisles.
+  if (hw === 'service' && NON_PUBLIC_SERVICE.has(tags.service ?? '')) {
+    return explicitlyOpen;
+  }
+  return true;
 }
 
 /**

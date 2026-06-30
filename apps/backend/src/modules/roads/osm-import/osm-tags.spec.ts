@@ -82,6 +82,27 @@ describe('isDrivableHighway', () => {
       isDrivableHighway({ highway: 'track', access: 'yes', motorcycle: 'no' }),
     ).toBe(false);
   });
+
+  it('rejects private service subtypes (driveway / parking aisle) without explicit access', () => {
+    for (const s of ['driveway', 'parking_aisle', 'drive-through']) {
+      expect(isDrivableHighway({ highway: 'service', service: s })).toBe(false);
+    }
+    // …but accepts them with an explicit public access value.
+    expect(
+      isDrivableHighway({
+        highway: 'service',
+        service: 'driveway',
+        access: 'yes',
+      }),
+    ).toBe(true);
+  });
+
+  it('still accepts generic service ways (no private subtype)', () => {
+    expect(isDrivableHighway({ highway: 'service' })).toBe(true);
+    expect(isDrivableHighway({ highway: 'service', service: 'alley' })).toBe(
+      true,
+    );
+  });
 });
 
 describe('surfaceSeedFromTag', () => {

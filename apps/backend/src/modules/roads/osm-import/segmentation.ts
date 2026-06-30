@@ -46,9 +46,20 @@ export function polylineLengthMeters(coords: readonly LatLng[]): number {
   return total;
 }
 
-/** Linear interpolation between two points (fine at ~100 m scale). */
+/**
+ * Linear interpolation between two points (fine at ~100 m scale). The
+ * longitude delta is wrapped to the shortest arc so a way crossing the
+ * antimeridian (e.g. 179.999° → -179.999°) interpolates the short way across
+ * ±180° rather than halfway around the globe through 0°.
+ */
 function lerp(a: LatLng, b: LatLng, t: number): LatLng {
-  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  let dLng = b.lng - a.lng;
+  if (dLng > 180) dLng -= 360;
+  else if (dLng < -180) dLng += 360;
+  let lng = a.lng + dLng * t;
+  if (lng > 180) lng -= 360;
+  else if (lng < -180) lng += 360;
+  return { lat: a.lat + (b.lat - a.lat) * t, lng };
 }
 
 /**
