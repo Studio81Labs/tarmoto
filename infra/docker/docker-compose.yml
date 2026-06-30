@@ -115,15 +115,20 @@ services:
     # `czech-republic-latest.osm.pbf` into infra/graphhopper first (see its
     # README). Pin the tag to keep the config schema in sync with the image.
     profiles: ["routing"]
-    # Pinned: `latest` on this image is a nightly from GraphHopper master, and
-    # the config / custom-model schema changes between versions — a rolling tag
-    # could break the routing profile (or silently change behaviour) on a
-    # routine pull with no repo change. Bump deliberately + retest config.yml.
-    image: israelhikingmap/graphhopper:10.0
+    # Pinned (not `latest`, which is a nightly from GraphHopper master whose
+    # config / custom-model schema can change under us). 10.2 is multi-arch
+    # (linux/amd64 + linux/arm64) so it runs natively on Apple-Silicon dev
+    # machines — 10.0 is amd64-only. Bump deliberately + retest config.yml.
+    image: israelhikingmap/graphhopper:10.2
     ports:
       - "8989:8989"
     volumes:
       - ../graphhopper:/data
+    environment:
+      # The entrypoint defaults Java to -Xmx1g, which OOMs importing a country
+      # extract (the ~900 MB Czech PBF + CH/LM prep). Give it room; tune down
+      # for a smaller subregion or up for a larger extract.
+      JAVA_OPTS: "-Xms1g -Xmx4g"
     # First run imports the PBF into /data/graph-cache (slow, one-time); later
     # runs reuse it. `-o` is REQUIRED: the image entrypoint defaults the graph
     # cache to /data/default-gh unless given, which would ignore our path and

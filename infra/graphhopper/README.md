@@ -47,5 +47,5 @@ To use the hosted GraphHopper Directions API instead (zero infra), set `TARMOTO_
 
 ## Caveats
 
-- **The image is pinned** to `israelhikingmap/graphhopper:10.0` in the compose service (its `latest` is a nightly from GraphHopper master). `config.yml` targets that version's schema — when bumping the tag, diff `config.yml` against the `config-example.yml` shipped with the new image and re-test, since the config / custom-model schema changes between GraphHopper majors.
-- The first import needs a few GB of RAM/disk for a country extract. Smaller extracts (e.g. a single region) import faster for local dev.
+- **The image is pinned** to `israelhikingmap/graphhopper:10.2` in the compose service (its `latest` is a nightly from GraphHopper master). 10.2 is multi-arch (amd64 + arm64), so it runs natively on Apple-Silicon machines. `config.yml` targets that version's schema — when bumping the tag, diff `config.yml` against the `config-example.yml` shipped with the new image and re-test, since the config / custom-model schema changes between GraphHopper majors.
+- **Heap:** the compose service sets `JAVA_OPTS=-Xms1g -Xmx4g` because the image defaults to `-Xmx1g`, which OOMs while importing a country extract. The first import needs a few GB of RAM/disk; tune `JAVA_OPTS` down for a smaller subregion or up for a larger extract.

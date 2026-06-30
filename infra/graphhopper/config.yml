@@ -1,7 +1,7 @@
 # GraphHopper config for the self-hosted Tarmoto routing engine (ADR-0004).
 #
 # This is a STARTING TEMPLATE for the pinned image tag in the compose service
-# (israelhikingmap/graphhopper:10.0). The Tarmoto-specific requirement is the
+# (israelhikingmap/graphhopper:10.2). The Tarmoto-specific requirement is the
 # set of `graph.encoded_values` below — keep `road_class` and `toll` (and
 # ideally `surface`) so the backend's request-time custom models work:
 #   - avoid_highways → needs `road_class`
