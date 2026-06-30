@@ -39,13 +39,19 @@ export function routingProviderFactory(
   valhalla: ValhallaProvider,
   graphhopper: GraphHopperProvider,
 ): RoutingProvider {
+  // Trim before opting in: a whitespace-only templated env value must count
+  // as unset, matching how each provider normalizes it. Otherwise the
+  // factory would pick an engine the provider then can't reach (e.g.
+  // GraphHopper falling back to a local port nothing is serving).
+  const set = (key: string): boolean =>
+    Boolean(config.get<string>(key)?.trim());
   if (
-    config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL') ||
-    config.get<string>('TARMOTO_GRAPHHOPPER_API_KEY')
+    set('TARMOTO_GRAPHHOPPER_BASE_URL') ||
+    set('TARMOTO_GRAPHHOPPER_API_KEY')
   ) {
     return graphhopper;
   }
-  if (config.get<string>('TARMOTO_VALHALLA_BASE_URL')) return valhalla;
+  if (set('TARMOTO_VALHALLA_BASE_URL')) return valhalla;
   return osrm;
 }
 

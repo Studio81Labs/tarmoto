@@ -68,4 +68,19 @@ describe('routingProviderFactory', () => {
       ),
     ).toBe(osrm);
   });
+
+  it('treats whitespace-only selectors as unset (provider would fall back to an unreachable default)', () => {
+    expect(
+      routingProviderFactory(
+        config({
+          TARMOTO_GRAPHHOPPER_BASE_URL: '   ',
+          TARMOTO_GRAPHHOPPER_API_KEY: '  ',
+          TARMOTO_VALHALLA_BASE_URL: '\t',
+        }),
+        osrm,
+        valhalla,
+        graphhopper,
+      ),
+    ).toBe(osrm);
+  });
 });
