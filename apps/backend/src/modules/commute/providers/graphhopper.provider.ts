@@ -73,17 +73,22 @@ export class GraphHopperProvider implements RoutingProvider {
     const explicitBase = config
       .get<string>('TARMOTO_GRAPHHOPPER_BASE_URL')
       ?.trim();
-    // An explicit base URL wins. Otherwise default to the hosted Directions
-    // API when an API key is set (the key-only hosted path), and to the
-    // local self-hosted port when it isn't.
+    // We're on the hosted Directions API only when no explicit base URL is
+    // set AND an API key is — an explicit base wins (the request goes there
+    // even if a leftover/proxy key is also present).
+    const usingHostedApi = !explicitBase && this.apiKey !== undefined;
     this.baseUrl =
       explicitBase ||
-      (this.apiKey ? 'https://graphhopper.com/api/1' : 'http://localhost:8989');
+      (usingHostedApi
+        ? 'https://graphhopper.com/api/1'
+        : 'http://localhost:8989');
     this.profile =
       config.get<string>('TARMOTO_GRAPHHOPPER_PROFILE')?.trim() || 'car';
-    // Explicit flag wins; otherwise default to true only for the hosted API
-    // (which ships the `toll` encoded value) and false for self-hosted,
-    // where the operator must add `toll` to `graph.encoded_values` first.
+    // Explicit flag wins; otherwise default to true only when we actually
+    // hit the hosted API (which ships the `toll` encoded value) — NOT merely
+    // when a key exists, since an explicit self-hosted base routes to a graph
+    // that likely lacks `toll`. Self-hosted operators add `toll` to
+    // `graph.encoded_values` and set the flag.
     const tollFlag = config
       .get<string>('TARMOTO_GRAPHHOPPER_TOLL_ENABLED')
       ?.trim()
@@ -93,7 +98,7 @@ export class GraphHopperProvider implements RoutingProvider {
         ? true
         : tollFlag === 'false'
           ? false
-          : this.apiKey !== undefined;
+          : usingHostedApi;
   }
 
   /** Build the `custom_model` (+ areas) for the avoidance options, or null. */

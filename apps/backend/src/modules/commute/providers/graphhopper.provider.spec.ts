@@ -169,6 +169,32 @@ describe('GraphHopperProvider.route', () => {
     expect(body['ch.disable']).toBeUndefined();
   });
 
+  it('no-ops avoidTolls when an explicit self-hosted base wins over a leftover key', async () => {
+    // The request goes to the self-hosted graph (explicit base wins), so the
+    // toll default must follow the endpoint, not the stray key.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paths: [
+          path([
+            [0, 0],
+            [1, 1],
+          ]),
+        ],
+      }),
+    );
+    await makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'http://gh.test',
+      TARMOTO_GRAPHHOPPER_API_KEY: 'leftover',
+    }).route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { avoidTolls: true },
+    );
+    expect(bodyOf(fetchMock).custom_model).toBeUndefined();
+  });
+
   it('excludePolygons → custom_model areas + a priority rule per polygon (#744)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
     const ring: Array<[number, number]> = [
