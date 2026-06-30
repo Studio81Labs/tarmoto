@@ -283,7 +283,9 @@ describe("UsersScreen", () => {
 
     // Click the View button on the first row (u1)
     const viewButtons = screen.getAllByRole("button", { name: "View" });
-    await user.click(viewButtons[0]);
+    const firstViewButton = viewButtons[0];
+    if (!firstViewButton) throw new Error("expected at least one View button");
+    await user.click(firstViewButton);
 
     // Detail panel should now be visible with activity counts
     expect(screen.getByText("Rides: 42")).toBeInTheDocument();

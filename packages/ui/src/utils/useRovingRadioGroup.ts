@@ -19,7 +19,8 @@ import {
  * `selectAt` calls do.
  */
 export interface UseRovingRadioGroupOptions<T> {
-  value: T;
+  /** The currently selected option, or `undefined` when nothing matches. */
+  value: T | undefined;
   options: ReadonlyArray<T>;
   onChange: (next: T) => void;
   /** Compares an option to the current `value`. Defaults to ===. */
@@ -50,7 +51,8 @@ export function useRovingRadioGroup<
   const moveFocusOnNextChange = useRef(false);
 
   const eq = isEqual ?? ((a: T, b: T) => Object.is(a, b));
-  const selectedIndex = options.findIndex((o) => eq(o, value));
+  const selectedIndex =
+    value === undefined ? -1 : options.findIndex((o) => eq(o, value));
   // Fall back to the first option if the controlled value doesn't match
   // — keeps a sensible tab target instead of trapping focus.
   const activeTabIndex = selectedIndex >= 0 ? selectedIndex : 0;
@@ -66,8 +68,10 @@ export function useRovingRadioGroup<
     (nextIndex: number) => {
       if (options.length === 0) return;
       const wrapped = (nextIndex + options.length) % options.length;
+      const next = options[wrapped];
+      if (next === undefined) return;
       moveFocusOnNextChange.current = true;
-      onChange(options[wrapped]);
+      onChange(next);
     },
     [onChange, options],
   );

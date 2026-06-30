@@ -33,9 +33,9 @@ export function UsersScreen() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isPending, error, refetch } = useAdminUsersList({
-    q: q || undefined,
+    ...(q ? { q } : {}),
     deleted,
-    subscription: subscription || undefined,
+    ...(subscription ? { subscription } : {}),
     page,
     pageSize: PAGE_SIZE,
   });

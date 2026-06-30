@@ -60,7 +60,7 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
   const { data, isPending, error, refetch } = useAdminContentList({
     type,
     status,
-    q: q || undefined,
+    ...(q ? { q } : {}),
     page,
     pageSize: PAGE_SIZE,
   });

@@ -20,8 +20,8 @@ interface GPSData {
 interface Segment extends Classification {
   rms: number;
   distance: number;
-  lat?: number;
-  lng?: number;
+  lat?: number | undefined;
+  lng?: number | undefined;
   samples: number;
   timestamp: number;
   tag: string;
@@ -45,8 +45,8 @@ interface RawReading {
 interface TagEvent {
   tag: string;
   timestamp: number;
-  lat?: number;
-  lng?: number;
+  lat?: number | undefined;
+  lng?: number | undefined;
   distance: number;
 }
 
@@ -207,7 +207,7 @@ export default function PocSensor() {
       setRiderId(e.target.value);
       localStorage.setItem("tm_rider", e.target.value);
     },
-    []
+    [],
   );
 
   /* ---- helpers ---- */
@@ -231,8 +231,10 @@ export default function PocSensor() {
     ctx.strokeStyle = currentColorRef.current;
     ctx.lineWidth = 1.5;
     for (let i = 0; i < buf.length; i++) {
+      const v = buf[i];
+      if (v === undefined) continue;
       const x = (i / (buf.length - 1)) * w;
-      const y = h - (buf[i] / max) * (h - 4);
+      const y = h - (v / max) * (h - 4);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -260,7 +262,7 @@ export default function PocSensor() {
       if (!a || a.z === null) return;
 
       const mag = Math.sqrt(
-        (a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2
+        (a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2,
       );
       const dev = Math.abs(mag - 9.81);
 
@@ -300,7 +302,7 @@ export default function PocSensor() {
         drawGraph();
       }
     },
-    [updateQB, drawGraph]
+    [updateQB, drawGraph],
   );
 
   /* ---- permissions ---- */
@@ -324,7 +326,7 @@ export default function PocSensor() {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
             timeout: 10000,
-          })
+          }),
         );
       }
       permGrantedRef.current = true;
@@ -347,14 +349,12 @@ export default function PocSensor() {
       lng: lastGPSRef.current?.lng,
       distance: Math.round(totalDistRef.current),
     });
-    setCurrentTagDisplay({ tag, color: TAG_COLORS[tag] });
+    setCurrentTagDisplay({ tag, color: TAG_COLORS[tag] ?? "#64748b" });
     const entry: TagLogEntry = {
       tag,
       distance: Math.round(totalDistRef.current),
       timeLabel: fmtDur(
-        Math.floor(
-          (Date.now() - (startTimeRef.current || Date.now())) / 1000
-        )
+        Math.floor((Date.now() - (startTimeRef.current || Date.now())) / 1000),
       ),
     };
     setTagLog((prev) => [...prev, entry]);
@@ -435,8 +435,12 @@ export default function PocSensor() {
     if (gpsOn) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         (pos) => {
-          const { latitude: lat, longitude: lng, speed: spd, accuracy: acc } =
-            pos.coords;
+          const {
+            latitude: lat,
+            longitude: lng,
+            speed: spd,
+            accuracy: acc,
+          } = pos.coords;
           const prev = lastGPSRef.current;
           if (prev) {
             const d = haversine(prev.lat, prev.lng, lat, lng);
@@ -450,7 +454,7 @@ export default function PocSensor() {
             ) {
               const buf = segBufRef.current;
               const rms = Math.sqrt(
-                buf.reduce((s, v) => s + v * v, 0) / buf.length
+                buf.reduce((s, v) => s + v * v, 0) / buf.length,
               );
               const cls = classify(rms);
               segmentsRef.current.push({
@@ -474,14 +478,14 @@ export default function PocSensor() {
           setGpsAcc(acc ? "\u00B1" + Math.round(acc) + "m" : "");
         },
         (e) => console.warn("GPS:", e.message),
-        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 },
       );
     }
 
     // Timer
     timerRef.current = setInterval(() => {
       const d = Math.floor(
-        (Date.now() - (startTimeRef.current || Date.now())) / 1000
+        (Date.now() - (startTimeRef.current || Date.now())) / 1000,
       );
       setTime(fmtDur(d));
       const td = totalDistRef.current;
@@ -490,13 +494,7 @@ export default function PocSensor() {
       const sc = sampleCountRef.current;
       setSamples(sc > 1000 ? (sc / 1000).toFixed(1) + "k" : String(sc));
     }, 500);
-  }, [
-    gpsToggle,
-    wakelockToggle,
-    requestPerms,
-    handleMotion,
-    updateSegmentsUI,
-  ]);
+  }, [gpsToggle, wakelockToggle, requestPerms, handleMotion, updateSegmentsUI]);
 
   /* ---- stop recording ---- */
   const stopRecording = useCallback(() => {
@@ -525,9 +523,7 @@ export default function PocSensor() {
     // Flush remaining segment
     if (segBufRef.current.length > 10 && segDistRef.current > 20) {
       const buf = segBufRef.current;
-      const rms = Math.sqrt(
-        buf.reduce((s, v) => s + v * v, 0) / buf.length
-      );
+      const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
       const cls = classify(rms);
       segmentsRef.current.push({
         rms,
@@ -561,7 +557,7 @@ export default function PocSensor() {
           (segs ? " + " + segs + " segments" : "") +
           " \u00B7 " +
           tags +
-          " road tags"
+          " road tags",
       );
     }
   }, [handleMotion, updateSegmentsUI]);
@@ -636,7 +632,7 @@ export default function PocSensor() {
 
       downloadBlob(csv, "text/csv", fn);
     },
-    [getRiderId]
+    [getRiderId],
   );
 
   const exportJSON = useCallback(() => {
@@ -644,7 +640,7 @@ export default function PocSensor() {
     // exportCSV scope, which is not accessible in exportData/exportJSON)
     const date = new Date().toISOString().slice(0, 10);
     const dur = Math.floor(
-      (Date.now() - (startTimeRef.current || Date.now())) / 1000
+      (Date.now() - (startTimeRef.current || Date.now())) / 1000,
     );
     const rider = getRiderId();
 
@@ -696,7 +692,7 @@ export default function PocSensor() {
     downloadBlob(
       JSON.stringify(data, null, 2),
       "application/json",
-      "tarmoto_ride_" + rider + "_" + date + ".json"
+      "tarmoto_ride_" + rider + "_" + date + ".json",
     );
   }, [getRiderId]);
 
@@ -751,8 +747,22 @@ export default function PocSensor() {
         <div className="header-inner">
           <div className="logo">
             <svg width="22" height="22" viewBox="0 0 100 100" fill="none">
-              <rect x="18" y="20" width="64" height="12" rx="4" fill="#0f172a" />
-              <rect x="40" y="20" width="20" height="42" rx="4" fill="#0f172a" />
+              <rect
+                x="18"
+                y="20"
+                width="64"
+                height="12"
+                rx="4"
+                fill="#0f172a"
+              />
+              <rect
+                x="40"
+                y="20"
+                width="20"
+                height="42"
+                rx="4"
+                fill="#0f172a"
+              />
               <path
                 d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
                 stroke="#0f172a"
@@ -811,7 +821,9 @@ export default function PocSensor() {
                 value={riderId}
                 onChange={handleRiderChange}
               />
-              <p style={{ color: "#475569", fontSize: "10px", marginTop: "6px" }}>
+              <p
+                style={{ color: "#475569", fontSize: "10px", marginTop: "6px" }}
+              >
                 Used to identify your data when multiple testers export files.
               </p>
             </div>
@@ -844,9 +856,7 @@ export default function PocSensor() {
               <div className="toggle-row">
                 <div>
                   <p className="toggle-label">Keep screen awake</p>
-                  <p className="toggle-sub">
-                    Prevents screen lock during ride
-                  </p>
+                  <p className="toggle-sub">Prevents screen lock during ride</p>
                 </div>
                 <div className="toggle-switch">
                   <input
@@ -1095,13 +1105,7 @@ export default function PocSensor() {
                 <div
                   key={i}
                   style={{ background: s.color }}
-                  title={
-                    s.label +
-                    " [" +
-                    s.tag +
-                    "] RMS:" +
-                    s.rms.toFixed(1)
-                  }
+                  title={s.label + " [" + s.tag + "] RMS:" + s.rms.toFixed(1)}
                 />
               ))}
             </div>
@@ -1128,23 +1132,16 @@ export default function PocSensor() {
             <div ref={segListRef} className="seg-list">
               {segments.map((s, i) => (
                 <div key={i} className="seg-item">
-                  <div
-                    className="seg-dot"
-                    style={{ background: s.color }}
-                  />
+                  <div className="seg-dot" style={{ background: s.color }} />
                   <span className="seg-label">{s.label}</span>
-                  <span className="seg-meta">
-                    RMS:{s.rms.toFixed(2)}
-                  </span>
+                  <span className="seg-meta">RMS:{s.rms.toFixed(2)}</span>
                   <span
                     className="seg-meta"
                     style={{ color: TAG_COLORS[s.tag] }}
                   >
                     {s.tag}
                   </span>
-                  <span className="seg-meta">
-                    {Math.round(s.distance)}m
-                  </span>
+                  <span className="seg-meta">{Math.round(s.distance)}m</span>
                 </div>
               ))}
             </div>

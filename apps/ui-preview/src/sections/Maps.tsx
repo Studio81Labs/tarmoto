@@ -211,9 +211,9 @@ export function MapVocabSection() {
                   <WaypointGlyph
                     size={50}
                     letter={s.letter}
-                    hover={s.hover}
-                    selected={s.selected}
-                    dragging={s.dragging}
+                    hover={s.hover ?? false}
+                    selected={s.selected ?? false}
+                    dragging={s.dragging ?? false}
                   />
                   <Mono className="mt-1.5 block text-[10px] tracking-[1px] text-fg-dim">
                     {s.label}
@@ -873,13 +873,12 @@ export function MapOverlaysSection() {
         >
           <OverlayCard className="flex items-center gap-2.5">
             <Stamp>Quality ≥</Stamp>
-            {[1, 2, 3].map((q) => (
-              <QChip
-                key={q}
-                num={q}
-                color={["#E05A3C", "#F0A03C", "#E8D66A"][q - 1]}
-                selected={q === 3}
-              />
+            {[
+              { num: 1, color: "#E05A3C" },
+              { num: 2, color: "#F0A03C" },
+              { num: 3, color: "#E8D66A" },
+            ].map(({ num, color }) => (
+              <QChip key={num} num={num} color={color} selected={num === 3} />
             ))}
             {[4, 5].map((q) => (
               <QChip key={q} num={q} muted />
@@ -1343,7 +1342,7 @@ function DayCard({
     >
       <div className="mb-1.5 flex items-center justify-between">
         <Stamp tone={accent ? "accent" : "dim"}>Day {day}</Stamp>
-        <QualityBars q={quality} size={3} onDark={accent} />
+        <QualityBars q={quality} size={3} onDark={accent ?? false} />
       </div>
       <div className="text-[13px] font-bold">{title}</div>
       <div
