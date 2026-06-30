@@ -210,16 +210,36 @@ describe('segmentWay', () => {
     expect(segs[0].curviness_score).toBeGreaterThan(0); // corner not dropped
   });
 
-  it('attributes a corner that lands JUST PAST a boundary to the approach segment', () => {
-    // A→B is 101 m with a 100 m target, so the split lands ~1 m before the
-    // corner vertex B. The ~100 m approach segment must still read as curvy
-    // (the corner is reached via the two-point boundary context), not straight.
+  it('puts a corner in the segment that contains it, not the straight approach', () => {
+    // A→B is 101 m with a 100 m target: the split lands ~1 m before the corner
+    // vertex B, so B is interior to the SECOND segment. The straight approach
+    // must read straight; the corner-containing segment must read curvy.
     const m = 1 / 111_320;
     const A = { lat: 50, lng: 14 };
     const B = { lat: 50 + 101 * m, lng: 14 };
     const C = { lat: 50 + 101 * m, lng: 14 + 140 * m };
     const segs = segmentWay([A, B, C], 100);
     expect(segs.length).toBeGreaterThanOrEqual(2);
+    expect(segs[0].curviness_score).toBe(0); // straight approach
+    expect(segs[1].curviness_score).toBeGreaterThan(0); // contains the corner
+  });
+
+  it("does not leak a neighbour's interior bend into a straight segment", () => {
+    // A→B→S→D: the bend is at B (interior to the first segment); B→S→D runs
+    // straight east. The straight segment must NOT inherit B's bend.
+    const m = 1 / 111_320;
+    const segs = segmentWay(
+      [
+        { lat: 50, lng: 14 },
+        { lat: 50 + 50 * m, lng: 14 + 50 * m }, // B (corner)
+        { lat: 50 + 50 * m, lng: 14 + 150 * m }, // S
+        { lat: 50 + 50 * m, lng: 14 + 250 * m }, // D (straight from B)
+      ],
+      100,
+    );
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    // The corner is in the first segment; the trailing straight stretch is 0.
     expect(segs[0].curviness_score).toBeGreaterThan(0);
+    expect(segs[segs.length - 1].curviness_score).toBe(0);
   });
 });

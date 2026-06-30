@@ -122,36 +122,22 @@ function coincident(a: LatLng, b: LatLng): boolean {
   return haversineMeters(a.lat, a.lng, b.lat, b.lng) === 0;
 }
 
-/**
- * Up to `n` successive non-coincident points scanned from one end of an
- * adjacent segment, skipping duplicated boundary vertices. Used to give a
- * segment's curviness enough context that the vertex just past its boundary
- * (a corner landing on OR just beyond the split) becomes an INTERIOR vertex
- * whose turn is actually computed — one point isn't enough when the corner
- * itself is that first distinct vertex. Returned nearest-boundary-last for
- * `fromEnd=false` and nearest-boundary-first for `fromEnd=true`, so the caller
- * can splice them in geometric order.
- */
-function distinctContext(
+/** First point in `coords` (scanning from `fromEnd`) not coincident with
+ *  `ref` — the neighbouring vertex just outside a segment's boundary, used
+ *  ONLY to supply the boundary bearing (never as an interior vertex). */
+function distinctNeighbour(
   coords: readonly LatLng[],
   ref: LatLng,
   fromEnd: boolean,
-  n = 2,
-): LatLng[] {
-  const order = fromEnd
-    ? coords.slice().reverse() // scan inward from the shared boundary
-    : coords.slice();
-  const picked: LatLng[] = [];
-  let prevRef = ref;
-  for (const p of order) {
-    if (!coincident(p, prevRef)) {
-      picked.push(p);
-      prevRef = p;
-      if (picked.length === n) break;
+): LatLng | undefined {
+  if (fromEnd) {
+    for (let i = coords.length - 1; i >= 0; i--) {
+      if (!coincident(coords[i], ref)) return coords[i];
     }
+  } else {
+    for (const p of coords) if (!coincident(p, ref)) return p;
   }
-  // `fromEnd` scanned inward → reverse back to geometric (outer→inner) order.
-  return fromEnd ? picked.reverse() : picked;
+  return undefined;
 }
 
 /**
@@ -179,6 +165,38 @@ function totalHeadingChangeDeg(raw: readonly LatLng[]): number {
     total += turnDeg(
       bearingDeg(coords[i - 1], coords[i]),
       bearingDeg(coords[i], coords[i + 1]),
+    );
+  }
+  return total;
+}
+
+/**
+ * Heading change attributable to a single SEGMENT: the turns at its own
+ * interior vertices PLUS the turn at each of its boundary vertices, using the
+ * neighbouring point (`before` / `after`) only to supply the incoming/outgoing
+ * bearing. A corner sitting exactly on a boundary is counted in both adjacent
+ * segments; a bend in the neighbour's interior (a vertex or more past the
+ * boundary) is NOT — only this segment's own vertices contribute.
+ */
+function segmentTurnDeg(
+  seg: readonly LatLng[],
+  before: LatLng | undefined,
+  after: LatLng | undefined,
+): number {
+  const coords = withoutZeroLengthLegs(seg);
+  if (coords.length < 2) return 0;
+  let total = totalHeadingChangeDeg(coords); // interior vertices
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  // Turn at the start boundary vertex (incoming edge from `before`).
+  if (before && !coincident(before, first)) {
+    total += turnDeg(bearingDeg(before, first), bearingDeg(first, coords[1]));
+  }
+  // Turn at the end boundary vertex (outgoing edge to `after`).
+  if (after && !coincident(after, last)) {
+    total += turnDeg(
+      bearingDeg(coords[coords.length - 2], last),
+      bearingDeg(last, after),
     );
   }
   return total;
@@ -215,12 +233,12 @@ export interface WaySegment {
 
 /**
  * Split a way into ~`targetMeters` segments AND score each one's curviness
- * with **boundary context**: a bend that lands on (or near) a segment boundary
- * would otherwise be lost — each side becomes a straight 2-point segment. So a
- * segment's curviness is computed over its own coords plus the neighbouring
- * vertex just outside each end, while normalising by the segment's own length.
- * A boundary bend is therefore counted in both adjacent segments (both ~100 m
- * stretches around a corner are genuinely curvy), never dropped.
+ * over its OWN vertices: the turns at its interior vertices plus the turn at
+ * each boundary vertex (using one neighbouring point for the incoming/outgoing
+ * bearing — see `segmentTurnDeg`), normalised by the segment's own length. So a
+ * corner that lands exactly on a split is counted in both adjacent segments
+ * (never lost), while a bend in a neighbour's interior does NOT leak into an
+ * otherwise straight segment.
  */
 export function segmentWay(
   coords: readonly LatLng[],
@@ -230,20 +248,23 @@ export function segmentWay(
   return segments.map((seg, i) => {
     const prev = segments[i - 1];
     const next = segments[i + 1];
-    // Pull up to TWO distinct points from each neighbouring segment (skipping
-    // duplicated boundary vertices) so a corner landing on OR just past the
-    // split becomes an interior vertex of this context — one point isn't
-    // enough when that first distinct vertex IS the corner (it would land as
-    // the last point, whose turn isn't computed). Both ~100 m stretches around
-    // a corner therefore read as curvy.
-    const before = prev ? distinctContext(prev, seg[0], true) : [];
-    const after = next ? distinctContext(next, seg[seg.length - 1], false) : [];
-    const context = [...before, ...seg, ...after];
+    // One distinct neighbour on each side supplies the boundary bearing so the
+    // turn AT this segment's boundary vertices is counted (a corner exactly on
+    // a boundary lands in both adjacent segments). `segmentTurnDeg` only counts
+    // this segment's OWN vertices, so a bend in the neighbour's interior never
+    // leaks into a straight segment.
+    const before = prev ? distinctNeighbour(prev, seg[0], true) : undefined;
+    const after = next
+      ? distinctNeighbour(next, seg[seg.length - 1], false)
+      : undefined;
     const length_m = polylineLengthMeters(seg);
     return {
       coords: seg,
       length_m,
-      curviness_score: scoreFromTurn(totalHeadingChangeDeg(context), length_m),
+      curviness_score: scoreFromTurn(
+        segmentTurnDeg(seg, before, after),
+        length_m,
+      ),
     };
   });
 }
