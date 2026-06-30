@@ -25,13 +25,14 @@ interface GraphHopperResponse {
  * Why GraphHopper alongside OSRM/Valhalla (ADR-0004): its avoidance +
  * weighting model is an at-request-time JSON `custom_model`, so road
  * filters today — and a future "prefer our own road-quality" weighting —
- * can be tuned without rebuilding the engine. We always run in flexible
- * mode (`ch.disable: true`) because custom models and alternative routes
- * require it.
+ * can be tuned without rebuilding the engine. Flexible mode
+ * (`ch.disable: true`) is used only for custom models (which require it);
+ * `alternative_route` runs under Contraction Hierarchies.
  *
  * `RoutingOptions` map as:
  *  - `avoidHighways` → `priority` rule zeroing `road_class == MOTORWAY`
- *  - `avoidTolls`    → `priority` rule zeroing `toll != NO`
+ *  - `avoidTolls`    → `priority` rule zeroing `toll == ALL || toll == HGV`
+ *    (GraphHopper's actual toll values — `MISSING`/`NO` are untolled)
  *  - `excludePolygons` (#744) → `custom_model.areas` polygons + a
  *    `priority` rule zeroing anything `in_<area>`
  *
@@ -78,7 +79,10 @@ export class GraphHopperProvider implements RoutingProvider {
       priority.push({ if: 'road_class == MOTORWAY', multiply_by: 0 });
     }
     if (options?.avoidTolls) {
-      priority.push({ if: 'toll != NO', multiply_by: 0 });
+      // Match GraphHopper's actual toll values, NOT `toll != NO`: most
+      // untolled OSM roads have no toll tag (`toll == MISSING`), so
+      // `!= NO` would exclude nearly the whole graph and return no route.
+      priority.push({ if: 'toll == ALL || toll == HGV', multiply_by: 0 });
     }
     const polygons = options?.excludePolygons ?? [];
     const features = polygons.map((ring, i) => {
@@ -114,8 +118,11 @@ export class GraphHopperProvider implements RoutingProvider {
       profile: this.profile,
       points_encoded: false,
       instructions: false,
-      // Custom models and alternative routes both require flexible mode.
-      ...(model || wantsAlternatives ? { 'ch.disable': true } : {}),
+      // `ch.disable` ONLY for custom models — they require flexible mode.
+      // `algorithm=alternative_route` works under Contraction Hierarchies,
+      // and forcing `ch.disable` on a CH-only server profile gets the
+      // request rejected, so plain (filter-less) alternatives keep CH.
+      ...(model ? { 'ch.disable': true } : {}),
       ...(model ?? {}),
       ...(wantsAlternatives
         ? {

@@ -111,7 +111,7 @@ describe('GraphHopperProvider.route', () => {
     ]);
   });
 
-  it('avoidTolls → custom_model priority on toll != NO', async () => {
+  it('avoidTolls → matches actual toll values, not toll != NO (avoids MISSING)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
     await makeProvider().route(
       [
@@ -121,7 +121,7 @@ describe('GraphHopperProvider.route', () => {
       { avoidTolls: true },
     );
     expect(bodyOf(fetchMock).custom_model?.priority).toEqual([
-      { if: 'toll != NO', multiply_by: 0 },
+      { if: 'toll == ALL || toll == HGV', multiply_by: 0 },
     ]);
   });
 
@@ -288,7 +288,7 @@ describe('GraphHopperProvider.getAlternatives', () => {
     ],
   };
 
-  it('requests alternative_route and includes the primary when asked', async () => {
+  it('requests alternative_route under CH (no ch.disable for filter-less alternatives)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(threePaths));
     const alts = await makeProvider().getAlternatives(0, 0, 1, 1, 3, {
       includePrimary: true,
@@ -296,9 +296,26 @@ describe('GraphHopperProvider.getAlternatives', () => {
     const body = bodyOf(fetchMock);
     expect(body.algorithm).toBe('alternative_route');
     expect(body['alternative_route.max_paths']).toBe(3);
-    expect(body['ch.disable']).toBe(true);
+    // No custom model → keep Contraction Hierarchies (ch.disable rejected
+    // on CH-only server profiles).
+    expect(body['ch.disable']).toBeUndefined();
     expect(alts).toHaveLength(3);
     expect(alts[0].distance_km).toBe(1); // primary kept at index 0
+  });
+
+  it('sets ch.disable when alternatives are combined with a custom model', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(threePaths));
+    await makeProvider().getAlternatives(0, 0, 1, 1, 3, {
+      includePrimary: true,
+      avoidHighways: true,
+    });
+    const body = bodyOf(fetchMock);
+    expect(body.algorithm).toBe('alternative_route');
+    expect(body['ch.disable']).toBe(true);
+    expect(body.custom_model?.priority).toContainEqual({
+      if: 'road_class == MOTORWAY',
+      multiply_by: 0,
+    });
   });
 
   it('drops the primary when includePrimary is not set (asks for one extra)', async () => {

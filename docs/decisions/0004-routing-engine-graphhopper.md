@@ -26,8 +26,10 @@ Adopt **GraphHopper** as the strategic routing engine for road-filter and qualit
 `RoutingOptions` map to a GraphHopper `custom_model`:
 
 - `avoidHighways` → `priority` rule zeroing `road_class == MOTORWAY`
-- `avoidTolls` → `priority` rule zeroing `toll != NO`
+- `avoidTolls` → `priority` rule zeroing `toll == ALL || toll == HGV` (GraphHopper's actual toll values; `toll != NO` would also match untagged `MISSING` edges and exclude most of the graph → no route)
 - `excludePolygons` (#744) → `custom_model.areas` polygons + a `priority` rule zeroing anything `in_<area>`
+
+`ch.disable: true` (flexible mode) is sent only when a custom model is present; `algorithm=alternative_route` runs under Contraction Hierarchies, so filter-less commute/trip alternatives don't force flexible mode (which a CH-only server profile would reject).
 
 Self-hosted by default (`http://localhost:8989`); setting `TARMOTO_GRAPHHOPPER_API_KEY` alone both selects GraphHopper and defaults its base URL to the hosted GraphHopper Directions API (`https://graphhopper.com/api/1`) for a zero-infra trial — an explicit `TARMOTO_GRAPHHOPPER_BASE_URL` always wins. We request `points_encoded: false` to consume GeoJSON directly.
 
