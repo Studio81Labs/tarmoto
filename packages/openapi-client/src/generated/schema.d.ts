@@ -4269,6 +4269,8 @@ export interface components {
     RouteOptionsDto: {
       avoid_highways?: boolean;
       avoid_tolls?: boolean;
+      /** @description Prefer good-surface roads using crowdsourced quality (GraphHopper only; no-op until conflation is provisioned — ADR-0005 / #779). */
+      prefer_quality?: boolean;
       /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
       avoid_unpaved?: boolean;
       /** @description Reserved — accepted but not yet applied to live routing (phase 1). */

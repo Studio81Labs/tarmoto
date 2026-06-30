@@ -51,6 +51,7 @@ Briefly: what else did we look at, and why not?
 - [0002 — Nominatim as the geocoding provider](./0002-geocoding-provider.md)
 - [0003 — Subscription pricing is EUR-denominated and EUR-displayed](./0003-subscription-pricing-currency.md)
 - [0004 — GraphHopper as the routing engine for road-filter & quality-weighted routing](./0004-routing-engine-graphhopper.md)
+- [0005 — Road-quality routing via OSM `smoothness` tag injection (GraphHopper)](./0005-road-quality-routing-via-smoothness.md)
 
 ## Candidates worth writing up
 

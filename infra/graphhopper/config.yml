@@ -20,8 +20,11 @@
 graphhopper:
   # Encoded values exposed to custom models. `car_access` + `car_average_speed`
   # power the base car weighting (below); the rest are what Tarmoto's
-  # avoidances + future weighting reference.
-  graph.encoded_values: car_access, car_average_speed, road_class, road_environment, max_speed, toll, surface, road_access
+  # avoidances + weighting reference. `smoothness` carries our conflated road
+  # quality (ADR-0005): the conflation job injects an OSM `smoothness` tag from
+  # `road_segments`, and the backend's preferQuality custom_model weights it
+  # (TARMOTO_GRAPHHOPPER_QUALITY_ENABLED).
+  graph.encoded_values: car_access, car_average_speed, road_class, road_environment, max_speed, toll, surface, smoothness, road_access
 
   profiles:
     - name: car

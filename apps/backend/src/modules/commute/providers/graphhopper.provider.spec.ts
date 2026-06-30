@@ -215,6 +215,45 @@ describe('GraphHopperProvider.route', () => {
     expect(bodyOf(fetchMock).custom_model).toBeUndefined();
   });
 
+  it('preferQuality → de-weights poor smoothness when quality is enabled (#779)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
+    await makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'http://gh.test',
+      TARMOTO_GRAPHHOPPER_QUALITY_ENABLED: 'true',
+    }).route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { preferQuality: true },
+    );
+    expect(bodyOf(fetchMock).custom_model?.priority).toContainEqual({
+      if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == IMPASSABLE',
+      multiply_by: 0.3,
+    });
+  });
+
+  it('no-ops preferQuality when quality is not enabled (default)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paths: [
+          path([
+            [0, 0],
+            [1, 1],
+          ]),
+        ],
+      }),
+    );
+    await makeProvider().route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { preferQuality: true },
+    );
+    expect(bodyOf(fetchMock).custom_model).toBeUndefined();
+  });
+
   it('excludePolygons → custom_model areas + a priority rule per polygon (#744)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ paths: [] }));
     const ring: Array<[number, number]> = [
