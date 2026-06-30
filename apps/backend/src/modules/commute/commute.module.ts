@@ -14,28 +14,35 @@ import {
 } from './routing-provider.interface.js';
 import { OsrmProvider } from './providers/osrm.provider.js';
 import { ValhallaProvider } from './providers/valhalla.provider.js';
+import { GraphHopperProvider } from './providers/graphhopper.provider.js';
 
 /**
  * Selects the routing engine for the shared ROUTING_PROVIDER token (used by
  * commute, the trip generator, and the planner /routing/route endpoint).
  *
- * Valhalla is self-hosted and opt-in — its docker service sits behind the
- * `routing` compose profile, so the documented `pnpm db:up` dev setup does NOT
- * start it. We therefore only use Valhalla when it has been explicitly
- * configured via TARMOTO_VALHALLA_BASE_URL, and otherwise fall back to OSRM
- * (public demo by default). This keeps commute + trip generation working out of
- * the box instead of returning no route against a Valhalla that isn't running.
+ * All non-OSRM engines are self-hosted and opt-in (their docker services sit
+ * behind the `routing` compose profile, so the documented `pnpm db:up` dev
+ * setup does NOT start them). We pick by explicit configuration and otherwise
+ * fall back to OSRM (public demo by default), so commute + trip generation
+ * work out of the box instead of returning no route against an engine that
+ * isn't running.
+ *
+ * Precedence: GraphHopper (ADR-0004 — request-time `custom_model` avoidances,
+ * and the future home for our own road-quality weighting) → Valhalla → OSRM.
  */
 export function routingProviderFactory(
   config: ConfigService,
   osrm: OsrmProvider,
   valhalla: ValhallaProvider,
+  graphhopper: GraphHopperProvider,
 ): RoutingProvider {
-  return config.get<string>('TARMOTO_VALHALLA_BASE_URL') ? valhalla : osrm;
+  if (config.get<string>('TARMOTO_GRAPHHOPPER_BASE_URL')) return graphhopper;
+  if (config.get<string>('TARMOTO_VALHALLA_BASE_URL')) return valhalla;
+  return osrm;
 }
 
 /**
- * To swap the routing engine (e.g., to GraphHopper or Mapbox), add a provider
+ * To swap the routing engine, add a provider implementing `RoutingProvider`
  * and adjust `routingProviderFactory` above.
  *
  * `HazardsModule` and `WeatherModule` are imported so
@@ -55,9 +62,15 @@ export function routingProviderFactory(
     CommuteService,
     OsrmProvider,
     ValhallaProvider,
+    GraphHopperProvider,
     {
       provide: ROUTING_PROVIDER,
-      inject: [ConfigService, OsrmProvider, ValhallaProvider],
+      inject: [
+        ConfigService,
+        OsrmProvider,
+        ValhallaProvider,
+        GraphHopperProvider,
+      ],
       useFactory: routingProviderFactory,
     },
   ],
