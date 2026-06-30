@@ -40,7 +40,7 @@
     "poc:dev": "pnpm --filter @tarmoto/poc-sensor dev",
     "poc:build": "pnpm --filter @tarmoto/poc-sensor build",
     "shared:build": "pnpm --filter @tarmoto/shared build",
-    "openapi:gen": "pnpm --filter @tarmoto/openapi generate",
+    "openapi:gen": "pnpm shared:build && pnpm --filter @tarmoto/openapi generate",
     "postman:gen": "pnpm --filter @tarmoto/openapi postman",
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
