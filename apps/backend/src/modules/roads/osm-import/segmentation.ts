@@ -12,7 +12,16 @@ export interface LatLng {
   lng: number;
 }
 
-/** Default ~100 m segment target (§1 of the data reference). */
+/**
+ * Default ~100 m segment target (§1 of the data reference).
+ *
+ * NOTE for the persistence slice (#781): `FunZoneClusteringService` defaults
+ * `minSegmentLengthM: 500` and filters `length_m >= …` before DBSCAN, so once
+ * the importer persists ~100 m rows the weekly fun-zone recompute would filter
+ * them all out. That slice must either lower the clustering min-length or
+ * aggregate neighbouring imported segments before the filter — it is NOT a
+ * property of this pure geometry core (nothing here persists segments yet).
+ */
 export const SEGMENT_TARGET_METERS = 100;
 
 /**

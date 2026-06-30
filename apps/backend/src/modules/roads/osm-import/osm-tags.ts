@@ -33,11 +33,17 @@ const DRIVABLE_HIGHWAYS = new Set([
 ]);
 
 /**
- * OSM access keys, broad → specific, that can exclude a motorcycle. We check
- * the whole chain (not just `access`/`motor_vehicle`) so a way tagged e.g.
- * `vehicle=no` or `motorcycle=private` isn't imported as rideable.
+ * OSM access keys for a motorcycle, **most-specific → least-specific**.
+ * Effective access is resolved from the most-specific key that's present, so a
+ * specific allow overrides a broad restriction (e.g. `access=no` +
+ * `motorcycle=yes` → drivable).
  */
-const ACCESS_KEYS = ['access', 'vehicle', 'motor_vehicle', 'motorcycle'];
+const ACCESS_KEYS_SPECIFIC_FIRST = [
+  'motorcycle',
+  'motor_vehicle',
+  'vehicle',
+  'access',
+];
 
 /**
  * Access values that close a way to ordinary riders: `no` (forbidden) and
@@ -51,9 +57,13 @@ const CLOSED_ACCESS = new Set(['no', 'private']);
 export function isDrivableHighway(tags: OsmTags): boolean {
   const hw = tags.highway;
   if (!hw || !DRIVABLE_HIGHWAYS.has(hw)) return false;
-  // A closed value on any key of the motorcycle access chain shuts us out.
-  if (ACCESS_KEYS.some((k) => CLOSED_ACCESS.has(tags[k] ?? ''))) return false;
-  return true;
+  // Resolve effective access from the most-specific key present (OSM
+  // precedence), so `motorcycle=yes` re-opens a way broadly tagged `access=no`.
+  for (const key of ACCESS_KEYS_SPECIFIC_FIRST) {
+    const value = tags[key];
+    if (value !== undefined) return !CLOSED_ACCESS.has(value);
+  }
+  return true; // no access tags → open
 }
 
 /**

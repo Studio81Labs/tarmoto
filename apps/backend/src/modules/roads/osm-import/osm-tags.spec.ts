@@ -45,6 +45,23 @@ describe('isDrivableHighway', () => {
       isDrivableHighway({ highway: 'residential', access: 'destination' }),
     ).toBe(true);
   });
+
+  it('honours a specific motorcycle allow over a broad restriction', () => {
+    // OSM precedence: the most-specific key present wins.
+    expect(
+      isDrivableHighway({
+        highway: 'residential',
+        access: 'no',
+        motorcycle: 'yes',
+      }),
+    ).toBe(true);
+  });
+
+  it('honours a specific motorcycle restriction over a broad allow', () => {
+    expect(
+      isDrivableHighway({ highway: 'track', access: 'yes', motorcycle: 'no' }),
+    ).toBe(false);
+  });
 });
 
 describe('surfaceSeedFromTag', () => {
