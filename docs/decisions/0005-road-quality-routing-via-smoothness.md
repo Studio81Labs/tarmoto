@@ -31,7 +31,7 @@ Quality → smoothness mapping (used by the future conflation job):
 
 Three phases (this ADR + #779):
 
-1. **Phase 3 — request-time weighting (this change).** `RoutingOptions.preferQuality` → a `custom_model` `priority` rule that **de-weights poor `smoothness`** (`BAD`/`VERY_BAD`/`HORRIBLE`/`IMPASSABLE`). Unknown/`MISSING` stays neutral, so segments without data are never penalised. Gated behind `TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off) — a silent no-op when off, exactly like the `toll` rule (RoutingProvider contract). `smoothness` added to `graph.encoded_values` in the self-hosted config.
+1. **Phase 3 — request-time weighting (this change).** `RoutingOptions.preferQuality` → a `custom_model` `priority` rule that **de-weights poor `smoothness`** (`BAD`/`VERY_BAD`/`HORRIBLE`/`VERY_HORRIBLE`/`IMPASSABLE`). Unknown/`MISSING` stays neutral, so segments without data are never penalised. Gated behind `TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off) — a silent no-op when off, exactly like the `toll` rule (RoutingProvider contract). `smoothness` added to `graph.encoded_values` in the self-hosted config.
 2. **Phase 2 — conflation job (later).** Join `road_segments` → OSM ways via `(osm_way_id, segment_index)`, inject the `smoothness` tag into a derived `.pbf`, trigger a graph re-import. Blocked on `osm_way_id` being populated (the OSM importer).
 3. **Curviness — deferred.** GraphHopper has **no stock encoded value** for curviness, so it can't ride the same tag-injection path; it would need the custom-parser (forked image) route. Out of scope until quality proves the approach.
 

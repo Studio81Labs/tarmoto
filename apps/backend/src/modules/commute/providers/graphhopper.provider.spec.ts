@@ -228,7 +228,7 @@ describe('GraphHopperProvider.route', () => {
       { preferQuality: true },
     );
     expect(bodyOf(fetchMock).custom_model?.priority).toContainEqual({
-      if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == IMPASSABLE',
+      if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == VERY_HORRIBLE || smoothness == IMPASSABLE',
       multiply_by: 0.3,
     });
   });

@@ -150,7 +150,7 @@ export class GraphHopperProvider implements RoutingProvider {
       // neutral (multiply_by 1), so segments without crowdsourced data are
       // never penalised.
       priority.push({
-        if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == IMPASSABLE',
+        if: 'smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == VERY_HORRIBLE || smoothness == IMPASSABLE',
         multiply_by: 0.3,
       });
     } else if (options?.preferQuality) {

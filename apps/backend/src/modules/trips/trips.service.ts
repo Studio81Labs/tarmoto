@@ -1046,6 +1046,7 @@ export class TripsService {
       {
         avoidHighways: options?.avoid_highways,
         avoidTolls: options?.avoid_tolls,
+        preferQuality: options?.prefer_quality,
       },
     );
     if (!route) {
