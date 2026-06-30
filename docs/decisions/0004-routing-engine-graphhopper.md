@@ -40,7 +40,7 @@ This ADR covers the _provider_. The data-conflation pipeline (mapping `road_segm
 - **Road filters and closure avoidance work properly**, request-time, on a supported engine — unlike the OSRM demo. The `/routing` `exclude=` 400s go away once GraphHopper is the configured engine.
 - **The moat feature gets a fast iteration loop:** quality/curviness weighting will live in request-time `custom_model` JSON, so we tune preference strength without rebuilding the engine.
 - **Flexible mode is the cost.** Custom models and alternative routes require `ch.disable: true`, which is slower than Contraction Hierarchies. Acceptable for our query profile (rider-initiated planning, not programmatic fan-out); mitigated by GraphHopper Landmarks if needed.
-- **Operational surface grows:** a self-hosted GraphHopper needs a regional OSM extract + a docker service (behind the `routing` compose profile, like Valhalla). The hosted API removes that for trials but adds a key + cost.
+- **Operational surface grows:** a self-hosted GraphHopper needs a regional OSM extract + a docker service (behind the `routing` compose profile, like Valhalla) — provided in [`infra/graphhopper`](../../infra/graphhopper/README.md), with `config.yml` pinning the `toll` / `road_class` / `surface` encoded values the custom models reference. The hosted API removes that for trials but adds a key + cost.
 - **No consumer changes and no breaking changes** — the swap is additive; `version` (`graphhopper-v1`) drives cache invalidation (#361). OSRM and Valhalla remain fully supported and selectable.
 - We keep **three** engines to maintain. That's intentional: OSRM for zero-config dev, Valhalla retained as a proven fallback, GraphHopper as the strategic target.
 
