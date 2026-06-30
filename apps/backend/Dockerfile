@@ -14,14 +14,15 @@
 # env var anywhere in the application's Coolify config — or one of its
 # own internal build args — would otherwise override the default and
 # the build would end up on the Debian variant of node:24, where `apk`
-# doesn't exist and the runtime stage fails. Same reason for `pnpm@10`
+# doesn't exist and the runtime stage fails. Same reason for `pnpm@11`
 # below. (Verified during Nexcue's Coolify migration; this defensive
-# pin is mirrored here proactively.)
+# pin is mirrored here proactively, and kept in lockstep with the root
+# `packageManager` field.)
 
 FROM node:24-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /workspace
 
 # ---------- deps ----------
@@ -47,7 +48,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 RUN apk add --no-cache curl tini \
  && addgroup -S tarmoto && adduser -S tarmoto -G tarmoto
 WORKDIR /app
