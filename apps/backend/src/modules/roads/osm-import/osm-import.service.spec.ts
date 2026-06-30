@@ -20,16 +20,38 @@ function straightWay(id: number): OsmWay {
 
 describe('OsmImportService', () => {
   let service: OsmImportService;
-  let upsert: jest.Mock;
+  let qb: {
+    insert: jest.Mock;
+    into: jest.Mock;
+    values: jest.Mock;
+    orUpdate: jest.Mock;
+    execute: jest.Mock;
+  };
+  let createQueryBuilder: jest.Mock;
+
+  /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
+  const valuesOnCall = (n: number): RoadSegmentRow[] =>
+    (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
+
+  /** The `(overwriteColumns, conflictColumns)` args of the first `.orUpdate()`. */
+  const firstOrUpdate = (): [string[], string[]] =>
+    qb.orUpdate.mock.calls[0] as [string[], string[]];
 
   beforeEach(async () => {
-    upsert = jest.fn().mockResolvedValue(undefined);
+    qb = {
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orUpdate: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({}),
+    };
+    createQueryBuilder = jest.fn().mockReturnValue(qb);
     const moduleRef = await Test.createTestingModule({
       providers: [
         OsmImportService,
         {
           provide: getRepositoryToken(RoadSegment),
-          useValue: { upsert } as Partial<Repository<RoadSegment>>,
+          useValue: { createQueryBuilder } as Partial<Repository<RoadSegment>>,
         },
       ],
     }).compile();
@@ -40,11 +62,9 @@ describe('OsmImportService', () => {
     const result = await service.importFrom([straightWay(1), straightWay(2)]);
 
     expect(result.upserted).toBe(2);
-    expect(upsert).toHaveBeenCalledTimes(1);
-    const [rows, options] = upsert.mock.calls[0] as [RoadSegmentRow[], unknown];
-    expect(options).toEqual({
-      conflictPaths: ['osm_way_id', 'segment_index'],
-    });
+    expect(qb.execute).toHaveBeenCalledTimes(1);
+    expect(firstOrUpdate()[1]).toEqual(['osm_way_id', 'segment_index']);
+    const rows = valuesOnCall(0);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       osm_way_id: '1',
@@ -53,13 +73,29 @@ describe('OsmImportService', () => {
     });
   });
 
+  it('does not overwrite rider-derived surface_type on conflict', async () => {
+    await service.importFrom([straightWay(1)]);
+
+    // The DO UPDATE SET list must omit surface_type (crowd-classified once
+    // sensor readings land) while still INSERTing the OSM seed for new rows.
+    const overwrite = firstOrUpdate()[0];
+    expect(overwrite).not.toContain('surface_type');
+    expect(overwrite).not.toContain('quality_score');
+    expect(overwrite).not.toContain('confidence');
+    expect(overwrite).not.toContain('reading_count');
+    expect(overwrite).toEqual(
+      expect.arrayContaining(['geom', 'road_name', 'road_number']),
+    );
+    // …but the seed is still present in the inserted row.
+    expect(valuesOnCall(0)[0]).toHaveProperty('surface_type');
+  });
+
   it('never writes the crowdsourced columns (preserves quality / id on re-import)', async () => {
     await service.importFrom([straightWay(1)]);
 
-    const [rows] = upsert.mock.calls[0] as [RoadSegmentRow[], unknown];
-    for (const row of rows) {
-      // These columns are absent from the row, so TypeORM's DO UPDATE SET never
-      // touches them — a re-import keeps each segment's UUID + crowdsourced data.
+    for (const row of valuesOnCall(0)) {
+      // Absent from the row, so they are neither inserted nor in the SET list —
+      // a re-import keeps each segment's UUID + crowdsourced data.
       expect(row).not.toHaveProperty('id');
       expect(row).not.toHaveProperty('quality_score');
       expect(row).not.toHaveProperty('confidence');
@@ -67,7 +103,7 @@ describe('OsmImportService', () => {
     }
   });
 
-  it('skips non-drivable ways (no upsert for them)', async () => {
+  it('skips non-drivable ways (no statement for them)', async () => {
     const footpath: OsmWay = {
       id: 9,
       tags: { highway: 'footway' },
@@ -79,21 +115,20 @@ describe('OsmImportService', () => {
     const result = await service.importFrom([footpath]);
 
     expect(result.upserted).toBe(0);
-    expect(upsert).not.toHaveBeenCalled();
+    expect(qb.execute).not.toHaveBeenCalled();
   });
 
-  it('chunks large imports into multiple bounded upserts', async () => {
+  it('chunks large imports into multiple bounded statements', async () => {
     const ways = Array.from({ length: 1100 }, (_, i) => straightWay(i + 1));
 
     const result = await service.importFrom(ways);
 
     expect(result.upserted).toBe(1100);
     // 1100 rows / 500-row chunks → 3 statements (500 + 500 + 100).
-    expect(upsert).toHaveBeenCalledTimes(3);
-    const lengths = upsert.mock.calls.map(
-      (call) => (call as [RoadSegmentRow[], unknown])[0].length,
-    );
-    expect(lengths).toEqual([500, 500, 100]);
+    expect(qb.execute).toHaveBeenCalledTimes(3);
+    expect([0, 1, 2].map((n) => valuesOnCall(n).length)).toEqual([
+      500, 500, 100,
+    ]);
   });
 
   it('consumes an async source (the streaming PBF parser shape)', async () => {
@@ -106,6 +141,6 @@ describe('OsmImportService', () => {
     const result = await service.importFrom(source());
 
     expect(result.upserted).toBe(2);
-    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(qb.execute).toHaveBeenCalledTimes(1);
   });
 });

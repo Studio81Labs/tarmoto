@@ -12,6 +12,24 @@ import {
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
 
+/**
+ * Columns refreshed from OSM when a segment already exists (the `DO UPDATE SET`
+ * list). Deliberately EXCLUDES:
+ *  - `surface_type` — rider-derived once sensor readings land
+ *    (`update_road_quality_for_segment` owns it via the surface mode), so an OSM
+ *    re-import must not overwrite a crowd-classified surface with the raw seed;
+ *  - `quality_score` / `confidence` / `reading_count` / `id` — crowdsourced /
+ *    identity columns the importer never carries in its rows.
+ * The OSM `surface_type` seed is still INSERTed for brand-new segments.
+ */
+const OVERWRITE_ON_CONFLICT = [
+  'geom',
+  'length_m',
+  'curviness_score',
+  'road_name',
+  'road_number',
+];
+
 export interface OsmImportResult {
   upserted: number;
 }
@@ -62,8 +80,15 @@ export class OsmImportService {
   }
 
   private async flush(rows: RoadSegmentRow[]): Promise<void> {
-    await this.repo.upsert(rows, {
-      conflictPaths: ['osm_way_id', 'segment_index'],
-    });
+    // Hand-built upsert (not `repo.upsert`) so the conflict UPDATE can omit
+    // `surface_type` and the crowdsourced columns — `repo.upsert` would set
+    // every column present in the rows. New rows still INSERT all of them.
+    await this.repo
+      .createQueryBuilder()
+      .insert()
+      .into(RoadSegment)
+      .values(rows)
+      .orUpdate(OVERWRITE_ON_CONFLICT, ['osm_way_id', 'segment_index'])
+      .execute();
   }
 }
