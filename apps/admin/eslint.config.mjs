@@ -12,6 +12,21 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Cloudflare Worker + its node:test file run on the Web platform / Workers
+    // runtime, not the browser DOM — declare those globals so no-undef passes.
+    files: ["worker.mjs", "adminProxyShared.mjs", "worker.test.mjs"],
+    languageOptions: {
+      globals: {
+        fetch: "readonly",
+        Request: "readonly",
+        Response: "readonly",
+        Headers: "readonly",
+        URL: "readonly",
+        console: "readonly",
+      },
+    },
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
