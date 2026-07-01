@@ -493,6 +493,7 @@ export class RoadsService {
         ST_AsGeoJSON(agg.geom)::json AS geojson,
         fzr.contribution_score
       FROM fun_zone_roads fzr
+      INNER JOIN fun_zones fz ON fz.id = fzr.fun_zone_id
       INNER JOIN road_segments member ON member.id = fzr.road_segment_id
       INNER JOIN LATERAL (
         -- The stored member is one representative segment of an aggregated OSM
@@ -523,6 +524,16 @@ export class RoadsService {
           -- segments; otherwise unassessed siblings inflate length/geom while the
           -- quality numerator skips them, depressing the shown quality score.
           AND rs.quality_score IS NOT NULL
+          -- Constrain to the zone's scope: a bbox-scoped clustering run only
+          -- aggregated the way's sub-segments inside that run, so re-aggregating
+          -- the whole way would pull in out-of-zone km for a border-crossing way
+          -- and disagree with the stored contribution/boundary. The boundary hull
+          -- contains every in-cluster way, so compact ways are unaffected.
+          AND ST_Intersects(rs.geom, fz.boundary)
+        -- Drop a stale membership whose way has lost all in-zone assessed
+        -- segments: without this the no-GROUP-BY aggregate returns one all-NULL
+        -- row, nulling the geometry and 500-ing the mapper.
+        HAVING COUNT(*) > 0
       ) agg ON TRUE
       WHERE fzr.fun_zone_id = $1
       ORDER BY fzr.contribution_score DESC NULLS LAST,

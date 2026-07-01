@@ -200,6 +200,20 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         if (w === 0 && i === 0) way0Segment0Id = id;
       }
     }
+    // Way 2 also has an assessed sub-segment far outside the clustering bbox (a
+    // border-crossing way). Clustering never sees it, so the zone detail must not
+    // pull it into way 2's aggregate — the length must stay the in-zone 600 m.
+    await insertSegment({
+      name: 'e2e794-fz-2',
+      osmWayId: '79401002',
+      segmentIndex: 5,
+      lng: 0.02,
+      lat: 0.5, // outside bbox [-0.1, 0.1] and the zone boundary
+      lengthM: 120,
+      quality: 4.0,
+      confidence: 60,
+      curviness: 3.0,
+    });
 
     const result = await funZones.runClustering({
       bbox: [-0.1, -0.1, 0.1, 0.1],
@@ -226,12 +240,36 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     );
     expect(memberRows.map((r) => r.road_segment_id)).toContain(way0Segment0Id);
 
-    // findZoneById shows each aggregated way at its assessed 600 m (way 0
-    // excludes its unassessed index-0 segment), not a 120 m stub or 720 m.
+    // findZoneById shows each aggregated way at its assessed 600 m — way 0
+    // excludes its unassessed index-0 segment, and way 2 excludes its far
+    // out-of-zone sibling — not a 120 m stub, 720 m, or 720 m border overrun.
     const detail = await roads.findZoneById(zoneRows[0].fun_zone_id);
     expect(detail.top_roads).toHaveLength(3);
     for (const road of detail.top_roads) {
       expect(road.length_m).toBeCloseTo(600, 5);
     }
+
+    // A stale membership whose way has no in-zone assessed segments must be
+    // omitted, not turn the endpoint into a 500 (empty aggregate → null geom).
+    const staleId = await insertSegment({
+      name: 'e2e794-stale',
+      osmWayId: '79409999',
+      segmentIndex: 0,
+      lng: 0.0,
+      lat: 0.05,
+      lengthM: 120,
+      quality: null, // way has zero quality-bearing segments
+    });
+    await dataSource.query(
+      `INSERT INTO fun_zone_roads (fun_zone_id, road_segment_id, contribution_score)
+       VALUES ($1, $2, 0.9)`,
+      [zoneRows[0].fun_zone_id, staleId],
+    );
+
+    const detail2 = await roads.findZoneById(zoneRows[0].fun_zone_id);
+    expect(detail2.top_roads).toHaveLength(3); // stale road dropped, no 500
+    expect(detail2.top_roads.some((r) => r.road_name === 'e2e794-stale')).toBe(
+      false,
+    );
   }, 30_000);
 });
