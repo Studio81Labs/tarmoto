@@ -2803,7 +2803,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/config": {
+    "/admin/auth/config": {
         parameters: {
             query?: never;
             header?: never;
@@ -2820,7 +2820,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/login": {
+    "/admin/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -2837,7 +2837,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/refresh": {
+    "/admin/auth/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -2854,7 +2854,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/me": {
+    "/admin/auth/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -2871,7 +2871,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/logout": {
+    "/admin/auth/logout": {
         parameters: {
             query?: never;
             header?: never;
@@ -2888,7 +2888,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/sso/github/start": {
+    "/admin/auth/sso/github/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -2905,7 +2905,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/auth/sso/github/callback": {
+    "/admin/auth/sso/github/callback": {
         parameters: {
             query?: never;
             header?: never;
@@ -2922,7 +2922,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/metrics": {
+    "/admin/metrics": {
         parameters: {
             query?: never;
             header?: never;
@@ -2939,7 +2939,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/users": {
+    "/admin/users": {
         parameters: {
             query?: never;
             header?: never;
@@ -2956,7 +2956,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/users/{id}": {
+    "/admin/users/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2974,7 +2974,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/users/{id}/restore": {
+    "/admin/users/{id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -2991,7 +2991,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/admins": {
+    "/admin/admins": {
         parameters: {
             query?: never;
             header?: never;
@@ -3009,7 +3009,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/admins/{id}": {
+    "/admin/admins/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -3026,7 +3026,7 @@ export interface paths {
         patch: operations["AdminAdminsController_patch"];
         trace?: never;
     };
-    "/api/v1/admin/flags": {
+    "/admin/flags": {
         parameters: {
             query?: never;
             header?: never;
@@ -3044,7 +3044,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/flags/{id}": {
+    "/admin/flags/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -3062,7 +3062,7 @@ export interface paths {
         patch: operations["AdminFlagsController_update"];
         trace?: never;
     };
-    "/api/v1/admin/content": {
+    "/admin/content": {
         parameters: {
             query?: never;
             header?: never;
@@ -3079,7 +3079,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/content/{type}/{id}/hide": {
+    "/admin/content/{type}/{id}/hide": {
         parameters: {
             query?: never;
             header?: never;
@@ -3096,7 +3096,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/content/{type}/{id}/restore": {
+    "/admin/content/{type}/{id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -3113,7 +3113,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/content/{type}/{id}": {
+    "/admin/content/{type}/{id}": {
         parameters: {
             query?: never;
             header?: never;

@@ -16,6 +16,10 @@ import { SwaggerModule } from '@nestjs/swagger';
 import * as yaml from 'js-yaml';
 import { AppModule } from '../app.module.js';
 import { createSwaggerConfig } from '../config/swagger.config.js';
+import {
+  setupGlobalPrefix,
+  stripAdminPathsGlobalPrefix,
+} from '../config/global-prefix.js';
 
 // Set OPENAPI_EXPORT so modules can skip heavy initialisation if they check.
 process.env['OPENAPI_EXPORT'] = 'true';
@@ -67,9 +71,11 @@ async function exportSpec(): Promise<void> {
       logger: false,
     });
 
-    app.setGlobalPrefix('api/v1');
+    setupGlobalPrefix(app);
 
-    const document = SwaggerModule.createDocument(app, createSwaggerConfig());
+    const document = stripAdminPathsGlobalPrefix(
+      SwaggerModule.createDocument(app, createSwaggerConfig()),
+    );
 
     // __dirname at runtime is <repo>/apps/backend/dist/scripts/
     // Four levels up reaches the repo root.

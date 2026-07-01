@@ -7,15 +7,17 @@ import { AppModule } from '../src/app.module.js';
 import { AdminUser } from '../src/entities/admin-user.entity.js';
 import { AppDataSource } from '../src/data-source.js';
 import { hashAdminPassword } from '../src/modules/admin-auth/admin-password.js';
+import { setupGlobalPrefix } from '../src/config/global-prefix.js';
 
 /**
  * Admin auth + guard integration (e2e)
  *
  * Verifies the two core security properties introduced in Task 11:
- *   1. GET /api/v1/admin/metrics with no session → 401 (InternalGuard rejects).
- *   2. POST /api/v1/admin/auth/login + cookie → GET /api/v1/admin/metrics → 200.
+ *   1. GET /admin/metrics with no session → 401 (InternalGuard rejects).
+ *   2. POST /admin/auth/login + cookie → GET /admin/metrics → 200.
  *
- * The app is bootstrapped with the production global prefix (`api/v1`) so this
+ * The app is bootstrapped with the production global-prefix setup
+ * (`setupGlobalPrefix`, which excludes the prefix-less /admin routes) so this
  * test exercises the full request pipeline — routing, InternalGuard prefix
  * normalisation, and session validation — under the same paths that production
  * serves.
@@ -58,7 +60,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    setupGlobalPrefix(app);
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -96,13 +98,13 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     }
   }, 30_000);
 
-  it('GET /api/v1/admin/metrics without a session returns 401', async () => {
-    await request(app.getHttpServer()).get('/api/v1/admin/metrics').expect(401);
+  it('GET /admin/metrics without a session returns 401', async () => {
+    await request(app.getHttpServer()).get('/admin/metrics').expect(401);
   });
 
-  it('POST /api/v1/admin/auth/login then GET /api/v1/admin/metrics with the cookie returns 200', async () => {
+  it('POST /admin/auth/login then GET /admin/metrics with the cookie returns 200', async () => {
     const login = await request(app.getHttpServer())
-      .post('/api/v1/admin/auth/login')
+      .post('/admin/auth/login')
       .send({ email: E2E_ADMIN_EMAIL, password: E2E_ADMIN_PASSWORD })
       .expect(201);
 
@@ -120,7 +122,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
     expect(accessCookie).toBeDefined();
 
     await request(app.getHttpServer())
-      .get('/api/v1/admin/metrics')
+      .get('/admin/metrics')
       .set('Cookie', cookieArr.join('; '))
       .expect(200);
   });

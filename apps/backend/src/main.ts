@@ -15,6 +15,10 @@ import { AppModule } from './app.module.js';
 import { RedisIoAdapter } from './modules/events/redis-io.adapter.js';
 import { redisConfig } from './config/redis.config.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
+import {
+  setupGlobalPrefix,
+  stripAdminPathsGlobalPrefix,
+} from './config/global-prefix.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { guardClientSocketErrors } from './config/socket-error-guard.js';
 import { IMPORT_TRIP_BODY_LIMIT_PATHS } from './config/body-limits.js';
@@ -137,7 +141,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api/v1');
+  setupGlobalPrefix(app);
 
   // Serve locally-stored uploads (avatars, review photos). GDPR
   // data-export ZIPs share the same `LocalStorage` baseDir but are
@@ -181,7 +185,9 @@ async function bootstrap() {
   );
 
   if (!isProd) {
-    const document = SwaggerModule.createDocument(app, createSwaggerConfig());
+    const document = stripAdminPathsGlobalPrefix(
+      SwaggerModule.createDocument(app, createSwaggerConfig()),
+    );
     SwaggerModule.setup('api/docs', app, document);
   }
 

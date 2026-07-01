@@ -8,9 +8,9 @@ const REFRESH_RETRY_DELAY_MS = 250;
 const MAX_REFRESH_RETRIES = 2;
 
 const NO_REFRESH_PATHS = [
-  "/api/v1/admin/auth/login",
-  "/api/v1/admin/auth/refresh",
-  "/api/v1/admin/auth/logout",
+  "/admin/auth/login",
+  "/admin/auth/refresh",
+  "/admin/auth/logout",
 ];
 
 let inflightRefresh: Promise<boolean> | null = null;
@@ -23,7 +23,7 @@ function requestUrl(input: RequestInfo | URL): string {
 
 async function refreshOnce(): Promise<boolean> {
   if (!inflightRefresh) {
-    inflightRefresh = fetch("/api/v1/admin/auth/refresh", {
+    inflightRefresh = fetch("/admin/auth/refresh", {
       method: "POST",
       credentials: "include",
     })
