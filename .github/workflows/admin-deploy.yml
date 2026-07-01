@@ -15,9 +15,10 @@ name: Admin Deploy
 # missing-value guards — expected; wire them up before relying on it.
 #
 # Required repo secret:  CLOUDFLARE_API_TOKEN
-# Required repo vars:    CLOUDFLARE_ACCOUNT_ID, ADMIN_WORKERS_SUBDOMAIN,
-#                        ADMIN_PROD_WORKER_NAME, ADMIN_STAGING_WORKER_NAME
+# Required repo vars:    CLOUDFLARE_ACCOUNT_ID, ADMIN_WORKERS_SUBDOMAIN
 # Required per-environment (staging / production):
+#   var    ADMIN_WORKER_NAME           Worker name for this env
+#                                      (e.g. tarmoto-admin / tarmoto-admin-staging)
 #   var    ADMIN_API_BASE_URL          backend origin the worker proxies to
 #   secret TARMOTO_INTERNAL_API_TOKEN   MUST equal the backend's token on the
 #                                       same environment
@@ -102,13 +103,11 @@ jobs:
       - name: Build admin console
         run: pnpm --filter @tarmoto/admin build
 
-      - name: Resolve environment + worker name
+      - name: Resolve environment
         id: env
         env:
           INPUT_ENV: ${{ inputs.environment || '' }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
-          PROD_NAME: ${{ vars.ADMIN_PROD_WORKER_NAME || 'tarmoto-admin' }}
-          STAGING_NAME: ${{ vars.ADMIN_STAGING_WORKER_NAME || 'tarmoto-admin-staging' }}
         run: |
           set -euo pipefail
           if [ -n "$INPUT_ENV" ]; then
@@ -118,11 +117,6 @@ jobs:
           else
             ENV_NAME="staging"
           fi
-          if [ "$ENV_NAME" = "production" ]; then
-            echo "worker=${PROD_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "worker=${STAGING_NAME}" >> "$GITHUB_OUTPUT"
-          fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Cloudflare Workers
@@ -130,7 +124,9 @@ jobs:
         working-directory: apps/admin
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
-          WORKER_NAME: ${{ steps.env.outputs.worker }}
+          # Per-environment: GitHub resolves vars.ADMIN_WORKER_NAME to the value
+          # set in the job's environment (staging vs production).
+          WORKER_NAME: ${{ vars.ADMIN_WORKER_NAME }}
           WORKERS_SUBDOMAIN: ${{ vars.ADMIN_WORKERS_SUBDOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -138,7 +134,7 @@ jobs:
           INTERNAL_API_TOKEN: ${{ secrets.TARMOTO_INTERNAL_API_TOKEN }}
         run: |
           set -euo pipefail
-          test -n "$WORKER_NAME" || { echo "::error::worker name is empty"; exit 1; }
+          test -n "$WORKER_NAME" || { echo "::error::ADMIN_WORKER_NAME var is not set in env ${ENV_NAME}"; exit 1; }
           test -n "$WORKERS_SUBDOMAIN" || { echo "::error::ADMIN_WORKERS_SUBDOMAIN repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN secret is required"; exit 1; }
