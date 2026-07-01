@@ -1,23 +1,23 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2023",
-    "sourceMap": true,
+    "resolvePackageJsonExports": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true
+    "removeComments": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Phased strict migration (see docs/decisions / sibling nexcue N5): the
+    // backend inherits the shared strict base but temporarily overrides the
+    // two highest-volume flags OFF. Enabling them surfaces ~580 (indexed
+    // access) and ~100 (optional props) errors respectively; each is flipped
+    // on and fixed in its own follow-up PR to keep diffs reviewable.
+    // TODO(strict): remove these overrides once the fixes land.
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
   }
 }
