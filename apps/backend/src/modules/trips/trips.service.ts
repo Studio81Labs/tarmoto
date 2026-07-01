@@ -1651,7 +1651,7 @@ type BuiltWaypointType = (typeof BUILT_WAYPOINT_TYPES)[number];
 interface BuiltWaypoint {
   lat: number;
   lng: number;
-  name?: string;
+  name?: string | undefined;
   waypoint_type: BuiltWaypointType;
 }
 

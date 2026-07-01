@@ -29,7 +29,7 @@ export interface S3StorageConfig {
    * MinIO). Leave undefined to use the default AWS endpoint for
    * `region`.
    */
-  endpoint?: string;
+  endpoint?: string | undefined;
   accessKeyId: string;
   secretAccessKey: string;
   /**
@@ -47,7 +47,7 @@ export interface S3StorageConfig {
    * works for MinIO out of the box but is rarely what production
    * deployments want.
    */
-  publicUrlBase?: string;
+  publicUrlBase?: string | undefined;
 }
 
 export type StorageConfig = LocalStorageConfig | S3StorageConfig;

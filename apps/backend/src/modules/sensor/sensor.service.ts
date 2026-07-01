@@ -332,8 +332,8 @@ export class SensorService {
     return [...events]
       .map<RideTagEventPayload>((ev) => ({
         t: ev.t,
-        lat: ev.lat,
-        lng: ev.lng,
+        ...(ev.lat !== undefined ? { lat: ev.lat } : {}),
+        ...(ev.lng !== undefined ? { lng: ev.lng } : {}),
         label: ev.label,
       }))
       .sort((a, b) => a.t - b.t);

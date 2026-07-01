@@ -357,7 +357,7 @@ export class FunZoneClusteringService {
     candidates: ClusterRow[],
     opts: {
       pruneStaleZones: boolean;
-      bbox?: [number, number, number, number];
+      bbox?: [number, number, number, number] | undefined;
     },
   ): Promise<{
     zonesWritten: number;

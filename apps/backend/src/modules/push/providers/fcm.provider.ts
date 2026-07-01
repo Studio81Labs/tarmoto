@@ -76,9 +76,9 @@ export class FcmPushProvider implements PushProvider {
         // overwrite each other in the system tray rather than
         // stacking — useful for hazard alerts where the latest
         // observation replaces the prior one.
-        android: payload.category
-          ? { collapseKey: payload.category }
-          : undefined,
+        ...(payload.category
+          ? { android: { collapseKey: payload.category } }
+          : {}),
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

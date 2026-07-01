@@ -27,8 +27,8 @@ export interface RouteAlternative {
  * partial honour is still strictly better than ignoring the flag.
  */
 export interface RoutingOptions {
-  avoidHighways?: boolean;
-  avoidTolls?: boolean;
+  avoidHighways?: boolean | undefined;
+  avoidTolls?: boolean | undefined;
   /**
    * When true, the returned set includes the routing engine's primary
    * (lowest-duration) route at index 0 in addition to alternatives.
@@ -58,7 +58,7 @@ export interface RoutingOptions {
    * value has been provisioned (`TARMOTO_GRAPHHOPPER_QUALITY_ENABLED`).
    * Segments without crowdsourced data stay neutral — never penalised.
    */
-  preferQuality?: boolean;
+  preferQuality?: boolean | undefined;
 }
 
 /**

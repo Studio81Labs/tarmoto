@@ -34,7 +34,7 @@ export interface PushDispatchResult {
   /** True when preferences gated the dispatch entirely (no provider call). */
   suppressed: boolean;
   /** Reason for suppression — only set when `suppressed` is true. */
-  suppressedReason?: 'preference-off' | 'quiet-hours' | 'no-tokens';
+  suppressedReason?: 'preference-off' | 'quiet-hours' | 'no-tokens' | undefined;
 }
 
 /**
