@@ -1,8 +1,8 @@
 name: Backend Deploy
 
 # Deploy model:
-#   push to main  → staging  (PaaS auto-deploys)
-#   push tag v*   → production (CI triggers PaaS deploy webhook)
+#   push to main  → staging    (CI triggers PaaS deploy webhook)
+#   push tag v*   → production  (CI triggers PaaS deploy webhook)
 #   workflow_dispatch → choose staging or production
 #
 # Day-2 ops: docs/process/runbook.md
@@ -72,12 +72,16 @@ jobs:
           fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger production deploy (production only)
-        if: steps.env.outputs.name == 'production'
+      - name: Trigger deploy
         env:
-          WEBHOOK_URL: ${{ secrets.COOLIFY_PROD_DEPLOY_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ steps.env.outputs.name == 'production' && secrets.COOLIFY_PROD_DEPLOY_WEBHOOK_URL || secrets.COOLIFY_STAGING_DEPLOY_WEBHOOK_URL }}
+          ENV_NAME: ${{ steps.env.outputs.name }}
         run: |
-          echo "Triggering production deploy..."
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::Deploy webhook URL is unset for ${ENV_NAME}. Set the COOLIFY_${ENV_NAME^^}_DEPLOY_WEBHOOK_URL secret."
+            exit 1
+          fi
+          echo "Triggering ${ENV_NAME} deploy..."
           curl --fail --silent --show-error -X POST "$WEBHOOK_URL"
           echo "Webhook accepted — PaaS is building."
 
