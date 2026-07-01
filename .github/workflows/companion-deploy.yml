@@ -30,6 +30,7 @@ on:
       - "packages/shared/**"
       - "packages/openapi/**"
       - ".github/workflows/companion-deploy.yml"
+      - ".github/workflows/_build-openapi.yml"
   pull_request:
     branches: [main]
     paths:
@@ -38,6 +39,7 @@ on:
       - "packages/shared/**"
       - "packages/openapi/**"
       - ".github/workflows/companion-deploy.yml"
+      - ".github/workflows/_build-openapi.yml"
   workflow_dispatch:
 
 permissions:
@@ -50,12 +52,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Build the OpenAPI spec once (reusable workflow) and fan it out as an
+  # artifact, instead of rebuilding the backend inline in the deploy job.
+  # Gated on the same condition so it's skipped in lockstep with the deploy
+  # (no wasted backend build when the deploy is disabled or dependabot-authored).
+  prepare-openapi:
+    if: vars.COMPANION_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
+    uses: ./.github/workflows/_build-openapi.yml
+    with:
+      # The deploy job is environment-gated (companion-preview/production) and
+      # may sit behind a required-reviewer approval; keep the spec artifact
+      # well past the 1-day default so a multi-day hold doesn't expire it
+      # before the deploy downloads it.
+      artifact-retention-days: 7
+
   deploy:
     name: Build & deploy to Cloudflare Workers
     # Dependabot-authored PRs don't receive environment secrets
     # (CLOUDFLARE_API_TOKEN), so skip the deploy. Build & Test still gates the
     # bump; deploy re-runs on push to main after merge.
     if: vars.COMPANION_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
+    needs: prepare-openapi
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event_name == 'pull_request' && 'companion-preview' || 'companion-production' }}
@@ -79,8 +96,19 @@ jobs:
       - name: Build shared package
         run: pnpm shared:build
 
+      - name: Download generated OpenAPI spec
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: openapi-spec
+          path: ${{ runner.temp }}
+
+      - name: Restore generated OpenAPI spec
+        run: |
+          mkdir -p packages/openapi
+          tar -xzf "$RUNNER_TEMP/openapi-spec.tgz" -C packages/openapi
+
       - name: Generate OpenAPI client
-        run: pnpm openapi:gen
+        run: pnpm --filter @tarmoto/openapi-client generate
 
       - name: Resolve environment
         id: env

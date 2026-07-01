@@ -11,6 +11,7 @@ on:
       - "pnpm-workspace.yaml"
       - "tsconfig.base.json"
       - ".github/workflows/packages-ci.yml"
+      - ".github/workflows/_build-openapi.yml"
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - "pnpm-workspace.yaml"
       - "tsconfig.base.json"
       - ".github/workflows/packages-ci.yml"
+      - ".github/workflows/_build-openapi.yml"
 
 permissions:
   contents: read
@@ -30,8 +32,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Build the OpenAPI spec once (reusable workflow) and fan it out as an
+  # artifact, instead of rebuilding the backend inline here.
+  prepare-openapi:
+    uses: ./.github/workflows/_build-openapi.yml
+
   build:
     name: Build, test & typecheck packages
+    needs: prepare-openapi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -46,14 +54,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # @tarmoto/openapi's tests regenerate the Postman collection from
-      # packages/openapi/openapi.yaml, which is produced by the backend export
-      # (tarmoto has no postinstall codegen — see N2 in the alignment notes).
-      # openapi:gen builds @tarmoto/shared, exports the spec, and regenerates
-      # the TS client; the export self-defaults all DB/Redis/JWT env, so no
-      # secrets are needed.
-      - name: Generate OpenAPI spec + client
-        run: pnpm openapi:gen
+      - name: Download generated OpenAPI spec
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: openapi-spec
+          path: ${{ runner.temp }}
+
+      - name: Restore generated OpenAPI spec
+        run: |
+          mkdir -p packages/openapi
+          tar -xzf "$RUNNER_TEMP/openapi-spec.tgz" -C packages/openapi
+
+      # @tarmoto/openapi's tests regenerate the Postman collection from the
+      # restored openapi.yaml, and openapi-client's typecheck/test need the
+      # generated schema.d.ts — produce it from the spec above.
+      - name: Generate OpenAPI client
+        run: pnpm --filter @tarmoto/openapi-client generate
 
       - name: Build packages
         run: pnpm --filter "./packages/*" run build
