@@ -177,48 +177,38 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
   }, 30_000);
 
   it('fun-zones: clusters three imported ways as three roads, not fifteen stubs', async () => {
-    // Three imported ways (each 5×120 m = 600 m) within DBSCAN eps of each other
-    // at the origin (outside any region bbox). Aggregation must present them as
-    // 3 cluster members, not 15 raw sub-segments.
+    // Three imported ways within DBSCAN eps at the origin (outside any region
+    // bbox). Way 0's lowest-index sub-segment is UNASSESSED (quality NULL) and
+    // its indices 1..5 are assessed (5×120 = 600 m); ways 1 & 2 are 5×120 m all
+    // assessed. Aggregation must present three cluster members, not fifteen stubs.
+    let way0Segment0Id = '';
     for (let w = 0; w < 3; w++) {
-      for (let i = 0; i < 5; i++) {
-        await insertSegment({
+      const count = w === 0 ? 6 : 5;
+      for (let i = 0; i < count; i++) {
+        const id = await insertSegment({
           name: `e2e794-fz-${w}`,
           osmWayId: `7940100${w}`,
           segmentIndex: i,
           lng: 0.0 + w * 0.01,
           lat: 0.0 + i * 0.0012,
           lengthM: 120,
-          quality: 4.0,
+          // Way 0, index 0 is unassessed — the stability + assessed-length cases.
+          quality: w === 0 && i === 0 ? null : 4.0,
           confidence: 60,
           curviness: 3.0,
         });
+        if (w === 0 && i === 0) way0Segment0Id = id;
       }
     }
-    // Way 0 also has an unassessed (quality NULL) 6th sub-segment. Clustering
-    // ignores it (groups only quality-bearing segments), so the zone detail must
-    // too — otherwise it would show a 720 m road with a depressed quality score.
-    await insertSegment({
-      name: 'e2e794-fz-0',
-      osmWayId: '79401000',
-      segmentIndex: 5,
-      lng: 0.0,
-      lat: 0.0 + 5 * 0.0012,
-      lengthM: 120,
-      quality: null,
-      confidence: 60,
-      curviness: 3.0,
-    });
 
     const result = await funZones.runClustering({
       bbox: [-0.1, -0.1, 0.1, 0.1],
     });
 
     expect(result.zones_written).toBe(1);
-    // 3 aggregated ways, NOT 15 sub-segments.
+    // 3 aggregated ways, NOT 16 raw sub-segments.
     expect(result.members_written).toBe(3);
 
-    // findZoneById must show the aggregated ways (≈600 m), not a 120 m stub.
     const zoneRows: { fun_zone_id: string }[] = await dataSource.query(
       `SELECT DISTINCT fun_zone_id FROM fun_zone_roads
          WHERE road_segment_id = ANY($1::uuid[])`,
@@ -226,10 +216,22 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     );
     expect(zoneRows).toHaveLength(1);
 
+    // Stable member id: way 0's representative is its lowest-index sibling
+    // (index 0) even though that one is unassessed — so the id (and the zone
+    // UUID derived from it) doesn't churn when index 0 later gains a reading.
+    const memberRows: { road_segment_id: string }[] = await dataSource.query(
+      `SELECT road_segment_id FROM fun_zone_roads
+         WHERE road_segment_id = ANY($1::uuid[])`,
+      [segmentIds],
+    );
+    expect(memberRows.map((r) => r.road_segment_id)).toContain(way0Segment0Id);
+
+    // findZoneById shows each aggregated way at its assessed 600 m (way 0
+    // excludes its unassessed index-0 segment), not a 120 m stub or 720 m.
     const detail = await roads.findZoneById(zoneRows[0].fun_zone_id);
     expect(detail.top_roads).toHaveLength(3);
     for (const road of detail.top_roads) {
-      expect(road.length_m).toBeCloseTo(600, 5); // whole way, not a 120 m member
+      expect(road.length_m).toBeCloseTo(600, 5);
     }
   }, 30_000);
 });

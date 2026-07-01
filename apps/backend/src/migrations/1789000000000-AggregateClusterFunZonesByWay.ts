@@ -31,25 +31,32 @@ const CLUSTER_FUN_ZONES_AGGREGATED = clusterFunZonesFn(`
           -- Collapse imported ~100 m sub-segments into their parent way so the
           -- length filter and DBSCAN operate on whole roads (#794). A crowd row
           -- (null osm_way_id) is a group of one, so its aggregates equal its raw
-          -- values and existing clustering is unchanged.
+          -- values and existing clustering is unchanged. The representative id is
+          -- taken over ALL siblings (stats stay quality-filtered via FILTER) so
+          -- it — and the zone UUID derived from it — is stable when a sub-segment
+          -- gains its first reading.
           SELECT
             (ARRAY_AGG(id ORDER BY segment_index NULLS FIRST, id))[1] AS id,
-            ST_LineMerge(ST_Collect(geom ORDER BY segment_index NULLS FIRST, id)) AS geom,
-            SUM(curviness_score * length_m) / NULLIF(SUM(length_m), 0) AS curviness_score,
-            SUM(quality_score * length_m) / NULLIF(SUM(length_m), 0) AS quality_score,
-            SUM(confidence * length_m) / NULLIF(SUM(length_m), 0) AS confidence,
-            SUM(length_m) AS length_m,
-            MIN(elevation_min) AS elevation_min,
-            MAX(elevation_max) AS elevation_max
+            ST_LineMerge(ST_Collect(geom ORDER BY segment_index NULLS FIRST, id)
+              FILTER (WHERE quality_score IS NOT NULL)) AS geom,
+            SUM(curviness_score * length_m) FILTER (WHERE quality_score IS NOT NULL)
+              / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS curviness_score,
+            SUM(quality_score * length_m) FILTER (WHERE quality_score IS NOT NULL)
+              / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS quality_score,
+            SUM(confidence * length_m) FILTER (WHERE quality_score IS NOT NULL)
+              / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS confidence,
+            SUM(length_m) FILTER (WHERE quality_score IS NOT NULL) AS length_m,
+            MIN(elevation_min) FILTER (WHERE quality_score IS NOT NULL) AS elevation_min,
+            MAX(elevation_max) FILTER (WHERE quality_score IS NOT NULL) AS elevation_max
           FROM road_segments
-          WHERE quality_score IS NOT NULL
           GROUP BY COALESCE(osm_way_id::text, id::text)
         ),
         eligible AS (
           SELECT id, geom, curviness_score, quality_score, length_m,
                  elevation_min, elevation_max
           FROM road
-          WHERE curviness_score >= p_min_curviness
+          WHERE quality_score IS NOT NULL
+            AND curviness_score >= p_min_curviness
             AND quality_score >= p_min_quality
             AND confidence >= p_min_confidence
             AND length_m >= p_min_segment_length_m

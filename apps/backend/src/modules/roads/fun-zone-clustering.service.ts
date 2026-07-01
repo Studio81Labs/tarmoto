@@ -290,16 +290,25 @@ export class FunZoneClusteringService {
         -- value — existing clustering is unchanged. Length-weighted to match the
         -- per-segment semantics the eligibility filters expect.
         SELECT
+          -- Representative id over ALL of the way's siblings, so it — and the
+          -- fun-zone UUID persistZones derives from it — stays stable when a
+          -- sub-segment gains its first reading (the quality-bearing subset, and
+          -- thus its lowest member, would otherwise shift). Stats stay
+          -- quality-filtered via FILTER so the aggregate values are unchanged.
           (ARRAY_AGG(id ORDER BY segment_index NULLS FIRST, id))[1] AS id,
-          ST_LineMerge(ST_Collect(geom ORDER BY segment_index NULLS FIRST, id)) AS geom,
-          SUM(curviness_score * length_m) / NULLIF(SUM(length_m), 0) AS curviness_score,
-          SUM(quality_score * length_m) / NULLIF(SUM(length_m), 0) AS quality_score,
-          SUM(confidence * length_m) / NULLIF(SUM(length_m), 0) AS confidence,
-          SUM(length_m) AS length_m,
-          MIN(elevation_min) AS elevation_min,
-          MAX(elevation_max) AS elevation_max
+          ST_LineMerge(ST_Collect(geom ORDER BY segment_index NULLS FIRST, id)
+            FILTER (WHERE quality_score IS NOT NULL)) AS geom,
+          SUM(curviness_score * length_m) FILTER (WHERE quality_score IS NOT NULL)
+            / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS curviness_score,
+          SUM(quality_score * length_m) FILTER (WHERE quality_score IS NOT NULL)
+            / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS quality_score,
+          SUM(confidence * length_m) FILTER (WHERE quality_score IS NOT NULL)
+            / NULLIF(SUM(length_m) FILTER (WHERE quality_score IS NOT NULL), 0) AS confidence,
+          SUM(length_m) FILTER (WHERE quality_score IS NOT NULL) AS length_m,
+          MIN(elevation_min) FILTER (WHERE quality_score IS NOT NULL) AS elevation_min,
+          MAX(elevation_max) FILTER (WHERE quality_score IS NOT NULL) AS elevation_max
         FROM road_segments
-        WHERE quality_score IS NOT NULL
+        WHERE TRUE
           ${bboxClause}
         GROUP BY COALESCE(osm_way_id::text, id::text)
       ),
@@ -308,7 +317,8 @@ export class FunZoneClusteringService {
           id, geom, curviness_score, quality_score, length_m,
           elevation_min, elevation_max
         FROM road
-        WHERE curviness_score >= $1
+        WHERE quality_score IS NOT NULL
+          AND curviness_score >= $1
           AND quality_score >= $2
           AND confidence >= $3
           AND length_m >= $4
