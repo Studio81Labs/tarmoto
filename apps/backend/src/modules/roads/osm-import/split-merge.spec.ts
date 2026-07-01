@@ -76,6 +76,21 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toHaveLength(1); // the other existing row is orphaned
   });
 
+  it('does not match two short segments that only touch at an endpoint', () => {
+    // A ~10 m existing row and a ~10 m incoming row that are adjacent (share one
+    // tip). Half of each is within the 5 m tolerance of the other's endpoint —
+    // a false majority — but the shared length is only ~tolerance, below the
+    // tolerance-aware floor, so identity must NOT carry onto the neighbour.
+    const existing: ExistingSegment[] = [{ id: 's', coords: seg(0, 0.1 * M) }];
+    const incoming = [seg(0.1 * M, 0.2 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['s']);
+  });
+
   it('disjoint geometry: no carry-over — all inserts, all existing stale', () => {
     const existing: ExistingSegment[] = [{ id: 'far', coords: seg(0, M) }];
     // ~1° north — kilometres away, no overlap.

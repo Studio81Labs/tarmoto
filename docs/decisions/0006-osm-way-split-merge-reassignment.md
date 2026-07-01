@@ -57,7 +57,11 @@ a contained stretch (either side of a split/merge) scores ~1.0, while a short
 partial overlap of two mostly-different stretches stays low both ways. A
 carry-over requires a **strict majority** (> 0.5), so a segment overlapping only
 a minority of an existing row (a mostly-new or extended stretch) is inserted
-fresh rather than silently inheriting another road's reviews.
+fresh rather than silently inheriting another road's reviews. A carry-over also
+requires the shared **length** to exceed a tolerance-aware floor (> 2·tolerance):
+two very short segments that merely touch at an endpoint each have ~tolerance of
+length within tolerance of the other's tip — a false majority for ~10 m stubs —
+so the floor stops one stub's identity leaking onto an adjacent road.
 
 Because each existing id is claimed once:
 

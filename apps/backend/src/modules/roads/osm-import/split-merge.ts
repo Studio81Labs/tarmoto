@@ -153,7 +153,9 @@ function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
     total += planarMeters(coords[i - 1]!, coords[i]!);
   }
   if (total === 0) return [coords[0]!];
-  const steps = Math.max(2, Math.ceil(total / sampleM));
+  // At least 4 intervals (5 samples) so a short segment isn't judged on 2–3
+  // coarse points where a single endpoint dominates the fraction.
+  const steps = Math.max(4, Math.ceil(total / sampleM));
   const out: LatLng[] = [];
   for (let i = 0; i <= steps; i++) {
     out.push(pointAtLength(coords, (total * i) / steps));
@@ -219,13 +221,17 @@ export function planReassignment(
       // segment contained in the other (a split/merge) — max ~1.0 — while a short
       // partial overlap of two mostly-different stretches stays low both ways.
       const score = Math.max(fwd, rev);
-      if (score > minOverlap) {
-        // Rank by shared LENGTH, not the fraction: an uneven split leaves both a
-        // 10 m and a 90 m child fully contained in the old row (fraction 1 each),
-        // so ranking by fraction would let the stub steal the id. The overlapping
-        // length (fraction of the incoming that lies on the existing × its length)
-        // puts the better-covered stretch first, so it inherits the history.
-        const overlapLen = fwd * polylineMeters(incoming[n]!);
+      // Shared LENGTH — the fraction of the incoming that lies on the existing,
+      // scaled to metres. Used both to rank (an uneven split leaves a 10 m and a
+      // 90 m child fully contained, fraction 1 each; length puts the 90 m first so
+      // it inherits the history) and to gate.
+      const overlapLen = fwd * polylineMeters(incoming[n]!);
+      // Require the shared length to clear a tolerance-aware floor as well as the
+      // fraction majority. Two short segments that merely touch at an endpoint
+      // each have ~`tolM` of length within tolerance of the other's tip — a false
+      // majority for ~10 m stubs — so demand more than 2·tolM of genuine overlap
+      // before one can carry another's identity onto an adjacent road.
+      if (score > minOverlap && overlapLen > 2 * tolM) {
         pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }
     }
