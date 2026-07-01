@@ -15,11 +15,12 @@ name: Backend Deploy
 #   COOLIFY_API_TOKEN                 PaaS API token (issued from PaaS dashboard)
 #
 # Required repo variables:
-#   COOLIFY_API_BASE_URL              Base URL of the PaaS API (no trailing slash)
-#   BACKEND_URL_PROD                  e.g. https://api.tarmoto.app
-#   BACKEND_URL_STAGING               e.g. https://api-staging.tarmoto.app
-#   COOLIFY_PROD_APPLICATION_UUID     Production app UUID
-#   COOLIFY_STAGING_APPLICATION_UUID  Staging app UUID
+#   COOLIFY_API_BASE_URL   Base URL of the PaaS API (no trailing slash)
+#
+# Required per-environment (staging / production) variables:
+#   BACKEND_URL            e.g. https://api.tarmoto.app (prod) or
+#                          https://api-staging.tarmoto.app (staging)
+#   COOLIFY_BACKEND_UUID   the backend app's Coolify UUID
 
 on:
   push:
@@ -86,21 +87,22 @@ jobs:
 
       - name: Resolve env-specific deploy targets
         id: resolve
-        # Validate non-empty here so a missing per-env value fails loudly
-        # with a clear message instead of bubbling up as a curl 401 /
-        # unbound shell var later.
+        # The job-level `environment:` declaration scopes vars to the right env,
+        # so we read the unsuffixed names directly. We still validate non-empty
+        # so a missing per-env value fails loudly with a clear message instead
+        # of bubbling up as a curl 401 / unbound shell var later.
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
-          BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
-          APP_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_PROD_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
+          BASE_URL: ${{ vars.BACKEND_URL }}
+          APP_UUID: ${{ vars.COOLIFY_BACKEND_UUID }}
         run: |
           set -euo pipefail
           test -n "$BASE_URL" || {
-            echo "::error::BACKEND_URL_${ENV_NAME^^} var is not set"
+            echo "::error::BACKEND_URL var is not set in env ${ENV_NAME}"
             exit 1
           }
           test -n "$APP_UUID" || {
-            echo "::error::COOLIFY_${ENV_NAME^^}_APPLICATION_UUID var is not set"
+            echo "::error::COOLIFY_BACKEND_UUID var is not set in env ${ENV_NAME}"
             exit 1
           }
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
@@ -174,7 +176,7 @@ jobs:
             exit 1
           fi
           if [ "$HTTP_CODE" = "404" ]; then
-            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_${ENV_NAME^^}_APPLICATION_UUID."
+            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_BACKEND_UUID."
             rm -f "$REQUEST" "$RESPONSE"
             exit 1
           fi
@@ -297,7 +299,7 @@ jobs:
               return 2
             fi
             if [ "$code" = "404" ]; then
-              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_${ENV_NAME^^}_APPLICATION_UUID."
+              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_BACKEND_UUID."
               return 2
             fi
             if [ "$code" != "200" ]; then
