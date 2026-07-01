@@ -158,6 +158,9 @@ export class PassesService {
 
     const point = p.location;
     const [lng, lat] = point.coordinates;
+    if (lng === undefined || lat === undefined) {
+      throw new Error('pass location coordinate is missing lng/lat');
+    }
 
     return {
       id: p.id,
@@ -184,6 +187,16 @@ export class PassesService {
       );
     }
     const [minLng, minLat, maxLng, maxLat] = parts;
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
+      throw new BadRequestException(
+        'bbox must be "minLng,minLat,maxLng,maxLat"',
+      );
+    }
     if (minLng >= maxLng || minLat >= maxLat) {
       throw new BadRequestException(
         'bbox min must be strictly less than max for both axes',

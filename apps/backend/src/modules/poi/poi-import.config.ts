@@ -33,27 +33,30 @@ export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
   if (raw) {
     const tokens = raw.split(',');
     const parts = tokens.map(Number);
-    const valid =
-      tokens.length === 4 &&
+    const [minLng, minLat, maxLng, maxLat] = parts;
+    const invalid =
+      tokens.length !== 4 ||
       // Reject blank tokens up front — `Number('')` is 0, so `14,,17,51`
       // would otherwise coerce to a valid-looking box and import a large
       // unintended region instead of failing on the typo.
-      tokens.every((t) => t.trim() !== '') &&
-      parts.every((n) => Number.isFinite(n)) &&
-      parts[0] < parts[2] &&
-      parts[1] < parts[3];
-    if (!valid) {
+      !tokens.every((t) => t.trim() !== '') ||
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined ||
+      !Number.isFinite(minLng) ||
+      !Number.isFinite(minLat) ||
+      !Number.isFinite(maxLng) ||
+      !Number.isFinite(maxLat) ||
+      minLng >= maxLng ||
+      minLat >= maxLat;
+    if (invalid) {
       throw new Error(
         `Invalid TARMOTO_POI_IMPORT_BBOX="${raw}" — expected ` +
           `"minLng,minLat,maxLng,maxLat" with minLng<maxLng and minLat<maxLat`,
       );
     }
-    bbox = {
-      minLng: parts[0],
-      minLat: parts[1],
-      maxLng: parts[2],
-      maxLat: parts[3],
-    };
+    bbox = { minLng, minLat, maxLng, maxLat };
   }
 
   return {

@@ -83,7 +83,9 @@ describe('ValhallaProvider.route', () => {
     ]);
 
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const [url, opts] = calls[0];
+    const call = calls[0];
+    if (!call) throw new Error('expected fetch to have been called');
+    const [url, opts] = call;
     expect(url).toBe('http://valhalla.test/route');
     const body = JSON.parse(opts.body as string) as ValhallaRequestBody;
     expect(body.locations).toEqual([

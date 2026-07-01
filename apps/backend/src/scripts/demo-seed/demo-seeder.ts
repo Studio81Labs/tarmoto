@@ -383,6 +383,7 @@ export class DemoSeeder {
           rng();
         startedAt = new Date(now.getTime() - ageDays * DAY_MS);
       }
+      const bike = bikes.length > 0 ? bikes[i % bikes.length] : undefined;
       rows.push(
         repo.create({
           user_id: userId,
@@ -397,7 +398,7 @@ export class DemoSeeder {
           ride_type: RIDE_TYPES[i % RIDE_TYPES.length],
           name: i % 5 === 0 ? `${persona.home_region} loop #${i + 1}` : null,
           status: 'completed',
-          bike_id: bikes.length > 0 ? bikes[i % bikes.length].id : null,
+          bike_id: bike ? bike.id : null,
         }),
       );
     }
@@ -423,6 +424,9 @@ export class DemoSeeder {
     const seqByRide = new Map<string, number>();
     const rows = discovered.map((road, k) => {
       const ride = rides[k % rides.length];
+      if (!ride) {
+        throw new Error('Expected a ride for every ride_segment.');
+      }
       const seq = (seqByRide.get(ride.id) ?? 0) + 1;
       seqByRide.set(ride.id, seq);
       return repo.create({
@@ -466,6 +470,9 @@ export class DemoSeeder {
     );
     const rows = contributed.map((road, k) => {
       const ride = rides[k % rides.length];
+      if (!ride) {
+        throw new Error('Expected a ride for every surface_reading.');
+      }
       // IRI ~1–7 m/km, classified with the same bands as the sensor pipeline.
       const iri = round1(1 + rng() * 6);
       return repo.create({
@@ -500,13 +507,13 @@ export class DemoSeeder {
       // ride-detail "Time spent leaning" chart has data. Roughly a third of
       // the ride is spent leaning, weighted toward the lower buckets.
       const leaning = Math.max(40, Math.round(durationSec / 3));
-      const w = [
+      const [w0, w1, w2, w3]: [number, number, number, number] = [
         0.3 + rng() * 0.2, // 0–10°
         0.3 + rng() * 0.15, // 10–20°
         0.15 + rng() * 0.15, // 20–30°
         0.05 + rng() * 0.15, // 30°+
       ];
-      const wSum = w[0] + w[1] + w[2] + w[3];
+      const wSum = w0 + w1 + w2 + w3;
       return repo.create({
         ride_id: ride.id,
         max_lean_angle: maxLean,
@@ -516,10 +523,10 @@ export class DemoSeeder {
         elevation_loss: round1(200 + rng() * 1200),
         curve_count: Math.round(20 + rng() * 120),
         lean_distribution_json: {
-          '0_10': Math.round((leaning * w[0]) / wSum),
-          '10_20': Math.round((leaning * w[1]) / wSum),
-          '20_30': Math.round((leaning * w[2]) / wSum),
-          '30_plus': Math.round((leaning * w[3]) / wSum),
+          '0_10': Math.round((leaning * w0) / wSum),
+          '10_20': Math.round((leaning * w1) / wSum),
+          '20_30': Math.round((leaning * w2) / wSum),
+          '30_plus': Math.round((leaning * w3) / wSum),
         },
       });
     });
@@ -540,10 +547,11 @@ export class DemoSeeder {
       const createdAt = new Date(
         now.getTime() - rng() * persona.joinedDaysAgo * DAY_MS,
       );
+      const hazardRoad = roads.length > 0 ? roads[i % roads.length] : undefined;
       rows.push(
         repo.create({
           user_id: userId,
-          road_segment_id: roads.length > 0 ? roads[i % roads.length].id : null,
+          road_segment_id: hazardRoad ? hazardRoad.id : null,
           location: pointGeom(jitter(persona.home, rng, 0.05)),
           hazard_type: HAZARD_TYPES[i % HAZARD_TYPES.length],
           severity: HAZARD_SEVERITY[i % HAZARD_SEVERITY.length],
@@ -573,10 +581,14 @@ export class DemoSeeder {
     const rows: RoadReview[] = [];
     for (let i = 0; i < count; i++) {
       const bike = persona.bikes[i % persona.bikes.length];
+      const road = roads[i];
+      if (!bike || !road) {
+        throw new Error('Expected a bike and a road for every review.');
+      }
       rows.push(
         repo.create({
           user_id: userId,
-          road_segment_id: roads[i].id,
+          road_segment_id: road.id,
           rating: 3 + Math.floor(rng() * 3),
           comment: `Demo review #${i + 1}: a genuinely fun stretch of road.`,
           bike_model: `${bike.make} ${bike.model}`,
@@ -641,8 +653,9 @@ export class DemoSeeder {
 
     for (let t = 0; t < persona.tripCount; t++) {
       const numDays = 2 + Math.floor(rng() * 4);
-      const folderId =
-        t % 2 === 0 ? folders[Math.floor(t / 2) % folders.length].id : null;
+      const folder =
+        t % 2 === 0 ? folders[Math.floor(t / 2) % folders.length] : undefined;
+      const folderId = folder ? folder.id : null;
       const trip = await tripRepo.save(
         tripRepo.create({
           owner_id: userId,

@@ -26,6 +26,16 @@ function parseBbox(value: string): [number, number, number, number] {
     );
   }
   const [w, s, e, n] = parts;
+  if (
+    w === undefined ||
+    s === undefined ||
+    e === undefined ||
+    n === undefined
+  ) {
+    throw new Error(
+      `Invalid --bbox: ${value}. Expected "west,south,east,north".`,
+    );
+  }
   if (w >= e || s >= n) {
     throw new Error(`Invalid --bbox: min must be < max for both axes.`);
   }

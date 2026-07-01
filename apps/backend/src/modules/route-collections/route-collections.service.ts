@@ -844,7 +844,13 @@ export class RouteCollectionsService {
       // stay accurate and any future @BeforeUpdate hooks fire normally.
       const reordered: RouteCollectionItem[] = [];
       for (let i = 0; i < dto.item_ids.length; i += 1) {
-        const item = currentById.get(dto.item_ids[i])!;
+        const itemId = dto.item_ids[i];
+        const item = itemId ? currentById.get(itemId) : undefined;
+        if (!item) {
+          throw new BadRequestException(
+            'item_ids references an item that is not in this collection',
+          );
+        }
         item.position = i;
         reordered.push(item);
       }

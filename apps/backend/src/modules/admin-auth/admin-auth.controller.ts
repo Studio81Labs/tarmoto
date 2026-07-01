@@ -190,7 +190,7 @@ export class AdminAuthController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const callbackPath = (req.originalUrl ?? req.url ?? '').split('?')[0];
+    const callbackPath = (req.originalUrl ?? req.url ?? '').split('?')[0] ?? '';
     try {
       const expectedState = readCookie(req, ADMIN_SSO_STATE_COOKIE);
       clearAdminSsoStateCookie(res, this.secure);

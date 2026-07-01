@@ -215,7 +215,16 @@ export function resolveBBox(
     const parts = bboxString.split(',').map(Number);
     if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
       const [w, s, e, n] = parts;
-      if (w < e && s < n) return [w, s, e, n];
+      if (
+        w !== undefined &&
+        s !== undefined &&
+        e !== undefined &&
+        n !== undefined &&
+        w < e &&
+        s < n
+      ) {
+        return [w, s, e, n];
+      }
     }
   }
   if (region) {
@@ -495,12 +504,10 @@ export function planFuelStopIndices(
   let cumKm = 0;
   let nextBoundary = FUEL_RANGE_KM;
   for (let i = 1; i < route.length; i++) {
-    cumKm += haversineKm(
-      route[i - 1].lat,
-      route[i - 1].lng,
-      route[i].lat,
-      route[i].lng,
-    );
+    const prev = route[i - 1];
+    const curr = route[i];
+    if (!prev || !curr) continue;
+    cumKm += haversineKm(prev.lat, prev.lng, curr.lat, curr.lng);
     if (cumKm >= nextBoundary && i < route.length - 1) {
       indices.push(i);
       nextBoundary += FUEL_RANGE_KM;

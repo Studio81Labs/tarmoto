@@ -99,9 +99,11 @@ export function deriveProgression(
   // Current tier = the highest whose minLevel the rider has reached.
   let index = 0;
   for (let i = 0; i < TIERS.length; i++) {
-    if (level >= TIERS[i].minLevel) index = i;
+    const tier = TIERS[i];
+    if (tier && level >= tier.minLevel) index = i;
   }
   const current = TIERS[index];
+  if (!current) throw new Error('TIERS must define at least one tier');
   const next = TIERS[index + 1] ?? null;
 
   const current_tier_xp = xpForLevel(current.minLevel);

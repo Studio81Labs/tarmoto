@@ -119,10 +119,12 @@ export class OsrmProvider implements RoutingProvider {
     return data.routes.slice(start, start + maxAlternatives).map((route) => ({
       distance_km: Math.round((route.distance / 1000) * 100) / 100,
       duration_min: Math.round(route.duration / 60),
-      geometry: route.geometry.coordinates.map((c) => ({
-        lat: c[1],
-        lng: c[0],
-      })),
+      geometry: route.geometry.coordinates.map(([lng, lat]) => {
+        if (lng === undefined || lat === undefined) {
+          throw new Error('OSRM geometry coordinate is missing lng/lat');
+        }
+        return { lat, lng };
+      }),
     }));
   }
 
@@ -154,10 +156,16 @@ export class OsrmProvider implements RoutingProvider {
     const data = (await response.json()) as OsrmResponse;
     if (data.code !== 'Ok' || !data.routes?.length) return null;
     const r = data.routes[0];
+    if (!r) return null;
     return {
       distance_km: Math.round((r.distance / 1000) * 100) / 100,
       duration_min: Math.round(r.duration / 60),
-      geometry: r.geometry.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
+      geometry: r.geometry.coordinates.map(([lng, lat]) => {
+        if (lng === undefined || lat === undefined) {
+          throw new Error('OSRM geometry coordinate is missing lng/lat');
+        }
+        return { lat, lng };
+      }),
     };
   }
 }

@@ -271,7 +271,10 @@ export class Datex2ParserService {
       const nums = text.trim().split(/\s+/).map(Number);
       const out: [number, number][] = [];
       for (let i = 0; i + 1 < nums.length; i += dim) {
-        out.push([nums[i + 1], nums[i]]);
+        const lat = nums[i];
+        const lon = nums[i + 1];
+        if (lat === undefined || lon === undefined) continue;
+        out.push([lon, lat]);
       }
       return out.length ? out : null;
     }

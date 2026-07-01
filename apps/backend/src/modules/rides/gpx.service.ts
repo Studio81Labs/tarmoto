@@ -52,16 +52,14 @@ export class GpxService {
     // Calculate route stats
     let totalDistance = 0;
     for (let i = 1; i < points.length; i++) {
-      totalDistance += haversineMeters(
-        points[i - 1].lat,
-        points[i - 1].lng,
-        points[i].lat,
-        points[i].lng,
-      );
+      const prev = points[i - 1];
+      const curr = points[i];
+      if (!prev || !curr) continue;
+      totalDistance += haversineMeters(prev.lat, prev.lng, curr.lat, curr.lng);
     }
 
-    const startTime = points[0].time ?? new Date();
-    const endTime = points[points.length - 1].time ?? null;
+    const startTime = points[0]?.time ?? new Date();
+    const endTime = points[points.length - 1]?.time ?? null;
 
     // Build GeoJSON LineString
     const coordinates = points.map((p) => [p.lng, p.lat]);

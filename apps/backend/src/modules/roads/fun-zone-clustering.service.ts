@@ -376,7 +376,13 @@ export class FunZoneClusteringService {
         `SELECT uuid_generate_v5($1::uuid, $2::text)::text AS id`,
         [FUN_ZONE_UUID_NAMESPACE, memberKey],
       );
-      const zoneId = idRows[0].id;
+      const idRow = idRows[0];
+      if (!idRow) {
+        throw new Error(
+          `uuid_generate_v5 returned no row for fun-zone member key ${memberKey}`,
+        );
+      }
+      const zoneId = idRow.id;
 
       const passes: Array<{
         typical_open_month: number;
@@ -449,13 +455,20 @@ export class FunZoneClusteringService {
       // dominated runtime and increased the chance of lock/timeout
       // pressure under heavy contention. UNNEST + multi-values keeps
       // the write cost bounded to one statement per zone.
-      const contributionScores = cand.member_ids.map((_, i) =>
-        FunZoneClusteringService.computeContributionScore(
-          cand.curviness_scores[i],
+      const contributionScores = cand.member_ids.map((_, i) => {
+        const curviness = cand.curviness_scores[i];
+        const lengthM = cand.lengths_m[i];
+        if (curviness === undefined || lengthM === undefined) {
+          throw new Error(
+            `Fun-zone aggregate arrays out of sync for zone ${zoneId} at index ${i}`,
+          );
+        }
+        return FunZoneClusteringService.computeContributionScore(
+          curviness,
           cand.quality_scores[i] ?? null,
-          cand.lengths_m[i],
-        ),
-      );
+          lengthM,
+        );
+      });
       if (cand.member_ids.length > 0) {
         await tx.query(
           `INSERT INTO fun_zone_roads (fun_zone_id, road_segment_id, contribution_score)

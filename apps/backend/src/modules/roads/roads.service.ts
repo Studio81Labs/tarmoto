@@ -115,11 +115,11 @@ export class RoadsService {
     }
 
     const row = rows[0];
+    if (!row) {
+      throw new NotFoundException('Road segment not found');
+    }
     const geojson = row.geojson as { coordinates: number[][] };
-    const geometry = geojson.coordinates.map((coord) => ({
-      lat: coord[1],
-      lng: coord[0],
-    }));
+    const geometry = lineStringToLatLng(geojson.coordinates);
     const elevationProfile = normalizeElevationProfile(
       row.elevation_profile,
       geometry.length,
@@ -379,7 +379,7 @@ export class RoadsService {
           surface_type: row.surface_type as SurfaceType,
           length_m: row.length_m as number,
           confidence: row.confidence as number,
-          geometry: geojson.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
+          geometry: lineStringToLatLng(geojson.coordinates),
           best_score: row.best_score as number,
         };
       },
@@ -416,10 +416,7 @@ export class RoadsService {
 
     return (rows as Record<string, unknown>[]).map((row) => {
       const geojson = row.geojson as { coordinates: number[][][] };
-      const boundary = geojson.coordinates[0].map((coord) => ({
-        lat: coord[1],
-        lng: coord[0],
-      }));
+      const boundary = polygonBoundaryToLatLng(geojson.coordinates);
 
       return {
         id: row.id as string,
@@ -453,6 +450,9 @@ export class RoadsService {
       throw new NotFoundException('Fun zone not found');
     }
     const zoneRow = zoneList[0];
+    if (!zoneRow) {
+      throw new NotFoundException('Fun zone not found');
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const roadRows = await this.funZoneRepo.query(
@@ -472,19 +472,13 @@ export class RoadsService {
       [zoneId, FUN_ZONE_TOP_ROADS_LIMIT],
     );
     const zoneGeo = zoneRow.geojson as { coordinates: number[][][] };
-    const boundary = zoneGeo.coordinates[0].map((coord) => ({
-      lat: coord[1],
-      lng: coord[0],
-    }));
+    const boundary = polygonBoundaryToLatLng(zoneGeo.coordinates);
 
     const top_roads: FunZoneRoadDto[] = (
       roadRows as Record<string, unknown>[]
     ).map((row) => {
       const geojson = row.geojson as { coordinates: number[][] };
-      const geometry = geojson.coordinates.map((c) => ({
-        lat: c[1],
-        lng: c[0],
-      }));
+      const geometry = lineStringToLatLng(geojson.coordinates);
       return {
         id: row.id as string,
         road_name: (row.road_name as string) ?? null,
@@ -646,4 +640,33 @@ function normalizeElevationProfile(
     profile.push(n);
   }
   return profile;
+}
+
+/**
+ * Convert a GeoJSON LineString coordinate list (`[lng, lat]` pairs) into
+ * `{ lat, lng }` points, rejecting any coordinate missing a component so a
+ * malformed geometry surfaces as a clear error instead of `NaN` lat/lng.
+ */
+function lineStringToLatLng(
+  coordinates: number[][],
+): { lat: number; lng: number }[] {
+  return coordinates.map((coord) => {
+    const lng = coord[0];
+    const lat = coord[1];
+    if (lng === undefined || lat === undefined) {
+      throw new Error('GeoJSON coordinate is missing lat/lng');
+    }
+    return { lat, lng };
+  });
+}
+
+/** Convert the outer ring of a GeoJSON Polygon into `{ lat, lng }` points. */
+function polygonBoundaryToLatLng(
+  coordinates: number[][][],
+): { lat: number; lng: number }[] {
+  const ring = coordinates[0];
+  if (!ring) {
+    throw new Error('GeoJSON polygon has no outer ring');
+  }
+  return lineStringToLatLng(ring);
 }

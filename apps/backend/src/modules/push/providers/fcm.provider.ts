@@ -104,7 +104,8 @@ export class FcmPushProvider implements PushProvider {
         errCode === 'messaging/invalid-argument' ||
         errCode === 'messaging/invalid-registration-token'
       ) {
-        invalidTokens.push(tokens[i]);
+        const token = tokens[i];
+        if (token) invalidTokens.push(token);
       }
     });
 

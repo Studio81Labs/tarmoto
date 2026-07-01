@@ -161,7 +161,7 @@ export class InternalGuard implements CanActivate {
 
   // Returns the raw request path (may include the global prefix in production).
   private path(request: AdminRequest): string {
-    return (request.originalUrl ?? request.url ?? '').split('?')[0];
+    return (request.originalUrl ?? request.url ?? '').split('?')[0] ?? '';
   }
 
   // Returns the path with the global prefix stripped so security checks work

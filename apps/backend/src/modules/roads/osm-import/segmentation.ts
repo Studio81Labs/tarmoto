@@ -37,12 +37,10 @@ const DEG_PER_KM_PER_CURVINESS_POINT = 150;
 export function polylineLengthMeters(coords: readonly LatLng[]): number {
   let total = 0;
   for (let i = 1; i < coords.length; i++) {
-    total += haversineMeters(
-      coords[i - 1].lat,
-      coords[i - 1].lng,
-      coords[i].lat,
-      coords[i].lng,
-    );
+    const prev = coords[i - 1];
+    const curr = coords[i];
+    if (!prev || !curr) continue;
+    total += haversineMeters(prev.lat, prev.lng, curr.lat, curr.lng);
   }
   return total;
 }
@@ -76,13 +74,17 @@ export function splitIntoSegments(
 ): LatLng[][] {
   if (coords.length < 2 || targetMeters <= 0) return [];
 
+  const first = coords[0];
+  if (!first) return [];
+
   const segments: LatLng[][] = [];
-  let current: LatLng[] = [coords[0]];
+  let current: LatLng[] = [first];
   let accrued = 0; // metres accumulated in the current segment
 
   for (let i = 1; i < coords.length; i++) {
     let a = current[current.length - 1];
     const b = coords[i];
+    if (!a || !b) continue;
     let edge = haversineMeters(a.lat, a.lng, b.lat, b.lng);
 
     // The edge a→b may span one or more target boundaries; split at each.
@@ -102,9 +104,10 @@ export function splitIntoSegments(
   }
 
   if (current.length >= 2) {
-    if (segments.length > 0 && accrued < targetMeters / 2) {
+    const lastSeg = segments[segments.length - 1];
+    if (lastSeg && accrued < targetMeters / 2) {
       // Merge the short tail into the previous segment (skip the shared start).
-      segments[segments.length - 1].push(...current.slice(1));
+      lastSeg.push(...current.slice(1));
     } else {
       segments.push(current);
     }
@@ -144,7 +147,8 @@ function distinctNeighbour(
 ): LatLng | undefined {
   if (fromEnd) {
     for (let i = coords.length - 1; i >= 0; i--) {
-      if (!coincident(coords[i], ref)) return coords[i];
+      const p = coords[i];
+      if (p && !coincident(p, ref)) return p;
     }
   } else {
     for (const p of coords) if (!coincident(p, ref)) return p;
@@ -174,10 +178,11 @@ function totalHeadingChangeDeg(raw: readonly LatLng[]): number {
   const coords = withoutZeroLengthLegs(raw);
   let total = 0;
   for (let i = 1; i < coords.length - 1; i++) {
-    total += turnDeg(
-      bearingDeg(coords[i - 1], coords[i]),
-      bearingDeg(coords[i], coords[i + 1]),
-    );
+    const prev = coords[i - 1];
+    const curr = coords[i];
+    const next = coords[i + 1];
+    if (!prev || !curr || !next) continue;
+    total += turnDeg(bearingDeg(prev, curr), bearingDeg(curr, next));
   }
   return total;
 }
@@ -200,16 +205,16 @@ function segmentTurnDeg(
   let total = totalHeadingChangeDeg(coords); // interior vertices
   const first = coords[0];
   const last = coords[coords.length - 1];
+  const second = coords[1];
+  const penultimate = coords[coords.length - 2];
+  if (!first || !last || !second || !penultimate) return total;
   // Turn at the start boundary vertex (incoming edge from `before`).
   if (before && !coincident(before, first)) {
-    total += turnDeg(bearingDeg(before, first), bearingDeg(first, coords[1]));
+    total += turnDeg(bearingDeg(before, first), bearingDeg(first, second));
   }
   // Turn at the end boundary vertex (outgoing edge to `after`).
   if (after && !coincident(after, last)) {
-    total += turnDeg(
-      bearingDeg(coords[coords.length - 2], last),
-      bearingDeg(last, after),
-    );
+    total += turnDeg(bearingDeg(penultimate, last), bearingDeg(last, after));
   }
   return total;
 }
@@ -260,15 +265,18 @@ export function segmentWay(
   return segments.map((seg, i) => {
     const prev = segments[i - 1];
     const next = segments[i + 1];
+    const segStart = seg[0];
+    const segEnd = seg[seg.length - 1];
+    if (!segStart || !segEnd) {
+      throw new Error('segmentWay encountered an empty segment');
+    }
     // One distinct neighbour on each side supplies the boundary bearing so the
     // turn AT this segment's boundary vertices is counted (a corner exactly on
     // a boundary lands in both adjacent segments). `segmentTurnDeg` only counts
     // this segment's OWN vertices, so a bend in the neighbour's interior never
     // leaks into a straight segment.
-    const before = prev ? distinctNeighbour(prev, seg[0], true) : undefined;
-    const after = next
-      ? distinctNeighbour(next, seg[seg.length - 1], false)
-      : undefined;
+    const before = prev ? distinctNeighbour(prev, segStart, true) : undefined;
+    const after = next ? distinctNeighbour(next, segEnd, false) : undefined;
     const length_m = polylineLengthMeters(seg);
     return {
       coords: seg,
