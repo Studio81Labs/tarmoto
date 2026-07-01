@@ -112,6 +112,7 @@ import { ClearEndedGroupRideLocations1785000000000 } from './migrations/17850000
 import { AddRoadSegmentOsmIdentity1786000000000 } from './migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 import { AddPois1787000000000 } from './migrations/1787000000000-AddPois.js';
 import { AddSurfaceFromReading1788000000000 } from './migrations/1788000000000-AddSurfaceFromReading.js';
+import { AggregateClusterFunZonesByWay1789000000000 } from './migrations/1789000000000-AggregateClusterFunZonesByWay.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -242,6 +243,7 @@ export const AppDataSource = new DataSource({
     AddRoadSegmentOsmIdentity1786000000000,
     AddPois1787000000000,
     AddSurfaceFromReading1788000000000,
+    AggregateClusterFunZonesByWay1789000000000,
   ],
   synchronize: false,
 });

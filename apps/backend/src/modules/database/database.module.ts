@@ -66,6 +66,7 @@ import { ClearEndedGroupRideLocations1785000000000 } from '../../migrations/1785
 import { AddRoadSegmentOsmIdentity1786000000000 } from '../../migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 import { AddPois1787000000000 } from '../../migrations/1787000000000-AddPois.js';
 import { AddSurfaceFromReading1788000000000 } from '../../migrations/1788000000000-AddSurfaceFromReading.js';
+import { AggregateClusterFunZonesByWay1789000000000 } from '../../migrations/1789000000000-AggregateClusterFunZonesByWay.js';
 import {
   User,
   UserContact,
@@ -273,6 +274,7 @@ const entities = [
             AddRoadSegmentOsmIdentity1786000000000,
             AddPois1787000000000,
             AddSurfaceFromReading1788000000000,
+            AggregateClusterFunZonesByWay1789000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

@@ -483,17 +483,43 @@ export class RoadsService {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const roadRows = await this.funZoneRepo.query(
       `SELECT
-        rs.id, rs.road_name, rs.road_number,
-        rs.quality_score, rs.curviness_score, rs.surface_type,
-        rs.length_m, rs.confidence,
-        rs.elevation_min, rs.elevation_max, rs.elevation_profile,
-        ST_AsGeoJSON(rs.geom)::json AS geojson,
+        agg.id, agg.road_name, agg.road_number,
+        agg.quality_score, agg.curviness_score, agg.surface_type,
+        agg.length_m, agg.confidence,
+        agg.elevation_min, agg.elevation_max, agg.elevation_profile,
+        ST_AsGeoJSON(agg.geom)::json AS geojson,
         fzr.contribution_score
       FROM fun_zone_roads fzr
-      INNER JOIN road_segments rs ON rs.id = fzr.road_segment_id
+      INNER JOIN road_segments member ON member.id = fzr.road_segment_id
+      INNER JOIN LATERAL (
+        -- The stored member is one representative segment of an aggregated OSM
+        -- way (#794); re-aggregate the whole way so the panel shows the real
+        -- road, not a ~100 m stub. A crowd-sourced row (null osm_way_id) is a
+        -- group of one, so its aggregates equal its raw values.
+        SELECT
+          (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+          MAX(rs.road_name) AS road_name,
+          MAX(rs.road_number) AS road_number,
+          SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS quality_score,
+          SUM(rs.curviness_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS curviness_score,
+          (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+          SUM(rs.length_m) AS length_m,
+          SUM(rs.confidence * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS confidence,
+          MIN(rs.elevation_min) AS elevation_min,
+          MAX(rs.elevation_max) AS elevation_max,
+          -- Only a group of one keeps its profile; a merged way's per-segment
+          -- profiles can't be concatenated meaningfully, so null it. MIN over the
+          -- single row returns its profile (and ignores nulls, unlike ARRAY_AGG
+          -- which rejects null arrays).
+          CASE WHEN COUNT(*) = 1 THEN MIN(rs.elevation_profile) END AS elevation_profile,
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id)) AS geom
+        FROM road_segments rs
+        WHERE COALESCE(rs.osm_way_id::text, rs.id::text)
+            = COALESCE(member.osm_way_id::text, member.id::text)
+      ) agg ON TRUE
       WHERE fzr.fun_zone_id = $1
       ORDER BY fzr.contribution_score DESC NULLS LAST,
-               rs.quality_score DESC NULLS LAST
+               agg.quality_score DESC NULLS LAST
       LIMIT $2`,
       [zoneId, FUN_ZONE_TOP_ROADS_LIMIT],
     );
@@ -503,8 +529,11 @@ export class RoadsService {
     const top_roads: FunZoneRoadDto[] = (
       roadRows as Record<string, unknown>[]
     ).map((row) => {
-      const geojson = row.geojson as { coordinates: number[][] };
-      const geometry = lineStringToLatLng(geojson.coordinates);
+      const geojson = row.geojson as {
+        type: string;
+        coordinates: number[][] | number[][][];
+      };
+      const geometry = lineStringToLatLng(geoJsonLineCoordinates(geojson));
       return {
         id: row.id as string,
         road_name: (row.road_name as string) ?? null,

@@ -184,5 +184,19 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     expect(result.zones_written).toBe(1);
     // 3 aggregated ways, NOT 15 sub-segments.
     expect(result.members_written).toBe(3);
+
+    // findZoneById must show the aggregated ways (≈600 m), not a 120 m stub.
+    const zoneRows: { fun_zone_id: string }[] = await dataSource.query(
+      `SELECT DISTINCT fun_zone_id FROM fun_zone_roads
+         WHERE road_segment_id = ANY($1::uuid[])`,
+      [segmentIds],
+    );
+    expect(zoneRows).toHaveLength(1);
+
+    const detail = await roads.findZoneById(zoneRows[0].fun_zone_id);
+    expect(detail.top_roads).toHaveLength(3);
+    for (const road of detail.top_roads) {
+      expect(road.length_m).toBeCloseTo(600, 5); // whole way, not a 120 m member
+    }
   }, 30_000);
 });
