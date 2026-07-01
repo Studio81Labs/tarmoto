@@ -143,8 +143,7 @@ describe('buildGithubAuthorizeUrl', () => {
   });
 
   it('includes redirect_uri when TARMOTO_ADMIN_SSO_REDIRECT_URI is set', () => {
-    const redirectUri =
-      'http://localhost:3003/api/v1/admin/auth/sso/github/callback';
+    const redirectUri = 'http://localhost:3003/admin/auth/sso/github/callback';
     const configWithRedirect = {
       get: (key: string) => {
         if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_ID') return 'test-client-id';

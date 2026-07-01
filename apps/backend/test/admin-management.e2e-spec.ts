@@ -16,11 +16,12 @@ import { AdminAdminsService } from '../src/modules/admin-admins/admin-admins.ser
 import { ADMIN_ROLES_KEY } from '../src/modules/admin-auth/admin-role.decorator.js';
 import { hasRequiredAdminRole } from '../src/modules/admin-auth/admin-role-rank.js';
 import type { AdminRole } from '../src/entities/admin-user.entity.js';
+import { setupGlobalPrefix } from '../src/config/global-prefix.js';
 
 /**
  * Admin-management gating integration test
  *
- * Verifies that GET /api/v1/admin/admins is gated @AdminRoles('admin'):
+ * Verifies that GET /admin/admins is gated @AdminRoles('admin'):
  *   - read_only or support session  → 403
  *   - admin / super_admin session   → 200
  *
@@ -80,7 +81,7 @@ describe('Admin-management gating (@AdminRoles integration)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
+    setupGlobalPrefix(app);
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
     );
@@ -91,30 +92,30 @@ describe('Admin-management gating (@AdminRoles integration)', () => {
     await app?.close();
   });
 
-  it('GET /api/v1/admin/admins with read_only session → 403', async () => {
+  it('GET /admin/admins with read_only session → 403', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/admin/admins')
+      .get('/admin/admins')
       .set('x-test-admin-role', 'read_only')
       .expect(403);
   });
 
-  it('GET /api/v1/admin/admins with support session → 403', async () => {
+  it('GET /admin/admins with support session → 403', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/admin/admins')
+      .get('/admin/admins')
       .set('x-test-admin-role', 'support')
       .expect(403);
   });
 
-  it('GET /api/v1/admin/admins with admin session → 200', async () => {
+  it('GET /admin/admins with admin session → 200', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/admin/admins')
+      .get('/admin/admins')
       .set('x-test-admin-role', 'admin')
       .expect(200);
   });
 
-  it('GET /api/v1/admin/admins with super_admin session → 200', async () => {
+  it('GET /admin/admins with super_admin session → 200', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/admin/admins')
+      .get('/admin/admins')
       .set('x-test-admin-role', 'super_admin')
       .expect(200);
   });

@@ -1,16 +1,19 @@
 // Shared between worker.mjs (the Cloudflare Worker) and its tests. The admin
-// console calls the backend's /api/v1/* routes same-origin; the worker proxies
-// them to the backend so the httpOnly, host-scoped, SameSite=Lax
-// tarmoto_admin_* session cookies stay first-party on the console origin — the
-// same contract the Vite dev proxy provides locally (apps/admin/vite.config.ts).
+// console calls the backend's prefix-less /admin/* routes same-origin; the
+// worker proxies them to the backend so the httpOnly, host-scoped,
+// SameSite=Lax tarmoto_admin_* session cookies stay first-party on the console
+// origin — the same contract the Vite dev proxy provides locally
+// (apps/admin/vite.config.ts). The GitHub OAuth callback rides this branch too,
+// so it lands on the clean /admin/auth/sso/github/callback path.
 //
-// Adapted from the sibling admin workers (tabletap/nexcue): tarmoto keeps the
-// /api/v1 prefix, and its admin API authenticates the session cookie itself
-// (InternalGuard), so this worker additionally injects the shared
-// x-internal-token proving the request transited the trusted proxy — direct
-// hits that skip the proxy are rejected by the backend (defence in depth).
+// Mirrors the sibling admin workers (tabletap/nexcue): admin routes are
+// mounted prefix-less on the backend, and its admin API authenticates the
+// session cookie itself (InternalGuard), so this worker additionally injects
+// the shared x-internal-token proving the request transited the trusted proxy
+// — direct hits that skip the proxy are rejected by the backend (defence in
+// depth).
 
-export const API_PROXY_PREFIX = "/api/v1/";
+export const API_PROXY_PREFIX = "/admin/";
 export const MAX_PROXY_BODY_BYTES = 1024 * 1024;
 export const INTERNAL_TOKEN_HEADER = "x-internal-token";
 

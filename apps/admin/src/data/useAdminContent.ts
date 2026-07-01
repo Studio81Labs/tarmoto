@@ -10,19 +10,19 @@ export function useAdminContentList(params: {
   page?: number;
   pageSize?: number;
 }) {
-  return $api.useQuery("get", "/api/v1/admin/content", {
+  return $api.useQuery("get", "/admin/content", {
     params: { query: params },
   });
 }
 
 export function useHideContent() {
-  return $api.useMutation("post", "/api/v1/admin/content/{type}/{id}/hide");
+  return $api.useMutation("post", "/admin/content/{type}/{id}/hide");
 }
 
 export function useRestoreContent() {
-  return $api.useMutation("post", "/api/v1/admin/content/{type}/{id}/restore");
+  return $api.useMutation("post", "/admin/content/{type}/{id}/restore");
 }
 
 export function useDeleteContent() {
-  return $api.useMutation("delete", "/api/v1/admin/content/{type}/{id}");
+  return $api.useMutation("delete", "/admin/content/{type}/{id}");
 }

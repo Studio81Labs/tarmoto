@@ -11,7 +11,7 @@ export interface AdminUserView {
 export const adminAuthApi = {
   async getConfig(): Promise<{ passwordLoginEnabled: boolean }> {
     try {
-      const { data, error } = await apiClient.GET("/api/v1/admin/auth/config");
+      const { data, error } = await apiClient.GET("/admin/auth/config");
       if (error || !data) return { passwordLoginEnabled: import.meta.env.DEV };
       return data as { passwordLoginEnabled: boolean };
     } catch {
@@ -21,7 +21,7 @@ export const adminAuthApi = {
 
   async getCurrentAdmin(): Promise<AdminUserView | null> {
     try {
-      const { data, error } = await apiClient.GET("/api/v1/admin/auth/me");
+      const { data, error } = await apiClient.GET("/admin/auth/me");
       if (error || !data) return null;
       return data.user as AdminUserView;
     } catch {
@@ -33,7 +33,7 @@ export const adminAuthApi = {
     email: string,
     password: string,
   ): Promise<AdminUserView> {
-    const { data, error } = await apiClient.POST("/api/v1/admin/auth/login", {
+    const { data, error } = await apiClient.POST("/admin/auth/login", {
       body: { email, password },
     });
     if (error || !data) throw new Error("Invalid credentials");
@@ -41,11 +41,11 @@ export const adminAuthApi = {
   },
 
   async logout(): Promise<void> {
-    const { error } = await apiClient.POST("/api/v1/admin/auth/logout", {});
+    const { error } = await apiClient.POST("/admin/auth/logout", {});
     if (error) throw new Error("Logout failed");
   },
 
   startGithubSso(): void {
-    window.location.href = "/api/v1/admin/auth/sso/github/start";
+    window.location.href = "/admin/auth/sso/github/start";
   },
 };
