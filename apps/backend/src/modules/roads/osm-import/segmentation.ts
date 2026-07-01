@@ -15,13 +15,13 @@ export interface LatLng {
 /**
  * Default ~100 m segment target (§1 of the data reference).
  *
- * NOTE (tracked in #794): `FunZoneClusteringService` defaults
- * `minSegmentLengthM: 500` and `RoadsService.findBest` requires
- * `length_m >= BEST_ROADS_MIN_LENGTH_M`, so once the importer persists ~100 m
- * rows those consumers would filter them all out. Reconciling that (aggregate
- * neighbouring imported segments on read, and/or lower the clustering min) is a
- * separate consumer-side slice — NOT a property of this pure geometry core, and
- * NOT the upsert slice (nothing imports into a live job yet).
+ * The ~100 m granularity below the 500 m length filters in
+ * `FunZoneClusteringService` and `RoadsService.findBest` is reconciled on read
+ * (#794): both consumers aggregate imported sub-segments into their parent OSM
+ * way (`COALESCE(osm_way_id, id)`) and apply the length filter to the whole way,
+ * so an imported road surfaces once it's long enough without a 100 m stub ever
+ * ranking on its own. Crowd-sourced rows (null `osm_way_id`) are groups of one,
+ * so their behaviour is unchanged.
  */
 export const SEGMENT_TARGET_METERS = 100;
 

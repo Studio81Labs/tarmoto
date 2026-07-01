@@ -744,6 +744,78 @@ describe('RoadsService', () => {
         { lat: 49.51, lng: 18.41 },
       ]);
     });
+
+    it('aggregates imported ~100 m segments by way before the length filter (#794)', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([]);
+      await service.findBest({ country: 'cz', region: 'beskydy' });
+
+      const [sql] = (segmentRepo.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      // Group by way (imported) or self (crowd rows, null osm_way_id).
+      expect(sql).toContain(
+        'GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)',
+      );
+      // Length-weighted aggregates + summed length.
+      expect(sql).toContain('SUM(rs.length_m)');
+      expect(sql).toContain(
+        'SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0)',
+      );
+      expect(sql).toContain('ST_LineMerge(ST_Collect(rs.geom');
+      // Length AND confidence thresholds apply to the aggregated road, not raw
+      // segments, so a partially-confident way isn't shortened below the length
+      // cutoff or dropped when its weighted average still qualifies.
+      expect(sql).toMatch(/FROM road\s+[\s\S]*WHERE length_m >= \$6/);
+      expect(sql).toContain('AND confidence >= $5');
+      // The candidate CTE no longer pre-filters confidence.
+      expect(sql).not.toContain('AND rs.confidence >= $5');
+    });
+
+    it('returns the longest contiguous part of a gappy MultiLineString (no false connector)', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'way-1',
+          road_name: 'Gappy Way',
+          road_number: null,
+          quality_score: 4.0,
+          curviness_score: 2.0,
+          surface_type: 'asphalt',
+          length_m: 900,
+          confidence: 55,
+          geojson: {
+            type: 'MultiLineString',
+            coordinates: [
+              // Dense short stub: 3 vertices over a ~30 m span. More points, but
+              // geographically tiny — must NOT win.
+              [
+                [18.4, 49.5],
+                [18.4001, 49.5001],
+                [18.4002, 49.5002],
+              ],
+              // Sparse long road: 2 vertices over ~13 km. Fewer points, but the
+              // geographically longest part — the one to keep.
+              [
+                [18.5, 49.6],
+                [18.6, 49.7],
+              ],
+            ],
+          },
+          best_score: 10,
+        },
+      ]);
+
+      const result = await service.findBest({
+        country: 'cz',
+        region: 'beskydy',
+      });
+
+      // Chosen by geographic length, not vertex count.
+      expect(result.roads[0].geometry).toEqual([
+        { lat: 49.6, lng: 18.5 },
+        { lat: 49.7, lng: 18.6 },
+      ]);
+    });
   });
 
   describe('findZoneById', () => {
