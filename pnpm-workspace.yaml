@@ -1,10 +1,35 @@
 packages:
   - "apps/*"
   - "packages/*"
-onlyBuiltDependencies:
-  - "@nestjs/core"
-  - "@scarf/scarf"
-  - "bcrypt"
-  - "esbuild"
-  - sharp
-  - "unrs-resolver"
+
+# Supply-chain gate: refuse any package version published less than 24h
+# (1440 minutes) ago. A compromised maintainer / typosquat is usually yanked
+# within hours, so this window blunts the "publish malware, get it
+# auto-installed minutes later" class of attack. Frozen-lockfile installs
+# (CI, prod) are unaffected — they install the already-pinned versions; the
+# gate only bites when RESOLVING new versions (Renovate bumps, `pnpm update`,
+# manifest changes). Expected gotcha: a Renovate PR for a brand-new release
+# will fail install until that version ages past 24h — by design; re-run the
+# job after the window, don't bypass the gate.
+minimumReleaseAge: 1440
+
+# No exclusions needed today. Add `minimumReleaseAgeExclude: [pkg@version]`
+# entries here only if a legitimate, time-critical bump is blocked by the gate.
+
+# Dependencies whose install/build scripts are allowed to run. pnpm 11's
+# native key (the pnpm 10 `onlyBuiltDependencies` array is no longer honored;
+# leaving these off makes pnpm 11 fail the install with ERR_PNPM_IGNORED_BUILDS).
+allowBuilds:
+  "@firebase/util": true
+  "@nestjs/core": true
+  "@scarf/scarf": true
+  "bcrypt": true
+  "esbuild": true
+  "msgpackr-extract": true
+  "protobufjs": true
+  "sharp": true
+  "unrs-resolver": true
+  "workerd": true
+
+overrides:
+  "@maplibre/maplibre-gl-style-spec": "24.8.3"

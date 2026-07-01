@@ -25,6 +25,7 @@
   ],
   "scripts": {
     "generate": "openapi-typescript ../openapi/openapi.yaml --output src/generated/schema.d.ts --root-types",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {

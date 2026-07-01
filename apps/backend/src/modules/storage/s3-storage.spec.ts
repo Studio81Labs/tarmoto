@@ -1,7 +1,6 @@
 /* eslint-disable
   @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-unsafe-member-access,
-  @typescript-eslint/no-unused-vars
+  @typescript-eslint/no-unsafe-member-access
 */
 const sendMock = jest.fn();
 const presignerMock = jest.fn();

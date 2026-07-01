@@ -197,8 +197,9 @@ function parseKml(text: string, filename: string): ImportedRoute | null {
     const parsed = parseKmlCoordString(coordsText);
     const first = parsed[0];
     if (!first) continue;
+    const wpName = childText(placemark.body, "name");
     waypoints.push({
-      name: childText(placemark.body, "name") ?? undefined,
+      ...(wpName != null ? { name: wpName } : {}),
       lng: first[0],
       lat: first[1],
     });
@@ -287,8 +288,9 @@ function readLatLonAttrs(el: ParsedElement): ImportedWaypoint | null {
   const lng = readNumberAttr(el.attrs, "lon");
   if (lat === null || lng === null) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const wpName = childText(el.body, "name");
   return {
-    name: childText(el.body, "name") ?? undefined,
+    ...(wpName != null ? { name: wpName } : {}),
     lat,
     lng,
   };
@@ -303,6 +305,7 @@ function readNumberAttr(attrs: string, name: string): number | null {
   );
   if (!m) return null;
   const raw = m[1] ?? m[2];
+  if (raw === undefined) return null;
   const n = Number.parseFloat(raw);
   return Number.isFinite(n) ? n : null;
 }
@@ -359,6 +362,13 @@ function childText(body: string, tag: string): string | null {
     const isSelfClose = m[5] === "/";
     const tagEnd = lt + m[0].length;
 
+    if (elemName === undefined) {
+      // Defensive: the tag-name capture is always present when the pattern
+      // matches, but the type is widened by noUncheckedIndexedAccess.
+      i = lt + 1;
+      continue;
+    }
+
     if (isClose) {
       // We've reached the parent element's own end tag — no direct
       // child by `tag` exists at this level.
@@ -412,6 +422,7 @@ function parseKmlCoordString(text: string): Array<[number, number]> {
   for (const tuple of text.trim().split(/\s+/)) {
     if (!tuple) continue;
     const [lngRaw, latRaw] = tuple.split(",");
+    if (lngRaw === undefined || latRaw === undefined) continue;
     const lng = Number.parseFloat(lngRaw);
     const lat = Number.parseFloat(latRaw);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
@@ -447,12 +458,10 @@ function stripExtension(filename: string): string | null {
 export function pointsDistanceKm(points: Array<[number, number]>): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) {
-    total += haversineKm(
-      points[i - 1][1],
-      points[i - 1][0],
-      points[i][1],
-      points[i][0],
-    );
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (!prev || !curr) continue;
+    total += haversineKm(prev[1], prev[0], curr[1], curr[0]);
   }
   return total;
 }

@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "description": "Tarmoto — Know the road before you ride it",
+  "author": {
+    "name": "Studio81 Labs s.r.o.",
+    "email": "dev@studio81.cz",
+    "url": "https://www.studio81.cz"
+  },
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepare": "husky",
@@ -34,7 +40,7 @@
     "poc:dev": "pnpm --filter @tarmoto/poc-sensor dev",
     "poc:build": "pnpm --filter @tarmoto/poc-sensor build",
     "shared:build": "pnpm --filter @tarmoto/shared build",
-    "openapi:gen": "pnpm --filter @tarmoto/openapi generate",
+    "openapi:gen": "pnpm shared:build && pnpm --filter @tarmoto/openapi generate",
     "postman:gen": "pnpm --filter @tarmoto/openapi postman",
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
@@ -46,7 +52,7 @@
   },
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": ">=10.0.0"
+    "pnpm": ">=11.0.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
@@ -57,22 +63,5 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,yml,yaml}": "prettier --write --ignore-unknown"
-  },
-  "pnpm": {
-    "overrides": {
-      "@maplibre/maplibre-gl-style-spec": "24.8.3"
-    },
-    "onlyBuiltDependencies": [
-      "@firebase/util",
-      "@nestjs/core",
-      "@scarf/scarf",
-      "bcrypt",
-      "esbuild",
-      "msgpackr-extract",
-      "protobufjs",
-      "sharp",
-      "unrs-resolver",
-      "workerd"
-    ]
   }
 }

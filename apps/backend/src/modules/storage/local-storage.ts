@@ -81,7 +81,6 @@ export class LocalStorage implements ObjectStorage {
     return `${this.publicPathPrefix}/${encoded}`;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   signedUrl(key: string, _ttlSeconds: number): Promise<string> {
     return Promise.resolve(this.publicUrl(key));
   }
