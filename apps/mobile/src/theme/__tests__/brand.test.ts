@@ -209,9 +209,15 @@ describe("statusFg", () => {
 function flattenRgbaOverHex(rgba: string, bgHex: string): string {
   const m = rgba.match(/rgba?\(([^)]+)\)/);
   if (!m) return rgba;
-  const [r, g, b, a = 1] = m[1].split(",").map((s) => parseFloat(s.trim()));
+  const parts = (m[1] ?? "").split(",").map((s) => parseFloat(s.trim()));
+  const r = parts[0] ?? 0;
+  const g = parts[1] ?? 0;
+  const b = parts[2] ?? 0;
+  const a = parts[3] ?? 1;
   const bg = [1, 3, 5].map((i) => parseInt(bgHex.slice(i, i + 2), 16));
-  const mix = [r, g, b].map((c, i) => Math.round(c * a + bg[i] * (1 - a)));
+  const mix = [r, g, b].map((c, i) =>
+    Math.round(c * a + (bg[i] ?? 0) * (1 - a)),
+  );
   return "#" + mix.map((c) => c.toString(16).padStart(2, "0")).join("");
 }
 

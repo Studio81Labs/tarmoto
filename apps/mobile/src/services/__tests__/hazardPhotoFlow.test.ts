@@ -100,7 +100,7 @@ describe("api hazard photo flow", () => {
             lat,
             lng,
             hazard_type,
-            severity,
+            ...(severity !== undefined ? { severity } : {}),
             note: note ?? null,
             photo_url: photoUrl ?? null,
           }),

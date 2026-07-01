@@ -754,7 +754,7 @@ function DeltaChip({
   valueColor?: string;
   /** When true (distance/time deltas), negative deltas render as success. */
   negativeIsGood?: boolean;
-  delta?: number;
+  delta?: number | undefined;
 }) {
   let color = valueColor ?? t.fg;
   if (delta !== undefined && negativeIsGood) {
@@ -1001,7 +1001,7 @@ function formatSignedDuration(min: number): string {
 
 function formatAbsDelta(
   delta: number,
-  options: { integer?: boolean } = {},
+  options: { integer?: boolean | undefined } = {},
 ): string {
   if (Math.abs(delta) < 0.05) return "±0";
   if (options.integer) {

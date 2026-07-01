@@ -49,7 +49,9 @@ export function useVehicleNavigationDisplay(
       nextManeuver: options.nextManeuver
         ? {
             type: options.nextManeuver.type,
-            roadName: options.nextManeuver.roadName,
+            ...(options.nextManeuver.roadName !== undefined
+              ? { roadName: options.nextManeuver.roadName }
+              : {}),
           }
         : null,
       distanceToNextM: options.tick?.distanceToNextM ?? 0,

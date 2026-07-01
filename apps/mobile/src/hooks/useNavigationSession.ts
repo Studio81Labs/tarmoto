@@ -291,5 +291,8 @@ function handleAnnouncement(
 
   if (!voiceEnabled) return;
   const phrase = phraseForAnnouncement(ann, phraseOptions);
-  if (phrase) ttsService.speak(phrase, { key: announcementKey(ann) });
+  if (phrase) {
+    const key = announcementKey(ann);
+    ttsService.speak(phrase, key !== undefined ? { key } : {});
+  }
 }

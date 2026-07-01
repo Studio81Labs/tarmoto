@@ -38,14 +38,14 @@ export interface HazardReportPayload {
   lng: number;
   hazardType: HazardType;
   severity: Severity;
-  note?: string;
+  note?: string | undefined;
   /**
    * Local URI of an optional photo attachment (camera or library). Kept
    * in the queue entry so that when the backend file-upload endpoint
    * lands, the drain can re-read the file and ship it without losing
    * the rider's original capture. Today's uploader ignores it.
    */
-  photoUri?: string;
+  photoUri?: string | undefined;
 }
 
 export interface PendingHazardReport extends HazardReportPayload {

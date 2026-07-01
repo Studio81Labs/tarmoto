@@ -240,7 +240,7 @@ const TAB_BAR_HIDDEN_ROUTES = new Set(["RideActive", "Navigate"]);
 
 function tabBarStyleForRoute(route: {
   name: string;
-  params?: object;
+  params?: object | undefined;
 }): typeof brandTabBarStyle | { display: "none" } {
   const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
   return TAB_BAR_HIDDEN_ROUTES.has(focused)

@@ -87,7 +87,7 @@ export interface CalibrationSample {
    * delivered a fix; missing speed is treated as "not moving" so a
    * pre-fix calibration can still complete on a stationary phone.
    */
-  speedMs?: number;
+  speedMs?: number | undefined;
 }
 
 export interface CalibrationSnapshot {

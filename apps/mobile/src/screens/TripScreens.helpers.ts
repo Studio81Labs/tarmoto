@@ -188,6 +188,7 @@ export function withSuggestedOvernightStop(
   if (dayIndex < 0) return trip;
 
   const day = trip.days[dayIndex];
+  if (!day) return trip;
   if (isLastDay(trip.days, day.day_number)) return trip;
 
   const explicitHotel = day.waypoints.some(
@@ -313,21 +314,25 @@ export function tripToGpxInput(trip: Trip): TripGpxInput {
   );
   return {
     name: trip.title,
-    description: trip.region ?? undefined,
+    ...(trip.region != null ? { description: trip.region } : {}),
     days: orderedDays.map((day) => ({
       dayNumber: day.day_number,
-      title: day.title ?? undefined,
+      ...(day.title != null ? { title: day.title } : {}),
       waypoints: [...day.waypoints]
         .sort((a, b) => a.sequence - b.sequence)
         .map((w) => ({
           lat: w.lat,
           lng: w.lng,
-          name: w.name ?? undefined,
+          ...(w.name != null ? { name: w.name } : {}),
           type: w.waypoint_type,
         })),
-      routeGeometry: Array.isArray(day.route_geometry)
-        ? day.route_geometry.map((p) => [p.lng, p.lat] as [number, number])
-        : undefined,
+      ...(Array.isArray(day.route_geometry)
+        ? {
+            routeGeometry: day.route_geometry.map(
+              (p) => [p.lng, p.lat] as [number, number],
+            ),
+          }
+        : {}),
     })),
   };
 }
@@ -415,9 +420,12 @@ export function computeFuelRangeLegs(
   const cumKm: number[] = new Array(geom.length);
   cumKm[0] = 0;
   for (let i = 1; i < geom.length; i++) {
-    cumKm[i] = cumKm[i - 1] + haversineKm(geom[i - 1], geom[i]);
+    const prev = geom[i - 1];
+    const curr = geom[i];
+    cumKm[i] =
+      (cumKm[i - 1] ?? 0) + (prev && curr ? haversineKm(prev, curr) : 0);
   }
-  const totalKm = cumKm[cumKm.length - 1];
+  const totalKm = cumKm[cumKm.length - 1] ?? 0;
 
   const sortedWaypoints = [...day.waypoints].sort(
     (a, b) => a.sequence - b.sequence,
@@ -428,13 +436,15 @@ export function computeFuelRangeLegs(
       let bestIdx = 0;
       let bestDist = Infinity;
       for (let i = 0; i < geom.length; i++) {
-        const d = haversineKm(w, geom[i]);
+        const point = geom[i];
+        if (!point) continue;
+        const d = haversineKm(w, point);
         if (d < bestDist) {
           bestDist = d;
           bestIdx = i;
         }
       }
-      return { name: w.name ?? "Fuel", cumKm: cumKm[bestIdx] };
+      return { name: w.name ?? "Fuel", cumKm: cumKm[bestIdx] ?? 0 };
     })
     .sort((a, b) => a.cumKm - b.cumKm);
 
@@ -448,10 +458,13 @@ export function computeFuelRangeLegs(
 
   const legs: FuelLeg[] = [];
   for (let i = 0; i < points.length - 1; i++) {
-    const distanceKm = Math.max(0, points[i + 1].cumKm - points[i].cumKm);
+    const from = points[i];
+    const to = points[i + 1];
+    if (!from || !to) continue;
+    const distanceKm = Math.max(0, to.cumKm - from.cumKm);
     legs.push({
-      fromName: points[i].name,
-      toName: points[i + 1].name,
+      fromName: from.name,
+      toName: to.name,
       distanceKm,
       exceedsRange: fuelRangeKm > 0 && distanceKm > fuelRangeKm,
     });
@@ -516,9 +529,12 @@ function annotateLegsWithStations(
   const cumKm: number[] = new Array(geom.length);
   cumKm[0] = 0;
   for (let i = 1; i < geom.length; i++) {
-    cumKm[i] = cumKm[i - 1] + haversineKm(geom[i - 1], geom[i]);
+    const prev = geom[i - 1];
+    const curr = geom[i];
+    cumKm[i] =
+      (cumKm[i - 1] ?? 0) + (prev && curr ? haversineKm(prev, curr) : 0);
   }
-  const totalKm = cumKm[cumKm.length - 1];
+  const totalKm = cumKm[cumKm.length - 1] ?? 0;
 
   const sortedWaypoints = [...day.waypoints].sort(
     (a, b) => a.sequence - b.sequence,
@@ -529,13 +545,15 @@ function annotateLegsWithStations(
       let bestIdx = 0;
       let bestDist = Infinity;
       for (let i = 0; i < geom.length; i++) {
-        const d = haversineKm(w, geom[i]);
+        const point = geom[i];
+        if (!point) continue;
+        const d = haversineKm(w, point);
         if (d < bestDist) {
           bestDist = d;
           bestIdx = i;
         }
       }
-      return cumKm[bestIdx];
+      return cumKm[bestIdx] ?? 0;
     })
     .sort((a, b) => a - b);
   const legBoundaries = [0, ...fuelAnchorKms, totalKm];
@@ -546,8 +564,8 @@ function annotateLegsWithStations(
 
   return legs.map((leg, idx) => {
     if (!leg.exceedsRange) return leg;
-    const startKm = legBoundaries[idx];
-    const endKm = legBoundaries[idx + 1];
+    const startKm = legBoundaries[idx] ?? 0;
+    const endKm = legBoundaries[idx + 1] ?? Infinity;
     const inside = sortedStations
       .filter(
         (s) =>
@@ -600,7 +618,8 @@ export function pickDayEndAnchor(day: TripDay): LatLng | null {
 
   const geom = day.route_geometry;
   if (Array.isArray(geom) && geom.length > 0) {
-    return geom[geom.length - 1];
+    const last = geom[geom.length - 1];
+    if (last) return last;
   }
 
   const lastNonSuggested = [...sorted]
@@ -619,10 +638,11 @@ export function pickDayEndAnchor(day: TripDay): LatLng | null {
  * to be returning home, not looking for another bed.
  */
 export function isLastDay(days: TripDay[], dayNumber: number): boolean {
-  if (days.length === 0) return false;
+  const first = days[0];
+  if (!first) return false;
   const max = days.reduce(
     (m, d) => (d.day_number > m ? d.day_number : m),
-    days[0].day_number,
+    first.day_number,
   );
   return dayNumber === max;
 }

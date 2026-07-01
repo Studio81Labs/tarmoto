@@ -128,7 +128,7 @@ describe("offlineQueue", () => {
       expect(result.accepted).toBe(0);
       expect(result.pending).toBe(1);
       expect(getPendingCount()).toBe(1);
-      expect(getPendingUploads()[0].rideId).toBe("ride-1");
+      expect(getPendingUploads()[0]?.rideId).toBe("ride-1");
     });
 
     it("bubbles 4xx client errors so callers can react", async () => {
@@ -198,7 +198,7 @@ describe("offlineQueue", () => {
 
       expect(result.status).toBe("queued");
       expect(result.pending).toBe(1);
-      expect(getPendingUploads()[0].rideId).toBe("ride-1");
+      expect(getPendingUploads()[0]?.rideId).toBe("ride-1");
     });
 
     it("queues the new payload (no live call) when the BACKLOG flush hits a 5xx", async () => {
@@ -822,7 +822,7 @@ describe("offlineQueue", () => {
       await drainOfflineQueue(uploader);
       await drainOfflineQueue(uploader);
       await drainOfflineQueue(uploader);
-      expect(getPendingUploads()[0].attempts).toBe(0);
+      expect(getPendingUploads()[0]?.attempts).toBe(0);
 
       const final = await drainOfflineQueue(uploader);
       expect(final.flushed).toBe(1);
@@ -901,8 +901,8 @@ describe("offlineQueue", () => {
       expect(poisonCalls).toHaveBeenCalledTimes(1);
       // Still in the queue, attempts bumped exactly once.
       const [entry] = getPendingUploads();
-      expect(entry.rideId).toBe("poison");
-      expect(entry.attempts).toBe(1);
+      expect(entry?.rideId).toBe("poison");
+      expect(entry?.attempts).toBe(1);
     });
   });
 
@@ -992,7 +992,7 @@ describe("offlineQueue", () => {
 
       const restored = getPendingUploads();
       expect(restored).toHaveLength(1);
-      expect(restored[0].tagEvents).toEqual([]);
+      expect(restored[0]?.tagEvents).toEqual([]);
     });
 
     it("normalises pre-#494 entries lacking calibration to null", () => {
@@ -1014,7 +1014,7 @@ describe("offlineQueue", () => {
 
       const restored = getPendingUploads();
       expect(restored).toHaveLength(1);
-      expect(restored[0].calibration).toBeNull();
+      expect(restored[0]?.calibration).toBeNull();
     });
 
     it("forwards calibration through enqueue → drain → uploader (issue #494)", async () => {
@@ -1077,8 +1077,8 @@ describe("offlineQueue", () => {
 
       const restored = getPendingUploads();
       expect(restored).toHaveLength(1);
-      expect(restored[0].rideId).toBe("ride-1");
-      expect(restored[0].modelVersion).toBeNull();
+      expect(restored[0]?.rideId).toBe("ride-1");
+      expect(restored[0]?.modelVersion).toBeNull();
     });
 
     it("notifies subscribers on enqueue and drain", async () => {

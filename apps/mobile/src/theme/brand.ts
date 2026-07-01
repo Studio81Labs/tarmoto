@@ -219,7 +219,7 @@ export function qualityIndex(score: number | null | undefined): number {
  */
 export function qualityBrandColor(score: number | null | undefined): string {
   if (score == null || !Number.isFinite(score)) return UNSCORED_COLOR;
-  return QUALITY_COLORS[qualityIndex(score)];
+  return QUALITY_COLORS[qualityIndex(score)] ?? UNSCORED_COLOR;
 }
 
 /**
@@ -228,5 +228,5 @@ export function qualityBrandColor(score: number | null | undefined): string {
  */
 export function qualityBrandLabel(score: number | null | undefined): string {
   if (score == null || !Number.isFinite(score)) return UNSCORED_LABEL;
-  return QUALITY_LABELS[qualityIndex(score)];
+  return QUALITY_LABELS[qualityIndex(score)] ?? UNSCORED_LABEL;
 }

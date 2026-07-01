@@ -206,12 +206,12 @@ describe("passesToFeatureCollection", () => {
     ]);
     expect(fc.type).toBe("FeatureCollection");
     expect(fc.features).toHaveLength(2);
-    expect(fc.features[0].geometry).toEqual({
+    expect(fc.features[0]?.geometry).toEqual({
       type: "Point",
       coordinates: [10, 46],
     });
-    expect(fc.features[0].properties).toEqual({ id: "a", status: "open" });
-    expect(fc.features[1].properties.status).toBe("closed");
+    expect(fc.features[0]?.properties).toEqual({ id: "a", status: "open" });
+    expect(fc.features[1]?.properties.status).toBe("closed");
   });
 
   it("returns an empty collection for an empty input (avoids ShapeSource errors)", () => {
@@ -321,8 +321,9 @@ describe("funZonesToFeatureCollection", () => {
     ]);
     expect(fc.type).toBe("FeatureCollection");
     expect(fc.features).toHaveLength(2);
-    expect(fc.features[0].geometry.type).toBe("Polygon");
-    const ring = fc.features[0].geometry.coordinates[0];
+    expect(fc.features[0]?.geometry.type).toBe("Polygon");
+    const ring = fc.features[0]?.geometry.coordinates[0];
+    if (!ring) throw new Error("expected a polygon ring");
     // 4 unique vertices + explicit close → 5 entries in the output ring.
     expect(ring).toHaveLength(5);
     expect(ring[0]).toEqual(ring[ring.length - 1]);
@@ -339,7 +340,7 @@ describe("funZonesToFeatureCollection", () => {
       name: "Custom zone",
     });
     const fc = funZonesToFeatureCollection([zone]);
-    expect(fc.features[0].properties).toEqual({
+    expect(fc.features[0]?.properties).toEqual({
       id: "meta",
       name: "Custom zone",
       composite_score: 4.7,
@@ -361,7 +362,7 @@ describe("funZonesToFeatureCollection", () => {
         ],
       }),
     ]);
-    const first = fc.features[0].geometry.coordinates[0][0];
+    const first = fc.features[0]?.geometry.coordinates[0]?.[0];
     expect(first).toEqual([20, 10]);
   });
 
@@ -377,7 +378,7 @@ describe("funZonesToFeatureCollection", () => {
       makeFunZone({ id: "ok" }),
     ]);
     expect(fc.features).toHaveLength(1);
-    expect(fc.features[0].properties.id).toBe("ok");
+    expect(fc.features[0]?.properties.id).toBe("ok");
   });
 
   it("returns an empty collection for an empty input (avoids ShapeSource errors)", () => {
@@ -397,7 +398,8 @@ describe("funZonesToFeatureCollection", () => {
         best_season: null,
       }),
     ]);
-    const props = fc.features[0].properties;
+    const props = fc.features[0]?.properties;
+    if (!props) throw new Error("expected feature properties");
     expect(props.name).toBeNull();
     expect(props.total_curve_km).toBeNull();
     expect(props.avg_quality).toBeNull();

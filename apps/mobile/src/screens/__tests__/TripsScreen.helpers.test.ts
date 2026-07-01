@@ -9,7 +9,9 @@ function trip(overrides: Partial<TripSummary> = {}): TripSummary {
     num_days: overrides.num_days ?? 1,
     status: overrides.status ?? "planned",
     member_count: overrides.member_count ?? 1,
-    folder_id: overrides.folder_id,
+    ...(overrides.folder_id !== undefined
+      ? { folder_id: overrides.folder_id }
+      : {}),
     created_at: overrides.created_at ?? "2026-04-20T10:00:00Z",
   };
 }

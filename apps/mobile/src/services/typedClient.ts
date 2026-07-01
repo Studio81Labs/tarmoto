@@ -419,7 +419,7 @@ export const client = baseClient;
  */
 export async function rawFetch(
   path: string,
-  init: RequestInit & { bearer?: string },
+  init: RequestInit & { bearer?: string | undefined },
 ): Promise<Response> {
   const { bearer, headers, signal: callerSignal, ...rest } = init;
   const merged = new Headers(headers);

@@ -94,11 +94,11 @@ describe("fft (radix-2 in-place)", () => {
 
     const power = Array.from(
       { length: N / 2 + 1 },
-      (_, k) => re[k] * re[k] + im[k] * im[k],
+      (_, k) => (re[k] ?? 0) * (re[k] ?? 0) + (im[k] ?? 0) * (im[k] ?? 0),
     );
     let maxBin = 0;
     for (let k = 1; k < power.length; k++) {
-      if (power[k] > power[maxBin]) maxBin = k;
+      if ((power[k] ?? 0) > (power[maxBin] ?? 0)) maxBin = k;
     }
     expect(maxBin).toBe(targetBin);
   });
@@ -217,7 +217,8 @@ describe("computeSpectralFeatures — pure tone", () => {
     const b = makeSine(9, 1, WINDOW_SAMPLES, SAMPLE_RATE_HZ);
     const c = makeSine(11, 1, WINDOW_SAMPLES, SAMPLE_RATE_HZ);
     const mix = new Float64Array(WINDOW_SAMPLES);
-    for (let i = 0; i < WINDOW_SAMPLES; i++) mix[i] = a[i] + b[i] + c[i];
+    for (let i = 0; i < WINDOW_SAMPLES; i++)
+      mix[i] = (a[i] ?? 0) + (b[i] ?? 0) + (c[i] ?? 0);
     const f = computeSpectralFeatures(mix, SAMPLE_RATE_HZ);
     expect(f.spectral_entropy).toBeLessThan(0.6);
   });

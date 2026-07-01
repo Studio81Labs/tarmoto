@@ -269,7 +269,7 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(result.notified).toBe(true);
     expect(result.hazardIds).toEqual(["h1"]);
     expect(fake.calls).toHaveLength(1);
-    expect(fake.calls[0].title).toBe("1 new hazard on your commute");
+    expect(fake.calls[0]?.title).toBe("1 new hazard on your commute");
   });
 
   it("dedups within a session — second call does not re-fire", async () => {
@@ -307,7 +307,7 @@ describe("checkCommuteHazardsAndNotify", () => {
     // h1 was already notified; only h2 is fresh.
     expect(result.hazardIds).toEqual(["h2"]);
     expect(fake.calls).toHaveLength(2);
-    expect(fake.calls[1].body).toContain("Oak Rd");
+    expect(fake.calls[1]?.body).toContain("Oak Rd");
   });
 
   it("respects the rider's seen-set from the commute store", async () => {

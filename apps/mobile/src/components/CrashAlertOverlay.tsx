@@ -224,8 +224,10 @@ export default function CrashAlertOverlay({
         // backend a fixed idempotency key so a network retry replays
         // the original outcome instead of re-notifying contacts.
         const result = await api.sendCrashAlert(alert.lat, alert.lng, {
-          rideId: alert.rideId ?? undefined,
-          speedAtImpact: alert.speedAtImpact ?? undefined,
+          ...(alert.rideId != null ? { rideId: alert.rideId } : {}),
+          ...(alert.speedAtImpact != null
+            ? { speedAtImpact: alert.speedAtImpact }
+            : {}),
           alertId: alert.alertId,
         });
         // Idempotent replay where the original POST is still running

@@ -97,8 +97,10 @@ class RmsBuffer {
   push(t: number, magnitude: number, windowMs: number): void {
     this.samples.push({ t, m: magnitude });
     const cutoff = t - windowMs;
-    while (this.samples.length > 0 && this.samples[0].t < cutoff) {
+    let head = this.samples[0];
+    while (head !== undefined && head.t < cutoff) {
       this.samples.shift();
+      head = this.samples[0];
     }
   }
 

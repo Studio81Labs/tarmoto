@@ -110,7 +110,7 @@ describe("tripToGpxInput", () => {
 
   it("orders each day's waypoints by sequence", () => {
     const input = tripToGpxInput(makeTrip());
-    expect(input.days[1].waypoints.map((w) => w.name)).toEqual([
+    expect(input.days[1]?.waypoints.map((w) => w.name)).toEqual([
       "Prato",
       "Cortina",
     ]);
@@ -118,7 +118,7 @@ describe("tripToGpxInput", () => {
 
   it("emits geometry as [lng, lat] tuples for the GPX writer", () => {
     const input = tripToGpxInput(makeTrip());
-    expect(input.days[0].routeGeometry?.[0]).toEqual([10.37, 46.47]);
+    expect(input.days[0]?.routeGeometry?.[0]).toEqual([10.37, 46.47]);
   });
 
   it("propagates the trip name and region as description", () => {
@@ -154,8 +154,10 @@ describe("tripToGpx", () => {
 
   it("omits the `<trk>` block when a day has no geometry", () => {
     const trip = makeTrip();
+    const day2 = trip.days[1];
+    if (!day2) throw new Error("expected a second trip day");
     trip.days[1] = {
-      ...trip.days[1],
+      ...day2,
       route_geometry: [],
       waypoints: [],
     };

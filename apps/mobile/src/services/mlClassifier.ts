@@ -324,7 +324,9 @@ export function featuresToInputVector(features: WindowFeatures): Float32Array {
   const order = activeInputFeatures();
   const out = new Float32Array(order.length);
   for (let i = 0; i < order.length; i++) {
-    out[i] = features[order[i]] ?? 0;
+    const key = order[i];
+    if (key === undefined) continue;
+    out[i] = features[key] ?? 0;
   }
   return out;
 }
@@ -347,8 +349,11 @@ export function parseModelOutput(
   let surfaceProbs: number[] | null = null;
 
   if (raw.length >= 2) {
-    qualityProbs = sliceProbs(raw[0], QUALITY_LABELS.length);
-    surfaceProbs = sliceProbs(raw[1], SURFACE_LABELS.length);
+    const qualityTensor = raw[0];
+    const surfaceTensor = raw[1];
+    if (qualityTensor === undefined || surfaceTensor === undefined) return null;
+    qualityProbs = sliceProbs(qualityTensor, QUALITY_LABELS.length);
+    surfaceProbs = sliceProbs(surfaceTensor, SURFACE_LABELS.length);
   } else {
     const joined = Array.from(raw[0] as ArrayLike<number>);
     if (joined.length === QUALITY_LABELS.length + SURFACE_LABELS.length) {
@@ -374,12 +379,17 @@ export function parseModelOutput(
   // unsure should pull it down; using the min would be too pessimistic
   // on roads where surface and quality genuinely don't agree.
   const confidence =
-    ((qualityProbs[qualityIdx] + surfaceProbs[surfaceIdx]) / 2) * 100;
+    (((qualityProbs[qualityIdx] ?? 0) + (surfaceProbs[surfaceIdx] ?? 0)) / 2) *
+    100;
+
+  const qualityClass = QUALITY_LABELS[qualityIdx];
+  const surfaceType = SURFACE_LABELS[surfaceIdx];
+  if (qualityClass === undefined || surfaceType === undefined) return null;
 
   return {
-    quality_class: QUALITY_LABELS[qualityIdx],
+    quality_class: qualityClass,
     quality_score: Math.round(clamp(qualityScore, 0.5, 5.0) * 10) / 10,
-    surface_type: SURFACE_LABELS[surfaceIdx],
+    surface_type: surfaceType,
     confidence: Math.round(clamp(confidence, 0, 100)),
     model_version: activeModelVersion(),
   };
@@ -397,7 +407,10 @@ function sliceProbs(
 function argmax(values: number[]): number {
   let best = 0;
   for (let i = 1; i < values.length; i++) {
-    if (values[i] > values[best]) best = i;
+    const current = values[i];
+    const bestValue = values[best];
+    if (current === undefined) continue;
+    if (bestValue === undefined || current > bestValue) best = i;
   }
   return best;
 }
