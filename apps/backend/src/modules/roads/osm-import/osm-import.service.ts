@@ -12,23 +12,62 @@ import {
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
 
+/** Target table — referenced bare in the raw conflict clause to read the
+ *  existing row (Postgres `DO UPDATE` refers to the target row by table name,
+ *  `EXCLUDED` to the proposed one). */
+const TABLE = 'road_segments';
+
+/** Conflict target: the stable `(osm_way_id, segment_index)` identity (#751). */
+const CONFLICT_COLUMNS = ['osm_way_id', 'segment_index'];
+
 /**
- * Columns refreshed from OSM when a segment already exists (the `DO UPDATE SET`
- * list). Deliberately EXCLUDES:
- *  - `surface_type` — rider-derived once sensor readings land
- *    (`update_road_quality_for_segment` owns it via the surface mode), so an OSM
- *    re-import must not overwrite a crowd-classified surface with the raw seed;
- *  - `quality_score` / `confidence` / `reading_count` / `id` — crowdsourced /
- *    identity columns the importer never carries in its rows.
- * The OSM `surface_type` seed is still INSERTed for brand-new segments.
+ * OSM-owned columns refreshed verbatim from the incoming snapshot on every
+ * conflict. Excludes the crowdsourced/identity columns (`quality_score`,
+ * `confidence`, `reading_count`, `id`) — the importer never carries them in its
+ * rows, so they are untouched on update and defaulted on insert (the #751
+ * stable-identity guarantee). `surface_type` is handled separately below.
  */
-const OVERWRITE_ON_CONFLICT = [
+const OSM_REFRESH_COLUMNS = [
   'geom',
   'length_m',
   'curviness_score',
   'road_name',
   'road_number',
 ];
+
+/**
+ * The raw `ON CONFLICT … DO UPDATE …` clause. Built once.
+ *
+ * `surface_type`: refreshed from the OSM seed ONLY while a segment has no sensor
+ * readings (`reading_count = 0`). Per ADR-0005 the OSM seed tracks the OSM cycle
+ * but a rider-classified surface (`reading_count > 0`, owned by
+ * `update_road_quality_for_segment`) is authoritative and must survive re-import
+ * — hence the `CASE`, not a blanket refresh or a blanket exclude.
+ *
+ * `WHERE …`: skips no-op rows. A weekly snapshot re-sends mostly-identical rows;
+ * without this every conflict would emit an unconditional `DO UPDATE`, churning
+ * row locks + WAL on a national import. The row is updated only if an OSM column
+ * actually changed, or an unread segment's surface seed changed.
+ */
+function buildOnConflictClause(): string {
+  const set = [
+    ...OSM_REFRESH_COLUMNS.map((c) => `"${c}" = EXCLUDED."${c}"`),
+    `"surface_type" = CASE WHEN "${TABLE}"."reading_count" = 0 ` +
+      `THEN EXCLUDED."surface_type" ELSE "${TABLE}"."surface_type" END`,
+  ];
+  const changed = [
+    ...OSM_REFRESH_COLUMNS.map(
+      (c) => `"${TABLE}"."${c}" IS DISTINCT FROM EXCLUDED."${c}"`,
+    ),
+    `("${TABLE}"."reading_count" = 0 AND ` +
+      `"${TABLE}"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")`,
+  ];
+  const target = CONFLICT_COLUMNS.map((c) => `"${c}"`).join(', ');
+  return `( ${target} ) DO UPDATE SET ${set.join(', ')} WHERE ${changed.join(' OR ')}`;
+}
+
+/** Pre-built so it isn't reconstructed per chunk. */
+export const ROAD_SEGMENT_ON_CONFLICT = buildOnConflictClause();
 
 export interface OsmImportResult {
   upserted: number;
@@ -39,12 +78,11 @@ export interface OsmImportResult {
  * an `OsmWaySource` (the PBF parser — separate slice) through the pure
  * transform and bulk-upserts them ON CONFLICT `(osm_way_id, segment_index)`.
  *
- * Because each row carries ONLY the OSM-derived columns (geometry, name,
- * number, surface seed, curviness) — NOT the crowdsourced `quality_score` /
- * `confidence` / `reading_count` — TypeORM's `DO UPDATE SET` touches only those
- * columns, so a re-import preserves a segment's **UUID**, its dependent FKs,
- * and the crowdsourced quality (the #751 stable-identity guarantee). New rows
- * get the crowdsourced columns' defaults.
+ * The conflict clause (see {@link ROAD_SEGMENT_ON_CONFLICT}) refreshes only the
+ * OSM-owned columns, leaves the crowdsourced `quality_score` / `confidence` /
+ * `reading_count` and the `id` untouched (the #751 stable-identity guarantee),
+ * refreshes the `surface_type` seed only while a segment has no readings, and
+ * skips rows whose OSM values did not change.
  *
  * No delete pass here: stale rows (ways removed from OSM, or split/merged) are
  * the separate split/merge slice's concern — this overwrites in place.
@@ -80,22 +118,17 @@ export class OsmImportService {
   }
 
   private async flush(rows: RoadSegmentRow[]): Promise<void> {
-    // Hand-built upsert (not `repo.upsert`) so the conflict UPDATE can omit
-    // `surface_type` and the crowdsourced columns — `repo.upsert` would set
-    // every column present in the rows. New rows still INSERT all of them.
+    // Raw conflict clause (not `repo.upsert` / the `orUpdate` array form) because
+    // the DO UPDATE must (a) omit the crowdsourced columns, (b) refresh
+    // `surface_type` conditionally per `reading_count`, and (c) skip no-op rows —
+    // none of which the column-array API can express. `.values()` still builds
+    // the INSERT (incl. PostGIS geometry binding); only the conflict tail is raw.
     await this.repo
       .createQueryBuilder()
       .insert()
       .into(RoadSegment)
       .values(rows)
-      .orUpdate(OVERWRITE_ON_CONFLICT, ['osm_way_id', 'segment_index'], {
-        // A weekly re-import re-sends mostly-identical rows. Without this, every
-        // conflict emits an unconditional DO UPDATE — needless row locks + WAL
-        // churn on a national snapshot. This adds a `col IS DISTINCT FROM
-        // EXCLUDED.col` predicate over the overwrite columns so unchanged
-        // segments are skipped.
-        skipUpdateIfNoValuesChanged: true,
-      })
+      .onConflict(ROAD_SEGMENT_ON_CONFLICT)
       .execute();
   }
 }

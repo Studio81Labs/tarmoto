@@ -2,7 +2,10 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
-import { OsmImportService } from './osm-import.service.js';
+import {
+  OsmImportService,
+  ROAD_SEGMENT_ON_CONFLICT,
+} from './osm-import.service.js';
 import type { OsmWay, RoadSegmentRow } from './segment-rows.js';
 
 /** A single ~100 m drivable way (two nodes → one segment). */
@@ -18,13 +21,73 @@ function straightWay(id: number): OsmWay {
   };
 }
 
+describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
+  it('targets the (osm_way_id, segment_index) identity', () => {
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '( "osm_way_id", "segment_index" ) DO UPDATE SET',
+    );
+  });
+
+  it('refreshes the OSM-owned columns from EXCLUDED', () => {
+    for (const col of [
+      'geom',
+      'length_m',
+      'curviness_score',
+      'road_name',
+      'road_number',
+    ]) {
+      expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+        `"${col}" = EXCLUDED."${col}"`,
+      );
+    }
+  });
+
+  it('refreshes surface_type only while the segment has no readings', () => {
+    // Rider-classified surfaces (reading_count > 0) stay authoritative (ADR-0005).
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"surface_type" = CASE WHEN "road_segments"."reading_count" = 0 ' +
+        'THEN EXCLUDED."surface_type" ELSE "road_segments"."surface_type" END',
+    );
+  });
+
+  it('never writes the crowdsourced / identity columns', () => {
+    for (const col of [
+      'quality_score',
+      'confidence',
+      'reading_count',
+      '"id"',
+    ]) {
+      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`SET ${col}`);
+      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`, ${col} =`);
+    }
+    // reading_count appears only inside the guard, never as an assignment target.
+    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(
+      '"reading_count" = EXCLUDED',
+    );
+  });
+
+  it('skips no-op rows via an IS DISTINCT FROM guard', () => {
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"road_segments"."geom" IS DISTINCT FROM EXCLUDED."geom"',
+    );
+    // Surface-only change on an unread segment still triggers an update…
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '("road_segments"."reading_count" = 0 AND ' +
+        '"road_segments"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")',
+    );
+    // …but a read segment whose only OSM change is surface is NOT rewritten
+    // (that branch is gated by reading_count = 0), so the guard has a WHERE.
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain('WHERE');
+  });
+});
+
 describe('OsmImportService', () => {
   let service: OsmImportService;
   let qb: {
     insert: jest.Mock;
     into: jest.Mock;
     values: jest.Mock;
-    orUpdate: jest.Mock;
+    onConflict: jest.Mock;
     execute: jest.Mock;
   };
   let createQueryBuilder: jest.Mock;
@@ -33,16 +96,12 @@ describe('OsmImportService', () => {
   const valuesOnCall = (n: number): RoadSegmentRow[] =>
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
-  /** The args of the first `.orUpdate()` call. */
-  const firstOrUpdate = (): [string[], string[], { [k: string]: boolean }] =>
-    qb.orUpdate.mock.calls[0] as [string[], string[], { [k: string]: boolean }];
-
   beforeEach(async () => {
     qb = {
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
-      orUpdate: jest.fn().mockReturnThis(),
+      onConflict: jest.fn().mockReturnThis(),
       execute: jest.fn().mockResolvedValue({}),
     };
     createQueryBuilder = jest.fn().mockReturnValue(qb);
@@ -58,12 +117,12 @@ describe('OsmImportService', () => {
     service = moduleRef.get(OsmImportService);
   });
 
-  it('upserts ON CONFLICT (osm_way_id, segment_index)', async () => {
+  it('upserts with the road-segment conflict clause', async () => {
     const result = await service.importFrom([straightWay(1), straightWay(2)]);
 
     expect(result.upserted).toBe(2);
     expect(qb.execute).toHaveBeenCalledTimes(1);
-    expect(firstOrUpdate()[1]).toEqual(['osm_way_id', 'segment_index']);
+    expect(qb.onConflict).toHaveBeenCalledWith(ROAD_SEGMENT_ON_CONFLICT);
     const rows = valuesOnCall(0);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
@@ -73,43 +132,18 @@ describe('OsmImportService', () => {
     });
   });
 
-  it('does not overwrite rider-derived surface_type on conflict', async () => {
-    await service.importFrom([straightWay(1)]);
-
-    // The DO UPDATE SET list must omit surface_type (crowd-classified once
-    // sensor readings land) while still INSERTing the OSM seed for new rows.
-    const overwrite = firstOrUpdate()[0];
-    expect(overwrite).not.toContain('surface_type');
-    expect(overwrite).not.toContain('quality_score');
-    expect(overwrite).not.toContain('confidence');
-    expect(overwrite).not.toContain('reading_count');
-    expect(overwrite).toEqual(
-      expect.arrayContaining(['geom', 'road_name', 'road_number']),
-    );
-    // …but the seed is still present in the inserted row.
-    expect(valuesOnCall(0)[0]).toHaveProperty('surface_type');
-  });
-
-  it('skips no-op conflict updates (IS DISTINCT FROM predicate)', async () => {
-    await service.importFrom([straightWay(1)]);
-
-    // Avoids rewriting unchanged segments on a periodic re-import (WAL churn).
-    expect(firstOrUpdate()[2]).toMatchObject({
-      skipUpdateIfNoValuesChanged: true,
-    });
-  });
-
-  it('never writes the crowdsourced columns (preserves quality / id on re-import)', async () => {
+  it('never carries the crowdsourced columns in the inserted rows', async () => {
     await service.importFrom([straightWay(1)]);
 
     for (const row of valuesOnCall(0)) {
-      // Absent from the row, so they are neither inserted nor in the SET list —
-      // a re-import keeps each segment's UUID + crowdsourced data.
+      // Absent from the row → defaulted on insert, untouched on update.
       expect(row).not.toHaveProperty('id');
       expect(row).not.toHaveProperty('quality_score');
       expect(row).not.toHaveProperty('confidence');
       expect(row).not.toHaveProperty('reading_count');
     }
+    // …but the OSM surface seed IS present (inserted for new segments).
+    expect(valuesOnCall(0)[0]).toHaveProperty('surface_type');
   });
 
   it('skips non-drivable ways (no statement for them)', async () => {
