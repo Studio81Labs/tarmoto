@@ -11,6 +11,7 @@ import {
 } from '../reviews/dto/review.dto.js';
 import {
   findRegion,
+  haversineMeters,
   type SurfaceType,
   type HazardType,
   type HazardSeverity,
@@ -344,24 +345,50 @@ export class RoadsService {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.segmentRepo.query(
-      `SELECT
-        rs.id, rs.road_name, rs.road_number,
-        rs.quality_score, rs.curviness_score, rs.surface_type,
-        rs.length_m, rs.confidence,
-        ST_AsGeoJSON(rs.geom)::json AS geojson,
-        (
-          rs.quality_score * 2.0
-          + rs.curviness_score * 1.0
-          + LEAST(rs.length_m / 1000.0, 20.0) * 0.1
-        ) AS best_score
-      FROM road_segments rs
-      WHERE ST_Intersects(
-        rs.geom,
-        ST_MakeEnvelope($1, $2, $3, $4, 4326)
+      `WITH candidate AS (
+        SELECT
+          rs.id, rs.osm_way_id, rs.segment_index,
+          rs.road_name, rs.road_number, rs.surface_type,
+          rs.quality_score, rs.curviness_score, rs.length_m, rs.confidence, rs.geom
+        FROM road_segments rs
+        WHERE ST_Intersects(rs.geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))
+          AND rs.quality_score IS NOT NULL
+      ),
+      -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
+      -- length filter applies to the whole road, not a stub (#794). Grouping key
+      -- COALESCE(osm_way_id, id): a crowd-sourced row has a NULL osm_way_id, so it
+      -- is a group of one and every aggregate below equals its raw value —
+      -- existing best-roads behaviour is unchanged. Aggregates are length-weighted
+      -- so a road's score reflects its constituent segments.
+      road AS (
+        SELECT
+          (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+          MAX(rs.road_name) AS road_name,
+          MAX(rs.road_number) AS road_number,
+          (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+          SUM(rs.length_m) AS length_m,
+          SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS quality_score,
+          SUM(rs.curviness_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS curviness_score,
+          SUM(rs.confidence * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS confidence,
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id)) AS geom
+        FROM candidate rs
+        GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)
       )
-        AND rs.quality_score IS NOT NULL
-        AND rs.confidence >= $5
-        AND rs.length_m >= $6
+      SELECT
+        id, road_name, road_number, quality_score, curviness_score, surface_type,
+        length_m, confidence,
+        ST_AsGeoJSON(geom)::json AS geojson,
+        (
+          quality_score * 2.0
+          + curviness_score * 1.0
+          + LEAST(length_m / 1000.0, 20.0) * 0.1
+        ) AS best_score
+      FROM road
+      -- Confidence is applied to the aggregated road (length-weighted), not raw
+      -- sub-segments, so a way with a few low-confidence pieces isn't shortened
+      -- below the length threshold or dropped when its average still qualifies.
+      WHERE length_m >= $6
+        AND confidence >= $5
       ORDER BY best_score DESC NULLS LAST
       LIMIT $7`,
       [w, s, e, n, BEST_ROADS_MIN_CONFIDENCE, BEST_ROADS_MIN_LENGTH_M, limit],
@@ -369,7 +396,10 @@ export class RoadsService {
 
     const roads: BestRoadDto[] = (rows as Record<string, unknown>[]).map(
       (row) => {
-        const geojson = row.geojson as { coordinates: number[][] };
+        const geojson = row.geojson as {
+          type: string;
+          coordinates: number[][] | number[][][];
+        };
         return {
           id: row.id as string,
           road_name: (row.road_name as string) ?? null,
@@ -379,7 +409,7 @@ export class RoadsService {
           surface_type: row.surface_type as SurfaceType,
           length_m: row.length_m as number,
           confidence: row.confidence as number,
-          geometry: lineStringToLatLng(geojson.coordinates),
+          geometry: lineStringToLatLng(geoJsonLineCoordinates(geojson)),
           best_score: row.best_score as number,
         };
       },
@@ -457,17 +487,58 @@ export class RoadsService {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const roadRows = await this.funZoneRepo.query(
       `SELECT
-        rs.id, rs.road_name, rs.road_number,
-        rs.quality_score, rs.curviness_score, rs.surface_type,
-        rs.length_m, rs.confidence,
-        rs.elevation_min, rs.elevation_max, rs.elevation_profile,
-        ST_AsGeoJSON(rs.geom)::json AS geojson,
+        agg.id, agg.road_name, agg.road_number,
+        agg.quality_score, agg.curviness_score, agg.surface_type,
+        agg.length_m, agg.confidence,
+        agg.elevation_min, agg.elevation_max, agg.elevation_profile,
+        ST_AsGeoJSON(agg.geom)::json AS geojson,
         fzr.contribution_score
       FROM fun_zone_roads fzr
-      INNER JOIN road_segments rs ON rs.id = fzr.road_segment_id
+      INNER JOIN fun_zones fz ON fz.id = fzr.fun_zone_id
+      INNER JOIN road_segments member ON member.id = fzr.road_segment_id
+      INNER JOIN LATERAL (
+        -- The stored member is one representative segment of an aggregated OSM
+        -- way (#794); re-aggregate the whole way so the panel shows the real
+        -- road, not a ~100 m stub. A crowd-sourced row (null osm_way_id) is a
+        -- group of one, so its aggregates equal its raw values.
+        SELECT
+          (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+          MAX(rs.road_name) AS road_name,
+          MAX(rs.road_number) AS road_number,
+          SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS quality_score,
+          SUM(rs.curviness_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS curviness_score,
+          (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+          SUM(rs.length_m) AS length_m,
+          SUM(rs.confidence * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS confidence,
+          MIN(rs.elevation_min) AS elevation_min,
+          MAX(rs.elevation_max) AS elevation_max,
+          -- Only a group of one keeps its profile; a merged way's per-segment
+          -- profiles can't be concatenated meaningfully, so null it. MIN over the
+          -- single row returns its profile (and ignores nulls, unlike ARRAY_AGG
+          -- which rejects null arrays).
+          CASE WHEN COUNT(*) = 1 THEN MIN(rs.elevation_profile) END AS elevation_profile,
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id)) AS geom
+        FROM road_segments rs
+        WHERE COALESCE(rs.osm_way_id::text, rs.id::text)
+            = COALESCE(member.osm_way_id::text, member.id::text)
+          -- Match the clustering aggregation, which only groups quality-bearing
+          -- segments; otherwise unassessed siblings inflate length/geom while the
+          -- quality numerator skips them, depressing the shown quality score.
+          AND rs.quality_score IS NOT NULL
+          -- Constrain to the zone's scope: a bbox-scoped clustering run only
+          -- aggregated the way's sub-segments inside that run, so re-aggregating
+          -- the whole way would pull in out-of-zone km for a border-crossing way
+          -- and disagree with the stored contribution/boundary. The boundary hull
+          -- contains every in-cluster way, so compact ways are unaffected.
+          AND ST_Intersects(rs.geom, fz.boundary)
+        -- Drop a stale membership whose way has lost all in-zone assessed
+        -- segments: without this the no-GROUP-BY aggregate returns one all-NULL
+        -- row, nulling the geometry and 500-ing the mapper.
+        HAVING COUNT(*) > 0
+      ) agg ON TRUE
       WHERE fzr.fun_zone_id = $1
       ORDER BY fzr.contribution_score DESC NULLS LAST,
-               rs.quality_score DESC NULLS LAST
+               agg.quality_score DESC NULLS LAST
       LIMIT $2`,
       [zoneId, FUN_ZONE_TOP_ROADS_LIMIT],
     );
@@ -477,8 +548,11 @@ export class RoadsService {
     const top_roads: FunZoneRoadDto[] = (
       roadRows as Record<string, unknown>[]
     ).map((row) => {
-      const geojson = row.geojson as { coordinates: number[][] };
-      const geometry = lineStringToLatLng(geojson.coordinates);
+      const geojson = row.geojson as {
+        type: string;
+        coordinates: number[][] | number[][][];
+      };
+      const geometry = lineStringToLatLng(geoJsonLineCoordinates(geojson));
       return {
         id: row.id as string,
         road_name: (row.road_name as string) ?? null,
@@ -647,6 +721,59 @@ function normalizeElevationProfile(
  * `{ lat, lng }` points, rejecting any coordinate missing a component so a
  * malformed geometry surfaces as a clear error instead of `NaN` lat/lng.
  */
+/**
+ * Coordinate array for a response polyline from a GeoJSON LineString or, when an
+ * aggregated OSM way's assessed sub-segments are non-contiguous (a gap),
+ * `ST_LineMerge` returns a MultiLineString (#794). The `geometry` DTO is a single
+ * polyline, so rather than concatenate the parts — which would draw a straight
+ * connector across the unassessed gap and can misplace the rank marker — return
+ * the geographically LONGEST contiguous part (not the one with the most
+ * vertices — a short but dense stub must not win). Contiguous ways stay a
+ * LineString, so the Multi branch is the rare case; faithful multi-part
+ * rendering is tracked in #809.
+ */
+function geoJsonLineCoordinates(geojson: {
+  type: string;
+  coordinates: number[][] | number[][][];
+}): number[][] {
+  if (geojson.type === 'MultiLineString') {
+    const parts = geojson.coordinates as number[][][];
+    let best: number[][] = parts[0] ?? [];
+    let bestLength = -1;
+    for (const part of parts) {
+      const length = polylineMeters(part);
+      if (length > bestLength) {
+        best = part;
+        bestLength = length;
+      }
+    }
+    return best;
+  }
+  return geojson.coordinates as number[][];
+}
+
+/** Geographic length of a `[lng, lat][]` polyline in metres. */
+function polylineMeters(coords: number[][]): number {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const prev = coords[i - 1];
+    const curr = coords[i];
+    if (!prev || !curr) continue;
+    const [aLng, aLat] = prev;
+    const [bLng, bLat] = curr;
+    if (
+      aLng === undefined ||
+      aLat === undefined ||
+      bLng === undefined ||
+      bLat === undefined
+    ) {
+      continue;
+    }
+    total += haversineMeters(aLat, aLng, bLat, bLng);
+  }
+  return total;
+}
+
 function lineStringToLatLng(
   coordinates: number[][],
 ): { lat: number; lng: number }[] {

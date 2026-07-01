@@ -282,17 +282,59 @@ export class FunZoneClusteringService {
     }
 
     const sql = `
-      WITH eligible AS (
+      WITH assessed_ways AS (
+        -- Preselect only the way keys that HAVE quality-bearing segments, so the
+        -- aggregation below groups just assessed roads — not the entire imported
+        -- graph (most ~100 m OSM rows are unrated) only to discard them in
+        -- \`eligible\`. Keeps the weekly (no-bbox) recompute scaling with assessed
+        -- roads (#794).
+        SELECT DISTINCT COALESCE(osm_way_id::text, id::text) AS road_key
+        FROM road_segments
+        WHERE quality_score IS NOT NULL
+          ${bboxClause}
+      ),
+      road AS (
+        -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
+        -- length filter and DBSCAN operate on whole roads, not stubs (#794).
+        -- Grouping key COALESCE(osm_way_id, id): a crowd-sourced row has a NULL
+        -- osm_way_id, so it is a group of one and every aggregate equals its raw
+        -- value — existing clustering is unchanged. Length-weighted to match the
+        -- per-segment semantics the eligibility filters expect.
+        SELECT
+          -- Representative id over ALL of the way's siblings, so it — and the
+          -- fun-zone UUID persistZones derives from it — stays stable when a
+          -- sub-segment gains its first reading (the quality-bearing subset, and
+          -- thus its lowest member, would otherwise shift). Stats stay
+          -- quality-filtered via FILTER so the aggregate values are unchanged.
+          (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id)
+            FILTER (WHERE rs.quality_score IS NOT NULL)) AS geom,
+          SUM(rs.curviness_score * rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL)
+            / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL), 0) AS curviness_score,
+          SUM(rs.quality_score * rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL)
+            / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL), 0) AS quality_score,
+          SUM(rs.confidence * rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL)
+            / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL), 0) AS confidence,
+          SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL) AS length_m,
+          MIN(rs.elevation_min) FILTER (WHERE rs.quality_score IS NOT NULL) AS elevation_min,
+          MAX(rs.elevation_max) FILTER (WHERE rs.quality_score IS NOT NULL) AS elevation_max
+        FROM road_segments rs
+        JOIN assessed_ways aw
+          ON aw.road_key = COALESCE(rs.osm_way_id::text, rs.id::text)
+        WHERE TRUE
+          ${bboxClause.replace(/geom/g, 'rs.geom')}
+        GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)
+      ),
+      eligible AS (
         SELECT
           id, geom, curviness_score, quality_score, length_m,
           elevation_min, elevation_max
-        FROM road_segments
-        WHERE curviness_score >= $1
-          AND quality_score IS NOT NULL
+        FROM road
+        WHERE quality_score IS NOT NULL
+          AND curviness_score >= $1
           AND quality_score >= $2
           AND confidence >= $3
           AND length_m >= $4
-          ${bboxClause}
       ),
       clustered AS (
         SELECT
