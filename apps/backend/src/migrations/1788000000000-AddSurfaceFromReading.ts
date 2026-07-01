@@ -142,20 +142,22 @@ export class AddSurfaceFromReading1788000000000 implements MigrationInterface {
     // 3. Backfill: conservatively protect every existing surface whose OSM
     //    provenance can't be proven, so enabling OSM refresh never overwrites a
     //    legacy rider-classified surface. Mark owned when:
-    //      (a) a non-null surface reading is still present, OR
-    //      (b) surface_type is anything other than the 'unknown' default.
-    //    (b) is the key case the reviewer flagged: a segment classified before
+    //      (a) surface_type is a real classification (non-null, non-'unknown'),
+    //          OR
+    //      (b) a non-null surface reading is still present.
+    //    (a) is the key case the reviewer flagged: a segment classified before
     //    this deploy whose raw readings were already deleted by the
     //    location_retention sweep keeps only the aggregate surface_type — the raw
     //    evidence is gone. This is safe because no OSM import has run yet (the
-    //    importer this flag guards is not wired to a job), so a non-'unknown'
-    //    surface can only be rider/seed-derived, never OSM. New OSM segments
+    //    importer this flag guards is not wired to a job), so a real surface can
+    //    only be rider/seed-derived, never OSM. A NULL or 'unknown' surface stays
+    //    unprotected so it still receives the OSM seed. New OSM segments
     //    created after this migration correctly start false and refresh until a
     //    rider classifies them.
     await queryRunner.query(`
       UPDATE road_segments rs
       SET surface_from_reading = true
-      WHERE rs.surface_type IS DISTINCT FROM 'unknown'
+      WHERE (rs.surface_type IS NOT NULL AND rs.surface_type <> 'unknown')
          OR EXISTS (
            SELECT 1 FROM surface_readings sr
            WHERE sr.road_segment_id = rs.id AND sr.surface_type IS NOT NULL
