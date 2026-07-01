@@ -30,13 +30,19 @@ function day(overrides: Partial<TripDay> = {}): TripDay {
       waypoint({ id: "start", lat: 46.47, lng: 10.37, type: "start" }),
       waypoint({ id: "end", lat: 46.61, lng: 10.57, type: "end" }),
     ],
-    routeGeometry: overrides.routeGeometry,
+    ...(overrides.routeGeometry !== undefined
+      ? { routeGeometry: overrides.routeGeometry }
+      : {}),
     distanceKm: overrides.distanceKm ?? 248,
     durationMinutes: overrides.durationMinutes ?? 360,
     elevationGain: overrides.elevationGain ?? 2640,
     avgQuality: overrides.avgQuality ?? 4.1,
-    segments: overrides.segments,
-    overnightStop: overrides.overnightStop,
+    ...(overrides.segments !== undefined
+      ? { segments: overrides.segments }
+      : {}),
+    ...(overrides.overnightStop !== undefined
+      ? { overnightStop: overrides.overnightStop }
+      : {}),
   };
 }
 

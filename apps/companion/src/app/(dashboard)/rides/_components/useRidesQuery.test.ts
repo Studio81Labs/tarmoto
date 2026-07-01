@@ -201,7 +201,9 @@ describe("useRidesQuery — window preserved for a stale debounced update", () =
     });
 
     expect(replace).toHaveBeenCalledTimes(1);
-    const url = replace.mock.calls[0][0] as string;
+    const replaceCall = replace.mock.calls[0];
+    if (!replaceCall) throw new Error("expected replace to have been called");
+    const url = replaceCall[0] as string;
     expect(url).toContain("window=30d"); // latest window, not the stale "all"
     expect(url).toContain("q=ridge");
   });

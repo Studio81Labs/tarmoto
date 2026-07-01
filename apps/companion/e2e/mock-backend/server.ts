@@ -275,12 +275,13 @@ function describeSubscription(userId: string) {
     premium: { name: "Premium", price: "€29.99/yr" },
     pro: { name: "Pro", price: "€49.99/yr" },
   };
+  const currentLabel = planLabels[sub.tier] ?? { name: sub.tier, price: "" };
   return {
     current_plan: {
       tier: sub.tier,
-      name: planLabels[sub.tier].name,
+      name: currentLabel.name,
       status: sub.status,
-      price_label: planLabels[sub.tier].price,
+      price_label: currentLabel.price,
       renews_at: sub.current_period_end,
       cancel_at_period_end: sub.cancel_at_period_end,
       manage_url: null,
@@ -1761,9 +1762,10 @@ export function buildApp(): Express {
         res.status(404).json({ message: "not-found" });
         return;
       }
-      const wasActive = list[idx].isActive;
+      const wasActive = list[idx]?.isActive;
       list.splice(idx, 1);
-      if (wasActive && list.length > 0) list[0].isActive = true;
+      const first = list[0];
+      if (wasActive && first) first.isActive = true;
       state.bikes.set(userId, list);
       res.status(204).end();
     },
@@ -1853,10 +1855,13 @@ export function buildApp(): Express {
         return;
       }
       const next = [...items];
-      next[index] = {
-        ...next[index],
-        read_at: next[index].read_at ?? new Date().toISOString(),
-      };
+      const target = next[index];
+      if (target) {
+        next[index] = {
+          ...target,
+          read_at: target.read_at ?? new Date().toISOString(),
+        };
+      }
       state.inAppNotifications.set(userId, next);
       res.json(next[index]);
     },
@@ -3179,9 +3184,11 @@ export function buildApp(): Express {
       ];
       let idx = 0;
       for (let i = 0; i < tiers.length; i++) {
-        if (level >= tiers[i].minLevel) idx = i;
+        const tier = tiers[i];
+        if (tier && level >= tier.minLevel) idx = i;
       }
       const current = tiers[idx];
+      if (!current) throw new Error("tier index out of range");
       const next = tiers[idx + 1] ?? null;
       const nextTierXp = next ? xpForLevel(next.minLevel) : null;
       res.json({
@@ -4071,7 +4078,7 @@ interface CollectionSerializeOptions {
    * `RouteCollectionsService.toSummaryResponse`'s private-owner
    * branch.
    */
-  maskOwner?: boolean;
+  maskOwner?: boolean | undefined;
 }
 
 function serializeCollectionSummary(

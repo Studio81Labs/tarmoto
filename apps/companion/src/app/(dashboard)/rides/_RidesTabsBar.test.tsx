@@ -74,7 +74,9 @@ describe("TimeWindowPills — pagination reset on window change", () => {
     render(<RidesTabsBar />);
     fireEvent.click(screen.getByRole("radio", { name: "Last 30 days" }));
     expect(mockReplace).toHaveBeenCalledTimes(1);
-    const url = mockReplace.mock.calls[0][0] as string;
+    const replaceCall = mockReplace.mock.calls[0];
+    if (!replaceCall) throw new Error("expected replace to have been called");
+    const url = replaceCall[0] as string;
     expect(url).toContain("window=30d");
     expect(url).toContain("type=trip"); // other filters preserved
     expect(url).not.toContain("page="); // pagination reset

@@ -48,7 +48,7 @@ export async function fetchSharedRides(
   const { signal, ...query } = options;
   const result = await api.GET("/api/v1/users/{userId}/shared-rides", {
     params: { path: { userId }, query },
-    signal,
+    ...(signal !== undefined ? { signal } : {}),
   });
   if (result.error) {
     const status = result.response?.status ?? 0;

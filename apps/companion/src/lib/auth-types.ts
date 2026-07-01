@@ -6,7 +6,7 @@ declare module "next-auth" {
     id: string;
     email: string;
     displayName: string;
-    phone?: string;
+    phone?: string | undefined;
     accessToken: string;
     refreshToken: string;
     expiresAt: number;
@@ -17,7 +17,7 @@ declare module "next-auth" {
       id: string;
       email: string;
       displayName: string;
-      phone?: string;
+      phone?: string | undefined;
     };
     accessToken: string;
     error?: "RefreshTokenError";
@@ -29,10 +29,10 @@ declare module "next-auth/jwt" {
     id: string;
     email: string;
     displayName: string;
-    phone?: string;
+    phone?: string | undefined;
     accessToken: string;
     refreshToken: string;
     expiresAt: number;
-    error?: "RefreshTokenError";
+    error?: "RefreshTokenError" | undefined;
   }
 }

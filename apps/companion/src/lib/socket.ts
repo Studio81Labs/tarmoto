@@ -62,7 +62,7 @@ export function connectSocket(token: string | null = null): Socket {
 
   const url = WS_URL ? `${WS_URL}${NAMESPACE}` : NAMESPACE;
   const next = io(url, {
-    auth: token ? { token } : undefined,
+    ...(token ? { auth: { token } } : {}),
     transports: ["websocket"],
     reconnection: true,
     reconnectionAttempts: Infinity,

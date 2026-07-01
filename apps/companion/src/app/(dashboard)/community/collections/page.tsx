@@ -92,9 +92,10 @@ export default function RouteCollectionsPage() {
   const submitModal = async (input: CollectionInputForm) => {
     if (!modal) return;
     if (modal.mode === "create") {
+      const description = input.description.trim() || undefined;
       await createCollection({
         title: input.title.trim(),
-        description: input.description.trim() || undefined,
+        ...(description !== undefined ? { description } : {}),
         visibility: input.visibility,
       });
     } else {
@@ -569,7 +570,7 @@ function CollectionModal({
   mode: "create" | "edit";
   initial: CollectionInputForm;
   collections: readonly RouteCollectionView[];
-  excludeId?: string;
+  excludeId?: string | undefined;
   onClose: () => void;
   onSubmit: (input: CollectionInputForm) => Promise<void>;
 }) {

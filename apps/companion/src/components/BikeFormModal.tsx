@@ -180,7 +180,7 @@ interface FieldProps {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  error?: string;
+  error?: string | undefined;
   placeholder?: string;
   helpText?: string;
   inputMode?: "text" | "numeric";

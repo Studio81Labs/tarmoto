@@ -49,7 +49,9 @@ export const api = createTarmotoClient({
           id: session.user.id,
           email: session.user.email!,
           displayName: session.user.displayName,
-          phone: session.user.phone,
+          ...(session.user.phone !== undefined
+            ? { phone: session.user.phone }
+            : {}),
         },
         session.accessToken,
       );
@@ -660,8 +662,8 @@ export interface RouteCollectionLibraryResponse {
 
 export interface CreateRouteCollectionInput {
   title: string;
-  description?: string;
-  visibility?: RouteCollectionVisibility;
+  description?: string | undefined;
+  visibility?: RouteCollectionVisibility | undefined;
 }
 
 export interface UpdateRouteCollectionInput {
@@ -1248,7 +1250,7 @@ export const roadsApi = {
       {
         method: "POST",
         body,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
       },
     );
 
@@ -1344,7 +1346,7 @@ export const usersApi = {
     const res = await fetch(`${API_BASE}/users/me/avatar`, {
       method: "POST",
       body,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
     });
 
     if (!res.ok) {

@@ -193,7 +193,7 @@ export default function BikesPage() {
       <BikeFormModal
         open={modal.kind !== "closed"}
         mode={modal.kind === "edit" ? "edit" : "add"}
-        initialBike={modal.kind === "edit" ? modal.bike : undefined}
+        {...(modal.kind === "edit" ? { initialBike: modal.bike } : {})}
         onClose={() => setModal({ kind: "closed" })}
         onSubmit={handleSubmit}
       />

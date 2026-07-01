@@ -301,14 +301,18 @@ describe("importedRouteToTrip", () => {
     expect(trip.days).toHaveLength(1);
 
     const day = trip.days[0];
+    if (!day) throw new Error("expected a day");
     expect(day.dayNumber).toBe(1);
     expect(day.distanceKm).toBeGreaterThan(10);
     expect(day.routeGeometry?.type).toBe("LineString");
     expect(day.routeGeometry?.coordinates).toHaveLength(8);
 
     // Start and end waypoints always present.
-    expect(day.waypoints[0].type).toBe("start");
-    expect(day.waypoints[day.waypoints.length - 1].type).toBe("end");
+    const firstWp = day.waypoints[0];
+    const lastWp = day.waypoints[day.waypoints.length - 1];
+    if (!firstWp || !lastWp) throw new Error("expected start/end waypoints");
+    expect(firstWp.type).toBe("start");
+    expect(lastWp.type).toBe("end");
 
     const segments = day.segments ?? [];
     expect(segments.length).toBeGreaterThan(0);
@@ -326,8 +330,11 @@ describe("importedRouteToTrip", () => {
     if (!parsed.ok) throw new Error("parse failed");
     const a = importedRouteToTrip(parsed.route);
     const b = importedRouteToTrip(parsed.route);
-    const scoresA = (a.days[0].segments ?? []).map((s) => s.qualityScore);
-    const scoresB = (b.days[0].segments ?? []).map((s) => s.qualityScore);
+    const dayA = a.days[0];
+    const dayB = b.days[0];
+    if (!dayA || !dayB) throw new Error("expected a day");
+    const scoresA = (dayA.segments ?? []).map((s) => s.qualityScore);
+    const scoresB = (dayB.segments ?? []).map((s) => s.qualityScore);
     expect(scoresA).toEqual(scoresB);
   });
 
@@ -335,7 +342,9 @@ describe("importedRouteToTrip", () => {
     const parsed = parseImportedRoute(GPX_ROUTE_WITH_WPTS, "loop.gpx");
     if (!parsed.ok) throw new Error("parse failed");
     const trip = importedRouteToTrip(parsed.route);
-    const wps = trip.days[0].waypoints;
+    const day = trip.days[0];
+    if (!day) throw new Error("expected a day");
+    const wps = day.waypoints;
     // Bormio and Prato are co-located with start/end — should be deduped.
     expect(wps.filter((w) => w.name === "Bormio")).toHaveLength(1);
     expect(wps.filter((w) => w.name === "Prato")).toHaveLength(1);
@@ -358,14 +367,16 @@ describe("importedRouteToTrip", () => {
     const parsed = parseImportedRoute(gpx, "loop.gpx");
     if (!parsed.ok) throw new Error("parse failed");
     const trip = importedRouteToTrip(parsed.route);
-    const wps = trip.days[0].waypoints;
+    const day = trip.days[0];
+    if (!day) throw new Error("expected a day");
+    const wps = day.waypoints;
     // Mid-route waypoint must not be promoted to start/end…
     expect(wps.find((w) => w.type === "start")?.name).toBe("Start");
     expect(wps.find((w) => w.type === "end")?.name).toBe("End");
     // …and should survive as a via with its actual name.
     const vias = wps.filter((w) => w.type === "via");
     expect(vias).toHaveLength(1);
-    expect(vias[0].name).toBe("Scenic viewpoint");
+    expect(vias[0]?.name).toBe("Scenic viewpoint");
   });
 
   it("estimates duration at roughly 55 km/h average with a 30-minute floor", () => {
@@ -373,6 +384,7 @@ describe("importedRouteToTrip", () => {
     if (!parsed.ok) throw new Error("parse failed");
     const trip = importedRouteToTrip(parsed.route);
     const day = trip.days[0];
+    if (!day) throw new Error("expected a day");
     const projected = Math.round((day.distanceKm / 55) * 60);
     expect(day.durationMinutes).toBe(Math.max(30, projected));
   });

@@ -145,11 +145,13 @@ describe("flattenTripRoute", () => {
   });
 
   it("skips non-finite coordinates in routeGeometry", () => {
+    const baseDay = validTrip.days[0];
+    if (!baseDay) throw new Error("expected a base day");
     const tripWithBad: Trip = {
       ...validTrip,
       days: [
         {
-          ...validTrip.days[0],
+          ...baseDay,
           routeGeometry: {
             type: "LineString",
             coordinates: [

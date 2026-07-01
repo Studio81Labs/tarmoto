@@ -291,7 +291,7 @@ export function createRegionDrawControl(
       opts.onRegionCleared?.();
     },
     setDrawn(bbox) {
-      drawnBbox = bbox ? (normalizeBbox([...bbox]) as RegionDrawBbox) : null;
+      drawnBbox = bbox ? normalizeBbox(bbox) : null;
       paintBbox(drawnBbox);
     },
     destroy() {
@@ -503,7 +503,7 @@ function applyResize(
   return [west, south, east, north];
 }
 
-function normalizeBbox(bbox: number[]): RegionDrawBbox {
+function normalizeBbox(bbox: RegionDrawBbox): RegionDrawBbox {
   const [a, b, c, d] = bbox;
   const west = Math.min(a, c);
   let east = Math.max(a, c);

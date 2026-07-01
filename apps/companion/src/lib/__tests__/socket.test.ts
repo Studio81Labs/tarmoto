@@ -313,7 +313,15 @@ describe("lib/socket", () => {
     } = await import("../socket");
 
     connectSocket(null);
-    const seen: Record<string, unknown[]> = {
+    const seen: {
+      cursor: unknown[];
+      presence: unknown[];
+      created: unknown[];
+      deleted: unknown[];
+      voted: unknown[];
+      resolved: unknown[];
+      activity: unknown[];
+    } = {
       cursor: [],
       presence: [],
       created: [],

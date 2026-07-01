@@ -134,6 +134,14 @@ function parseBbox(raw: string | null): DiscoverBbox | null {
   const parts = raw.split(",").map(Number);
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
   const [w, s, e, n] = parts;
+  if (
+    w === undefined ||
+    s === undefined ||
+    e === undefined ||
+    n === undefined
+  ) {
+    return null;
+  }
   if (!(w < e && s < n)) return null;
   return [w, s, e, n];
 }

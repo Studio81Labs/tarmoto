@@ -151,14 +151,14 @@ export default async function SharedRidePage({
           <MetricTile
             label={t("Distance")}
             value={distance ? distance.value : "—"}
-            unit={distance?.unit}
             variant="ink"
             accentNumber
+            {...(distance?.unit !== undefined ? { unit: distance.unit } : {})}
           />
           <MetricTile
             label={t("Duration")}
             value={duration.value}
-            unit={duration.unit}
+            {...(duration.unit !== undefined ? { unit: duration.unit } : {})}
           />
           <MetricTile
             label={t("Quality")}
@@ -167,7 +167,7 @@ export default async function SharedRidePage({
                 ? ride.avg_road_quality.toFixed(1)
                 : "—"
             }
-            unit={ride.avg_road_quality != null ? "/5" : undefined}
+            {...(ride.avg_road_quality != null ? { unit: "/5" } : {})}
           />
           <MetricTile
             label={t("Curviness")}

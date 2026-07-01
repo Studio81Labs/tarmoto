@@ -528,11 +528,11 @@ export default function TripPlannerPage() {
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
   type TimelineDayLike = {
     dayNumber: number;
-    title?: string;
-    distanceKm?: number;
-    elevationGain?: number;
-    durationMinutes?: number;
-    overnightStop?: { name: string };
+    title?: string | undefined;
+    distanceKm?: number | undefined;
+    elevationGain?: number | undefined;
+    durationMinutes?: number | undefined;
+    overnightStop?: { name: string } | undefined;
   };
   const timelineDays: TimelineDayLike[] = activeTrip?.days ?? [
     { dayNumber: 1 },
@@ -1462,7 +1462,9 @@ export default function TripPlannerPage() {
               }
               collaboratorCursors={collabSession.cursors}
               suggestions={collabSession.suggestions}
-              onCursorMove={serverTripId ? collabSession.emitCursor : undefined}
+              {...(serverTripId
+                ? { onCursorMove: collabSession.emitCursor }
+                : {})}
               fitRouteToken={fitRouteToken}
             />
             {/* Focus-day toggle — only meaningful when there are multiple
@@ -2002,17 +2004,18 @@ function buildGenerationPayload(
   option?: TripGenerationOptionId,
 ) {
   const surfaces = generationSurfaces(params);
+  const bbox = drawnRegion ? formatBboxParam(drawnRegion) : undefined;
   return {
     start_location: {
       lat: startWaypoint.location.lat,
       lng: startWaypoint.location.lng,
     },
-    bbox: drawnRegion ? formatBboxParam(drawnRegion) : undefined,
-    option,
+    ...(bbox !== undefined ? { bbox } : {}),
+    ...(option !== undefined ? { option } : {}),
     avoid_highways: params.avoidHighways,
     avoid_tolls: params.avoidTolls,
     avoid_unpaved: params.avoidUnpaved,
-    surfaces: surfaces.length ? surfaces : undefined,
+    ...(surfaces.length ? { surfaces } : {}),
   };
 }
 function buildGenerationInputSignature(
@@ -2183,6 +2186,14 @@ function parseBboxParam(raw: string | null): RegionDrawBbox | null {
     return null;
   }
   const [west, south, east, north] = parts;
+  if (
+    west === undefined ||
+    south === undefined ||
+    east === undefined ||
+    north === undefined
+  ) {
+    return null;
+  }
   if (west >= east || south >= north) return null;
   if (west < -180 || east > 180 || south < -90 || north > 90) return null;
   return [
@@ -2330,7 +2341,9 @@ function buildImportedRoutePayload(trip: Trip) {
   return {
     title: trip.name,
     source_format: trip.importSourceFormat ?? "gpx",
-    geometry: coordinates.map(([lng, lat]) => ({ lng, lat })),
+    geometry: coordinates.flatMap(([lng, lat]) =>
+      lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],
+    ),
     waypoints: (firstDay?.waypoints ?? []).map((waypoint) => {
       const payload: {
         lat: number;
@@ -2378,7 +2391,7 @@ function WaypointEditor({
   dayNumber: number;
   waypoints: Array<{
     id: string;
-    name?: string;
+    name?: string | undefined;
     type: string;
   }>;
   onReorder: (fromIndex: number, toIndex: number) => void;

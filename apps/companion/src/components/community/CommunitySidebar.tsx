@@ -43,7 +43,7 @@ export function CommunitySidebar() {
       .then(setChallenge)
       .catch(() => undefined);
     void fetchRegionalLeaderboards({
-      currentUserId: currentUserId ?? undefined,
+      ...(currentUserId != null ? { currentUserId } : {}),
       limit: 8,
       signal: ac.signal,
     })

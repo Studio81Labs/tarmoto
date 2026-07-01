@@ -299,7 +299,7 @@ function buildRegeneratedWaypoints({
   end,
 }: {
   dayNumber: number;
-  existingDay?: TripDay;
+  existingDay?: TripDay | undefined;
   start: Waypoint;
   viaWaypoint: Waypoint;
   end: Waypoint;
@@ -409,8 +409,8 @@ function buildShiftedRoute(
     seededRange(variationSeed, 3, 0.018);
 
   return baseCoordinates.map(([lng, lat], index) => [
-    roundCoord(lng + lngOffset + index * 0.01),
-    roundCoord(lat + latOffset + index * 0.005),
+    roundCoord((lng ?? 0) + lngOffset + index * 0.01),
+    roundCoord((lat ?? 0) + latOffset + index * 0.005),
   ]);
 }
 
@@ -586,10 +586,7 @@ function cloneDay(day: TripDay): TripDay {
     routeGeometry: day.routeGeometry
       ? {
           type: "LineString",
-          coordinates: day.routeGeometry.coordinates.map(([lng, lat]) => [
-            lng,
-            lat,
-          ]),
+          coordinates: day.routeGeometry.coordinates.map((pos) => [...pos]),
         }
       : undefined,
     waypoints: day.waypoints.map(cloneWaypoint),

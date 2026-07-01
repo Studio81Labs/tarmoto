@@ -98,7 +98,7 @@ function FetchedPassesPanel({
   setMonth: (nextMonth: number) => void;
   isReadOnlyControlled: boolean;
   routes: PlannerClosureRoute[];
-  bbox?: string;
+  bbox?: string | undefined;
   showRouteWarnings: boolean;
 }) {
   const data = usePasses(month, routes, bbox ? { bbox } : undefined);

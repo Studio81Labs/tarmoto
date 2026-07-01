@@ -57,7 +57,7 @@ describe("useRecentRides", () => {
       signal: expect.anything(),
     });
     expect(result.current.rides).toHaveLength(1);
-    expect(result.current.rides[0].name).toBe("Stelvio");
+    expect(result.current.rides[0]?.name).toBe("Stelvio");
   });
 
   it("exposes error=true when the API returns an error", async () => {

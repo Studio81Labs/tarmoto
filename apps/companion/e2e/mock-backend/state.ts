@@ -36,7 +36,7 @@ export interface MockTrip {
    * Mirrors the backend's `TripSummaryDto.folder_id` so the detail
    * response can carry it through into list-view consumers.
    */
-  folder_id?: string | null;
+  folder_id?: string | null | undefined;
   created_at: string;
   updated_at: string;
 }
@@ -463,8 +463,9 @@ export class MockState {
   resolveSession(authHeader: string | undefined): MockSession | null {
     if (!authHeader) return null;
     const m = /^Bearer\s+(.+)$/i.exec(authHeader);
-    if (!m) return null;
-    return this.sessionsByAccess.get(m[1]) ?? null;
+    const token = m?.[1];
+    if (!token) return null;
+    return this.sessionsByAccess.get(token) ?? null;
   }
 }
 

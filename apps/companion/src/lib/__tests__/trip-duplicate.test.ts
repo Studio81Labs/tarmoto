@@ -92,10 +92,12 @@ describe("duplicateTripPayload", () => {
   });
 
   it("omits description and folder_id when absent", () => {
-    const payload = duplicateTripPayload(
-      makeTrip({ description: undefined, folder_id: undefined }),
-      { isOwner: true },
-    );
+    const {
+      description: _description,
+      folder_id: _folder_id,
+      ...trip
+    } = makeTrip();
+    const payload = duplicateTripPayload(trip, { isOwner: true });
     expect(payload).not.toHaveProperty("description");
     expect(payload).not.toHaveProperty("folder_id");
   });

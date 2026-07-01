@@ -139,7 +139,11 @@ function TripPrintPageContent() {
         </button>
       </div>
 
-      <TripPrintBody trip={trip} region={region} members={members} />
+      <TripPrintBody
+        trip={trip}
+        members={members}
+        {...(region !== undefined ? { region } : {})}
+      />
     </div>
   );
 }

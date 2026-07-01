@@ -24,7 +24,9 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
   return {
     id: overrides.id ?? "trip_1",
     name: overrides.name ?? "Untitled",
-    description: overrides.description,
+    ...(overrides.description !== undefined
+      ? { description: overrides.description }
+      : {}),
     status: overrides.status ?? "draft",
     num_days: overrides.num_days ?? days.length,
     days,
@@ -41,7 +43,9 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
     collaborators: overrides.collaborators ?? [
       { userId: "u1", displayName: "Me", role: "owner" },
     ],
-    folder_id: overrides.folder_id,
+    ...(overrides.folder_id !== undefined
+      ? { folder_id: overrides.folder_id }
+      : {}),
     createdAt: overrides.createdAt ?? "2026-04-01T00:00:00Z",
     updatedAt: overrides.updatedAt ?? "2026-04-15T00:00:00Z",
   };

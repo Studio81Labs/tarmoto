@@ -189,6 +189,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  secret: process.env.AUTH_SECRET,
+  ...(process.env.AUTH_SECRET !== undefined
+    ? { secret: process.env.AUTH_SECRET }
+    : {}),
   trustHost: true,
 });

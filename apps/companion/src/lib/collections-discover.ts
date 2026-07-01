@@ -33,7 +33,7 @@ export async function fetchDiscoverCollections(
   if (q.trim()) query.q = q.trim();
   const { data, error } = await api.GET("/api/v1/collections/discover", {
     params: { query },
-    signal,
+    ...(signal !== undefined ? { signal } : {}),
   });
   if (error || !data) return { items: [], total: 0 };
   return { items: data.items, total: data.total };

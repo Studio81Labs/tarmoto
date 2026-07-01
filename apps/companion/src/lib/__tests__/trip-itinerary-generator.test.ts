@@ -58,8 +58,9 @@ describe("trip-itinerary-generator", () => {
   it("does not collapse initial seeded variation to the negative max offset", () => {
     const bestFitDay = generateTripOptions(params)[0]!.trip.days[0]!;
     const baseLng = DEMO_TRIP.days[0]!.waypoints[0]!.location.lng;
-    const inferredSeedOffset =
-      bestFitDay.routeGeometry!.coordinates[0]![0] - baseLng - 0.01;
+    const seedLng = bestFitDay.routeGeometry!.coordinates[0]![0];
+    if (seedLng === undefined) throw new Error("expected a seed coordinate");
+    const inferredSeedOffset = seedLng - baseLng - 0.01;
 
     expect(inferredSeedOffset).not.toBeCloseTo(-0.024, 3);
   });

@@ -197,7 +197,7 @@ function waypointLabel(wp: Waypoint, index: number): string {
   // want a readable label instead of a TypeError on `type[0]`.
   const rawType =
     typeof wp.type === "string" && wp.type.length > 0 ? wp.type : "stop";
-  const typeLabel = rawType[0].toUpperCase() + rawType.slice(1);
+  const typeLabel = rawType.charAt(0).toUpperCase() + rawType.slice(1);
   return `${typeLabel} ${index + 1}`;
 }
 function Pill({

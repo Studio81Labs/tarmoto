@@ -24,7 +24,7 @@ export async function fetchSuggestedRiders(
 ): Promise<SuggestedRider[]> {
   const { data, error } = await api.GET("/api/v1/users/suggestions", {
     params: { query: { limit: String(limit) } },
-    signal,
+    ...(signal !== undefined ? { signal } : {}),
   });
   if (error || !data) return [];
   return data;
@@ -49,13 +49,18 @@ export async function fetchActiveChallengeCard(
   now = new Date(),
   signal?: AbortSignal,
 ): Promise<ActiveChallengeCard | null> {
-  const challenges = await fetchActiveChallenges({ signal });
+  const challenges = await fetchActiveChallenges(
+    signal !== undefined ? { signal } : {},
+  );
   if (challenges.length === 0) return null;
   // Soonest to end so the card reflects the most time-pressured goal.
   const next = [...challenges].sort((a, b) =>
     a.ends_at.localeCompare(b.ends_at),
   )[0]!;
-  const detail = await fetchChallengeDetail(next.id, { signal });
+  const detail = await fetchChallengeDetail(
+    next.id,
+    signal !== undefined ? { signal } : {},
+  );
   const endMs = new Date(next.ends_at).getTime();
   const daysLeft = Math.max(0, Math.ceil((endMs - now.getTime()) / 86_400_000));
   return {

@@ -1153,7 +1153,7 @@ function FolderModal({
   mode: "create" | "rename";
   initialName: string;
   folders: TripFolder[];
-  excludeId?: string;
+  excludeId?: string | undefined;
   onClose: () => void;
   onSubmit: (name: string) => void;
 }) {

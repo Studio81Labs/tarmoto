@@ -16,7 +16,9 @@ export function AuthSync() {
           id: session.user.id,
           email: session.user.email!,
           displayName: session.user.displayName,
-          phone: session.user.phone,
+          ...(session.user.phone !== undefined
+            ? { phone: session.user.phone }
+            : {}),
         },
         session.accessToken,
       );

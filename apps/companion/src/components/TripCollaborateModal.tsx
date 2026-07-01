@@ -371,10 +371,12 @@ function SuggestionsTab({
   serverTripId: string | null;
   currentUserId: string | null;
   isOwner: boolean;
-  externalSuggestions?: TripSuggestion[];
-  onExternalChange?: React.Dispatch<React.SetStateAction<TripSuggestion[]>>;
-  externalError?: string | null;
-  onPromoted?: (id: string) => void;
+  externalSuggestions?: TripSuggestion[] | undefined;
+  onExternalChange?:
+    | React.Dispatch<React.SetStateAction<TripSuggestion[]>>
+    | undefined;
+  externalError?: string | null | undefined;
+  onPromoted?: ((id: string) => void) | undefined;
 }) {
   const [localSuggestions, setLocalSuggestions] = useState<TripSuggestion[]>(
     [],
@@ -436,11 +438,11 @@ function SuggestionsTab({
     setCreating(true);
     setError(null);
     try {
+      const trimmedDescription = description.trim();
       const { data } = await tripCollabApi.createSuggestion(serverTripId, {
         title: title.trim(),
-        description: description.trim() || undefined,
-        lat: anchor?.lat,
-        lng: anchor?.lng,
+        ...(trimmedDescription ? { description: trimmedDescription } : {}),
+        ...(anchor ? { lat: anchor.lat, lng: anchor.lng } : {}),
       });
       // Dedupe by id — if the broadcast landed first, replace in place.
       setSuggestions((prev) => {
@@ -736,7 +738,7 @@ function ActivityTab({
 }: {
   trip: Trip | null;
   serverTripId: string | null;
-  onPromoted?: (id: string) => void;
+  onPromoted?: ((id: string) => void) | undefined;
 }) {
   const [entries, setEntries] = useState<TripActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -874,7 +876,7 @@ function PromoteTripCTA({
   trip: Trip | null;
   headline: string;
   body: string;
-  onPromoted?: (id: string) => void;
+  onPromoted?: ((id: string) => void) | undefined;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

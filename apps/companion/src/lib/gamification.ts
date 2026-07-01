@@ -41,7 +41,7 @@ export interface Challenge {
   /** ISO string. Challenges past their end date are filtered out. */
   endsAt: string;
   /** Optional reward copy shown on completion. */
-  reward?: string;
+  reward?: string | undefined;
 }
 
 export type LeaderboardMetric =

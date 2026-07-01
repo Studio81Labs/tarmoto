@@ -493,7 +493,7 @@ function TierHero({
       .then(({ data }) => {
         const region = data?.home_region?.trim() || undefined;
         return fetchRegionalLeaderboards({
-          region,
+          ...(region !== undefined ? { region } : {}),
           signal: controller.signal,
         });
       })

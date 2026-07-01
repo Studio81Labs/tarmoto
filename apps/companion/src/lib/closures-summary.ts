@@ -108,7 +108,9 @@ export function buildTripClosureRoutes(
         label: day.title
           ? `Day ${day.dayNumber} · ${day.title}`
           : `Day ${day.dayNumber}`,
-        points: coords.map(([lng, lat]) => ({ lng, lat })),
+        points: coords.flatMap(([lng, lat]) =>
+          lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],
+        ),
       },
     ];
   });
