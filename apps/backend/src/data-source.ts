@@ -111,6 +111,7 @@ import { AddNapClosureReconciliation1784000000000 } from './migrations/178400000
 import { ClearEndedGroupRideLocations1785000000000 } from './migrations/1785000000000-ClearEndedGroupRideLocations.js';
 import { AddRoadSegmentOsmIdentity1786000000000 } from './migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 import { AddPois1787000000000 } from './migrations/1787000000000-AddPois.js';
+import { AddSurfaceFromReading1788000000000 } from './migrations/1788000000000-AddSurfaceFromReading.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -240,6 +241,7 @@ export const AppDataSource = new DataSource({
     ClearEndedGroupRideLocations1785000000000,
     AddRoadSegmentOsmIdentity1786000000000,
     AddPois1787000000000,
+    AddSurfaceFromReading1788000000000,
   ],
   synchronize: false,
 });

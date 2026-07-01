@@ -46,6 +46,7 @@ CREATE TABLE road_segments (
     curviness_score FLOAT DEFAULT 0,         -- 0-5, computed from geometry
     quality_score   FLOAT,                   -- 1-5, aggregated from readings
     surface_type    VARCHAR(30) DEFAULT 'unknown',  -- asphalt, concrete, cobblestone, gravel, dirt
+    surface_from_reading BOOLEAN NOT NULL DEFAULT false, -- #796: true once a rider classifies the surface; durable (survives location_retention sweep) so the OSM importer refreshes the seed only while false
     reading_count   INT DEFAULT 0,           -- number of rider passes (post-filter)
     confidence      INT DEFAULT 0,           -- 0-100, increases with more readings
     last_filtered_count INT NOT NULL DEFAULT 0, -- #495: rows dropped as >2σ outliers on the latest aggregation run
@@ -519,6 +520,10 @@ BEGIN
             ELSE 0
         END,
         surface_type = COALESCE((SELECT surface_type FROM surface_mode), rs.surface_type),
+        -- #796: sticky true once a rider classifies the surface, so it outlives
+        -- the location_retention sweep like the aggregate surface_type it guards.
+        surface_from_reading = rs.surface_from_reading
+            OR (SELECT surface_type FROM surface_mode) IS NOT NULL,
         last_filtered_count = fc.filtered_count,
         last_updated = NOW()
     FROM agg, fc

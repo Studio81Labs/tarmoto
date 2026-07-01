@@ -68,6 +68,17 @@ export class RoadSegment {
   @Column({ type: 'varchar', length: 30, default: 'unknown' })
   surface_type!: string;
 
+  /**
+   * Whether `surface_type` is rider-derived (#796). Set true (and sticky) by
+   * `update_road_quality_for_segment` once a non-null `surface_readings.surface_type`
+   * exists for the segment. Durable — unlike the raw readings it is derived from,
+   * it survives the `location_retention` sweep, so the OSM importer can safely
+   * refresh the OSM `surface` seed only while this is false without ever
+   * clobbering a crowd-classified surface.
+   */
+  @Column({ type: 'boolean', default: false })
+  surface_from_reading!: boolean;
+
   @Column({ type: 'int', default: 0 })
   reading_count!: number;
 

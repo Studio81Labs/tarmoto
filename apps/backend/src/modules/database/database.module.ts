@@ -27,6 +27,7 @@ import { AddTripActivity1715100000000 } from '../../migrations/1715100000000-Add
 import { AddSurfaceReadingClientModelVersion1715200000000 } from '../../migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
 import { AddTripShareTripLink1715250000000 } from '../../migrations/1715250000000-AddTripShareTripLink.js';
 import { AddFunZoneClusteringSeed1715300000000 } from '../../migrations/1715300000000-AddFunZoneClusteringSeed.js';
+import { AddTripDayGenerationColumns1715350000000 } from '../../migrations/1715350000000-AddTripDayGenerationColumns.js';
 import { AddCrashAlerts1715400000000 } from '../../migrations/1715400000000-AddCrashAlerts.js';
 import { AddAccountDeletion1715500000000 } from '../../migrations/1715500000000-AddAccountDeletion.js';
 import { AddDataExportRequests1715600000000 } from '../../migrations/1715600000000-AddDataExportRequests.js';
@@ -40,6 +41,7 @@ import { AddRideStatsLeanDistribution1716200000000 } from '../../migrations/1716
 import { MigrateLegacyNotificationPreferences1716300000000 } from '../../migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
 import { AddPrivacyPreferences1716400000000 } from '../../migrations/1716400000000-AddPrivacyPreferences.js';
 import { AddRouteCollections1716500000000 } from '../../migrations/1716500000000-AddRouteCollections.js';
+import { AddHomeRegionIndex1716600000000 } from '../../migrations/1716600000000-AddHomeRegionIndex.js';
 import { AddWeatherAlertDispatches1716700000000 } from '../../migrations/1716700000000-AddWeatherAlertDispatches.js';
 import { AddRouteCollectionFollows1716800000000 } from '../../migrations/1716800000000-AddRouteCollectionFollows.js';
 import { AddBikes1716900000000 } from '../../migrations/1716900000000-AddBikes.js';
@@ -63,6 +65,7 @@ import { AddNapClosureReconciliation1784000000000 } from '../../migrations/17840
 import { ClearEndedGroupRideLocations1785000000000 } from '../../migrations/1785000000000-ClearEndedGroupRideLocations.js';
 import { AddRoadSegmentOsmIdentity1786000000000 } from '../../migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
 import { AddPois1787000000000 } from '../../migrations/1787000000000-AddPois.js';
+import { AddSurfaceFromReading1788000000000 } from '../../migrations/1788000000000-AddSurfaceFromReading.js';
 import {
   User,
   UserContact,
@@ -231,6 +234,7 @@ const entities = [
             AddSurfaceReadingClientModelVersion1715200000000,
             AddTripShareTripLink1715250000000,
             AddFunZoneClusteringSeed1715300000000,
+            AddTripDayGenerationColumns1715350000000,
             AddCrashAlerts1715400000000,
             AddAccountDeletion1715500000000,
             AddDataExportRequests1715600000000,
@@ -244,6 +248,7 @@ const entities = [
             MigrateLegacyNotificationPreferences1716300000000,
             AddPrivacyPreferences1716400000000,
             AddRouteCollections1716500000000,
+            AddHomeRegionIndex1716600000000,
             AddWeatherAlertDispatches1716700000000,
             AddRouteCollectionFollows1716800000000,
             AddBikes1716900000000,
@@ -267,6 +272,7 @@ const entities = [
             ClearEndedGroupRideLocations1785000000000,
             AddRoadSegmentOsmIdentity1786000000000,
             AddPois1787000000000,
+            AddSurfaceFromReading1788000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppDataSource } from '../data-source.js';
 
@@ -44,5 +44,30 @@ describe('migration registry — every file on disk is registered', () => {
       .sort();
 
     expect(registered).toEqual(filesOnDisk);
+  });
+
+  // The Nest runtime (`migrationsRun: true`) replays migrations from a SEPARATE
+  // inline list in database.module.ts, not from AppDataSource. A migration
+  // registered only in data-source.ts applies via the CLI but is silently
+  // skipped on a fresh runtime bootstrap, so the entity + queries read a column
+  // that was never added. The list is inline (not importable), so assert by
+  // source text that every migration class is present.
+  it('registers every migration in the runtime database.module.ts too', () => {
+    const source = readFileSync(
+      join(__dirname, '..', 'modules', 'database', 'database.module.ts'),
+      'utf8',
+    );
+    const filesOnDisk = readdirSync(join(__dirname, '.'))
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'))
+      .map((name) => {
+        const match = name.match(/^(\d+)-(.+)\.ts$/);
+        if (!match) throw new Error(`unexpected migration filename: ${name}`);
+        return `${match[2]}${match[1]}`;
+      });
+
+    const missing = filesOnDisk.filter(
+      (className) => !source.includes(className),
+    );
+    expect(missing).toEqual([]);
   });
 });
