@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import {
   CanActivate,
   ExecutionContext,
@@ -28,6 +29,19 @@ import { AdminAuditService } from './admin-audit.interceptor.js';
 
 export interface AdminRequest extends Request {
   adminUser?: AdminUser;
+}
+
+// Header the admin proxy (Cloudflare Worker) injects to prove a request
+// transited the trusted proxy rather than hitting the admin API directly.
+const INTERNAL_TOKEN_HEADER = 'x-internal-token';
+
+// Length-guarded constant-time compare — timingSafeEqual throws on a length
+// mismatch, and the provided token is attacker-controlled.
+function tokensEqual(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 // Keys are always in bare /admin/... form; normalizePath() strips the global
@@ -61,11 +75,48 @@ export class InternalGuard implements CanActivate {
     // /admin/... paths (e.g. in tests where setGlobalPrefix is not applied).
     const normalized = this.normalizePath(request);
     if (!normalized.startsWith('/admin/')) return true;
+
+    // Outer gate for the whole admin API (incl. public auth paths): when an
+    // internal token is configured, every admin request must carry the header
+    // the admin proxy injects. Runs before the public-path bypass so login /
+    // SSO are reachable only through the proxy too.
+    this.assertInternalToken(request);
+
     if (this.isPublicAdminAuthPath(normalized, request)) return true;
 
     await this.authenticate(request);
     this.assertRole(context, request);
     return true;
+  }
+
+  private assertInternalToken(request: AdminRequest): void {
+    const expected = this.config
+      .get<string>('TARMOTO_INTERNAL_API_TOKEN')
+      ?.trim();
+
+    if (!expected) {
+      // Fail closed in production: the admin API must only be reachable
+      // through the trusted admin proxy (which injects the token), never
+      // served ungated because the secret was forgotten. In dev/test the gate
+      // is off so the Vite dev proxy reaches the API with just the session
+      // cookie. Mirrors resolveAdminSessionSecret's prod-only requirement.
+      if (this.config.get<string>('NODE_ENV') === 'production') {
+        this.deny(request, 'internal_token_not_configured');
+        throw new UnauthorizedException('Internal admin API not configured');
+      }
+      return;
+    }
+
+    const header = request.headers[INTERNAL_TOKEN_HEADER];
+    const provided = (Array.isArray(header) ? header[0] : header)?.trim();
+    if (!provided) {
+      this.deny(request, 'missing_internal_token');
+      throw new UnauthorizedException('Invalid internal token');
+    }
+    if (!tokensEqual(provided, expected)) {
+      this.deny(request, 'invalid_internal_token');
+      throw new UnauthorizedException('Invalid internal token');
+    }
   }
 
   private async authenticate(request: AdminRequest): Promise<void> {

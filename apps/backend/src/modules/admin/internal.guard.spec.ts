@@ -20,14 +20,16 @@ function contextFor(
   method: string,
   url: string,
   cookieToken?: string,
+  internalToken?: string,
 ): ExecutionContext {
+  const headers: Record<string, string> = {};
+  if (cookieToken) headers.cookie = `tarmoto_admin_access=${cookieToken}`;
+  if (internalToken !== undefined) headers['x-internal-token'] = internalToken;
   const req: Record<string, unknown> = {
     method,
     url,
     originalUrl: url,
-    headers: cookieToken
-      ? { cookie: `tarmoto_admin_access=${cookieToken}` }
-      : {},
+    headers,
   };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
@@ -37,9 +39,14 @@ function contextFor(
   } as unknown as ExecutionContext;
 }
 
+function configWith(vals: Record<string, string | undefined>): ConfigService {
+  return { get: (key: string) => vals[key] } as unknown as ConfigService;
+}
+
 function guardWith(opts: {
   session?: unknown;
   requiredRoles?: string[];
+  config?: ConfigService;
 }): InternalGuard {
   const reflector = {
     getAllAndOverride: () => opts.requiredRoles,
@@ -59,7 +66,7 @@ function guardWith(opts: {
   const audit = { record: jest.fn() };
   return new InternalGuard(
     jwt,
-    config,
+    opts.config ?? config,
     reflector,
     sessions as never,
     audit as never,
@@ -86,6 +93,86 @@ describe('InternalGuard', () => {
     await expect(
       guard.canActivate(contextFor('GET', '/admin/metrics')),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  describe('internal token gate', () => {
+    const PROD_TOKEN = {
+      NODE_ENV: 'production',
+      TARMOTO_INTERNAL_API_TOKEN: 's3kret-internal-token',
+    };
+
+    it('fails closed in production when no internal token is configured', async () => {
+      const guard = guardWith({
+        config: configWith({ NODE_ENV: 'production' }),
+      });
+      await expect(
+        guard.canActivate(contextFor('POST', '/admin/auth/login')),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('leaves the gate off in dev when no internal token is configured', async () => {
+      const guard = guardWith({
+        config: configWith({ NODE_ENV: 'development' }),
+      });
+      await expect(
+        guard.canActivate(contextFor('POST', '/admin/auth/login')),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects an admin request missing the internal token when configured', async () => {
+      const guard = guardWith({ config: configWith(PROD_TOKEN) });
+      await expect(
+        guard.canActivate(contextFor('POST', '/admin/auth/login')),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a wrong internal token when configured', async () => {
+      const guard = guardWith({ config: configWith(PROD_TOKEN) });
+      await expect(
+        guard.canActivate(
+          contextFor('POST', '/admin/auth/login', undefined, 'wrong-token'),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('accepts a valid internal token then applies the public-path bypass', async () => {
+      const guard = guardWith({ config: configWith(PROD_TOKEN) });
+      await expect(
+        guard.canActivate(
+          contextFor(
+            'POST',
+            '/admin/auth/login',
+            undefined,
+            's3kret-internal-token',
+          ),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('accepts a valid internal token plus a valid session on a protected path', async () => {
+      const token = await jwt.signAsync(
+        { sub: 'a1', sid: 's1', scope: ADMIN_ACCESS_TOKEN_SCOPE },
+        { secret: SECRET },
+      );
+      const guard = guardWith({
+        config: configWith({
+          ...PROD_TOKEN,
+          TARMOTO_ADMIN_SESSION_SECRET: SECRET,
+        }),
+        session: {
+          id: 's1',
+          admin_user_id: 'a1',
+          revoked_at: null,
+          expires_at: new Date(Date.now() + 100000),
+          admin_user: { id: 'a1', role: 'support', status: 'active' },
+        },
+      });
+      await expect(
+        guard.canActivate(
+          contextFor('GET', '/admin/metrics', token, 's3kret-internal-token'),
+        ),
+      ).resolves.toBe(true);
+    });
   });
 
   it('allows a valid session and sets adminUser', async () => {
