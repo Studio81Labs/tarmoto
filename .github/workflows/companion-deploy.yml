@@ -59,6 +59,12 @@ jobs:
   prepare-openapi:
     if: vars.COMPANION_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
     uses: ./.github/workflows/_build-openapi.yml
+    with:
+      # The deploy job is environment-gated (companion-preview/production) and
+      # may sit behind a required-reviewer approval; keep the spec artifact
+      # well past the 1-day default so a multi-day hold doesn't expire it
+      # before the deploy downloads it.
+      artifact-retention-days: 7
 
   deploy:
     name: Build & deploy to Cloudflare Workers
