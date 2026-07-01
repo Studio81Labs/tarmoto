@@ -62,5 +62,16 @@ jobs:
       - name: Verify generated TS schema exists
         run: test -f packages/openapi-client/src/generated/schema.d.ts
 
+      # Freshness gate: the client is committed and openapi-typescript is pinned
+      # (exact), so regeneration is deterministic — a diff here means a backend
+      # DTO/controller change landed without regenerating the committed client.
+      - name: Verify committed openapi-client is up to date
+        run: |
+          if ! git diff --quiet -- packages/openapi-client/src/generated/schema.d.ts; then
+            echo "::error::packages/openapi-client/src/generated/schema.d.ts is stale. Run 'pnpm openapi:gen' and commit the result."
+            git diff --stat -- packages/openapi-client/src/generated/schema.d.ts
+            exit 1
+          fi
+
       - name: Typecheck openapi-client
         run: pnpm -C packages/openapi-client run typecheck
