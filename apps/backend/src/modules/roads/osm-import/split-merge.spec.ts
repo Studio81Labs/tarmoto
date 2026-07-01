@@ -76,6 +76,24 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toHaveLength(1); // the other existing row is orphaned
   });
 
+  it('keeps the id of an unchanged sub-10 m segment (perfect match bypasses the floor)', () => {
+    // A ~8 m connector/driveway re-imported unchanged. Its overlap length is
+    // below the endpoint-leak floor, but a near-perfect containment is genuine at
+    // any length, so it must still carry its id rather than go stale + reinsert.
+    const existing: ExistingSegment[] = [
+      { id: 'short', coords: seg(0, 0.08 * M) },
+    ];
+    const incoming = [seg(0, 0.08 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'short', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
   it('does not match two short segments that only touch at an endpoint', () => {
     // A ~10 m existing row and a ~10 m incoming row that are adjacent (share one
     // tip). Half of each is within the 5 m tolerance of the other's endpoint —

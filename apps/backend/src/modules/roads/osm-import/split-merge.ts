@@ -29,6 +29,11 @@ const DEFAULT_MIN_OVERLAP = 0.5;
 const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
+/** A match this strongly bidirectional is a full containment (a 1:1 match or an
+ *  unchanged segment), genuine at any length — so it bypasses the short-match
+ *  length floor. Below it, only a partial/adjacent overlap, which the floor
+ *  guards. */
+const NEAR_PERFECT_OVERLAP = 0.9;
 
 export interface ExistingSegment {
   id: string;
@@ -226,12 +231,17 @@ export function planReassignment(
       // 90 m child fully contained, fraction 1 each; length puts the 90 m first so
       // it inherits the history) and to gate.
       const overlapLen = fwd * polylineMeters(incoming[n]!);
-      // Require the shared length to clear a tolerance-aware floor as well as the
-      // fraction majority. Two short segments that merely touch at an endpoint
-      // each have ~`tolM` of length within tolerance of the other's tip — a false
-      // majority for ~10 m stubs — so demand more than 2·tolM of genuine overlap
-      // before one can carry another's identity onto an adjacent road.
-      if (score > minOverlap && overlapLen > 2 * tolM) {
+      // A PARTIAL majority must also clear a tolerance-aware length floor: two
+      // short segments that merely touch at an endpoint each have ~`tolM` of
+      // length within tolerance of the other's tip — a false majority for ~10 m
+      // stubs. But a near-perfect containment (an unchanged segment, or one fully
+      // inside another on a split/merge) is genuine at any length, so it bypasses
+      // the floor — otherwise an idempotent re-import of a <10 m connector would
+      // lose its id.
+      const eligible =
+        score > minOverlap &&
+        (score >= NEAR_PERFECT_OVERLAP || overlapLen > 2 * tolM);
+      if (eligible) {
         pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }
     }
