@@ -226,11 +226,20 @@ export function planReassignment(
       // segment contained in the other (a split/merge) — max ~1.0 — while a short
       // partial overlap of two mostly-different stretches stays low both ways.
       const score = Math.max(fwd, rev);
-      // Shared LENGTH — the fraction of the incoming that lies on the existing,
-      // scaled to metres. Used both to rank (an uneven split leaves a 10 m and a
-      // 90 m child fully contained, fraction 1 each; length puts the 90 m first so
-      // it inherits the history) and to gate.
-      const overlapLen = fwd * polylineMeters(incoming[n]!);
+      // Shared LENGTH — the length of the stretch the two segments genuinely
+      // share, taken as the SMALLER of the two directional covered lengths
+      // (incoming fraction × incoming length, and existing fraction × existing
+      // length). Using the incoming side alone would let an endpoint-only touch
+      // between a short stub and a long neighbour inflate the shared length: the
+      // stub covers only ~tolerance of the long incoming, but scaling that small
+      // fraction by the long length yields metres of phantom overlap that defeats
+      // the floor. The min is the conservative real overlap; it also ranks an
+      // uneven split by the longer child (a 10 m + 90 m split each fully contained
+      // scores min 10 m vs 90 m, so the 90 m inherits the history).
+      const overlapLen = Math.min(
+        fwd * polylineMeters(incoming[n]!),
+        rev * polylineMeters(existing[e]!.coords),
+      );
       // A PARTIAL majority must also clear a tolerance-aware length floor: two
       // short segments that merely touch at an endpoint each have ~`tolM` of
       // length within tolerance of the other's tip — a false majority for ~10 m

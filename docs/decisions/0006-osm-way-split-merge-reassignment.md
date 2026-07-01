@@ -59,13 +59,18 @@ carry-over requires a **strict majority** (> 0.5), so a segment overlapping only
 a minority of an existing row (a mostly-new or extended stretch) is inserted
 fresh rather than silently inheriting another road's reviews. A **partial**
 majority also requires the shared **length** to exceed a tolerance-aware floor
-(> 2·tolerance): two very short segments that merely touch at an endpoint each
-have ~tolerance of length within tolerance of the other's tip — a false majority
-for ~10 m stubs — so the floor stops one stub's identity leaking onto an adjacent
-road. A **near-perfect** match (score ≥ 0.9 — an unchanged segment, or one fully
-contained in another on a split/merge) bypasses this floor: it is genuine at any
-length, so an idempotent re-import of a sub-10 m connector/driveway keeps its id
-instead of being tombstoned and reinserted.
+(> 2·tolerance): two segments that merely touch at an endpoint each have
+~tolerance of length within tolerance of the other's tip — a false majority for
+short stubs — so the floor stops one stub's identity leaking onto an adjacent
+road. The shared length is the **smaller of the two directional covered lengths**
+(incoming-fraction × incoming-length and existing-fraction × existing-length):
+measuring only the incoming side would let a short stub touching the _end_ of a
+long incoming segment inflate the covered length (a small fraction of a long
+neighbour is still several metres) and defeat the floor, even though the real
+overlap is ~zero. A **near-perfect** match (score ≥ 0.9 — an unchanged segment, or
+one fully contained in another on a split/merge) bypasses the floor entirely: it
+is genuine at any length, so an idempotent re-import of a sub-10 m
+connector/driveway keeps its id instead of being tombstoned and reinserted.
 
 Because each existing id is claimed once:
 

@@ -109,6 +109,25 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['s']);
   });
 
+  it('does not carry a short stub onto a long incoming that only touches its end', () => {
+    // A ~9 m stale existing stub ending exactly where a normal ~100 m incoming
+    // segment starts. `rev` clears the majority (a few stub samples fall within
+    // tolerance of the shared tip), and scaling that small `fwd` by the long
+    // incoming's length would inflate the covered length past the floor — but the
+    // REAL shared length is ~0, so the min-of-both-directions floor must reject it
+    // rather than leak the stub's UUID/history onto the adjacent new road.
+    const existing: ExistingSegment[] = [
+      { id: 'stub', coords: seg(0, 0.09 * M) },
+    ];
+    const incoming = [seg(0.09 * M, 0.09 * M + M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['stub']);
+  });
+
   it('disjoint geometry: no carry-over — all inserts, all existing stale', () => {
     const existing: ExistingSegment[] = [{ id: 'far', coords: seg(0, M) }];
     // ~1° north — kilometres away, no overlap.
