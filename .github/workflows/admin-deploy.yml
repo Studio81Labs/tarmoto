@@ -11,13 +11,12 @@ name: Admin Deploy
 #   push tag v*        -> production
 #   workflow_dispatch  -> choose staging or production
 #
-# Kill switch: ADMIN_DEPLOY_ENABLED must be "true" (off by default until the
-# vars/secrets below are set — like companion-deploy).
+# Until the vars/secrets below are configured the deploy job fails fast on the
+# missing-value guards — expected; wire them up before relying on it.
 #
 # Required repo secret:  CLOUDFLARE_API_TOKEN
 # Required repo vars:    CLOUDFLARE_ACCOUNT_ID, ADMIN_WORKERS_SUBDOMAIN,
-#                        ADMIN_PROD_WORKER_NAME, ADMIN_STAGING_WORKER_NAME,
-#                        ADMIN_DEPLOY_ENABLED
+#                        ADMIN_PROD_WORKER_NAME, ADMIN_STAGING_WORKER_NAME
 # Required per-environment (staging / production):
 #   var    ADMIN_API_BASE_URL          backend origin the worker proxies to
 #   secret TARMOTO_INTERNAL_API_TOKEN   MUST equal the backend's token on the
@@ -54,7 +53,6 @@ jobs:
   # Build the spec once from main HEAD (the commit the backend actually serves —
   # Coolify deploys main HEAD) so the admin's generated client matches it.
   prepare-openapi:
-    if: vars.ADMIN_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
     uses: ./.github/workflows/_build-openapi.yml
     with:
       ref: refs/heads/main
@@ -62,7 +60,6 @@ jobs:
 
   deploy:
     name: Build & deploy admin console (Cloudflare)
-    if: vars.ADMIN_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
     needs: prepare-openapi
     runs-on: ubuntu-latest
     environment:
