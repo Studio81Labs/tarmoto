@@ -1,17 +1,18 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": false,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
     "jsx": "react-jsx",
+    "noEmit": true,
+    // Next.js app: emits no library declarations. The shared base turns
+    // `declaration` on (for the publishable packages); disable it here so the
+    // compiler doesn't demand portable annotations on re-exported inferred
+    // types (TS2742).
+    "declaration": false,
+    "declarationMap": false,
     "incremental": true,
     "plugins": [
       {
