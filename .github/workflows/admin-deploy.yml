@@ -1,0 +1,201 @@
+name: Admin Deploy
+
+# Admin console -> Cloudflare Workers: the static SPA (./dist) + worker.mjs,
+# which proxies /api/v1/* to the backend (injecting the x-internal-token the
+# backend InternalGuard requires) so the tarmoto_admin_* session cookies stay
+# first-party. Mirrors companion-deploy's model; the worker + backend gate live
+# in apps/admin/worker.mjs and the backend InternalGuard.
+#
+# Deploy model:
+#   push to main       -> staging     (auto, path-filtered)
+#   push tag v*        -> production
+#   workflow_dispatch  -> choose staging or production
+#
+# Kill switch: ADMIN_DEPLOY_ENABLED must be "true" (off by default until the
+# vars/secrets below are set — like companion-deploy).
+#
+# Required repo secret:  CLOUDFLARE_API_TOKEN
+# Required repo vars:    CLOUDFLARE_ACCOUNT_ID, ADMIN_WORKERS_SUBDOMAIN,
+#                        ADMIN_PROD_WORKER_NAME, ADMIN_STAGING_WORKER_NAME,
+#                        ADMIN_DEPLOY_ENABLED
+# Required per-environment (staging / production):
+#   var    ADMIN_API_BASE_URL          backend origin the worker proxies to
+#   secret TARMOTO_INTERNAL_API_TOKEN   MUST equal the backend's token on the
+#                                       same environment
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "apps/admin/**"
+      - "apps/backend/**"
+      - "packages/**"
+      - "tsconfig.base.json"
+      - ".github/workflows/admin-deploy.yml"
+      - ".github/workflows/_build-openapi.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  # Build the spec once from main HEAD (the commit the backend actually serves —
+  # Coolify deploys main HEAD) so the admin's generated client matches it.
+  prepare-openapi:
+    if: vars.ADMIN_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
+    uses: ./.github/workflows/_build-openapi.yml
+    with:
+      ref: refs/heads/main
+      artifact-retention-days: 7
+
+  deploy:
+    name: Build & deploy admin console (Cloudflare)
+    if: vars.ADMIN_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
+    needs: prepare-openapi
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Always build main HEAD (like the backend), so the admin bundle +
+          # generated client match the running backend regardless of trigger ref.
+          ref: refs/heads/main
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm shared:build
+
+      - name: Download generated OpenAPI spec
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: openapi-spec
+          path: ${{ runner.temp }}
+
+      - name: Restore generated OpenAPI spec
+        run: |
+          mkdir -p packages/openapi
+          tar -xzf "$RUNNER_TEMP/openapi-spec.tgz" -C packages/openapi
+
+      - name: Generate OpenAPI client
+        run: pnpm --filter @tarmoto/openapi-client generate
+
+      - name: Build admin console
+        run: pnpm --filter @tarmoto/admin build
+
+      - name: Resolve environment + worker name
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          PROD_NAME: ${{ vars.ADMIN_PROD_WORKER_NAME || 'tarmoto-admin' }}
+          STAGING_NAME: ${{ vars.ADMIN_STAGING_WORKER_NAME || 'tarmoto-admin-staging' }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+          if [ "$ENV_NAME" = "production" ]; then
+            echo "worker=${PROD_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "worker=${STAGING_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloudflare Workers
+        id: deploy
+        working-directory: apps/admin
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          WORKER_NAME: ${{ steps.env.outputs.worker }}
+          WORKERS_SUBDOMAIN: ${{ vars.ADMIN_WORKERS_SUBDOMAIN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_API_BASE_URL: ${{ vars.ADMIN_API_BASE_URL }}
+          INTERNAL_API_TOKEN: ${{ secrets.TARMOTO_INTERNAL_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$WORKER_NAME" || { echo "::error::worker name is empty"; exit 1; }
+          test -n "$WORKERS_SUBDOMAIN" || { echo "::error::ADMIN_WORKERS_SUBDOMAIN repo var is required"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN secret is required"; exit 1; }
+          test -n "$INTERNAL_API_TOKEN" || { echo "::error::TARMOTO_INTERNAL_API_TOKEN secret is required in env ${ENV_NAME}"; exit 1; }
+
+          # Default the backend origin per environment when the var is unset,
+          # matching companion-deploy's convention.
+          if [ -z "${ADMIN_API_BASE_URL}" ]; then
+            if [ "$ENV_NAME" = "production" ]; then
+              ADMIN_API_BASE_URL="https://api.tarmoto.app"
+            else
+              ADMIN_API_BASE_URL="https://api-staging.tarmoto.app"
+            fi
+          fi
+
+          # Worker secrets ride along with the deploy so the new version boots
+          # with its proxy config (no separate `wrangler secret put` that could
+          # leave a version without TARMOTO_ADMIN_API_BASE_URL / token).
+          export ADMIN_API_BASE_URL INTERNAL_API_TOKEN
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            writeFileSync(process.argv[1], JSON.stringify({
+              TARMOTO_ADMIN_API_BASE_URL: process.env.ADMIN_API_BASE_URL,
+              TARMOTO_INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN,
+            }));
+          ' "$RUNNER_TEMP/admin-worker-secrets.json"
+
+          SHORT_SHA="${GITHUB_SHA::7}"
+          pnpm dlx wrangler@latest deploy \
+            --name "$WORKER_NAME" \
+            --secrets-file "$RUNNER_TEMP/admin-worker-secrets.json" \
+            --message "${ENV_NAME} @ ${SHORT_SHA}"
+
+          DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
+          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Admin console deployed to ${DEPLOY_URL}"
+
+      - name: Smoke test
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            SPA=$(curl -sL -o spa.html -w '%{http_code}' "$URL" || echo '000')
+            # The worker proxies this public admin endpoint to the backend,
+            # injecting the internal token — a 200 proves SPA + proxy + token
+            # end-to-end. A 401/502 means the token or backend origin is wrong.
+            CFG=$(curl -sL -o /dev/null -w '%{http_code}' "$URL/api/v1/admin/auth/config" || echo '000')
+            if [ "$SPA" = "200" ] && grep -qi "Tarmoto Admin" spa.html && [ "$CFG" = "200" ]; then
+              echo "::notice::Admin smoke OK ($URL) — SPA + /admin/auth/config proxy"
+              exit 0
+            fi
+            echo "Smoke attempt ${attempt}: SPA=${SPA} config=${CFG}"
+            sleep 5
+          done
+          echo "::error::Admin smoke failed (last: SPA=${SPA} config=${CFG})"
+          exit 1
