@@ -157,7 +157,7 @@ describe('InternalGuard', () => {
       const guard = guardWith({
         config: configWith({
           ...PROD_TOKEN,
-          TARMOTO_ADMIN_SESSION_SECRET: SECRET,
+          TARMOTO_ADMIN_AUTH_SESSION_SECRET: SECRET,
         }),
         session: {
           id: 's1',
