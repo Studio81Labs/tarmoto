@@ -85,9 +85,9 @@ export class LeaderboardsService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   async getRegional(opts: {
-    region?: string;
-    limit?: number;
-    currentUserId?: string;
+    region?: string | undefined;
+    limit?: number | undefined;
+    currentUserId?: string | undefined;
   }): Promise<RegionalLeaderboardsResponseDto> {
     const limit = opts.limit ?? 20;
     const regionRaw = opts.region?.trim() ?? '';

@@ -186,13 +186,18 @@ const entities = [
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const isOpenApiExport = process.env['OPENAPI_EXPORT'] === 'true';
+        const host = config.get<string>('database.host');
+        const port = config.get<number>('database.port');
+        const database = config.get<string>('database.database');
+        const username = config.get<string>('database.username');
+        const password = config.get<string>('database.password');
         return {
           type: 'postgres',
-          host: config.get('database.host'),
-          port: config.get('database.port'),
-          database: config.get('database.database'),
-          username: config.get('database.username'),
-          password: config.get('database.password'),
+          ...(host !== undefined ? { host } : {}),
+          ...(port !== undefined ? { port } : {}),
+          ...(database !== undefined ? { database } : {}),
+          ...(username !== undefined ? { username } : {}),
+          ...(password !== undefined ? { password } : {}),
           entities,
           migrations: [
             // Listed in chronological order. Every migration in

@@ -25,7 +25,7 @@ export interface PushPayload {
    * keeps this small (FCM has a 4 KB total payload limit). Always
    * stringify-friendly — providers JSON-encode for transport.
    */
-  data?: Record<string, string>;
+  data?: Record<string, string> | undefined;
   /**
    * Provider-side category tag. Used for log filtering and (on iOS)
    * APN `apns-collapse-id` to dedupe stacked alerts of the same

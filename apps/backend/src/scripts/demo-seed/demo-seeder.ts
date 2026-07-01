@@ -395,7 +395,7 @@ export class DemoSeeder {
           route_geom: buildLineString(rng, persona.home, 6),
           avg_road_quality: round1(2 + rng() * 3),
           avg_curviness: round2(rng()),
-          ride_type: RIDE_TYPES[i % RIDE_TYPES.length],
+          ride_type: RIDE_TYPES[i % RIDE_TYPES.length] ?? RIDE_TYPES[0],
           name: i % 5 === 0 ? `${persona.home_region} loop #${i + 1}` : null,
           status: 'completed',
           bike_id: bike ? bike.id : null,
@@ -553,8 +553,9 @@ export class DemoSeeder {
           user_id: userId,
           road_segment_id: hazardRoad ? hazardRoad.id : null,
           location: pointGeom(jitter(persona.home, rng, 0.05)),
-          hazard_type: HAZARD_TYPES[i % HAZARD_TYPES.length],
-          severity: HAZARD_SEVERITY[i % HAZARD_SEVERITY.length],
+          hazard_type: HAZARD_TYPES[i % HAZARD_TYPES.length] ?? HAZARD_TYPES[0],
+          severity:
+            HAZARD_SEVERITY[i % HAZARD_SEVERITY.length] ?? HAZARD_SEVERITY[0],
           note: `Demo hazard #${i + 1} near ${persona.home_region}`,
           confirmations: Math.floor(rng() * 8),
           is_active: true,
@@ -641,11 +642,16 @@ export class DemoSeeder {
     // across folders), odd-indexed ones stay unfiled so the "Unfiled"
     // pseudo-bucket is exercised too.
     const folders = await folderRepo.save(
-      ['Favourites', 'Bucket list'].map((name, i) =>
+      (
+        [
+          { name: 'Favourites', color: '#2563eb' },
+          { name: 'Bucket list', color: '#16a34a' },
+        ] as const
+      ).map(({ name, color }, i) =>
         folderRepo.create({
           user_id: userId,
           name,
-          color: ['#2563eb', '#16a34a'][i],
+          color,
           position: i,
         }),
       ),

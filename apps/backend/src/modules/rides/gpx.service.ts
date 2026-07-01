@@ -84,9 +84,12 @@ export class GpxService {
    * Parse GPX XML and extract track points.
    * Supports both <trk><trkseg><trkpt> and <rte><rtept> formats.
    */
-  parseGpxPoints(
-    xml: string,
-  ): Array<{ lat: number; lng: number; ele?: number; time?: Date }> {
+  parseGpxPoints(xml: string): Array<{
+    lat: number;
+    lng: number;
+    ele?: number | undefined;
+    time?: Date | undefined;
+  }> {
     let parsed: GpxRoot;
     try {
       parsed = this.parser.parse(xml) as GpxRoot;
@@ -107,8 +110,8 @@ export class GpxService {
       const points: Array<{
         lat: number;
         lng: number;
-        ele?: number;
-        time?: Date;
+        ele?: number | undefined;
+        time?: Date | undefined;
       }> = [];
 
       for (const track of tracks) {
@@ -136,8 +139,8 @@ export class GpxService {
       const points: Array<{
         lat: number;
         lng: number;
-        ele?: number;
-        time?: Date;
+        ele?: number | undefined;
+        time?: Date | undefined;
       }> = [];
 
       for (const route of routes) {
@@ -157,8 +160,8 @@ export class GpxService {
   private parsePoint(pt: GpxTrackPoint): {
     lat: number;
     lng: number;
-    ele?: number;
-    time?: Date;
+    ele?: number | undefined;
+    time?: Date | undefined;
   } {
     return {
       lat: parseFloat(pt['@_lat']),

@@ -405,7 +405,7 @@ export function scoreRoute(
     scenicScore: number | null; // 0..100
     durationMin: number; // > 0
     distanceKm?: number; // total day distance, when scoring a real OSRM route
-    targetKm?: number; // preset-adjusted day target from chunkDistance
+    targetKm?: number | undefined; // preset-adjusted day target from chunkDistance
     hazardCount?: number; // active hazards intersecting the route buffer
   },
 ): number {

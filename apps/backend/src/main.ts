@@ -48,7 +48,16 @@ async function bootstrap() {
   // in-memory pub/sub if Redis is unreachable).
   const redisCfg = redisConfig();
   try {
-    await redisAdapter.connectRedis(redisCfg);
+    await redisAdapter.connectRedis({
+      host: redisCfg.host,
+      port: redisCfg.port,
+      ...(redisCfg.username !== undefined
+        ? { username: redisCfg.username }
+        : {}),
+      ...(redisCfg.password !== undefined
+        ? { password: redisCfg.password }
+        : {}),
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(

@@ -115,8 +115,8 @@ export interface StripeBillingClient {
     returnUrl: string;
     flow: null | {
       type: Exclude<BillingPortalFlowType, 'manage'>;
-      subscriptionId?: string;
-      afterCompletionUrl?: string;
+      subscriptionId?: string | undefined;
+      afterCompletionUrl?: string | undefined;
     };
   }): Promise<{ url: string }>;
   cancelSubscription(subscriptionId: string): Promise<void>;
@@ -289,8 +289,8 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     returnUrl: string;
     flow: null | {
       type: Exclude<BillingPortalFlowType, 'manage'>;
-      subscriptionId?: string;
-      afterCompletionUrl?: string;
+      subscriptionId?: string | undefined;
+      afterCompletionUrl?: string | undefined;
     };
   }): Promise<{ url: string }> {
     const stripe = this.requireStripe();
@@ -378,8 +378,8 @@ export class StripeNodeBillingClient implements StripeBillingClient {
 
 function buildPortalFlowData(flow: {
   type: Exclude<BillingPortalFlowType, 'manage'>;
-  subscriptionId?: string;
-  afterCompletionUrl?: string;
+  subscriptionId?: string | undefined;
+  afterCompletionUrl?: string | undefined;
 }): StripePortalFlowData {
   const afterCompletion =
     flow.afterCompletionUrl != null
