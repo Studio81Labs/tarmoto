@@ -27,9 +27,11 @@ name: Marketing Deploy
 #
 # Required repo variables:
 #   CLOUDFLARE_ACCOUNT_ID            Cloudflare account hosting the worker
-#   MARKETING_PROD_WORKER_NAME       production worker name (e.g. tarmoto-marketing)
-#   MARKETING_STAGING_WORKER_NAME    staging worker name (e.g. tarmoto-marketing-staging)
 #   MARKETING_WORKERS_SUBDOMAIN      account workers.dev subdomain (e.g. studio81)
+#
+# Required per-environment (staging / production) variables:
+#   MARKETING_WORKER_NAME            worker name (e.g. tarmoto-marketing /
+#                                    tarmoto-marketing-staging)
 
 on:
   push:
@@ -99,6 +101,8 @@ jobs:
   deploy:
     name: Deploy Marketing Site
     needs: resolve
+    # Scope secrets/vars to the resolved environment (staging / production).
+    environment: ${{ needs.resolve.outputs.name }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -120,17 +124,17 @@ jobs:
 
       - name: Resolve worker name
         id: worker
+        # MARKETING_WORKER_NAME is env-scoped (resolved per the job's
+        # environment), so read it directly.
         env:
           ENV_NAME: ${{ needs.resolve.outputs.name }}
-          PROD_NAME: ${{ vars.MARKETING_PROD_WORKER_NAME || 'tarmoto-marketing' }}
-          STAGING_NAME: ${{ vars.MARKETING_STAGING_WORKER_NAME || 'tarmoto-marketing-staging' }}
+          WORKER_NAME: ${{ vars.MARKETING_WORKER_NAME }}
         run: |
           set -euo pipefail
-          if [ "$ENV_NAME" = "production" ]; then
-            WORKER_NAME="$PROD_NAME"
-          else
-            WORKER_NAME="$STAGING_NAME"
-          fi
+          test -n "$WORKER_NAME" || {
+            echo "::error::MARKETING_WORKER_NAME var is not set in env ${ENV_NAME}"
+            exit 1
+          }
           echo "name=${WORKER_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy marketing site to Cloudflare Workers
