@@ -7,10 +7,11 @@ export default defineConfig({
     // backend 3000, marketing 3001, companion 3002, admin 3003.
     port: 3003,
     strictPort: true,
-    // Proxy /api/v1/* to the backend so cookies are first-party in dev.
-    // Admin routes live at /api/v1/admin/... on the NestJS backend (port 3000).
+    // Proxy /admin/* to the backend so cookies are first-party in dev.
+    // Admin routes are mounted prefix-less at /admin/... on the NestJS
+    // backend (port 3000), matching the tabletap/nexcue admin topology.
     proxy: {
-      "/api/v1": "http://localhost:3000",
+      "/admin": "http://localhost:3000",
     },
   },
   // @tarmoto/ui ships TypeScript/TSX source. Excluding it from pre-bundling

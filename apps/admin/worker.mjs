@@ -3,7 +3,8 @@
 // Serves the static console build (./dist via the ASSETS binding, SPA
 // fallback) and proxies the admin API same-origin:
 //
-//   * /api/v1/*   same-origin proxy to the NestJS backend
+//   * /admin/*   same-origin proxy to the NestJS backend's prefix-less
+//                admin routes (incl. the GitHub OAuth callback)
 //
 // The proxy keeps the host-scoped tarmoto_admin_* session cookies first-party
 // on this origin (see adminProxyShared.mjs) and injects the x-internal-token

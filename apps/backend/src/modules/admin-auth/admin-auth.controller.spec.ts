@@ -294,7 +294,7 @@ describe('AdminAuthController', () => {
 
     const req = {
       headers: { cookie: `${ADMIN_SSO_STATE_COOKIE}=correct-state` },
-      originalUrl: '/api/v1/admin/auth/sso/github/callback?code=c&state=wrong',
+      originalUrl: '/admin/auth/sso/github/callback?code=c&state=wrong',
     } as unknown as Request;
     const res = mockResponse();
 
@@ -350,7 +350,7 @@ describe('AdminAuthController', () => {
     const req = {
       headers: { cookie: `${ADMIN_SSO_STATE_COOKIE}=valid-state` },
       originalUrl:
-        '/api/v1/admin/auth/sso/github/callback?code=code123&state=valid-state',
+        '/admin/auth/sso/github/callback?code=code123&state=valid-state',
     } as unknown as Request;
     const res = mockResponse();
 
@@ -394,7 +394,7 @@ describe('AdminAuthController', () => {
       makeTokens({ clientNonce: 'sso-nonce-xyz' }),
     );
 
-    const callbackPath = '/api/v1/admin/auth/sso/github/callback';
+    const callbackPath = '/admin/auth/sso/github/callback';
     const req = {
       headers: {
         cookie: `${ADMIN_SSO_STATE_COOKIE}=valid-state`,

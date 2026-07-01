@@ -7,7 +7,7 @@ export function useAdminUsersList(params: {
   page?: number;
   pageSize?: number;
 }) {
-  return $api.useQuery("get", "/api/v1/admin/users", {
+  return $api.useQuery("get", "/admin/users", {
     params: { query: params },
   });
 }
@@ -15,16 +15,16 @@ export function useAdminUsersList(params: {
 export function useAdminUserDetail(id: string | null) {
   return $api.useQuery(
     "get",
-    "/api/v1/admin/users/{id}",
+    "/admin/users/{id}",
     { params: { path: { id: id ?? "" } } },
     { enabled: !!id },
   );
 }
 
 export function useSoftDeleteUser() {
-  return $api.useMutation("delete", "/api/v1/admin/users/{id}");
+  return $api.useMutation("delete", "/admin/users/{id}");
 }
 
 export function useRestoreUser() {
-  return $api.useMutation("post", "/api/v1/admin/users/{id}/restore");
+  return $api.useMutation("post", "/admin/users/{id}/restore");
 }
