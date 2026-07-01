@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests && node --test worker.test.mjs",
+    "worker:dev": "pnpm dlx wrangler@latest dev",
+    "worker:deploy": "pnpm build && pnpm dlx wrangler@latest deploy",
+    "worker:tail": "pnpm dlx wrangler@latest tail"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.1",

@@ -1,24 +1,36 @@
 {
-  // Admin SPA: static-assets-only config. Build output lands in apps/admin/dist;
-  // no Worker script is generated, and production deployment is NOT wired yet
-  // (there is intentionally no `worker:deploy` script — see DEPLOY note below).
+  // Admin console on Cloudflare Workers: static assets (./dist, SPA fallback)
+  // + a small worker (worker.mjs) that proxies /api/v1/* to the NestJS backend
+  // same-origin. The proxy keeps the host-scoped tarmoto_admin_* session
+  // cookies first-party on this origin and injects the x-internal-token the
+  // backend's InternalGuard requires (see worker.mjs / adminProxyShared.mjs).
   //
-  // DEPLOY (deferred to a dedicated deploy phase): a production deploy needs a
-  // Worker entry (`main`) or Cloudflare origin rule that forwards /api/v1/admin/*
-  // to the NestJS backend, plus an admin-deploy workflow and a backend-origin
-  // var. Until then this file is a placeholder; local dev reaches the backend
-  // via the Vite proxy (`/api/v1` -> http://localhost:3000) in vite.config.ts.
+  // The worker `name` here keeps `wrangler dev` / local preview working; CI
+  // overrides it per environment via `wrangler deploy --name $ADMIN_WORKER_NAME`
+  // (see .github/workflows/admin-deploy.yml).
   //
-  // The worker name here keeps `wrangler dev` / local preview working without
-  // env wiring; a future deploy workflow should override --name from a repo var.
+  // Local dev still uses the Vite proxy (`/api/v1` -> http://localhost:3000 in
+  // vite.config.ts); this worker is the production/preview equivalent.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tarmoto-admin",
+  "main": "./worker.mjs",
   "compatibility_date": "2026-04-01",
+  "keep_vars": true,
   "assets": {
     "directory": "dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // The worker handles the API proxy first; everything else is served from
+    // the static SPA build.
+    "run_worker_first": ["/api/v1/*"]
   },
   "observability": {
     "enabled": true
+  },
+  "secrets": {
+    // Backend origin the proxy forwards /api/v1/* to, and the shared token it
+    // injects as x-internal-token (must equal the backend's
+    // TARMOTO_INTERNAL_API_TOKEN). Set per environment by the deploy workflow.
+    "required": ["TARMOTO_ADMIN_API_BASE_URL", "TARMOTO_INTERNAL_API_TOKEN"]
   }
 }

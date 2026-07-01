@@ -31,6 +31,7 @@ jobs:
             backend
             mobile
             companion
+            admin
             poc-sensor
             shared
             openapi

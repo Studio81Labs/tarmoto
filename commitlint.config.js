@@ -45,6 +45,7 @@ module.exports = {
         "backend",
         "mobile",
         "companion",
+        "admin",
         "poc-sensor",
         "shared",
         "openapi",
