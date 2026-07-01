@@ -44,6 +44,22 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual([]); // the existing row was reused, not orphaned
   });
 
+  it('uneven split: history follows the longer child, not the first/short stub', () => {
+    // Existing 100 m row split into a 10 m stub (index 0) + 90 m main (index 1).
+    // Both are fully contained (fraction 1), so ranking by fraction alone would
+    // let the stub — first by index — steal the id. Overlap length picks the 90 m.
+    const existing: ExistingSegment[] = [{ id: 'x', coords: seg(0, M) }];
+    const incoming = [seg(0, 0.1 * M), seg(0.1 * M, M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('x');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(1); // the 90 m main stretch
+    expect(plan.inserts).toEqual([0]); // the 10 m stub is a fresh row
+    expect(plan.stale).toEqual([]);
+  });
+
   it('2→1 merge: one id inherits the merged road, the other goes stale', () => {
     // Two existing 100 m segments merged into one 200 m way.
     const existing: ExistingSegment[] = [

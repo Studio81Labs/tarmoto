@@ -77,6 +77,15 @@ function planarMeters(a: LatLng, b: LatLng): number {
   return Math.hypot(dx, dy);
 }
 
+/** Total planar length of a polyline in metres. */
+function polylineMeters(coords: readonly LatLng[]): number {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    total += planarMeters(coords[i - 1]!, coords[i]!);
+  }
+  return total;
+}
+
 /** Perpendicular distance in metres from `p` to segment `a`–`b`. Longitudes are
  *  projected relative to `a` (shortest arc) so points straddling ±180° stay
  *  local rather than blowing up. */
@@ -190,27 +199,42 @@ export function planReassignment(
     existingIdx: number;
     incomingIndex: number;
     score: number;
+    overlapLen: number;
   }> = [];
   for (let e = 0; e < existing.length; e++) {
     for (let n = 0; n < incoming.length; n++) {
-      // Bidirectional: a real carry-over is a 1:1 match, or one segment fully
-      // contained in the other (a split/merge). Taking the max of both
-      // directions accepts those (~1.0) while a short partial overlap of two
-      // longer, mostly-different stretches stays low both ways.
-      const score = Math.max(
-        overlapFraction(incoming[n]!, existing[e]!.coords, tolM, sampleM),
-        overlapFraction(existing[e]!.coords, incoming[n]!, tolM, sampleM),
+      const fwd = overlapFraction(
+        incoming[n]!,
+        existing[e]!.coords,
+        tolM,
+        sampleM,
       );
+      const rev = overlapFraction(
+        existing[e]!.coords,
+        incoming[n]!,
+        tolM,
+        sampleM,
+      );
+      // Eligibility (bidirectional): a real carry-over is a 1:1 match, or one
+      // segment contained in the other (a split/merge) — max ~1.0 — while a short
+      // partial overlap of two mostly-different stretches stays low both ways.
+      const score = Math.max(fwd, rev);
       if (score > minOverlap) {
-        pairs.push({ existingIdx: e, incomingIndex: n, score });
+        // Rank by shared LENGTH, not the fraction: an uneven split leaves both a
+        // 10 m and a 90 m child fully contained in the old row (fraction 1 each),
+        // so ranking by fraction would let the stub steal the id. The overlapping
+        // length (fraction of the incoming that lies on the existing × its length)
+        // puts the better-covered stretch first, so it inherits the history.
+        const overlapLen = fwd * polylineMeters(incoming[n]!);
+        pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }
     }
   }
-  // Highest overlap first; ties resolve deterministically by index so the plan
-  // is stable across runs on unchanged data.
+  // Longest shared stretch first; ties resolve deterministically by index so the
+  // plan is stable across runs on unchanged data.
   pairs.sort(
     (x, y) =>
-      y.score - x.score ||
+      y.overlapLen - x.overlapLen ||
       x.existingIdx - y.existingIdx ||
       x.incomingIndex - y.incomingIndex,
   );
