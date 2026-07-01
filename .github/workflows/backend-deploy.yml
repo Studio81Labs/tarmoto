@@ -27,6 +27,7 @@ on:
       - "apps/backend/**"
       - "packages/shared/**"
       - "packages/openapi/**"
+      - "tsconfig.base.json"
       - "docs/database/**"
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
