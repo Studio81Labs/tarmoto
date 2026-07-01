@@ -72,6 +72,22 @@ describe('parseOsmXml', () => {
     await expect(collect('<osm><node id="1" <<>')).rejects.toBeDefined();
   });
 
+  it('skips a node missing id/coordinates and a way missing id', async () => {
+    const primitives = await collect(`<osm>
+      <node lat="1" lon="1"/>
+      <node id="5" lat="2"/>
+      <node id="6" lat="3" lon="3"/>
+      <way><nd ref="6"/></way>
+      <way id="20"><nd ref="6"/></way>
+    </osm>`);
+
+    // Only the fully-specified node and the id-bearing way survive.
+    expect(primitives).toEqual([
+      { type: 'node', id: '6', lat: 3, lon: 3 },
+      { type: 'way', id: '20', tags: {}, refs: ['6'] },
+    ]);
+  });
+
   it('feeds assembleWays end-to-end (XML → resolved OsmWay)', async () => {
     const ways: OsmWay[] = [];
     for await (const way of assembleWays(parseOsmXml(streamOf(SAMPLE)))) {

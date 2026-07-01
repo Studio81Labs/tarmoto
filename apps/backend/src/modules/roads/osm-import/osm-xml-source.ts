@@ -59,20 +59,24 @@ export async function* parseOsmXml(
   let way: OsmWayRef | null = null;
 
   parser.on('opentag', (tag) => {
-    const attributes = tag.attributes as Record<string, string>;
+    // Attributes are absent-keyed, so every lookup is `string | undefined`.
+    const attributes = tag.attributes as Record<string, string | undefined>;
     switch (tag.name) {
-      case 'node':
-        queue.push({
-          type: 'node',
-          id: attributes.id,
-          lat: Number(attributes.lat),
-          lon: Number(attributes.lon),
-        });
+      case 'node': {
+        const { id, lat, lon } = attributes;
+        // A node without id/coordinates is malformed OSM — skip it.
+        if (id === undefined || lat === undefined || lon === undefined) break;
+        queue.push({ type: 'node', id, lat: Number(lat), lon: Number(lon) });
         maybePause();
         signal();
         break;
+      }
       case 'way':
-        way = { type: 'way', id: attributes.id, tags: {}, refs: [] };
+        // A way must carry an id (its identity + conflict key); skip if absent.
+        way =
+          attributes.id === undefined
+            ? null
+            : { type: 'way', id: attributes.id, tags: {}, refs: [] };
         break;
       case 'nd':
         if (way && attributes.ref !== undefined) way.refs.push(attributes.ref);
