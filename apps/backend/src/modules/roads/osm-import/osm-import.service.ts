@@ -35,31 +35,66 @@ const OSM_REFRESH_COLUMNS = [
   'road_number',
 ];
 
+/** Geometry columns derived from `geom`, nulled when the geometry changes so a
+ *  downstream elevation-enrichment pass recomputes them (a NULL profile/min/max
+ *  is a state every consumer already handles). */
+const GEOM_DERIVED_COLUMNS = [
+  'elevation_min',
+  'elevation_max',
+  'elevation_profile',
+];
+
+/**
+ * True iff the stored geometry differs from the incoming one at the vertex
+ * level. `ST_OrderingEquals` compares exact coordinate sequence (bbox-gated
+ * internally), so — unlike the `=`/`IS DISTINCT FROM` operator, which only
+ * compares bounding boxes — a same-bbox reshape is still detected.
+ */
+const GEOM_CHANGED = `NOT ST_OrderingEquals("${TABLE}"."geom", EXCLUDED."geom")`;
+
+/**
+ * True iff a rider has classified this segment's surface. Mirrors the quality
+ * aggregation, which derives `surface_type` only from readings whose own
+ * `surface_type IS NOT NULL` (`inferSurfaceType` returns null for many smooth
+ * asphalt rides) — so `reading_count > 0` alone does NOT prove crowd ownership.
+ */
+const HAS_RIDER_SURFACE =
+  `EXISTS (SELECT 1 FROM "surface_readings" sr ` +
+  `WHERE sr."road_segment_id" = "${TABLE}"."id" AND sr."surface_type" IS NOT NULL)`;
+
 /**
  * The raw `ON CONFLICT … DO UPDATE …` clause. Built once.
  *
- * `surface_type`: refreshed from the OSM seed ONLY while a segment has no sensor
- * readings (`reading_count = 0`). Per ADR-0005 the OSM seed tracks the OSM cycle
- * but a rider-classified surface (`reading_count > 0`, owned by
- * `update_road_quality_for_segment`) is authoritative and must survive re-import
- * — hence the `CASE`, not a blanket refresh or a blanket exclude.
+ * `surface_type`: refreshed from the OSM seed unless a rider has classified the
+ * surface ({@link HAS_RIDER_SURFACE}). Per ADR-0005 the seed tracks the OSM
+ * cycle until superseded by sensor evidence, then the rider value is
+ * authoritative — hence the `CASE`, not a blanket refresh or exclude.
+ *
+ * `elevation_*`: nulled whenever the geometry changes, since they were computed
+ * from the previous geometry and would otherwise be served stale by
+ * `RoadsService.findById` / fun-zone detail and skew elevation math.
  *
  * `WHERE …`: skips no-op rows. A weekly snapshot re-sends mostly-identical rows;
- * without this every conflict would emit an unconditional `DO UPDATE`, churning
- * row locks + WAL on a national import. The row is updated only if an OSM column
- * actually changed, or an unread segment's surface seed changed.
+ * without this every conflict emits an unconditional `DO UPDATE`, churning row
+ * locks + WAL on a national import. The row updates only if the geometry, an OSM
+ * attribute, or an un-classified segment's surface seed actually changed.
  */
 function buildOnConflictClause(): string {
   const set = [
     ...OSM_REFRESH_COLUMNS.map((c) => `"${c}" = EXCLUDED."${c}"`),
-    `"surface_type" = CASE WHEN "${TABLE}"."reading_count" = 0 ` +
-      `THEN EXCLUDED."surface_type" ELSE "${TABLE}"."surface_type" END`,
+    `"surface_type" = CASE WHEN ${HAS_RIDER_SURFACE} ` +
+      `THEN "${TABLE}"."surface_type" ELSE EXCLUDED."surface_type" END`,
+    ...GEOM_DERIVED_COLUMNS.map(
+      (c) =>
+        `"${c}" = CASE WHEN ${GEOM_CHANGED} THEN NULL ELSE "${TABLE}"."${c}" END`,
+    ),
   ];
   const changed = [
-    ...OSM_REFRESH_COLUMNS.map(
+    GEOM_CHANGED,
+    ...OSM_REFRESH_COLUMNS.filter((c) => c !== 'geom').map(
       (c) => `"${TABLE}"."${c}" IS DISTINCT FROM EXCLUDED."${c}"`,
     ),
-    `("${TABLE}"."reading_count" = 0 AND ` +
+    `(NOT ${HAS_RIDER_SURFACE} AND ` +
       `"${TABLE}"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")`,
   ];
   const target = CONFLICT_COLUMNS.map((c) => `"${c}"`).join(', ');
@@ -81,8 +116,9 @@ export interface OsmImportResult {
  * The conflict clause (see {@link ROAD_SEGMENT_ON_CONFLICT}) refreshes only the
  * OSM-owned columns, leaves the crowdsourced `quality_score` / `confidence` /
  * `reading_count` and the `id` untouched (the #751 stable-identity guarantee),
- * refreshes the `surface_type` seed only while a segment has no readings, and
- * skips rows whose OSM values did not change.
+ * refreshes the `surface_type` seed only until a rider classifies the surface,
+ * nulls the geometry-derived `elevation_*` columns when the geometry changes,
+ * and skips rows whose values did not change.
  *
  * No delete pass here: stale rows (ways removed from OSM, or split/merged) are
  * the separate split/merge slice's concern — this overwrites in place.
@@ -120,9 +156,9 @@ export class OsmImportService {
   private async flush(rows: RoadSegmentRow[]): Promise<void> {
     // Raw conflict clause (not `repo.upsert` / the `orUpdate` array form) because
     // the DO UPDATE must (a) omit the crowdsourced columns, (b) refresh
-    // `surface_type` conditionally per `reading_count`, and (c) skip no-op rows —
-    // none of which the column-array API can express. `.values()` still builds
-    // the INSERT (incl. PostGIS geometry binding); only the conflict tail is raw.
+    // `surface_type` and null `elevation_*` conditionally, and (c) skip no-op
+    // rows — none of which the column-array API can express. `.values()` still
+    // builds the INSERT (incl. PostGIS geometry binding); only the tail is raw.
     await this.repo
       .createQueryBuilder()
       .insert()

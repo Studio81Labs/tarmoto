@@ -42,42 +42,54 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
     }
   });
 
-  it('refreshes surface_type only while the segment has no readings', () => {
-    // Rider-classified surfaces (reading_count > 0) stay authoritative (ADR-0005).
+  it('refreshes surface_type only until a rider classifies the surface', () => {
+    // Ownership mirrors the quality aggregation: a NON-NULL surface reading, not
+    // reading_count (which counts readings that carry no surface_type).
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '"surface_type" = CASE WHEN "road_segments"."reading_count" = 0 ' +
-        'THEN EXCLUDED."surface_type" ELSE "road_segments"."surface_type" END',
+      '"surface_type" = CASE WHEN EXISTS (SELECT 1 FROM "surface_readings" sr ' +
+        'WHERE sr."road_segment_id" = "road_segments"."id" ' +
+        'AND sr."surface_type" IS NOT NULL) ' +
+        'THEN "road_segments"."surface_type" ELSE EXCLUDED."surface_type" END',
+    );
+    // reading_count is never consulted for ownership.
+    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('reading_count');
+  });
+
+  it('nulls the geometry-derived elevation columns when geometry changes', () => {
+    for (const col of ['elevation_min', 'elevation_max', 'elevation_profile']) {
+      expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+        `"${col}" = CASE WHEN NOT ST_OrderingEquals("road_segments"."geom", ` +
+          `EXCLUDED."geom") THEN NULL ELSE "road_segments"."${col}" END`,
+      );
+    }
+  });
+
+  it('detects geometry changes at the vertex level (not bbox)', () => {
+    // ST_OrderingEquals compares the exact coordinate sequence, so a same-bbox
+    // reshape is still caught — the `=` / IS DISTINCT FROM operator would not.
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      'NOT ST_OrderingEquals("road_segments"."geom", EXCLUDED."geom")',
+    );
+    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(
+      '"road_segments"."geom" IS DISTINCT FROM',
     );
   });
 
   it('never writes the crowdsourced / identity columns', () => {
-    for (const col of [
-      'quality_score',
-      'confidence',
-      'reading_count',
-      '"id"',
-    ]) {
-      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`SET ${col}`);
-      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`, ${col} =`);
+    for (const col of ['quality_score', 'confidence', 'reading_count', 'id']) {
+      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`"${col}" = EXCLUDED`);
     }
-    // reading_count appears only inside the guard, never as an assignment target.
-    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(
-      '"reading_count" = EXCLUDED',
-    );
   });
 
-  it('skips no-op rows via an IS DISTINCT FROM guard', () => {
+  it('skips no-op rows via a change guard (WHERE)', () => {
+    // Surface-only change on an unclassified segment still triggers an update…
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '"road_segments"."geom" IS DISTINCT FROM EXCLUDED."geom"',
-    );
-    // Surface-only change on an unread segment still triggers an update…
-    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '("road_segments"."reading_count" = 0 AND ' +
+      '(NOT EXISTS (SELECT 1 FROM "surface_readings" sr ' +
+        'WHERE sr."road_segment_id" = "road_segments"."id" ' +
+        'AND sr."surface_type" IS NOT NULL) AND ' +
         '"road_segments"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")',
     );
-    // …but a read segment whose only OSM change is surface is NOT rewritten
-    // (that branch is gated by reading_count = 0), so the guard has a WHERE.
-    expect(ROAD_SEGMENT_ON_CONFLICT).toContain('WHERE');
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(' WHERE ');
   });
 });
 
