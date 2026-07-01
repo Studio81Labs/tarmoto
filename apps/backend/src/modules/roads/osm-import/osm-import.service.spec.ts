@@ -42,14 +42,16 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
     }
   });
 
-  it('never overwrites surface_type on conflict (seed is INSERT-only)', () => {
-    // A rider-classified surface must survive re-import, and — unlike the raw
-    // surface_readings a segment was classified from — the aggregate surface_type
-    // persists past location_retention. So the seed is never refreshed on update
-    // here; safe conditional refresh needs a durable provenance flag (#796).
-    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('"surface_type" =');
-    // …and ownership is never inferred from raw readings (would break after the
-    // retention sweep deletes them).
+  it('refreshes surface_type only while OSM still owns it (durable flag)', () => {
+    // Gated on the durable surface_from_reading flag (#796), NOT the raw
+    // surface_readings (which the retention sweep deletes) — so a rider-classified
+    // surface is preserved even after the sweep, while an unclassified seed
+    // refreshes on the OSM cycle.
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"surface_type" = CASE WHEN NOT "road_segments"."surface_from_reading" ' +
+        'THEN EXCLUDED."surface_type" ELSE "road_segments"."surface_type" END',
+    );
+    // Ownership is never inferred from raw readings.
     expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('surface_readings');
     expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('reading_count');
   });
@@ -74,20 +76,34 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
     );
   });
 
-  it('never writes the crowdsourced / identity columns', () => {
-    for (const col of ['quality_score', 'confidence', 'reading_count', 'id']) {
+  it('never writes the crowdsourced / identity / provenance columns', () => {
+    // surface_from_reading is aggregation-owned; the importer only reads it.
+    for (const col of [
+      'quality_score',
+      'confidence',
+      'reading_count',
+      'id',
+      'surface_from_reading',
+    ]) {
       expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(`"${col}" = EXCLUDED`);
+      expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain(
+        `"${col}" = "road_segments"`,
+      );
     }
   });
 
-  it('skips no-op rows via a change guard (WHERE over geom + OSM columns)', () => {
-    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(' WHERE ');
+  it('skips no-op rows via a change guard (WHERE over geom + OSM + surface)', () => {
+    // The guard leads with the vertex-level geometry check…
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      'WHERE NOT ST_OrderingEquals("road_segments"."geom", EXCLUDED."geom")',
+    );
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
       '"road_segments"."road_name" IS DISTINCT FROM EXCLUDED."road_name"',
     );
-    // The guard leads with the vertex-level geometry check.
+    // …and updates an unclassified segment whose only change is the surface seed.
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      'WHERE NOT ST_OrderingEquals("road_segments"."geom", EXCLUDED."geom")',
+      '(NOT "road_segments"."surface_from_reading" AND ' +
+        '"road_segments"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")',
     );
   });
 });
