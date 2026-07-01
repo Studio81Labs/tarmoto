@@ -772,7 +772,7 @@ describe('RoadsService', () => {
       expect(sql).not.toContain('AND rs.confidence >= $5');
     });
 
-    it('flattens a MultiLineString (gappy aggregated way) into one polyline', async () => {
+    it('returns the longest contiguous part of a gappy MultiLineString (no false connector)', async () => {
       (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
         {
           id: 'way-1',
@@ -786,13 +786,17 @@ describe('RoadsService', () => {
           geojson: {
             type: 'MultiLineString',
             coordinates: [
+              // Short part (2 points) — the assessed stub before the gap.
               [
                 [18.4, 49.5],
                 [18.41, 49.51],
               ],
+              // Longer contiguous part (3 points) — kept as-is, not concatenated
+              // with the short part across the gap.
               [
                 [18.43, 49.53],
                 [18.44, 49.54],
+                [18.45, 49.55],
               ],
             ],
           },
@@ -806,10 +810,9 @@ describe('RoadsService', () => {
       });
 
       expect(result.roads[0].geometry).toEqual([
-        { lat: 49.5, lng: 18.4 },
-        { lat: 49.51, lng: 18.41 },
         { lat: 49.53, lng: 18.43 },
         { lat: 49.54, lng: 18.44 },
+        { lat: 49.55, lng: 18.45 },
       ]);
     });
   });

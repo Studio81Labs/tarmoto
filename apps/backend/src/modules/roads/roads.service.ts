@@ -722,16 +722,23 @@ function normalizeElevationProfile(
  */
 /**
  * Coordinate array for a response polyline from a GeoJSON LineString or, when an
- * aggregated OSM way's ridden segments are non-contiguous (a gap), a
- * MultiLineString — whose parts are concatenated in order (#794). Contiguous
- * ways stay a LineString via ST_LineMerge, so the Multi branch is the rare case.
+ * aggregated OSM way's assessed sub-segments are non-contiguous (a gap),
+ * `ST_LineMerge` returns a MultiLineString (#794). The `geometry` DTO is a single
+ * polyline, so rather than concatenate the parts — which would draw a straight
+ * connector across the unassessed gap and can misplace the rank marker — return
+ * the LONGEST contiguous part. Contiguous ways stay a LineString, so the Multi
+ * branch is the rare case; faithful multi-part rendering is tracked in #809.
  */
 function geoJsonLineCoordinates(geojson: {
   type: string;
   coordinates: number[][] | number[][][];
 }): number[][] {
   if (geojson.type === 'MultiLineString') {
-    return (geojson.coordinates as number[][][]).flat();
+    const parts = geojson.coordinates as number[][][];
+    return parts.reduce(
+      (longest, part) => (part.length > longest.length ? part : longest),
+      parts[0] ?? [],
+    );
   }
   return geojson.coordinates as number[][];
 }
