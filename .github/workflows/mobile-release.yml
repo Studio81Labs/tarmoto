@@ -1,13 +1,21 @@
 name: Mobile Release
 
-# Manual-dispatch only. We don't auto-release on merge to main —
-# Apple/Play review windows make that a footgun. The workflow reads
-# the release version from a `mobile-vX.Y.Z` git tag and the build
-# number from the GitHub run number.
+# Unified release tag: a single `vX.Y.Z` tag ships every surface —
+# backend, companion, and marketing deploy from it, and this workflow
+# builds + submits the mobile app to TestFlight / Play Internal so the
+# store build always matches the web release at that version. Also
+# runnable via workflow_dispatch. We don't auto-release on merge to main —
+# Apple/Play review windows make that a footgun. The release version comes
+# from the `vX.Y.Z` git tag (or the dispatch input); the build number is
+# the GitHub run number.
+#
+# Accepted tradeoff: a `v*` tag also rebuilds mobile (macOS runner + store
+# submission). For a server-only hotfix that shouldn't touch the app, don't
+# cut a `v*` tag — use workflow_dispatch on the specific deploy instead.
 
 on:
   push:
-    tags: ["mobile-v*"]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       platforms:
@@ -53,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "push" ]; then
-            VERSION="${REF_NAME#mobile-v}"
+            VERSION="${REF_NAME#v}"
             PLATFORMS="both"
             # Tag-driven release: synthesise a non-empty changelog so
             # TestFlight / Play Internal don't show a blank "what's

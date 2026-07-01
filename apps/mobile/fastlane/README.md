@@ -2,8 +2,8 @@
 
 Release tooling for the Tarmoto mobile app. Two lanes — `beta_ios`
 (TestFlight) and `beta_android` (Play Internal track) — are wired up
-in [Fastfile](./Fastfile). Versioning is driven by the git tag
-`mobile-vX.Y.Z` and the GitHub run number; nothing is bumped in
+in [Fastfile](./Fastfile). Versioning is driven by the unified release
+tag `vX.Y.Z` and the GitHub run number; nothing is bumped in
 source. The workflow that drives them lives at
 [.github/workflows/mobile-release.yml](../../../.github/workflows/mobile-release.yml).
 

@@ -6,13 +6,13 @@ Day-2 procedures for running Tarmoto's deployed surfaces (backend PaaS + Cloudfl
 
 Two environments per service. The split is enforced in two places that **must** stay in sync — drift between them is what allows production to deploy on a stray `main` merge.
 
-|                                  | Staging                       | Production                              |
-| -------------------------------- | ----------------------------- | --------------------------------------- |
-| Trigger                          | push to `main`                | push tag `v*`                           |
-| PaaS GitHub App watching `main`  | Yes                           | Yes (read-only)                         |
-| PaaS "Auto Deploy" toggle        | **ON**                        | **OFF**                                 |
-| CI fires deploy webhook          | No (PaaS auto-deploys)        | Yes (`COOLIFY_PROD_DEPLOY_WEBHOOK_URL`) |
-| Healthcheck + smoke target       | `api-staging.tarmoto.app`     | `api.tarmoto.app`                       |
+|                                 | Staging                   | Production                              |
+| ------------------------------- | ------------------------- | --------------------------------------- |
+| Trigger                         | push to `main`            | push tag `v*`                           |
+| PaaS GitHub App watching `main` | Yes                       | Yes (read-only)                         |
+| PaaS "Auto Deploy" toggle       | **ON**                    | **OFF**                                 |
+| CI fires deploy webhook         | No (PaaS auto-deploys)    | Yes (`COOLIFY_PROD_DEPLOY_WEBHOOK_URL`) |
+| Healthcheck + smoke target      | `api-staging.tarmoto.app` | `api.tarmoto.app`                       |
 
 Both PaaS applications keep the GitHub source connected so manual redeploys from the dashboard work in either direction. The **only** difference is the Auto Deploy toggle on the production app, set in `Application → Advanced Settings → Deployment → Auto Deploy = OFF`.
 
@@ -26,7 +26,7 @@ Both PaaS applications keep the GitHub source connected so manual redeploys from
    git push origin v0.X.Y
    ```
 3. Tag push triggers `backend-deploy.yml` with `IS_TAG=true` → fires `COOLIFY_PROD_DEPLOY_WEBHOOK_URL` → polls `api.tarmoto.app/api/v1/healthz` → runs `scripts/smoke/smoke.sh` → rolls back on failure via the PaaS API.
-4. Mobile + companion follow the same tag-based pattern (`mobile-release.yml` reads `mobile-vX.Y.Z`; `companion-deploy.yml` resolves `production` worker on `v*`).
+4. The same `v*` tag fans out to every surface: `companion-deploy.yml` and `marketing-deploy.yml` resolve the `production` target on `v*`, and `mobile-release.yml` builds + submits the app to TestFlight / Play Internal (deriving the version from the tag). One tag ships backend, companion, marketing, and mobile at the same commit. Accepted tradeoff: a `v*` tag rebuilds mobile too — for a server-only hotfix, use `workflow_dispatch` on the specific deploy instead of cutting a tag.
 
 ### Verifying the split is intact
 

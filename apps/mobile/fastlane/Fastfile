@@ -9,8 +9,8 @@
 # (.github/workflows/mobile-release.yml). Locally the same lanes work
 # if you have the right credentials in the keychain / env.
 #
-# Versioning: the workflow passes the version from the git tag
-# (mobile-vX.Y.Z) and a CI-derived build number (the GitHub run number).
+# Versioning: the workflow passes the version from the unified release
+# tag (vX.Y.Z) and a CI-derived build number (the GitHub run number).
 # We deliberately don't bump versions in the source — the tag is the
 # source of truth.
 
