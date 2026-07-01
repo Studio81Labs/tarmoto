@@ -62,12 +62,14 @@ export function fft(re: Float64Array, im: Float64Array): void {
     }
     j ^= bit;
     if (i < j) {
-      let tmp = re[i];
-      re[i] = re[j];
-      re[j] = tmp;
-      tmp = im[i];
-      im[i] = im[j];
-      im[j] = tmp;
+      const reI = re[i] ?? 0;
+      const reJ = re[j] ?? 0;
+      re[i] = reJ;
+      re[j] = reI;
+      const imI = im[i] ?? 0;
+      const imJ = im[j] ?? 0;
+      im[i] = imJ;
+      im[j] = imI;
     }
   }
 
@@ -80,10 +82,12 @@ export function fft(re: Float64Array, im: Float64Array): void {
         const angle = angleStep * k;
         const wRe = Math.cos(angle);
         const wIm = Math.sin(angle);
-        const tRe = re[start + k + half] * wRe - im[start + k + half] * wIm;
-        const tIm = re[start + k + half] * wIm + im[start + k + half] * wRe;
-        const uRe = re[start + k];
-        const uIm = im[start + k];
+        const reHalf = re[start + k + half] ?? 0;
+        const imHalf = im[start + k + half] ?? 0;
+        const tRe = reHalf * wRe - imHalf * wIm;
+        const tIm = reHalf * wIm + imHalf * wRe;
+        const uRe = re[start + k] ?? 0;
+        const uIm = im[start + k] ?? 0;
         re[start + k] = uRe + tRe;
         im[start + k] = uIm + tIm;
         re[start + k + half] = uRe - tRe;
@@ -141,13 +145,13 @@ export function computeSpectralFeatures(
   const im = new Float64Array(fftN);
 
   let mean = 0;
-  for (let i = 0; i < n; i++) mean += signal[i];
+  for (let i = 0; i < n; i++) mean += signal[i] ?? 0;
   mean /= n;
 
   // Hann window over the original n samples; zero-pad to fftN.
   for (let i = 0; i < n; i++) {
     const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
-    re[i] = (signal[i] - mean) * w;
+    re[i] = ((signal[i] ?? 0) - mean) * w;
   }
 
   fft(re, im);
@@ -166,7 +170,9 @@ export function computeSpectralFeatures(
 
   // Pass 1: bin-wise power, band sums, dominant bin (skip DC).
   for (let k = 1; k <= topBin; k++) {
-    const power = re[k] * re[k] + im[k] * im[k];
+    const reK = re[k] ?? 0;
+    const imK = im[k] ?? 0;
+    const power = reK * reK + imK * imK;
     if (power === 0) continue;
     const f = k * binHz;
     totalPower += power;
@@ -196,7 +202,9 @@ export function computeSpectralFeatures(
   // must mirror this exact denominator (issue #492 model contract).
   let entropySum = 0;
   for (let k = 1; k <= topBin; k++) {
-    const power = re[k] * re[k] + im[k] * im[k];
+    const reK = re[k] ?? 0;
+    const imK = im[k] ?? 0;
+    const power = reK * reK + imK * imK;
     if (power === 0) continue;
     const p = power / totalPower;
     entropySum -= p * Math.log(p);

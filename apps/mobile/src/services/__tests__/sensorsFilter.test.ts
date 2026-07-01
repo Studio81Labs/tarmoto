@@ -207,7 +207,9 @@ describe("LowPassFilter — state continuity", () => {
     const splitOut = [...part1, ...part2];
 
     for (let i = 0; i < signal.length; i++) {
-      expect(splitOut[i]).toBeCloseTo(oneShotOut[i], 12);
+      const expected = oneShotOut[i];
+      if (expected === undefined) throw new Error("missing one-shot sample");
+      expect(splitOut[i]).toBeCloseTo(expected, 12);
     }
   });
 
@@ -267,7 +269,9 @@ describe("LowPassFilter — comparison vs unfiltered on the PoC ride fixture", (
     const samples: Row[] = [];
     let prevT: number | null = null;
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",");
+      const line = lines[i];
+      if (line === undefined) continue;
+      const cols = line.split(",");
       const t = Number(cols[1]);
       const row = {
         t,
@@ -282,7 +286,10 @@ describe("LowPassFilter — comparison vs unfiltered on the PoC ride fixture", (
       samples.push(row);
       prevT = t;
     }
-    const span = samples[samples.length - 1].t - samples[0].t;
+    const lastSample = samples[samples.length - 1];
+    const firstSample = samples[0];
+    if (!lastSample || !firstSample) throw new Error("no samples parsed");
+    const span = lastSample.t - firstSample.t;
     const sampleRateHz = ((samples.length - 1) * 1000) / span;
     return { samples, sampleRateHz };
   }

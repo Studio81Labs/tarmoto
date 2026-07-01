@@ -70,6 +70,7 @@ function buildCornerPolyline(
 
   const step = () => {
     const last = points[points.length - 1];
+    if (!last) throw new Error("polyline has no points to step from");
     // In our tiny flat-earth model, bearing 0 = +lat, bearing 90 = +lng.
     // cos/sin drive lat/lng respectively.
     const next = {
@@ -97,8 +98,8 @@ describe("extractManeuvers", () => {
   it("single point → depart + arrive at the same vertex", () => {
     const m = extractManeuvers([{ lat: 49, lng: 18 }]);
     expect(m.map((x) => x.type)).toEqual(["depart", "arrive"]);
-    expect(m[0].distanceFromStartM).toBe(0);
-    expect(m[1].distanceFromStartM).toBe(0);
+    expect(m[0]?.distanceFromStartM).toBe(0);
+    expect(m[1]?.distanceFromStartM).toBe(0);
   });
 
   it("straight line → no interior maneuvers", () => {
@@ -111,8 +112,8 @@ describe("extractManeuvers", () => {
     const poly = buildCornerPolyline({ lat: 49, lng: 18 }, 5, 90, 5);
     const m = extractManeuvers(poly);
     expect(m.map((x) => x.type)).toEqual(["depart", "turn-right", "arrive"]);
-    expect(m[1].headingChangeDeg).toBeGreaterThan(80);
-    expect(m[1].headingChangeDeg).toBeLessThan(100);
+    expect(m[1]?.headingChangeDeg).toBeGreaterThan(80);
+    expect(m[1]?.headingChangeDeg).toBeLessThan(100);
   });
 
   it("45° slight-left", () => {
@@ -123,13 +124,13 @@ describe("extractManeuvers", () => {
       "turn-slight-left",
       "arrive",
     ]);
-    expect(m[1].headingChangeDeg).toBeLessThan(0);
+    expect(m[1]?.headingChangeDeg).toBeLessThan(0);
   });
 
   it("U-turn at ~170°", () => {
     const poly = buildCornerPolyline({ lat: 49, lng: 18 }, 5, 170, 5);
     const m = extractManeuvers(poly);
-    expect(m[1].type).toBe("uturn");
+    expect(m[1]?.type).toBe("uturn");
   });
 
   it("attaches road names from the waypoint array", () => {
@@ -185,12 +186,10 @@ describe("projectOnPolyline", () => {
     const p = projectOnPolyline(poly, { lat: 49.5, lng: 18.1 });
     expect(p?.segmentIndex).toBe(1);
     // Clamped to the last vertex, so progress equals polyline length.
-    const total = haversineM(
-      poly[0].lat,
-      poly[0].lng,
-      poly[2].lat,
-      poly[2].lng,
-    );
+    const start = poly[0];
+    const finish = poly[2];
+    if (!start || !finish) throw new Error("poly fixture broken");
+    const total = haversineM(start.lat, start.lng, finish.lat, finish.lng);
     expect(p?.progressM).toBeCloseTo(total, -1);
   });
 });
@@ -202,17 +201,21 @@ describe("NavSession", () => {
   const maneuvers = extractManeuvers(poly);
   const executedTurn = maneuvers.find((m) => m.type === "turn-right");
   if (!executedTurn) throw new Error("test fixture broken: no turn");
+  const startPt = poly[0];
+  const endPt = poly[poly.length - 1];
+  if (!startPt || !endPt)
+    throw new Error("test fixture broken: empty polyline");
 
   it("fires depart on the first tick", () => {
     const s = new NavSession(poly, maneuvers);
-    const tick = s.update(poly[0]);
+    const tick = s.update(startPt);
     expect(tick.announcements.some((a) => a.type === "depart")).toBe(true);
     expect(tick.nextManeuver?.type).toBe("turn-right");
   });
 
   it("fires warning-far exactly once when crossing 300m to the turn", () => {
     const s = new NavSession(poly, maneuvers);
-    s.update(poly[0]);
+    s.update(startPt);
     // Walk along the polyline until the turn is within 300m. We pick a
     // point close to but below the threshold to trigger the boundary.
     const turnM = executedTurn.distanceFromStartM;
@@ -229,7 +232,7 @@ describe("NavSession", () => {
 
   it("fires warning-near, then arrived on completion", () => {
     const s = new NavSession(poly, maneuvers);
-    s.update(poly[0]);
+    s.update(startPt);
     // Skip past the far-warning zone so the near one is what fires here.
     s.update(pointAlong(poly, executedTurn.distanceFromStartM - 200));
     const near = s.update(
@@ -241,11 +244,11 @@ describe("NavSession", () => {
     // cold-start projection snapping to the tail on loop routes). The
     // first end-of-polyline tick primes prevInArrivalZone; the second
     // actually fires.
-    const firstAtEnd = s.update(poly[poly.length - 1]);
+    const firstAtEnd = s.update(endPt);
     expect(firstAtEnd.announcements.map((a) => a.type)).not.toContain(
       "arrived",
     );
-    const arrival = s.update(poly[poly.length - 1]);
+    const arrival = s.update(endPt);
     expect(arrival.announcements.map((a) => a.type)).toContain("arrived");
   });
 
@@ -254,25 +257,28 @@ describe("NavSession", () => {
     // the projection snaps them to the end segment. A single tick must not
     // trigger the arrival announcement — the two-tick gate swallows it.
     const s = new NavSession(poly, maneuvers);
-    const coldStart = s.update(poly[poly.length - 1]);
+    const coldStart = s.update(endPt);
     expect(coldStart.announcements.map((a) => a.type)).not.toContain("arrived");
   });
 
   it("flags off-route when > 50m perpendicular and recovers on return", () => {
     const s = new NavSession(poly, maneuvers);
-    s.update(poly[0]);
+    s.update(startPt);
     // Offset 200m north of the first segment's mid-point — well over
     // the off-route threshold. We skip the maneuver logic while off-route.
+    const offVertex = poly[2];
+    const returnVertex = poly[3];
+    if (!offVertex || !returnVertex) throw new Error("poly fixture broken");
     const offRouteTick = s.update({
-      lat: poly[2].lat + 0.002,
-      lng: poly[2].lng,
+      lat: offVertex.lat + 0.002,
+      lng: offVertex.lng,
     });
     expect(offRouteTick.offRoute).toBe(true);
     expect(offRouteTick.announcements.map((a) => a.type)).toContain(
       "off-route",
     );
 
-    const recovered = s.update(poly[3]);
+    const recovered = s.update(returnVertex);
     expect(recovered.offRoute).toBe(false);
     expect(recovered.announcements.map((a) => a.type)).toContain("on-route");
   });
@@ -283,8 +289,8 @@ describe("NavSession", () => {
     // stay true across the off-route gap and the two-tick gate would be
     // bypassed.
     const s = new NavSession(poly, maneuvers);
-    s.update(poly[0]); // depart
-    const end = poly[poly.length - 1];
+    s.update(startPt); // depart
+    const end = endPt;
     // Tick 1: at the end (in-zone). Sets prevInArrivalZone=true but
     // doesn't fire since the prev was still false.
     const first = s.update(end);
@@ -550,20 +556,20 @@ describe("resolveVoiceLocale", () => {
 function pointAlong(poly: LatLng[], targetM: number): LatLng {
   let remaining = targetM;
   for (let i = 0; i < poly.length - 1; i++) {
-    const len = haversineM(
-      poly[i].lat,
-      poly[i].lng,
-      poly[i + 1].lat,
-      poly[i + 1].lng,
-    );
+    const a = poly[i];
+    const b = poly[i + 1];
+    if (!a || !b) continue;
+    const len = haversineM(a.lat, a.lng, b.lat, b.lng);
     if (remaining <= len) {
       const t = len === 0 ? 0 : remaining / len;
       return {
-        lat: poly[i].lat + t * (poly[i + 1].lat - poly[i].lat),
-        lng: poly[i].lng + t * (poly[i + 1].lng - poly[i].lng),
+        lat: a.lat + t * (b.lat - a.lat),
+        lng: a.lng + t * (b.lng - a.lng),
       };
     }
     remaining -= len;
   }
-  return poly[poly.length - 1];
+  const last = poly[poly.length - 1];
+  if (!last) throw new Error("pointAlong: empty polyline");
+  return last;
 }

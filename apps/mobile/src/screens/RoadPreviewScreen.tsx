@@ -819,7 +819,7 @@ function ReviewRow({
   review: RoadReview;
   onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
   /** Defined only when this row is the viewer's own review. */
-  onEditOwn?: () => void;
+  onEditOwn?: (() => void) | undefined;
 }) {
   const photos = Array.isArray(review.photos) ? review.photos : [];
   // US-27 follow-up (#335): tapping a reviewer name opens their profile
@@ -1044,7 +1044,7 @@ function SectionTitle({
 }: {
   icon: IconName;
   title: string;
-  rightLabel?: string;
+  rightLabel?: string | undefined;
 }) {
   return (
     <View style={styles.sectionTitleRow}>

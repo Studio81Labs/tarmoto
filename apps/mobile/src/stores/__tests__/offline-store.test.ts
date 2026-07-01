@@ -57,8 +57,8 @@ describe("useOfflineStore", () => {
     const all = useOfflineStore.getState().regions;
     const match = all.filter((r) => r.id === spec.id);
     expect(match).toHaveLength(1);
-    expect(match[0].totalTiles).toBe(40);
-    expect(match[0].downloadedTiles).toBe(0);
+    expect(match[0]?.totalTiles).toBe(40);
+    expect(match[0]?.downloadedTiles).toBe(0);
   });
 
   it("beginDownload flips to downloading and clears lastError", () => {

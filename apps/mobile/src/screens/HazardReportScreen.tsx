@@ -279,8 +279,8 @@ export default function HazardReportScreen() {
         lng: location.lng,
         hazardType,
         severity,
-        note: trimmedNote.length > 0 ? trimmedNote : undefined,
-        photoUri: photo?.uri,
+        ...(trimmedNote.length > 0 ? { note: trimmedNote } : {}),
+        ...(photo?.uri !== undefined ? { photoUri: photo.uri } : {}),
       });
 
       // Optimistic store update so the rider's own report shows on the

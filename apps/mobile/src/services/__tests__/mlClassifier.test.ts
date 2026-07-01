@@ -235,8 +235,8 @@ describe("setUseLegacyFeatureVector (v1.0 fallback)", () => {
     expect(getActiveModelVersion()).toBe(LEGACY_MODEL_VERSION);
 
     // runSync received the 11-feature buffer, not the 21-feature one.
-    const inputs = model.runSync.mock.calls[0][0];
-    expect(inputs[0].byteLength).toBe(LEGACY_INPUT_FEATURES.length * 4);
+    const inputs = model.runSync.mock.calls[0]?.[0];
+    expect(inputs?.[0]?.byteLength).toBe(LEGACY_INPUT_FEATURES.length * 4);
   });
 });
 
@@ -343,7 +343,7 @@ describe("warmup + classify integration", () => {
     classify(makeFeatures({ rms: 1.7 }));
 
     expect(model.runSync).toHaveBeenCalledTimes(1);
-    const inputs = model.runSync.mock.calls[0][0];
+    const inputs = model.runSync.mock.calls[0]?.[0];
     expect(Array.isArray(inputs)).toBe(true);
     expect(inputs).toHaveLength(1);
     // `instanceof ArrayBuffer` is unreliable across jest realms (the
@@ -352,10 +352,10 @@ describe("warmup + classify integration", () => {
     // fail if the production code ever reverted to passing a typed
     // array directly (a Float32Array reports `[object Float32Array]`
     // and its byteLength is 4× the element count anyway).
-    expect(Object.prototype.toString.call(inputs[0])).toBe(
+    expect(Object.prototype.toString.call(inputs?.[0])).toBe(
       "[object ArrayBuffer]",
     );
-    expect(inputs[0].byteLength).toBe(INPUT_FEATURES.length * 4);
+    expect(inputs?.[0]?.byteLength).toBe(INPUT_FEATURES.length * 4);
   });
 
   it("returns null and stays unready when the loader rejects", async () => {

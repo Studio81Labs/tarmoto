@@ -82,8 +82,8 @@ export function WeatherAlertBanner({
     [alerts],
   );
 
-  if (sortedAlerts.length === 0) return null;
   const top = sortedAlerts[0];
+  if (!top) return null;
   const additionalCount = sortedAlerts.length - 1;
   const accent = severityColor(top.severity);
 

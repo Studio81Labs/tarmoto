@@ -337,7 +337,7 @@ class SensorService {
         // during calibration; we differentiate from a real 0° lean
         // (rider is genuinely upright) by checking the calibration
         // flag, not the value.
-        lean_deg: this.leanFilter.isCalibrating() ? undefined : leanDeg,
+        ...(this.leanFilter.isCalibrating() ? {} : { lean_deg: leanDeg }),
       };
 
       this.buffer.push(reading);
@@ -393,8 +393,8 @@ class SensorService {
       const gz = this.gyroFilterZ.process(z);
 
       // Attach to most recent reading
-      if (this.rawReadings.length > 0) {
-        const last = this.rawReadings[this.rawReadings.length - 1];
+      const last = this.rawReadings[this.rawReadings.length - 1];
+      if (last !== undefined) {
         last.gx = gx;
         last.gy = gy;
         last.gz = gz;
@@ -641,17 +641,19 @@ class SensorService {
       deviations.reduce((s, v) => s + (v - mean) ** 2, 0) / n,
     );
     const sorted = [...deviations].sort((a, b) => a - b);
-    const min = sorted[0];
-    const max = sorted[n - 1];
+    const min = sorted[0] ?? 0;
+    const max = sorted[n - 1] ?? 0;
     const peak_to_peak = max - min;
     const crest_factor = rms > 0 ? max / rms : 0;
-    const percentile_95 = sorted[Math.floor(n * 0.95)];
+    const percentile_95 = sorted[Math.floor(n * 0.95)] ?? 0;
 
     // Zero crossing rate
     let zeroCrossings = 0;
     for (let i = 1; i < n; i++) {
-      if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0)
-        zeroCrossings++;
+      const current = deviations[i];
+      const previous = deviations[i - 1];
+      if (current === undefined || previous === undefined) continue;
+      if ((current - mean) * (previous - mean) < 0) zeroCrossings++;
     }
     const zero_crossing_rate = zeroCrossings / n;
 
@@ -737,11 +739,11 @@ class SensorService {
     // initialisation explicit and immune to future re-orderings of
     // `DEVICE_FAMILIES`.
     const [
-      device_family_iphone_pro,
-      device_family_iphone_standard,
-      device_family_pixel,
-      device_family_samsung_galaxy_s,
-      device_family_other,
+      device_family_iphone_pro = 0,
+      device_family_iphone_standard = 0,
+      device_family_pixel = 0,
+      device_family_samsung_galaxy_s = 0,
+      device_family_other = 0,
     ] = this.deviceFamilyOneHot;
 
     return {

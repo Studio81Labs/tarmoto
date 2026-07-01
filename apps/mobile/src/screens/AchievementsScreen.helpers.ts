@@ -60,6 +60,7 @@ export function nextMilestone(badge: UserBadge): NextMilestone | null {
   const rank = tierRank(badge.tier);
   if (rank >= TIER_ORDER.length) return null;
   const nextTier = TIER_ORDER[rank];
+  if (!nextTier) return null;
   return { tier: nextTier, target: badge.progress[nextTier] };
 }
 
@@ -74,7 +75,8 @@ export function progressToNext(badge: UserBadge): number {
   if (!next) return 1;
   const rank = tierRank(badge.tier);
   // Threshold for the most-recently-earned tier (or 0 for unearned).
-  const floor = rank === 0 ? 0 : badge.progress[TIER_ORDER[rank - 1]];
+  const prevTier = rank === 0 ? null : TIER_ORDER[rank - 1];
+  const floor = prevTier ? badge.progress[prevTier] : 0;
   const span = next.target - floor;
   if (span <= 0) return 1;
   const progressed = badge.progress.current - floor;

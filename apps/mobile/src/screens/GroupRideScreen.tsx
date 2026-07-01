@@ -357,7 +357,8 @@ export default function GroupRideScreen() {
     // constructor isn't reachable here.
     const lookup: Record<string, string> = {};
     sorted.forEach((m, idx) => {
-      lookup[m.user_id] = MEMBER_COLORS[idx % MEMBER_COLORS.length];
+      const color = MEMBER_COLORS[idx % MEMBER_COLORS.length];
+      if (color) lookup[m.user_id] = color;
     });
     return lookup;
   }, [positionTick]);

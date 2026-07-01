@@ -51,10 +51,10 @@ export interface ReviewSubmissionPayload {
    * "keep existing value"). Use `undefined` on create to omit the
    * field entirely. Same convention for `bikeModel` and `photos`.
    */
-  comment?: string | null;
-  bikeModel?: string | null;
+  comment?: string | null | undefined;
+  bikeModel?: string | null | undefined;
   /** URLs of photos already persisted on Tarmoto media storage. */
-  photos?: string[] | null;
+  photos?: string[] | null | undefined;
 }
 
 export interface PendingReview extends ReviewSubmissionPayload {

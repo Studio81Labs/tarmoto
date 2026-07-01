@@ -681,7 +681,7 @@ function QualityLegend({
   onHeightChange,
 }: {
   minQuality: number;
-  offlineRegionName?: string;
+  offlineRegionName?: string | undefined;
   onHeightChange?: (height: number) => void;
 }) {
   // Buckets are rendered top-down (Excellent → Very poor) but the score

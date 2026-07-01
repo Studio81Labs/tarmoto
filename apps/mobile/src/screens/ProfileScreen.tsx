@@ -158,8 +158,12 @@ export default function ProfileScreen() {
     try {
       const updated = await api.uploadAvatar({
         uri: result.photo.uri,
-        mimeType: result.photo.mimeType,
-        fileName: result.photo.fileName,
+        ...(result.photo.mimeType !== undefined
+          ? { mimeType: result.photo.mimeType }
+          : {}),
+        ...(result.photo.fileName !== undefined
+          ? { fileName: result.photo.fileName }
+          : {}),
       });
       setUser(updated);
       // Refresh profile so the counts/joined date stay in sync — the

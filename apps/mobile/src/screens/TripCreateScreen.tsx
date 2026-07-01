@@ -236,7 +236,7 @@ export default function TripCreateScreen() {
         const trip = await api.createTrip({
           title: trimmedTitle,
           num_days: numDays,
-          region: region.trim() || undefined,
+          ...(region.trim() ? { region: region.trim() } : {}),
           min_quality: tripMinQuality,
           road_preference: roadPref,
           daily_km_min: dailyKm.min,

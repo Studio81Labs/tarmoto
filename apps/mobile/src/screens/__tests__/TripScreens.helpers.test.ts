@@ -161,6 +161,14 @@ describe("bboxAroundPoint", () => {
     const parts = bbox.split(",").map((n) => Number.parseFloat(n));
     expect(parts).toHaveLength(4);
     const [minLng, minLat, maxLng, maxLat] = parts;
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
+      throw new Error("expected four bbox parts");
+    }
     expect(minLng).toBeLessThan(maxLng);
     expect(minLat).toBeLessThan(maxLat);
     // Centered on the input point within rounding.
@@ -173,6 +181,14 @@ describe("bboxAroundPoint", () => {
     const epic = bboxAroundPoint(49.82, 18.26, 14);
     const [, sMinLat, , sMaxLat] = short.split(",").map(Number.parseFloat);
     const [, eMinLat, , eMaxLat] = epic.split(",").map(Number.parseFloat);
+    if (
+      sMinLat === undefined ||
+      sMaxLat === undefined ||
+      eMinLat === undefined ||
+      eMaxLat === undefined
+    ) {
+      throw new Error("expected latitude bbox parts");
+    }
     expect(eMaxLat - eMinLat).toBeGreaterThan(sMaxLat - sMinLat);
     // Cap: 600 km → roughly 5.4° of latitude. Anything bigger means the
     // safety cap isn't working.
@@ -355,11 +371,11 @@ describe("computeFuelRangeLegs", () => {
     const legs = computeFuelRangeLegs(day, 150);
     expect(legs).toHaveLength(1);
     // 2° of latitude ≈ 222 km — exceeds a 150 km range.
-    expect(legs[0].distanceKm).toBeGreaterThan(220);
-    expect(legs[0].distanceKm).toBeLessThan(225);
-    expect(legs[0].exceedsRange).toBe(true);
-    expect(legs[0].fromName).toBe("Start");
-    expect(legs[0].toName).toBe("End");
+    expect(legs[0]?.distanceKm).toBeGreaterThan(220);
+    expect(legs[0]?.distanceKm).toBeLessThan(225);
+    expect(legs[0]?.exceedsRange).toBe(true);
+    expect(legs[0]?.fromName).toBe("Start");
+    expect(legs[0]?.toName).toBe("End");
   });
 
   it("splits the route at each fuel waypoint and honours within-range legs", () => {
@@ -393,13 +409,13 @@ describe("computeFuelRangeLegs", () => {
     ]);
     const legs = computeFuelRangeLegs(day, 200);
     expect(legs).toHaveLength(2);
-    expect(legs[0].fromName).toBe("Home");
-    expect(legs[0].toName).toBe("BP Brno");
-    expect(legs[1].fromName).toBe("BP Brno");
-    expect(legs[1].toName).toBe("Hotel");
+    expect(legs[0]?.fromName).toBe("Home");
+    expect(legs[0]?.toName).toBe("BP Brno");
+    expect(legs[1]?.fromName).toBe("BP Brno");
+    expect(legs[1]?.toName).toBe("Hotel");
     // ~166 km each — both under 200 km.
     expect(legs.every((l) => !l.exceedsRange)).toBe(true);
-    expect(legs[0].distanceKm).toBeCloseTo(1.5 * KM_PER_DEGREE_LAT, 0);
+    expect(legs[0]?.distanceKm).toBeCloseTo(1.5 * KM_PER_DEGREE_LAT, 0);
   });
 
   it("marks a leg as exceeding when its distance is above the fuel range", () => {
@@ -440,13 +456,13 @@ describe("computeFuelRangeLegs", () => {
       { id: "fuel", sequence: 1, lat: 50.5, lng: 0.7, waypoint_type: "fuel" },
     ]);
     const legs = computeFuelRangeLegs(day, 1000);
-    expect(legs[0].distanceKm).toBeCloseTo(1.5 * KM_PER_DEGREE_LAT, 0);
+    expect(legs[0]?.distanceKm).toBeCloseTo(1.5 * KM_PER_DEGREE_LAT, 0);
   });
 
   it("never flags legs as exceeding when fuelRangeKm is zero or negative", () => {
     const day = dayFrom(vertexStrip([49, 50, 51, 52]), []);
-    expect(computeFuelRangeLegs(day, 0)[0].exceedsRange).toBe(false);
-    expect(computeFuelRangeLegs(day, -200)[0].exceedsRange).toBe(false);
+    expect(computeFuelRangeLegs(day, 0)[0]?.exceedsRange).toBe(false);
+    expect(computeFuelRangeLegs(day, -200)[0]?.exceedsRange).toBe(false);
   });
 });
 
@@ -520,6 +536,7 @@ describe("withSuggestedOvernightStop", () => {
     ]);
 
     const day1 = next.days[0];
+    if (!day1) throw new Error("expected a first trip day");
     expect(day1.waypoints.map((waypoint) => waypoint.waypoint_type)).toEqual([
       "start",
       "hotel",
@@ -560,7 +577,7 @@ describe("withSuggestedOvernightStop", () => {
       }),
     ]);
 
-    expect(next.days[0].waypoints[1]).toMatchObject({
+    expect(next.days[0]?.waypoints[1]).toMatchObject({
       id: "hotel-explicit",
       name: "Booked stay",
       waypoint_type: "hotel",
@@ -597,7 +614,9 @@ describe("navigationWaypointsForRoadNames", () => {
     expect(
       navigationWaypointsForRoadNames(waypoints).map((waypoint) => waypoint.id),
     ).toEqual(["start", "fuel-1", "end"]);
-    expect(isSuggestedOvernightWaypoint(waypoints[1])).toBe(true);
+    const secondWaypoint = waypoints[1];
+    if (!secondWaypoint) throw new Error("expected a second waypoint");
+    expect(isSuggestedOvernightWaypoint(secondWaypoint)).toBe(true);
   });
 });
 
@@ -645,6 +664,7 @@ describe("summarizeFuelRange", () => {
       ]);
       expect(result.legs).toHaveLength(1);
       const leg = result.legs[0];
+      if (!leg) throw new Error("expected a fuel range leg");
       expect(leg.exceedsRange).toBe(true);
       expect(leg.suggestedStops).toEqual([
         {
@@ -723,19 +743,15 @@ describe("summarizeFuelRange", () => {
         },
       ]);
       expect(result.legs).toHaveLength(2);
-      expect(result.legs[0].suggestedStops?.map((s) => s.name)).toEqual([
-        "Station A",
-      ]);
-      expect(result.legs[1].suggestedStops?.map((s) => s.name)).toEqual([
-        "Station B",
-      ]);
+      const [leg0, leg1] = result.legs;
+      if (!leg0 || !leg1) throw new Error("expected two fuel range legs");
+      expect(leg0.suggestedStops?.map((s) => s.name)).toEqual(["Station A"]);
+      expect(leg1.suggestedStops?.map((s) => s.name)).toEqual(["Station B"]);
       // Leg 2 starts ~220 km in; Station B at 280 km is ~60 km in.
-      expect(
-        result.legs[1].suggestedStops![0].distanceFromLegStartKm,
-      ).toBeGreaterThan(55);
-      expect(
-        result.legs[1].suggestedStops![0].distanceFromLegStartKm,
-      ).toBeLessThan(65);
+      const leg1FirstStop = leg1.suggestedStops?.[0];
+      if (!leg1FirstStop) throw new Error("expected a suggested stop on leg 2");
+      expect(leg1FirstStop.distanceFromLegStartKm).toBeGreaterThan(55);
+      expect(leg1FirstStop.distanceFromLegStartKm).toBeLessThan(65);
     });
 
     it("drops stations with blank names since the UI has nothing to render", () => {
@@ -759,7 +775,7 @@ describe("summarizeFuelRange", () => {
           distanceFromRouteKm: 0.3,
         },
       ]);
-      expect(result.legs[0].suggestedStops?.map((s) => s.name)).toEqual([
+      expect(result.legs[0]?.suggestedStops?.map((s) => s.name)).toEqual([
         "Named",
       ]);
     });
@@ -774,7 +790,11 @@ describe("summarizeFuelRange", () => {
       const result = summarizeFuelRange(longDay(), 150, manyStations);
       // MAX_SUGGESTED_STOPS_PER_LEG is a private constant inside the
       // helper (3); assert the public contract rather than the value.
-      expect(result.legs[0].suggestedStops!.length).toBeLessThanOrEqual(3);
+      const cappedLeg = result.legs[0];
+      if (!cappedLeg?.suggestedStops) {
+        throw new Error("expected suggested stops on the first leg");
+      }
+      expect(cappedLeg.suggestedStops.length).toBeLessThanOrEqual(3);
     });
 
     it("is a no-op when the station list is empty", () => {

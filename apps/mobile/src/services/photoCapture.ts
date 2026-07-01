@@ -28,11 +28,11 @@ export type PhotoSource = "camera" | "library";
 
 export interface CapturedPhoto {
   uri: string;
-  fileName?: string;
-  mimeType?: string;
-  fileSize?: number;
-  width?: number;
-  height?: number;
+  fileName?: string | undefined;
+  mimeType?: string | undefined;
+  fileSize?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
 }
 
 export type CaptureStatus =
@@ -46,7 +46,7 @@ export interface CaptureResult {
   photo?: CapturedPhoto;
   source?: PhotoSource;
   /** Optional human-readable detail for `unavailable` / errors. */
-  reason?: string;
+  reason?: string | undefined;
 }
 
 type PhotoLauncher = (source: PhotoSource) => Promise<CaptureResult>;

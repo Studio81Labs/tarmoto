@@ -679,7 +679,7 @@ function Metric({
   // ink value — the Q1–Q5 ramp fails AA as text on the cream card, so the
   // colour lives on the swatch (rule #4 quality vocabulary) and the label
   // stays ink.
-  swatchColor?: string;
+  swatchColor?: string | undefined;
 }) {
   return (
     <View style={styles.metric}>

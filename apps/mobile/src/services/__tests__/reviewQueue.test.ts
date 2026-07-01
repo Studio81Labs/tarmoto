@@ -119,7 +119,7 @@ describe("reviewQueue", () => {
       expect(pending).toHaveLength(1);
       // Photo URLs must round-trip so the next drain can re-submit
       // without re-uploading the bytes.
-      expect(pending[0].photos).toEqual([
+      expect(pending[0]?.photos).toEqual([
         "https://api.tarmoto.test/uploads/road-review-photos/u-1.jpg",
       ]);
     });
@@ -189,7 +189,7 @@ describe("reviewQueue", () => {
       expect(result.status).toBe("queued");
       expect(getPendingCount()).toBe(2);
       expect(calls).toHaveLength(1);
-      expect(calls[0].segmentId).toBe("seg-A");
+      expect(calls[0]?.segmentId).toBe("seg-A");
     });
 
     it("does not flush entries belonging to a different signed-in user", async () => {
@@ -217,10 +217,10 @@ describe("reviewQueue", () => {
 
       expect(result.status).toBe("uploaded");
       expect(calls).toHaveLength(1);
-      expect(calls[0].comment).toBe("user-B's note");
+      expect(calls[0]?.comment).toBe("user-B's note");
       const remaining = getPendingReviews();
       expect(remaining).toHaveLength(1);
-      expect(remaining[0].userId).toBe("user-A");
+      expect(remaining[0]?.userId).toBe("user-A");
     });
   });
 
@@ -303,8 +303,8 @@ describe("reviewQueue", () => {
       // without the poison-pill drop kicking in prematurely.
       const remaining = getPendingReviews();
       expect(remaining).toHaveLength(1);
-      expect(remaining[0].userId).toBe("user-A");
-      expect(remaining[0].attempts).toBe(0);
+      expect(remaining[0]?.userId).toBe("user-A");
+      expect(remaining[0]?.attempts).toBe(0);
     });
   });
 });

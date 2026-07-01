@@ -157,8 +157,8 @@ describe("CrashAlertOverlay", () => {
       expect(useCrashStore.getState().phase).toBe("dispatched"),
     );
 
-    const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0][2];
-    const retryOpts = mockedApi.sendCrashAlert.mock.calls[1][2];
+    const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0]?.[2];
+    const retryOpts = mockedApi.sendCrashAlert.mock.calls[1]?.[2];
     expect(firstAttemptOpts?.alertId).toBeDefined();
     expect(retryOpts?.alertId).toBe(firstAttemptOpts?.alertId);
   });
@@ -196,8 +196,8 @@ describe("CrashAlertOverlay", () => {
       expect(useCrashStore.getState().phase).toBe("dispatched"),
     );
 
-    const initial = mockedApi.sendCrashAlert.mock.calls[0][2];
-    const poll = mockedApi.sendCrashAlert.mock.calls[1][2];
+    const initial = mockedApi.sendCrashAlert.mock.calls[0]?.[2];
+    const poll = mockedApi.sendCrashAlert.mock.calls[1]?.[2];
     expect(poll?.alertId).toBe(initial?.alertId);
   });
 
@@ -320,8 +320,8 @@ describe("CrashAlertOverlay", () => {
       expect(useCrashStore.getState().phase).toBe("dispatched"),
     );
 
-    const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0][2];
-    const retryOpts = mockedApi.sendCrashAlert.mock.calls[1][2];
+    const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0]?.[2];
+    const retryOpts = mockedApi.sendCrashAlert.mock.calls[1]?.[2];
     expect(retryOpts?.alertId).not.toBe(firstAttemptOpts?.alertId);
   });
 

@@ -64,7 +64,7 @@ export const MAX_REVIEW_BIKE_MODEL_LENGTH = 100;
 
 export interface ReviewFormSubmitResult {
   status: "uploaded" | "queued";
-  review?: RoadReview;
+  review?: RoadReview | undefined;
 }
 
 export interface ReviewFormModalProps {
@@ -120,8 +120,8 @@ interface PhotoEntry {
   uploading: boolean;
   /** Human-readable reason when an upload fails. */
   error?: string;
-  fileName?: string;
-  mimeType?: string;
+  fileName?: string | undefined;
+  mimeType?: string | undefined;
 }
 
 function nextPhotoId(): string {
@@ -370,8 +370,12 @@ export default function ReviewFormModal({
           [
             {
               uri: result.photo.uri,
-              mimeType: result.photo.mimeType,
-              fileName: result.photo.fileName,
+              ...(result.photo.mimeType !== undefined
+                ? { mimeType: result.photo.mimeType }
+                : {}),
+              ...(result.photo.fileName !== undefined
+                ? { fileName: result.photo.fileName }
+                : {}),
             },
           ],
           { signal: abortController.signal },
@@ -488,9 +492,9 @@ export default function ReviewFormModal({
           {
             segmentId,
             rating,
-            comment: trimmedComment || undefined,
-            bikeModel: trimmedBike || undefined,
-            photos: photoUrls.length > 0 ? photoUrls : undefined,
+            ...(trimmedComment ? { comment: trimmedComment } : {}),
+            ...(trimmedBike ? { bikeModel: trimmedBike } : {}),
+            ...(photoUrls.length > 0 ? { photos: photoUrls } : {}),
           },
           currentUserId,
         );

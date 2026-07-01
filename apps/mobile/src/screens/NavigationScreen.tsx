@@ -227,26 +227,24 @@ export default function NavigationScreen() {
     setVoiceEnabled((v) => !v);
   }, []);
 
+  const noRouteView = (
+    <View style={styles.empty}>
+      <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
+      <Icon name="map-marker-off-outline" size={48} color={t.mute} />
+      <Text style={styles.emptyTitle}>No route to navigate</Text>
+      <Text style={styles.emptyBody}>
+        {params.source === "trip-day"
+          ? "Open this day from the trip detail and try again."
+          : "We couldn't load this route's geometry. Go back and try again."}
+      </Text>
+      <TouchableOpacity onPress={handleEnd} style={styles.endSecondary}>
+        <Text style={styles.endSecondaryLabel}>Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (polyline.length < 2) {
-    return (
-      <View style={styles.empty}>
-        <StatusBar
-          barStyle="light-content"
-          backgroundColor={t.bg}
-          translucent
-        />
-        <Icon name="map-marker-off-outline" size={48} color={t.mute} />
-        <Text style={styles.emptyTitle}>No route to navigate</Text>
-        <Text style={styles.emptyBody}>
-          {params.source === "trip-day"
-            ? "Open this day from the trip detail and try again."
-            : "We couldn't load this route's geometry. Go back and try again."}
-        </Text>
-        <TouchableOpacity onPress={handleEnd} style={styles.endSecondary}>
-          <Text style={styles.endSecondaryLabel}>Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return noRouteView;
   }
 
   const startCenter = polyline[0];
@@ -256,7 +254,11 @@ export default function NavigationScreen() {
   //      (or overshot the last maneuver), so show "Arrive" instead of
   //      stale "Turn right" copy from the start of the route.
   //   3. No tick yet (pre-GPS-fix) → preview the first real turn.
-  const nextManeuver: Maneuver = vehicleNextManeuver ?? maneuvers[0];
+  const nextManeuver: Maneuver | undefined =
+    vehicleNextManeuver ?? maneuvers[0];
+  if (!startCenter || !nextManeuver) {
+    return noRouteView;
+  }
   const offRoute = tick?.offRoute ?? false;
   // Live count of interior maneuvers still ahead of the rider. Falls back
   // to the total interior count before the first GPS fix lands so the
