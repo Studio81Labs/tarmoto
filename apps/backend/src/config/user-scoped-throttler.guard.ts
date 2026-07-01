@@ -43,7 +43,9 @@ export class UserScopedThrottlerGuard extends ThrottlerGuard {
     super(options, storageService, reflector);
   }
 
-  protected async getTracker(req: Record<string, unknown>): Promise<string> {
+  protected override async getTracker(
+    req: Record<string, unknown>,
+  ): Promise<string> {
     const ip = typeof req['ip'] === 'string' ? req['ip'] : 'unknown-ip';
     const userId = await this.resolveUserId(req);
     return `${ip}:${userId}`;
