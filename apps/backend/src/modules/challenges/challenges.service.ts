@@ -42,7 +42,7 @@ export class ChallengesService {
       ),
     );
 
-    return challenges.map((c, i) => this.toChallengeDto(c, counts[i]));
+    return challenges.map((c, i) => this.toChallengeDto(c, counts[i] ?? 0));
   }
 
   async getDetail(

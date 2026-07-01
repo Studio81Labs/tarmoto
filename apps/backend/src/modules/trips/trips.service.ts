@@ -570,6 +570,7 @@ export class TripsService {
       // the day-list UI.
       for (let i = 0; i < days.length; i++) {
         const parsed = days[i];
+        if (!parsed) continue;
         const dayNumber = i + 1;
         // Normalize the (client-supplied) overnight link like manual saves: day
         // 1 is never linked, and a successor is only linked when its start
@@ -581,8 +582,10 @@ export class TripsService {
         // A generated predecessor finishes at a terminal accommodation, not an
         // explicit `end` — treat that as the finish so a valid shared link is
         // kept (otherwise the trip reloads with a duplicate overnight marker).
-        const prevEndWp =
-          i > 0 ? snapshotDayFinish(days[i - 1].waypoints) : undefined;
+        const prevDay = i > 0 ? days[i - 1] : undefined;
+        const prevEndWp = prevDay
+          ? snapshotDayFinish(prevDay.waypoints)
+          : undefined;
         const startLinked =
           i > 0 &&
           parsed.startLinked === true &&
@@ -1137,16 +1140,19 @@ export class TripsService {
       for (let i = 0; i < days.length; i++) {
         const d = days[i];
         const b = built[i];
+        if (!d || !b) {
+          throw new Error(`saveDays: missing day or built route at index ${i}`);
+        }
         // Normalize the overnight-link flag rather than trusting the client:
         // day 1 is never linked, and a successor is only linked if its start
         // actually sits on the previous day's end. A direct/mobile client could
         // otherwise persist an impossible link the companion later trusts to
         // hide markers and resync starts.
         const startWp = d.waypoints.find((w) => w.type === 'start');
-        const prevEndWp =
-          i > 0
-            ? days[i - 1].waypoints.find((w) => w.type === 'end')
-            : undefined;
+        const prevDay = i > 0 ? days[i - 1] : undefined;
+        const prevEndWp = prevDay
+          ? prevDay.waypoints.find((w) => w.type === 'end')
+          : undefined;
         const startLinked =
           i > 0 &&
           d.startLinked === true &&
@@ -1615,12 +1621,10 @@ function emailDomain(email: string): string {
 function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) {
-    total += haversineKm(
-      points[i - 1].lat,
-      points[i - 1].lng,
-      points[i].lat,
-      points[i].lng,
-    );
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (!prev || !curr) continue;
+    total += haversineKm(prev.lat, prev.lng, curr.lat, curr.lng);
   }
   return total;
 }
@@ -1905,6 +1909,9 @@ function parseSnapshotWaypoints(raw: unknown): BuiltWaypoint[] {
 function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
   const first = dto.geometry[0];
   const last = dto.geometry[dto.geometry.length - 1];
+  if (!first || !last) {
+    throw new Error('buildImportedWaypoints: route geometry is empty');
+  }
   const incoming = dto.waypoints ?? [];
 
   const startMatch = incoming.find((w) => samePoint(w, first));

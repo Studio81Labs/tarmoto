@@ -72,7 +72,7 @@ export class AdminAuditInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<AdminRequest>();
     const method = request.method ?? 'GET';
-    const path = (request.originalUrl ?? request.url ?? '').split('?')[0];
+    const path = (request.originalUrl ?? request.url ?? '').split('?')[0] ?? '';
 
     // Strip the global prefix before deciding whether this is an admin request
     // so that prod routes under /api/v1/admin/... are audited correctly.

@@ -694,10 +694,14 @@ export class SharingService {
       coordinates?: number[][];
     };
     if (!geom.coordinates) return null;
-    return geom.coordinates.map((c) => ({
-      lat: c[1],
-      lng: c[0],
-    }));
+    return geom.coordinates.map((c) => {
+      const lng = c[0];
+      const lat = c[1];
+      if (lat === undefined || lng === undefined) {
+        throw new Error('route_geom coordinate is missing lat/lng');
+      }
+      return { lat, lng };
+    });
   }
 
   private toRoutePreviewGeometry(
@@ -710,7 +714,11 @@ export class SharingService {
     const step = (geometry.length - 1) / (maxPoints - 1);
     return Array.from({ length: maxPoints }, (_, index) => {
       const pointIndex = Math.round(index * step);
-      return geometry[pointIndex];
+      const point = geometry[pointIndex];
+      if (!point) {
+        throw new Error('route preview point index out of range');
+      }
+      return point;
     });
   }
 

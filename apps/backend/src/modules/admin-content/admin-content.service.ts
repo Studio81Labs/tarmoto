@@ -166,6 +166,7 @@ export class AdminContentService {
     const row = await repo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Content not found');
     const [item] = await this.project(type, config, [row]);
+    if (!item) throw new NotFoundException('Content not found');
     return item;
   }
 

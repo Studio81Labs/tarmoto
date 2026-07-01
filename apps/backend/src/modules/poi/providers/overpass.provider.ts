@@ -429,7 +429,7 @@ export function classifyPoiTags(
     return null;
   }
 
-  return matches[0];
+  return matches[0] ?? null;
 }
 
 /**

@@ -290,6 +290,9 @@ export class PoiService {
 
     const cumKm = cumulativeLengthKm(dto.route);
     const totalKm = cumKm[cumKm.length - 1];
+    if (totalKm === undefined) {
+      throw new Error('Cumulative length table is empty for a non-empty route');
+    }
     const samples = sampleRouteAnchors(dto.route, cumKm, bufferKm);
 
     let raw: PointOfInterest[];
@@ -465,14 +468,13 @@ export function cumulativeLengthKm(
   const cum = new Array<number>(route.length);
   cum[0] = 0;
   for (let i = 1; i < route.length; i++) {
-    cum[i] =
-      cum[i - 1] +
-      haversineKm(
-        route[i - 1].lat,
-        route[i - 1].lng,
-        route[i].lat,
-        route[i].lng,
-      );
+    const prev = route[i - 1];
+    const curr = route[i];
+    const prevCum = cum[i - 1];
+    if (prev === undefined || curr === undefined || prevCum === undefined) {
+      throw new Error('Route index out of range while building length table');
+    }
+    cum[i] = prevCum + haversineKm(prev.lat, prev.lng, curr.lat, curr.lng);
   }
   return cum;
 }
@@ -498,13 +500,18 @@ export function sampleRouteAnchors(
   bufferKm: number,
 ): { lat: number; lng: number }[] {
   if (route.length === 0) return [];
-  if (route.length === 1) return [{ lat: route[0].lat, lng: route[0].lng }];
+  const first = route[0];
+  if (first === undefined) return [];
+  if (route.length === 1) return [{ lat: first.lat, lng: first.lng }];
 
   const totalKm = cumKm[cumKm.length - 1];
+  if (totalKm === undefined) {
+    throw new Error('Cumulative length table is empty for a non-empty route');
+  }
   const stride = Math.max(bufferKm, 0.5);
 
   const anchors: { lat: number; lng: number }[] = [
-    { lat: route[0].lat, lng: route[0].lng },
+    { lat: first.lat, lng: first.lng },
   ];
   // Advance a cursor through segments and emit an anchor each time the
   // cumulative-km boundary `k * stride` crosses the current segment.
@@ -512,16 +519,26 @@ export function sampleRouteAnchors(
   // under Overpass's soft 256-element `around:` limit.
   let segmentIdx = 1;
   for (let boundary = stride; boundary < totalKm; boundary += stride) {
-    while (segmentIdx < route.length && cumKm[segmentIdx] < boundary) {
+    while (segmentIdx < route.length) {
+      const cum = cumKm[segmentIdx];
+      if (cum === undefined || cum >= boundary) break;
       segmentIdx++;
     }
     if (segmentIdx >= route.length) break;
     const segStartKm = cumKm[segmentIdx - 1];
     const segEndKm = cumKm[segmentIdx];
-    const segLenKm = segEndKm - segStartKm;
-    const t = segLenKm > 0 ? (boundary - segStartKm) / segLenKm : 0;
     const a = route[segmentIdx - 1];
     const b = route[segmentIdx];
+    if (
+      segStartKm === undefined ||
+      segEndKm === undefined ||
+      a === undefined ||
+      b === undefined
+    ) {
+      throw new Error('Route/length index out of range while sampling anchors');
+    }
+    const segLenKm = segEndKm - segStartKm;
+    const t = segLenKm > 0 ? (boundary - segStartKm) / segLenKm : 0;
     anchors.push({
       lat: a.lat + t * (b.lat - a.lat),
       lng: a.lng + t * (b.lng - a.lng),
@@ -531,6 +548,9 @@ export function sampleRouteAnchors(
   // even when the stride hasn't landed exactly on it.
   const last = route[route.length - 1];
   const lastAnchor = anchors[anchors.length - 1];
+  if (last === undefined || lastAnchor === undefined) {
+    throw new Error('Route/anchor list unexpectedly empty while sampling');
+  }
   if (lastAnchor.lat !== last.lat || lastAnchor.lng !== last.lng) {
     anchors.push({ lat: last.lat, lng: last.lng });
   }
@@ -571,6 +591,9 @@ export function projectOntoRoute(
   for (let i = 1; i < route.length; i++) {
     const a = route[i - 1];
     const b = route[i];
+    if (a === undefined || b === undefined) {
+      throw new Error('Route index out of range while projecting point');
+    }
     const ax = a.lng * lngScale;
     const ay = a.lat * LAT_KM_PER_DEGREE;
     const bx = b.lng * lngScale;
@@ -589,8 +612,13 @@ export function projectOntoRoute(
     const distKm = haversineKm(point.lat, point.lng, projLat, projLng);
     if (distKm < bestDistanceKm) {
       bestDistanceKm = distKm;
-      const segLengthKm = cumKm[i] - cumKm[i - 1];
-      bestAlongKm = cumKm[i - 1] + t * segLengthKm;
+      const cumEnd = cumKm[i];
+      const cumStart = cumKm[i - 1];
+      if (cumEnd === undefined || cumStart === undefined) {
+        throw new Error('Cumulative length table shorter than route');
+      }
+      const segLengthKm = cumEnd - cumStart;
+      bestAlongKm = cumStart + t * segLengthKm;
     }
   }
   return {

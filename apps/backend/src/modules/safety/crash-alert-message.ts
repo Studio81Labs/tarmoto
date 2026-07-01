@@ -76,7 +76,7 @@ const TEMPLATES: Record<SupportedLocale, MessageTemplate> = {
 function normalize(locale: string | null | undefined): SupportedLocale {
   if (!locale) return 'en';
   // Accept "cs", "cs-CZ", "cs_cz", "CS-cz" — match on the language subtag.
-  const lang = locale.toLowerCase().split(/[-_]/)[0];
+  const lang = locale.toLowerCase().split(/[-_]/)[0] ?? '';
   return (SUPPORTED_LOCALES as readonly string[]).includes(lang)
     ? (lang as SupportedLocale)
     : 'en';

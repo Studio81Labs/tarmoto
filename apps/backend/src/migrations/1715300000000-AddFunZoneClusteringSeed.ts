@@ -202,7 +202,7 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
        WHERE road_name LIKE 'seed:%'`,
     )) as Array<{ count: number }>;
 
-    if (existing[0].count > 0) {
+    if ((existing[0]?.count ?? 0) > 0) {
       return;
     }
 

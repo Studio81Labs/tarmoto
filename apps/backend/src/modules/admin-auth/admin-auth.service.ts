@@ -301,6 +301,9 @@ export class AdminAuthService implements OnModuleInit {
       );
     }
     const row = active[0];
+    if (!row) {
+      throw new UnauthorizedException('No admin account for this identity');
+    }
     // Guard against SSO identity hijack: if this admin row is already linked to
     // a DIFFERENT SSO identity (the first bySso lookup did not match, so the
     // subjects differ), refuse to overwrite the existing link. A new GitHub

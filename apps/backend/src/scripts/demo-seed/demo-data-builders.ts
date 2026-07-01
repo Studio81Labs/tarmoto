@@ -114,7 +114,8 @@ export function buildDemoRoadSpecs(count: number): DemoRoadSpec[] {
         ROAD_QUALITY.VERY_POOR +
           rng() * (ROAD_QUALITY.EXCELLENT - ROAD_QUALITY.VERY_POOR),
       ),
-      surface_type: DEMO_SURFACES[Math.floor(rng() * DEMO_SURFACES.length)],
+      surface_type:
+        DEMO_SURFACES[Math.floor(rng() * DEMO_SURFACES.length)] ?? 'asphalt',
       reading_count: 5 + Math.floor(rng() * 200),
       confidence: 1 + Math.floor(rng() * 100),
     });
@@ -126,8 +127,11 @@ export function buildDemoRoadSpecs(count: number): DemoRoadSpec[] {
 export function lineLengthKm(line: LineString): number {
   let km = 0;
   for (let i = 1; i < line.coordinates.length; i++) {
-    const [lng1, lat1] = line.coordinates[i - 1];
-    const [lng2, lat2] = line.coordinates[i];
+    const from = line.coordinates[i - 1];
+    const to = line.coordinates[i];
+    if (!from || !to) continue;
+    const [lng1, lat1] = from;
+    const [lng2, lat2] = to;
     km += haversineKm(lat1, lng1, lat2, lng2);
   }
   return km;

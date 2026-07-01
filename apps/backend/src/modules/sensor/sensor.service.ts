@@ -437,8 +437,10 @@ export class SensorService {
     const segments: ProcessedSegment[] = [];
     let segmentReadings: SensorReadingDto[] = [];
     let segmentDistance = 0;
-    let lastLat = readings[0].lat!;
-    let lastLng = readings[0].lng!;
+    const first = readings[0];
+    if (!first) return segments;
+    let lastLat = first.lat!;
+    let lastLng = first.lng!;
 
     for (const reading of readings) {
       if (reading.lat !== undefined && reading.lng !== undefined) {
@@ -514,6 +516,9 @@ export class SensorService {
     if (gpsReadings.length === 0) return null;
 
     const midpoint = gpsReadings[Math.floor(gpsReadings.length / 2)];
+    if (!midpoint) return null;
+    const midReading = readings[Math.floor(readings.length / 2)];
+    if (!midReading) return null;
     const speeds = readings
       .filter((r) => r.speed !== undefined)
       .map((r) => r.speed!);
@@ -530,7 +535,7 @@ export class SensorService {
       lng: midpoint.lng!,
       speedAvg,
       sampleCount: readings.length,
-      timestamp: new Date(readings[Math.floor(readings.length / 2)].t),
+      timestamp: new Date(midReading.t),
     };
   }
 
@@ -607,7 +612,7 @@ export class SensorService {
     );
 
     const result = rows as Array<{ id: string }>;
-    return result.length > 0 ? result[0].id : null;
+    return result[0]?.id ?? null;
   }
 }
 
@@ -631,7 +636,10 @@ function inferSurfaceType(deviations: number[], rms: number): string | null {
     deviations.reduce((sum, value) => sum + value, 0) / deviations.length;
   let zeroCrossings = 0;
   for (let i = 1; i < deviations.length; i++) {
-    if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0) {
+    const curr = deviations[i];
+    const prev = deviations[i - 1];
+    if (curr === undefined || prev === undefined) continue;
+    if ((curr - mean) * (prev - mean) < 0) {
       zeroCrossings++;
     }
   }

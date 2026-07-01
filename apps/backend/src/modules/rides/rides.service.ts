@@ -488,10 +488,12 @@ export class RidesService {
         coordinates: number[][];
       };
       if (geom.coordinates) {
-        routeGeometry = geom.coordinates.map((c) => ({
-          lat: c[1],
-          lng: c[0],
-        }));
+        routeGeometry = geom.coordinates.map(([lng, lat]) => {
+          if (lng === undefined || lat === undefined) {
+            throw new Error('ride geometry coordinate is missing lng/lat');
+          }
+          return { lat, lng };
+        });
       }
     }
 

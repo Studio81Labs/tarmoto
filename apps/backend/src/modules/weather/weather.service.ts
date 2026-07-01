@@ -153,14 +153,12 @@ export class WeatherService {
 
     const cumulative: number[] = new Array<number>(route.length).fill(0);
     for (let i = 1; i < route.length; i++) {
+      const prev = route[i - 1];
+      const cur = route[i];
+      if (!prev || !cur) continue;
       cumulative[i] =
-        cumulative[i - 1] +
-        haversineKm(
-          route[i - 1].lat,
-          route[i - 1].lng,
-          route[i].lat,
-          route[i].lng,
-        );
+        (cumulative[i - 1] ?? 0) +
+        haversineKm(prev.lat, prev.lng, cur.lat, cur.lng);
     }
 
     let cursor = 0;
@@ -172,9 +170,10 @@ export class WeatherService {
       // each sample gets to scan from the last *successful* match.
       for (let i = cursor; i < route.length; i++) {
         const v = route[i];
+        if (!v) continue;
         if (v.lat === sample.lat && v.lng === sample.lng) {
           cursor = i;
-          return cumulative[i];
+          return cumulative[i] ?? 0;
         }
       }
       return 0;
@@ -189,32 +188,34 @@ export class WeatherService {
     intervalKm: number,
   ): Array<{ lat: number; lng: number }> {
     if (route.length === 0) return [];
-    if (route.length === 1) return [route[0]];
+    const first = route[0];
+    if (!first) return [];
+    if (route.length === 1) return [first];
 
-    const samples: Array<{ lat: number; lng: number }> = [route[0]];
+    const samples: Array<{ lat: number; lng: number }> = [first];
     let accumulated = 0;
 
     for (let i = 1; i < route.length; i++) {
-      const dist = haversineKm(
-        route[i - 1].lat,
-        route[i - 1].lng,
-        route[i].lat,
-        route[i].lng,
-      );
+      const prev = route[i - 1];
+      const cur = route[i];
+      if (!prev || !cur) continue;
+      const dist = haversineKm(prev.lat, prev.lng, cur.lat, cur.lng);
       accumulated += dist;
 
       if (accumulated >= intervalKm) {
-        samples.push(route[i]);
+        samples.push(cur);
         accumulated = 0;
       }
     }
 
     // Always include the last point
     const last = route[route.length - 1];
+    if (!last) return samples;
+    const lastSample = samples[samples.length - 1];
     if (
-      samples.length === 0 ||
-      samples[samples.length - 1].lat !== last.lat ||
-      samples[samples.length - 1].lng !== last.lng
+      !lastSample ||
+      lastSample.lat !== last.lat ||
+      lastSample.lng !== last.lng
     ) {
       samples.push(last);
     }

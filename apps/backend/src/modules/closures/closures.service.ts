@@ -313,9 +313,19 @@ export class ClosuresService {
       title: r.title,
       reason: r.reason,
       severity: r.severity,
-      geometry: r.geom!.coordinates.map(([lng, lat]) => ({ lng, lat })),
+      geometry: r.geom!.coordinates.map(([lng, lat]) => {
+        if (lng === undefined || lat === undefined) {
+          throw new Error('closure geometry coordinate is missing lng/lat');
+        }
+        return { lng, lat };
+      }),
       detour: r.detour_geom
-        ? r.detour_geom.coordinates.map(([lng, lat]) => ({ lng, lat }))
+        ? r.detour_geom.coordinates.map(([lng, lat]) => {
+            if (lng === undefined || lat === undefined) {
+              throw new Error('closure detour coordinate is missing lng/lat');
+            }
+            return { lng, lat };
+          })
         : null,
       country_code: r.country_code,
       region: r.region,
@@ -364,6 +374,16 @@ export class ClosuresService {
       );
     }
     const [minLng, minLat, maxLng, maxLat] = parts;
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined
+    ) {
+      throw new BadRequestException(
+        'bbox must be "minLng,minLat,maxLng,maxLat"',
+      );
+    }
     if (minLng >= maxLng || minLat >= maxLat) {
       throw new BadRequestException(
         'bbox min must be strictly less than max for both axes',

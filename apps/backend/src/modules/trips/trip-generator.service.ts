@@ -328,7 +328,10 @@ export class TripGeneratorService {
       enrichable.map((alt) => this.enrichment.aggregate(alt.geometry)),
     );
     const enriched = new Map<RouteAlternative, RouteMetrics>();
-    enrichable.forEach((alt, i) => enriched.set(alt, enrichedList[i]));
+    enrichable.forEach((alt, i) => {
+      const metrics = enrichedList[i];
+      if (metrics) enriched.set(alt, metrics);
+    });
 
     const candidates: Candidate[] = [];
     for (const alt of enrichable) {
@@ -350,7 +353,8 @@ export class TripGeneratorService {
       }
       candidates.push({ alt, metrics });
     }
-    if (candidates.length === 0 && alts[0]?.geometry.length >= 2) {
+    const primary = alts[0];
+    if (candidates.length === 0 && primary && primary.geometry.length >= 2) {
       // Both filters dropped every candidate. Keep the primary as a
       // last-resort so the day still has something to render — the
       // option summary numbers will reflect the lower quality and the
@@ -358,10 +362,10 @@ export class TripGeneratorService {
       // for `alts[0]` in the loop above; falling back to a fresh
       // `aggregateRouteMetrics` call would waste 4 PostGIS round-trips
       // per fallback day.
-      const cached = enriched.get(alts[0]);
+      const cached = enriched.get(primary);
       const metrics =
-        cached ?? (await this.enrichment.aggregate(alts[0].geometry));
-      candidates.push({ alt: alts[0], metrics });
+        cached ?? (await this.enrichment.aggregate(primary.geometry));
+      candidates.push({ alt: primary, metrics });
     }
     return candidates;
   }
@@ -418,7 +422,13 @@ export class TripGeneratorService {
       // step (and self-scored the seed against itself on the first
       // step), wasting `2 * candidates.length` calls per day-per-option
       // for no behavioural difference.
-      let best = candidates[0];
+      const first = candidates[0];
+      if (!first) {
+        throw new Error(
+          `buildOption: day ${dayIdx + 1} has no route candidates`,
+        );
+      }
+      let best = first;
       let bestScore = scoreRoute(preset, {
         avgQuality: best.metrics.avgQuality,
         curvinessScore: best.metrics.curvinessScore,
@@ -430,6 +440,7 @@ export class TripGeneratorService {
       });
       for (let i = 1; i < candidates.length; i++) {
         const cand = candidates[i];
+        if (!cand) continue;
         const score = scoreRoute(preset, {
           avgQuality: cand.metrics.avgQuality,
           curvinessScore: cand.metrics.curvinessScore,
@@ -479,8 +490,11 @@ export class TripGeneratorService {
    */
   private isDayStartLinked(days: BuiltDay[], i: number): boolean {
     if (i < 1) return false;
-    const start = days[i].waypoints.find((w) => w.waypoint_type === 'start');
-    const prevTerminal = days[i - 1].waypoints.find(
+    const day = days[i];
+    const prevDay = days[i - 1];
+    if (!day || !prevDay) return false;
+    const start = day.waypoints.find((w) => w.waypoint_type === 'start');
+    const prevTerminal = prevDay.waypoints.find(
       (w) => w.waypoint_type === 'hotel' || w.waypoint_type === 'end',
     );
     return (
@@ -501,6 +515,9 @@ export class TripGeneratorService {
     const route = cand.alt.geometry;
     const startPt = route[0];
     const endPt = route[route.length - 1];
+    if (!startPt || !endPt) {
+      throw new Error(`buildDay: day ${dayNumber} route geometry is empty`);
+    }
 
     const fuelIndices = planFuelStopIndices(route, cand.alt.distance_km);
 
@@ -517,6 +534,7 @@ export class TripGeneratorService {
     let seq = 2;
     for (const idx of fuelIndices) {
       const p = route[idx];
+      if (!p) continue;
       waypoints.push({
         sequence: seq++,
         lat: p.lat,
@@ -620,10 +638,16 @@ export class TripGeneratorService {
       );
       const savedDays = await manager.save(dayRows);
 
-      const waypointRows = option.days.flatMap((day, dayIdx) =>
-        day.waypoints.map((w) =>
+      const waypointRows = option.days.flatMap((day, dayIdx) => {
+        const savedDay = savedDays[dayIdx];
+        if (!savedDay) {
+          throw new Error(
+            `persistOption: missing saved day for index ${dayIdx}`,
+          );
+        }
+        return day.waypoints.map((w) =>
           manager.create(TripWaypoint, {
-            trip_day_id: savedDays[dayIdx].id,
+            trip_day_id: savedDay.id,
             sequence: w.sequence,
             location: latLngToPoint({ lat: w.lat, lng: w.lng }),
             name: w.name,
@@ -631,8 +655,8 @@ export class TripGeneratorService {
             duration_min: w.duration_min,
             notes: w.notes,
           }),
-        ),
-      );
+        );
+      });
       if (waypointRows.length > 0) {
         await manager.save(waypointRows);
       }

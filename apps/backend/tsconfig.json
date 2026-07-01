@@ -11,13 +11,11 @@
     "removeComments": true,
     "noFallthroughCasesInSwitch": true,
 
-    // Phased strict migration (see docs/decisions / sibling nexcue N5): the
-    // backend inherits the shared strict base but temporarily overrides the
-    // two highest-volume flags OFF. Enabling them surfaces ~580 (indexed
-    // access) and ~100 (optional props) errors respectively; each is flipped
-    // on and fixed in its own follow-up PR to keep diffs reviewable.
-    // TODO(strict): remove these overrides once the fixes land.
-    "noUncheckedIndexedAccess": false,
+    // Phased strict migration (see sibling nexcue N5): the backend inherits
+    // the shared strict base. noUncheckedIndexedAccess is now on (phase 2);
+    // exactOptionalPropertyTypes stays overridden OFF until phase 3 (~100
+    // errors) so diffs stay reviewable.
+    // TODO(strict): remove this final override once phase 3 lands.
     "exactOptionalPropertyTypes": false
   }
 }

@@ -808,11 +808,12 @@ export function computeAgreement(
 }
 
 function modeOrAverage(scores: number[]): number {
-  if (scores.length === 0) return 0;
-  if (scores.length === 1) return scores[0];
+  const first = scores[0];
+  if (first === undefined) return 0;
+  if (scores.length === 1) return first;
   const counts = new Map<number, number>();
   for (const s of scores) counts.set(s, (counts.get(s) ?? 0) + 1);
-  let best = scores[0];
+  let best = first;
   let bestCount = 0;
   for (const [score, count] of counts) {
     if (count > bestCount) {
@@ -828,9 +829,13 @@ function pairwiseFraction(scores: number[]): number | null {
   let agree = 0;
   let total = 0;
   for (let i = 0; i < scores.length; i++) {
+    const a = scores[i];
+    if (a === undefined) continue;
     for (let j = i + 1; j < scores.length; j++) {
+      const b = scores[j];
+      if (b === undefined) continue;
       total += 1;
-      if (Math.abs(scores[i] - scores[j]) <= 1) agree += 1;
+      if (Math.abs(a - b) <= 1) agree += 1;
     }
   }
   if (total === 0) return null;

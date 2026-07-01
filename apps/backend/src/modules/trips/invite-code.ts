@@ -20,7 +20,9 @@ export function generateInviteCode(): string {
     const buf = randomBytes(INVITE_LENGTH);
     for (const byte of buf) {
       if (byte >= 240) continue;
-      out.push(INVITE_ALPHABET[byte % INVITE_ALPHABET.length]);
+      const char = INVITE_ALPHABET[byte % INVITE_ALPHABET.length];
+      if (char === undefined) continue;
+      out.push(char);
       if (out.length === INVITE_LENGTH) break;
     }
   }

@@ -2161,7 +2161,10 @@ describe('TripsService', () => {
       ).resolves.toBeUndefined();
 
       expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
-      const [to, ctx] = email.sendTripInvite.mock.calls[0];
+      const inviteCall = email.sendTripInvite.mock.calls[0];
+      if (!inviteCall)
+        throw new Error('expected sendTripInvite to have been called');
+      const [to, ctx] = inviteCall;
       expect(to).toBe(RECIPIENT);
       expect(ctx).toMatchObject({
         inviterDisplayName: 'Adam',

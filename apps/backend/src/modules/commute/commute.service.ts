@@ -669,7 +669,12 @@ export class CommuteService {
     if (!Array.isArray(line.coordinates) || line.coordinates.length === 0) {
       return null;
     }
-    return line.coordinates.map((c) => ({ lat: c[1], lng: c[0] }));
+    return line.coordinates.map(([lng, lat]) => {
+      if (lng === undefined || lat === undefined) {
+        throw new Error('route geometry coordinate is missing lng/lat');
+      }
+      return { lat, lng };
+    });
   }
 
   /**
