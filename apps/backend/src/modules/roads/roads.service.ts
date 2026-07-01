@@ -344,24 +344,47 @@ export class RoadsService {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.segmentRepo.query(
-      `SELECT
-        rs.id, rs.road_name, rs.road_number,
-        rs.quality_score, rs.curviness_score, rs.surface_type,
-        rs.length_m, rs.confidence,
-        ST_AsGeoJSON(rs.geom)::json AS geojson,
-        (
-          rs.quality_score * 2.0
-          + rs.curviness_score * 1.0
-          + LEAST(rs.length_m / 1000.0, 20.0) * 0.1
-        ) AS best_score
-      FROM road_segments rs
-      WHERE ST_Intersects(
-        rs.geom,
-        ST_MakeEnvelope($1, $2, $3, $4, 4326)
+      `WITH candidate AS (
+        SELECT
+          rs.id, rs.osm_way_id, rs.segment_index,
+          rs.road_name, rs.road_number, rs.surface_type,
+          rs.quality_score, rs.curviness_score, rs.length_m, rs.confidence, rs.geom
+        FROM road_segments rs
+        WHERE ST_Intersects(rs.geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))
+          AND rs.quality_score IS NOT NULL
+          AND rs.confidence >= $5
+      ),
+      -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
+      -- length filter applies to the whole road, not a stub (#794). Grouping key
+      -- COALESCE(osm_way_id, id): a crowd-sourced row has a NULL osm_way_id, so it
+      -- is a group of one and every aggregate below equals its raw value —
+      -- existing best-roads behaviour is unchanged. Aggregates are length-weighted
+      -- so a road's score reflects its constituent segments.
+      road AS (
+        SELECT
+          (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+          MAX(rs.road_name) AS road_name,
+          MAX(rs.road_number) AS road_number,
+          (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+          SUM(rs.length_m) AS length_m,
+          SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS quality_score,
+          SUM(rs.curviness_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS curviness_score,
+          SUM(rs.confidence * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS confidence,
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id)) AS geom
+        FROM candidate rs
+        GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)
       )
-        AND rs.quality_score IS NOT NULL
-        AND rs.confidence >= $5
-        AND rs.length_m >= $6
+      SELECT
+        id, road_name, road_number, quality_score, curviness_score, surface_type,
+        length_m, confidence,
+        ST_AsGeoJSON(geom)::json AS geojson,
+        (
+          quality_score * 2.0
+          + curviness_score * 1.0
+          + LEAST(length_m / 1000.0, 20.0) * 0.1
+        ) AS best_score
+      FROM road
+      WHERE length_m >= $6
       ORDER BY best_score DESC NULLS LAST
       LIMIT $7`,
       [w, s, e, n, BEST_ROADS_MIN_CONFIDENCE, BEST_ROADS_MIN_LENGTH_M, limit],
@@ -369,7 +392,10 @@ export class RoadsService {
 
     const roads: BestRoadDto[] = (rows as Record<string, unknown>[]).map(
       (row) => {
-        const geojson = row.geojson as { coordinates: number[][] };
+        const geojson = row.geojson as {
+          type: string;
+          coordinates: number[][] | number[][][];
+        };
         return {
           id: row.id as string,
           road_name: (row.road_name as string) ?? null,
@@ -379,7 +405,7 @@ export class RoadsService {
           surface_type: row.surface_type as SurfaceType,
           length_m: row.length_m as number,
           confidence: row.confidence as number,
-          geometry: lineStringToLatLng(geojson.coordinates),
+          geometry: lineStringToLatLng(geoJsonLineCoordinates(geojson)),
           best_score: row.best_score as number,
         };
       },
@@ -647,6 +673,22 @@ function normalizeElevationProfile(
  * `{ lat, lng }` points, rejecting any coordinate missing a component so a
  * malformed geometry surfaces as a clear error instead of `NaN` lat/lng.
  */
+/**
+ * Coordinate array for a response polyline from a GeoJSON LineString or, when an
+ * aggregated OSM way's ridden segments are non-contiguous (a gap), a
+ * MultiLineString — whose parts are concatenated in order (#794). Contiguous
+ * ways stay a LineString via ST_LineMerge, so the Multi branch is the rare case.
+ */
+function geoJsonLineCoordinates(geojson: {
+  type: string;
+  coordinates: number[][] | number[][][];
+}): number[][] {
+  if (geojson.type === 'MultiLineString') {
+    return (geojson.coordinates as number[][][]).flat();
+  }
+  return geojson.coordinates as number[][];
+}
+
 function lineStringToLatLng(
   coordinates: number[][],
 ): { lat: number; lng: number }[] {

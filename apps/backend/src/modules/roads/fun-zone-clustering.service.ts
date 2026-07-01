@@ -282,17 +282,36 @@ export class FunZoneClusteringService {
     }
 
     const sql = `
-      WITH eligible AS (
+      WITH road AS (
+        -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
+        -- length filter and DBSCAN operate on whole roads, not stubs (#794).
+        -- Grouping key COALESCE(osm_way_id, id): a crowd-sourced row has a NULL
+        -- osm_way_id, so it is a group of one and every aggregate equals its raw
+        -- value — existing clustering is unchanged. Length-weighted to match the
+        -- per-segment semantics the eligibility filters expect.
+        SELECT
+          (ARRAY_AGG(id ORDER BY segment_index NULLS FIRST, id))[1] AS id,
+          ST_LineMerge(ST_Collect(geom ORDER BY segment_index NULLS FIRST, id)) AS geom,
+          SUM(curviness_score * length_m) / NULLIF(SUM(length_m), 0) AS curviness_score,
+          SUM(quality_score * length_m) / NULLIF(SUM(length_m), 0) AS quality_score,
+          SUM(confidence * length_m) / NULLIF(SUM(length_m), 0) AS confidence,
+          SUM(length_m) AS length_m,
+          MIN(elevation_min) AS elevation_min,
+          MAX(elevation_max) AS elevation_max
+        FROM road_segments
+        WHERE quality_score IS NOT NULL
+          ${bboxClause}
+        GROUP BY COALESCE(osm_way_id::text, id::text)
+      ),
+      eligible AS (
         SELECT
           id, geom, curviness_score, quality_score, length_m,
           elevation_min, elevation_max
-        FROM road_segments
+        FROM road
         WHERE curviness_score >= $1
-          AND quality_score IS NOT NULL
           AND quality_score >= $2
           AND confidence >= $3
           AND length_m >= $4
-          ${bboxClause}
       ),
       clustered AS (
         SELECT

@@ -744,6 +744,69 @@ describe('RoadsService', () => {
         { lat: 49.51, lng: 18.41 },
       ]);
     });
+
+    it('aggregates imported ~100 m segments by way before the length filter (#794)', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([]);
+      await service.findBest({ country: 'cz', region: 'beskydy' });
+
+      const [sql] = (segmentRepo.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      // Group by way (imported) or self (crowd rows, null osm_way_id).
+      expect(sql).toContain(
+        'GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)',
+      );
+      // Length-weighted aggregates + summed length.
+      expect(sql).toContain('SUM(rs.length_m)');
+      expect(sql).toContain(
+        'SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0)',
+      );
+      expect(sql).toContain('ST_LineMerge(ST_Collect(rs.geom');
+      // The length threshold applies to the aggregated road, not a raw segment.
+      expect(sql).toMatch(/FROM road\s+WHERE length_m >= \$6/);
+    });
+
+    it('flattens a MultiLineString (gappy aggregated way) into one polyline', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'way-1',
+          road_name: 'Gappy Way',
+          road_number: null,
+          quality_score: 4.0,
+          curviness_score: 2.0,
+          surface_type: 'asphalt',
+          length_m: 900,
+          confidence: 55,
+          geojson: {
+            type: 'MultiLineString',
+            coordinates: [
+              [
+                [18.4, 49.5],
+                [18.41, 49.51],
+              ],
+              [
+                [18.43, 49.53],
+                [18.44, 49.54],
+              ],
+            ],
+          },
+          best_score: 10,
+        },
+      ]);
+
+      const result = await service.findBest({
+        country: 'cz',
+        region: 'beskydy',
+      });
+
+      expect(result.roads[0].geometry).toEqual([
+        { lat: 49.5, lng: 18.4 },
+        { lat: 49.51, lng: 18.41 },
+        { lat: 49.53, lng: 18.43 },
+        { lat: 49.54, lng: 18.44 },
+      ]);
+    });
   });
 
   describe('findZoneById', () => {

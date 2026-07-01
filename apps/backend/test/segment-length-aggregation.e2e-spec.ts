@@ -1,0 +1,188 @@
+import { DataSource } from 'typeorm';
+import { Test, TestingModule } from '@nestjs/testing';
+import { TypeOrmModule, getDataSourceToken } from '@nestjs/typeorm';
+import { AppDataSource } from '../src/data-source.js';
+import { RoadsService } from '../src/modules/roads/roads.service.js';
+import { FunZoneClusteringService } from '../src/modules/roads/fun-zone-clustering.service.js';
+import { RoadSegment } from '../src/entities/road-segment.entity.js';
+import { FunZone } from '../src/entities/fun-zone.entity.js';
+import { FunZoneRoad } from '../src/entities/fun-zone-road.entity.js';
+
+/**
+ * Issue #794 — OSM-imported ~100 m segments must reach best-roads and fun-zones
+ * despite the 500 m length filters, WITHOUT a lone 100 m stub surfacing as a
+ * "best road". The consumers aggregate sub-segments into their parent OSM way
+ * (COALESCE(osm_way_id, id)) and apply the length filter to the aggregate; a
+ * crowd-sourced row (null osm_way_id) is a group of one, so its behaviour is
+ * unchanged. The aggregation is PostGIS SQL, so the only meaningful test drives
+ * the real queries against Postgres.
+ *
+ * Prerequisites: `pnpm db:up && pnpm db:migrate` before running
+ * `pnpm --filter @tarmoto/backend test:e2e`.
+ */
+describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
+  let module: TestingModule;
+  let roads: RoadsService;
+  let funZones: FunZoneClusteringService;
+  let dataSource: DataSource;
+  const segmentIds: string[] = [];
+
+  // best-roads test rows live in the (unseeded) Dolomites region so findBest
+  // returns only them. fun-zone rows live at the origin — outside every region
+  // bbox — so runClustering(bbox) isolates them and they can't leak into the
+  // findBest assertions.
+  const DOLO_LNG = 11.6;
+  const DOLO_LAT = 46.5;
+
+  interface SegOpts {
+    name: string;
+    osmWayId?: string | null;
+    segmentIndex?: number | null;
+    lng: number;
+    lat: number;
+    lengthM: number;
+    quality?: number;
+    confidence?: number;
+    curviness?: number;
+  }
+
+  async function insertSegment(o: SegOpts): Promise<string> {
+    // A short distinct line; length_m (the column) drives the filters, not the
+    // geometry's true length, so a small geom with an explicit length_m is fine.
+    const geom = `ST_GeomFromText('LINESTRING(${o.lng} ${o.lat}, ${o.lng} ${o.lat + 0.001})', 4326)`;
+    const rows: { id: string }[] = await dataSource.query(
+      `INSERT INTO road_segments
+         (geom, length_m, road_name, osm_way_id, segment_index,
+          quality_score, confidence, curviness_score)
+       VALUES (${geom}, $1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        o.lengthM,
+        o.name,
+        o.osmWayId ?? null,
+        o.segmentIndex ?? null,
+        o.quality ?? 4.0,
+        o.confidence ?? 60,
+        o.curviness ?? 3.0,
+      ],
+    );
+    segmentIds.push(rows[0].id);
+    return rows[0].id;
+  }
+
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
+      imports: [
+        TypeOrmModule.forRoot(AppDataSource.options),
+        TypeOrmModule.forFeature([RoadSegment, FunZone, FunZoneRoad]),
+      ],
+      providers: [RoadsService, FunZoneClusteringService],
+    }).compile();
+
+    roads = module.get(RoadsService);
+    funZones = module.get(FunZoneClusteringService);
+    dataSource = module.get(getDataSourceToken());
+  }, 30_000);
+
+  afterAll(async () => {
+    if (segmentIds.length > 0) {
+      // Drop any fun-zones this test's segments were clustered into first (FK),
+      // then the segments.
+      const zoneRows: { fun_zone_id: string }[] = await dataSource.query(
+        `SELECT DISTINCT fun_zone_id FROM fun_zone_roads
+           WHERE road_segment_id = ANY($1::uuid[])`,
+        [segmentIds],
+      );
+      const zoneIds = zoneRows.map((r) => r.fun_zone_id);
+      if (zoneIds.length > 0) {
+        await dataSource.query(
+          `DELETE FROM fun_zone_roads WHERE fun_zone_id = ANY($1::uuid[])`,
+          [zoneIds],
+        );
+        await dataSource.query(
+          `DELETE FROM fun_zones WHERE id = ANY($1::uuid[])`,
+          [zoneIds],
+        );
+      }
+      await dataSource.query(
+        `DELETE FROM road_segments WHERE id = ANY($1::uuid[])`,
+        [segmentIds],
+      );
+    }
+    await module?.close();
+  });
+
+  it('best-roads: aggregates an imported way, keeps a crowd segment, drops a short way', async () => {
+    // Crowd-sourced 600 m segment (null osm_way_id) — unchanged behaviour.
+    await insertSegment({
+      name: 'e2e794-crowd',
+      lng: DOLO_LNG,
+      lat: DOLO_LAT,
+      lengthM: 600,
+    });
+    // Imported way of 5×120 m sub-segments = 600 m → one aggregated best road.
+    for (let i = 0; i < 5; i++) {
+      await insertSegment({
+        name: 'e2e794-long-way',
+        osmWayId: '794000001',
+        segmentIndex: i,
+        lng: DOLO_LNG + 0.002,
+        lat: DOLO_LAT + 0.01 + i * 0.0012,
+        lengthM: 120,
+      });
+    }
+    // Imported way of 2×100 m = 200 m → below 500 m, must NOT appear.
+    for (let i = 0; i < 2; i++) {
+      await insertSegment({
+        name: 'e2e794-short-way',
+        osmWayId: '794000002',
+        segmentIndex: i,
+        lng: DOLO_LNG + 0.004,
+        lat: DOLO_LAT + 0.02 + i * 0.001,
+        lengthM: 100,
+      });
+    }
+
+    const result = await roads.findBest({ country: 'it', region: 'dolomites' });
+    const byName = (name: string) =>
+      result.roads.filter((r) => r.road_name === name);
+
+    // The 5 sub-segments collapse into exactly one ~600 m best road.
+    expect(byName('e2e794-long-way')).toHaveLength(1);
+    expect(byName('e2e794-long-way')[0].length_m).toBeCloseTo(600, 5);
+    // Crowd segment unchanged.
+    expect(byName('e2e794-crowd')).toHaveLength(1);
+    expect(byName('e2e794-crowd')[0].length_m).toBeCloseTo(600, 5);
+    // The 200 m way is filtered out — no stub as a "best road".
+    expect(byName('e2e794-short-way')).toHaveLength(0);
+  }, 30_000);
+
+  it('fun-zones: clusters three imported ways as three roads, not fifteen stubs', async () => {
+    // Three imported ways (each 5×120 m = 600 m) within DBSCAN eps of each other
+    // at the origin (outside any region bbox). Aggregation must present them as
+    // 3 cluster members, not 15 raw sub-segments.
+    for (let w = 0; w < 3; w++) {
+      for (let i = 0; i < 5; i++) {
+        await insertSegment({
+          name: `e2e794-fz-${w}`,
+          osmWayId: `7940100${w}`,
+          segmentIndex: i,
+          lng: 0.0 + w * 0.01,
+          lat: 0.0 + i * 0.0012,
+          lengthM: 120,
+          quality: 4.0,
+          confidence: 60,
+          curviness: 3.0,
+        });
+      }
+    }
+
+    const result = await funZones.runClustering({
+      bbox: [-0.1, -0.1, 0.1, 0.1],
+    });
+
+    expect(result.zones_written).toBe(1);
+    // 3 aggregated ways, NOT 15 sub-segments.
+    expect(result.members_written).toBe(3);
+  }, 30_000);
+});
