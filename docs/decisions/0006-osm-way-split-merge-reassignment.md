@@ -77,12 +77,12 @@ id-preserving update, stale as a tombstone/deactivation) is a follow-up wiring
 slice — a follow-up that must add the deactivation column/flag rather than hard-
 delete, since the history tables FK to `road_segments`.
 
-Defaults: **overlap threshold 0.5** (a _strict_ majority — carry-over needs
-
-> 0.5), **tolerance 5 m** (tight, because an OSM re-split reuses the same node
-> coordinates so matching stretches are near-exact; a looser value would inflate a
-> partial overlap past the cutoff), **sample spacing 20 m** (samples placed evenly
-> by arc-length, so the on-line fraction approximates the overlapping _length_).
+Defaults: **overlap threshold 0.5** — a strict majority, i.e. a carry-over needs
+a score above `0.5`; **tolerance 5 m** (tight, because an OSM re-split reuses the
+same node coordinates so matching stretches are near-exact; a looser value would
+inflate a partial overlap past the cutoff); **sample spacing 20 m** (samples
+placed evenly by arc-length, so the on-line fraction approximates the overlapping
+_length_).
 
 ## Consequences
 
