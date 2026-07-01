@@ -1,23 +1,25 @@
 name: Backend Deploy
 
 # Deploy model:
-#   push to main  → staging    (CI triggers PaaS deploy webhook)
-#   push tag v*   → production  (CI triggers PaaS deploy webhook)
+#   push to main  → staging    (CI triggers the Coolify deploy API)
+#   push tag v*   → production  (CI triggers the Coolify deploy API)
 #   workflow_dispatch → choose staging or production
+#
+# Deploy target: self-hosted Coolify PaaS. Staging and production are
+# triggered by the SAME authenticated Coolify API call — Coolify "Auto
+# Deploy" is kept OFF so CI is the single source of deploys.
 #
 # Day-2 ops: docs/process/runbook.md
 #
 # Required repo secrets:
-#   COOLIFY_API_TOKEN                   PaaS API token (issued from PaaS dashboard)
-#   COOLIFY_PROD_DEPLOY_WEBHOOK_URL     Production deploy webhook
-#   COOLIFY_STAGING_DEPLOY_WEBHOOK_URL  Staging deploy webhook
+#   COOLIFY_API_TOKEN                 PaaS API token (issued from PaaS dashboard)
 #
 # Required repo variables:
-#   BACKEND_URL_PROD                    e.g. https://api.tarmoto.app
-#   BACKEND_URL_STAGING                 e.g. https://api.staging.tarmoto.app
-#   COOLIFY_API_BASE_URL                Base URL of the PaaS API (no trailing slash)
-#   COOLIFY_PROD_APPLICATION_UUID       Production app UUID
-#   COOLIFY_STAGING_APPLICATION_UUID    Staging app UUID
+#   COOLIFY_API_BASE_URL              Base URL of the PaaS API (no trailing slash)
+#   BACKEND_URL_PROD                  e.g. https://api.tarmoto.app
+#   BACKEND_URL_STAGING               e.g. https://api-staging.tarmoto.app
+#   COOLIFY_PROD_APPLICATION_UUID     Production app UUID
+#   COOLIFY_STAGING_APPLICATION_UUID  Staging app UUID
 
 on:
   push:
@@ -63,105 +65,304 @@ jobs:
           INPUT_ENV: ${{ inputs.environment || '' }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          if [ "$IS_TAG" = "true" ]; then
-            ENV_NAME="production"
-          elif [ -n "$INPUT_ENV" ]; then
+          # Explicit operator selection wins. Otherwise infer from the
+          # trigger ref: tag → production, branch → staging. If we
+          # checked $IS_TAG first, a workflow_dispatch from a `v*` tag
+          # selecting "staging" would silently deploy production despite
+          # the operator-selected target.
+          if [ -n "$INPUT_ENV" ]; then
             ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
           else
             ENV_NAME="staging"
           fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger deploy
+      - name: Resolve env-specific deploy targets
+        id: resolve
+        # Validate non-empty here so a missing per-env value fails loudly
+        # with a clear message instead of bubbling up as a curl 401 /
+        # unbound shell var later.
         env:
-          WEBHOOK_URL: ${{ steps.env.outputs.name == 'production' && secrets.COOLIFY_PROD_DEPLOY_WEBHOOK_URL || secrets.COOLIFY_STAGING_DEPLOY_WEBHOOK_URL }}
           ENV_NAME: ${{ steps.env.outputs.name }}
-        run: |
-          if [ -z "$WEBHOOK_URL" ]; then
-            echo "::error::Deploy webhook URL is unset for ${ENV_NAME}. Set the COOLIFY_${ENV_NAME^^}_DEPLOY_WEBHOOK_URL secret."
-            exit 1
-          fi
-          echo "Triggering ${ENV_NAME} deploy..."
-          curl --fail --silent --show-error -X POST "$WEBHOOK_URL"
-          echo "Webhook accepted — PaaS is building."
-
-      - name: Wait for deploy to go live
-        env:
           BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
+          APP_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_PROD_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
         run: |
           set -euo pipefail
-          # The PaaS rolling update builds the image, starts a new
-          # container, and waits for the Docker HEALTHCHECK to pass
-          # before switching traffic. We poll the app healthcheck
-          # endpoint until it returns 200 — the new container is live.
-          DEADLINE=$(( $(date +%s) + 600 ))
+          test -n "$BASE_URL" || {
+            echo "::error::BACKEND_URL_${ENV_NAME^^} var is not set"
+            exit 1
+          }
+          test -n "$APP_UUID" || {
+            echo "::error::COOLIFY_${ENV_NAME^^}_APPLICATION_UUID var is not set"
+            exit 1
+          }
+          echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "app_uuid=${APP_UUID}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Coolify deploy
+        id: trigger_deploy
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_API_TOKEN" || {
+            echo "::error::COOLIFY_API_TOKEN secret is not set"
+            exit 1
+          }
+          test -n "$COOLIFY_URL" || {
+            echo "::error::COOLIFY_API_BASE_URL repo variable is not set"
+            exit 1
+          }
+          echo "Triggering ${ENV_NAME} deploy..."
+          BODY="$(mktemp)"
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$BODY" \
+            --write-out '%{http_code}' \
+            --max-time 30 --get \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            --data-urlencode "uuid=${APPLICATION_UUID}" \
+            "${COOLIFY_URL}/api/v1/deploy")
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify deploy request failed before receiving an HTTP response"
+            rm -f "$BODY"
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+              echo "::error::Coolify deploy API returned HTTP ${HTTP_CODE}. Refresh COOLIFY_API_TOKEN and make sure it can deploy applications."
+            else
+              echo "::error::Coolify deploy API returned HTTP ${HTTP_CODE}"
+            fi
+            head -c 400 "$BODY"; echo
+            rm -f "$BODY"
+            exit 1
+          fi
+          DEPLOYMENT_ID=$(jq -r '.deployments[0].deployment_uuid // .deployments[0].uuid // .deployments[0].id // empty' < "$BODY" 2>/dev/null || echo '')
+          if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" = "null" ]; then
+            echo "::error::Coolify deploy API response did not include a deployment UUID"
+            head -c 400 "$BODY"; echo
+            rm -f "$BODY"
+            exit 1
+          fi
+          rm -f "$BODY"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "Coolify accepted deployment id=${DEPLOYMENT_ID}"
+
+      - name: Wait for Coolify deploy to finish
+        id: wait_deploy
+        # Don't trust the app's healthcheck endpoint to tell us the NEW
+        # container is live: Coolify's rolling-update keeps the OLD
+        # container serving 200 until traffic switches, so a naive
+        # `curl /healthz` poll would pass on the very first iteration
+        # against the previous build. Track the specific deployment id.
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          DEPLOYMENT_ID: ${{ steps.trigger_deploy.outputs.deployment_id }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+        run: |
+          # Drop -e: each iteration handles its own errors so a single
+          # transient curl/jq failure doesn't kill the whole poll. We
+          # keep -u (catch typos in env vars) and pipefail (so a broken
+          # `curl | jq` pipeline still bubbles up rather than silently
+          # producing empty output the parser misinterprets).
+          set +e
+          set -uo pipefail
+
+          test -n "$COOLIFY_API_TOKEN" || {
+            echo "::error::COOLIFY_API_TOKEN secret is not set"
+            exit 1
+          }
+          test -n "$COOLIFY_URL" || {
+            echo "::error::COOLIFY_API_BASE_URL repo variable is not set"
+            exit 1
+          }
+          test -n "$DEPLOYMENT_ID" || {
+            echo "::error::Coolify deployment id was not captured"
+            exit 1
+          }
+
+          DEPLOYMENTS_JQ='if type == "array" then . elif type == "object" and (.deployments | type == "array") then .deployments else empty end'
+
+          fetch_deploys() {
+            # Defensive curl: --retry handles dns/connect/5xx; non-200 →
+            # caller treats as transient. Body to a temp file so we can
+            # validate it's JSON before parsing.
+            local out_file="$1"
+            local code
+            code=$(curl --silent --show-error --output "$out_file" \
+              --write-out '%{http_code}' \
+              --max-time 30 --retry 3 --retry-connrefused \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              -H "Accept: application/json" \
+              "${COOLIFY_URL}/api/v1/deployments/applications/${APPLICATION_UUID}" || echo '000')
+            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+              echo "::error::Coolify API returned HTTP ${code} while listing deployments. Refresh COOLIFY_API_TOKEN and make sure it can read deployments."
+              head -c 400 "$out_file"; echo
+              return 2
+            fi
+            if [ "$code" = "404" ]; then
+              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_${ENV_NAME^^}_APPLICATION_UUID."
+              return 2
+            fi
+            if [ "$code" != "200" ]; then
+              echo "Coolify API returned HTTP ${code}; retrying"
+              return 1
+            fi
+            if ! jq -e "${DEPLOYMENTS_JQ} | type == \"array\"" < "$out_file" >/dev/null 2>&1; then
+              echo "Coolify API returned an unsupported deployment list response; retrying"
+              head -c 400 "$out_file"; echo
+              return 1
+            fi
+            return 0
+          }
+
+          POLL_BODY="$(mktemp)"
+          DEADLINE=$(( $(date +%s) + 900 ))
+          echo "Tracking ${ENV_NAME} deployment id=${DEPLOYMENT_ID}"
+
           while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            fetch_deploys "$POLL_BODY"
+            FETCH_RESULT=$?
+            if [ "$FETCH_RESULT" -eq 2 ]; then
+              rm -f "$POLL_BODY"
+              exit 1
+            fi
+            if [ "$FETCH_RESULT" -ne 0 ]; then
+              echo "Coolify API transient failure; retrying"
+              sleep 15
+              continue
+            fi
+
+            # Wait for the specific deployment returned by the deploy
+            # API. Prefer `deployment_uuid` because records can also
+            # carry a numeric internal `id`.
+            STATUS=$(jq -r --arg id "$DEPLOYMENT_ID" "${DEPLOYMENTS_JQ} |
+              [ .[]? | select(((.deployment_uuid // .uuid // .id) | tostring) == \$id) ][0].status // \"unknown\"
+            " < "$POLL_BODY" 2>/dev/null || echo "unknown")
+
+            case "$STATUS" in
+              finished|success)
+                echo "Coolify deployment ${DEPLOYMENT_ID} reached status=${STATUS}"
+                rm -f "$POLL_BODY"
+                exit 0
+                ;;
+              failed|cancelled|error)
+                echo "::error::Coolify deployment ${DEPLOYMENT_ID} ended with status=${STATUS}"
+                rm -f "$POLL_BODY"
+                exit 1
+                ;;
+              *)
+                echo "Coolify deployment ${DEPLOYMENT_ID}: status=${STATUS}; waiting..."
+                sleep 15
+                ;;
+            esac
+          done
+          rm -f "$POLL_BODY"
+          echo "::error::Timed out waiting for Coolify deployment ${DEPLOYMENT_ID} to finish"
+          exit 1
+
+      - name: Healthcheck (sanity)
+        id: healthcheck
+        env:
+          BASE_URL: ${{ steps.resolve.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          # Coolify reported the deploy as finished. A 200 here is a
+          # belt-and-braces check that traffic actually reaches the new
+          # container — failing this with a recently-finished Coolify
+          # deploy means routing or DNS is in a bad state.
+          for attempt in 1 2 3 4 5; do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' \
               "${BASE_URL}/api/v1/healthz" || echo '000')
             if [ "$CODE" = "200" ]; then
               echo "Healthcheck passed (200)"
               exit 0
             fi
-            echo "Healthcheck returned ${CODE}; waiting..."
-            sleep 10
+            echo "Healthcheck attempt ${attempt}: HTTP ${CODE}"
+            sleep 5
           done
-          echo "::error::Timed out waiting for healthy deploy"
+          echo "::error::Healthcheck failed after Coolify reported deploy finished"
           exit 1
 
       - name: Smoke test
+        id: smoke
         env:
-          BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
+          BASE_URL: ${{ steps.resolve.outputs.base_url }}
         run: scripts/smoke/smoke.sh "$BASE_URL"
 
-      - name: Roll back on smoke failure
+      - name: Surface manual rollback instructions on failure
+        # Coolify v4's API does not expose a "redeploy this previous
+        # deployment" endpoint we can call from CI. Rather than ship a
+        # broken automated rollback, we list the recent deploys for
+        # forensic context and direct the operator to the Coolify UI's
+        # Redeploy button on the last green build.
         if: failure()
         env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          BASE_URL: ${{ steps.resolve.outputs.base_url }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          APPLICATION_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_PROD_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
           COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          # The actual offending step. Each verification step has its own
+          # id; whichever ran most recently and reported failure is the
+          # one to name in the operator-facing error message.
+          WAIT_OUTCOME: ${{ steps.wait_deploy.outcome }}
+          HEALTHCHECK_OUTCOME: ${{ steps.healthcheck.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
-          set -euo pipefail
-          echo "::warning::Smoke test failed — rolling back via PaaS API."
+          set +e
 
-          if [ -z "$COOLIFY_URL" ]; then
-            echo "::error::Repo variable COOLIFY_API_BASE_URL is unset; cannot reach the PaaS API for rollback."
-            echo "::error::Set it under Repo → Settings → Secrets and variables → Actions → Variables, or roll back manually from the PaaS UI."
-            exit 1
-          fi
-          if [ -z "$APPLICATION_UUID" ]; then
-            echo "::error::COOLIFY_${{ steps.env.outputs.name == 'production' && 'PROD' || 'STAGING' }}_APPLICATION_UUID is unset; cannot identify the app for rollback."
-            exit 1
-          fi
-          if [ -z "$COOLIFY_API_TOKEN" ]; then
-            echo "::error::COOLIFY_API_TOKEN secret is unset; cannot authenticate to the PaaS API for rollback."
-            exit 1
-          fi
-
-          DEPLOYS=$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H "Accept: application/json" \
-            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}")
-
-          # The PaaS returns the application object with a .deployments array,
-          # but if the API returns a plain array, normalize it.
-          if echo "$DEPLOYS" | jq -e 'type == "array"' > /dev/null 2>&1; then
-            CURRENT=$(echo "$DEPLOYS" | jq -r '.[0].id // empty')
-            PREV=$(echo "$DEPLOYS" | jq -r '.[1].id // empty')
+          # Pick the actual failing step rather than always blaming smoke.
+          # Order matches execution order — the first failure short-
+          # circuits the rest, so the earliest `failure` wins.
+          if [ "$WAIT_OUTCOME" = "failure" ]; then
+            FAILED_STEP="Coolify deployment never reached status=finished"
+          elif [ "$HEALTHCHECK_OUTCOME" = "failure" ]; then
+            FAILED_STEP="post-deploy healthcheck against ${BASE_URL}"
+          elif [ "$SMOKE_OUTCOME" = "failure" ]; then
+            FAILED_STEP="smoke test"
           else
-            CURRENT=$(echo "$DEPLOYS" | jq -r '.deployments[0].id // empty')
-            PREV=$(echo "$DEPLOYS" | jq -r '.deployments[1].id // empty')
+            # Deploy trigger or env-validation step failed before any of
+            # the three id'd ones reported. The job's error log has the
+            # specific step.
+            FAILED_STEP="deploy setup (Coolify API trigger or missing secret/var)"
           fi
 
-          if [ -z "$PREV" ]; then
-            echo "::error::No previous deployment to roll back to."
-            echo "::error::Open the PaaS UI → Deployments → Redeploy a previous successful deploy."
-            exit 1
+          if [ -n "$COOLIFY_API_TOKEN" ] && [ -n "$COOLIFY_URL" ] && [ -n "$APPLICATION_UUID" ]; then
+            BODY="$(mktemp)"
+            HTTP_CODE=$(curl --silent --show-error --output "$BODY" --write-out '%{http_code}' --max-time 30 \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              -H "Accept: application/json" \
+              "${COOLIFY_URL}/api/v1/deployments/applications/${APPLICATION_UUID}" || echo '000')
+
+            echo "::group::Recent ${ENV_NAME} deployments (most recent first)"
+            if [ "$HTTP_CODE" = "200" ]; then
+              jq -r '
+                (if type == "array" then . elif type == "object" and (.deployments | type == "array") then .deployments else [] end)[]
+                | "\(.deployment_uuid // .uuid // .id // "?")\t\(.status // "?")\t\(.commit // .commit_sha // .git_commit_sha // "?")\t\(.created_at // "?")"
+              ' < "$BODY" 2>/dev/null \
+                | head -10
+            else
+              echo "Could not list recent deployments: Coolify API returned HTTP ${HTTP_CODE}"
+              head -c 400 "$BODY"; echo
+            fi
+            rm -f "$BODY"
+            echo "::endgroup::"
           fi
 
-          echo "Rolling back from ${CURRENT} to ${PREV}..."
-          curl --fail --silent --show-error -X POST \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H "Accept: application/json" \
-            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}/deployments/${PREV}/rollback" \
-            > /dev/null
-          echo "::notice::Rolled back to deployment ${PREV}"
+          echo "::error::${ENV_NAME} deploy verification failed at: ${FAILED_STEP}"
+          echo "::error::Manual rollback:"
+          echo "::error::  1. Open Coolify → ${ENV_NAME} application → Deployments"
+          echo "::error::  2. Find the most recent deployment with status=finished and a healthy commit"
+          echo "::error::  3. Click Redeploy"
+          echo "::error::  4. After rollback, run: scripts/smoke/smoke.sh ${BASE_URL}"
