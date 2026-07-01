@@ -1,0 +1,62 @@
+name: Build Backend & Export OpenAPI
+
+# Reusable workflow: builds @tarmoto/shared + the backend, exports the OpenAPI
+# spec, and uploads it as the `openapi-spec` artifact. Client-consuming
+# workflows (admin/companion/mobile CI, packages CI) call this once and then
+# download the spec + regenerate the TS client, instead of each rebuilding the
+# backend inline. Mirrors the sibling monorepos' _build-openapi.yml.
+#
+# The export script self-defaults all DB/Redis/JWT env, so no secrets are
+# needed — see apps/backend/src/scripts/export-openapi.ts.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-retention-days:
+        description: Retention for the openapi-spec artifact.
+        required: false
+        type: number
+        default: 1
+      ref:
+        description: >-
+          Git ref to check out before exporting the spec. Defaults to the
+          calling workflow's github.ref; callers that must align the spec with
+          a specific commit (e.g. a deploy building from main HEAD) override it.
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  export:
+    name: Export OpenAPI spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm shared:build
+
+      - name: Export OpenAPI spec
+        run: pnpm --filter @tarmoto/backend openapi:export
+
+      - name: Archive generated OpenAPI spec
+        run: tar -czf "$RUNNER_TEMP/openapi-spec.tgz" -C packages/openapi openapi.yaml
+
+      - name: Upload generated OpenAPI spec
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: openapi-spec
+          path: ${{ runner.temp }}/openapi-spec.tgz
+          retention-days: ${{ inputs.artifact-retention-days }}
