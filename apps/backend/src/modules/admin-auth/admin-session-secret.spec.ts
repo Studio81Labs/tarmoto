@@ -10,7 +10,9 @@ function configWith(values: Record<string, string | undefined>): ConfigService {
 describe('resolveAdminSessionSecret', () => {
   it('returns the configured secret', () => {
     const secret = resolveAdminSessionSecret(
-      configWith({ TARMOTO_ADMIN_SESSION_SECRET: 'super-secret-value-1234' }),
+      configWith({
+        TARMOTO_ADMIN_AUTH_SESSION_SECRET: 'super-secret-value-1234',
+      }),
     );
     expect(secret).toBe('super-secret-value-1234');
   });
@@ -25,6 +27,6 @@ describe('resolveAdminSessionSecret', () => {
   it('throws when unset in production', () => {
     expect(() =>
       resolveAdminSessionSecret(configWith({ NODE_ENV: 'production' })),
-    ).toThrow(/TARMOTO_ADMIN_SESSION_SECRET/);
+    ).toThrow(/TARMOTO_ADMIN_AUTH_SESSION_SECRET/);
   });
 });

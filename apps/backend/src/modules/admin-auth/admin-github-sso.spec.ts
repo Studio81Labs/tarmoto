@@ -135,21 +135,21 @@ describe('buildGithubAuthorizeUrl', () => {
     },
   } as unknown as ConfigService;
 
-  it('omits redirect_uri when TARMOTO_ADMIN_SSO_REDIRECT_URI is not set', () => {
+  it('omits redirect_uri when TARMOTO_ADMIN_GITHUB_CALLBACK_URL is not set', () => {
     const url = buildGithubAuthorizeUrl('test-state', baseConfig);
     expect(url).toContain('client_id=test-client-id');
     expect(url).toContain('state=test-state');
     expect(url).not.toContain('redirect_uri');
   });
 
-  it('includes redirect_uri when TARMOTO_ADMIN_SSO_REDIRECT_URI is set', () => {
+  it('includes redirect_uri when TARMOTO_ADMIN_GITHUB_CALLBACK_URL is set', () => {
     const redirectUri = 'http://localhost:3003/admin/auth/sso/github/callback';
     const configWithRedirect = {
       get: (key: string) => {
         if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_ID') return 'test-client-id';
         if (key === 'TARMOTO_ADMIN_GITHUB_CLIENT_SECRET')
           return 'test-client-secret';
-        if (key === 'TARMOTO_ADMIN_SSO_REDIRECT_URI') return redirectUri;
+        if (key === 'TARMOTO_ADMIN_GITHUB_CALLBACK_URL') return redirectUri;
         return undefined;
       },
     } as unknown as ConfigService;

@@ -33,6 +33,7 @@ on:
       - "docs/database/**"
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
+      - "scripts/ci/**"
   workflow_dispatch:
     inputs:
       environment:
@@ -58,6 +59,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Full history so scripts/ci/resolve-app-version.sh can `git describe`
+          # against the latest v-tag.
+          fetch-depth: 0
 
       - name: Resolve environment
         id: env
@@ -100,6 +105,87 @@ jobs:
           }
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "app_uuid=${APP_UUID}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve app version
+        id: version
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(bash scripts/ci/resolve-app-version.sh)"
+          test -n "$APP_VERSION" || {
+            echo "::error::Unable to resolve backend app version"
+            exit 1
+          }
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved backend app version: ${APP_VERSION}"
+
+      - name: Set Coolify backend version env
+        # Stamp the resolved version into Coolify BEFORE triggering the deploy so
+        # the new container builds/runs with it. Fills TARMOTO_APP_VERSION and
+        # TARMOTO_SENTRY_RELEASE (both = the resolved version), mirroring the
+        # tabletap/nexcue convention. Coolify's envs/bulk upserts the given keys
+        # (it does not replace the whole env).
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_API_TOKEN" || {
+            echo "::error::COOLIFY_API_TOKEN secret is not set"
+            exit 1
+          }
+          test -n "$COOLIFY_URL" || {
+            echo "::error::COOLIFY_API_BASE_URL repo variable is not set"
+            exit 1
+          }
+
+          REQUEST="$(mktemp)"
+          RESPONSE="$(mktemp)"
+          jq -n --arg version "$APP_VERSION" \
+            '{data: [
+              {key: "TARMOTO_APP_VERSION", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true},
+              {key: "TARMOTO_SENTRY_RELEASE", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
+            ]}' \
+            > "$REQUEST"
+
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$RESPONSE" \
+            --write-out '%{http_code}' \
+            --max-time 30 --request PATCH \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data @"$REQUEST" \
+            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}/envs/bulk")
+          CURL_EXIT=$?
+          set -e
+
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify env update failed before receiving an HTTP response"
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting the version env. Refresh COOLIFY_API_TOKEN and make sure it can update application envs."
+            head -c 400 "$RESPONSE"; echo
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_${ENV_NAME^^}_APPLICATION_UUID."
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting the version env"
+            head -c 400 "$RESPONSE"; echo
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          rm -f "$REQUEST" "$RESPONSE"
+          echo "Coolify TARMOTO_APP_VERSION and TARMOTO_SENTRY_RELEASE set to ${APP_VERSION}"
 
       - name: Trigger Coolify deploy
         id: trigger_deploy

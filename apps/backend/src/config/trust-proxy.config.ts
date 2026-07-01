@@ -11,7 +11,7 @@
  * See docs/process/runbook.md § "Proxy & throttling" for deployment guidance.
  */
 
-const ENV_KEY = 'TARMOTO_TRUST_PROXY_HOPS';
+const ENV_KEY = 'TARMOTO_TRUSTED_PROXY_HOPS';
 
 export interface TrustProxyConfig {
   hops: number;

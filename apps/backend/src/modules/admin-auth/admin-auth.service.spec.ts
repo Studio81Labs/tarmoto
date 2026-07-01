@@ -1399,7 +1399,7 @@ describe('AdminAuthService.findOrProvisionSsoUser', () => {
 // ---------------------------------------------------------------------------
 
 describe('AdminAuthService.onModuleInit', () => {
-  it('throws in production when TARMOTO_ADMIN_SESSION_SECRET is unset', () => {
+  it('throws in production when TARMOTO_ADMIN_AUTH_SESSION_SECRET is unset', () => {
     const prodConfig = {
       get: (key: string) => (key === 'NODE_ENV' ? 'production' : undefined),
     } as unknown as ConfigService;
@@ -1413,7 +1413,7 @@ describe('AdminAuthService.onModuleInit', () => {
       noopAudit,
     );
     expect(() => service.onModuleInit()).toThrow(
-      /TARMOTO_ADMIN_SESSION_SECRET/,
+      /TARMOTO_ADMIN_AUTH_SESSION_SECRET/,
     );
   });
 

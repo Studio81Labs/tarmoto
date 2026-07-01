@@ -1,6 +1,6 @@
 {
   // Admin console on Cloudflare Workers: static assets (./dist, SPA fallback)
-  // + a small worker (worker.mjs) that proxies /api/v1/* to the NestJS backend
+  // + a small worker (worker.mjs) that proxies /admin/* to the NestJS backend
   // same-origin. The proxy keeps the host-scoped tarmoto_admin_* session
   // cookies first-party on this origin and injects the x-internal-token the
   // backend's InternalGuard requires (see worker.mjs / adminProxyShared.mjs).
@@ -9,7 +9,7 @@
   // overrides it per environment via `wrangler deploy --name $ADMIN_WORKER_NAME`
   // (see .github/workflows/admin-deploy.yml).
   //
-  // Local dev still uses the Vite proxy (`/api/v1` -> http://localhost:3000 in
+  // Local dev still uses the Vite proxy (`/admin` -> http://localhost:3000 in
   // vite.config.ts); this worker is the production/preview equivalent.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tarmoto-admin",
@@ -20,15 +20,16 @@
     "directory": "dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // The worker handles the API proxy first; everything else is served from
-    // the static SPA build.
-    "run_worker_first": ["/api/v1/*"]
+    // The worker handles the admin API proxy first (incl. the GitHub OAuth
+    // callback at /admin/auth/sso/github/callback); everything else is served
+    // from the static SPA build.
+    "run_worker_first": ["/admin/*"]
   },
   "observability": {
     "enabled": true
   },
   "secrets": {
-    // Backend origin the proxy forwards /api/v1/* to, and the shared token it
+    // Backend origin the proxy forwards /admin/* to, and the shared token it
     // injects as x-internal-token (must equal the backend's
     // TARMOTO_INTERNAL_API_TOKEN). Set per environment by the deploy workflow.
     "required": ["TARMOTO_ADMIN_API_BASE_URL", "TARMOTO_INTERNAL_API_TOKEN"]
