@@ -11,6 +11,7 @@ import {
 } from '../reviews/dto/review.dto.js';
 import {
   findRegion,
+  haversineMeters,
   type SurfaceType,
   type HazardType,
   type HazardSeverity,
@@ -726,8 +727,10 @@ function normalizeElevationProfile(
  * `ST_LineMerge` returns a MultiLineString (#794). The `geometry` DTO is a single
  * polyline, so rather than concatenate the parts — which would draw a straight
  * connector across the unassessed gap and can misplace the rank marker — return
- * the LONGEST contiguous part. Contiguous ways stay a LineString, so the Multi
- * branch is the rare case; faithful multi-part rendering is tracked in #809.
+ * the geographically LONGEST contiguous part (not the one with the most
+ * vertices — a short but dense stub must not win). Contiguous ways stay a
+ * LineString, so the Multi branch is the rare case; faithful multi-part
+ * rendering is tracked in #809.
  */
 function geoJsonLineCoordinates(geojson: {
   type: string;
@@ -735,12 +738,40 @@ function geoJsonLineCoordinates(geojson: {
 }): number[][] {
   if (geojson.type === 'MultiLineString') {
     const parts = geojson.coordinates as number[][][];
-    return parts.reduce(
-      (longest, part) => (part.length > longest.length ? part : longest),
-      parts[0] ?? [],
-    );
+    let best: number[][] = parts[0] ?? [];
+    let bestLength = -1;
+    for (const part of parts) {
+      const length = polylineMeters(part);
+      if (length > bestLength) {
+        best = part;
+        bestLength = length;
+      }
+    }
+    return best;
   }
   return geojson.coordinates as number[][];
+}
+
+/** Geographic length of a `[lng, lat][]` polyline in metres. */
+function polylineMeters(coords: number[][]): number {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const prev = coords[i - 1];
+    const curr = coords[i];
+    if (!prev || !curr) continue;
+    const [aLng, aLat] = prev;
+    const [bLng, bLat] = curr;
+    if (
+      aLng === undefined ||
+      aLat === undefined ||
+      bLng === undefined ||
+      bLat === undefined
+    ) {
+      continue;
+    }
+    total += haversineMeters(aLat, aLng, bLat, bLng);
+  }
+  return total;
 }
 
 function lineStringToLatLng(

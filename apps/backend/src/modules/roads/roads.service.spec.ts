@@ -786,17 +786,18 @@ describe('RoadsService', () => {
           geojson: {
             type: 'MultiLineString',
             coordinates: [
-              // Short part (2 points) — the assessed stub before the gap.
+              // Dense short stub: 3 vertices over a ~30 m span. More points, but
+              // geographically tiny — must NOT win.
               [
                 [18.4, 49.5],
-                [18.41, 49.51],
+                [18.4001, 49.5001],
+                [18.4002, 49.5002],
               ],
-              // Longer contiguous part (3 points) — kept as-is, not concatenated
-              // with the short part across the gap.
+              // Sparse long road: 2 vertices over ~13 km. Fewer points, but the
+              // geographically longest part — the one to keep.
               [
-                [18.43, 49.53],
-                [18.44, 49.54],
-                [18.45, 49.55],
+                [18.5, 49.6],
+                [18.6, 49.7],
               ],
             ],
           },
@@ -809,10 +810,10 @@ describe('RoadsService', () => {
         region: 'beskydy',
       });
 
+      // Chosen by geographic length, not vertex count.
       expect(result.roads[0].geometry).toEqual([
-        { lat: 49.53, lng: 18.43 },
-        { lat: 49.54, lng: 18.44 },
-        { lat: 49.55, lng: 18.45 },
+        { lat: 49.6, lng: 18.5 },
+        { lat: 49.7, lng: 18.6 },
       ]);
     });
   });
