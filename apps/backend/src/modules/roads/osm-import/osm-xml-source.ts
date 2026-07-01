@@ -113,23 +113,32 @@ export async function* parseOsmXml(
 
   input.pipe(parser);
 
-  while (true) {
-    if (queue.length > 0) {
-      const primitive = queue.shift() as OsmPrimitive;
-      maybeResume();
-      yield primitive;
-      continue;
-    }
-    if (failure !== null) {
-      // Rethrow the captured stream/parse error (sax + streams emit Errors).
-      throw failure instanceof Error
-        ? failure
-        : new Error('OSM XML parsing failed');
-    }
+  try {
+    while (true) {
+      if (queue.length > 0) {
+        const primitive = queue.shift() as OsmPrimitive;
+        maybeResume();
+        yield primitive;
+        continue;
+      }
+      if (failure !== null) {
+        // Rethrow the captured stream/parse error (sax + streams emit Errors).
+        throw failure instanceof Error
+          ? failure
+          : new Error('OSM XML parsing failed');
+      }
 
-    if (ended) return;
-    await new Promise<void>((resolve) => {
-      wake = resolve;
-    });
+      if (ended) return;
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    }
+  } finally {
+    // Runs on normal completion, on throw, AND when the consumer abandons the
+    // generator early (e.g. the downstream upsert throws mid-stream): stop the
+    // source promptly so a large extract doesn't keep the fd + parser work alive
+    // after the import has already failed.
+    input.unpipe(parser);
+    input.destroy();
   }
 }

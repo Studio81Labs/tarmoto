@@ -89,4 +89,17 @@ describe('parseOsmXml', () => {
       ],
     });
   });
+
+  it('destroys the source when the consumer abandons iteration early', async () => {
+    const input = streamOf(SAMPLE);
+    const iterator = parseOsmXml(input);
+
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+
+    // Simulate an early exit (e.g. a downstream upsert throwing mid-stream).
+    await iterator.return(undefined);
+
+    expect(input.destroyed).toBe(true);
+  });
 });
