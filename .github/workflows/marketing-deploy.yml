@@ -2,7 +2,7 @@ name: Marketing Deploy
 
 # Deploy model:
 #   push to main         → staging  (auto)
-#   push tag marketing-v*→ production (auto)
+#   push tag v*          → production (auto)
 #   workflow_dispatch    → choose staging or production
 #
 # Deploy target: Cloudflare Workers (wrangler). The worker serves
@@ -14,9 +14,11 @@ name: Marketing Deploy
 # rolling-update / poll / healthcheck stages required — the smoke
 # test below is enough to catch a broken bundle.
 #
-# Prefix the marketing tag namespace (`marketing-v*`) so it doesn't
-# clash with the backend deploy's plain `v*` tags or the mobile
-# release's `mobile-v*` tags.
+# Unified release tag: a single `v*` tag ships every surface — backend,
+# companion, marketing (here), and the mobile app all trigger on `v*`, so
+# one tag pins the whole release to the same commit. (Accepted tradeoff:
+# a `v*` tag also rebuilds mobile; for a marketing-only change push to main
+# for staging or use workflow_dispatch.)
 #
 # Required repo secrets:
 #   CLOUDFLARE_API_TOKEN          shared with other Cloudflare deploys
@@ -32,7 +34,7 @@ name: Marketing Deploy
 on:
   push:
     branches: [main]
-    tags: ["marketing-v*"]
+    tags: ["v*"]
     paths:
       - "apps/marketing/**"
       - "package.json"
@@ -52,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: marketing-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/marketing-v') && 'production' || 'staging') }}
+  group: marketing-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +68,7 @@ jobs:
         id: env
         env:
           INPUT_ENV: ${{ inputs.environment || '' }}
-          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/marketing-v') }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
           EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
         run: |
@@ -81,7 +83,7 @@ jobs:
 
           # Push events deploy the actual ref that triggered the run:
           #   - push to main → deploy main HEAD as staging
-          #   - push tag marketing-v* → deploy the tagged commit as
+          #   - push tag v* → deploy the tagged commit as
           #     production (so the tag really pins the production
           #     release; otherwise main could have moved on and the
           #     "tagged" deploy would silently include untagged work).
