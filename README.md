@@ -174,7 +174,7 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 - **Backend** — Container deploy from [`apps/backend/Dockerfile`](./apps/backend/Dockerfile) onto a self-hosted PaaS, with managed Postgres (PostGIS via migration) and Redis for queues / pub-sub; Cloudflare R2 for object storage. Push to `main` auto-deploys staging; tag `v*` deploys production via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml), which waits for healthcheck, smoke-tests, and auto-rolls back on failure. The `production` GitHub environment can gate the smoke + rollback step on reviewer approval. No separate staging environment — pre-prod validation runs against the local Docker Compose stack.
 - **Companion** — Cloudflare Workers (OpenNext) with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
-- **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or `mobile-vX.Y.Z` tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
+- **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or the unified `vX.Y.Z` release tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
 - **Marketing site** — Astro static site + waitlist Cloudflare Worker deployed to Cloudflare Pages + Workers via [`.github/workflows/marketing-deploy.yml`](./.github/workflows/marketing-deploy.yml).
 - **PoC sensor** — Cloudflare Pages on push to `main` via [`poc-deploy.yml`](./.github/workflows/poc-deploy.yml).
 
