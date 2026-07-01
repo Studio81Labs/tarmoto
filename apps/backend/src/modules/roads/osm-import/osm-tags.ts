@@ -147,11 +147,25 @@ export interface RoadSeedFields {
   surface_type: SurfaceType;
 }
 
+// `road_segments` varchar limits — OSM tags are untrusted external input, so an
+// overlong `name`/`ref` must be clamped here rather than aborting the whole
+// 500-row insert when Postgres rejects the value.
+const ROAD_NAME_MAX = 255;
+const ROAD_NUMBER_MAX = 50;
+
+/** Trim, drop-if-blank, and clamp an OSM tag to a column's length limit. */
+function clampTag(value: string | undefined, max: number): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
+}
+
 /** Derive the OSM-seeded `road_segments` columns from a way's tags. */
 export function roadFieldsFromTags(tags: OsmTags): RoadSeedFields {
   return {
-    road_name: tags.name ?? tags['name:en'] ?? null,
-    road_number: tags.ref ?? null,
+    road_name: clampTag(tags.name ?? tags['name:en'], ROAD_NAME_MAX),
+    road_number: clampTag(tags.ref, ROAD_NUMBER_MAX),
     surface_type: surfaceSeedFromTag(tags.surface),
   };
 }

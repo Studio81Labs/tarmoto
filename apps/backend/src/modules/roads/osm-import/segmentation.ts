@@ -15,12 +15,13 @@ export interface LatLng {
 /**
  * Default ~100 m segment target (§1 of the data reference).
  *
- * NOTE for the persistence slice (#781): `FunZoneClusteringService` defaults
- * `minSegmentLengthM: 500` and filters `length_m >= …` before DBSCAN, so once
- * the importer persists ~100 m rows the weekly fun-zone recompute would filter
- * them all out. That slice must either lower the clustering min-length or
- * aggregate neighbouring imported segments before the filter — it is NOT a
- * property of this pure geometry core (nothing here persists segments yet).
+ * NOTE (tracked in #794): `FunZoneClusteringService` defaults
+ * `minSegmentLengthM: 500` and `RoadsService.findBest` requires
+ * `length_m >= BEST_ROADS_MIN_LENGTH_M`, so once the importer persists ~100 m
+ * rows those consumers would filter them all out. Reconciling that (aggregate
+ * neighbouring imported segments on read, and/or lower the clustering min) is a
+ * separate consumer-side slice — NOT a property of this pure geometry core, and
+ * NOT the upsert slice (nothing imports into a live job yet).
  */
 export const SEGMENT_TARGET_METERS = 100;
 

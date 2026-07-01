@@ -147,4 +147,22 @@ describe('roadFieldsFromTags', () => {
     expect(empty.road_number).toBeNull();
     expect(empty.surface_type).toBe('unknown');
   });
+
+  it('clamps overlong name / ref to the column limits (untrusted OSM input)', () => {
+    const fields = roadFieldsFromTags({
+      name: 'a'.repeat(400),
+      ref: 'b'.repeat(120),
+    });
+    expect(fields.road_name).toHaveLength(255);
+    expect(fields.road_number).toHaveLength(50);
+  });
+
+  it('trims and treats blank tags as absent', () => {
+    expect(roadFieldsFromTags({ name: '  Main St  ' }).road_name).toBe(
+      'Main St',
+    );
+    const blank = roadFieldsFromTags({ name: '   ', ref: '' });
+    expect(blank.road_name).toBeNull();
+    expect(blank.road_number).toBeNull();
+  });
 });
