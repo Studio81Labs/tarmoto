@@ -53,22 +53,16 @@ const GEOM_DERIVED_COLUMNS = [
 const GEOM_CHANGED = `NOT ST_OrderingEquals("${TABLE}"."geom", EXCLUDED."geom")`;
 
 /**
- * True iff a rider has classified this segment's surface. Mirrors the quality
- * aggregation, which derives `surface_type` only from readings whose own
- * `surface_type IS NOT NULL` (`inferSurfaceType` returns null for many smooth
- * asphalt rides) — so `reading_count > 0` alone does NOT prove crowd ownership.
- */
-const HAS_RIDER_SURFACE =
-  `EXISTS (SELECT 1 FROM "surface_readings" sr ` +
-  `WHERE sr."road_segment_id" = "${TABLE}"."id" AND sr."surface_type" IS NOT NULL)`;
-
-/**
  * The raw `ON CONFLICT … DO UPDATE …` clause. Built once.
  *
- * `surface_type`: refreshed from the OSM seed unless a rider has classified the
- * surface ({@link HAS_RIDER_SURFACE}). Per ADR-0005 the seed tracks the OSM
- * cycle until superseded by sensor evidence, then the rider value is
- * authoritative — hence the `CASE`, not a blanket refresh or exclude.
+ * `surface_type`: INSERT-only. It seeds a brand-new segment from the OSM
+ * `surface` tag, but is NEVER overwritten on conflict, so a rider-classified
+ * surface is preserved. It is deliberately not refreshed for still-unclassified
+ * segments either: doing that safely needs a *durable* provenance flag, because
+ * the raw `surface_readings` a segment was classified from are deleted once they
+ * age past a user's `location_retention` (while the aggregate `surface_type`
+ * persists), so any check against raw readings would flip and clobber the
+ * rider value after the sweep. Tracked in #796.
  *
  * `elevation_*`: nulled whenever the geometry changes, since they were computed
  * from the previous geometry and would otherwise be served stale by
@@ -76,14 +70,12 @@ const HAS_RIDER_SURFACE =
  *
  * `WHERE …`: skips no-op rows. A weekly snapshot re-sends mostly-identical rows;
  * without this every conflict emits an unconditional `DO UPDATE`, churning row
- * locks + WAL on a national import. The row updates only if the geometry, an OSM
- * attribute, or an un-classified segment's surface seed actually changed.
+ * locks + WAL on a national import. The row updates only if the geometry or an
+ * OSM attribute actually changed.
  */
 function buildOnConflictClause(): string {
   const set = [
     ...OSM_REFRESH_COLUMNS.map((c) => `"${c}" = EXCLUDED."${c}"`),
-    `"surface_type" = CASE WHEN ${HAS_RIDER_SURFACE} ` +
-      `THEN "${TABLE}"."surface_type" ELSE EXCLUDED."surface_type" END`,
     ...GEOM_DERIVED_COLUMNS.map(
       (c) =>
         `"${c}" = CASE WHEN ${GEOM_CHANGED} THEN NULL ELSE "${TABLE}"."${c}" END`,
@@ -94,8 +86,6 @@ function buildOnConflictClause(): string {
     ...OSM_REFRESH_COLUMNS.filter((c) => c !== 'geom').map(
       (c) => `"${TABLE}"."${c}" IS DISTINCT FROM EXCLUDED."${c}"`,
     ),
-    `(NOT ${HAS_RIDER_SURFACE} AND ` +
-      `"${TABLE}"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")`,
   ];
   const target = CONFLICT_COLUMNS.map((c) => `"${c}"`).join(', ');
   return `( ${target} ) DO UPDATE SET ${set.join(', ')} WHERE ${changed.join(' OR ')}`;
@@ -115,8 +105,8 @@ export interface OsmImportResult {
  *
  * The conflict clause (see {@link ROAD_SEGMENT_ON_CONFLICT}) refreshes only the
  * OSM-owned columns, leaves the crowdsourced `quality_score` / `confidence` /
- * `reading_count` and the `id` untouched (the #751 stable-identity guarantee),
- * refreshes the `surface_type` seed only until a rider classifies the surface,
+ * `reading_count`, the `id`, and the `surface_type` seed untouched on update
+ * (the #751 stable-identity guarantee; surface refresh is deferred to #796),
  * nulls the geometry-derived `elevation_*` columns when the geometry changes,
  * and skips rows whose values did not change.
  *
@@ -155,8 +145,8 @@ export class OsmImportService {
 
   private async flush(rows: RoadSegmentRow[]): Promise<void> {
     // Raw conflict clause (not `repo.upsert` / the `orUpdate` array form) because
-    // the DO UPDATE must (a) omit the crowdsourced columns, (b) refresh
-    // `surface_type` and null `elevation_*` conditionally, and (c) skip no-op
+    // the DO UPDATE must (a) omit the crowdsourced + surface_type columns, (b)
+    // null `elevation_*` conditionally on geometry change, and (c) skip no-op
     // rows — none of which the column-array API can express. `.values()` still
     // builds the INSERT (incl. PostGIS geometry binding); only the tail is raw.
     await this.repo

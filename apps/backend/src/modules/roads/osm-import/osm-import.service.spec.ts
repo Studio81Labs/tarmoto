@@ -42,16 +42,15 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
     }
   });
 
-  it('refreshes surface_type only until a rider classifies the surface', () => {
-    // Ownership mirrors the quality aggregation: a NON-NULL surface reading, not
-    // reading_count (which counts readings that carry no surface_type).
-    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '"surface_type" = CASE WHEN EXISTS (SELECT 1 FROM "surface_readings" sr ' +
-        'WHERE sr."road_segment_id" = "road_segments"."id" ' +
-        'AND sr."surface_type" IS NOT NULL) ' +
-        'THEN "road_segments"."surface_type" ELSE EXCLUDED."surface_type" END',
-    );
-    // reading_count is never consulted for ownership.
+  it('never overwrites surface_type on conflict (seed is INSERT-only)', () => {
+    // A rider-classified surface must survive re-import, and — unlike the raw
+    // surface_readings a segment was classified from — the aggregate surface_type
+    // persists past location_retention. So the seed is never refreshed on update
+    // here; safe conditional refresh needs a durable provenance flag (#796).
+    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('"surface_type" =');
+    // …and ownership is never inferred from raw readings (would break after the
+    // retention sweep deletes them).
+    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('surface_readings');
     expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('reading_count');
   });
 
@@ -81,15 +80,15 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
     }
   });
 
-  it('skips no-op rows via a change guard (WHERE)', () => {
-    // Surface-only change on an unclassified segment still triggers an update…
-    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '(NOT EXISTS (SELECT 1 FROM "surface_readings" sr ' +
-        'WHERE sr."road_segment_id" = "road_segments"."id" ' +
-        'AND sr."surface_type" IS NOT NULL) AND ' +
-        '"road_segments"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")',
-    );
+  it('skips no-op rows via a change guard (WHERE over geom + OSM columns)', () => {
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(' WHERE ');
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"road_segments"."road_name" IS DISTINCT FROM EXCLUDED."road_name"',
+    );
+    // The guard leads with the vertex-level geometry check.
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      'WHERE NOT ST_OrderingEquals("road_segments"."geom", EXCLUDED."geom")',
+    );
   });
 });
 
