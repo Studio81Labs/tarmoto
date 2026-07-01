@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
@@ -7,6 +9,9 @@ import {
   type RoadSegmentRow,
   buildSegmentRows,
 } from './segment-rows.js';
+import { assembleWays } from './osm-assemble.js';
+import { parseOsmXml } from './osm-xml-source.js';
+import { osmImportConfig } from './osm-import.config.js';
 
 /** Rows per bulk upsert — keeps each statement well under PG's 65,535-param
  *  limit (each row binds ~8 columns). */
@@ -129,7 +134,32 @@ export class OsmImportService {
   constructor(
     @InjectRepository(RoadSegment)
     private readonly repo: Repository<RoadSegment>,
+    @Inject(osmImportConfig.KEY)
+    private readonly config: ConfigType<typeof osmImportConfig>,
   ) {}
+
+  /** Whether the scheduled import is turned on (TARMOTO_OSM_IMPORT_ENABLED). */
+  get enabled(): boolean {
+    return this.config.enabled;
+  }
+
+  /**
+   * Import the configured `.osm` XML extract: stream it through the parser and
+   * way assembler into the upsert. Read-stream errors and parse errors abort the
+   * import via the generator chain; the upsert never deletes, so a partial or
+   * failed run can't wipe existing rows.
+   */
+  async importFromConfiguredFile(): Promise<OsmImportResult> {
+    const { filePath } = this.config;
+    if (!filePath) {
+      throw new Error(
+        'OSM import is enabled but TARMOTO_OSM_IMPORT_FILE is not set',
+      );
+    }
+    this.logger.log(`OSM import: reading ${filePath}`);
+    const stream = createReadStream(filePath);
+    return this.importFrom(assembleWays(parseOsmXml(stream)));
+  }
 
   async importFrom(source: OsmWaySource): Promise<OsmImportResult> {
     let batch: RoadSegmentRow[] = [];

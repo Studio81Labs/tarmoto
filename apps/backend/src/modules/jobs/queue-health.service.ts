@@ -77,6 +77,8 @@ export class QueueHealthService {
     private readonly napClosurePoll: Queue,
     @InjectQueue(QUEUE_NAMES.POI_IMPORT)
     private readonly poiImport: Queue,
+    @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
+    private readonly osmImport: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -95,6 +97,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.MODEL_EVAL_AGREEMENT]: this.modelEvalAgreement,
       [QUEUE_NAMES.NAP_CLOSURE_POLL]: this.napClosurePoll,
       [QUEUE_NAMES.POI_IMPORT]: this.poiImport,
+      [QUEUE_NAMES.OSM_IMPORT]: this.osmImport,
     };
   }
 
