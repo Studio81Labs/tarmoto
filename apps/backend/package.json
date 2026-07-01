@@ -63,6 +63,7 @@
     "redis": "^5.11.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sax": "^1.6.0",
     "socket.io": "^4.8.3",
     "stripe": "^22.1.0",
     "typeorm": "^0.3.28"
@@ -81,6 +82,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/multer": "^2.1.0",
     "@types/node": "^24.0.0",
+    "@types/sax": "^1.2.7",
     "@types/supertest": "^7.0.0",
     "@types/unzipper": "^0.10.11",
     "dotenv": "^17.4.2",

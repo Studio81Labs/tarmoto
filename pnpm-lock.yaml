@@ -83,7 +83,7 @@ importers:
         version: 7.1.1(eslint@10.3.0(jiti@2.6.1))
       jsdom:
         specifier: ^25.0.0
-        version: 25.0.1
+        version: 25.0.1(supports-color@10.2.2)
       tailwindcss:
         specifier: ^4.2.4
         version: 4.3.0
@@ -98,7 +98,7 @@ importers:
         version: 8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4)
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(jsdom@25.0.1)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4))
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(jsdom@25.0.1(supports-color@10.2.2))(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4))
 
   apps/backend:
     dependencies:
@@ -113,43 +113,43 @@ importers:
         version: 3.1041.0
       '@nestjs/bullmq':
         specifier: ^11.0.4
-        version: 11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(bullmq@5.76.5)
+        version: 11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(bullmq@5.76.5)
       '@nestjs/common':
         specifier: ^11.0.1
-        version: 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+        version: 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       '@nestjs/config':
         specifier: ^4.0.4
-        version: 4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+        version: 4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(rxjs@7.8.2)
       '@nestjs/core':
         specifier: ^11.0.1
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/jwt':
         specifier: ^11.0.2
-        version: 11.0.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))
+        version: 11.0.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))
       '@nestjs/platform-express':
         specifier: ^11.0.1
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)
       '@nestjs/platform-socket.io':
         specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)
       '@nestjs/schedule':
         specifier: ^6.1.3
-        version: 6.1.3(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
+        version: 6.1.3(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)
       '@nestjs/swagger':
         specifier: ^11.4.1
-        version: 11.4.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)
+        version: 11.4.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)
       '@nestjs/throttler':
         specifier: ^6.5.0
-        version: 6.5.0(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)
+        version: 6.5.0(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)
       '@nestjs/typeorm':
         specifier: ^11.0.1
-        version: 11.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))
+        version: 11.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))
       '@nestjs/websockets':
         specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@parse/node-apn':
         specifier: ^8.0.0
-        version: 8.1.0
+        version: 8.1.0(supports-color@10.2.2)
       '@socket.io/redis-adapter':
         specifier: ^8.3.0
         version: 8.3.0(socket.io-adapter@2.5.6)
@@ -179,7 +179,7 @@ importers:
         version: 5.7.2
       firebase-admin:
         specifier: ^13.8.0
-        version: 13.8.0
+        version: 13.8.0(supports-color@10.2.2)
       geojson:
         specifier: ^0.5.0
         version: 0.5.0
@@ -204,6 +204,9 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.2
+      sax:
+        specifier: ^1.6.0
+        version: 1.6.0
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
@@ -212,14 +215,14 @@ importers:
         version: 22.1.0(@types/node@24.12.2)
       typeorm:
         specifier: ^0.3.28
-        version: 0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
+        version: 0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.2.0
-        version: 3.3.5
+        version: 3.3.5(supports-color@10.2.2)
       '@eslint/js':
         specifier: ^10.0.0
-        version: 10.0.1(eslint@10.3.0(jiti@2.6.1))
+        version: 10.0.1(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))
       '@nestjs/cli':
         specifier: ^11.0.0
         version: 11.0.21(@types/node@24.12.2)(prettier@3.8.3)
@@ -228,7 +231,7 @@ importers:
         version: 11.1.0(chokidar@4.0.3)(prettier@3.8.3)(typescript@5.9.3)
       '@nestjs/testing':
         specifier: ^11.0.1
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-express@11.1.19)
+        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-express@11.1.19)
       '@types/archiver':
         specifier: ^7.0.0
         version: 7.0.0
@@ -253,6 +256,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2
+      '@types/sax':
+        specifier: ^1.2.7
+        version: 1.2.7
       '@types/supertest':
         specifier: ^7.0.0
         version: 7.2.0
@@ -264,13 +270,13 @@ importers:
         version: 17.4.2
       eslint:
         specifier: ^10.0.0
-        version: 10.3.0(jiti@2.6.1)
+        version: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
       eslint-config-prettier:
         specifier: ^10.0.1
-        version: 10.1.8(eslint@10.3.0(jiti@2.6.1))
+        version: 10.1.8(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))
       eslint-plugin-prettier:
         specifier: ^5.2.2
-        version: 5.5.5(@types/eslint@9.6.1)(eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)))(eslint@10.3.0(jiti@2.6.1))(prettier@3.8.3)
+        version: 5.5.5(@types/eslint@9.6.1)(eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2)))(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(prettier@3.8.3)
       globals:
         specifier: ^17.0.0
         version: 17.6.0
@@ -285,7 +291,7 @@ importers:
         version: 0.5.21
       supertest:
         specifier: ^7.0.0
-        version: 7.2.2
+        version: 7.2.2(supports-color@10.2.2)
       ts-jest:
         specifier: ^29.2.5
         version: 29.4.9(@babel/core@7.29.0)(@jest/transform@30.3.0)(@jest/types@30.3.0)(babel-jest@30.3.0(@babel/core@7.29.0))(jest-util@30.3.0)(jest@30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))(typescript@5.9.3)
@@ -303,7 +309,7 @@ importers:
         version: 5.9.3
       typescript-eslint:
         specifier: ^8.20.0
-        version: 8.59.2(eslint@10.3.0(jiti@2.6.1))(typescript@5.9.3)
+        version: 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
       unzipper:
         specifier: ^0.12.3
         version: 0.12.3
@@ -372,7 +378,7 @@ importers:
         version: 3.8.1(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react-is@19.2.5)(react@19.2.5)(redux@5.0.1)
       socket.io-client:
         specifier: ^4.8.0
-        version: 4.8.3
+        version: 4.8.3(supports-color@10.2.2)
       zustand:
         specifier: ^5.0.0
         version: 5.0.12(@types/react@19.2.14)(immer@11.1.6)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
@@ -497,34 +503,34 @@ importers:
         version: 7.29.2
       '@maplibre/maplibre-react-native':
         specifier: ^11.0.1
-        version: 11.0.2(@types/geojson@7946.0.16)(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 11.0.2(@types/geojson@7946.0.16)(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-native-community/geolocation':
         specifier: ^3.4.0
-        version: 3.4.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 3.4.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-native-documents/picker':
         specifier: ^12.0.0
-        version: 12.0.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 12.0.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-native-firebase/app':
         specifier: ^24.0.0
-        version: 24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-native-firebase/messaging':
         specifier: ^24.0.0
-        version: 24.0.0(@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))
+        version: 24.0.0(@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))
       '@react-native-vector-icons/material-design-icons':
         specifier: ^13.1.1
-        version: 13.1.1(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 13.1.1(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-native/gradle-plugin':
         specifier: ^0.85.1
         version: 0.85.2
       '@react-navigation/bottom-tabs':
         specifier: ^7.0.0
-        version: 7.15.11(0bd9a3dfac51ee5db8f0c286e34de944)
+        version: 7.15.11(455e0e6ac9af26d584acac50aafa13ab)
       '@react-navigation/native':
         specifier: ^7.0.0
-        version: 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       '@react-navigation/native-stack':
         specifier: ^7.0.0
-        version: 7.14.12(0bd9a3dfac51ee5db8f0c286e34de944)
+        version: 7.14.12(455e0e6ac9af26d584acac50aafa13ab)
       '@tarmoto/openapi-client':
         specifier: workspace:*
         version: link:../../packages/openapi-client
@@ -539,70 +545,70 @@ importers:
         version: 19.2.5
       react-native:
         specifier: ^0.85.0
-        version: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+        version: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       react-native-background-actions:
         specifier: ^4.0.0
-        version: 4.1.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))
+        version: 4.1.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
       react-native-carplay:
         specifier: 2.4.1-beta.0
-        version: 2.4.1-beta.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 2.4.1-beta.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-device-info:
         specifier: ^15.0.2
-        version: 15.0.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))
+        version: 15.0.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
       react-native-fast-tflite:
         specifier: ^3.0.1
-        version: 3.0.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 3.0.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-fs:
         specifier: ^2.20.0
-        version: 2.20.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))
+        version: 2.20.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
       react-native-gesture-handler:
         specifier: ^2.20.0
-        version: 2.31.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 2.31.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-haptic-feedback:
         specifier: ^3.0.0
-        version: 3.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 3.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-image-picker:
         specifier: ^8.2.1
-        version: 8.2.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 8.2.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-keep-awake:
         specifier: ^4.0.0
         version: 4.0.0
       react-native-mmkv:
         specifier: ^4.3.1
-        version: 4.3.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 4.3.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-nitro-modules:
         specifier: ^0.35.4
-        version: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-reanimated:
         specifier: ^4.3.0
-        version: 4.3.0(react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 4.3.0(react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-safe-area-context:
         specifier: ^5.0.0
-        version: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-screens:
         specifier: ^4.4.0
-        version: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-sensors:
         specifier: ^7.3.6
-        version: 7.3.6(prop-types@15.8.1)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))
+        version: 7.3.6(prop-types@15.8.1)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
       react-native-share:
         specifier: ^12.2.6
         version: 12.3.1
       react-native-svg:
         specifier: ^15.8.0
-        version: 15.15.4(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 15.15.4(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-tts:
         specifier: ^4.1.1
         version: 4.1.1
       react-native-worklets:
         specifier: ^0.8.0
-        version: 0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+        version: 0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
       socket.io-client:
         specifier: ^4.8.0
-        version: 4.8.3
+        version: 4.8.3(supports-color@10.2.2)
       zustand:
         specifier: ^5.0.0
         version: 5.0.12(@types/react@19.2.14)(immer@11.1.6)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
@@ -627,10 +633,10 @@ importers:
         version: 0.85.2(@babel/core@7.29.0)(react@19.2.5)
       '@react-native/metro-config':
         specifier: ^0.85.0
-        version: 0.85.2(@babel/core@7.29.0)
+        version: 0.85.2(@babel/core@7.29.0)(supports-color@10.2.2)
       '@testing-library/react-native':
         specifier: ^13.3.3
-        version: 13.3.3(jest@30.3.0(@types/node@24.12.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react-test-renderer@19.2.5(react@19.2.5))(react@19.2.5)
+        version: 13.3.3(jest@30.3.0(@types/node@24.12.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react-test-renderer@19.2.5(react@19.2.5))(react@19.2.5)
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
@@ -4649,6 +4655,9 @@ packages:
   '@types/request@2.48.13':
     resolution: {integrity: sha512-FGJ6udDNUCjd19pp0Q3iTiDkwhYup7J8hpMW9c4k53NrccQFFWKRho6hvtPPEhnXWKvukfwAlB6DbDz4yhH5Gg==}
 
+  '@types/sax@1.2.7':
+    resolution: {integrity: sha512-rO73L89PJxeYM3s3pPPjiPgVVcymqU490g0YO5n5By0k2Erzj6tay/4lr1CHAAU4JyOWd1rpQ8bCf6cZfHU96A==}
+
   '@types/send@1.2.1':
     resolution: {integrity: sha512-arsCikDvlU99zl1g69TcAB3mzZPpxgw0UQnaHeC1Nwb015xp8bknZv5rIfri9xTOcMuaVgvabfIRA7PSZVuZIQ==}
 
@@ -8661,6 +8670,10 @@ packages:
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
+  sax@1.6.0:
+    resolution: {integrity: sha512-6R3J5M4AcbtLUdZmRv2SygeVaM7IhrLXu9BmnOGmmACak8fiUtOsYNWUS4uK7upbmHIBbLBeFeI//477BKLBzA==}
+    engines: {node: '>=11.0.0'}
+
   saxes@6.0.0:
     resolution: {integrity: sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==}
     engines: {node: '>=v12.22.7'}
@@ -11769,6 +11782,11 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
+  '@eslint-community/eslint-utils@4.9.1(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))':
+    dependencies:
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      eslint-visitor-keys: 3.4.3
+
   '@eslint-community/eslint-utils@4.9.1(eslint@10.3.0(jiti@2.6.1))':
     dependencies:
       eslint: 10.3.0(jiti@2.6.1)
@@ -11776,7 +11794,7 @@ snapshots:
 
   '@eslint-community/regexpp@4.12.2': {}
 
-  '@eslint/config-array@0.23.5':
+  '@eslint/config-array@0.23.5(supports-color@10.2.2)':
     dependencies:
       '@eslint/object-schema': 3.0.5
       debug: 4.4.3(supports-color@10.2.2)
@@ -11792,7 +11810,7 @@ snapshots:
     dependencies:
       '@types/json-schema': 7.0.15
 
-  '@eslint/eslintrc@3.3.5':
+  '@eslint/eslintrc@3.3.5(supports-color@10.2.2)':
     dependencies:
       ajv: 6.15.0
       debug: 4.4.3(supports-color@10.2.2)
@@ -11805,6 +11823,10 @@ snapshots:
       strip-json-comments: 3.1.1
     transitivePeerDependencies:
       - supports-color
+
+  '@eslint/js@10.0.1(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))':
+    optionalDependencies:
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
 
   '@eslint/js@10.0.1(eslint@10.3.0(jiti@2.6.1))':
     optionalDependencies:
@@ -12829,7 +12851,7 @@ snapshots:
       rw: 1.3.3
       tinyqueue: 3.0.0
 
-  '@maplibre/maplibre-react-native@11.0.2(@types/geojson@7946.0.16)(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@maplibre/maplibre-react-native@11.0.2(@types/geojson@7946.0.16)(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       '@maplibre/maplibre-gl-style-spec': 24.8.3
       '@turf/distance': 7.3.5
@@ -12837,7 +12859,7 @@ snapshots:
       '@turf/length': 7.3.5
       '@turf/nearest-point-on-line': 7.3.5
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     optionalDependencies:
       '@types/geojson': 7946.0.16
       '@types/react': 19.2.14
@@ -12890,17 +12912,17 @@ snapshots:
       '@tybys/wasm-util': 0.10.2
     optional: true
 
-  '@nestjs/bull-shared@11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)':
+  '@nestjs/bull-shared@11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       tslib: 2.8.1
 
-  '@nestjs/bullmq@11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(bullmq@5.76.5)':
+  '@nestjs/bullmq@11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(bullmq@5.76.5)':
     dependencies:
-      '@nestjs/bull-shared': 11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/bull-shared': 11.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       bullmq: 5.76.5
       tslib: 2.8.1
 
@@ -12931,9 +12953,9 @@ snapshots:
       - uglify-js
       - webpack-cli
 
-  '@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+  '@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)':
     dependencies:
-      file-type: 21.3.4
+      file-type: 21.3.4(supports-color@10.2.2)
       iterare: 1.2.1
       load-esm: 1.0.3
       reflect-metadata: 0.2.2
@@ -12946,17 +12968,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@nestjs/config@4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)':
+  '@nestjs/config@4.0.4(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(rxjs@7.8.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       dotenv: 17.4.1
       dotenv-expand: 12.0.3
       lodash: 4.18.1
       rxjs: 7.8.2
 
-  '@nestjs/core@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+  '@nestjs/core@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       '@nuxt/opencollective': 0.4.1
       fast-safe-stringify: 2.1.1
       iterare: 1.2.1
@@ -12966,27 +12988,27 @@ snapshots:
       tslib: 2.8.1
       uid: 2.0.2
     optionalDependencies:
-      '@nestjs/platform-express': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
-      '@nestjs/websockets': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-express': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)
+      '@nestjs/websockets': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
 
-  '@nestjs/jwt@11.0.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))':
+  '@nestjs/jwt@11.0.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       '@types/jsonwebtoken': 9.0.10
       jsonwebtoken: 9.0.3
 
-  '@nestjs/mapped-types@2.1.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)':
+  '@nestjs/mapped-types@2.1.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       reflect-metadata: 0.2.2
     optionalDependencies:
       class-transformer: 0.5.1
       class-validator: 0.15.1
 
-  '@nestjs/platform-express@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)':
+  '@nestjs/platform-express@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       cors: 2.8.6
       express: 5.2.1
       multer: 2.1.1
@@ -12995,10 +13017,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@nestjs/platform-socket.io@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)':
+  '@nestjs/platform-socket.io@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/websockets': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/websockets': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       rxjs: 7.8.2
       socket.io: 4.8.3
       tslib: 2.8.1
@@ -13007,10 +13029,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@nestjs/schedule@6.1.3(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)':
+  '@nestjs/schedule@6.1.3(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       cron: 4.4.0
 
   '@nestjs/schematics@11.1.0(chokidar@4.0.3)(prettier@3.8.3)(typescript@5.9.3)':
@@ -13026,12 +13048,12 @@ snapshots:
     transitivePeerDependencies:
       - chokidar
 
-  '@nestjs/swagger@11.4.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)':
+  '@nestjs/swagger@11.4.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)':
     dependencies:
       '@microsoft/tsdoc': 0.16.0
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/mapped-types': 2.1.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/mapped-types': 2.1.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)
       js-yaml: 4.1.1
       lodash: 4.18.1
       path-to-regexp: 8.4.2
@@ -13041,39 +13063,39 @@ snapshots:
       class-transformer: 0.5.1
       class-validator: 0.15.1
 
-  '@nestjs/testing@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-express@11.1.19)':
+  '@nestjs/testing@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-express@11.1.19)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       tslib: 2.8.1
     optionalDependencies:
-      '@nestjs/platform-express': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
+      '@nestjs/platform-express': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)
 
-  '@nestjs/throttler@6.5.0(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)':
+  '@nestjs/throttler@6.5.0(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
 
-  '@nestjs/typeorm@11.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))':
+  '@nestjs/typeorm@11.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)))':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
       rxjs: 7.8.2
-      typeorm: 0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
+      typeorm: 0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
 
-  '@nestjs/websockets@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+  '@nestjs/websockets@11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
-      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
+      '@nestjs/core': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.1.19)(@nestjs/websockets@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       iterare: 1.2.1
       object-hash: 3.0.0
       reflect-metadata: 0.2.2
       rxjs: 7.8.2
       tslib: 2.8.1
     optionalDependencies:
-      '@nestjs/platform-socket.io': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)
+      '@nestjs/platform-socket.io': 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)
 
   '@next/env@16.2.4': {}
 
@@ -13230,7 +13252,7 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
-  '@parse/node-apn@8.1.0':
+  '@parse/node-apn@8.1.0(supports-color@10.2.2)':
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       jsonwebtoken: 9.0.3
@@ -13413,43 +13435,43 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@react-native-community/geolocation@3.4.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native-community/geolocation@3.4.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  '@react-native-documents/picker@12.0.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native-documents/picker@12.0.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  '@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       firebase: 12.10.0
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@react-native-async-storage/async-storage'
 
-  '@react-native-firebase/messaging@24.0.0(@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))':
+  '@react-native-firebase/messaging@24.0.0(@react-native-firebase/app@24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))':
     dependencies:
-      '@react-native-firebase/app': 24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-native-firebase/app': 24.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
 
-  '@react-native-vector-icons/common@13.0.0(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native-vector-icons/common@13.0.0(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       find-up: 7.0.0
       picocolors: 1.1.1
       plist: 3.1.1
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     optionalDependencies:
       '@react-native/assets-registry': 0.85.2
 
-  '@react-native-vector-icons/material-design-icons@13.1.1(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native-vector-icons/material-design-icons@13.1.1(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
-      '@react-native-vector-icons/common': 13.0.0(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-native-vector-icons/common': 13.0.0(@react-native/assets-registry@0.85.2)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@react-native-vector-icons/get-image'
       - '@react-native/assets-registry'
@@ -13512,18 +13534,18 @@ snapshots:
       tinyglobby: 0.2.16
       yargs: 17.7.2
 
-  '@react-native/community-cli-plugin@0.85.2(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))':
+  '@react-native/community-cli-plugin@0.85.2(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@react-native/dev-middleware': 0.85.2
+      '@react-native/dev-middleware': 0.85.2(supports-color@10.2.2)
       debug: 4.4.3(supports-color@10.2.2)
       invariant: 2.2.4
-      metro: 0.84.4
-      metro-config: 0.84.4
+      metro: 0.84.4(supports-color@10.2.2)
+      metro-config: 0.84.4(supports-color@10.2.2)
       metro-core: 0.84.4
       semver: 7.7.4
     optionalDependencies:
       '@react-native-community/cli': 20.1.3(typescript@5.9.3)
-      '@react-native/metro-config': 0.85.2(@babel/core@7.29.0)
+      '@react-native/metro-config': 0.85.2(@babel/core@7.29.0)(supports-color@10.2.2)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -13531,7 +13553,7 @@ snapshots:
 
   '@react-native/debugger-frontend@0.85.2': {}
 
-  '@react-native/debugger-shell@0.85.2':
+  '@react-native/debugger-shell@0.85.2(supports-color@10.2.2)':
     dependencies:
       cross-spawn: 7.0.6
       debug: 4.4.3(supports-color@10.2.2)
@@ -13539,11 +13561,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@react-native/dev-middleware@0.85.2':
+  '@react-native/dev-middleware@0.85.2(supports-color@10.2.2)':
     dependencies:
       '@isaacs/ttlcache': 1.4.1
       '@react-native/debugger-frontend': 0.85.2
-      '@react-native/debugger-shell': 0.85.2
+      '@react-native/debugger-shell': 0.85.2(supports-color@10.2.2)
       chrome-launcher: 0.15.2
       chromium-edge-launcher: 0.3.0
       connect: 3.7.0
@@ -13583,11 +13605,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@react-native/metro-config@0.85.2(@babel/core@7.29.0)':
+  '@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2)':
     dependencies:
       '@react-native/js-polyfills': 0.85.2
       '@react-native/metro-babel-transformer': 0.85.2(@babel/core@7.29.0)
-      metro-config: 0.84.4
+      metro-config: 0.84.4(supports-color@10.2.2)
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
@@ -13597,24 +13619,24 @@ snapshots:
 
   '@react-native/normalize-colors@0.85.2': {}
 
-  '@react-native/virtualized-lists@0.85.2(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-native/virtualized-lists@0.85.2(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       invariant: 2.2.4
       nullthrows: 1.1.1
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     optionalDependencies:
       '@types/react': 19.2.14
 
-  '@react-navigation/bottom-tabs@7.15.11(0bd9a3dfac51ee5db8f0c286e34de944)':
+  '@react-navigation/bottom-tabs@7.15.11(455e0e6ac9af26d584acac50aafa13ab)':
     dependencies:
-      '@react-navigation/elements': 2.9.15(@react-navigation/native@7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native-safe-area-context@5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-navigation/elements': 2.9.15(058128c06e0f28e0c2f0c5f24ea7ffe4)
+      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       color: 4.2.3
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      react-native-screens: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
+      react-native-screens: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       sf-symbols-typescript: 2.2.0
     transitivePeerDependencies:
       - '@react-native-masked-view/masked-view'
@@ -13631,38 +13653,38 @@ snapshots:
       use-latest-callback: 0.2.6(react@19.2.5)
       use-sync-external-store: 1.6.0(react@19.2.5)
 
-  '@react-navigation/elements@2.9.15(@react-navigation/native@7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native-safe-area-context@5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-navigation/elements@2.9.15(058128c06e0f28e0c2f0c5f24ea7ffe4)':
     dependencies:
-      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       color: 4.2.3
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       use-latest-callback: 0.2.6(react@19.2.5)
       use-sync-external-store: 1.6.0(react@19.2.5)
 
-  '@react-navigation/native-stack@7.14.12(0bd9a3dfac51ee5db8f0c286e34de944)':
+  '@react-navigation/native-stack@7.14.12(455e0e6ac9af26d584acac50aafa13ab)':
     dependencies:
-      '@react-navigation/elements': 2.9.15(@react-navigation/native@7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native-safe-area-context@5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-navigation/elements': 2.9.15(058128c06e0f28e0c2f0c5f24ea7ffe4)
+      '@react-navigation/native': 7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       color: 4.2.3
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      react-native-screens: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-safe-area-context: 5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
+      react-native-screens: 4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       sf-symbols-typescript: 2.2.0
       warn-once: 0.1.1
     transitivePeerDependencies:
       - '@react-native-masked-view/masked-view'
 
-  '@react-navigation/native@7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+  '@react-navigation/native@7.2.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)':
     dependencies:
       '@react-navigation/core': 7.17.2(react@19.2.5)
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
       nanoid: 3.3.12
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       use-latest-callback: 0.2.6(react@19.2.5)
 
   '@react-navigation/routers@7.5.3':
@@ -14333,13 +14355,13 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
 
-  '@testing-library/react-native@13.3.3(jest@30.3.0(@types/node@24.12.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react-test-renderer@19.2.5(react@19.2.5))(react@19.2.5)':
+  '@testing-library/react-native@13.3.3(jest@30.3.0(@types/node@24.12.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react-test-renderer@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:
       jest-matcher-utils: 30.3.0
       picocolors: 1.1.1
       pretty-format: 30.3.0
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       react-test-renderer: 19.2.5(react@19.2.5)
       redent: 3.0.0
     optionalDependencies:
@@ -14359,7 +14381,7 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.1
 
-  '@tokenizer/inflate@0.4.1':
+  '@tokenizer/inflate@0.4.1(supports-color@10.2.2)':
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       token-types: 6.1.2
@@ -14630,6 +14652,10 @@ snapshots:
       form-data: 2.5.5
     optional: true
 
+  '@types/sax@1.2.7':
+    dependencies:
+      '@types/node': 24.12.2
+
   '@types/send@1.2.1':
     dependencies:
       '@types/node': 24.12.2
@@ -14678,6 +14704,22 @@ snapshots:
     dependencies:
       '@types/yargs-parser': 21.0.3
 
+  '@typescript-eslint/eslint-plugin@8.59.2(@typescript-eslint/parser@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3))(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
+    dependencies:
+      '@eslint-community/regexpp': 4.12.2
+      '@typescript-eslint/parser': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+      '@typescript-eslint/scope-manager': 8.59.2
+      '@typescript-eslint/type-utils': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+      '@typescript-eslint/utils': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(typescript@5.9.3)
+      '@typescript-eslint/visitor-keys': 8.59.2
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      ignore: 7.0.5
+      natural-compare: 1.4.0
+      ts-api-utils: 2.5.0(typescript@5.9.3)
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - supports-color
+
   '@typescript-eslint/eslint-plugin@8.59.2(@typescript-eslint/parser@8.59.2(eslint@10.3.0(jiti@2.6.1))(typescript@5.9.3))(eslint@10.3.0(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
@@ -14707,6 +14749,18 @@ snapshots:
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@typescript-eslint/parser@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
+    dependencies:
+      '@typescript-eslint/scope-manager': 8.59.2
+      '@typescript-eslint/types': 8.59.2
+      '@typescript-eslint/typescript-estree': 8.59.2(typescript@5.9.3)
+      '@typescript-eslint/visitor-keys': 8.59.2
+      debug: 4.4.3(supports-color@10.2.2)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -14765,6 +14819,18 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
+  '@typescript-eslint/type-utils@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
+    dependencies:
+      '@typescript-eslint/types': 8.59.2
+      '@typescript-eslint/typescript-estree': 8.59.2(typescript@5.9.3)
+      '@typescript-eslint/utils': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(typescript@5.9.3)
+      debug: 4.4.3(supports-color@10.2.2)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      ts-api-utils: 2.5.0(typescript@5.9.3)
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - supports-color
+
   '@typescript-eslint/type-utils@8.59.2(eslint@10.3.0(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
       '@typescript-eslint/types': 8.59.2
@@ -14818,6 +14884,17 @@ snapshots:
       tinyglobby: 0.2.16
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@typescript-eslint/utils@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(typescript@5.9.3)':
+    dependencies:
+      '@eslint-community/eslint-utils': 4.9.1(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))
+      '@typescript-eslint/scope-manager': 8.59.2
+      '@typescript-eslint/types': 8.59.2
+      '@typescript-eslint/typescript-estree': 8.59.2(typescript@5.9.3)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -16123,7 +16200,7 @@ snapshots:
       once: 1.4.0
     optional: true
 
-  engine.io-client@6.6.4:
+  engine.io-client@6.6.4(supports-color@10.2.2):
     dependencies:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@10.2.2)
@@ -16304,19 +16381,19 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)):
+  eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2)):
     dependencies:
-      eslint: 10.3.0(jiti@2.6.1)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
 
-  eslint-plugin-prettier@5.5.5(@types/eslint@9.6.1)(eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)))(eslint@10.3.0(jiti@2.6.1))(prettier@3.8.3):
+  eslint-plugin-prettier@5.5.5(@types/eslint@9.6.1)(eslint-config-prettier@10.1.8(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2)))(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(prettier@3.8.3):
     dependencies:
-      eslint: 10.3.0(jiti@2.6.1)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
       prettier: 3.8.3
       prettier-linter-helpers: 1.0.1
       synckit: 0.11.12
     optionalDependencies:
       '@types/eslint': 9.6.1
-      eslint-config-prettier: 10.1.8(eslint@10.3.0(jiti@2.6.1))
+      eslint-config-prettier: 10.1.8(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))
 
   eslint-plugin-react-hooks@7.1.1(eslint@10.3.0(jiti@2.6.1)):
     dependencies:
@@ -16351,7 +16428,44 @@ snapshots:
     dependencies:
       '@eslint-community/eslint-utils': 4.9.1(eslint@10.3.0(jiti@2.6.1))
       '@eslint-community/regexpp': 4.12.2
-      '@eslint/config-array': 0.23.5
+      '@eslint/config-array': 0.23.5(supports-color@10.2.2)
+      '@eslint/config-helpers': 0.5.5
+      '@eslint/core': 1.2.1
+      '@eslint/plugin-kit': 0.7.1
+      '@humanfs/node': 0.16.8
+      '@humanwhocodes/module-importer': 1.0.1
+      '@humanwhocodes/retry': 0.4.3
+      '@types/estree': 1.0.8
+      ajv: 6.15.0
+      cross-spawn: 7.0.6
+      debug: 4.4.3(supports-color@10.2.2)
+      escape-string-regexp: 4.0.0
+      eslint-scope: 9.1.2
+      eslint-visitor-keys: 5.0.1
+      espree: 11.2.0
+      esquery: 1.7.0
+      esutils: 2.0.3
+      fast-deep-equal: 3.1.3
+      file-entry-cache: 8.0.0
+      find-up: 5.0.0
+      glob-parent: 6.0.2
+      ignore: 5.3.2
+      imurmurhash: 0.1.4
+      is-glob: 4.0.3
+      json-stable-stringify-without-jsonify: 1.0.1
+      minimatch: 10.2.5
+      natural-compare: 1.4.0
+      optionator: 0.9.4
+    optionalDependencies:
+      jiti: 2.6.1
+    transitivePeerDependencies:
+      - supports-color
+
+  eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2):
+    dependencies:
+      '@eslint-community/eslint-utils': 4.9.1(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))
+      '@eslint-community/regexpp': 4.12.2
+      '@eslint/config-array': 0.23.5(supports-color@10.2.2)
       '@eslint/config-helpers': 0.5.5
       '@eslint/core': 1.2.1
       '@eslint/plugin-kit': 0.7.1
@@ -16566,9 +16680,9 @@ snapshots:
     dependencies:
       flat-cache: 4.0.1
 
-  file-type@21.3.4:
+  file-type@21.3.4(supports-color@10.2.2):
     dependencies:
-      '@tokenizer/inflate': 0.4.1
+      '@tokenizer/inflate': 0.4.1(supports-color@10.2.2)
       strtok3: 10.3.5
       token-types: 6.1.2
       uint8array-extras: 1.5.0
@@ -16628,7 +16742,7 @@ snapshots:
       path-exists: 5.0.0
       unicorn-magic: 0.1.0
 
-  firebase-admin@13.8.0:
+  firebase-admin@13.8.0(supports-color@10.2.2):
     dependencies:
       '@fastify/busboy': 3.2.0
       '@firebase/database-compat': 2.1.3
@@ -16637,7 +16751,7 @@ snapshots:
       fast-deep-equal: 3.1.3
       google-auth-library: 10.6.2
       jsonwebtoken: 9.0.3
-      jwks-rsa: 3.2.2
+      jwks-rsa: 3.2.2(supports-color@10.2.2)
       node-forge: 1.4.0
       uuid: 11.1.1
     optionalDependencies:
@@ -17079,7 +17193,7 @@ snapshots:
       - supports-color
     optional: true
 
-  http-proxy-agent@7.0.2:
+  http-proxy-agent@7.0.2(supports-color@10.2.2):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@10.2.2)
@@ -17715,14 +17829,14 @@ snapshots:
 
   jsc-safe-url@0.2.4: {}
 
-  jsdom@25.0.1:
+  jsdom@25.0.1(supports-color@10.2.2):
     dependencies:
       cssstyle: 4.6.0
       data-urls: 5.0.0
       decimal.js: 10.6.0
       form-data: 4.0.5
       html-encoding-sniffer: 4.0.0
-      http-proxy-agent: 7.0.2
+      http-proxy-agent: 7.0.2(supports-color@10.2.2)
       https-proxy-agent: 7.0.6(supports-color@10.2.2)
       is-potential-custom-element-name: 1.0.1
       nwsapi: 2.2.24
@@ -17820,7 +17934,7 @@ snapshots:
       ecdsa-sig-formatter: 1.0.11
       safe-buffer: 5.2.1
 
-  jwks-rsa@3.2.2:
+  jwks-rsa@3.2.2(supports-color@10.2.2):
     dependencies:
       '@types/jsonwebtoken': 9.0.10
       debug: 4.4.3(supports-color@10.2.2)
@@ -18133,12 +18247,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  metro-config@0.84.4:
+  metro-config@0.84.4(supports-color@10.2.2):
     dependencies:
       connect: 3.7.0
       flow-enums-runtime: 0.0.6
       jest-validate: 29.7.0
-      metro: 0.84.4
+      metro: 0.84.4(supports-color@10.2.2)
       metro-cache: 0.84.4
       metro-core: 0.84.4
       metro-runtime: 0.84.4
@@ -18225,7 +18339,7 @@ snapshots:
       '@babel/parser': 7.29.3
       '@babel/types': 7.29.0
       flow-enums-runtime: 0.0.6
-      metro: 0.84.4
+      metro: 0.84.4(supports-color@10.2.2)
       metro-babel-transformer: 0.84.4
       metro-cache: 0.84.4
       metro-cache-key: 0.84.4
@@ -18238,7 +18352,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  metro@0.84.4:
+  metro@0.84.4(supports-color@10.2.2):
     dependencies:
       '@babel/code-frame': 7.29.0
       '@babel/core': 7.29.0
@@ -18263,7 +18377,7 @@ snapshots:
       metro-babel-transformer: 0.84.4
       metro-cache: 0.84.4
       metro-cache-key: 0.84.4
-      metro-config: 0.84.4
+      metro-config: 0.84.4(supports-color@10.2.2)
       metro-core: 0.84.4
       metro-file-map: 0.84.4
       metro-resolver: 0.84.4
@@ -18946,114 +19060,114 @@ snapshots:
     optionalDependencies:
       maplibre-gl: 5.24.0
 
-  react-native-background-actions@4.1.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)):
+  react-native-background-actions@4.1.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)):
     dependencies:
       eventemitter3: 4.0.7
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-carplay@2.4.1-beta.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-carplay@2.4.1-beta.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     optionalDependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-device-info@15.0.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)):
+  react-native-device-info@15.0.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)):
     dependencies:
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
   react-native-dotenv@3.4.11(@babel/runtime@7.29.2):
     dependencies:
       '@babel/runtime': 7.29.2
       dotenv: 16.6.1
 
-  react-native-fast-tflite@3.0.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-fast-tflite@3.0.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-nitro-modules: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-nitro-modules: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
 
-  react-native-fs@2.20.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)):
+  react-native-fs@2.20.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)):
     dependencies:
       base-64: 0.1.0
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       utf8: 3.0.0
 
-  react-native-gesture-handler@2.31.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-gesture-handler@2.31.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       '@egjs/hammerjs': 2.0.17
       '@types/react-test-renderer': 19.1.0
       hoist-non-react-statics: 3.3.2
       invariant: 2.2.4
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-haptic-feedback@3.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-haptic-feedback@3.0.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
     optionalDependencies:
       react: 19.2.5
 
-  react-native-image-picker@8.2.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-image-picker@8.2.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-is-edge-to-edge@1.3.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-is-edge-to-edge@1.3.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
   react-native-keep-awake@4.0.0: {}
 
-  react-native-mmkv@4.3.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-mmkv@4.3.1(react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-nitro-modules: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-nitro-modules: 0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
 
-  react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-nitro-modules@0.35.6(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-reanimated@4.3.0(react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-reanimated@4.3.0(react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
-      react-native-is-edge-to-edge: 1.3.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      react-native-worklets: 0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
+      react-native-is-edge-to-edge: 1.3.1(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
+      react-native-worklets: 0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       semver: 7.7.4
 
-  react-native-safe-area-context@5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-safe-area-context@5.7.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-screens@4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-screens@4.24.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       react: 19.2.5
       react-freeze: 1.0.4(react@19.2.5)
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       warn-once: 0.1.1
 
-  react-native-sensors@7.3.6(prop-types@15.8.1)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)):
+  react-native-sensors@7.3.6(prop-types@15.8.1)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)):
     dependencies:
       prop-types: 15.8.1
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       rxjs: 7.8.2
 
   react-native-share@12.3.1: {}
 
-  react-native-svg@15.15.4(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-svg@15.15.4(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       css-select: 5.2.2
       css-tree: 1.1.3
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       warn-once: 0.1.1
 
   react-native-tts@4.1.1: {}
 
-  react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5):
+  react-native-worklets@0.8.3(@babel/core@7.29.0)(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-transform-arrow-functions': 7.27.1(@babel/core@7.29.0)
@@ -19065,23 +19179,23 @@ snapshots:
       '@babel/plugin-transform-template-literals': 7.27.1(@babel/core@7.29.0)
       '@babel/plugin-transform-unicode-regex': 7.27.1(@babel/core@7.29.0)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.29.0)
-      '@react-native/metro-config': 0.85.2(@babel/core@7.29.0)
+      '@react-native/metro-config': 0.85.2(@babel/core@7.29.0)(supports-color@10.2.2)
       convert-source-map: 2.0.0
       react: 19.2.5
-      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+      react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
       semver: 7.7.4
     transitivePeerDependencies:
       - supports-color
 
-  react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5):
+  react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2):
     dependencies:
       '@react-native/assets-registry': 0.85.2
       '@react-native/codegen': 0.85.2(@babel/core@7.29.0)
-      '@react-native/community-cli-plugin': 0.85.2(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))
+      '@react-native/community-cli-plugin': 0.85.2(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(supports-color@10.2.2)
       '@react-native/gradle-plugin': 0.85.2
       '@react-native/js-polyfills': 0.85.2
       '@react-native/normalize-colors': 0.85.2
-      '@react-native/virtualized-lists': 0.85.2(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-native/virtualized-lists': 0.85.2(@types/react@19.2.14)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       abort-controller: 3.0.0
       anser: 1.4.10
       ansi-regex: 5.0.1
@@ -19354,6 +19468,8 @@ snapshots:
 
   safer-buffer@2.1.2: {}
 
+  sax@1.6.0: {}
+
   saxes@6.0.0:
     dependencies:
       xmlchars: 2.2.0
@@ -19558,11 +19674,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  socket.io-client@4.8.3:
+  socket.io-client@4.8.3(supports-color@10.2.2):
     dependencies:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@10.2.2)
-      engine.io-client: 6.6.4
+      engine.io-client: 6.6.4(supports-color@10.2.2)
       socket.io-parser: 4.2.6
     transitivePeerDependencies:
       - bufferutil
@@ -19748,7 +19864,7 @@ snapshots:
     optionalDependencies:
       '@babel/core': 7.29.0
 
-  superagent@10.3.0:
+  superagent@10.3.0(supports-color@10.2.2):
     dependencies:
       component-emitter: 1.3.1
       cookiejar: 2.1.4
@@ -19766,11 +19882,11 @@ snapshots:
     dependencies:
       kdbush: 4.0.2
 
-  supertest@7.2.2:
+  supertest@7.2.2(supports-color@10.2.2):
     dependencies:
       cookie-signature: 1.2.2
       methods: 1.1.2
-      superagent: 10.3.0
+      superagent: 10.3.0(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -20046,7 +20162,7 @@ snapshots:
 
   typedarray@0.0.6: {}
 
-  typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)):
+  typeorm@0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3)):
     dependencies:
       '@sqltools/formatter': 1.2.5
       ansis: 4.2.0
@@ -20070,6 +20186,17 @@ snapshots:
       ts-node: 10.9.2(@types/node@24.12.2)(typescript@5.9.3)
     transitivePeerDependencies:
       - babel-plugin-macros
+      - supports-color
+
+  typescript-eslint@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3):
+    dependencies:
+      '@typescript-eslint/eslint-plugin': 8.59.2(@typescript-eslint/parser@8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3))(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+      '@typescript-eslint/parser': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.59.2(typescript@5.9.3)
+      '@typescript-eslint/utils': 8.59.2(eslint@10.3.0(jiti@2.6.1)(supports-color@10.2.2))(typescript@5.9.3)
+      eslint: 10.3.0(jiti@2.6.1)(supports-color@10.2.2)
+      typescript: 5.9.3
+    transitivePeerDependencies:
       - supports-color
 
   typescript-eslint@8.59.2(eslint@10.3.0(jiti@2.6.1))(typescript@5.9.3):
@@ -20261,7 +20388,7 @@ snapshots:
       tsx: 4.21.0
       yaml: 2.8.4
 
-  vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(jsdom@25.0.1)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4)):
+  vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(jsdom@25.0.1(supports-color@10.2.2))(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4)):
     dependencies:
       '@vitest/expect': 4.1.5
       '@vitest/mocker': 4.1.5(vite@8.0.10(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.4))
@@ -20286,7 +20413,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 25.6.0
-      jsdom: 25.0.1
+      jsdom: 25.0.1(supports-color@10.2.2)
     transitivePeerDependencies:
       - msw
 
