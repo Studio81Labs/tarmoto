@@ -104,7 +104,9 @@ export class RoadsService {
     // ones, matching best-roads / clustering. A crowd-sourced row (null
     // osm_way_id) is a group of one, so every value equals its raw column and the
     // community sub-queries below run over the single id — behaviour unchanged.
-    // `way_segment_ids` is the exact id set the sub-queries expand to.
+    // `way_segment_ids` is the exact id set the sub-queries expand to. Reviews are
+    // the exception — they stay keyed on the requested segment id to match the
+    // standalone /roads/:id/reviews endpoint (see the review query below).
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const segmentRows = await this.segmentRepo.query(
       `WITH target AS (
@@ -228,11 +230,17 @@ export class RoadsService {
         [waySegmentIds, asOf, ACTIVE_HAZARD_LIMIT],
       ),
       this.segmentRepo.query(
+        // Reviews stay keyed on the REQUESTED segment id (not the way set): the
+        // standalone /roads/:id/reviews endpoint the clients fetch to render the
+        // review panel is per-segment (ReviewsService.listForSegment), so
+        // aggregating here would make the panel overwrite the detail with a
+        // different set. Aligning both on the logical road is a reviews-subsystem
+        // change (per-road review identity + the write path) tracked in #809.
         `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
         FROM road_reviews
-        WHERE road_segment_id = ANY($1)
+        WHERE road_segment_id = $1
           AND moderation_status = 'visible'`,
-        [waySegmentIds],
+        [segmentId],
       ),
       this.segmentRepo.query(
         // Left-join the helpful-vote counts via a lateral subquery so a
@@ -269,11 +277,11 @@ export class RoadsService {
           FROM road_review_votes v
           WHERE v.road_review_id = rr.id
         ) vc ON true
-        WHERE rr.road_segment_id = ANY($1)
+        WHERE rr.road_segment_id = $1
           AND rr.moderation_status = 'visible'
         ORDER BY rr.created_at DESC
         LIMIT $2`,
-        [waySegmentIds, RECENT_REVIEW_LIMIT],
+        [segmentId, RECENT_REVIEW_LIMIT],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(DISTINCT user_id)::int AS count
