@@ -1,3 +1,6 @@
+// Must be the first import so Sentry can instrument the runtime before other
+// modules load. No-op until TARMOTO_SENTRY_DSN is set (see instrument.ts).
+import './instrument.js';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { type NestExpressApplication } from '@nestjs/platform-express';

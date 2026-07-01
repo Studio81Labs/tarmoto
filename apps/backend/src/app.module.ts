@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UserScopedThrottlerGuard } from './config/user-scoped-throttler.guard.js';
@@ -106,6 +107,9 @@ import { NapModule } from './modules/nap/nap.module.js';
   // each other's safety-endpoint budget.
   providers: [
     AppService,
+    // Captures unhandled exceptions to Sentry. Harmless when Sentry is not
+    // configured (no DSN → Sentry.init never ran → nothing is sent).
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
     { provide: APP_GUARD, useClass: UserScopedThrottlerGuard },
   ],
 })
