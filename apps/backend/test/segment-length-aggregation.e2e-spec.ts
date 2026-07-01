@@ -41,7 +41,7 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     lng: number;
     lat: number;
     lengthM: number;
-    quality?: number;
+    quality?: number | null;
     confidence?: number;
     curviness?: number;
   }
@@ -61,7 +61,7 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         o.name,
         o.osmWayId ?? null,
         o.segmentIndex ?? null,
-        o.quality ?? 4.0,
+        o.quality === undefined ? 4.0 : o.quality,
         o.confidence ?? 60,
         o.curviness ?? 3.0,
       ],
@@ -142,6 +142,22 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         lengthM: 100,
       });
     }
+    // Imported way of 5×120 m where one sub-segment is barely confident
+    // (confidence 1). The whole 600 m way must still appear: confidence is
+    // applied to the length-weighted aggregate ((60·4+1)/5 ≈ 48), not per
+    // sub-segment — a pre-aggregation filter would drop the piece and shrink the
+    // road to 480 m (< 500 m) and disqualify it.
+    for (let i = 0; i < 5; i++) {
+      await insertSegment({
+        name: 'e2e794-mixed-conf',
+        osmWayId: '794000003',
+        segmentIndex: i,
+        lng: DOLO_LNG + 0.006,
+        lat: DOLO_LAT + 0.03 + i * 0.0012,
+        lengthM: 120,
+        confidence: i === 4 ? 1 : 60,
+      });
+    }
 
     const result = await roads.findBest({ country: 'it', region: 'dolomites' });
     const byName = (name: string) =>
@@ -155,6 +171,9 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     expect(byName('e2e794-crowd')[0].length_m).toBeCloseTo(600, 5);
     // The 200 m way is filtered out — no stub as a "best road".
     expect(byName('e2e794-short-way')).toHaveLength(0);
+    // The mixed-confidence way survives on its weighted-average confidence.
+    expect(byName('e2e794-mixed-conf')).toHaveLength(1);
+    expect(byName('e2e794-mixed-conf')[0].length_m).toBeCloseTo(600, 5);
   }, 30_000);
 
   it('fun-zones: clusters three imported ways as three roads, not fifteen stubs', async () => {
@@ -176,6 +195,20 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         });
       }
     }
+    // Way 0 also has an unassessed (quality NULL) 6th sub-segment. Clustering
+    // ignores it (groups only quality-bearing segments), so the zone detail must
+    // too — otherwise it would show a 720 m road with a depressed quality score.
+    await insertSegment({
+      name: 'e2e794-fz-0',
+      osmWayId: '79401000',
+      segmentIndex: 5,
+      lng: 0.0,
+      lat: 0.0 + 5 * 0.0012,
+      lengthM: 120,
+      quality: null,
+      confidence: 60,
+      curviness: 3.0,
+    });
 
     const result = await funZones.runClustering({
       bbox: [-0.1, -0.1, 0.1, 0.1],

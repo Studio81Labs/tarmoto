@@ -352,7 +352,6 @@ export class RoadsService {
         FROM road_segments rs
         WHERE ST_Intersects(rs.geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))
           AND rs.quality_score IS NOT NULL
-          AND rs.confidence >= $5
       ),
       -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
       -- length filter applies to the whole road, not a stub (#794). Grouping key
@@ -384,7 +383,11 @@ export class RoadsService {
           + LEAST(length_m / 1000.0, 20.0) * 0.1
         ) AS best_score
       FROM road
+      -- Confidence is applied to the aggregated road (length-weighted), not raw
+      -- sub-segments, so a way with a few low-confidence pieces isn't shortened
+      -- below the length threshold or dropped when its average still qualifies.
       WHERE length_m >= $6
+        AND confidence >= $5
       ORDER BY best_score DESC NULLS LAST
       LIMIT $7`,
       [w, s, e, n, BEST_ROADS_MIN_CONFIDENCE, BEST_ROADS_MIN_LENGTH_M, limit],
@@ -516,6 +519,10 @@ export class RoadsService {
         FROM road_segments rs
         WHERE COALESCE(rs.osm_way_id::text, rs.id::text)
             = COALESCE(member.osm_way_id::text, member.id::text)
+          -- Match the clustering aggregation, which only groups quality-bearing
+          -- segments; otherwise unassessed siblings inflate length/geom while the
+          -- quality numerator skips them, depressing the shown quality score.
+          AND rs.quality_score IS NOT NULL
       ) agg ON TRUE
       WHERE fzr.fun_zone_id = $1
       ORDER BY fzr.contribution_score DESC NULLS LAST,

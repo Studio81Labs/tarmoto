@@ -763,8 +763,13 @@ describe('RoadsService', () => {
         'SUM(rs.quality_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0)',
       );
       expect(sql).toContain('ST_LineMerge(ST_Collect(rs.geom');
-      // The length threshold applies to the aggregated road, not a raw segment.
-      expect(sql).toMatch(/FROM road\s+WHERE length_m >= \$6/);
+      // Length AND confidence thresholds apply to the aggregated road, not raw
+      // segments, so a partially-confident way isn't shortened below the length
+      // cutoff or dropped when its weighted average still qualifies.
+      expect(sql).toMatch(/FROM road\s+[\s\S]*WHERE length_m >= \$6/);
+      expect(sql).toContain('AND confidence >= $5');
+      // The candidate CTE no longer pre-filters confidence.
+      expect(sql).not.toContain('AND rs.confidence >= $5');
     });
 
     it('flattens a MultiLineString (gappy aggregated way) into one polyline', async () => {
