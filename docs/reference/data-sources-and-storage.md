@@ -195,7 +195,7 @@ POIs are fetched **live from Overpass per request** today. That's the **MVP** de
 **Still to build (the importer itself is not in the repo yet):**
 
 - The OSM importer that splits each way into ~100 m segments, assigns `segment_index` in order, and upserts on `(osm_way_id, segment_index)`. The current `road_segments` rows come only from the demo seeder + the fun-zone-clustering seed; neither sets the OSM identity.
-- **Way split/merge between snapshots:** when OSM splits one way into two (or merges two), `segment_index` continuity breaks. The importer needs a policy — e.g. geometry-overlap reassignment for the changed ranges — so quality/review history follows the road rather than the way id. Decide this when the importer lands.
+- **Way split/merge between snapshots:** when OSM splits one way into two (or merges two), `segment_index` continuity breaks. Policy decided in **ADR-0006**: geometry-overlap identity reassignment — an incoming segment inherits the best-overlapping existing row's UUID (and its history), splits carry history to one half, merges keep one side and mark the other stale. The pure matching core (`osm-import/split-merge.ts`) has landed; loading candidates + applying the plan (id-preserving update / stale delete) is a follow-up wiring slice, and the threshold must be validated against real snapshot deltas before enabling the job on a live region.
 
 ---
 
