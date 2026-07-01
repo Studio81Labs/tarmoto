@@ -1,17 +1,17 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
     "noEmit": true,
+    // Next.js app: never emits library declarations. The shared base turns
+    // `declaration` on (for the publishable packages); disable it here so the
+    // compiler doesn't demand portable type annotations on re-exported
+    // third-party inferred types (e.g. NextAuth's `signIn`) — TS2742.
+    "declaration": false,
+    "declarationMap": false,
     "incremental": true,
     "types": ["vitest/globals"],
     "plugins": [

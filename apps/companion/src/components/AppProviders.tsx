@@ -21,12 +21,14 @@ export function AppProviders({
 }) {
   const pathname = usePathname();
 
+  const localeProp = locale !== undefined ? { locale } : {};
+
   if (pathname === "/embed" || pathname.startsWith("/embed/")) {
-    return <I18nProvider locale={locale}>{children}</I18nProvider>;
+    return <I18nProvider {...localeProp}>{children}</I18nProvider>;
   }
 
   return (
-    <I18nProvider locale={locale}>
+    <I18nProvider {...localeProp}>
       <NetworkStatusProvider />
       <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
       <ToastHost />

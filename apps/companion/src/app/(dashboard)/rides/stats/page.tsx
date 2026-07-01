@@ -435,7 +435,9 @@ export default function StatsPage() {
                     key={year}
                     type="monotone"
                     dataKey={String(year)}
-                    stroke={YOY_COLORS[index % YOY_COLORS.length]}
+                    stroke={
+                      YOY_COLORS[index % YOY_COLORS.length] ?? YOY_COLORS[0]
+                    }
                     strokeWidth={2}
                     dot={{ r: 3 }}
                   />

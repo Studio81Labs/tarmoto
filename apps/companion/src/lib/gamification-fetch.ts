@@ -47,7 +47,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export interface FetchOptions {
   /** Aborts the in-flight fetch when triggered (page unmount, user switch). */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // Capturing `response.status` before the `error` narrow avoids an
@@ -62,7 +62,10 @@ export async function fetchBadges(
 ): Promise<BadgeDto[]> {
   const { data, error, response } = await api.GET(
     "/api/v1/users/{userId}/badges",
-    { params: { path: { userId } }, signal: options.signal },
+    {
+      params: { path: { userId } },
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    },
   );
   const status = response.status;
   if (error) {
@@ -78,7 +81,7 @@ export async function fetchActiveChallenges(
   options: FetchOptions = {},
 ): Promise<ChallengeDto[]> {
   const { data, error, response } = await api.GET("/api/v1/challenges", {
-    signal: options.signal,
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });
   const status = response.status;
   if (error) {
@@ -94,7 +97,7 @@ export async function fetchMeProfile(
   options: FetchOptions = {},
 ): Promise<MeProfileDto> {
   const { data, error, response } = await api.GET("/api/v1/users/me/profile", {
-    signal: options.signal,
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });
   const status = response.status;
   if (error || !data) {
@@ -111,7 +114,7 @@ export async function fetchProgression(
 ): Promise<RiderProgression> {
   const { data, error, response } = await api.GET(
     "/api/v1/users/me/progression",
-    { signal: options.signal },
+    { ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   );
   const status = response.status;
   if (error || !data) {
@@ -131,7 +134,7 @@ export async function fetchChallengeDetail(
     "/api/v1/challenges/{challengeId}",
     {
       params: { path: { challengeId } },
-      signal: options.signal,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     },
   );
   const status = response.status;
@@ -221,13 +224,16 @@ export async function fetchRegionalLeaderboards(
   options: FetchRegionalLeaderboardsOptions = {},
 ): Promise<RegionalLeaderboards> {
   const region = options.region?.trim() ?? "";
-  const query: Record<string, string | number | undefined> = {};
+  const query: { region?: string; limit?: number } = {};
   if (region.length > 0) query.region = region;
   if (options.limit !== undefined) query.limit = options.limit;
 
   const { data, error, response } = await api.GET(
     "/api/v1/leaderboards/regional",
-    { params: { query }, signal: options.signal },
+    {
+      params: { query },
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    },
   );
   const status = response.status;
   if (error || !data) {

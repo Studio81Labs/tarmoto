@@ -11,7 +11,7 @@ interface DownloadArgs {
 async function download({ path, filename }: DownloadArgs): Promise<void> {
   const token = useAuthStore.getState().accessToken;
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
   });
   if (!res.ok) {
     throw new Error(`Export failed (${res.status})`);

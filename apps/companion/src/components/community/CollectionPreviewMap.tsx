@@ -115,7 +115,11 @@ export function CollectionPreviewMap({ routes }: Props) {
       const bounds = new maplibregl.LngLatBounds();
       for (const f of features) {
         const coords = (f.geometry as GeoJSON.LineString).coordinates;
-        for (const c of coords) bounds.extend([c[0], c[1]]);
+        for (const c of coords) {
+          const lng = c[0];
+          const lat = c[1];
+          if (lng !== undefined && lat !== undefined) bounds.extend([lng, lat]);
+        }
       }
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds as LngLatBoundsLike, {

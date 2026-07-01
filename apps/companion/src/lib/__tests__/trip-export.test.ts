@@ -305,9 +305,9 @@ describe("groupDayWaypoints", () => {
       "Fuel",
       "Accommodation",
     ]);
-    expect(groups[0].waypoints[0].label).toBe("Bormio");
-    expect(groups[1].waypoints[0].label).toBe("Q8 Aprica");
-    expect(groups[2].waypoints[0].label).toBe("Hotel Stelvio");
+    expect(groups[0]?.waypoints[0]?.label).toBe("Bormio");
+    expect(groups[1]?.waypoints[0]?.label).toBe("Q8 Aprica");
+    expect(groups[2]?.waypoints[0]?.label).toBe("Hotel Stelvio");
   });
 
   it("skips groups with no waypoints", () => {
@@ -327,7 +327,7 @@ describe("groupDayWaypoints", () => {
       ],
     });
     expect(groups).toHaveLength(1);
-    expect(groups[0].label).toBe("Stops");
+    expect(groups[0]?.label).toBe("Stops");
   });
 });
 
@@ -453,13 +453,13 @@ describe("buildTurnList", () => {
   it("produces one item per day with labelled waypoints", () => {
     const list = buildTurnList(DEMO_TRIP);
     expect(list).toHaveLength(2);
-    expect(list[0].dayNumber).toBe(1);
-    expect(list[0].waypoints[0]).toMatchObject({
+    expect(list[0]?.dayNumber).toBe(1);
+    expect(list[0]?.waypoints[0]).toMatchObject({
       label: "Bormio",
       typeLabel: "Start",
       lat: 46.47,
       lng: 10.37,
     });
-    expect(list[0].waypoints[1].typeLabel).toBe("End");
+    expect(list[0]?.waypoints[1]?.typeLabel).toBe("End");
   });
 });

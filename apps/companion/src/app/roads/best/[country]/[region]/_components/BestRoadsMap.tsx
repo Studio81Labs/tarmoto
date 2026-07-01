@@ -65,6 +65,7 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
       roads.flatMap((r, i) => {
         if (r.geometry.length < 2) return [];
         const mid = r.geometry[Math.floor(r.geometry.length / 2)];
+        if (!mid) return [];
         return [{ id: r.id, rank: i + 1, lat: mid.lat, lng: mid.lng }];
       }),
     [roads],

@@ -26,11 +26,15 @@ function show(intent: ToastIntent, title: ReactNode, opts: ToastOptions = {}) {
   return useToastStore.getState().add({
     intent,
     title,
-    description: opts.description,
+    ...(opts.description !== undefined
+      ? { description: opts.description }
+      : {}),
     durationMs:
       opts.durationMs === undefined ? DEFAULT_DURATION_MS : opts.durationMs,
-    actionLabel: opts.actionLabel,
-    onAction: opts.onAction,
+    ...(opts.actionLabel !== undefined
+      ? { actionLabel: opts.actionLabel }
+      : {}),
+    ...(opts.onAction !== undefined ? { onAction: opts.onAction } : {}),
   });
 }
 

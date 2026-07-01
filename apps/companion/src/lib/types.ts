@@ -130,7 +130,7 @@ export interface TripSummary {
    * because the planner-side `tripFromDetail` adapter doesn't
    * always populate it from the detail response.
    */
-  owner_id?: string;
+  owner_id?: string | undefined;
   /**
    * US-37 — backend-persisted folder uuid. Null/undefined for
    * unfiled trips. Snake_case to mirror the wire format so
@@ -148,8 +148,8 @@ export interface TripSummary {
   distance_km?: number | null;
   passes_count?: number | null;
   quality_avg?: number | null;
-  warnings_count?: number;
-  updatedAt?: string;
+  warnings_count?: number | undefined;
+  updatedAt?: string | undefined;
 }
 
 /** Hydrated detail — extends summary with day-level + planner data. */
@@ -177,15 +177,15 @@ export type Trip = TripDetail;
 
 export interface TripDay {
   dayNumber: number;
-  title?: string;
+  title?: string | undefined;
   waypoints: Waypoint[];
-  routeGeometry?: GeoJSON.LineString;
+  routeGeometry?: GeoJSON.LineString | undefined;
   distanceKm: number;
   durationMinutes: number;
   elevationGain: number;
   avgQuality: number;
-  overnightStop?: POI;
-  segments?: RoutePreviewSegment[];
+  overnightStop?: POI | undefined;
+  segments?: RoutePreviewSegment[] | undefined;
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
   startLinked?: boolean;
 }
@@ -198,7 +198,7 @@ export interface TripDay {
  */
 export interface RoutePreviewSegment {
   id: string;
-  name?: string;
+  name?: string | undefined;
   dayNumber: number;
   orderInDay: number;
   distanceKm: number;
@@ -209,20 +209,20 @@ export interface RoutePreviewSegment {
   elevationProfile: number[];
   photos: SegmentPhoto[];
   activeHazards: Hazard[];
-  qualityHistory?: { date: string; score: number }[];
+  qualityHistory?: { date: string; score: number }[] | undefined;
   /**
    * Regional average quality score sampled over time, used by the quality
    * trend graph (US-45) to contextualise this segment's history against the
    * surrounding area. Dates don't need to align with `qualityHistory`; the
    * chart interpolates at render time.
    */
-  regionalQualityHistory?: { date: string; score: number }[];
-  bounds?: [[number, number], [number, number]];
+  regionalQualityHistory?: { date: string; score: number }[] | undefined;
+  bounds?: [[number, number], [number, number]] | undefined;
 }
 
 export interface Waypoint {
   id: string;
-  name?: string;
+  name?: string | undefined;
   location: { lng: number; lat: number };
   type: "start" | "via" | "end" | "fuel" | "rest" | "photo" | "accommodation";
 }
@@ -297,7 +297,7 @@ export interface Badge {
   name: string;
   description: string;
   icon: string;
-  earnedAt?: string;
+  earnedAt?: string | undefined;
 }
 
 export interface Bike {

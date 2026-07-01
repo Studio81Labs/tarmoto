@@ -219,20 +219,24 @@ const FetchedTripPlannerMap = forwardRef<
   {
     trip: Trip | null;
     month: number;
-    drawnRegion?: RegionDrawBbox | null;
-    onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
-    onAddWaypoint?: (location: { lng: number; lat: number }) => void;
-    onMoveWaypoint?: (
-      dayNumber: number,
-      waypointId: string,
-      location: { lng: number; lat: number },
-    ) => void;
-    selectedDayNumber?: number;
-    focusSelectedDay?: boolean;
-    collaboratorCursors?: Map<string, CollaboratorCursor>;
-    suggestions?: TripSuggestion[];
-    onCursorMove?: (lat: number, lng: number) => void;
-    fitRouteToken?: number;
+    drawnRegion?: RegionDrawBbox | null | undefined;
+    onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
+    onAddWaypoint?:
+      | ((location: { lng: number; lat: number }) => void)
+      | undefined;
+    onMoveWaypoint?:
+      | ((
+          dayNumber: number,
+          waypointId: string,
+          location: { lng: number; lat: number },
+        ) => void)
+      | undefined;
+    selectedDayNumber?: number | undefined;
+    focusSelectedDay?: boolean | undefined;
+    collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
+    suggestions?: TripSuggestion[] | undefined;
+    onCursorMove?: ((lat: number, lng: number) => void) | undefined;
+    fitRouteToken?: number | undefined;
   }
 >(function FetchedTripPlannerMap(
   {
@@ -279,22 +283,26 @@ const TripPlannerMapContent = forwardRef<
   {
     trip: Trip | null;
     month: number;
-    drawnRegion?: RegionDrawBbox | null;
-    onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
+    drawnRegion?: RegionDrawBbox | null | undefined;
+    onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
     closuresData: ClosuresQueryResult;
     passesData: PassesQueryResult;
-    onAddWaypoint?: (location: { lng: number; lat: number }) => void;
-    onMoveWaypoint?: (
-      dayNumber: number,
-      waypointId: string,
-      location: { lng: number; lat: number },
-    ) => void;
-    selectedDayNumber?: number;
-    focusSelectedDay?: boolean;
-    collaboratorCursors?: Map<string, CollaboratorCursor>;
-    suggestions?: TripSuggestion[];
-    onCursorMove?: (lat: number, lng: number) => void;
-    fitRouteToken?: number;
+    onAddWaypoint?:
+      | ((location: { lng: number; lat: number }) => void)
+      | undefined;
+    onMoveWaypoint?:
+      | ((
+          dayNumber: number,
+          waypointId: string,
+          location: { lng: number; lat: number },
+        ) => void)
+      | undefined;
+    selectedDayNumber?: number | undefined;
+    focusSelectedDay?: boolean | undefined;
+    collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
+    suggestions?: TripSuggestion[] | undefined;
+    onCursorMove?: ((lat: number, lng: number) => void) | undefined;
+    fitRouteToken?: number | undefined;
   }
 >(function TripPlannerMapContent(
   {

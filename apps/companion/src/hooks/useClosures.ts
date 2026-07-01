@@ -25,7 +25,7 @@ export interface ClosuresQueryResult {
 }
 
 interface UseClosuresOptions {
-  bbox?: string;
+  bbox?: string | undefined;
   /**
    * Overrides the month-derived preview date when set. Trip planner
    * passes month-of-year (so closures preview reflects a future
@@ -62,7 +62,7 @@ export function useClosures(
     queryKey: ["closures", "list", previewIso, bbox, reconnectRevision],
     queryFn: async ({ signal }) => {
       const { data } = await closuresApi.list(
-        { active_on: previewIso, bbox },
+        { active_on: previewIso, ...(bbox !== undefined ? { bbox } : {}) },
         { signal },
       );
       return sortClosures(data);

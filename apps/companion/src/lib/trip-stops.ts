@@ -15,7 +15,7 @@ export interface TripStopsOptions {
 
 export interface TripDayStops {
   dayNumber: number;
-  title?: string;
+  title?: string | undefined;
   routeAvailable: boolean;
   endLabel: string | null;
   accommodations: AccommodationSuggestion[];
@@ -60,7 +60,9 @@ export function buildDayRoutePoints(
 ): Array<{ lat: number; lng: number }> {
   const coords = day.routeGeometry?.coordinates;
   if (coords && coords.length >= 2) {
-    return coords.map(([lng, lat]) => ({ lat, lng }));
+    return coords.flatMap(([lng, lat]) =>
+      lng !== undefined && lat !== undefined ? [{ lat, lng }] : [],
+    );
   }
 
   const routeWaypoints = routingWaypoints(day.waypoints);

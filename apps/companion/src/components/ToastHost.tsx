@@ -44,20 +44,22 @@ function ToastItem({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record.id, record.durationMs]);
 
+  const onAction = record.onAction
+    ? () => {
+        record.onAction?.();
+        onDismiss();
+      }
+    : undefined;
+
   return (
     <div className="animate-slide-in-right pointer-events-auto">
       <Toast
         intent={record.intent}
         title={record.title}
-        actionLabel={record.actionLabel}
-        onAction={
-          record.onAction
-            ? () => {
-                record.onAction?.();
-                onDismiss();
-              }
-            : undefined
-        }
+        {...(record.actionLabel !== undefined
+          ? { actionLabel: record.actionLabel }
+          : {})}
+        {...(onAction !== undefined ? { onAction } : {})}
         onClose={onDismiss}
         showProgress={record.durationMs != null}
       >

@@ -194,6 +194,7 @@ export function DiscoverMap({
       minLat = Infinity,
       maxLat = -Infinity;
     for (const [lng, lat] of ring) {
+      if (lng === undefined || lat === undefined) continue;
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
       if (lat < minLat) minLat = lat;

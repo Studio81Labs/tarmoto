@@ -14,20 +14,20 @@ export type SortField =
 export type SortOrder = "asc" | "desc";
 
 export interface RidesFilters {
-  from?: string; // ISO date, YYYY-MM-DD
-  to?: string;
-  minDistance?: number;
-  maxDistance?: number;
-  minQuality?: number;
-  maxQuality?: number;
-  q?: string;
-  type?: string;
+  from?: string | undefined; // ISO date, YYYY-MM-DD
+  to?: string | undefined;
+  minDistance?: number | undefined;
+  maxDistance?: number | undefined;
+  minQuality?: number | undefined;
+  maxQuality?: number | undefined;
+  q?: string | undefined;
+  type?: string | undefined;
   // Location filter — all four fields move together. `nearPlace` is the
   // resolved label we show in the UI; it doesn't travel to the backend.
-  nearLat?: number;
-  nearLng?: number;
-  nearKm?: number;
-  nearPlace?: string;
+  nearLat?: number | undefined;
+  nearLng?: number | undefined;
+  nearKm?: number | undefined;
+  nearPlace?: string | undefined;
 }
 
 export interface RidesQueryState extends RidesFilters {
@@ -40,7 +40,7 @@ export interface RidesQueryState extends RidesFilters {
    * Kept separate from `from` so the advanced date input still shows the
    * user's own value while the relative time pill ("Last 90 days") layers on top.
    */
-  effectiveFrom?: string;
+  effectiveFrom?: string | undefined;
 }
 
 const PAGE_SIZE = 20;

@@ -118,7 +118,12 @@ export function flattenTripRoute(trip: Trip): RoutePoint[] {
         // rather than throwing at destructure time.
         if (!Array.isArray(entry) || entry.length < 2) continue;
         const [lng, lat] = entry;
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (
+          typeof lat === "number" &&
+          typeof lng === "number" &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lng)
+        ) {
           out.push({ lat, lng });
         }
       }

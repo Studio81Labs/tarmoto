@@ -43,7 +43,10 @@ export function usePlannerRouting(
       setRouting(true);
       routingApi
         .route(
-          { waypoints: [...waypoints], options },
+          {
+            waypoints: [...waypoints],
+            ...(options !== undefined ? { options } : {}),
+          },
           { signal: controller.signal },
         )
         .then(({ data }) => {

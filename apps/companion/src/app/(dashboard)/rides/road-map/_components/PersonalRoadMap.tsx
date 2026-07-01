@@ -237,7 +237,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         zoom={initialCenter.zoom}
         showQuality={false}
         showSurface={false}
-        forceColorScheme={forceColorScheme}
+        {...(forceColorScheme !== undefined ? { forceColorScheme } : {})}
         onReady={handleReady}
       />
     );

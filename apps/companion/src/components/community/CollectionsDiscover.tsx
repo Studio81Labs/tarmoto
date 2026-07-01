@@ -13,16 +13,23 @@ import {
 
 /** Map a route polyline ([lng,lat][]) to an SVG path within a 200×120 box. */
 function linePath(line: number[][]): string {
-  const xs = line.map((p) => p[0]);
-  const ys = line.map((p) => p[1]);
+  const points = line
+    .map((p) => ({ lng: p[0], lat: p[1] }))
+    .filter(
+      (p): p is { lng: number; lat: number } =>
+        p.lng !== undefined && p.lat !== undefined,
+    );
+  if (points.length === 0) return "";
+  const xs = points.map((p) => p.lng);
+  const ys = points.map((p) => p.lat);
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
   const w = Math.max(...xs) - minX || 1;
   const h = Math.max(...ys) - minY || 1;
   return (
     "M " +
-    line
-      .map(([lng, lat]) => {
+    points
+      .map(({ lng, lat }) => {
         const x = ((lng - minX) / w) * 180 + 10;
         const y = (1 - (lat - minY) / h) * 100 + 10; // flip lat (north up)
         return `${x.toFixed(1)} ${y.toFixed(1)}`;

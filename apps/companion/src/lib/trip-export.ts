@@ -65,6 +65,7 @@ export function tripToGpx(trip: Trip, now: Date = new Date()): string {
       parts.push(`    <name>${escapeText(dayLabel)}</name>`);
       parts.push("    <trkseg>");
       for (const [lng, lat] of geometry.coordinates) {
+        if (lng === undefined || lat === undefined) continue;
         parts.push(
           `      <trkpt lat="${formatCoord(lat)}" lon="${formatCoord(lng)}" />`,
         );
@@ -191,7 +192,8 @@ export function sampleElevationProfile(
   const out: number[] = [];
   const step = (profile.length - 1) / (maxPoints - 1);
   for (let i = 0; i < maxPoints; i++) {
-    out.push(profile[Math.round(i * step)]);
+    const value = profile[Math.round(i * step)];
+    if (value !== undefined) out.push(value);
   }
   return out;
 }

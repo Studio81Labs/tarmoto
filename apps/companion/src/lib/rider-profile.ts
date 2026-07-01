@@ -79,7 +79,7 @@ export async function fetchPublicProfile(
 ): Promise<PublicProfile> {
   const result = await api.GET("/api/v1/users/{userId}/profile", {
     params: { path: { userId: riderId } },
-    signal: options.signal,
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });
   if (result.error) {
     const status =
@@ -114,7 +114,7 @@ export async function fetchPublicBadges(
   try {
     const result = await api.GET("/api/v1/users/{userId}/badges", {
       params: { path: { userId: riderId } },
-      signal: options.signal,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     if (result.error || !result.data) return [];
     return result.data as UserBadge[];

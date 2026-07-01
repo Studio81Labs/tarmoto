@@ -213,7 +213,9 @@ function DaySection({ day }: { day: TripDay }) {
   // day doesn't have a routed line (e.g. an imported GPX without a
   // smoothed route, or a planner draft pre-route-solve).
   const previewGeometry = day.routeGeometry?.coordinates?.length
-    ? day.routeGeometry.coordinates.map(([lng, lat]) => ({ lat, lng }))
+    ? day.routeGeometry.coordinates.flatMap(([lng, lat]) =>
+        lng !== undefined && lat !== undefined ? [{ lat, lng }] : [],
+      )
     : day.waypoints.map((w) => ({
         lat: w.location.lat,
         lng: w.location.lng,

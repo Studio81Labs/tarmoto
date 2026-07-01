@@ -67,7 +67,9 @@ export function useTripStops(
                     lat: endAnchor.lat,
                     lng: endAnchor.lng,
                     radius_km: ACCOMMODATION_RADIUS_KM,
-                    min_stars: options.minAccommodationStars,
+                    ...(options.minAccommodationStars !== undefined
+                      ? { min_stars: options.minAccommodationStars }
+                      : {}),
                   },
                   { signal },
                 )

@@ -124,7 +124,7 @@ export function CollectionRouteRow({
   route: RouteCollectionPreviewItem;
   index: number;
   author: string;
-  linkable?: boolean;
+  linkable?: boolean | undefined;
 }) {
   const isRide = route.kind === "ride";
   const daysLabel =

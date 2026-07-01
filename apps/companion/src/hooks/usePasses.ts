@@ -25,7 +25,7 @@ export interface PassesQueryResult {
 }
 
 interface UsePassesOptions {
-  bbox?: string;
+  bbox?: string | undefined;
 }
 
 /**
@@ -48,15 +48,16 @@ export function usePasses(
   const listQuery = useQuery({
     queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
     queryFn: async ({ signal }) => {
+      const query =
+        forMonth != null || bbox
+          ? ({
+              ...(bbox ? { bbox } : {}),
+              ...(forMonth != null ? { for_month: forMonth } : {}),
+            } as never)
+          : undefined;
       const { data, error } = await api.GET("/api/v1/passes", {
         params: {
-          query:
-            forMonth != null || bbox
-              ? ({
-                  ...(bbox ? { bbox } : {}),
-                  ...(forMonth != null ? { for_month: forMonth } : {}),
-                } as never)
-              : undefined,
+          ...(query !== undefined ? { query } : {}),
         },
         signal,
       });
@@ -89,7 +90,10 @@ export function usePasses(
       const results = await Promise.allSettled(
         routeRequestKey.map(({ points }) =>
           passesApi.checkRoute(
-            { route: points, for_month: forMonth },
+            {
+              route: points,
+              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+            },
             { signal },
           ),
         ),

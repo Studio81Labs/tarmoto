@@ -34,7 +34,7 @@ type TrendTone = "dark" | "cream";
 interface SegmentTrendChartProps {
   segmentId: string;
   history: readonly QualityPoint[];
-  regionalHistory?: readonly QualityPoint[];
+  regionalHistory?: readonly QualityPoint[] | undefined;
   now?: Date;
   /** Colour theme — `dark` (default) for the trip planner, `cream` for explore. */
   tone?: TrendTone;

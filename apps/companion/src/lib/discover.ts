@@ -19,7 +19,7 @@ export async function fetchFunZonesInBbox(
 ): Promise<FunZoneListItem[]> {
   const query = new URLSearchParams({ bbox: bbox.join(",") });
   const res = await fetch(`${API_BASE}/roads/fun-zones?${query.toString()}`, {
-    signal: init?.signal,
+    ...(init?.signal !== undefined ? { signal: init.signal } : {}),
   });
   if (!res.ok) {
     // The list endpoint returns 200 with [] for "no zones in bbox"; any
@@ -41,7 +41,7 @@ export async function fetchFunZoneDetail(
 ): Promise<FunZoneDetail | null> {
   const res = await fetch(
     `${API_BASE}/roads/fun-zones/${encodeURIComponent(id)}`,
-    { signal: init?.signal },
+    { ...(init?.signal !== undefined ? { signal: init.signal } : {}) },
   );
   if (res.status === 404) return null;
   if (!res.ok) {

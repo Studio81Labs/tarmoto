@@ -12,8 +12,8 @@ interface Props {
   countryName: string;
   countryCode: string;
   regionSlug: string;
-  parentSlug?: string;
-  parentName?: string;
+  parentSlug?: string | undefined;
+  parentName?: string | undefined;
   pageUrl: string;
   description: string;
   roads: Road[];

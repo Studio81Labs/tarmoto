@@ -238,7 +238,7 @@ interface TripState {
   saveWaypoints: () => {
     lat: number;
     lng: number;
-    name?: string;
+    name?: string | null;
     type: BackendWaypointType;
   }[];
 
@@ -254,7 +254,7 @@ interface TripState {
     waypoints: {
       lat: number;
       lng: number;
-      name?: string;
+      name?: string | null;
       type: BackendWaypointType;
     }[];
   }[];
@@ -360,13 +360,19 @@ const LOCAL_TO_BACKEND_WAYPOINT_TYPE: Record<
   accommodation: "hotel",
 };
 
-function activePlannerSaveWaypoints(
-  waypoints: Waypoint[],
-): { lat: number; lng: number; name?: string; type: BackendWaypointType }[] {
+function activePlannerSaveWaypoints(waypoints: Waypoint[]): {
+  lat: number;
+  lng: number;
+  name?: string | null;
+  type: BackendWaypointType;
+}[] {
   return waypoints.map((w) => ({
     lat: w.location.lat,
     lng: w.location.lng,
-    name: w.name,
+    // Always emit the `name` key (null for an unnamed via) — the save-route
+    // contract (SaveRouteBody) types it `string | null` and the store test
+    // asserts the key's presence on every waypoint.
+    name: w.name ?? null,
     type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
 }
@@ -433,9 +439,11 @@ function syncLinkedStart(
 ): { days: TripDay[]; stale: number[] } {
   const next = days[idx + 1];
   if (!next || !next.startLinked) return { days, stale: staleDays };
+  const current = days[idx];
+  if (!current) return { days, stale: staleDays };
   // A generated predecessor finishes at a terminal accommodation (overnight),
   // not an explicit `end` — treat that as the finish so moving it cascades.
-  const end = dayFinishWaypoint(days[idx].waypoints);
+  const end = dayFinishWaypoint(current.waypoints);
   const nextWaypoints = [...next.waypoints];
   const startIdx = nextWaypoints.findIndex((w) => w.type === "start");
   if (!end) {
@@ -493,7 +501,7 @@ function applyPostCommitSync(
   state: TripState & TripStoreHistory,
   idx: number,
 ): {
-  activeTrip: Trip | null | undefined;
+  activeTrip: Trip | null;
   routeDirty: true;
   stalePreviewDays: number[];
 } {
@@ -511,7 +519,7 @@ function applyPostCommitSync(
   return {
     activeTrip: committedTrip
       ? { ...committedTrip, days: syncedDays }
-      : committedTrip,
+      : (committedTrip ?? null),
     routeDirty: true,
     stalePreviewDays: syncedStale,
   };
@@ -1066,14 +1074,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       }[] = [];
       for (let i = 0; i < days.length; i++) {
         const d = days[i];
-        if (d.waypoints.length === 0) continue; // drop empties
+        if (!d || d.waypoints.length === 0) continue; // drop empties
         // A link is only valid if the day's ORIGINAL immediate predecessor
         // survived the empty-day filter (and this isn't the new first day).
         // Otherwise the start was seeded from a dropped day's end and no longer
         // mirrors the new predecessor — persisting startLinked:true would make
         // the map hide its start marker and let a future predecessor-end edit
         // overwrite a start that was never linked to it.
-        const predecessorSurvived = i > 0 && days[i - 1].waypoints.length > 0;
+        const predecessor = days[i - 1];
+        const predecessorSurvived =
+          i > 0 && !!predecessor && predecessor.waypoints.length > 0;
         result.push({
           dayNumber: result.length + 1, // renumber contiguously
           // Send the title with the day so it follows the day through
@@ -1359,7 +1369,7 @@ function updatePlannerDayRoute(
   day: Trip["days"][number],
   waypoints: Waypoint[],
   _parameters?: Trip["parameters"],
-) {
+): Trip["days"][number] {
   // Geometry is driven exclusively by applyRouteResult (live routing hook).
   // We never synthesize geometry here — just update the waypoint list and
   // leave the existing routeGeometry in place until the hook recomputes it...
@@ -1369,16 +1379,19 @@ function updatePlannerDayRoute(
   // Normalize a terminal accommodation first so a generated overnight day
   // (start + accommodation) counts as routable and keeps its geometry.
   if (filterRoutingWaypoints(normalizeDayFinish(waypoints)).length < 2) {
-    return {
+    const cleared: Trip["days"][number] = {
       ...day,
       waypoints,
-      routeGeometry: undefined,
       distanceKm: 0,
       durationMinutes: 0,
       avgQuality: 0,
       elevationGain: 0,
       segments: [],
     };
+    // Clear any route-derived geometry: the live routing hook bails for <2
+    // routing waypoints, so it won't recompute this day — drop the stale line.
+    delete cleared.routeGeometry;
+    return cleared;
   }
   return { ...day, waypoints };
 }

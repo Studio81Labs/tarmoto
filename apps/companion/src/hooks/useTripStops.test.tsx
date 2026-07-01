@@ -72,7 +72,6 @@ describe("useTripStops", () => {
   it("rebuilds placeholder day rows when the active trip changes", async () => {
     const options: TripStopsOptions = {
       poiKinds: ["fuel_station"],
-      minAccommodationStars: undefined,
     };
     const firstStayRequest = createDeferred<{ data: AccommodationsResponse }>();
     const secondStayRequest = createDeferred<{

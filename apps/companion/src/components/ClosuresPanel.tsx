@@ -34,7 +34,7 @@ const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
-  bbox?: string;
+  bbox?: string | undefined;
   showRouteWarnings?: boolean;
   data?: ClosuresQueryResult;
   /**
@@ -44,7 +44,7 @@ interface ClosuresPanelProps {
    * a multi-day plan. /explore passes a concrete date so the rider
    * can preview "what's closed tomorrow" / "next weekend".
    */
-  previewDate?: Date;
+  previewDate?: Date | undefined;
 }
 export function ClosuresPanel({
   month,

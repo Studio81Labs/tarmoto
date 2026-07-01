@@ -25,7 +25,7 @@ export type MonthNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
 export function monthLabel(month: number): string {
   if (!Number.isInteger(month) || month < 1 || month > 12) return "";
-  return MONTH_NAMES[month - 1];
+  return MONTH_NAMES[month - 1] ?? "";
 }
 
 export function currentUtcMonth(now: Date = new Date()): MonthNumber {

@@ -10,7 +10,7 @@ interface Props {
   origin: string;
   country: string;
   region: string;
-  subregion?: string;
+  subregion?: string | undefined;
   regionName: string;
 }
 const VARIANTS: Array<{
@@ -45,9 +45,9 @@ export function BestRoadsEmbedPanel({
       buildBestRoadsIframeCode(origin, {
         country,
         region,
-        subregion,
         regionName,
         variant,
+        ...(subregion !== undefined ? { subregion } : {}),
       }),
     [origin, country, region, subregion, regionName, variant],
   );

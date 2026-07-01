@@ -376,9 +376,10 @@ function fallbackWaypointLabel(type: string): string {
 
   if (normalizedType === "start") return "Start";
   if (normalizedType === "end") return "Finish";
-  if (!normalizedType) return "Waypoint";
+  const firstChar = normalizedType[0];
+  if (!firstChar) return "Waypoint";
 
-  return normalizedType[0].toUpperCase() + normalizedType.slice(1);
+  return firstChar.toUpperCase() + normalizedType.slice(1);
 }
 
 function emptyLineCollection(): FeatureCollection<LineString, RouteProperties> {

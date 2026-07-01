@@ -54,7 +54,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
   );
   const { days, loading, error } = useTripStops(trip, {
     poiKinds,
-    minAccommodationStars,
+    ...(minAccommodationStars !== undefined ? { minAccommodationStars } : {}),
   });
   useEffect(() => {
     hydratePreferences();

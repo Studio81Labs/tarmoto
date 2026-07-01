@@ -386,7 +386,7 @@ function RoadMapPageInner() {
             formatValue={format}
             label={t("All-time distance")}
             value={distanceValue}
-            unit={distanceUnit}
+            {...(distanceUnit !== undefined ? { unit: distanceUnit } : {})}
           />
 
           {/* 3 — Region coverage. No region label backing data → no subline. */}

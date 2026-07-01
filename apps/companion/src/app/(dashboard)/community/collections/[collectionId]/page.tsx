@@ -817,7 +817,7 @@ function SortableItemList({
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragEnd={disabled ? undefined : handleDragEnd}
+      {...(disabled ? {} : { onDragEnd: handleDragEnd })}
     >
       <SortableContext
         items={ids as string[]}

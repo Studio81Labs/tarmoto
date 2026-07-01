@@ -127,6 +127,10 @@ function deriveWaypoints(route: ImportedRoute): Waypoint[] {
     type: "via",
   }));
 
+  // No usable polyline endpoints — fall back to the explicit waypoints so a
+  // pathological (empty-points) import still yields something coherent.
+  if (!first || !last) return explicit;
+
   // Only adopt an imported waypoint's name for start/end when it's actually
   // co-located with that endpoint — otherwise a mid-route "Viewpoint" placemark
   // would be labelled "Start" and also survive as a duplicate via below.
@@ -187,21 +191,27 @@ function buildPreviewSegments(route: ImportedRoute): RoutePreviewSegment[] {
   );
   const chunkKm = total / targetSegments;
 
+  const firstPoint = route.points[0];
+  if (!firstPoint) return [];
+
   const segments: RoutePreviewSegment[] = [];
-  let chunkPoints: Array<[number, number]> = [route.points[0]];
+  let chunkPoints: Array<[number, number]> = [firstPoint];
   let chunkDistance = 0;
   let chunkIndex = 0;
 
   for (let i = 1; i < route.points.length; i++) {
-    const step = haversineKm(route.points[i - 1], route.points[i]);
+    const prev = route.points[i - 1];
+    const curr = route.points[i];
+    if (!prev || !curr) continue;
+    const step = haversineKm(prev, curr);
     chunkDistance += step;
-    chunkPoints.push(route.points[i]);
+    chunkPoints.push(curr);
 
     const isLast = i === route.points.length - 1;
     if (chunkDistance >= chunkKm || isLast) {
       segments.push(buildSegment(chunkIndex, chunkPoints, chunkDistance));
       chunkIndex++;
-      chunkPoints = [route.points[i]];
+      chunkPoints = [curr];
       chunkDistance = 0;
     }
   }
@@ -257,9 +267,10 @@ function hashPoints(points: Array<[number, number]>): number {
 function computeBounds(
   points: Array<[number, number]>,
 ): [[number, number], [number, number]] | undefined {
-  if (points.length === 0) return undefined;
-  let minLng = points[0][0];
-  let minLat = points[0][1];
+  const firstPt = points[0];
+  if (!firstPt) return undefined;
+  let minLng = firstPt[0];
+  let minLat = firstPt[1];
   let maxLng = minLng;
   let maxLat = minLat;
   for (const [lng, lat] of points) {
