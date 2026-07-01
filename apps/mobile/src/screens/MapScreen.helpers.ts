@@ -80,7 +80,7 @@ export const QUALITY_STEP_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
  *   `apps/backend/.../road-segment.dto.ts`, "0-100, based on number of
  *   readings"), not 0-1 — so the interpolation stops match that range.
  */
-export const qualityLineStyle: LineLayerStyle = {
+export const qualityLineStyle = {
   lineColor: [
     "step",
     ["get", "quality_score"],
@@ -118,7 +118,7 @@ export const qualityLineStyle: LineLayerStyle = {
     100,
     1,
   ],
-};
+} satisfies LineLayerStyle;
 
 /**
  * Opacity applied to segments below the rider's minimum-quality threshold.
@@ -155,13 +155,13 @@ export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
       ["<", ["get", "quality_score"], threshold],
       UNSCORED_COLOR,
       qualityLineStyle.lineColor,
-    ] as LineLayerStyle["lineColor"],
+    ] as NonNullable<LineLayerStyle["lineColor"]>,
     lineOpacity: [
       "case",
       ["<", ["get", "quality_score"], threshold],
       BELOW_THRESHOLD_OPACITY,
       qualityLineStyle.lineOpacity,
-    ] as LineLayerStyle["lineOpacity"],
+    ] as NonNullable<LineLayerStyle["lineOpacity"]>,
   };
 }
 
@@ -338,6 +338,7 @@ function toClosedRing(boundary: LatLng[]): [number, number][] {
   const ring = boundary.map((p) => [p.lng, p.lat] as [number, number]);
   const first = ring[0];
   const last = ring[ring.length - 1];
+  if (!first || !last) return ring;
   if (first[0] !== last[0] || first[1] !== last[1]) {
     ring.push([first[0], first[1]]);
   }

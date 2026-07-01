@@ -128,8 +128,8 @@ describe("hazardQueue", () => {
       expect(pending).toHaveLength(1);
       // Photo URI must round-trip so a future drain can ship it once
       // the backend file-upload endpoint lands.
-      expect(pending[0].photoUri).toBe("file:///tmp/photo.jpg");
-      expect(pending[0].hazardType).toBe("pothole");
+      expect(pending[0]?.photoUri).toBe("file:///tmp/photo.jpg");
+      expect(pending[0]?.hazardType).toBe("pothole");
     });
 
     it("queues on transient server errors (5xx)", async () => {

@@ -17,7 +17,7 @@ describe("iOS Info.plist", () => {
   function valueOf(key: string): string {
     const re = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`, "m");
     const m = plist.match(re);
-    if (!m) throw new Error(`missing key ${key}`);
+    if (!m || m[1] === undefined) throw new Error(`missing key ${key}`);
     return m[1];
   }
 

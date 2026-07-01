@@ -307,7 +307,7 @@ describe("rankUnriddenSegments", () => {
       make({ id: "a", quality_score: null, distance_m: 100 }),
       make({ id: "b", quality_score: 2.0, distance_m: 1000 }),
     ]);
-    expect(ranked[0].id).toBe("b");
+    expect(ranked[0]?.id).toBe("b");
   });
 });
 

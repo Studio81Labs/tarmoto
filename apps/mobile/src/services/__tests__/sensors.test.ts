@@ -498,12 +498,12 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     expect(readings).toHaveLength(1);
     // First sample of a step on Z must be attenuated — the filter's
     // initial response to a unit step is well below the steady value.
-    expect(readings[0].az).toBeLessThan(9.81);
-    expect(readings[0].az).toBeGreaterThan(0);
+    expect(readings[0]?.az).toBeLessThan(9.81);
+    expect(readings[0]?.az).toBeGreaterThan(0);
     // X and Y were zero on input AND the filter started from zero
     // state, so the output stays at zero.
-    expect(readings[0].ax).toBe(0);
-    expect(readings[0].ay).toBe(0);
+    expect(readings[0]?.ax).toBe(0);
+    expect(readings[0]?.ay).toBe(0);
   });
 
   it("filter state persists across windows so DC settles to its input", () => {
@@ -528,7 +528,7 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     }
     const { readings } = sensorService.stop();
     const last = readings[readings.length - 1];
-    expect(last.az).toBeCloseTo(9.81, 6);
+    expect(last?.az).toBeCloseTo(9.81, 6);
   });
 
   it("filters gx/gy/gz on the gyro stream", () => {
@@ -553,9 +553,9 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     expect(readings).toHaveLength(1);
     // Gyro x of 1 rad/s through a freshly-reset filter — its first-
     // sample output is well below 1 (filter is settling).
-    expect(readings[0].gx).toBeDefined();
-    expect(readings[0].gx).toBeLessThan(1);
-    expect(readings[0].gx).toBeGreaterThanOrEqual(0);
+    expect(readings[0]?.gx).toBeDefined();
+    expect(readings[0]?.gx).toBeLessThan(1);
+    expect(readings[0]?.gx).toBeGreaterThanOrEqual(0);
   });
 
   it("resets filter state on each start() so a previous ride doesn't leak", () => {
@@ -581,9 +581,9 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     sensorService.start(() => undefined);
     capturedAccel!({ x: 0, y: 0, z: 0, timestamp: 0 });
     const { readings } = sensorService.stop();
-    expect(readings[0].ax).toBe(0);
-    expect(readings[0].ay).toBe(0);
-    expect(readings[0].az).toBe(0);
+    expect(readings[0]?.ax).toBe(0);
+    expect(readings[0]?.ay).toBe(0);
+    expect(readings[0]?.az).toBe(0);
   });
 
   it("delivers unfiltered axes to subscribeReadings listeners (US-12)", () => {
@@ -622,7 +622,7 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     expect(listenerSamples[1]).toEqual({ ax: 1.0, ay: -2.0, az: 9.81 });
     // Buffered (filtered) reading is still attenuated for the same
     // tick — proves the listener received raw, not filtered.
-    expect(readings[0].az).toBeLessThan(9.81);
+    expect(readings[0]?.az).toBeLessThan(9.81);
   });
 
   it("delivers raw axes to listeners even after the filter has settled", () => {
@@ -704,7 +704,7 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     // The first few readings are below 9.81 because the 4th-order
     // Butterworth has non-zero settling time — that asymmetry is what
     // distinguishes filtered from raw.
-    expect(readings[0].az).toBeLessThan(9.81);
+    expect(readings[0]?.az).toBeLessThan(9.81);
 
     // The calibrator's per-axis mean must equal the mean of the
     // post-filter readings to numerical precision. Anything else

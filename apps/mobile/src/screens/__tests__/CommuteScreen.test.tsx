@@ -309,7 +309,7 @@ describe("CommuteScreen", () => {
     // and (after the rejection) the "Couldn't update primary" error.
     // The mock auto-confirms the first and records the second so we
     // can assert on its title.
-    const alertCalls: Array<[string, string?]> = [];
+    const alertCalls: Array<[string, string | undefined]> = [];
     const alertSpy = jest
       .spyOn(Alert, "alert")
       .mockImplementation((title, body, buttons) => {
@@ -465,7 +465,7 @@ describe("rankAlternatives", () => {
       make({ duration_min: 10, hazard_count: 2 }),
       make({ duration_min: 30, hazard_count: 0 }),
     ]);
-    expect(ranked[0].hazard_count).toBe(0);
+    expect(ranked[0]?.hazard_count).toBe(0);
   });
 
   it("ties on hazards break by duration", () => {
@@ -473,7 +473,7 @@ describe("rankAlternatives", () => {
       make({ duration_min: 25, hazard_count: 1 }),
       make({ duration_min: 18, hazard_count: 1 }),
     ]);
-    expect(ranked[0].duration_min).toBe(18);
+    expect(ranked[0]?.duration_min).toBe(18);
   });
 
   it("ties on hazards and duration break by quality (higher first)", () => {
@@ -481,7 +481,7 @@ describe("rankAlternatives", () => {
       make({ avg_quality: 3.0 }),
       make({ avg_quality: 4.5 }),
     ]);
-    expect(ranked[0].avg_quality).toBe(4.5);
+    expect(ranked[0]?.avg_quality).toBe(4.5);
   });
 
   it("treats null quality as worst", () => {
@@ -489,7 +489,7 @@ describe("rankAlternatives", () => {
       make({ avg_quality: null }),
       make({ avg_quality: 2.0 }),
     ]);
-    expect(ranked[0].avg_quality).toBe(2.0);
+    expect(ranked[0]?.avg_quality).toBe(2.0);
   });
 });
 

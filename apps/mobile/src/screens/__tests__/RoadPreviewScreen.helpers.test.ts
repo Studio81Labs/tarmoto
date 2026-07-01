@@ -131,6 +131,7 @@ describe("computeCurveCount", () => {
     const STRAIGHT_LEGS_BETWEEN_TURNS = 3;
     const step = () => {
       const last = points[points.length - 1];
+      if (!last) throw new Error("expected a previous point");
       const rad = (heading * Math.PI) / 180;
       const dLat = Math.cos(rad) * stepLatDeg;
       const dLng =
@@ -182,6 +183,7 @@ describe("computeCurveCount", () => {
     const stepLatDeg = 0.0005;
     for (let i = 0; i < 5; i++) {
       const last = pts[pts.length - 1];
+      if (!last) throw new Error("expected a previous point");
       const rad = (heading * Math.PI) / 180;
       const dLat = Math.cos(rad) * stepLatDeg;
       const dLng =

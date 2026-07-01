@@ -42,7 +42,7 @@ export interface Maneuver {
   /** Signed heading change at the vertex in degrees (+ right, - left). */
   headingChangeDeg: number;
   /** Optional road name ahead — sourced from the nearest waypoint. */
-  roadName?: string;
+  roadName?: string | undefined;
 }
 
 export const MANEUVER_LABELS: Record<ManeuverType, string> = {
@@ -86,15 +86,15 @@ export type NavAnnouncementType =
 
 export interface NavAnnouncement {
   type: NavAnnouncementType;
-  maneuver?: Maneuver;
-  distanceM?: number;
+  maneuver?: Maneuver | undefined;
+  distanceM?: number | undefined;
   /**
    * Name of the road the rider is currently on, if known. Used by the
    * phrase builder to suppress "onto {roadName}" when the upcoming
    * maneuver stays on the same road — announcing "Turn left onto Main St"
    * while already on Main St is noise.
    */
-  currentRoadName?: string;
+  currentRoadName?: string | undefined;
 }
 
 export interface NavTick {
@@ -193,14 +193,19 @@ export function buildCumulativeDistances(polyline: LatLng[]): number[] {
   if (polyline.length === 0) return [];
   const cumulative: number[] = [0];
   for (let i = 1; i < polyline.length; i++) {
+    const prevPoint = polyline[i - 1];
+    const point = polyline[i];
+    const prevCumulative = cumulative[i - 1];
+    if (
+      prevPoint === undefined ||
+      point === undefined ||
+      prevCumulative === undefined
+    ) {
+      continue;
+    }
     cumulative.push(
-      cumulative[i - 1] +
-        haversineM(
-          polyline[i - 1].lat,
-          polyline[i - 1].lng,
-          polyline[i].lat,
-          polyline[i].lng,
-        ),
+      prevCumulative +
+        haversineM(prevPoint.lat, prevPoint.lng, point.lat, point.lng),
     );
   }
   return cumulative;
@@ -239,6 +244,15 @@ export function extractManeuvers(
       const prev = polyline[i - 1];
       const here = polyline[i];
       const next = polyline[i + 1];
+      const cumHere = cumulative[i];
+      if (
+        prev === undefined ||
+        here === undefined ||
+        next === undefined ||
+        cumHere === undefined
+      ) {
+        continue;
+      }
       const inBearing = bearingDeg(prev, here);
       const outBearing = bearingDeg(here, next);
       const delta = headingDelta(inBearing, outBearing);
@@ -248,7 +262,7 @@ export function extractManeuvers(
       const candidate: Maneuver = {
         type,
         vertexIndex: i,
-        distanceFromStartM: cumulative[i],
+        distanceFromStartM: cumHere,
         headingChangeDeg: delta,
         roadName: roadNames?.[i + 1] ?? roadNames?.[i],
       };
@@ -258,6 +272,7 @@ export function extractManeuvers(
       // slight-left that immediately chains into a hard-left.
       const prevManeuver = maneuvers[maneuvers.length - 1];
       if (
+        prevManeuver !== undefined &&
         prevManeuver.type !== "depart" &&
         candidate.distanceFromStartM - prevManeuver.distanceFromStartM <
           TURN_DEDUPE_M
@@ -278,7 +293,7 @@ export function extractManeuvers(
   maneuvers.push({
     type: "arrive",
     vertexIndex: lastIndex,
-    distanceFromStartM: cumulative[lastIndex],
+    distanceFromStartM: cumulative[lastIndex] ?? 0,
     headingChangeDeg: 0,
     roadName: roadNames?.[lastIndex],
   });
@@ -318,15 +333,12 @@ export function projectOnPolyline(
 ): Projection | null {
   if (polyline.length === 0) return null;
   if (polyline.length === 1) {
+    const only = polyline[0];
+    if (only === undefined) return null;
     return {
       segmentIndex: 0,
-      point: polyline[0],
-      distanceM: haversineM(
-        polyline[0].lat,
-        polyline[0].lng,
-        point.lat,
-        point.lng,
-      ),
+      point: only,
+      distanceM: haversineM(only.lat, only.lng, point.lat, point.lng),
       progressM: 0,
     };
   }
@@ -337,11 +349,15 @@ export function projectOnPolyline(
   for (let i = 0; i < polyline.length - 1; i++) {
     const a = polyline[i];
     const b = polyline[i + 1];
+    if (a === undefined || b === undefined) continue;
     const { point: closest, t } = closestOnSegment(a, b, point);
     const dist = haversineM(closest.lat, closest.lng, point.lat, point.lng);
     if (best === null || dist < best.distanceM) {
-      const segmentLen = cumulative[i + 1] - cumulative[i];
-      const progressM = cumulative[i] + t * segmentLen;
+      const cumHere = cumulative[i];
+      const cumNext = cumulative[i + 1];
+      if (cumHere === undefined || cumNext === undefined) continue;
+      const segmentLen = cumNext - cumHere;
+      const progressM = cumHere + t * segmentLen;
       best = { segmentIndex: i, point: closest, distanceM: dist, progressM };
     }
   }
@@ -428,10 +444,9 @@ export class NavSession {
     this.routeCumulative =
       cumulativeDistances ?? buildCumulativeDistances(route);
     this.maneuvers = maneuvers;
+    const lastManeuver = maneuvers[maneuvers.length - 1];
     this.totalM =
-      maneuvers.length > 0
-        ? maneuvers[maneuvers.length - 1].distanceFromStartM
-        : 0;
+      lastManeuver !== undefined ? lastManeuver.distanceFromStartM : 0;
     this.thresholds = maneuvers.map(() => ({
       farFired: false,
       nearFired: false,
@@ -503,7 +518,11 @@ export class NavSession {
 
       if (nextManeuver && nextIndex !== null) {
         const state = this.thresholds[nextIndex];
-        if (nextManeuver.type !== "depart" && nextManeuver.type !== "arrive") {
+        if (
+          state !== undefined &&
+          nextManeuver.type !== "depart" &&
+          nextManeuver.type !== "arrive"
+        ) {
           // Fire at most ONE threshold per tick, picking the most urgent
           // one the rider has crossed. A cold-start fix can land inside
           // `WARNING_NEAR_M` — or even `EXECUTE_M` — with none of the
@@ -584,7 +603,7 @@ export class NavSession {
     // if the route is a single leg).
     for (let i = 0; i < this.maneuvers.length; i++) {
       const m = this.maneuvers[i];
-      if (m.type === "depart") continue;
+      if (m === undefined || m.type === "depart") continue;
       if (m.distanceFromStartM > progressM - 5) {
         return { nextManeuver: m, nextIndex: i };
       }
@@ -817,8 +836,9 @@ function maneuverPhrase(m: Maneuver, strings: PhraseStrings): string {
  * grammatically-significant capitalisation deeper in the phrase.
  */
 function lowercaseFirstChar(s: string): string {
-  if (s.length === 0) return s;
-  return s[0].toLowerCase() + s.slice(1);
+  const first = s[0];
+  if (first === undefined) return s;
+  return first.toLowerCase() + s.slice(1);
 }
 
 function ontoPhrase(

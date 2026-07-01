@@ -176,18 +176,20 @@ export function routeToImportRequest(
   geometry: Array<{ lat: number; lng: number }>;
   waypoints?: Array<{ lat: number; lng: number; name?: string }>;
 } {
+  const trimmedRegion = region?.trim();
   return {
     title: title.trim() || route.name,
-    region: region?.trim() || undefined,
+    ...(trimmedRegion ? { region: trimmedRegion } : {}),
     source_format: route.sourceFormat,
     geometry: route.points.map(([lng, lat]) => ({ lat, lng })),
-    waypoints:
-      route.waypoints.length > 0
-        ? route.waypoints.map((w) => ({
+    ...(route.waypoints.length > 0
+      ? {
+          waypoints: route.waypoints.map((w) => ({
             lat: w.lat,
             lng: w.lng,
-            name: w.name,
-          }))
-        : undefined,
+            ...(w.name !== undefined ? { name: w.name } : {}),
+          })),
+        }
+      : {}),
   };
 }

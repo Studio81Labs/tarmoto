@@ -491,11 +491,11 @@ class ApiService {
     const result = await client.POST("/api/v1/rides/start", {
       body: {
         ride_type: type as Schemas["StartRideDto"]["ride_type"],
-        trip_day_id: tripDayId,
+        ...(tripDayId !== undefined ? { trip_day_id: tripDayId } : {}),
         // Omitted ⇒ backend pins to the rider's active bike. Passed
         // explicitly when the rider chose a non-default bike from the
         // garage picker before tapping Start.
-        bike_id: bikeId,
+        ...(bikeId !== undefined ? { bike_id: bikeId } : {}),
       },
     });
     // /start returns the slim `RideResponseDto`. Detail-only fields
@@ -529,7 +529,9 @@ class ApiService {
         query: {
           limit,
           offset,
-          type: type as "free" | "commute" | "trip" | "tracked" | undefined,
+          ...(type !== undefined
+            ? { type: type as "free" | "commute" | "trip" | "tracked" }
+            : {}),
         },
       },
     });
@@ -609,7 +611,7 @@ class ApiService {
         // backend treats missing as "no client model on that device".
         // The backend re-derives `classification` / `surface_type`
         // from raw readings regardless, so this never feeds the labels.
-        client_model_version: modelVersion ?? undefined,
+        ...(modelVersion != null ? { client_model_version: modelVersion } : {}),
         // Issue #493 — marker telling the backend whether `ax/ay/az`
         // in every reading were low-pass-filtered on-device. Sourced
         // from the queued payload, NOT a module constant: rides
@@ -618,7 +620,9 @@ class ApiService {
         // omitted marker so the backend doesn't mislabel them as
         // filtered. `null` → omit the field (backend treats missing
         // as "raw axes").
-        client_preprocessing_version: preprocessingVersion ?? undefined,
+        ...(preprocessingVersion != null
+          ? { client_preprocessing_version: preprocessingVersion }
+          : {}),
         readings: readings as Schemas["UploadSensorDataDto"]["readings"],
         // Research issue #7 — rider-asserted surface labels captured
         // during the ride. Omit the field entirely when none fired so
@@ -627,8 +631,9 @@ class ApiService {
         // DTO).
         ...(tagEvents.length > 0
           ? {
-              tag_events:
-                tagEvents as Schemas["UploadSensorDataDto"]["tag_events"],
+              tag_events: tagEvents as NonNullable<
+                Schemas["UploadSensorDataDto"]["tag_events"]
+              >,
             }
           : {}),
         // Issue #494 — idle-baseline calibration for this ride.
@@ -638,8 +643,9 @@ class ApiService {
         // `calibration_quality: null`.
         ...(calibration
           ? {
-              calibration:
-                calibration as Schemas["UploadSensorDataDto"]["calibration"],
+              calibration: calibration as NonNullable<
+                Schemas["UploadSensorDataDto"]["calibration"]
+              >,
             }
           : {}),
       },
@@ -708,7 +714,14 @@ class ApiService {
     minQuality?: number,
   ): Promise<RoadSegment[]> {
     const result = await client.GET("/api/v1/roads/nearby", {
-      params: { query: { lat, lng, radius, min_quality: minQuality } },
+      params: {
+        query: {
+          lat,
+          lng,
+          radius,
+          ...(minQuality !== undefined ? { min_quality: minQuality } : {}),
+        },
+      },
     });
     return unwrap(result, "Failed to load nearby roads") as RoadSegment[];
   }
@@ -736,7 +749,14 @@ class ApiService {
     types?: string,
   ): Promise<Hazard[]> {
     const result = await client.GET("/api/v1/hazards", {
-      params: { query: { lat, lng, radius, types } },
+      params: {
+        query: {
+          lat,
+          lng,
+          radius,
+          ...(types !== undefined ? { types } : {}),
+        },
+      },
     });
     return unwrap(result, "Failed to load hazards") as Hazard[];
   }
@@ -755,8 +775,8 @@ class ApiService {
         lng,
         hazard_type: type,
         severity,
-        note,
-        photo_url: photoUrl,
+        ...(note !== undefined ? { note } : {}),
+        ...(photoUrl !== undefined ? { photo_url: photoUrl } : {}),
       },
     });
     return unwrap(result, "Failed to report hazard") as Hazard;
@@ -885,12 +905,11 @@ class ApiService {
     const result = await client.GET("/api/v1/trips", {
       params: {
         query: {
-          status: status as
-            | "active"
-            | "completed"
-            | "draft"
-            | "planned"
-            | undefined,
+          ...(status !== undefined
+            ? {
+                status: status as "active" | "completed" | "draft" | "planned",
+              }
+            : {}),
         },
       },
     });
@@ -987,9 +1006,15 @@ class ApiService {
         avoid_highways: options.avoid_highways ?? false,
         avoid_tolls: options.avoid_tolls ?? false,
         avoid_unpaved: options.avoid_unpaved ?? false,
-        bbox: options.bbox,
-        option: options.option,
-        surfaces: options.surfaces as Schemas["GenerateTripDto"]["surfaces"],
+        ...(options.bbox !== undefined ? { bbox: options.bbox } : {}),
+        ...(options.option !== undefined ? { option: options.option } : {}),
+        ...(options.surfaces !== undefined
+          ? {
+              surfaces: options.surfaces as NonNullable<
+                Schemas["GenerateTripDto"]["surfaces"]
+              >,
+            }
+          : {}),
       },
     });
     return unwrap(result, "Failed to generate trip route");
@@ -1068,9 +1093,9 @@ class ApiService {
       params: { path: { segmentId: payload.segmentId } },
       body: {
         rating: payload.rating,
-        comment: payload.comment ?? undefined,
-        bike_model: payload.bikeModel ?? undefined,
-        photos: payload.photos ?? undefined,
+        ...(payload.comment != null ? { comment: payload.comment } : {}),
+        ...(payload.bikeModel != null ? { bike_model: payload.bikeModel } : {}),
+        ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
     return unwrap(result, "Failed to submit review") as RoadReview;
@@ -1113,9 +1138,9 @@ class ApiService {
       params: { path: { segmentId: payload.segmentId } },
       body: {
         rating: payload.rating,
-        comment: payload.comment ?? undefined,
-        bike_model: payload.bikeModel ?? undefined,
-        photos: payload.photos ?? undefined,
+        ...(payload.comment != null ? { comment: payload.comment } : {}),
+        ...(payload.bikeModel != null ? { bike_model: payload.bikeModel } : {}),
+        ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
     return unwrap(result, "Failed to update review") as RoadReview;
@@ -1274,7 +1299,13 @@ class ApiService {
     radiusKm?: number,
   ): Promise<AccommodationList> {
     const result = await client.GET("/api/v1/poi/accommodations", {
-      params: { query: { lat, lng, radius_km: radiusKm } },
+      params: {
+        query: {
+          lat,
+          lng,
+          ...(radiusKm !== undefined ? { radius_km: radiusKm } : {}),
+        },
+      },
     });
     return unwrap(result, "Failed to load accommodations");
   }
@@ -1294,8 +1325,10 @@ class ApiService {
         query: {
           lat,
           lng,
-          radius_km: options.radiusKm,
-          kinds: options.kinds?.length ? options.kinds : undefined,
+          ...(options.radiusKm !== undefined
+            ? { radius_km: options.radiusKm }
+            : {}),
+          ...(options.kinds?.length ? { kinds: options.kinds } : {}),
         },
       },
     });
@@ -1313,7 +1346,7 @@ class ApiService {
       body: {
         route,
         buffer_km: options.bufferKm ?? 2,
-        kinds: options.kinds,
+        ...(options.kinds !== undefined ? { kinds: options.kinds } : {}),
       },
     });
     return unwrap(result, "Failed to load POIs along route");
@@ -1371,8 +1404,10 @@ class ApiService {
         query: {
           lat,
           lng,
-          radius_km: options.radiusKm,
-          limit: options.limit,
+          ...(options.radiusKm !== undefined
+            ? { radius_km: options.radiusKm }
+            : {}),
+          ...(options.limit !== undefined ? { limit: options.limit } : {}),
         },
       },
     });
@@ -1418,11 +1453,15 @@ class ApiService {
       body: {
         lat,
         lng,
-        ride_id: options.rideId,
-        speed_at_impact: options.speedAtImpact,
-        severity: options.severity,
-        alert_id: options.alertId,
-        locale: options.locale,
+        ...(options.rideId !== undefined ? { ride_id: options.rideId } : {}),
+        ...(options.speedAtImpact !== undefined
+          ? { speed_at_impact: options.speedAtImpact }
+          : {}),
+        ...(options.severity !== undefined
+          ? { severity: options.severity }
+          : {}),
+        ...(options.alertId !== undefined ? { alert_id: options.alertId } : {}),
+        ...(options.locale !== undefined ? { locale: options.locale } : {}),
       },
     });
     return unwrap(result, "Failed to send crash alert");

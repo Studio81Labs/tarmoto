@@ -428,7 +428,7 @@ export function buildPersonalLineStyle(
       labels,
       riddenColor,
       dimmedColor,
-    ] as unknown as LineLayerStyle["lineColor"],
+    ] as unknown as NonNullable<LineLayerStyle["lineColor"]>,
     lineWidth: [
       "interpolate",
       ["linear"],
@@ -448,7 +448,7 @@ export function buildPersonalLineStyle(
       labels,
       1,
       0.45,
-    ] as unknown as LineLayerStyle["lineOpacity"],
+    ] as unknown as NonNullable<LineLayerStyle["lineOpacity"]>,
     lineCap: "round",
     lineJoin: "round",
   };

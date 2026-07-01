@@ -142,7 +142,11 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
     const appVersion = await safeAppVersion();
     if (mySession !== registrationSession) return;
 
-    await api.registerDevice({ platform, token, app_version: appVersion });
+    await api.registerDevice({
+      platform,
+      token,
+      ...(appVersion !== undefined ? { app_version: appVersion } : {}),
+    });
 
     // Final session check before mutating module state. A logout
     // that fired during the POST round-trip must NOT leave the
@@ -172,7 +176,9 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
           api.registerDevice({
             platform,
             token: nextToken,
-            app_version: latestVersion,
+            ...(latestVersion !== undefined
+              ? { app_version: latestVersion }
+              : {}),
           }),
         )
         .then(() => {

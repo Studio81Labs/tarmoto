@@ -85,14 +85,16 @@ describe("resolveNavigationRoute", () => {
       { source: "trip-day", tripId: "trip-1", dayNumber: 1 },
       trip,
     );
-    expect(result.polyline).toBe(trip.days[0].route_geometry);
+    expect(result.polyline).toBe(trip.days[0]?.route_geometry);
     expect(result.title).toBe("Day One");
-    expect(result.waypoints).toBe(trip.days[0].waypoints);
+    expect(result.waypoints).toBe(trip.days[0]?.waypoints);
   });
 
   it("falls back to a 'Day N' title when the trip day has no title", () => {
     const trip = makeTrip();
-    trip.days[0].title = null;
+    const firstDay = trip.days[0];
+    if (!firstDay) throw new Error("expected a trip day");
+    firstDay.title = null;
     const result = resolveNavigationRoute(
       { source: "trip-day", tripId: "trip-1", dayNumber: 1 },
       trip,

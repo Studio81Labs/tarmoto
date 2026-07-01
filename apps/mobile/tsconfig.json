@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
@@ -6,8 +7,6 @@
     "allowJs": true,
     "jsx": "react-native",
     "noEmit": true,
-    "isolatedModules": true,
-    "strict": true,
     "moduleResolution": "node",
     "baseUrl": "./",
     "paths": {
@@ -23,12 +22,19 @@
       "@navigation/*": ["src/navigation/*"]
     },
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
     "types": ["jest", "node"],
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true
+    // React Native app: emits nothing (Metro/Babel builds). The shared base
+    // turns `declaration` on (for the publishable packages); disable it here so
+    // the compiler doesn't demand portable annotations on re-exported inferred
+    // types (TS2742).
+    "declaration": false,
+    "declarationMap": false
   },
   "include": ["src/**/*", "App.tsx"],
-  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js"]
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js"
+  ]
 }

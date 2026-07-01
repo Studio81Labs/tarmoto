@@ -854,7 +854,7 @@ function Metric({
   // Ramp colour for the quality metric. Rendered as a swatch dot beside the
   // ink value — the Q1–Q5 ramp fails AA as text on the cream card, so the
   // colour lives on the swatch (rule #4) and the label stays ink.
-  swatchColor?: string;
+  swatchColor?: string | undefined;
 }) {
   return (
     <View style={styles.metric}>

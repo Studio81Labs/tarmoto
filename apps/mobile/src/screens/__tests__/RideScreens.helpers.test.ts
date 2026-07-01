@@ -218,7 +218,7 @@ describe("rideRouteFeatureCollection", () => {
     // No-data legs use the sentinel so the step expression's default
     // branch (textTertiary) handles them — a literal 0 would collide
     // with a real veryPoor reading at score 1.
-    expect(fc.features[0].properties).toEqual({
+    expect(fc.features[0]?.properties).toEqual({
       quality_reading: NO_QUALITY_READING,
     });
   });
@@ -235,7 +235,7 @@ describe("rideRouteFeatureCollection", () => {
       },
     ];
     const fc = rideRouteFeatureCollection(geometry, segs);
-    expect(fc.features[0].properties).toEqual({
+    expect(fc.features[0]?.properties).toEqual({
       quality_reading: NO_QUALITY_READING,
     });
   });
@@ -244,11 +244,11 @@ describe("rideRouteFeatureCollection", () => {
     const segs = [makeSegment(4.7), makeSegment(2.1)];
     const fc = rideRouteFeatureCollection(geometry, segs);
     expect(fc.features).toHaveLength(2);
-    expect(fc.features[0].properties).toEqual({ quality_reading: 4.7 });
-    expect(fc.features[1].properties).toEqual({ quality_reading: 2.1 });
+    expect(fc.features[0]?.properties).toEqual({ quality_reading: 4.7 });
+    expect(fc.features[1]?.properties).toEqual({ quality_reading: 2.1 });
     // The last feature must reach the polyline's end vertex so the route
     // visualisation never stops short of the rider's actual end.
-    const last = fc.features[1].geometry as GeoJSON.LineString;
+    const last = fc.features[1]?.geometry as GeoJSON.LineString;
     expect(last.coordinates[last.coordinates.length - 1]).toEqual([4, 0]);
   });
 
@@ -261,10 +261,10 @@ describe("rideRouteFeatureCollection", () => {
     const segs = [makeSegment(4.5), makeSegment(3.0), makeSegment(1.5)];
     const fc = rideRouteFeatureCollection(geometry, segs);
     expect(fc.features).toHaveLength(3);
-    expect(fc.features[0].properties).toEqual({ quality_reading: 4.5 });
-    expect(fc.features[1].properties).toEqual({ quality_reading: 3.0 });
-    expect(fc.features[2].properties).toEqual({ quality_reading: 1.5 });
-    const last = fc.features[2].geometry as GeoJSON.LineString;
+    expect(fc.features[0]?.properties).toEqual({ quality_reading: 4.5 });
+    expect(fc.features[1]?.properties).toEqual({ quality_reading: 3.0 });
+    expect(fc.features[2]?.properties).toEqual({ quality_reading: 1.5 });
+    const last = fc.features[2]?.geometry as GeoJSON.LineString;
     expect(last.coordinates[last.coordinates.length - 1]).toEqual([4, 0]);
   });
 
@@ -285,7 +285,7 @@ describe("rideRouteFeatureCollection", () => {
     ];
     const fc = rideRouteFeatureCollection(geometry, segs);
     expect(fc.features).toHaveLength(1);
-    expect(fc.features[0].properties).toEqual({
+    expect(fc.features[0]?.properties).toEqual({
       quality_reading: NO_QUALITY_READING,
     });
   });

@@ -72,7 +72,10 @@ export function computeCurveCount(
 
   const bearings: number[] = [];
   for (let i = 1; i < geometry.length; i++) {
-    const b = bearingDeg(geometry[i - 1], geometry[i]);
+    const from = geometry[i - 1];
+    const to = geometry[i];
+    if (!from || !to) continue;
+    const b = bearingDeg(from, to);
     if (b !== null) bearings.push(b);
   }
   if (bearings.length < 2) return 0;
@@ -80,9 +83,10 @@ export function computeCurveCount(
   let count = 0;
   let inTurn = false;
   for (let i = 1; i < bearings.length; i++) {
-    const delta = Math.abs(
-      normalizeBearingDelta(bearings[i] - bearings[i - 1]),
-    );
+    const curr = bearings[i];
+    const prev = bearings[i - 1];
+    if (curr === undefined || prev === undefined) continue;
+    const delta = Math.abs(normalizeBearingDelta(curr - prev));
     if (delta > turnThresholdDeg) {
       if (!inTurn) {
         count += 1;
@@ -233,10 +237,13 @@ export function buildElevationChartPaths(
   const line = points
     .map((p, i) => `${i === 0 ? "M" : "L"}${fmt(p.x)} ${fmt(p.y)}`)
     .join(" ");
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return null;
   const area =
-    `M${fmt(points[0].x)} ${fmt(height)} ` +
+    `M${fmt(first.x)} ${fmt(height)} ` +
     points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(" ") +
-    ` L${fmt(points[points.length - 1].x)} ${fmt(height)} Z`;
+    ` L${fmt(last.x)} ${fmt(height)} Z`;
 
   return { line, area, min, max };
 }
