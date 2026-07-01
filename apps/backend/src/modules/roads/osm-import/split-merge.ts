@@ -18,10 +18,15 @@ import type { LatLng } from './segmentation.js';
  * slice loads the candidate existing segments and applies the plan.
  */
 
-/** Fraction of `a` that must lie on `b` to consider `a` a continuation of `b`. */
+/** A carry-over requires MORE than this fraction of one segment to lie on the
+ *  other (strict majority), so a short partial overlap of two mostly-different
+ *  stretches never inherits identity. */
 const DEFAULT_MIN_OVERLAP = 0.5;
-/** A sampled point is "on" the other line if within this many metres of it. */
-const DEFAULT_TOLERANCE_M = 15;
+/** A sampled point is "on" the other line if within this many metres of it.
+ *  Tight, because an OSM re-split reuses the SAME node coordinates, so genuinely
+ *  overlapping stretches are near-exact; a looser value would inflate a partial
+ *  overlap past the majority cutoff. */
+const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
 
@@ -49,19 +54,39 @@ export interface ReassignmentPlan {
   stale: string[];
 }
 
+/** Shortest-arc longitude delta in (-180, 180], so an antimeridian-crossing
+ *  edge (179.999° → -179.999°) is a short hop, not a ~40,000 km one. */
+function wrapLngDelta(d: number): number {
+  if (d > 180) return d - 360;
+  if (d < -180) return d + 360;
+  return d;
+}
+
+/** Normalize a longitude back into (-180, 180] after interpolation. */
+function normalizeLng(lng: number): number {
+  if (lng > 180) return lng - 360;
+  if (lng < -180) return lng + 360;
+  return lng;
+}
+
 /** Equirectangular metres between two points — exact enough at ~100 m spans. */
 function planarMeters(a: LatLng, b: LatLng): number {
   const meanLatRad = ((a.lat + b.lat) / 2) * (Math.PI / 180);
-  const dx = (b.lng - a.lng) * Math.cos(meanLatRad) * 111_320;
+  const dx = wrapLngDelta(b.lng - a.lng) * Math.cos(meanLatRad) * 111_320;
   const dy = (b.lat - a.lat) * 111_320;
   return Math.hypot(dx, dy);
 }
 
-/** Perpendicular distance in metres from `p` to segment `a`–`b`. */
+/** Perpendicular distance in metres from `p` to segment `a`–`b`. Longitudes are
+ *  projected relative to `a` (shortest arc) so points straddling ±180° stay
+ *  local rather than blowing up. */
 function pointToSegmentMeters(p: LatLng, a: LatLng, b: LatLng): number {
   const meanLatRad = ((a.lat + b.lat) / 2) * (Math.PI / 180);
   const mx = Math.cos(meanLatRad) * 111_320;
-  const project = (q: LatLng) => ({ x: q.lng * mx, y: q.lat * 111_320 });
+  const project = (q: LatLng) => ({
+    x: wrapLngDelta(q.lng - a.lng) * mx,
+    y: q.lat * 111_320,
+  });
   const P = project(p);
   const A = project(a);
   const B = project(b);
@@ -85,28 +110,45 @@ function pointToPolylineMeters(p: LatLng, poly: readonly LatLng[]): number {
   return min;
 }
 
-/** Sample points along `coords` at ~`sampleM` spacing (endpoints included). */
-function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
-  if (coords.length < 2) return coords.length === 1 ? [coords[0]!] : [];
-  const out: LatLng[] = [coords[0]!];
-  let carry = 0;
+/** The point at arc-length `atM` along `coords` (clamped to the ends). */
+function pointAtLength(coords: readonly LatLng[], atM: number): LatLng {
+  let acc = 0;
   for (let i = 1; i < coords.length; i++) {
     const a = coords[i - 1]!;
     const b = coords[i]!;
     const legLen = planarMeters(a, b);
     if (legLen === 0) continue;
-    let d = sampleM - carry;
-    while (d < legLen) {
-      const t = d / legLen;
-      out.push({
+    if (acc + legLen >= atM) {
+      const t = (atM - acc) / legLen;
+      const dLng = wrapLngDelta(b.lng - a.lng);
+      return {
         lat: a.lat + (b.lat - a.lat) * t,
-        lng: a.lng + (b.lng - a.lng) * t,
-      });
-      d += sampleM;
+        lng: normalizeLng(a.lng + dLng * t),
+      };
     }
-    carry = (carry + legLen) % sampleM;
+    acc += legLen;
   }
-  out.push(coords[coords.length - 1]!);
+  return coords[coords.length - 1]!;
+}
+
+/**
+ * Sample points EVENLY by arc-length along `coords` (endpoints included), one
+ * per ~`sampleM` of length. Even spacing (vs. per-leg stepping) means the
+ * fraction of samples that lie on another line approximates the fraction of
+ * *length* that overlaps — no double-counting near a leg boundary.
+ */
+function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
+  if (coords.length < 2) return coords.length === 1 ? [coords[0]!] : [];
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    total += planarMeters(coords[i - 1]!, coords[i]!);
+  }
+  if (total === 0) return [coords[0]!];
+  const steps = Math.max(2, Math.ceil(total / sampleM));
+  const out: LatLng[] = [];
+  for (let i = 0; i <= steps; i++) {
+    out.push(pointAtLength(coords, (total * i) / steps));
+  }
   return out;
 }
 
@@ -151,14 +193,17 @@ export function planReassignment(
   }> = [];
   for (let e = 0; e < existing.length; e++) {
     for (let n = 0; n < incoming.length; n++) {
-      const score = overlapFraction(
-        incoming[n]!,
-        existing[e]!.coords,
-        tolM,
-        sampleM,
+      // Bidirectional: a real carry-over is a 1:1 match, or one segment fully
+      // contained in the other (a split/merge). Taking the max of both
+      // directions accepts those (~1.0) while a short partial overlap of two
+      // longer, mostly-different stretches stays low both ways.
+      const score = Math.max(
+        overlapFraction(incoming[n]!, existing[e]!.coords, tolM, sampleM),
+        overlapFraction(existing[e]!.coords, incoming[n]!, tolM, sampleM),
       );
-      if (score >= minOverlap)
+      if (score > minOverlap) {
         pairs.push({ existingIdx: e, incomingIndex: n, score });
+      }
     }
   }
   // Highest overlap first; ties resolve deterministically by index so the plan

@@ -46,7 +46,18 @@ at most one incoming segment — produces three sets:
   its FKs/history); the upsert updates that row's OSM columns in place.
 - **insert** — no existing segment overlaps; a genuinely new stretch, fresh UUID.
 - **stale** — an existing row nothing overlaps; the road it represented is gone
-  from the snapshot.
+  from the snapshot. It is **tombstoned/deactivated, not hard-deleted** — the
+  crowdsourced history (`surface_readings`, `road_reviews`, `hazard_reports`,
+  `fun_zone_roads`) still FKs to it, and a delete would either fail on those
+  constraints or destroy the very history this policy exists to preserve.
+
+Overlap is measured **bidirectionally** — the max of "fraction of the incoming
+on the existing" and "fraction of the existing on the incoming". A 1:1 match or
+a contained stretch (either side of a split/merge) scores ~1.0, while a short
+partial overlap of two mostly-different stretches stays low both ways. A
+carry-over requires a **strict majority** (> 0.5), so a segment overlapping only
+a minority of an existing row (a mostly-new or extended stretch) is inserted
+fresh rather than silently inheriting another road's reviews.
 
 Because each existing id is claimed once:
 
@@ -62,11 +73,16 @@ The matching heart is a **pure, PostGIS-free core** (`split-merge.ts`,
 `planReassignment`) operating on coordinate arrays with a planar overlap metric —
 exact enough on ~100 m spans and unit-testable from synthetic geometries. Loading
 the candidate existing rows and applying the plan (carry-over as an
-id-preserving update, stale as a deactivate/delete) is a follow-up wiring slice.
+id-preserving update, stale as a tombstone/deactivation) is a follow-up wiring
+slice — a follow-up that must add the deactivation column/flag rather than hard-
+delete, since the history tables FK to `road_segments`.
 
-Defaults: **overlap threshold 0.5** (a majority of the incoming segment must lie
-on the existing one), **tolerance 15 m** (absorbs minor node differences between
-snapshots), **sample spacing 20 m**.
+Defaults: **overlap threshold 0.5** (a _strict_ majority — carry-over needs
+
+> 0.5), **tolerance 5 m** (tight, because an OSM re-split reuses the same node
+> coordinates so matching stretches are near-exact; a looser value would inflate a
+> partial overlap past the cutoff), **sample spacing 20 m** (samples placed evenly
+> by arc-length, so the on-line fraction approximates the overlapping _length_).
 
 ## Consequences
 

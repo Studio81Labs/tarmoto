@@ -72,6 +72,36 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['far']);
   });
 
+  it('does not carry identity on a sub-majority partial overlap', () => {
+    // Two 100 m segments sharing only ~40 m — a mostly-different/extended
+    // stretch. Neither direction reaches a strict majority, so no carry-over.
+    const existing: ExistingSegment[] = [{ id: 'e', coords: seg(0, M) }];
+    const incoming = [seg(0.6 * M, 1.6 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['e']);
+  });
+
+  it('handles an antimeridian-crossing segment without exploding', () => {
+    // ~100 m segment straddling ±180°. A raw lng delta would read it as a
+    // ~40,000 km edge and generate millions of samples; the wrapped delta keeps
+    // it short so an unchanged re-import still carries the id over.
+    const cross: LatLng[] = [
+      { lat: 0, lng: 179.9995 },
+      { lat: M, lng: -179.9995 },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'am', coords: cross }];
+
+    const plan = planReassignment(existing, [cross]);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('am');
+    expect(plan.stale).toEqual([]);
+  });
+
   it('is deterministic on unchanged data (stable plan across runs)', () => {
     const existing: ExistingSegment[] = [
       { id: 'a', coords: seg(0, M) },

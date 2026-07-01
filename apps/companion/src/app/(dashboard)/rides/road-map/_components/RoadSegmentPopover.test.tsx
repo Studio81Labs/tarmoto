@@ -31,7 +31,14 @@ describe("RoadSegmentPopover", () => {
 
   it("shows the personal stats immediately and the road name + distance after the fetch", async () => {
     getSegmentDetailMock.mockResolvedValueOnce({
-      data: { road_name: "Plzeň → Praha sweepers", length_m: 88900 },
+      // length_m is the aggregated logical road; the popover shows the selected
+      // segment's own length (segment_length_m), so the two differ here to prove
+      // the tile reads the per-segment field.
+      data: {
+        road_name: "Plzeň → Praha sweepers",
+        length_m: 500000,
+        segment_length_m: 88900,
+      },
     } as never);
 
     render(
