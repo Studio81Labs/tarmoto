@@ -9,3 +9,8 @@ pnpm-lock.yaml
 **/.next
 **/coverage
 apps/marketing/worker/
+
+# Generated OpenAPI client — emitted verbatim by openapi-typescript (pinned).
+# Prettier must not rewrite it, or the committed file diverges from raw
+# generator output and breaks the openapi-check freshness gate.
+packages/openapi-client/src/generated/
