@@ -328,6 +328,13 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     expect(detail.quality_breakdown.excellent).toBe(33);
     expect(detail.riders_per_month).toBeGreaterThanOrEqual(userId ? 1 : 0);
 
+    // The DTO id echoes the REQUESTED sub-segment (index 3, not the index-0
+    // representative), so the reviews panel keyed on it stays per-segment; the
+    // road is still aggregated to 600 m.
+    const detailMid = await roads.findById(wayIds[3]);
+    expect(detailMid.id).toBe(wayIds[3]);
+    expect(detailMid.length_m).toBeCloseTo(600, 5);
+
     // A crowd-sourced segment (null osm_way_id) is a group of one — unchanged.
     const crowdDetail = await roads.findById(crowdId);
     expect(crowdDetail.length_m).toBeCloseTo(300, 5);

@@ -114,7 +114,6 @@ export class RoadsService {
         FROM road_segments WHERE id = $1
       )
       SELECT
-        (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
         ARRAY_AGG(rs.id) AS way_segment_ids,
         MAX(rs.road_name) AS road_name,
         MAX(rs.road_number) AS road_number,
@@ -160,10 +159,8 @@ export class RoadsService {
       row.elevation_profile,
       geometry.length,
     );
-    // The community sub-queries run over every sub-segment of the way; the
-    // representative id centres the regional comparison.
+    // The community sub-queries run over every sub-segment of the way.
     const waySegmentIds = row.way_segment_ids as string[];
-    const repId = row.id as string;
 
     // Run all six independent queries in parallel. Share a single `asOf`
     // cutoff for the hazard count + hazard-rows queries so a report that
@@ -315,7 +312,7 @@ export class RoadsService {
           AND sr.recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', sr.recorded_at)
         ORDER BY month`,
-        [repId, waySegmentIds],
+        [segmentId, waySegmentIds],
       ),
     ]);
     /* eslint-enable @typescript-eslint/no-unsafe-assignment */
@@ -348,7 +345,11 @@ export class RoadsService {
       (riderRows as Array<{ count: number }>)[0]?.count ?? 0;
 
     return {
-      id: row.id as string,
+      // The DTO id is the REQUESTED segment id, not the aggregated
+      // representative — clients feed it straight into the standalone
+      // /roads/:id/reviews panel, which is keyed per-segment (see the review
+      // query above), so the two must reference the same segment (#809 review).
+      id: segmentId,
       road_name: (row.road_name as string) ?? null,
       road_number: (row.road_number as string) ?? null,
       quality_score: (row.quality_score as number) ?? null,
