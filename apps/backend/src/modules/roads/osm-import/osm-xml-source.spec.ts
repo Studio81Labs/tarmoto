@@ -72,6 +72,19 @@ describe('parseOsmXml', () => {
     await expect(collect('<osm><node id="1" <<>')).rejects.toBeDefined();
   });
 
+  it('fails fast on a parse error without first draining buffered primitives', async () => {
+    // The whole single-chunk document (two valid nodes + malformed tail) is
+    // parsed before the first pull, so both nodes and the error are buffered.
+    // The first `.next()` must reject rather than yield the buffered nodes.
+    const iterator = parseOsmXml(
+      streamOf(
+        '<osm><node id="1" lat="1" lon="1"/><node id="2" lat="2" lon="2"/><oops',
+      ),
+    );
+
+    await expect(iterator.next()).rejects.toBeDefined();
+  });
+
   it('skips a node missing id/coordinates and a way missing id', async () => {
     const primitives = await collect(`<osm>
       <node lat="1" lon="1"/>

@@ -119,19 +119,21 @@ export async function* parseOsmXml(
 
   try {
     while (true) {
-      if (queue.length > 0) {
-        const primitive = queue.shift() as OsmPrimitive;
-        maybeResume();
-        yield primitive;
-        continue;
-      }
+      // Check for a parse/read failure BEFORE draining the queue: on a doomed
+      // extract, fail fast instead of yielding (and upserting) up to HIGH_WATER
+      // more buffered primitives that will be discarded when the import throws.
       if (failure !== null) {
         // Rethrow the captured stream/parse error (sax + streams emit Errors).
         throw failure instanceof Error
           ? failure
           : new Error('OSM XML parsing failed');
       }
-
+      if (queue.length > 0) {
+        const primitive = queue.shift() as OsmPrimitive;
+        maybeResume();
+        yield primitive;
+        continue;
+      }
       if (ended) return;
       await new Promise<void>((resolve) => {
         wake = resolve;
