@@ -105,6 +105,10 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         );
       }
       await dataSource.query(
+        `DELETE FROM surface_readings WHERE road_segment_id = ANY($1::uuid[])`,
+        [segmentIds],
+      );
+      await dataSource.query(
         `DELETE FROM road_segments WHERE id = ANY($1::uuid[])`,
         [segmentIds],
       );
@@ -271,5 +275,61 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     expect(detail2.top_roads.some((r) => r.road_name === 'e2e794-stale')).toBe(
       false,
     );
+  }, 30_000);
+
+  it('road detail: aggregates the way + its community data across sub-segments (#809)', async () => {
+    // A 5×120 m imported way, contiguous (each sub-segment starts where the last
+    // ended) so its merged geometry is one continuous line.
+    const wayIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      wayIds.push(
+        await insertSegment({
+          name: 'e2e809-way',
+          osmWayId: '809000001',
+          segmentIndex: i,
+          lng: DOLO_LNG + 0.05,
+          lat: DOLO_LAT + 0.05 + i * 0.001, // 0.001 span → contiguous
+          lengthM: 120,
+        }),
+      );
+    }
+    const crowdId = await insertSegment({
+      name: 'e2e809-crowd',
+      lng: DOLO_LNG + 0.07,
+      lat: DOLO_LAT + 0.07,
+      lengthM: 300,
+    });
+
+    // Surface readings on TWO different sub-segments (indices 2 and 4) — not the
+    // requested index 0 — so the detail's community data must span the whole way.
+    const users: { id: string }[] = await dataSource.query(
+      `SELECT id FROM users LIMIT 1`,
+    );
+    const userId = users[0]?.id ?? null;
+    for (const [segIdx, cls] of [
+      [2, 'good'],
+      [2, 'good'],
+      [4, 'excellent'],
+    ] as [number, string][]) {
+      await dataSource.query(
+        `INSERT INTO surface_readings
+           (road_segment_id, user_id, iri_value, classification, recorded_at)
+         VALUES ($1, $2, 2.0, $3, NOW())`,
+        [wayIds[segIdx], userId, cls],
+      );
+    }
+
+    const detail = await roads.findById(wayIds[0]);
+    // Whole way, not the 120 m child.
+    expect(detail.length_m).toBeCloseTo(600, 5);
+    expect(detail.geometry.length).toBeGreaterThan(2);
+    // Breakdown counts the readings on indices 2 + 4 (2 good, 1 excellent → 67/33).
+    expect(detail.quality_breakdown.good).toBe(67);
+    expect(detail.quality_breakdown.excellent).toBe(33);
+    expect(detail.riders_per_month).toBeGreaterThanOrEqual(userId ? 1 : 0);
+
+    // A crowd-sourced segment (null osm_way_id) is a group of one — unchanged.
+    const crowdDetail = await roads.findById(crowdId);
+    expect(crowdDetail.length_m).toBeCloseTo(300, 5);
   }, 30_000);
 });

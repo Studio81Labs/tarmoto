@@ -96,17 +96,47 @@ export class RoadsService {
   }
 
   async findById(segmentId: string): Promise<RoadSegmentDetailDto> {
-    // Get base segment with geometry
+    // Resolve the requested id's whole OSM way (COALESCE(osm_way_id, id)) and
+    // aggregate it, so `/roads/:id` shows the same logical road as `/roads/best`
+    // rather than one ~100 m child (#809). Physical attributes (geometry, length,
+    // curviness, surface, elevation) aggregate over ALL the way's sub-segments;
+    // the quality signal (quality_score, confidence) over the quality-bearing
+    // ones, matching best-roads / clustering. A crowd-sourced row (null
+    // osm_way_id) is a group of one, so every value equals its raw column and the
+    // community sub-queries below run over the single id — behaviour unchanged.
+    // `way_segment_ids` is the exact id set the sub-queries expand to.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const segmentRows = await this.segmentRepo.query(
-      `SELECT
-        rs.id, rs.road_name, rs.road_number, rs.quality_score,
-        rs.curviness_score, rs.surface_type, rs.length_m,
-        rs.confidence, rs.reading_count, rs.last_updated,
-        rs.elevation_min, rs.elevation_max, rs.elevation_profile,
-        ST_AsGeoJSON(rs.geom)::json AS geojson
-      FROM road_segments rs
-      WHERE rs.id = $1`,
+      `WITH target AS (
+        SELECT COALESCE(osm_way_id::text, id::text) AS way_key
+        FROM road_segments WHERE id = $1
+      )
+      SELECT
+        (ARRAY_AGG(rs.id ORDER BY rs.segment_index NULLS FIRST, rs.id))[1] AS id,
+        ARRAY_AGG(rs.id) AS way_segment_ids,
+        MAX(rs.road_name) AS road_name,
+        MAX(rs.road_number) AS road_number,
+        SUM(rs.quality_score * rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL)
+          / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL), 0) AS quality_score,
+        SUM(rs.curviness_score * rs.length_m) / NULLIF(SUM(rs.length_m), 0) AS curviness_score,
+        COALESCE(
+          SUM(rs.confidence * rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL)
+            / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.quality_score IS NOT NULL), 0),
+          0
+        ) AS confidence,
+        (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+        SUM(rs.length_m) AS length_m,
+        SUM(rs.reading_count)::int AS reading_count,
+        MAX(rs.last_updated) AS last_updated,
+        MIN(rs.elevation_min) AS elevation_min,
+        MAX(rs.elevation_max) AS elevation_max,
+        CASE WHEN COUNT(*) = 1 THEN MIN(rs.elevation_profile) END AS elevation_profile,
+        ST_AsGeoJSON(
+          ST_LineMerge(ST_Collect(rs.geom ORDER BY rs.segment_index NULLS FIRST, rs.id))
+        )::json AS geojson
+      FROM road_segments rs, target
+      WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = target.way_key
+      GROUP BY target.way_key`,
       [segmentId],
     );
 
@@ -119,12 +149,19 @@ export class RoadsService {
     if (!row) {
       throw new NotFoundException('Road segment not found');
     }
-    const geojson = row.geojson as { coordinates: number[][] };
-    const geometry = lineStringToLatLng(geojson.coordinates);
+    const geojson = row.geojson as {
+      type: string;
+      coordinates: number[][] | number[][][];
+    };
+    const geometry = lineStringToLatLng(geoJsonLineCoordinates(geojson));
     const elevationProfile = normalizeElevationProfile(
       row.elevation_profile,
       geometry.length,
     );
+    // The community sub-queries run over every sub-segment of the way; the
+    // representative id centres the regional comparison.
+    const waySegmentIds = row.way_segment_ids as string[];
+    const repId = row.id as string;
 
     // Run all six independent queries in parallel. Share a single `asOf`
     // cutoff for the hazard count + hazard-rows queries so a report that
@@ -145,18 +182,18 @@ export class RoadsService {
       this.segmentRepo.query(
         `SELECT classification, COUNT(*)::int AS count
         FROM surface_readings
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND recorded_at > NOW() - INTERVAL '6 months'
         GROUP BY classification`,
-        [segmentId],
+        [waySegmentIds],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(*)::int AS count
         FROM hazard_reports
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND is_active = true AND expires_at > $2
           AND moderation_status = 'visible'`,
-        [segmentId, asOf],
+        [waySegmentIds, asOf],
       ),
       // Top-N most-recent active hazards with reporter + road name. Joining
       // on road_segments here so the response shape matches the standalone
@@ -183,19 +220,19 @@ export class RoadsService {
         LEFT JOIN users u ON u.id = h.user_id
         LEFT JOIN privacy_preferences pp ON pp.user_id = h.user_id
         LEFT JOIN road_segments rs ON rs.id = h.road_segment_id
-        WHERE h.road_segment_id = $1
+        WHERE h.road_segment_id = ANY($1)
           AND h.is_active = true AND h.expires_at > $2
           AND h.moderation_status = 'visible'
         ORDER BY h.created_at DESC
         LIMIT $3`,
-        [segmentId, asOf, ACTIVE_HAZARD_LIMIT],
+        [waySegmentIds, asOf, ACTIVE_HAZARD_LIMIT],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
         FROM road_reviews
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND moderation_status = 'visible'`,
-        [segmentId],
+        [waySegmentIds],
       ),
       this.segmentRepo.query(
         // Left-join the helpful-vote counts via a lateral subquery so a
@@ -232,18 +269,18 @@ export class RoadsService {
           FROM road_review_votes v
           WHERE v.road_review_id = rr.id
         ) vc ON true
-        WHERE rr.road_segment_id = $1
+        WHERE rr.road_segment_id = ANY($1)
           AND rr.moderation_status = 'visible'
         ORDER BY rr.created_at DESC
         LIMIT $2`,
-        [segmentId, RECENT_REVIEW_LIMIT],
+        [waySegmentIds, RECENT_REVIEW_LIMIT],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(DISTINCT user_id)::int AS count
         FROM surface_readings
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND recorded_at > NOW() - INTERVAL '30 days'`,
-        [segmentId],
+        [waySegmentIds],
       ),
       // US-45: quality trend — monthly average IRI for the last 2 years.
       this.segmentRepo.query(
@@ -251,11 +288,11 @@ export class RoadsService {
           TO_CHAR(DATE_TRUNC('month', recorded_at), 'YYYY-MM') AS month,
           ROUND(AVG(iri_value)::numeric, 2) AS score
         FROM surface_readings
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', recorded_at)
         ORDER BY month`,
-        [segmentId],
+        [waySegmentIds],
       ),
       // US-45: regional comparison trend — average across segments within 5 km.
       this.segmentRepo.query(
@@ -266,11 +303,11 @@ export class RoadsService {
         INNER JOIN road_segments rs2 ON rs2.id = sr.road_segment_id
         INNER JOIN road_segments rs ON rs.id = $1
         WHERE ST_DWithin(rs.geom, rs2.geom, 5000)
-          AND sr.road_segment_id != $1
+          AND sr.road_segment_id <> ALL($2)
           AND sr.recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', sr.recorded_at)
         ORDER BY month`,
-        [segmentId],
+        [repId, waySegmentIds],
       ),
     ]);
     /* eslint-enable @typescript-eslint/no-unsafe-assignment */
