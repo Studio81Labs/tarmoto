@@ -68,6 +68,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly napClosurePoll: Queue,
     @InjectQueue(QUEUE_NAMES.POI_IMPORT)
     private readonly poiImport: Queue,
+    @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
+    private readonly osmImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -165,6 +167,12 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.POI_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300,
         description: 'weekly offline POI import → pois (#745)',
+      },
+      {
+        queue: this.osmImport,
+        name: JOB_NAMES.OSM_IMPORT_RUN,
+        pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
+        description: 'weekly OSM road-graph import → road_segments (#781)',
       },
     ];
   }

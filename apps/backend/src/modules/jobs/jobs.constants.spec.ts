@@ -30,8 +30,8 @@ describe('jobs.constants', () => {
     // Issue #276 shipped ten queues; #496 added two model-eval queues.
     // Drift here means a producer or processor will try to enqueue
     // into a queue that the rest of the system never registered.
-    // #743 added the NAP closure poll queue (13th).
-    expect(ALL_QUEUE_NAMES).toHaveLength(14); // #745 added the POI import queue
+    // #743 added the NAP closure poll queue (13th); #745 the POI import (14th).
+    expect(ALL_QUEUE_NAMES).toHaveLength(15); // #781 added the OSM import queue
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {
