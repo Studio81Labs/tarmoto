@@ -872,6 +872,7 @@ export interface RoadSegmentDetailResponse {
   curviness_score: number;
   surface_type: string;
   length_m: number;
+  segment_length_m: number;
   confidence: number;
   reading_count: number;
   last_updated: string;
