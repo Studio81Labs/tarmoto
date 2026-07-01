@@ -333,7 +333,8 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     // road is still aggregated to 600 m.
     const detailMid = await roads.findById(wayIds[3]);
     expect(detailMid.id).toBe(wayIds[3]);
-    expect(detailMid.length_m).toBeCloseTo(600, 5);
+    expect(detailMid.length_m).toBeCloseTo(600, 5); // whole road
+    expect(detailMid.segment_length_m).toBeCloseTo(120, 5); // just this sub-segment
 
     // A crowd-sourced segment (null osm_way_id) is a group of one — unchanged.
     const crowdDetail = await roads.findById(crowdId);

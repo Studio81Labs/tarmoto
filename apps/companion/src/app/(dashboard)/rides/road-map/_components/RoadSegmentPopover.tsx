@@ -73,9 +73,12 @@ export function RoadSegmentPopover({
     : settled
       ? t("Road segment")
       : t("Loading…");
+  // Per-segment length (not the aggregated logical-road `length_m`) — this tile
+  // sits with the per-`RiddenSegment` ride stats, so it must describe the
+  // selected ~100 m segment, not the whole OSM way (#809).
   const distance =
-    detail?.length_m != null
-      ? formatDistanceFromMeters(detail.length_m, unitSystem)
+    detail?.segment_length_m != null
+      ? formatDistanceFromMeters(detail.segment_length_m, unitSystem)
       : settled
         ? "—"
         : "…";

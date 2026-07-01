@@ -110,7 +110,7 @@ export class RoadsService {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const segmentRows = await this.segmentRepo.query(
       `WITH target AS (
-        SELECT COALESCE(osm_way_id::text, id::text) AS way_key
+        SELECT id AS requested_id, COALESCE(osm_way_id::text, id::text) AS way_key
         FROM road_segments WHERE id = $1
       )
       SELECT
@@ -127,6 +127,8 @@ export class RoadsService {
         ) AS confidence,
         (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
         SUM(rs.length_m) AS length_m,
+        -- The specific requested segment's own length, for per-segment consumers.
+        MAX(rs.length_m) FILTER (WHERE rs.id = target.requested_id) AS segment_length_m,
         SUM(rs.reading_count)::int AS reading_count,
         MAX(rs.last_updated) AS last_updated,
         MIN(rs.elevation_min) AS elevation_min,
@@ -137,7 +139,7 @@ export class RoadsService {
         )::json AS geojson
       FROM road_segments rs, target
       WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = target.way_key
-      GROUP BY target.way_key`,
+      GROUP BY target.way_key, target.requested_id`,
       [segmentId],
     );
 
@@ -356,6 +358,7 @@ export class RoadsService {
       curviness_score: row.curviness_score as number,
       surface_type: row.surface_type as SurfaceType,
       length_m: row.length_m as number,
+      segment_length_m: row.segment_length_m as number,
       confidence: row.confidence as number,
       reading_count: row.reading_count as number,
       last_updated: (row.last_updated as Date).toISOString(),

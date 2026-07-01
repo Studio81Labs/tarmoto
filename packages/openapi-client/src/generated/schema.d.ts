@@ -3707,6 +3707,8 @@ export interface components {
             /** @description Distance from query point in meters */
             distance_m?: number;
             geometry: components["schemas"]["LatLngResponseDto"][];
+            /** @description Length in meters of the SPECIFIC requested segment. The inherited `length_m` is the whole logical road (an aggregated OSM way spans many ~100 m children); this is the single requested sub-segment, for per-segment consumers such as the ride-map popover. */
+            segment_length_m: number;
             elevation_min: number | null;
             elevation_max: number | null;
             /** @description Per-vertex elevation in meters, aligned with `geometry`. Null when no elevation samples have been ingested yet. */

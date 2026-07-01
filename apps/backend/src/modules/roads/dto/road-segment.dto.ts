@@ -64,6 +64,15 @@ export class RoadSegmentDetailDto extends RoadSegmentDto {
   @ApiProperty({ type: [LatLngResponseDto] })
   geometry!: LatLngResponseDto[];
 
+  @ApiProperty({
+    description:
+      'Length in meters of the SPECIFIC requested segment. The inherited ' +
+      '`length_m` is the whole logical road (an aggregated OSM way spans many ' +
+      '~100 m children); this is the single requested sub-segment, for ' +
+      'per-segment consumers such as the ride-map popover.',
+  })
+  segment_length_m!: number;
+
   @ApiProperty({ nullable: true })
   elevation_min!: number | null;
 

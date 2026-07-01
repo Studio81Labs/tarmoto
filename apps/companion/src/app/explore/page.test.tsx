@@ -148,6 +148,7 @@ function segmentDetail(overrides: Record<string, unknown> = {}) {
     curviness_score: 82,
     surface_type: "asphalt",
     length_m: 1240,
+    segment_length_m: 1240,
     confidence: 91,
     reading_count: 37,
     last_updated: "2026-05-10T12:00:00.000Z",
