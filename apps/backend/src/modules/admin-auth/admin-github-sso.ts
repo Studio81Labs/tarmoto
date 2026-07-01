@@ -15,7 +15,7 @@ export function buildGithubAuthorizeUrl(
     state,
     allow_signup: 'false',
   });
-  const redirectUri = config.get<string>('TARMOTO_ADMIN_SSO_REDIRECT_URI');
+  const redirectUri = config.get<string>('TARMOTO_ADMIN_GITHUB_CALLBACK_URL');
   if (redirectUri) {
     params.set('redirect_uri', redirectUri);
   }
