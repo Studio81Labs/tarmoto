@@ -1,4 +1,4 @@
-name: Deploy PoC Sensor
+name: PoC Deploy
 
 on:
   push:
