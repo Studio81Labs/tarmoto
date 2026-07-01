@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
@@ -6,6 +9,7 @@ import {
   OsmImportService,
   ROAD_SEGMENT_ON_CONFLICT,
 } from './osm-import.service.js';
+import { osmImportConfig } from './osm-import.config.js';
 import type { OsmWay, RoadSegmentRow } from './segment-rows.js';
 
 /** A single ~100 m drivable way (two nodes → one segment). */
@@ -118,12 +122,14 @@ describe('OsmImportService', () => {
     execute: jest.Mock;
   };
   let createQueryBuilder: jest.Mock;
+  let osmConfig: { enabled: boolean; filePath: string | null };
 
   /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
   const valuesOnCall = (n: number): RoadSegmentRow[] =>
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
   beforeEach(async () => {
+    osmConfig = { enabled: false, filePath: null };
     qb = {
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -138,6 +144,10 @@ describe('OsmImportService', () => {
         {
           provide: getRepositoryToken(RoadSegment),
           useValue: { createQueryBuilder } as Partial<Repository<RoadSegment>>,
+        },
+        {
+          provide: osmImportConfig.KEY,
+          useValue: osmConfig,
         },
       ],
     }).compile();
@@ -212,5 +222,40 @@ describe('OsmImportService', () => {
 
     expect(result.upserted).toBe(2);
     expect(qb.execute).toHaveBeenCalledTimes(1);
+  });
+
+  describe('importFromConfiguredFile', () => {
+    it('reflects the enabled flag', () => {
+      expect(service.enabled).toBe(false);
+      osmConfig.enabled = true;
+      expect(service.enabled).toBe(true);
+    });
+
+    it('throws when enabled without a configured file path', async () => {
+      osmConfig.filePath = null;
+      await expect(service.importFromConfiguredFile()).rejects.toThrow(
+        /TARMOTO_OSM_IMPORT_FILE/,
+      );
+    });
+
+    it('reads + imports a configured .osm file end-to-end', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'osm-import-'));
+      const file = join(dir, 'region.osm');
+      await writeFile(
+        file,
+        `<osm>
+           <node id="1" lat="0" lon="0"/>
+           <node id="2" lat="0.0009" lon="0"/>
+           <way id="100"><nd ref="1"/><nd ref="2"/><tag k="highway" v="residential"/></way>
+         </osm>`,
+      );
+      osmConfig.filePath = file;
+
+      const result = await service.importFromConfiguredFile();
+
+      expect(result.upserted).toBe(1); // the way → one ~100 m segment
+      expect(qb.onConflict).toHaveBeenCalledWith(ROAD_SEGMENT_ON_CONFLICT);
+      await rm(dir, { recursive: true, force: true });
+    });
   });
 });
