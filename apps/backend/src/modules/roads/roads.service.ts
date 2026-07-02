@@ -545,8 +545,12 @@ export class RoadsService {
         fzr.contribution_score
       FROM fun_zone_roads fzr
       INNER JOIN fun_zones fz ON fz.id = fzr.fun_zone_id
+      -- Keep the membership even if the stored representative sub-segment is
+      -- tombstoned: the lateral re-aggregates the way from its LIVE siblings
+      -- (rs.deactivated_at IS NULL) and HAVING COUNT(*) > 0 drops a way only when
+      -- ALL its in-zone assessed segments are dead. Filtering the representative
+      -- here would instead hide a still-live road until the next reclustering.
       INNER JOIN road_segments member ON member.id = fzr.road_segment_id
-        AND member.deactivated_at IS NULL
       INNER JOIN LATERAL (
         -- The stored member is one representative segment of an aggregated OSM
         -- way (#794); re-aggregate the whole way so the panel shows the real

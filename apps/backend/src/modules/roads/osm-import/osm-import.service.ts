@@ -374,6 +374,19 @@ export class OsmImportService {
           )
           .map((e) => e.id);
 
+    // The ON CONFLICT arbiter is GLOBAL, but `existingByKey` is bbox-scoped: a
+    // claimed key can already be owned by a LIVE row OUTSIDE this tile (a segment
+    // split/moved across the boundary). That owner never entered the reuse check,
+    // so the upsert would silently update it in place and move its history onto the
+    // new geometry. `newIncoming` keys are, by definition, absent from the bbox set
+    // — so any live owner of one is out-of-bbox. Load and vacate them (null
+    // identity; the row stays live for its own tile's run) so the upsert inserts
+    // fresh instead.
+    const outOfBboxOwnerIds = await this.loadOutOfBboxKeyOwners(
+      newIncoming,
+      new Set(existing.map((e) => e.id)),
+    );
+
     await this.repo.manager.transaction(async (tx) => {
       // Apply order matters — a split/merge can move an `(osm_way_id,
       // segment_index)` key from one live row to another, so free every key that's
@@ -388,9 +401,12 @@ export class OsmImportService {
         );
       }
       // 2. Free the OLD identity of every row being re-keyed — carry-over targets
-      //    (a rotation could swap keys between live rows) and, without a region,
-      //    rows whose key was reused by a different road — so step 3 can't collide.
-      const toFree = [...carryTargetIds, ...reusedKeyIds];
+      //    (a rotation could swap keys between live rows), out-of-bbox owners of a
+      //    claimed key, and (without a region) rows whose key was reused by a
+      //    different road — so step 3 and the upsert can't collide.
+      const toFree = [
+        ...new Set([...carryTargetIds, ...reusedKeyIds, ...outOfBboxOwnerIds]),
+      ];
       if (toFree.length > 0) {
         await tx.query(
           `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
@@ -431,6 +447,28 @@ export class OsmImportService {
       carriedOver: plan.carryOver.length,
       deactivated: staleIds.length,
     };
+  }
+
+  /** Live rows OUTSIDE the loaded bbox that own one of the incoming `newIncoming`
+   *  keys — the global-uniqueness owners the bbox load can't see. Their identity is
+   *  vacated so the upsert doesn't silently overwrite an out-of-tile road. */
+  private async loadOutOfBboxKeyOwners(
+    newIncoming: RoadSegmentRow[],
+    bboxIds: Set<string>,
+  ): Promise<string[]> {
+    if (newIncoming.length === 0) return [];
+    const rows = await this.repo.query(
+      `SELECT rs.id
+       FROM ${TABLE} rs
+       JOIN unnest($1::bigint[], $2::int[]) AS k(w, i)
+         ON rs.osm_way_id = k.w AND rs.segment_index = k.i
+       WHERE rs.deactivated_at IS NULL`,
+      [
+        newIncoming.map((r) => r.osm_way_id),
+        newIncoming.map((r) => r.segment_index),
+      ],
+    );
+    return rows.map((r) => r.id).filter((id) => !bboxIds.has(id));
   }
 
   /** Same road as far as the reassignment matcher is concerned — identical or a

@@ -389,6 +389,29 @@ describe('OsmImportService', () => {
       );
     });
 
+    it('vacates an out-of-bbox live owner of a claimed key before upserting', async () => {
+      // The global ON CONFLICT arbiter can match a live row OUTSIDE this tile that
+      // owns the incoming key (a segment split across the boundary). It isn't in the
+      // bbox load, so the upsert would overwrite it in place. It must be vacated.
+      osmConfig.bbox = [-1, -1, 1, 1];
+      // call 1: loadExistingInBbox → none in-bbox; call 2: loadOutOfBboxKeyOwners
+      // → an out-of-tile live row owns the incoming key.
+      loadExisting
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'out-of-tile' }]);
+
+      const result = await service.importFrom([straightWay(1)]);
+
+      expect(result).toMatchObject({ upserted: 1, carriedOver: 0 });
+      const free = (managerQuery.mock.calls as Array<[string, unknown[]]>).find(
+        ([sql]) => sql.includes('osm_way_id = NULL, segment_index = NULL'),
+      );
+      expect(free).toBeDefined();
+      expect(free![1]).toEqual([['out-of-tile']]);
+      // The incoming inserts fresh (its own key is now free).
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+    });
+
     it('tombstones every existing row when a configured region imports empty', async () => {
       // A configured region with zero drivable rows is authoritative: the region
       // was cleared, so its existing rows must be deactivated (not left live).
