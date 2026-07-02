@@ -66,7 +66,11 @@ one spot, collapsing the swept span (and thus the min) to ~0 regardless of how
 short the segments are. The contiguity requirement also defeats a chord bridging
 the mouth of a hairpin whose two ends fall within tolerance: the matched feet would
 _jump_ from one arc end to the other, and that jump is excluded rather than counted
-as the whole hairpin's length.
+as the whole hairpin's length. The samples are taken **finely** (well under the
+tolerance, independent of the coarse coverage spacing) so boundary intervals are
+counted and a short segment between coarse ticks is not missed, and the measure is
+computed **in both directions and maxed** so a short segment contained in a long
+one is captured from its own dense samples.
 
 **Eligibility.** A carry-over requires that real overlap to exceed a **strict
 majority of the shorter segment** (> 0.5). Using the shorter length as the

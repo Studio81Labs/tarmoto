@@ -193,17 +193,27 @@ function footOnPolyline(
  * whose two ends are within tolerance would make the foot JUMP from one arc end to
  * the other — a min-to-max span would count that whole gap as overlap, so instead
  * such jumps are excluded and the swept span (and thus the min) collapses to ~0.
+ *
+ * `a` is sampled FINELY (independent of the coarse coverage spacing) so that
+ * quantization stays well under the tolerance: the boundary intervals of a real
+ * overlap are captured, and a short `b` between coarse ticks is not missed. The
+ * measure is one-directional (it samples `a`); callers max it with the reverse
+ * direction so a short segment contained in a long one is measured from its own
+ * dense samples.
  */
 function realOverlapMeters(
   a: readonly LatLng[],
   b: readonly LatLng[],
   tolM: number,
-  sampleM: number,
 ): number {
   if (a.length < 2 || b.length < 2) return 0;
-  const samples = sampleAlong(a, sampleM);
-  if (samples.length < 2) return 0;
   const aLen = polylineMeters(a);
+  if (aLen === 0) return 0;
+  // ~128 samples along `a`, but no coarser than the tolerance and no finer than
+  // 0.5 m, so quantization error is a small fraction of the tolerance.
+  const step = Math.min(tolM, Math.max(0.5, aLen / 128));
+  const samples = sampleAlong(a, step);
+  if (samples.length < 2) return 0;
   const stepArcA = aLen / (samples.length - 1);
   // A foot step longer than one sample spacing plus tolerance is a jump between
   // disconnected places on `b`, not travel along it — don't count it as overlap.
@@ -216,15 +226,17 @@ function realOverlapMeters(
     if (foot.dist <= tolM) {
       matched++;
       if (prevArcPos !== null) {
-        const step = Math.abs(foot.arcPos - prevArcPos);
-        if (step <= maxContiguousStep) swept += step;
+        const gap = Math.abs(foot.arcPos - prevArcPos);
+        if (gap <= maxContiguousStep) swept += gap;
       }
       prevArcPos = foot.arcPos;
     } else {
       prevArcPos = null; // a gap in coverage breaks contiguity
     }
   }
-  const coveredArcA = (matched / samples.length) * aLen;
+  // Each matched sample stands for one step of `a`'s length, which includes the
+  // partial boundary intervals at each end of the matched run.
+  const coveredArcA = matched * stepArcA;
   return Math.min(coveredArcA, swept);
 }
 
@@ -349,12 +361,12 @@ export function planReassignment(
       // for a touch, crossing, or abutting stub — see `realOverlapMeters`). This is
       // the SOLE overlap signal: it does not inflate for two segments that merely
       // lie within tolerance of each other, so it needs no separate endpoint-touch
-      // length floor or near-1:1 bypass.
-      const overlap = realOverlapMeters(
-        incoming[n]!,
-        existing[e]!.coords,
-        tolM,
-        sampleM,
+      // length floor or near-1:1 bypass. Measured in BOTH directions and maxed, so
+      // a short segment contained in a long one is captured from its own dense
+      // samples rather than missed between the long side's ticks.
+      const overlap = Math.max(
+        realOverlapMeters(incoming[n]!, existing[e]!.coords, tolM),
+        realOverlapMeters(existing[e]!.coords, incoming[n]!, tolM),
       );
       // A carry-over requires the real overlap to be a STRICT MAJORITY of the
       // SHORTER segment. Using the shorter length as the denominator lets a

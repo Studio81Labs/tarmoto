@@ -108,6 +108,40 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['A']);
   });
 
+  it('carries a short existing segment contained in a long merged incoming way', () => {
+    // An unchanged ~8 m existing way fully inside a 100 m incoming merged way,
+    // sitting between the coarse sample ticks. Sampling only the long incoming
+    // could miss it (0 samples land inside); measuring the overlap from the short
+    // side's own dense samples keeps its id.
+    const existing: ExistingSegment[] = [
+      { id: 'small', coords: seg(0.46 * M, 0.54 * M) }, // ~8 m mid-way
+    ];
+    const incoming = [seg(0, M)]; // ~100 m
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'small', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('carries identity when an incoming row is shifted but still shares a majority', () => {
+    // A 100 m existing row and an incoming row shifted ~40 m along it, so they
+    // share ~60 m — a majority of each. Boundary intervals must be counted or the
+    // swept length undercounts and the majority gate wrongly rejects the match.
+    const existing: ExistingSegment[] = [{ id: 'shift', coords: seg(0, M) }];
+    const incoming = [seg(0.4 * M, 1.4 * M)]; // shares 0.4M..1.0M ≈ 60 m
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('shift');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(0);
+    expect(plan.stale).toEqual([]);
+  });
+
   it('2→1 merge: one id inherits the merged road, the other goes stale', () => {
     // Two existing 100 m segments merged into one 200 m way.
     const existing: ExistingSegment[] = [
