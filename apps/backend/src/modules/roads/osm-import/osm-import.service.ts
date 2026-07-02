@@ -145,6 +145,46 @@ const CARRY_OVER_UPDATE = `
   WHERE id = $9
 `;
 
+/**
+ * Does the line segment (x0,y0)-(x1,y1) intersect the axis-aligned rectangle
+ * [xmin,ymin,xmax,ymax]? Liang–Barsky parametric clip: the segment enters the rect
+ * iff its clipped [t0,t1] range is non-empty. Matches PostGIS `ST_Intersects` for a
+ * linestring vs an envelope, so the incoming-row filter agrees exactly with the
+ * existing-row load (a corner-clipping segment is kept/dropped the same way).
+ */
+function segmentIntersectsRect(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  xmin: number,
+  ymin: number,
+  xmax: number,
+  ymax: number,
+): boolean {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0];
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i]! < 0) return false; // parallel and outside this edge
+    } else {
+      const t = q[i]! / p[i]!;
+      if (p[i]! < 0) {
+        if (t > t1) return false;
+        if (t > t0) t0 = t;
+      } else {
+        if (t < t0) return false;
+        if (t < t1) t1 = t;
+      }
+    }
+  }
+  return t0 <= t1;
+}
+
 export interface OsmImportResult {
   /** Rows inserted or updated in place through the conflict upsert. */
   upserted: number;
@@ -243,7 +283,7 @@ export class OsmImportService {
     // idempotent on identical geometry.
     const region = this.config.bbox;
     const incoming = region
-      ? rawIncoming.filter((r) => this.overlapsBbox(r, region))
+      ? rawIncoming.filter((r) => this.intersectsRegion(r, region))
       : rawIncoming;
 
     if (incoming.length === 0) {
@@ -341,31 +381,37 @@ export class OsmImportService {
     return `${osmWayId}:${segmentIndex}`;
   }
 
-  /** Whether the segment's coordinate bounding box overlaps `[minLng, minLat,
-   *  maxLng, maxLat]`. Used to drop out-of-region rows a complete-way extract
-   *  emits past the tile boundary. Over-keeping a straddling ~100 m segment is
-   *  harmless (its upsert is idempotent); only a fully-outside segment — whose
-   *  tiny bbox can't reach the region — is dropped. */
-  private overlapsBbox(
+  /** Whether the segment's geometry actually intersects the rectangle `[minLng,
+   *  minLat, maxLng, maxLat]` — the SAME exact test `loadExistingInBbox` runs in
+   *  Postgres (`ST_Intersects`), so a segment clipping a tile corner is judged
+   *  identically on both sides. A bbox-overlap check would over-keep such a
+   *  segment on the incoming side only, leaking out-of-region rows. Each leg is
+   *  clipped against the rectangle (Liang–Barsky); any leg that survives means the
+   *  polyline enters it. */
+  private intersectsRegion(
     row: RoadSegmentRow,
     [minLng, minLat, maxLng, maxLat]: [number, number, number, number],
   ): boolean {
-    let sMinLng = Infinity;
-    let sMinLat = Infinity;
-    let sMaxLng = -Infinity;
-    let sMaxLat = -Infinity;
-    for (const [lng, lat] of row.geom.coordinates) {
-      if (lng! < sMinLng) sMinLng = lng!;
-      if (lng! > sMaxLng) sMaxLng = lng!;
-      if (lat! < sMinLat) sMinLat = lat!;
-      if (lat! > sMaxLat) sMaxLat = lat!;
+    const coords = row.geom.coordinates;
+    for (let i = 1; i < coords.length; i++) {
+      const [x0, y0] = coords[i - 1]!;
+      const [x1, y1] = coords[i]!;
+      if (
+        segmentIntersectsRect(
+          x0!,
+          y0!,
+          x1!,
+          y1!,
+          minLng,
+          minLat,
+          maxLng,
+          maxLat,
+        )
+      ) {
+        return true;
+      }
     }
-    return (
-      sMaxLng >= minLng &&
-      sMinLng <= maxLng &&
-      sMaxLat >= minLat &&
-      sMinLat <= maxLat
-    );
+    return false;
   }
 
   private toLatLngs(line: GeoJSON.LineString): LatLng[] {

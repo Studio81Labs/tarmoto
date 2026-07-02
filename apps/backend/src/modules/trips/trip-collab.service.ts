@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, In, IsNull, Repository } from 'typeorm';
 import { pointToLatLng } from '@tarmoto/shared';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
@@ -130,8 +130,11 @@ export class TripCollabService {
       // a typo'd id surfaces as a 400 instead of a 500 from the DB's
       // foreign-key constraint bubbling up as a \`23503\`. Existence-only
       // check — any road segment is globally referenceable.
+      // Requires the segment to be LIVE (deactivated_at IS NULL, #835): a
+      // tombstoned road that /roads/:id, tiles, and nearby discovery all hide
+      // must not be a suggestion target.
       const segment = await this.roadSegmentRepo.findOne({
-        where: { id: dto.road_segment_id },
+        where: { id: dto.road_segment_id, deactivated_at: IsNull() },
         select: { id: true },
       });
       if (!segment)

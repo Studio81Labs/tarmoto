@@ -137,9 +137,15 @@ export class ExplorationService {
       .createQueryBuilder('rs')
       .select('DISTINCT rs.road_segment_id', 'id')
       .innerJoin('rs.ride', 'r')
+      // Live segments only (#835): a road tombstoned after being ridden must not
+      // ship its dead id to the map highlight layer / share snapshots.
+      .innerJoin(
+        'road_segments',
+        'seg',
+        'seg.id = rs.road_segment_id AND seg.deactivated_at IS NULL',
+      )
       .where('r.user_id = :userId', { userId })
       .andWhere("r.status = 'completed'")
-      .andWhere('rs.road_segment_id IS NOT NULL')
       .getRawMany<{ id: string }>();
 
     return {
@@ -195,9 +201,13 @@ export class ExplorationService {
           .distinctOn(['rs2.road_segment_id'])
           .from('ride_segments', 'rs2')
           .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
+          .innerJoin(
+            'road_segments',
+            'seg2',
+            'seg2.id = rs2.road_segment_id AND seg2.deactivated_at IS NULL',
+          )
           .where('r2.user_id = :userId', { userId })
           .andWhere("r2.status = 'completed'")
-          .andWhere('rs2.road_segment_id IS NOT NULL')
           .orderBy('rs2.road_segment_id')
           .addOrderBy(lastTouchExpr, 'DESC', 'NULLS LAST')
           .addOrderBy('rs2.id', 'DESC');
@@ -210,9 +220,13 @@ export class ExplorationService {
             .addSelect('COUNT(DISTINCT rs3.ride_id)', 'ride_count')
             .from('ride_segments', 'rs3')
             .innerJoin('rides', 'r3', 'r3.id = rs3.ride_id')
+            .innerJoin(
+              'road_segments',
+              'seg3',
+              'seg3.id = rs3.road_segment_id AND seg3.deactivated_at IS NULL',
+            )
             .where('r3.user_id = :userId', { userId })
             .andWhere("r3.status = 'completed'")
-            .andWhere('rs3.road_segment_id IS NOT NULL')
             .groupBy('rs3.road_segment_id'),
         'counts',
         'counts.segment_id = latest.segment_id',
