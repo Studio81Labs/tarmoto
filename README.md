@@ -1,3 +1,5 @@
+![Tarmoto — Know the road before you ride it.](docs/assets/github-banner.png)
+
 # Tarmoto
 
 > **Know the road before you ride it.**
@@ -28,7 +30,7 @@ read it directly on GitHub.
 ## Prerequisites
 
 - Node.js >= 24 (see `.nvmrc`)
-- pnpm >= 10
+- pnpm >= 11
 - Docker & Docker Compose
 - Xcode (iOS) or Android Studio (Android) for mobile development
 
@@ -202,6 +204,22 @@ Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook
 5. Builds `@tarmoto/shared` and the backend (TypeORM needs the compiled data-source)
 6. Runs TypeORM migrations
 7. Prints the next local commands
+
+## Workspaces
+
+- `@tarmoto/backend` — NestJS API (serves mobile + web)
+- `@tarmoto/mobile` — Bare React Native app (iOS & Android)
+- `@tarmoto/companion` — Next.js web companion
+- `@tarmoto/admin` — admin console (Vite SPA + Cloudflare Worker proxy)
+- `@tarmoto/web` — marketing site (Astro) + waitlist worker
+- `@tarmoto/poc-sensor` — road-quality sensor PoC
+- `@tarmoto/ui` — shared UI components
+- `@tarmoto/ui-preview` — local preview harness for `@tarmoto/ui`
+- `@tarmoto/shared` — shared types, constants, DTOs
+- `@tarmoto/openapi` — OpenAPI spec emission from the backend
+- `@tarmoto/openapi-client` — generated OpenAPI TypeScript client
+
+(`docs/design/brand/` is static brand reference — logos, palette, typography — not a workspace.)
 
 ## Contributing
 
