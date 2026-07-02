@@ -45,9 +45,11 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
   (default off) + input/output `.osm` paths; region reuses
   `TARMOTO_OSM_IMPORT_BBOX`.
 - Wired as the **`quality.conflation` BullMQ queue** (`jobs.constants.ts`),
-  processed by `QualityConflationProcessor` and scheduled weekly Sun 02:00 —
-  after the OSM import (Sun 01:00) so it tags the freshly-imported network.
-  Dormant unless enabled.
+  processed by `QualityConflationProcessor`. It is **not** independently
+  scheduled: the OSM import processor enqueues it as a **success-continuation**,
+  so it only runs after a successful import and can never race a long-running or
+  failed one (a fixed 02:00 cron could). Dormant (the processor no-ops) unless
+  enabled.
 
 ### Behaviour
 

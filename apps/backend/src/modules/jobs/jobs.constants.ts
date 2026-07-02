@@ -133,11 +133,12 @@ export const QUEUE_NAMES = {
   OSM_IMPORT: 'osm.import',
 
   /**
-   * Recurring (weekly). Conflates `road_segments` quality into a derived `.osm`
-   * extract by injecting an OSM `smoothness` tag per way (#779, ADR-0005) so
-   * GraphHopper can weight quality-aware routes. Dormant until
-   * `TARMOTO_QUALITY_CONFLATION_ENABLED=true`. Runs after the OSM import so it
-   * tags the freshly-imported network.
+   * Success-continuation of `osm.import` (not independently scheduled).
+   * Conflates `road_segments` quality into a derived `.osm` extract by injecting
+   * an OSM `smoothness` tag per way (#779, ADR-0005) so GraphHopper can weight
+   * quality-aware routes. Enqueued by the OSM import processor only after a
+   * successful import so it can't race a running/failed one; dormant (the
+   * processor no-ops) until `TARMOTO_QUALITY_CONFLATION_ENABLED=true`.
    */
   QUALITY_CONFLATION: 'quality.conflation',
 } as const;
@@ -197,6 +198,4 @@ export const RECURRING_PATTERNS = {
   WEEKLY_SUN_0300: '0 3 * * 0',
   /** Weekly Sunday at 01:00 — OSM road-graph import (before POI + fun-zones). */
   WEEKLY_SUN_0100: '0 1 * * 0',
-  /** Weekly Sunday at 02:00 — quality conflation (after the OSM import). */
-  WEEKLY_SUN_0200: '0 2 * * 0',
 } as const;
