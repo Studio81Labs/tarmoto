@@ -19,6 +19,13 @@ import { registerAs } from '@nestjs/config';
  * outside the extract, and miss removed roads beyond the current roads' extrema.
  * When it is unset the importer still carries over + inserts, but does NOT
  * tombstone anything — it can't tell "removed" from "outside this extract".
+ *
+ * IMPORTANT: the `.osm` extract MUST be **bbox-clipped to exactly this rectangle**
+ * (`osmium extract -b minLng,minLat,maxLng,maxLat …`), so the extract's coverage
+ * equals the region. A polygon (e.g. raw Geofabrik) extract whose shape is smaller
+ * than the rectangle would leave neighbouring roads inside the bbox but absent
+ * from the file, and stale detection would wrongly tombstone them. See the module
+ * README.
  */
 export interface OsmImportConfig {
   enabled: boolean;

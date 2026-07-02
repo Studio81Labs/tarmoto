@@ -47,6 +47,17 @@ export class AddRoadSegmentDeactivatedAt1791000000000 implements MigrationInterf
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // The partial index permits a dead row + a live row to share an OSM key, so
+    // rebuilding the OLD unfiltered unique index would hit a duplicate-key error
+    // once the importer has tombstoned any reused key. Live rows are unique by the
+    // partial-index invariant, so strip the OSM identity from tombstones first
+    // (keeping the rows + their history FKs; the identity is meaningless once this
+    // feature is reverted) — then the unfiltered index rebuilds cleanly.
+    await queryRunner.query(`
+      UPDATE road_segments
+        SET osm_way_id = NULL, segment_index = NULL
+        WHERE deactivated_at IS NOT NULL;
+    `);
     await queryRunner.query(
       `DROP INDEX IF EXISTS uq_road_segments_osm_identity;`,
     );

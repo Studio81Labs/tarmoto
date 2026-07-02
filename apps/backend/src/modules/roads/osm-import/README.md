@@ -32,12 +32,30 @@ curl -L -o czech-republic-latest.osm.pbf \
 osmium cat czech-republic-latest.osm.pbf -o /data/czech.osm
 ```
 
+### Bbox-clip when you set a region (required for stale detection)
+
+If you set `TARMOTO_OSM_IMPORT_BBOX` (so the importer may **tombstone** removed
+roads), the `.osm` file MUST be clipped to that exact rectangle — otherwise a
+row that sits inside the rectangle but outside the extract's real (polygon) shape
+would be tombstoned even though the file never mentions it. Clip with the SAME
+bounds you configure:
+
+```bash
+# minLng,minLat,maxLng,maxLat — identical to TARMOTO_OSM_IMPORT_BBOX
+osmium extract -b 12.09,48.55,18.86,51.06 \
+  czech-republic-latest.osm.pbf -o /data/czech.osm
+```
+
+Without a region the importer never tombstones (it only carries over + inserts),
+so an unclipped extract is fine there.
+
 ## Config
 
-| env                          | default | meaning                                                           |
-| ---------------------------- | ------- | ----------------------------------------------------------------- |
-| `TARMOTO_OSM_IMPORT_ENABLED` | `false` | turn the weekly job on                                            |
-| `TARMOTO_OSM_IMPORT_FILE`    | —       | absolute path to the prepared `.osm` file (required when enabled) |
+| env                          | default | meaning                                                                                     |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `TARMOTO_OSM_IMPORT_ENABLED` | `false` | turn the weekly job on                                                                      |
+| `TARMOTO_OSM_IMPORT_FILE`    | —       | absolute path to the prepared `.osm` file (required when enabled)                           |
+| `TARMOTO_OSM_IMPORT_BBOX`    | —       | `minLng,minLat,maxLng,maxLat` region for stale detection; the extract must be clipped to it |
 
 The extract itself bounds the region — there is no bbox. Dormant by default:
 an off tick is a cheap no-op.
