@@ -587,13 +587,36 @@ describe('ReviewsService', () => {
 
       const result = await service.update('user-1', 'seg-1', dto);
 
+      // Resolves the rider's review anywhere on the requested id's way (#809).
       expect(reviewRepo.findOne).toHaveBeenCalledWith({
-        where: { user_id: 'user-1', road_segment_id: 'seg-1' },
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1']) },
         relations: ['user'],
       });
       expect(reviewRepo.save).toHaveBeenCalled();
       expect(result.rating).toBe(2);
       expect(result.comment).toBe('Road deteriorated');
+    });
+
+    it("resolves the rider's review on a sibling sub-segment of the way (#809)", async () => {
+      // The rider posted their review to sub-segment seg-2 (when it was the
+      // representative); opening seg-1 of the same way must still find + edit it,
+      // so the is_mine edit affordance doesn't 404.
+      segmentRepo.query!.mockResolvedValueOnce([
+        { id: 'seg-1' },
+        { id: 'seg-2' },
+      ]);
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        road_segment_id: 'seg-2',
+      });
+
+      await service.update('user-1', 'seg-1', { rating: 2 });
+
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1', 'seg-2']) },
+        relations: ['user'],
+      });
+      expect(reviewRepo.save).toHaveBeenCalled();
     });
 
     it('should clear optional fields when not provided', async () => {
@@ -814,8 +837,10 @@ describe('ReviewsService', () => {
     it('should delete an existing review', async () => {
       await service.delete('user-1', 'seg-1');
 
+      // Resolves the rider's review anywhere on the requested id's way (#809).
       expect(reviewRepo.findOne).toHaveBeenCalledWith({
-        where: { user_id: 'user-1', road_segment_id: 'seg-1' },
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1']) },
+        relations: [],
       });
       expect(reviewRepo.remove).toHaveBeenCalledWith(mockReview);
     });
@@ -826,6 +851,23 @@ describe('ReviewsService', () => {
       await expect(service.delete('user-1', 'seg-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it("resolves the rider's review on a sibling sub-segment of the way (#809)", async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        { id: 'seg-1' },
+        { id: 'seg-2' },
+      ]);
+      const siblingReview = { ...mockReview, road_segment_id: 'seg-2' };
+      reviewRepo.findOne!.mockResolvedValueOnce(siblingReview);
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1', 'seg-2']) },
+        relations: [],
+      });
+      expect(reviewRepo.remove).toHaveBeenCalledWith(siblingReview);
     });
 
     it('should cascade-delete managed photo objects after removing the review', async () => {
