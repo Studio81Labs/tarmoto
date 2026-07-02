@@ -598,7 +598,8 @@ export class SensorService {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.segmentRepo.query(
       `SELECT id FROM road_segments
-       WHERE ST_DWithin(
+       WHERE deactivated_at IS NULL
+         AND ST_DWithin(
          geom::geography,
          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
          50

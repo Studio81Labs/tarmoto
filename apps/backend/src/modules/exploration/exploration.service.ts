@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { canShowPersonalizedRecommendations } from '@tarmoto/shared';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -28,15 +28,22 @@ export class ExplorationService {
 
   async getStats(userId: string): Promise<ExplorationStatsDto> {
     const [riddenResult, totalResult, distanceResult] = await Promise.all([
+      // Numerator: distinct LIVE road segments the rider has completed. Join
+      // road_segments so a segment tombstoned after being ridden (#835) drops out
+      // of the count too — otherwise, with the active-only denominator below, the
+      // ratio could exceed 100 %.
       this.rideSegmentRepo
         .createQueryBuilder('rs')
         .select('COUNT(DISTINCT rs.road_segment_id)', 'count')
         .innerJoin('rs.ride', 'r')
+        .innerJoin('road_segments', 'seg', 'seg.id = rs.road_segment_id')
         .where('r.user_id = :userId', { userId })
         .andWhere("r.status = 'completed'")
-        .andWhere('rs.road_segment_id IS NOT NULL')
+        .andWhere('seg.deactivated_at IS NULL')
         .getRawOne<{ count: string }>(),
-      this.roadSegmentRepo.count(),
+      // Denominator is the ACTIVE network — tombstoned (split/merged-away) roads
+      // must not dilute the explored percentage (#835).
+      this.roadSegmentRepo.count({ where: { deactivated_at: IsNull() } }),
       this.rideRepo
         .createQueryBuilder('r')
         .select('COALESCE(SUM(r.distance_km), 0)', 'total')
@@ -92,6 +99,7 @@ export class ExplorationService {
         'ST_DWithin(seg.geom::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radius)',
         { lng, lat, radius: radiusM },
       )
+      .andWhere('seg.deactivated_at IS NULL')
       .andWhere(
         `seg.id NOT IN (
           SELECT DISTINCT rs.road_segment_id
@@ -129,9 +137,15 @@ export class ExplorationService {
       .createQueryBuilder('rs')
       .select('DISTINCT rs.road_segment_id', 'id')
       .innerJoin('rs.ride', 'r')
+      // Live segments only (#835): a road tombstoned after being ridden must not
+      // ship its dead id to the map highlight layer / share snapshots.
+      .innerJoin(
+        'road_segments',
+        'seg',
+        'seg.id = rs.road_segment_id AND seg.deactivated_at IS NULL',
+      )
       .where('r.user_id = :userId', { userId })
       .andWhere("r.status = 'completed'")
-      .andWhere('rs.road_segment_id IS NOT NULL')
       .getRawMany<{ id: string }>();
 
     return {
@@ -187,9 +201,13 @@ export class ExplorationService {
           .distinctOn(['rs2.road_segment_id'])
           .from('ride_segments', 'rs2')
           .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
+          .innerJoin(
+            'road_segments',
+            'seg2',
+            'seg2.id = rs2.road_segment_id AND seg2.deactivated_at IS NULL',
+          )
           .where('r2.user_id = :userId', { userId })
           .andWhere("r2.status = 'completed'")
-          .andWhere('rs2.road_segment_id IS NOT NULL')
           .orderBy('rs2.road_segment_id')
           .addOrderBy(lastTouchExpr, 'DESC', 'NULLS LAST')
           .addOrderBy('rs2.id', 'DESC');
@@ -202,9 +220,13 @@ export class ExplorationService {
             .addSelect('COUNT(DISTINCT rs3.ride_id)', 'ride_count')
             .from('ride_segments', 'rs3')
             .innerJoin('rides', 'r3', 'r3.id = rs3.ride_id')
+            .innerJoin(
+              'road_segments',
+              'seg3',
+              'seg3.id = rs3.road_segment_id AND seg3.deactivated_at IS NULL',
+            )
             .where('r3.user_id = :userId', { userId })
             .andWhere("r3.status = 'completed'")
-            .andWhere('rs3.road_segment_id IS NOT NULL')
             .groupBy('rs3.road_segment_id'),
         'counts',
         'counts.segment_id = latest.segment_id',

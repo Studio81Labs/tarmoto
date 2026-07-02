@@ -120,11 +120,30 @@ Because each existing id is claimed once:
 
 The matching heart is a **pure, PostGIS-free core** (`split-merge.ts`,
 `planReassignment`) operating on coordinate arrays with a planar overlap metric —
-exact enough on ~100 m spans and unit-testable from synthetic geometries. Loading
-the candidate existing rows and applying the plan (carry-over as an
-id-preserving update, stale as a tombstone/deactivation) is a follow-up wiring
-slice — a follow-up that must add the deactivation column/flag rather than hard-
-delete, since the history tables FK to `road_segments`.
+exact enough on ~100 m spans and unit-testable from synthetic geometries. The
+importer wires it in (#835): it buffers the regional snapshot, loads the existing
+active OSM rows overlapping its bbox, upserts the unchanged-identity rows in place,
+and applies the plan for the leftovers — carry-over as an **id-preserving UPDATE**
+that re-points the existing row onto the incoming geometry, insert as a fresh row,
+and stale as a **tombstone** (`road_segments.deactivated_at`, added by migration
+`1791`) rather than a hard delete, since the history tables FK to `road_segments`.
+Two subtleties: (a) **stale-by-absence** tombstoning is only sound over an
+**explicit import region** (`TARMOTO_OSM_IMPORT_BBOX`) — a data-derived bbox would
+wrongly tombstone rows that fall in the rectangle but outside the extract, and miss
+removed roads beyond the current extrema — so without a configured region the
+importer does not tombstone a row merely for being absent from the snapshot. (It
+still deactivates a row whose exact `(osm_way_id, segment_index)` the snapshot
+reassigns to a DIFFERENT road — definitive key reuse, not a bbox heuristic —
+otherwise the old holder would be silently overwritten in place or orphaned.)
+(b) the `(osm_way_id, segment_index)` identity
+index is rebuilt **partial on live rows** so a tombstone doesn't own its key (a
+returning key inserts fresh; a carry-over onto a formerly-tombstoned key doesn't
+hit a unique violation). The active discovery/aggregation reads filter
+`deactivated_at IS NULL` — best-roads, nearby, road + fun-zone detail aggregation,
+clustering, tiles, and route/commute quality enrichment — so a tombstoned road
+drops out of every current-network surface while its history rows survive. The
+scheduled job still stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`) until the
+misassignment rate is validated on a real region.
 
 Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
 the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split

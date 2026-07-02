@@ -8,7 +8,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Readable } from 'node:stream';
 import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
@@ -460,7 +460,7 @@ describe('ReviewsService', () => {
       const result = await service.create('user-1', 'seg-1', dto);
 
       expect(segmentRepo.findOne).toHaveBeenCalledWith({
-        where: { id: 'seg-1' },
+        where: { id: 'seg-1', deactivated_at: IsNull() },
       });
       expect(reviewRepo.create).toHaveBeenCalledWith({
         user_id: 'user-1',

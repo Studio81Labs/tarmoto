@@ -121,6 +121,7 @@ export class TilesService {
           FROM road_segments rs
           WHERE rs.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
             AND rs.quality_score IS NOT NULL
+            AND rs.deactivated_at IS NULL
         ) q
       )`,
       params: [0, 0, 0, 0], // placeholder, replaced by bboxParams
@@ -143,6 +144,7 @@ export class TilesService {
             ) AS geom
           FROM road_segments rs
           WHERE rs.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+            AND rs.deactivated_at IS NULL
         ) q
       )`,
       params: [0, 0, 0, 0],
