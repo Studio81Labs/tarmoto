@@ -26,7 +26,7 @@ pnpm db:down              # Stop Docker services
 pnpm db:migrate           # Proxies to backend's db:migrate (includes build)
 ```
 
-Migrations **do not** run automatically when the backend starts — you must run them explicitly. Plan for this in deploy scripts when production deploys are wired up.
+The runtime backend runs pending migrations **automatically on startup** (`database.module.ts` sets `migrationsRun: true`, suppressed only during OpenAPI spec export). So a deploy applies migrations when the new container boots. `pnpm db:migrate` is for applying them out-of-band — locally, or in CI — not a required deploy step.
 
 ## Normal workflow
 
@@ -34,12 +34,12 @@ Migrations **do not** run automatically when the backend starts — you must run
 1. Edit entities under apps/backend/src/entities/
 2. pnpm db:up                    # Make sure Postgres is running
 3. pnpm backend:build             # Compile — TypeORM needs dist/data-source.js
-4. pnpm --filter @tarmoto/backend typeorm migration:generate \
+4. pnpm --filter @tarmoto/backend exec typeorm migration:generate \
        src/migrations/<ShortName> -d dist/data-source.js
 5. Review the generated migration.sql (.ts file) under apps/backend/src/migrations/
 6. pnpm backend:build             # Rebuild so the new migration is in dist/
 7. pnpm db:migrate                # Apply locally
-8. pnpm test && pnpm --filter @tarmoto/backend test:e2e
+8. pnpm backend:test && pnpm --filter @tarmoto/backend test:e2e
 9. Commit entity + migration together in one commit
 ```
 
@@ -108,7 +108,7 @@ Before committing a migration:
 
 ```bash
 pnpm db:migrate           # Apply on dev DB
-pnpm test                 # Unit tests
+pnpm backend:test         # Backend unit tests
 pnpm --filter @tarmoto/backend test:e2e   # E2E against real DB
 ```
 
@@ -135,7 +135,7 @@ pnpm db:migrate           # Should apply all migrations cleanly from empty DB
 Write a new forward migration that reverses the previous one:
 
 ```bash
-pnpm --filter @tarmoto/backend typeorm migration:create \
+pnpm --filter @tarmoto/backend exec typeorm migration:create \
     src/migrations/RestoreSomeColumn
 # Hand-write the `up()` to reverse the offending change.
 ```

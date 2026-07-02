@@ -77,12 +77,16 @@ tarmoto/
 │   ├── mobile/              Bare React Native (iOS & Android)
 │   ├── backend/             NestJS API (serves mobile + web)
 │   ├── companion/           Web companion (Next.js + TailwindCSS)
+│   ├── admin/               Admin console (Vite SPA + Cloudflare Worker proxy)
 │   ├── marketing/           Marketing site (Astro) + waitlist worker
-│   └── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
+│   ├── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
+│   └── ui-preview/          Local preview harness for @tarmoto/ui
 ├── packages/
 │   ├── brand/               Brand identity system (logos, colors, fonts)
 │   ├── shared/              Shared types, constants, DTOs
-│   └── openapi/             OpenAPI spec generation from backend
+│   ├── ui/                  Shared UI components
+│   ├── openapi/             OpenAPI spec generation from backend
+│   └── openapi-client/      Generated OpenAPI TypeScript client
 ├── docs/
 │   ├── specs/               Product spec (canonical)
 │   ├── decisions/           ADRs
@@ -115,6 +119,11 @@ tarmoto/
 | `pnpm companion:start`                    | Start companion in production mode                     |
 | `pnpm companion:lint`                     | Lint companion                                         |
 | `pnpm companion:test`                     | Run companion tests (Vitest)                           |
+| `pnpm admin:dev`                          | Start admin console dev server                         |
+| `pnpm admin:build`                        | Build admin console                                    |
+| `pnpm admin:test`                         | Run admin tests (Vitest + worker tests)                |
+| `pnpm marketing:dev`                      | Start marketing site dev server                        |
+| `pnpm marketing:build`                    | Build marketing site                                   |
 | `pnpm mobile:dev`                         | Start Metro bundler                                    |
 | `pnpm mobile:ios` / `pnpm mobile:android` | Run mobile on simulator / emulator                     |
 | `pnpm poc:dev`                            | Start PoC sensor dev server                            |
@@ -124,6 +133,7 @@ tarmoto/
 | `pnpm db:up`                              | Start PostgreSQL + Redis via Docker                    |
 | `pnpm db:down`                            | Stop Docker services                                   |
 | `pnpm db:migrate`                         | Alias for `backend:db:migrate`                         |
+| `pnpm db:seed`                            | Seed the dev database with demo accounts + activity    |
 | `pnpm lint`                               | Lint all packages                                      |
 | `pnpm test`                               | Run all tests                                          |
 | `pnpm clean`                              | Remove `dist/` + `node_modules/`                       |
@@ -172,13 +182,14 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 ## Deployment
 
-- **Backend** — Container deploy from [`apps/backend/Dockerfile`](./apps/backend/Dockerfile) onto a self-hosted PaaS, with managed Postgres (PostGIS via migration) and Redis for queues / pub-sub; Cloudflare R2 for object storage. Push to `main` auto-deploys staging; tag `v*` deploys production via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml), which waits for healthcheck, smoke-tests, and auto-rolls back on failure. The `production` GitHub environment can gate the smoke + rollback step on reviewer approval. No separate staging environment — pre-prod validation runs against the local Docker Compose stack.
-- **Companion** — Cloudflare Workers (OpenNext) with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
+- **Backend** — Container deploy from [`apps/backend/Dockerfile`](./apps/backend/Dockerfile) onto a self-hosted Coolify PaaS, with managed Postgres (PostGIS via migration) and Redis for queues / pub-sub; Cloudflare R2 for object storage. Push to `main` deploys staging; tag `v*` deploys production via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml), which triggers the authenticated Coolify deploy API, tracks the deployment to completion, healthchecks, and smoke-tests. On failure it surfaces manual rollback instructions (Coolify v4 has no rollback API). Config is env-scoped to the `staging` / `production` GitHub environments.
+- **Companion** — Cloudflare Workers (OpenNext); push to `main` → staging, tag `v*` → production via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml). (No PR previews — review locally.)
+- **Admin console** — Vite SPA + Cloudflare Worker that proxies `/admin/*` same-origin to the backend; deploy via [`.github/workflows/admin-deploy.yml`](./.github/workflows/admin-deploy.yml).
 - **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or the unified `vX.Y.Z` release tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
-- **Marketing site** — Astro static site + waitlist Cloudflare Worker deployed to Cloudflare Pages + Workers via [`.github/workflows/marketing-deploy.yml`](./.github/workflows/marketing-deploy.yml).
+- **Marketing site** — Astro static site + waitlist Cloudflare Worker deployed to Cloudflare Workers via [`.github/workflows/marketing-deploy.yml`](./.github/workflows/marketing-deploy.yml).
 - **PoC sensor** — Cloudflare Pages on push to `main` via [`poc-deploy.yml`](./.github/workflows/poc-deploy.yml).
 
-Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
+Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#deploys).
 
 ## Bootstrap Details
 
