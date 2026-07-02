@@ -1,12 +1,13 @@
 name: Companion Deploy
 
-# PR previews, staging, and production deploys for the companion (Next.js).
-# Hosted on Cloudflare Workers via @opennextjs/cloudflare.
+# Staging + production deploys for the companion (Next.js). Hosted on
+# Cloudflare Workers via @opennextjs/cloudflare. PR previews were dropped —
+# review companion changes locally; they ship to staging on merge to main.
 #
 # Deploy model:
-#   PR to main      → preview   (wrangler versions upload, pr-N alias)
 #   push to main    → staging   (wrangler deploy to staging worker)
 #   push tag v*     → production (wrangler deploy to production worker)
+#   workflow_dispatch → staging
 #
 # Required repo secrets:
 #   CLOUDFLARE_API_TOKEN          Workers Scripts:Edit, Subdomain:Read, Account:Read
@@ -17,9 +18,9 @@ name: Companion Deploy
 #   NEXT_PUBLIC_API_URL (var)          Production backend URL for companion build
 #   NEXT_PUBLIC_WS_URL (var)           Production WebSocket URL for companion build
 #
-# Required per-environment variables (companion-preview / staging / production):
+# Required per-environment variables (staging / production):
 #   COMPANION_WORKER_NAME (var)        worker name for that environment
-#                                      (preview + production: tarmoto-companion;
+#                                      (production: tarmoto-companion;
 #                                      staging: tarmoto-companion-staging)
 
 on:
@@ -33,53 +34,36 @@ on:
       - "packages/openapi/**"
       - ".github/workflows/companion-deploy.yml"
       - ".github/workflows/_build-openapi.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/companion/**"
-      - "apps/backend/**"
-      - "packages/shared/**"
-      - "packages/openapi/**"
-      - ".github/workflows/companion-deploy.yml"
-      - ".github/workflows/_build-openapi.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
   deployments: write
-  pull-requests: write
 
 concurrency:
-  group: companion-deploy-${{ github.event.pull_request.number || github.ref }}
+  group: companion-deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # Build the OpenAPI spec once (reusable workflow) and fan it out as an
   # artifact, instead of rebuilding the backend inline in the deploy job.
-  # Gated on the same condition so it's skipped in lockstep with the deploy
-  # (no wasted backend build when the deploy is disabled or dependabot-authored).
   prepare-openapi:
-    if: github.actor != 'dependabot[bot]'
     uses: ./.github/workflows/_build-openapi.yml
     with:
-      # The deploy job is environment-gated (companion-preview / staging /
-      # production) and may sit behind a required-reviewer approval; keep the
-      # spec artifact well past the 1-day default so a multi-day hold doesn't
-      # expire it before the deploy downloads it.
+      # The deploy job is environment-gated (staging / production) and may sit
+      # behind a required-reviewer approval; keep the spec artifact well past
+      # the 1-day default so a multi-day hold doesn't expire it before the
+      # deploy downloads it.
       artifact-retention-days: 7
 
   deploy:
     name: Build & deploy to Cloudflare Workers
-    # Dependabot-authored PRs don't receive environment secrets
-    # (CLOUDFLARE_API_TOKEN), so skip the deploy. Build & Test still gates the
-    # bump; deploy re-runs on push to main after merge.
-    if: github.actor != 'dependabot[bot]'
     needs: prepare-openapi
     runs-on: ubuntu-latest
-    # PR → companion-preview (alias upload on the prod worker), push to main →
-    # staging, tag v* → production. Each environment scopes COMPANION_WORKER_NAME.
+    # push to main → staging, tag v* → production. Each environment scopes
+    # COMPANION_WORKER_NAME.
     environment:
-      name: ${{ github.event_name == 'pull_request' && 'companion-preview' || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
       url: ${{ steps.deploy.outputs.url }}
 
     steps:
@@ -117,12 +101,9 @@ jobs:
       - name: Resolve environment
         id: env
         env:
-          IS_PR: ${{ github.event_name == 'pull_request' }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          if [ "$IS_PR" = "true" ]; then
-            ENV_NAME="preview"
-          elif [ "$IS_TAG" = "true" ]; then
+          if [ "$IS_TAG" = "true" ]; then
             ENV_NAME="production"
           else
             ENV_NAME="staging"
@@ -165,8 +146,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           WORKER_NAME: ${{ steps.worker.outputs.name }}
           WORKERS_SUBDOMAIN: ${{ vars.COMPANION_WORKERS_SUBDOMAIN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          IS_PR: ${{ github.event_name == 'pull_request' }}
         run: |
           set -euo pipefail
           if [ -z "${WORKERS_SUBDOMAIN}" ]; then
@@ -174,20 +153,11 @@ jobs:
             exit 1
           fi
           SHORT_SHA="${GITHUB_SHA::7}"
-          if [ "$IS_PR" = "true" ]; then
-            ALIAS="pr-${PR_NUMBER}"
-            pnpm exec wrangler versions upload \
-              --name "$WORKER_NAME" \
-              --preview-alias "$ALIAS" \
-              --message "PR #${PR_NUMBER} (${SHORT_SHA})"
-            URL="https://${ALIAS}-${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
-          else
-            pnpm exec wrangler deploy \
-              --x-autoconfig=false \
-              --name "$WORKER_NAME" \
-              --message "main @ ${SHORT_SHA}"
-            URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
-          fi
+          pnpm exec wrangler deploy \
+            --x-autoconfig=false \
+            --name "$WORKER_NAME" \
+            --message "main @ ${SHORT_SHA}"
+          URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test
@@ -207,31 +177,3 @@ jobs:
           done
           echo "::error::Companion smoke failed after 3 attempts (last status $STATUS)"
           exit 1
-
-      - name: Comment PR with preview URL
-        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
-        with:
-          script: |
-            const url = process.env.PREVIEW_URL;
-            const body = `Companion preview deployed: ${url}`;
-            const { data: comments } = await github.rest.issues.listComments({
-              ...context.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find((c) => c.user.type === 'Bot' && c.body.startsWith('Companion preview deployed'));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                ...context.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                ...context.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
