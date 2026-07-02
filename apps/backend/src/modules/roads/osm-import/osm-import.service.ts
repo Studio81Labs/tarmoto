@@ -209,10 +209,12 @@ export class OsmImportService {
 
   async importFrom(source: OsmWaySource): Promise<OsmImportResult> {
     // Buffer the region's rows so split/merge reconciliation can compare the whole
-    // incoming snapshot against the existing rows in the same area. The input is a
-    // regional extract (config file / bbox), so this is bounded; a parse/read
-    // error propagates out of the buffering loop before any write, so a failed run
-    // can't touch existing rows.
+    // incoming snapshot against the existing rows in the same area — it can't be a
+    // pure per-chunk stream like a plain upsert. This is region-scoped by design,
+    // so the operator sizes the extract/bbox to the worker heap and tiles a large
+    // area into several sub-imports (see the module README, "Memory & scale"). A
+    // parse/read error propagates out of the buffering loop before any write, so a
+    // failed run can't touch existing rows.
     const incoming: RoadSegmentRow[] = [];
     for await (const row of buildSegmentRows(source)) {
       incoming.push(row);

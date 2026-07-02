@@ -170,7 +170,7 @@ export class ReviewsService {
        FROM road_segments rs
        WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = (
          SELECT COALESCE(osm_way_id::text, id::text)
-         FROM road_segments WHERE id = $1
+         FROM road_segments WHERE id = $1 AND deactivated_at IS NULL
        )
          AND rs.deactivated_at IS NULL`,
       [segmentId],

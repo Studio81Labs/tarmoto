@@ -59,6 +59,21 @@ so an unclipped extract is fine there.
 
 Dormant by default: an off tick is a cheap no-op.
 
+## Memory & scale
+
+Split/merge reconciliation is **region-scoped by design**: to decide whether a way
+was split/merged (vs removed), it has to compare the whole incoming snapshot
+against the existing rows in the same area, so a run buffers the region's ~100 m
+segment rows and loads the matching existing rows into memory (it can't be a pure
+per-chunk stream like a plain upsert). Size the region to fit the worker heap.
+
+For a large area, **tile it into several bbox-clipped sub-imports** rather than one
+country-sized file — each `(TARMOTO_OSM_IMPORT_FILE, TARMOTO_OSM_IMPORT_BBOX)` pair
+is a self-contained region, so N adjacent tiles reconcile independently and bound
+memory to one tile. (A way split exactly across a tile edge loses history only at
+that seam; keep tiles comfortably larger than a single way. In-engine auto-tiling
+is a possible future enhancement.)
+
 ## Cadence & manual runs
 
 Recurring weekly (Sunday 01:00 UTC, `osm.import` queue) — before the POI import
