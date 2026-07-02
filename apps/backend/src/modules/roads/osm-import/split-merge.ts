@@ -29,12 +29,17 @@ const DEFAULT_MIN_OVERLAP = 0.5;
 const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
-/** A tie between two candidate matches is broken in favour of the more EXACT one
- *  (smaller `separationMeters`); a match at most this far apart over its overlap
- *  counts as "exact" and outranks a longer within-tolerance parallel neighbour, so
- *  separated carriageways keep their own ids. Half the tolerance: comfortably
- *  above resampling noise, below a real lane gap. */
-const EXACT_SEPARATION_FRACTION = 0.5;
+/** A match at most this far apart over its overlap (as a fraction of the
+ *  tolerance) counts as "exact" — essentially the same geometry — and is preferred
+ *  over any looser within-tolerance parallel neighbour, so separated carriageways
+ *  keep their own ids. Tight (a fifth of the tolerance ≈ 1 m): above resampling
+ *  noise, well below a real lane gap, so a ~2 m parallel is NOT treated as exact. */
+const EXACT_SEPARATION_FRACTION = 0.2;
+/** Two segments only count as overlapping where they also run in nearly the same
+ *  (or opposite) direction. Beyond this heading difference they are crossing, not
+ *  sharing road — this rejects an acute crossing whose feet would otherwise advance
+ *  smoothly along the other line. */
+const HEADING_TOLERANCE_RAD = (20 * Math.PI) / 180;
 
 export interface ExistingSegment {
   id: string;
@@ -153,22 +158,42 @@ function footOnSegment(
   };
 }
 
-/** Closest point on `poly` to `p`: its distance in metres and the ARC-LENGTH
- *  position (metres from `poly`'s start) of that foot. The arc position lets a
- *  caller tell whether successive points genuinely travel ALONG `poly` (a real
- *  overlap) or all fold onto one spot (a touch/crossing). */
+/** Geographic bearing of `a`→`b` in radians (0 = due east, CCW). Used to compare
+ *  the direction two segments run at a shared point — absolute, so bearings from
+ *  different legs/segments are directly comparable. */
+function bearing(a: LatLng, b: LatLng): number {
+  const meanLatRad = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const dx = wrapLngDelta(b.lng - a.lng) * Math.cos(meanLatRad);
+  const dy = b.lat - a.lat;
+  return Math.atan2(dy, dx);
+}
+
+/** Do two bearings run along the same line — same OR opposite direction — within
+ *  `tolRad`? Uses |cos(Δ)| so 0° and 180° both count as aligned. */
+function bearingsAlign(b1: number, b2: number, tolRad: number): boolean {
+  return Math.abs(Math.cos(b1 - b2)) >= Math.cos(tolRad);
+}
+
+/** Closest point on `poly` to `p`: its distance in metres, the ARC-LENGTH position
+ *  (metres from `poly`'s start) of that foot, and the BEARING of the leg the foot
+ *  lies on. The arc position tells whether successive points travel ALONG `poly`
+ *  (a real overlap) or fold onto one spot (a touch/crossing); the bearing tells
+ *  whether they run in the same direction (a real overlap) or across it at an
+ *  angle (an acute crossing). */
 function footOnPolyline(
   p: LatLng,
   poly: readonly LatLng[],
-): { dist: number; arcPos: number } {
-  let best = { dist: Infinity, arcPos: 0 };
+): { dist: number; arcPos: number; legBearing: number } {
+  let best = { dist: Infinity, arcPos: 0, legBearing: 0 };
   let acc = 0;
   for (let i = 1; i < poly.length; i++) {
     const a = poly[i - 1]!;
     const b = poly[i]!;
     const legLen = planarMeters(a, b);
     const { dist, t } = footOnSegment(p, a, b);
-    if (dist < best.dist) best = { dist, arcPos: acc + t * legLen };
+    if (dist < best.dist) {
+      best = { dist, arcPos: acc + t * legLen, legBearing: bearing(a, b) };
+    }
     acc += legLen;
   }
   return best;
@@ -197,12 +222,13 @@ function denseSamples(coords: readonly LatLng[], tolM: number): LatLng[] {
  *  - the span of `b`'s ARC that those feet sweep across CONTIGUOUSLY.
  *
  * "Contiguously" is the crucial part: the swept span sums only steps where the
- * foot advances by about one sample spacing (± tolerance). When `a` genuinely runs
- * along `b`, moving one step along `a` moves the foot a comparable step along `b`.
- * A touch or crossing pins every foot to one spot, and a chord across a hairpin
- * whose two ends are within tolerance would make the foot JUMP from one arc end to
- * the other — a min-to-max span would count that whole gap as overlap, so instead
- * such jumps are excluded and the swept span (and thus the min) collapses to ~0.
+ * foot advances by about one sample spacing (± tolerance) AND `a` runs in nearly
+ * the same direction as `b`. When `a` genuinely runs along `b`, moving one step
+ * along `a` moves the foot a comparable step along `b` on a same-heading leg. A
+ * perpendicular touch/crossing pins every foot to one spot; an ACUTE crossing
+ * glides the foot smoothly but on an off-heading leg; and a chord across a hairpin
+ * whose two ends are within tolerance JUMPS the foot from one arc end to the other.
+ * All three are excluded, so the swept span (and thus the min) collapses to ~0.
  *
  * `a` is sampled FINELY (independent of the coarse coverage spacing) so that
  * quantization stays well under the tolerance: the boundary intervals of a real
@@ -227,18 +253,29 @@ function realOverlapMeters(
   const maxContiguousStep = stepArcA + tolM;
   let matched = 0;
   let swept = 0;
-  let prevArcPos: number | null = null; // foot of the immediately preceding sample
+  // The immediately preceding matched sample: its foot arc position and its point,
+  // so the next step's own heading can be compared to `b`'s heading there.
+  let prev: { arcPos: number; point: LatLng } | null = null;
   for (const p of samples) {
     const foot = footOnPolyline(p, b);
     if (foot.dist <= tolM) {
       matched++;
-      if (prevArcPos !== null) {
-        const gap = Math.abs(foot.arcPos - prevArcPos);
-        if (gap <= maxContiguousStep) swept += gap;
+      if (prev !== null) {
+        const gap = Math.abs(foot.arcPos - prev.arcPos);
+        // Count the step only if it advances contiguously AND `a` runs in nearly
+        // the same direction as `b` here — so an acute crossing, whose foot glides
+        // smoothly along `b` but at an angle, contributes no swept length.
+        const contiguous = gap <= maxContiguousStep;
+        const aligned = bearingsAlign(
+          bearing(prev.point, p),
+          foot.legBearing,
+          HEADING_TOLERANCE_RAD,
+        );
+        if (contiguous && aligned) swept += gap;
       }
-      prevArcPos = foot.arcPos;
+      prev = { arcPos: foot.arcPos, point: p };
     } else {
-      prevArcPos = null; // a gap in coverage breaks contiguity
+      prev = null; // a gap in coverage breaks contiguity
     }
   }
   // Each matched sample stands for one step of `a`'s length, which includes the
@@ -247,13 +284,15 @@ function realOverlapMeters(
   return Math.min(coveredArcA, swept);
 }
 
-/** How far apart two polylines run WHERE THEY OVERLAP — the symmetric mean
- *  point-to-line distance over the samples within `tolM` of the other line. ~0
- *  for (near-)identical geometry, ~the gap for a parallel neighbour. Measured over
- *  the overlapping region (not the whole segment) so a shorter EXACT match reads
- *  as more exact than a longer within-tolerance PARALLEL one; used to prefer the
- *  exact match. Uses DENSE samples so a short exact overlap between coarse ticks is
- *  seen in both directions rather than reported as no-overlap (Infinity). */
+/** How far apart two polylines run where they best correspond — the SMALLER of the
+ *  two directed mean point-to-line distances (each over the samples within `tolM`
+ *  of the other line). ~0 for (near-)identical geometry — including a short segment
+ *  lying exactly on part of a long one, whose own samples all sit on it — and ~the
+ *  gap for a parallel neighbour, whose samples are offset in both directions. The
+ *  MIN (not max) avoids the long→short direction being inflated by samples that
+ *  fall just past the short segment's ends but still within tolerance. Uses DENSE
+ *  samples so a short exact overlap between coarse ticks is still seen. Used to
+ *  prefer the exact match; returns Infinity when nothing overlaps. */
 function separationMeters(
   a: readonly LatLng[],
   b: readonly LatLng[],
@@ -274,7 +313,7 @@ function separationMeters(
     }
     return count === 0 ? Infinity : sum / count;
   };
-  return Math.max(directedMean(a, b), directedMean(b, a));
+  return Math.min(directedMean(a, b), directedMean(b, a));
 }
 
 /** The point at arc-length `atM` along `coords` (clamped to the ends). */
@@ -355,6 +394,25 @@ export function planReassignment(
   const tolM = opts.toleranceMeters ?? DEFAULT_TOLERANCE_M;
   const sampleM = opts.sampleMeters ?? DEFAULT_SAMPLE_M;
 
+  // Guard the tuning knobs: a non-positive tolerance or sample spacing makes the
+  // sampler's step 0 and its ceil(length / step) Infinity, which would push
+  // samples forever. Fail fast with a clear message instead.
+  if (!Number.isFinite(tolM) || tolM <= 0) {
+    throw new Error(
+      `toleranceMeters must be a positive finite number, got ${tolM}`,
+    );
+  }
+  if (!Number.isFinite(sampleM) || sampleM <= 0) {
+    throw new Error(
+      `sampleMeters must be a positive finite number, got ${sampleM}`,
+    );
+  }
+  if (!Number.isFinite(minOverlap) || minOverlap <= 0 || minOverlap >= 1) {
+    throw new Error(
+      `minOverlap must be a fraction in (0, 1), got ${minOverlap}`,
+    );
+  }
+
   const pairs: Array<{
     existingIdx: number;
     incomingIndex: number;
@@ -404,11 +462,12 @@ export function planReassignment(
       });
     }
   }
-  // Greedy order: EXACT same-geometry matches first (so a longer within-tolerance
-  // parallel neighbour can't outrank a shorter exact match — separated
-  // carriageways keep their own ids), then the longest real overlap, then the more
-  // exact match, then index order as the final deterministic tie-break so the plan
-  // is stable across runs on unchanged data.
+  // Greedy order: EXACT same-geometry matches first — separation within a TIGHT
+  // fraction of the tolerance, so a looser within-tolerance parallel neighbour
+  // (even a longer one) can never outrank a true match and separated carriageways
+  // keep their own ids. Then the longest real overlap (so the longer child of a
+  // split inherits), then the more exact match, then index order as the final
+  // deterministic tie-break so the plan is stable across runs on unchanged data.
   const exactSep = tolM * EXACT_SEPARATION_FRACTION;
   const tier = (p: { separation: number }): number =>
     p.separation <= exactSep ? 0 : 1;

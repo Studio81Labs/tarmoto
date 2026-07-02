@@ -355,6 +355,72 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['u']);
   });
 
+  it('does not carry between two short segments crossing at a shallow angle', () => {
+    // Two ~15 m stubs crossing at ~30°. Every sample is within tolerance and the
+    // projected foot advances smoothly along the other line (not pinned), so the
+    // contiguity rule alone would accept it. The heading check rejects it: the two
+    // run ~30° apart, well over the alignment tolerance, so no swept length counts.
+    const dLng = 0.075 * M; // ~7.5 m half-length east
+    const existing: ExistingSegment[] = [
+      {
+        id: 'ew',
+        coords: [
+          { lat: 0, lng: -dLng },
+          { lat: 0, lng: dLng },
+        ],
+      },
+    ];
+    // ~30° rotated: half-vector (6.5 m east, 3.75 m north).
+    const incoming = [
+      [
+        { lat: -0.0374 * M, lng: -0.0648 * M },
+        { lat: 0.0374 * M, lng: 0.0648 * M },
+      ],
+    ];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['ew']);
+  });
+
+  it('keeps a true match over a barely-offset (~2 m) parallel neighbour', () => {
+    // The exact tier is tight: a 100 m parallel row only ~2 m away must NOT count
+    // as an exact same-geometry match, so a true row covering the first 60 m keeps
+    // the incoming even though the parallel one overlaps a longer stretch.
+    const incomingLine = seg(0, M);
+    const parallel2m: LatLng[] = [
+      { lat: 0, lng: 0.02 * M }, // ~2 m to the side, full length
+      { lat: M, lng: 0.02 * M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'par', coords: parallel2m },
+      { id: 'true', coords: seg(0, 0.6 * M) }, // exact, first 60 m
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('true');
+    expect(plan.stale).toEqual(['par']);
+  });
+
+  it('rejects non-positive sampling options instead of hanging', () => {
+    const existing: ExistingSegment[] = [{ id: 'a', coords: seg(0, M) }];
+    const incoming = [seg(0, M)];
+
+    expect(() =>
+      planReassignment(existing, incoming, { toleranceMeters: 0 }),
+    ).toThrow(/toleranceMeters/);
+    expect(() =>
+      planReassignment(existing, incoming, { sampleMeters: 0 }),
+    ).toThrow(/sampleMeters/);
+    expect(() =>
+      planReassignment(existing, incoming, { minOverlap: 0 }),
+    ).toThrow(/minOverlap/);
+  });
+
   it('does not carry between two short segments that only cross at a point', () => {
     // An ~8 m E–W existing segment and an ~8 m N–S incoming segment crossing at
     // their midpoints. Both are shorter than 2·tolerance, so every sample of each

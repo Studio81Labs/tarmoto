@@ -70,7 +70,11 @@ as the whole hairpin's length. The samples are taken **finely** (well under the
 tolerance, independent of the coarse coverage spacing) so boundary intervals are
 counted and a short segment between coarse ticks is not missed, and the measure is
 computed **in both directions and maxed** so a short segment contained in a long
-one is captured from its own dense samples.
+one is captured from its own dense samples. A step is counted only when the foot
+also advances on a leg running in nearly the **same heading** as the incoming, so
+an acute crossing — whose foot glides smoothly along the other line but ~30° off —
+contributes no shared length, not just the perpendicular crossing whose foot is
+pinned.
 
 **Eligibility.** A carry-over requires that real overlap to exceed a **strict
 majority of the shorter segment** (> 0.5). Using the shorter length as the
@@ -83,17 +87,19 @@ floor or near-1:1 bypass: the single real-overlap majority subsumes both, becaus
 the metric already reads ~0 for the degenerate touch/crossing/abut cases.
 
 **Exactness tie-break.** The greedy orders **exact same-geometry matches first**
-(separation — the mean point-to-line distance _over the overlapping region_ — at
-most half the tolerance), then by longest real overlap, then by smallest
-separation, then index. Measuring separation only over the overlap (not the whole
-segment) lets a _shorter exact_ match beat a _longer within-tolerance parallel_
-one: two separated carriageways closer than the tolerance each keep their own id
-instead of one carrying its history onto its neighbour, even when the parallel
-neighbour covers a longer stretch or the rows arrive in a different order than the
-DB. Separation is measured from the same **dense** samples as the overlap, so a
-very short exact contained match (a few metres, between the long side's coarse
-ticks) still reads as exact in both directions and outranks the parallel neighbour
-rather than collapsing to "no overlap".
+(separation at most a _tight_ fraction of the tolerance — a fifth, ≈ 1 m, above
+resampling noise but below a real lane gap), then by longest real overlap, then by
+smallest separation, then index. Separation is the **smaller** of the two directed
+mean point-to-line distances over the overlapping samples: a short row lying
+exactly on part of a long one reads ~0 from its own side (the min avoids the
+long→short direction being inflated by samples just past the short row's ends),
+while a parallel neighbour reads its gap in both directions. This lets a _shorter
+exact_ match beat a _longer within-tolerance parallel_ one, and the tight exact
+threshold means even a ~2 m parallel carriageway is not mistaken for the true
+match: separated carriageways each keep their own id instead of one carrying its
+history onto its neighbour, whatever the overlap lengths or row order. Separation
+uses the same **dense** samples as the overlap, so a very short exact contained
+match (a few metres, between the long side's coarse ticks) is still seen.
 
 Because each existing id is claimed once:
 
@@ -117,8 +123,13 @@ Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above ha
 the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split
 reuses the same node coordinates so matching stretches are near-exact; a looser
 value would inflate a partial overlap past the cutoff); **sample spacing 20 m**
-(samples placed evenly by arc-length); **exact-match separation half the
-tolerance** (2.5 m — above resampling noise, below a real lane gap).
+(coverage samples; the real-overlap and separation measures resample far finer);
+**exact-match separation a fifth of the tolerance** (≈ 1 m — above resampling
+noise, below a real lane gap); **heading tolerance 20°** (beyond it two segments
+are crossing, not sharing road). The tolerance and sample-spacing knobs are
+validated positive and finite (and the overlap threshold a fraction in (0, 1)):
+the sampler's step derives from them, so a zero would make it loop forever — the
+core throws instead.
 
 ## Consequences
 
