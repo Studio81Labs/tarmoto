@@ -70,6 +70,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly poiImport: Queue,
     @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
     private readonly osmImport: Queue,
+    @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
+    private readonly qualityConflation: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -173,6 +175,13 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.OSM_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
+      },
+      {
+        queue: this.qualityConflation,
+        name: JOB_NAMES.QUALITY_CONFLATION_RUN,
+        pattern: RECURRING_PATTERNS.WEEKLY_SUN_0200,
+        description:
+          'weekly road-quality conflation → smoothness-tagged extract (#779)',
       },
     ];
   }

@@ -10,11 +10,13 @@ import { FunZoneClusteringService } from './fun-zone-clustering.service.js';
 import { OsmImportService } from './osm-import/osm-import.service.js';
 import { osmImportConfig } from './osm-import/osm-import.config.js';
 import { QualityConflationService } from './quality-conflation/quality-conflation.service.js';
+import { qualityConflationConfig } from './quality-conflation/quality-conflation.config.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RoadSegment, FunZone, FunZoneRoad]),
     ConfigModule.forFeature(osmImportConfig),
+    ConfigModule.forFeature(qualityConflationConfig),
   ],
   controllers: [RoadsController],
   providers: [

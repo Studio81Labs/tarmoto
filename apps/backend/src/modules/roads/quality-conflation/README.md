@@ -11,28 +11,43 @@ job injects an OSM `smoothness` tag derived from our score, and the request-time
 ```
 road_segments.quality_score ──(this core)──► per-way smoothness assignments
                                               │
-                                              ▼ (follow-up, infra)
-                                   inject smoothness tag into derived .pbf
-                                              │
                                               ▼
+                                inject smoothness tag into derived .osm
+                                              │
+                                              ▼ (operator/infra)
                                    GraphHopper graph re-import
                                               │
                                               ▼
               RoutingOptions.preferQuality → custom_model over `smoothness`
 ```
 
-## What lives here (the engine-neutral core)
+## What lives here
 
 - **`quality-smoothness.ts`** — the pure `quality_score → smoothness` mapping.
   `quality_score` is continuous in `[1, 5]`; it maps to the nearest ADR-0005
   tier (`1 → very_bad … 5 → excellent`). `NULL`/non-finite → no tag, so an
   unscored road stays `MISSING`/neutral and is **never penalised**. Single
   source of truth for the boundaries; unit-tested in one place.
-- **`quality-conflation.service.ts`** — `QualityConflationService.buildConflation()`
-  joins our ~100 m segments back to their OSM way via `osm_way_id`, collapses
-  each way to a **length-weighted mean** of its live, scored segments, maps that
-  to a `smoothness` tier, and returns the per-way `WaySmoothnessAssignment[]` —
-  exactly the artifact an osmium tag-injection pass consumes.
+- **`quality-conflation.service.ts`** — `QualityConflationService`:
+  - `buildConflation()` joins our ~100 m segments back to their OSM way via
+    `osm_way_id`, collapses each way to a **length-weighted mean** of its live,
+    scored segments, maps that to a `smoothness` tier, and returns the per-way
+    `WaySmoothnessAssignment[]`.
+  - `runConflation()` runs `buildConflation()` then streams the configured input
+    `.osm` extract to the output path, injecting the tags — the artifact the
+    GraphHopper re-import consumes.
+- **`smoothness-injection.ts`** — the streaming OSM-XML rewriter. Passes every
+  element through (nodes, ways, relations, bounds) and writes
+  `<tag k="smoothness" v="…"/>` onto each matched way, **replacing** any existing
+  `smoothness` so re-running is idempotent. Semantically (not byte-) faithful;
+  bounded memory (one way in flight).
+- **`quality-conflation.config.ts`** — `TARMOTO_QUALITY_CONFLATION_ENABLED`
+  (default off) + input/output `.osm` paths; region reuses
+  `TARMOTO_OSM_IMPORT_BBOX`.
+- Wired as the **`quality.conflation` BullMQ queue** (`jobs.constants.ts`),
+  processed by `QualityConflationProcessor` and scheduled weekly Sun 02:00 —
+  after the OSM import (Sun 01:00) so it tags the freshly-imported network.
+  Dormant unless enabled.
 
 ### Behaviour
 
@@ -53,23 +68,32 @@ length-weighted mean loses sub-way resolution (ADR-0005). Splitting ways at
 segment boundaries for full fidelity is a future refinement once the per-way
 loss is measured on a real region.
 
-## Not yet wired (documented follow-up)
+## Operator prep
 
-The **deployment-shaped** half of Phase 2 is intentionally out of this slice — it
-needs `osmium`/PBF tooling and a running GraphHopper, and its acceptance proof is
-a live route reroute on the Czech extract:
+Point the job at the extract to tag (normally the same one GraphHopper imports)
+and a derived output path, and enable it:
 
-1. **PBF tag injection.** Rewrite the OSM extract writing each assignment's
-   `smoothness` tag onto its way (`osmium` / a PBF writer), producing a derived
-   `.pbf`.
-2. **Graph re-import trigger.** Re-import the derived `.pbf` into GraphHopper
-   (reusing the #778 import infra) so the new `smoothness` bakes into the graph.
-3. **Job wiring.** A BullMQ queue + processor (mirroring `osm-import.processor`),
-   recurring after the OSM import so the graph is fresh, gated by its own enable
-   flag; dormant by default.
-4. **Proof.** Show a `preferQuality` route demonstrably avoiding a low-quality
-   way vs the baseline on the Czech extract (extends ADR-0005's Phase-1 goal).
+```bash
+TARMOTO_QUALITY_CONFLATION_ENABLED=true
+TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/czech.osm       # osmium-produced .osm XML
+TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/czech.quality.osm
+# region reuses TARMOTO_OSM_IMPORT_BBOX
+```
 
-Until then, `GraphHopperProvider.preferQuality` stays a no-op behind
-`TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off) — the request-time layer is
-already shipped and safe ahead of the data, exactly like the `toll` rule.
+The job writes `…/czech.quality.osm` weekly; wire the **GraphHopper import to that
+file** so the fresh `smoothness` bakes into the graph on re-import.
+
+## Not done here (needs running infra)
+
+Two things can't be built or validated without a running GraphHopper + a real
+extract, so they stay operator/follow-up:
+
+1. **Graph re-import trigger.** GraphHopper bakes `smoothness` at import time;
+   pointing its import at the derived `.osm` and re-importing (reusing the #778
+   infra) is an ops step, not something this job triggers.
+2. **Proof.** Show a `preferQuality` route demonstrably avoiding a low-quality
+   way vs the baseline on the Czech extract (ADR-0005's Phase-1 acceptance).
+
+Until the graph carries the tag, `GraphHopperProvider.preferQuality` stays a
+no-op behind `TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off) — the
+request-time layer is already shipped and safe ahead of the data, like `toll`.

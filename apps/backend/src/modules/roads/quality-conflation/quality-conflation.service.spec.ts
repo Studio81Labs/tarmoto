@@ -1,19 +1,34 @@
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Repository } from 'typeorm';
 import type { ConfigType } from '@nestjs/config';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
 import type { osmImportConfig } from '../osm-import/osm-import.config.js';
+import type { qualityConflationConfig } from './quality-conflation.config.js';
 import { QualityConflationService } from './quality-conflation.service.js';
 
 type Config = ConfigType<typeof osmImportConfig>;
+type ConflationConfig = ConfigType<typeof qualityConflationConfig>;
+
+const CONFLATION_OFF: ConflationConfig = {
+  enabled: false,
+  inputFilePath: null,
+  outputFilePath: null,
+};
 
 function makeService(
   rows: unknown[],
   bbox: Config['bbox'] = null,
+  conflation: ConflationConfig = CONFLATION_OFF,
 ): { service: QualityConflationService; query: jest.Mock } {
   const query = jest.fn().mockResolvedValue(rows);
   const repo = { query } as unknown as Repository<RoadSegment>;
   const config: Config = { enabled: false, filePath: null, bbox };
-  return { service: new QualityConflationService(repo, config), query };
+  return {
+    service: new QualityConflationService(repo, config, conflation),
+    query,
+  };
 }
 
 /** First `repo.query(sql, params)` call, typed for assertions. */
@@ -106,5 +121,61 @@ describe('QualityConflationService', () => {
   it('returns an empty artifact when no way is scored', async () => {
     const { service } = makeService([]);
     expect(await service.buildConflation()).toEqual([]);
+  });
+
+  describe('runConflation', () => {
+    it('reflects the enable flag', () => {
+      expect(makeService([]).service.enabled).toBe(false);
+      const on = makeService([], null, {
+        enabled: true,
+        inputFilePath: '/in.osm',
+        outputFilePath: '/out.osm',
+      }).service;
+      expect(on.enabled).toBe(true);
+    });
+
+    it('throws when the input/output paths are not configured', async () => {
+      const { service } = makeService([], null, {
+        enabled: true,
+        inputFilePath: null,
+        outputFilePath: null,
+      });
+      await expect(service.runConflation()).rejects.toThrow(
+        /TARMOTO_QUALITY_CONFLATION_INPUT_FILE/,
+      );
+    });
+
+    it('injects the built assignments into the derived extract', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'conflation-'));
+      const input = join(dir, 'in.osm');
+      const output = join(dir, 'out.osm');
+      try {
+        await writeFile(
+          input,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <way id="100"><nd ref="1"/><nd ref="2"/><tag k="highway" v="secondary"/></way>
+  <way id="999"><nd ref="3"/><nd ref="4"/><tag k="highway" v="track"/></way>
+</osm>`,
+        );
+        const { service } = makeService(
+          [{ osmWayId: '100', representativeQuality: 4.6, segmentCount: 2 }],
+          null,
+          { enabled: true, inputFilePath: input, outputFilePath: output },
+        );
+
+        const result = await service.runConflation();
+        expect(result).toEqual({ waysTagged: 1, assignments: 1 });
+
+        const written = await readFile(output, 'utf8');
+        // Way 100 (scored) gets the tag; way 999 (unscored) does not.
+        expect(written).toContain('<way id="100">');
+        expect(written).toContain('<tag k="smoothness" v="excellent"/>');
+        const way999 = written.slice(written.indexOf('<way id="999"'));
+        expect(way999).not.toContain('smoothness');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 });
