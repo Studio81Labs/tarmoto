@@ -146,6 +146,36 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['micro']);
   });
 
+  it('does not carry between two short segments that only cross at a point', () => {
+    // An ~8 m E–W existing segment and an ~8 m N–S incoming segment crossing at
+    // their midpoints. Both are shorter than 2·tolerance, so every sample of each
+    // is within tolerance of the other line — fwd === rev === 1, mutual === 1 —
+    // yet they share ~no road length. The endpoint-agreement gate on the bypass
+    // rejects it (their tips are ~√2·tolerance apart), so it stays stale.
+    const d = 0.04 * M; // ~4 m half-length
+    const existing: ExistingSegment[] = [
+      {
+        id: 'cross',
+        coords: [
+          { lat: 0, lng: -d },
+          { lat: 0, lng: d },
+        ],
+      },
+    ];
+    const incoming = [
+      [
+        { lat: -d, lng: 0 },
+        { lat: d, lng: 0 },
+      ],
+    ];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['cross']);
+  });
+
   it('disjoint geometry: no carry-over — all inserts, all existing stale', () => {
     const existing: ExistingSegment[] = [{ id: 'far', coords: seg(0, M) }];
     // ~1° north — kilometres away, no overlap.

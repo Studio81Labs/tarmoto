@@ -168,6 +168,28 @@ function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
   return out;
 }
 
+/** Do the two polylines start and end at (nearly) the same places — in either
+ *  direction? A mutually near-perfect coverage score means each line lies almost
+ *  entirely on the other, but two SHORT lines that merely CROSS at a point also
+ *  score ~1 both ways (every sample is within tolerance of the crossing) despite
+ *  zero shared length. Endpoint agreement is the shape check that separates a real
+ *  overlap (endpoints coincide) from a crossing (endpoints ~√2·tol apart). OSM can
+ *  reverse a way's node order between snapshots, so accept either orientation. */
+function endpointsAlign(
+  a: readonly LatLng[],
+  b: readonly LatLng[],
+  tolM: number,
+): boolean {
+  if (a.length < 2 || b.length < 2) return false;
+  const aS = a[0]!;
+  const aE = a[a.length - 1]!;
+  const bS = b[0]!;
+  const bE = b[b.length - 1]!;
+  const sameDir = planarMeters(aS, bS) <= tolM && planarMeters(aE, bE) <= tolM;
+  const reversed = planarMeters(aS, bE) <= tolM && planarMeters(aE, bS) <= tolM;
+  return sameDir || reversed;
+}
+
 /** Fraction of `a`'s sampled points that lie within `tolM` of polyline `b`. */
 function overlapFraction(
   a: readonly LatLng[],
@@ -249,16 +271,20 @@ export function planReassignment(
       // A PARTIAL majority must also clear a tolerance-aware length floor: two
       // short segments that merely touch at an endpoint each have ~`tolM` of
       // length within tolerance of the other's tip — a false majority for ~10 m
-      // stubs. Only a MUTUALLY near-perfect match (each segment almost entirely on
-      // the other — an unchanged segment) is genuine at any length and bypasses
-      // the floor, so an idempotent re-import of a <10 m connector keeps its id.
-      // The bypass keys on `mutual` (not `score`): a one-sided perfect match — a
-      // sub-tolerance stub whose every sample sits within tolerance of a long
-      // neighbour's tip — has score ≈ 1 but mutual ≈ 0, so it stays gated by the
-      // length floor and can't leak its id onto the adjacent road.
+      // stubs. Only a MUTUALLY near-perfect match whose endpoints also AGREE (each
+      // segment almost entirely on the other AND the two start/end at the same
+      // places — an unchanged segment) is genuine at any length and bypasses the
+      // floor, so an idempotent re-import of a <10 m connector keeps its id. Both
+      // guards are needed on short segments: `mutual` (not `score`) rejects a
+      // one-sided perfect match (a sub-tolerance stub touching a long neighbour's
+      // tip has score ≈ 1 but mutual ≈ 0), and endpoint agreement rejects two
+      // short lines that merely CROSS (mutual ≈ 1 both ways, endpoints far apart).
+      // Otherwise the length floor gates.
       const eligible =
         score > minOverlap &&
-        (mutual >= NEAR_PERFECT_OVERLAP || overlapLen > 2 * tolM);
+        ((mutual >= NEAR_PERFECT_OVERLAP &&
+          endpointsAlign(incoming[n]!, existing[e]!.coords, tolM)) ||
+          overlapLen > 2 * tolM);
       if (eligible) {
         pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }

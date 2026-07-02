@@ -70,11 +70,18 @@ neighbour is still several metres) and defeat the floor, even though the real
 overlap is ~zero. A **mutually near-perfect** match (each segment covers ≥ 0.9 of
 the other — an unchanged segment) bypasses the floor entirely: it is genuine at
 any length, so an idempotent re-import of a sub-10 m connector/driveway keeps its
-id instead of being tombstoned and reinserted. The bypass keys on the _weaker_
-direction, not the max: a stub shorter than the tolerance touching a long
-segment's tip is fully within tolerance of that tip (one direction ≈ 1) but covers
-almost none of the long side (the other ≈ 0), so it stays gated by the length
-floor and cannot leak its id onto the adjacent road.
+id instead of being tombstoned and reinserted. Two guards make the bypass safe on
+short segments. First, it keys on the _weaker_ coverage direction, not the max: a
+stub shorter than the tolerance touching a long segment's tip is fully within
+tolerance of that tip (one direction ≈ 1) but covers almost none of the long side
+(the other ≈ 0). Second, it also requires the two segments' **endpoints to agree**
+(start/end within tolerance, either orientation, since OSM can reverse node
+order): coverage is a proximity measure, so two short lines that merely _cross_ at
+a point score ~1 both ways despite zero shared length — endpoint agreement is the
+shape check that separates a real overlap (endpoints coincide) from a crossing
+(endpoints ~√2·tolerance apart). A match failing either guard falls back to the
+length floor and is inserted/tombstoned rather than leaking its id onto a
+neighbouring road.
 
 Because each existing id is claimed once:
 
