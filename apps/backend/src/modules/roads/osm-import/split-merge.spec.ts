@@ -77,6 +77,31 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual([]);
   });
 
+  it('prefers a short exact contained match over a longer parallel one', () => {
+    // A ~4 m existing row lying exactly on the middle of a 100 m incoming way
+    // (between the coarse sample ticks), competing with a full-length parallel row
+    // ~3 m to the side. Exactness must be measured from dense samples so the short
+    // contained match reads as exact (separation ~0) and outranks the longer
+    // parallel one, keeping each id on its own geometry.
+    const incomingLine = seg(0, M); // ~100 m
+    const parallelA: LatLng[] = [
+      { lat: 0, lng: 0.03 * M }, // ~3 m to the side, full length
+      { lat: M, lng: 0.03 * M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'A', coords: parallelA },
+      { id: 'B', coords: seg(0.48 * M, 0.52 * M) }, // ~4 m, exact, mid-way
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'B', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual(['A']);
+  });
+
   it('prefers a shorter exact match over a longer parallel one', () => {
     // Incoming 100 m way. Existing B lies exactly on its first 60 m; stale
     // existing A is a full-length carriageway 3 m to the side. A has the longer

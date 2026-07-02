@@ -90,7 +90,10 @@ segment) lets a _shorter exact_ match beat a _longer within-tolerance parallel_
 one: two separated carriageways closer than the tolerance each keep their own id
 instead of one carrying its history onto its neighbour, even when the parallel
 neighbour covers a longer stretch or the rows arrive in a different order than the
-DB.
+DB. Separation is measured from the same **dense** samples as the overlap, so a
+very short exact contained match (a few metres, between the long side's coarse
+ticks) still reads as exact in both directions and outranks the parallel neighbour
+rather than collapsing to "no overlap".
 
 Because each existing id is claimed once:
 

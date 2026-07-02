@@ -174,6 +174,16 @@ function footOnPolyline(
   return best;
 }
 
+/** Points along `coords` spaced FINELY relative to the tolerance (~128 samples,
+ *  but no coarser than the tolerance and no finer than 0.5 m) so overlap and
+ *  exactness measures don't miss a short match sitting between coarse ticks. */
+function denseSamples(coords: readonly LatLng[], tolM: number): LatLng[] {
+  const len = polylineMeters(coords);
+  if (len === 0) return coords.length >= 1 ? [coords[0]!] : [];
+  const step = Math.min(tolM, Math.max(0.5, len / 128));
+  return sampleAlong(coords, step);
+}
+
 /**
  * Length in metres of the stretch where `a` genuinely runs ALONG `b` — a real,
  * bend-tolerant overlap, as opposed to a mere endpoint touch or a crossing.
@@ -209,10 +219,7 @@ function realOverlapMeters(
   if (a.length < 2 || b.length < 2) return 0;
   const aLen = polylineMeters(a);
   if (aLen === 0) return 0;
-  // ~128 samples along `a`, but no coarser than the tolerance and no finer than
-  // 0.5 m, so quantization error is a small fraction of the tolerance.
-  const step = Math.min(tolM, Math.max(0.5, aLen / 128));
-  const samples = sampleAlong(a, step);
+  const samples = denseSamples(a, tolM);
   if (samples.length < 2) return 0;
   const stepArcA = aLen / (samples.length - 1);
   // A foot step longer than one sample spacing plus tolerance is a jump between
@@ -245,12 +252,12 @@ function realOverlapMeters(
  *  for (near-)identical geometry, ~the gap for a parallel neighbour. Measured over
  *  the overlapping region (not the whole segment) so a shorter EXACT match reads
  *  as more exact than a longer within-tolerance PARALLEL one; used to prefer the
- *  exact match. Returns Infinity when nothing overlaps. */
+ *  exact match. Uses DENSE samples so a short exact overlap between coarse ticks is
+ *  seen in both directions rather than reported as no-overlap (Infinity). */
 function separationMeters(
   a: readonly LatLng[],
   b: readonly LatLng[],
   tolM: number,
-  sampleM: number,
 ): number {
   const directedMean = (
     from: readonly LatLng[],
@@ -258,7 +265,7 @@ function separationMeters(
   ): number => {
     let sum = 0;
     let count = 0;
-    for (const p of sampleAlong(from, sampleM)) {
+    for (const p of denseSamples(from, tolM)) {
       const d = pointToPolylineMeters(p, to);
       if (d <= tolM) {
         sum += d;
@@ -393,12 +400,7 @@ export function planReassignment(
         // Exactness — how far the two run apart over their overlap. Prefers an
         // exact same-geometry match over a longer within-tolerance PARALLEL
         // neighbour (separated carriageways), which would otherwise cross-assign.
-        separation: separationMeters(
-          incoming[n]!,
-          existing[e]!.coords,
-          tolM,
-          sampleM,
-        ),
+        separation: separationMeters(incoming[n]!, existing[e]!.coords, tolM),
       });
     }
   }
