@@ -127,11 +127,15 @@ and applies the plan for the leftovers — carry-over as an **id-preserving UPDA
 that re-points the existing row onto the incoming geometry, insert as a fresh row,
 and stale as a **tombstone** (`road_segments.deactivated_at`, added by migration
 `1791`) rather than a hard delete, since the history tables FK to `road_segments`.
-Two subtleties: (a) tombstoning is only sound over an **explicit import region**
-(`TARMOTO_OSM_IMPORT_BBOX`) — a data-derived bbox would wrongly tombstone rows that
-fall in the rectangle but outside the extract, and miss removed roads beyond the
-current extrema — so without a configured region the importer carries over and
-inserts but tombstones nothing; (b) the `(osm_way_id, segment_index)` identity
+Two subtleties: (a) **stale-by-absence** tombstoning is only sound over an
+**explicit import region** (`TARMOTO_OSM_IMPORT_BBOX`) — a data-derived bbox would
+wrongly tombstone rows that fall in the rectangle but outside the extract, and miss
+removed roads beyond the current extrema — so without a configured region the
+importer does not tombstone a row merely for being absent from the snapshot. (It
+still deactivates a row whose exact `(osm_way_id, segment_index)` the snapshot
+reassigns to a DIFFERENT road — definitive key reuse, not a bbox heuristic —
+otherwise the old holder would be silently overwritten in place or orphaned.)
+(b) the `(osm_way_id, segment_index)` identity
 index is rebuilt **partial on live rows** so a tombstone doesn't own its key (a
 returning key inserts fresh; a carry-over onto a formerly-tombstoned key doesn't
 hit a unique violation). The active discovery/aggregation reads filter
