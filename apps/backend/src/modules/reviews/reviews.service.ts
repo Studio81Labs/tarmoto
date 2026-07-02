@@ -162,7 +162,10 @@ export class ReviewsService {
    * are keyed on the logical ROAD, matching the aggregated /roads/:id detail (#809).
    */
   private async resolveWaySegmentIds(segmentId: string): Promise<string[]> {
-    const rows = await this.segmentRepo.query(
+    // Annotate the binding (rather than an `as` cast) so `rows` is typed under
+    // both the local and the strict OpenAPI-gen tsconfigs, which disagree on
+    // whether a cast here is redundant.
+    const rows: Array<{ id: string }> = await this.segmentRepo.query(
       `SELECT rs.id
        FROM road_segments rs
        WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = (
