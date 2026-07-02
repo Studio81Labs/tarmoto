@@ -29,10 +29,10 @@ const DEFAULT_MIN_OVERLAP = 0.5;
 const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
-/** A match this strongly bidirectional is a full containment (a 1:1 match or an
- *  unchanged segment), genuine at any length — so it bypasses the short-match
- *  length floor. Below it, only a partial/adjacent overlap, which the floor
- *  guards. */
+/** Coverage this strong in BOTH directions means each segment lies almost
+ *  entirely on the other (a 1:1 match / unchanged segment). Combined with
+ *  endpoint agreement (see `endpointsAlign`) it bypasses the short-match length
+ *  floor, so an unchanged sub-floor segment keeps its id. */
 const NEAR_PERFECT_OVERLAP = 0.9;
 
 export interface ExistingSegment {
