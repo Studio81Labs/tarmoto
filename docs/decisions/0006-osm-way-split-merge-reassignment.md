@@ -58,11 +58,15 @@ abutting stub, a crossing, or an endpoint touch all score a full "overlap" despi
 sharing no road. So overlap is instead the **real, bend-tolerant shared length**:
 walk the incoming's arc-length samples and take the _smaller_ of (a) how much of
 the incoming lies within tolerance of the existing and (b) the span of the
-existing's own arc that those matched feet sweep across. A genuine overlap
+existing's own arc that those matched feet sweep across **contiguously** — summing
+only steps where the foot advances by about one sample spacing. A genuine overlap
 advances along both — following bends, so an unchanged _curved_ connector measures
 its full length — whereas a touch, crossing, or abutting stub pins every foot to
 one spot, collapsing the swept span (and thus the min) to ~0 regardless of how
-short the segments are.
+short the segments are. The contiguity requirement also defeats a chord bridging
+the mouth of a hairpin whose two ends fall within tolerance: the matched feet would
+_jump_ from one arc end to the other, and that jump is excluded rather than counted
+as the whole hairpin's length.
 
 **Eligibility.** A carry-over requires that real overlap to exceed a **strict
 majority of the shorter segment** (> 0.5). Using the shorter length as the

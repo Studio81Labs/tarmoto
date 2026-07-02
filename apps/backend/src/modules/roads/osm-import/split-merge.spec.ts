@@ -269,6 +269,33 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['abut']);
   });
 
+  it('does not carry a chord bridging the mouth of a hairpin existing segment', () => {
+    // A ~50 m U-shaped existing way whose two ends sit ~4 m apart (within the 5 m
+    // tolerance), and a ~4 m incoming connector bridging that mouth. Every incoming
+    // sample is near one of the U's ends, so the matched feet jump between arc 0
+    // and arc 50 — a min-to-max span would report the whole U as overlap. Summing
+    // only contiguous steps yields ~0, so the connector does NOT inherit the U's id.
+    const w = 0.04 * M; // ~4 m mouth width
+    const h = 0.25 * M; // ~25 m legs
+    const hairpin: LatLng[] = [
+      { lat: 0, lng: 0 }, // P0
+      { lat: h, lng: 0 }, // up the first leg
+      { lat: h, lng: w }, // across the top
+      { lat: 0, lng: w }, // back down to P1, ~4 m from P0
+    ];
+    const connector = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: w },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'u', coords: hairpin }];
+
+    const plan = planReassignment(existing, [connector]);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['u']);
+  });
+
   it('does not carry between two short segments that only cross at a point', () => {
     // An ~8 m E–W existing segment and an ~8 m N–S incoming segment crossing at
     // their midpoints. Both are shorter than 2·tolerance, so every sample of each

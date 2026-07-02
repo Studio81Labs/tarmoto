@@ -184,11 +184,15 @@ function footOnPolyline(
  * but BENT segment. So this walks `a`'s arc-length samples and takes the smaller
  * of two quantities:
  *  - how much of `a`'s own length lies within `tolM` of `b`, and
- *  - the span of `b`'s ARC that those feet sweep across.
+ *  - the span of `b`'s ARC that those feet sweep across CONTIGUOUSLY.
  *
- * A real overlap advances along BOTH (min ≈ shared length, following bends); a
- * touch or crossing pins every foot to one spot on `b`, so the swept span — and
- * thus the min — collapses to ~0 regardless of how short the segments are.
+ * "Contiguously" is the crucial part: the swept span sums only steps where the
+ * foot advances by about one sample spacing (± tolerance). When `a` genuinely runs
+ * along `b`, moving one step along `a` moves the foot a comparable step along `b`.
+ * A touch or crossing pins every foot to one spot, and a chord across a hairpin
+ * whose two ends are within tolerance would make the foot JUMP from one arc end to
+ * the other — a min-to-max span would count that whole gap as overlap, so instead
+ * such jumps are excluded and the swept span (and thus the min) collapses to ~0.
  */
 function realOverlapMeters(
   a: readonly LatLng[],
@@ -200,20 +204,28 @@ function realOverlapMeters(
   const samples = sampleAlong(a, sampleM);
   if (samples.length < 2) return 0;
   const aLen = polylineMeters(a);
+  const stepArcA = aLen / (samples.length - 1);
+  // A foot step longer than one sample spacing plus tolerance is a jump between
+  // disconnected places on `b`, not travel along it — don't count it as overlap.
+  const maxContiguousStep = stepArcA + tolM;
   let matched = 0;
-  let sweepMin = Infinity;
-  let sweepMax = -Infinity;
+  let swept = 0;
+  let prevArcPos: number | null = null; // foot of the immediately preceding sample
   for (const p of samples) {
     const foot = footOnPolyline(p, b);
     if (foot.dist <= tolM) {
       matched++;
-      if (foot.arcPos < sweepMin) sweepMin = foot.arcPos;
-      if (foot.arcPos > sweepMax) sweepMax = foot.arcPos;
+      if (prevArcPos !== null) {
+        const step = Math.abs(foot.arcPos - prevArcPos);
+        if (step <= maxContiguousStep) swept += step;
+      }
+      prevArcPos = foot.arcPos;
+    } else {
+      prevArcPos = null; // a gap in coverage breaks contiguity
     }
   }
   const coveredArcA = (matched / samples.length) * aLen;
-  const sweptArcB = sweepMax >= sweepMin ? sweepMax - sweepMin : 0;
-  return Math.min(coveredArcA, sweptArcB);
+  return Math.min(coveredArcA, swept);
 }
 
 /** How far apart two polylines run WHERE THEY OVERLAP — the symmetric mean
