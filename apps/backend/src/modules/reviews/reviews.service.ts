@@ -154,10 +154,57 @@ export class ReviewsService {
     };
   }
 
+  /**
+   * Resolve the whole OSM way a segment belongs to as its set of sub-segment ids
+   * (`COALESCE(osm_way_id, id)` match). A crowd-sourced row (null osm_way_id) is a
+   * group of one, so this returns `[segmentId]` and behaviour is unchanged; an
+   * imported ~100 m child expands to every sub-segment of its way. Used so reviews
+   * are keyed on the logical ROAD, matching the aggregated /roads/:id detail (#809).
+   */
+  private async resolveWaySegmentIds(segmentId: string): Promise<string[]> {
+    // Annotate the binding (rather than an `as` cast) so `rows` is typed under
+    // both the local and the strict OpenAPI-gen tsconfigs, which disagree on
+    // whether a cast here is redundant.
+    const rows: Array<{ id: string }> = await this.segmentRepo.query(
+      `SELECT rs.id
+       FROM road_segments rs
+       WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = (
+         SELECT COALESCE(osm_way_id::text, id::text)
+         FROM road_segments WHERE id = $1
+       )`,
+      [segmentId],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * The viewer's own review anywhere on the requested id's whole way (a rider can
+   * review a ROAD once, not once per ~100 m sub-segment). So a review posted to a
+   * sibling sub-segment is still found for edit/delete via any id of the way,
+   * keeping the write path consistent with the way-aggregated read path (#809).
+   */
+  private async findOwnReviewOnWay(
+    userId: string,
+    segmentId: string,
+    relations: string[] = [],
+  ): Promise<RoadReview | null> {
+    const wayIds = await this.resolveWaySegmentIds(segmentId);
+    if (wayIds.length === 0) return null;
+    return this.reviewRepo.findOne({
+      where: { user_id: userId, road_segment_id: In(wayIds) },
+      relations,
+    });
+  }
+
   async listForSegment(
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
+    // Reviews are keyed on the logical ROAD (the requested id's whole way), so the
+    // panel matches the aggregated /roads/:id detail — a road's reviews are the
+    // union across its ~100 m sub-segments (#809).
+    const wayIds = await this.resolveWaySegmentIds(segmentId);
+    if (wayIds.length === 0) return [];
     // Hidden (moderated) reviews stay out of the public list, but a rider
     // must still see their OWN hidden review — otherwise the mobile form
     // reads its absence as "create mode", the POST trips the unique
@@ -169,10 +216,10 @@ export class ReviewsService {
     const reviews = await this.reviewRepo.find({
       where: viewerUserId
         ? [
-            { road_segment_id: segmentId, moderation_status: 'visible' },
-            { road_segment_id: segmentId, user_id: viewerUserId },
+            { road_segment_id: In(wayIds), moderation_status: 'visible' },
+            { road_segment_id: In(wayIds), user_id: viewerUserId },
           ]
-        : { road_segment_id: segmentId, moderation_status: 'visible' },
+        : { road_segment_id: In(wayIds), moderation_status: 'visible' },
       relations: ['user'],
       order: { created_at: 'DESC' },
     });
@@ -280,13 +327,14 @@ export class ReviewsService {
     segmentId: string,
     dto: CreateReviewDto,
   ): Promise<ReviewResponseDto> {
-    const review = await this.reviewRepo.findOne({
-      where: { user_id: userId, road_segment_id: segmentId },
-      relations: ['user'],
-    });
+    const review = await this.findOwnReviewOnWay(userId, segmentId, ['user']);
     if (!review) {
       throw new NotFoundException('Review not found');
     }
+    // The review may live on a sibling sub-segment of the way; its managed photos
+    // are keyed to THAT segment, so ownership/cascade use the review's own segment
+    // (identical to `segmentId` for a crowd-sourced group-of-one).
+    const reviewSegmentId = review.road_segment_id;
 
     // Normalize incoming and stored URLs to the same trimmed form so the
     // set-difference below can't mistake padding for an actual removal —
@@ -299,7 +347,7 @@ export class ReviewsService {
     // `assertReviewPhotosAreOwned`).
     assertReviewPhotosAreOwned(
       nextPhotos,
-      segmentId,
+      reviewSegmentId,
       userId,
       this.isTrustedManagedOrigin,
     );
@@ -319,7 +367,7 @@ export class ReviewsService {
     // another user uploaded — even if a legacy row carries a foreign URL.
     const nextSet = new Set(nextPhotos);
     const removed = previousPhotos.filter((photo) => !nextSet.has(photo));
-    await this.deleteOwnedReviewPhotos(removed, segmentId, userId);
+    await this.deleteOwnedReviewPhotos(removed, reviewSegmentId, userId);
 
     const voteMap = await this.aggregateVotes([saved.id], userId);
     // The viewer is the author here. Even if their profile is `private`,
@@ -332,17 +380,17 @@ export class ReviewsService {
   }
 
   async delete(userId: string, segmentId: string): Promise<void> {
-    const review = await this.reviewRepo.findOne({
-      where: { user_id: userId, road_segment_id: segmentId },
-    });
+    const review = await this.findOwnReviewOnWay(userId, segmentId);
     if (!review) {
       throw new NotFoundException('Review not found');
     }
     // Normalize so a legacy padded URL still resolves to the same managed
-    // key the URL-resolver would otherwise miss.
+    // key the URL-resolver would otherwise miss. The review's own segment id keys
+    // its managed photos (same as `segmentId` for a group-of-one).
+    const reviewSegmentId = review.road_segment_id;
     const photos = normalizeReviewPhotoList(review.photos);
     await this.reviewRepo.remove(review);
-    await this.deleteOwnedReviewPhotos(photos, segmentId, userId);
+    await this.deleteOwnedReviewPhotos(photos, reviewSegmentId, userId);
   }
 
   /**

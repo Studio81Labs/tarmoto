@@ -8,7 +8,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Readable } from 'node:stream';
 import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
@@ -111,6 +111,9 @@ describe('ReviewsService', () => {
     };
     segmentRepo = {
       findOne: jest.fn().mockResolvedValue(mockSegment),
+      // `resolveWaySegmentIds` — a crowd-sourced row is a group of one, so the
+      // requested id maps to just itself and the reviews query is unchanged.
+      query: jest.fn().mockResolvedValue([{ id: 'seg-1' }]),
     };
 
     voteGroupRows = [];
@@ -173,7 +176,7 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(reviewRepo.find).toHaveBeenCalledWith({
-        where: { road_segment_id: 'seg-1', moderation_status: 'visible' },
+        where: { road_segment_id: In(['seg-1']), moderation_status: 'visible' },
         relations: ['user'],
         order: { created_at: 'DESC' },
       });
@@ -189,6 +192,39 @@ describe('ReviewsService', () => {
       expect(result[0].not_helpful_count).toBe(0);
       expect(result[0].my_vote).toBeNull();
       expect(result[0].is_mine).toBe(false);
+    });
+
+    it("aggregates reviews across the requested id's whole OSM way (#809)", async () => {
+      // An imported ~100 m child resolves to every sub-segment of its way, so the
+      // panel matches the aggregated /roads/:id detail.
+      segmentRepo.query!.mockResolvedValueOnce([
+        { id: 'seg-1' },
+        { id: 'seg-2' },
+        { id: 'seg-3' },
+      ]);
+
+      await service.listForSegment('seg-1');
+
+      expect(segmentRepo.query).toHaveBeenCalledWith(expect.any(String), [
+        'seg-1',
+      ]);
+      expect(reviewRepo.find).toHaveBeenCalledWith({
+        where: {
+          road_segment_id: In(['seg-1', 'seg-2', 'seg-3']),
+          moderation_status: 'visible',
+        },
+        relations: ['user'],
+        order: { created_at: 'DESC' },
+      });
+    });
+
+    it('returns an empty list when the segment id does not resolve to a way', async () => {
+      segmentRepo.query!.mockResolvedValueOnce([]);
+
+      const result = await service.listForSegment('missing');
+
+      expect(result).toEqual([]);
+      expect(reviewRepo.find).not.toHaveBeenCalled();
     });
 
     it("should surface vote counts and the caller's own vote when authenticated", async () => {
@@ -239,7 +275,7 @@ describe('ReviewsService', () => {
         expect.objectContaining({
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           where: expect.objectContaining({
-            road_segment_id: 'seg-1',
+            road_segment_id: In(['seg-1']),
             moderation_status: 'visible',
           }),
         }),
@@ -253,8 +289,8 @@ describe('ReviewsService', () => {
       expect(reviewRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
           where: [
-            { road_segment_id: 'seg-1', moderation_status: 'visible' },
-            { road_segment_id: 'seg-1', user_id: 'user-1' },
+            { road_segment_id: In(['seg-1']), moderation_status: 'visible' },
+            { road_segment_id: In(['seg-1']), user_id: 'user-1' },
           ],
         }),
       );
@@ -551,13 +587,36 @@ describe('ReviewsService', () => {
 
       const result = await service.update('user-1', 'seg-1', dto);
 
+      // Resolves the rider's review anywhere on the requested id's way (#809).
       expect(reviewRepo.findOne).toHaveBeenCalledWith({
-        where: { user_id: 'user-1', road_segment_id: 'seg-1' },
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1']) },
         relations: ['user'],
       });
       expect(reviewRepo.save).toHaveBeenCalled();
       expect(result.rating).toBe(2);
       expect(result.comment).toBe('Road deteriorated');
+    });
+
+    it("resolves the rider's review on a sibling sub-segment of the way (#809)", async () => {
+      // The rider posted their review to sub-segment seg-2 (when it was the
+      // representative); opening seg-1 of the same way must still find + edit it,
+      // so the is_mine edit affordance doesn't 404.
+      segmentRepo.query!.mockResolvedValueOnce([
+        { id: 'seg-1' },
+        { id: 'seg-2' },
+      ]);
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        road_segment_id: 'seg-2',
+      });
+
+      await service.update('user-1', 'seg-1', { rating: 2 });
+
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1', 'seg-2']) },
+        relations: ['user'],
+      });
+      expect(reviewRepo.save).toHaveBeenCalled();
     });
 
     it('should clear optional fields when not provided', async () => {
@@ -778,8 +837,10 @@ describe('ReviewsService', () => {
     it('should delete an existing review', async () => {
       await service.delete('user-1', 'seg-1');
 
+      // Resolves the rider's review anywhere on the requested id's way (#809).
       expect(reviewRepo.findOne).toHaveBeenCalledWith({
-        where: { user_id: 'user-1', road_segment_id: 'seg-1' },
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1']) },
+        relations: [],
       });
       expect(reviewRepo.remove).toHaveBeenCalledWith(mockReview);
     });
@@ -790,6 +851,23 @@ describe('ReviewsService', () => {
       await expect(service.delete('user-1', 'seg-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it("resolves the rider's review on a sibling sub-segment of the way (#809)", async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        { id: 'seg-1' },
+        { id: 'seg-2' },
+      ]);
+      const siblingReview = { ...mockReview, road_segment_id: 'seg-2' };
+      reviewRepo.findOne!.mockResolvedValueOnce(siblingReview);
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(reviewRepo.findOne).toHaveBeenCalledWith({
+        where: { user_id: 'user-1', road_segment_id: In(['seg-1', 'seg-2']) },
+        relations: [],
+      });
+      expect(reviewRepo.remove).toHaveBeenCalledWith(siblingReview);
     });
 
     it('should cascade-delete managed photo objects after removing the review', async () => {
