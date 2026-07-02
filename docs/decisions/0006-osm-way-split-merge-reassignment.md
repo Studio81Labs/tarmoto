@@ -67,10 +67,14 @@ road. The shared length is the **smaller of the two directional covered lengths*
 measuring only the incoming side would let a short stub touching the _end_ of a
 long incoming segment inflate the covered length (a small fraction of a long
 neighbour is still several metres) and defeat the floor, even though the real
-overlap is ~zero. A **near-perfect** match (score ≥ 0.9 — an unchanged segment, or
-one fully contained in another on a split/merge) bypasses the floor entirely: it
-is genuine at any length, so an idempotent re-import of a sub-10 m
-connector/driveway keeps its id instead of being tombstoned and reinserted.
+overlap is ~zero. A **mutually near-perfect** match (each segment covers ≥ 0.9 of
+the other — an unchanged segment) bypasses the floor entirely: it is genuine at
+any length, so an idempotent re-import of a sub-10 m connector/driveway keeps its
+id instead of being tombstoned and reinserted. The bypass keys on the _weaker_
+direction, not the max: a stub shorter than the tolerance touching a long
+segment's tip is fully within tolerance of that tip (one direction ≈ 1) but covers
+almost none of the long side (the other ≈ 0), so it stays gated by the length
+floor and cannot leak its id onto the adjacent road.
 
 Because each existing id is claimed once:
 

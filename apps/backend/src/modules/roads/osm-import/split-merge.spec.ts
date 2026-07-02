@@ -128,6 +128,24 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['stub']);
   });
 
+  it('does not carry a sub-tolerance stub whose every sample touches a long incoming tip', () => {
+    // A ~3 m stale stub (shorter than the 5 m tolerance) ending where a ~100 m
+    // incoming segment starts. EVERY stub sample is within tolerance of the
+    // incoming's tip, so rev === 1 and score === 1 — but the two share ~no real
+    // length. The bypass keys on mutual coverage (fwd ≈ 0 here), so the length
+    // floor still applies and the stub is stale, not carried onto the new road.
+    const existing: ExistingSegment[] = [
+      { id: 'micro', coords: seg(0, 0.03 * M) },
+    ];
+    const incoming = [seg(0.03 * M, 0.03 * M + M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['micro']);
+  });
+
   it('disjoint geometry: no carry-over — all inserts, all existing stale', () => {
     const existing: ExistingSegment[] = [{ id: 'far', coords: seg(0, M) }];
     // ~1° north — kilometres away, no overlap.

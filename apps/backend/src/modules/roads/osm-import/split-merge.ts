@@ -226,6 +226,12 @@ export function planReassignment(
       // segment contained in the other (a split/merge) — max ~1.0 — while a short
       // partial overlap of two mostly-different stretches stays low both ways.
       const score = Math.max(fwd, rev);
+      // Mutual coverage — the WEAKER direction. Near 1.0 only when each segment
+      // lies almost entirely on the other (a true 1:1 near-identity). A one-sided
+      // perfect match — a stub shorter than the tolerance touching a long
+      // segment's tip, so every stub sample is within tolerance (rev ≈ 1) but only
+      // the tip of the long side is covered (fwd ≈ 0) — stays low here.
+      const mutual = Math.min(fwd, rev);
       // Shared LENGTH — the length of the stretch the two segments genuinely
       // share, taken as the SMALLER of the two directional covered lengths
       // (incoming fraction × incoming length, and existing fraction × existing
@@ -243,13 +249,16 @@ export function planReassignment(
       // A PARTIAL majority must also clear a tolerance-aware length floor: two
       // short segments that merely touch at an endpoint each have ~`tolM` of
       // length within tolerance of the other's tip — a false majority for ~10 m
-      // stubs. But a near-perfect containment (an unchanged segment, or one fully
-      // inside another on a split/merge) is genuine at any length, so it bypasses
-      // the floor — otherwise an idempotent re-import of a <10 m connector would
-      // lose its id.
+      // stubs. Only a MUTUALLY near-perfect match (each segment almost entirely on
+      // the other — an unchanged segment) is genuine at any length and bypasses
+      // the floor, so an idempotent re-import of a <10 m connector keeps its id.
+      // The bypass keys on `mutual` (not `score`): a one-sided perfect match — a
+      // sub-tolerance stub whose every sample sits within tolerance of a long
+      // neighbour's tip — has score ≈ 1 but mutual ≈ 0, so it stays gated by the
+      // length floor and can't leak its id onto the adjacent road.
       const eligible =
         score > minOverlap &&
-        (score >= NEAR_PERFECT_OVERLAP || overlapLen > 2 * tolM);
+        (mutual >= NEAR_PERFECT_OVERLAP || overlapLen > 2 * tolM);
       if (eligible) {
         pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }
