@@ -34,7 +34,7 @@ Conventional commits. One logical change per commit.
 ```
 
 - **Types:** `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`, `perf`, `ci`, `build`, `revert`
-- **Scopes:** `backend`, `mobile`, `companion`, `poc-sensor`, `shared`, `openapi`, `ci`, `infra`, `docs`, `deps`, `cross`
+- **Scopes:** `backend`, `mobile`, `companion`, `admin`, `poc-sensor`, `shared`, `openapi`, `ci`, `infra`, `docs`, `deps`, `cross`, `marketing`
 - Scope is required on local commit messages and PR titles. `commitlint` enforces this on every commit via the husky `commit-msg` hook, and `lint-pr.yml` enforces it again on PR titles.
 - Use `cross` for genuinely cross-cutting changes instead of omitting the scope.
 - Subject must start **lowercase** (enforced by `lint-pr.yml`).
@@ -52,8 +52,8 @@ Run these locally and make sure they pass:
 
 ```bash
 pnpm lint                 # Lint all packages
-pnpm test                 # Backend unit tests (Jest)
-pnpm test --filter backend -- --coverage   # Coverage if you care about a specific module
+pnpm test                 # Run all package tests (backend Jest + others)
+pnpm backend:test:cov     # Backend unit tests with coverage
 # E2E tests on backend:
 pnpm --filter @tarmoto/backend test:e2e    # Requires `pnpm db:up`
 

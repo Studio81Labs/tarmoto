@@ -21,7 +21,7 @@ How we test Tarmoto. For CI details see `.github/workflows/`. For running locall
 - **Location:** colocated next to source as `*.spec.ts`. Example: `src/modules/rides/rides.service.spec.ts`.
 - **Runner:** Jest (NestJS default). Config embedded in `apps/backend/package.json`.
 - **Commands:**
-  - `pnpm test` — all backend unit tests
+  - `pnpm backend:test` — backend unit tests (`pnpm test` at the root runs **every** workspace's tests)
   - `pnpm --filter @tarmoto/backend test:watch` — watch mode
   - `pnpm --filter @tarmoto/backend test:cov` — with coverage
 - **What goes here:** pure functions, service methods with mocked dependencies, edge cases for classification / scoring / geospatial logic. Mock `TypeORM` repositories via Jest stubs; mock `WeatherService`, `TileService` at the service boundary.
@@ -30,7 +30,7 @@ How we test Tarmoto. For CI details see `.github/workflows/`. For running locall
 
 - **Location:** `apps/backend/test/*.e2e-spec.ts` with config in `apps/backend/test/jest-e2e.json`.
 - **Command:** `pnpm --filter @tarmoto/backend test:e2e`. Requires a running database — run `pnpm db:up` first.
-- **What goes here:** request → response cycles exercising real modules against a real Postgres (test DB). Existing coverage: app-level bootstrap. Expand as endpoints solidify.
+- **What goes here:** request → response cycles exercising real modules against a real Postgres (test DB). Existing coverage spans admin auth/management, hazards, road-quality, exploration, account-deletion, and demo seeding (`apps/backend/test/*.e2e-spec.ts`). Expand as endpoints solidify.
 - **When to add an E2E test:**
   - New public API endpoint
   - Change to auth/JWT behavior
@@ -111,12 +111,17 @@ Cursor-presence and live WebSocket sync between collaborators are mocked out; th
 
 ## What gets run in CI
 
-Each PR triggers:
+Each PR triggers (path-filtered per app):
 
 - `backend-ci.yml` — builds `shared` + `backend`, runs lint, runs backend unit tests
 - `companion-ci.yml` — lint, typecheck, Vitest, and Next.js build for the companion
 - `companion-e2e.yml` — runs the Playwright suite against the in-process mock backend; uploads traces and the HTML report on failure
-- `mobile-ci.yml` — lint and typecheck for the mobile app
+- `admin-ci.yml` — lint, typecheck, Vitest, `node --test` worker tests, and build for the admin console
+- `marketing-ci.yml` — build, typecheck, `node --test` worker tests, and a `wrangler` dry-run
+- `mobile-ci.yml` — lint, typecheck, and Jest tests for the mobile app
+- `packages-ci.yml` — build/test/typecheck of `packages/*` (Vitest)
+- `openapi-check.yml` — OpenAPI freshness gate: regenerates the spec + client (`pnpm openapi:gen`) and fails if the committed `packages/openapi-client` schema is stale
+- `poc-ci.yml` — PoC sensor build
 - `lint-pr.yml` — enforces conventional-commit PR titles with valid scope
 
 If CI fails, fix the root cause. Do not merge on a red build.
