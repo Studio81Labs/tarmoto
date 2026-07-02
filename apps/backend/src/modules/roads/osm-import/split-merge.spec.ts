@@ -1,0 +1,530 @@
+import { planReassignment, type ExistingSegment } from './split-merge.js';
+import type { LatLng } from './segmentation.js';
+
+// ~0.0009° latitude ≈ 100 m. Build straight segments north along lng 0.
+function seg(latStart: number, latEnd: number): LatLng[] {
+  return [
+    { lat: latStart, lng: 0 },
+    { lat: latEnd, lng: 0 },
+  ];
+}
+const M = 0.0009; // ~100 m in degrees latitude
+
+describe('planReassignment (OSM split/merge)', () => {
+  it('carries every id over when the segmentation is unchanged', () => {
+    const existing: ExistingSegment[] = [
+      { id: 'a', coords: seg(0, M) },
+      { id: 'b', coords: seg(M, 2 * M) },
+    ];
+    const incoming = [seg(0, M), seg(M, 2 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+    expect(plan.carryOver).toHaveLength(2);
+    expect(
+      plan.carryOver.map((c) => [c.existingId, c.incomingIndex]).sort(),
+    ).toEqual([
+      ['a', 0],
+      ['b', 1],
+    ]);
+  });
+
+  it('1→2 split: history follows one half, the other is a fresh insert', () => {
+    // Existing 200 m way, OSM re-split into two 100 m segments.
+    const existing: ExistingSegment[] = [{ id: 'x', coords: seg(0, 2 * M) }];
+    const incoming = [seg(0, M), seg(M, 2 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('x');
+    expect(plan.inserts).toHaveLength(1); // the other half is new
+    expect(plan.stale).toEqual([]); // the existing row was reused, not orphaned
+  });
+
+  it('uneven split: history follows the longer child, not the first/short stub', () => {
+    // Existing 100 m row split into a 10 m stub (index 0) + 90 m main (index 1).
+    // Both are fully contained (fraction 1), so ranking by fraction alone would
+    // let the stub — first by index — steal the id. Overlap length picks the 90 m.
+    const existing: ExistingSegment[] = [{ id: 'x', coords: seg(0, M) }];
+    const incoming = [seg(0, 0.1 * M), seg(0.1 * M, M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('x');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(1); // the 90 m main stretch
+    expect(plan.inserts).toEqual([0]); // the 10 m stub is a fresh row
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('genuine short split: parent id follows the longer sub-floor child', () => {
+    // A ~15 m connector split into 8 m (index 0) + 7 m (index 1) children. Both
+    // are below 2·tolerance and neither is near-1:1 with the parent, but each is a
+    // genuine contained overlap, so the parent's id must follow the longer child
+    // rather than being marked stale with both children inserted fresh.
+    const existing: ExistingSegment[] = [{ id: 'p', coords: seg(0, 0.15 * M) }];
+    const incoming = [seg(0, 0.08 * M), seg(0.08 * M, 0.15 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('p');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(0); // the 8 m child
+    expect(plan.inserts).toEqual([1]); // the 7 m child is a fresh row
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('prefers a short exact contained match over a longer parallel one', () => {
+    // A ~4 m existing row lying exactly on the middle of a 100 m incoming way
+    // (between the coarse sample ticks), competing with a full-length parallel row
+    // ~3 m to the side. Exactness must be measured from dense samples so the short
+    // contained match reads as exact (separation ~0) and outranks the longer
+    // parallel one, keeping each id on its own geometry.
+    const incomingLine = seg(0, M); // ~100 m
+    const parallelA: LatLng[] = [
+      { lat: 0, lng: 0.03 * M }, // ~3 m to the side, full length
+      { lat: M, lng: 0.03 * M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'A', coords: parallelA },
+      { id: 'B', coords: seg(0.48 * M, 0.52 * M) }, // ~4 m, exact, mid-way
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'B', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual(['A']);
+  });
+
+  it('prefers a shorter exact match over a longer parallel one', () => {
+    // Incoming 100 m way. Existing B lies exactly on its first 60 m; stale
+    // existing A is a full-length carriageway 3 m to the side. A has the longer
+    // overlap (~100 m vs ~60 m), so ranking by length alone would carry A's id
+    // onto the incoming and drop B. Exactness must win: B keeps the road, A stales.
+    const incomingLine: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: M, lng: 0 },
+    ];
+    const parallelA: LatLng[] = [
+      { lat: 0, lng: 0.03 * M }, // ~3 m to the side, full length
+      { lat: M, lng: 0.03 * M },
+    ];
+    const exactB: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: 0.6 * M, lng: 0 }, // exact, first 60 m only
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'A', coords: parallelA },
+      { id: 'B', coords: exactB },
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'B', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual(['A']);
+  });
+
+  it('carries a short existing segment contained in a long merged incoming way', () => {
+    // An unchanged ~8 m existing way fully inside a 100 m incoming merged way,
+    // sitting between the coarse sample ticks. Sampling only the long incoming
+    // could miss it (0 samples land inside); measuring the overlap from the short
+    // side's own dense samples keeps its id.
+    const existing: ExistingSegment[] = [
+      { id: 'small', coords: seg(0.46 * M, 0.54 * M) }, // ~8 m mid-way
+    ];
+    const incoming = [seg(0, M)]; // ~100 m
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'small', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('carries identity when an incoming row is shifted but still shares a majority', () => {
+    // A 100 m existing row and an incoming row shifted ~40 m along it, so they
+    // share ~60 m — a majority of each. Boundary intervals must be counted or the
+    // swept length undercounts and the majority gate wrongly rejects the match.
+    const existing: ExistingSegment[] = [{ id: 'shift', coords: seg(0, M) }];
+    const incoming = [seg(0.4 * M, 1.4 * M)]; // shares 0.4M..1.0M ≈ 60 m
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('shift');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(0);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('2→1 merge: one id inherits the merged road, the other goes stale', () => {
+    // Two existing 100 m segments merged into one 200 m way.
+    const existing: ExistingSegment[] = [
+      { id: 'a1', coords: seg(0, M) },
+      { id: 'a2', coords: seg(M, 2 * M) },
+    ];
+    const incoming = [seg(0, 2 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(['a1', 'a2']).toContain(plan.carryOver[0]!.existingId);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toHaveLength(1); // the other existing row is orphaned
+  });
+
+  it('keeps the id of an unchanged sub-10 m segment (perfect match bypasses the floor)', () => {
+    // A ~8 m connector/driveway re-imported unchanged. Its overlap length is
+    // below the endpoint-leak floor, but a near-perfect containment is genuine at
+    // any length, so it must still carry its id rather than go stale + reinsert.
+    const existing: ExistingSegment[] = [
+      { id: 'short', coords: seg(0, 0.08 * M) },
+    ];
+    const incoming = [seg(0, 0.08 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'short', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('does not match two short segments that only touch at an endpoint', () => {
+    // A ~10 m existing row and a ~10 m incoming row that are adjacent (share one
+    // tip). Half of each is within the 5 m tolerance of the other's endpoint —
+    // a false majority — but the shared length is only ~tolerance, below the
+    // tolerance-aware floor, so identity must NOT carry onto the neighbour.
+    const existing: ExistingSegment[] = [{ id: 's', coords: seg(0, 0.1 * M) }];
+    const incoming = [seg(0.1 * M, 0.2 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['s']);
+  });
+
+  it('does not carry a short stub onto a long incoming that only touches its end', () => {
+    // A ~9 m stale existing stub ending exactly where a normal ~100 m incoming
+    // segment starts. `rev` clears the majority (a few stub samples fall within
+    // tolerance of the shared tip), and scaling that small `fwd` by the long
+    // incoming's length would inflate the covered length past the floor — but the
+    // REAL shared length is ~0, so the min-of-both-directions floor must reject it
+    // rather than leak the stub's UUID/history onto the adjacent new road.
+    const existing: ExistingSegment[] = [
+      { id: 'stub', coords: seg(0, 0.09 * M) },
+    ];
+    const incoming = [seg(0.09 * M, 0.09 * M + M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['stub']);
+  });
+
+  it('does not carry a sub-tolerance stub whose every sample touches a long incoming tip', () => {
+    // A ~3 m stale stub (shorter than the 5 m tolerance) ending where a ~100 m
+    // incoming segment starts. EVERY stub sample is within tolerance of the
+    // incoming's tip, so rev === 1 and score === 1 — but the two share ~no real
+    // length. The bypass keys on mutual coverage (fwd ≈ 0 here), so the length
+    // floor still applies and the stub is stale, not carried onto the new road.
+    const existing: ExistingSegment[] = [
+      { id: 'micro', coords: seg(0, 0.03 * M) },
+    ];
+    const incoming = [seg(0.03 * M, 0.03 * M + M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['micro']);
+  });
+
+  it('keeps the id of an unchanged sub-floor segment with a sharp bend', () => {
+    // A ~9 m service connector as an L: a 4.5 m east leg then a 4.5 m north leg.
+    // Its end-to-end chord is only ~6.4 m, so a chord-based overlap would fall
+    // below 0.9×9 and wrongly drop it; the arc-following real overlap measures the
+    // full 9 m, so an idempotent re-import carries the id over.
+    const d = 0.045 * M; // ~4.5 m per leg
+    const bent = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: d },
+      { lat: d, lng: d },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'bend', coords: bent }];
+
+    const plan = planReassignment(existing, [bent]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'bend', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('prefers the exact geometry match over index order for parallel neighbours', () => {
+    // Two parallel carriageways ~3 m apart (within the 5 m tolerance), presented
+    // to the DB in the opposite order from the incoming snapshot. Every cross-pair
+    // scores a full overlap, so index order alone would hand A's id to B; the
+    // separation tie-breaker keeps each id on its own exact geometry.
+    const gap = 0.03 * M; // ~3 m lateral separation
+    const north: LatLng[] = [
+      { lat: gap, lng: 0 },
+      { lat: gap, lng: M },
+    ];
+    const south: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'north', coords: north },
+      { id: 'south', coords: south },
+    ];
+    // Incoming order is reversed relative to the existing rows.
+    const incoming = [south, north];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.stale).toEqual([]);
+    expect(plan.inserts).toEqual([]);
+    // north (existing) must keep its geometry: incoming index 1 is `north`.
+    expect(
+      plan.carryOver.map((c) => [c.existingId, c.incomingIndex]).sort(),
+    ).toEqual([
+      ['north', 1],
+      ['south', 0],
+    ]);
+  });
+
+  it('does not carry between two collinear sub-tolerance segments that only abut', () => {
+    // A ~3 m existing connector (0–3 m) and a ~3 m incoming connector (3–6 m),
+    // collinear and sharing only the junction. Both are shorter than the 5 m
+    // tolerance, so every sample is within tolerance both ways (mutual ≈ 1) AND
+    // the corresponding endpoints are ~3 m apart (endpoint proximity passes) —
+    // yet the real collinear overlap is zero, so the bypass must NOT fire and the
+    // stub is stale rather than carried onto the abutting road.
+    const existing: ExistingSegment[] = [
+      { id: 'abut', coords: seg(0, 0.03 * M) },
+    ];
+    const incoming = [seg(0.03 * M, 0.06 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['abut']);
+  });
+
+  it('does not carry a chord bridging the mouth of a hairpin existing segment', () => {
+    // A ~50 m U-shaped existing way whose two ends sit ~4 m apart (within the 5 m
+    // tolerance), and a ~4 m incoming connector bridging that mouth. Every incoming
+    // sample is near one of the U's ends, so the matched feet jump between arc 0
+    // and arc 50 — a min-to-max span would report the whole U as overlap. Summing
+    // only contiguous steps yields ~0, so the connector does NOT inherit the U's id.
+    const w = 0.04 * M; // ~4 m mouth width
+    const h = 0.25 * M; // ~25 m legs
+    const hairpin: LatLng[] = [
+      { lat: 0, lng: 0 }, // P0
+      { lat: h, lng: 0 }, // up the first leg
+      { lat: h, lng: w }, // across the top
+      { lat: 0, lng: w }, // back down to P1, ~4 m from P0
+    ];
+    const connector = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: w },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'u', coords: hairpin }];
+
+    const plan = planReassignment(existing, [connector]);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['u']);
+  });
+
+  it('does not carry between two short segments crossing at a shallow angle', () => {
+    // Two ~15 m stubs crossing at ~30°. Every sample is within tolerance and the
+    // projected foot advances smoothly along the other line (not pinned), so the
+    // contiguity rule alone would accept it. The heading check rejects it: the two
+    // run ~30° apart, well over the alignment tolerance, so no swept length counts.
+    const dLng = 0.075 * M; // ~7.5 m half-length east
+    const existing: ExistingSegment[] = [
+      {
+        id: 'ew',
+        coords: [
+          { lat: 0, lng: -dLng },
+          { lat: 0, lng: dLng },
+        ],
+      },
+    ];
+    // ~30° rotated: half-vector (6.5 m east, 3.75 m north).
+    const incoming = [
+      [
+        { lat: -0.0374 * M, lng: -0.0648 * M },
+        { lat: 0.0374 * M, lng: 0.0648 * M },
+      ],
+    ];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['ew']);
+  });
+
+  it('does not carry onto a lone parallel neighbour with no exact candidate', () => {
+    // The only existing row in the window is a ~3.5 m parallel offset from the
+    // incoming (a carriageway removed, or a new parallel added). Overlap and
+    // heading both look full, and there is no exact competitor to outrank it, so
+    // only the acceptance separation gate stops it inheriting the stale id.
+    const existing: ExistingSegment[] = [
+      {
+        id: 'para',
+        coords: [
+          { lat: 0, lng: 0.035 * M }, // ~3.5 m to the side
+          { lat: M, lng: 0.035 * M },
+        ],
+      },
+    ];
+    const incoming = [seg(0, M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['para']);
+  });
+
+  it('keeps a true match over a barely-offset (~2 m) parallel neighbour', () => {
+    // The exact tier is tight: a 100 m parallel row only ~2 m away must NOT count
+    // as an exact same-geometry match, so a true row covering the first 60 m keeps
+    // the incoming even though the parallel one overlaps a longer stretch.
+    const incomingLine = seg(0, M);
+    const parallel2m: LatLng[] = [
+      { lat: 0, lng: 0.02 * M }, // ~2 m to the side, full length
+      { lat: M, lng: 0.02 * M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'par', coords: parallel2m },
+      { id: 'true', coords: seg(0, 0.6 * M) }, // exact, first 60 m
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('true');
+    expect(plan.stale).toEqual(['par']);
+  });
+
+  it('rejects non-positive sampling options instead of hanging', () => {
+    const existing: ExistingSegment[] = [{ id: 'a', coords: seg(0, M) }];
+    const incoming = [seg(0, M)];
+
+    expect(() =>
+      planReassignment(existing, incoming, { toleranceMeters: 0 }),
+    ).toThrow(/toleranceMeters/);
+    expect(() =>
+      planReassignment(existing, incoming, { sampleMeters: 0 }),
+    ).toThrow(/sampleMeters/);
+    expect(() =>
+      planReassignment(existing, incoming, { minOverlap: 0 }),
+    ).toThrow(/minOverlap/);
+  });
+
+  it('does not carry between two short segments that only cross at a point', () => {
+    // An ~8 m E–W existing segment and an ~8 m N–S incoming segment crossing at
+    // their midpoints. Both are shorter than 2·tolerance, so every sample of each
+    // is within tolerance of the other line — fwd === rev === 1, mutual === 1 —
+    // yet they share ~no road length. The endpoint-agreement gate on the bypass
+    // rejects it (their tips are ~√2·tolerance apart), so it stays stale.
+    const d = 0.04 * M; // ~4 m half-length
+    const existing: ExistingSegment[] = [
+      {
+        id: 'cross',
+        coords: [
+          { lat: 0, lng: -d },
+          { lat: 0, lng: d },
+        ],
+      },
+    ];
+    const incoming = [
+      [
+        { lat: -d, lng: 0 },
+        { lat: d, lng: 0 },
+      ],
+    ];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['cross']);
+  });
+
+  it('disjoint geometry: no carry-over — all inserts, all existing stale', () => {
+    const existing: ExistingSegment[] = [{ id: 'far', coords: seg(0, M) }];
+    // ~1° north — kilometres away, no overlap.
+    const incoming = [seg(1, 1 + M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['far']);
+  });
+
+  it('does not carry identity on a sub-majority partial overlap', () => {
+    // Two 100 m segments sharing only ~40 m — a mostly-different/extended
+    // stretch. Neither direction reaches a strict majority, so no carry-over.
+    const existing: ExistingSegment[] = [{ id: 'e', coords: seg(0, M) }];
+    const incoming = [seg(0.6 * M, 1.6 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['e']);
+  });
+
+  it('handles an antimeridian-crossing segment without exploding', () => {
+    // ~100 m segment straddling ±180°. A raw lng delta would read it as a
+    // ~40,000 km edge and generate millions of samples; the wrapped delta keeps
+    // it short so an unchanged re-import still carries the id over.
+    const cross: LatLng[] = [
+      { lat: 0, lng: 179.9995 },
+      { lat: M, lng: -179.9995 },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'am', coords: cross }];
+
+    const plan = planReassignment(existing, [cross]);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('am');
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('is deterministic on unchanged data (stable plan across runs)', () => {
+    const existing: ExistingSegment[] = [
+      { id: 'a', coords: seg(0, M) },
+      { id: 'b', coords: seg(M, 2 * M) },
+    ];
+    const incoming = [seg(0, M), seg(M, 2 * M)];
+
+    const first = planReassignment(existing, incoming);
+    const second = planReassignment(existing, incoming);
+    expect(first).toEqual(second);
+  });
+});
