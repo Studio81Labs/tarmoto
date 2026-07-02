@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { canShowPersonalizedRecommendations } from '@tarmoto/shared';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -36,7 +36,9 @@ export class ExplorationService {
         .andWhere("r.status = 'completed'")
         .andWhere('rs.road_segment_id IS NOT NULL')
         .getRawOne<{ count: string }>(),
-      this.roadSegmentRepo.count(),
+      // Denominator is the ACTIVE network — tombstoned (split/merged-away) roads
+      // must not dilute the explored percentage (#835).
+      this.roadSegmentRepo.count({ where: { deactivated_at: IsNull() } }),
       this.rideRepo
         .createQueryBuilder('r')
         .select('COALESCE(SUM(r.distance_km), 0)', 'total')
@@ -92,6 +94,7 @@ export class ExplorationService {
         'ST_DWithin(seg.geom::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radius)',
         { lng, lat, radius: radiusM },
       )
+      .andWhere('seg.deactivated_at IS NULL')
       .andWhere(
         `seg.id NOT IN (
           SELECT DISTINCT rs.road_segment_id
