@@ -13,12 +13,15 @@ import { registerAs } from '@nestjs/config';
  * enabled; the import throws a clear error rather than silently importing nothing.
  *
  * `bbox` is the extract's authoritative boundary `[minLng, minLat, maxLng, maxLat]`
- * (TARMOTO_OSM_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"). Split/merge stale
- * detection (#835) needs it: a data-derived bbox (the extent of the incoming
- * roads) would wrongly tombstone existing rows that fall in the rectangle but
- * outside the extract, and miss removed roads beyond the current roads' extrema.
- * When it is unset the importer still carries over + inserts, but does NOT
- * tombstone anything — it can't tell "removed" from "outside this extract".
+ * (TARMOTO_OSM_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"). It gates
+ * **stale-by-absence** tombstoning (#835): a data-derived bbox (the extent of the
+ * incoming roads) would wrongly tombstone existing rows that fall in the rectangle
+ * but outside the extract, and miss removed roads beyond the current roads'
+ * extrema. When it is unset the importer does NOT tombstone rows just for being
+ * absent from the snapshot — it can't tell "removed" from "outside this extract".
+ * (A row whose exact `(osm_way_id, segment_index)` the snapshot reassigns to a
+ * DIFFERENT road is still deactivated even without a region: that's definitive key
+ * reuse, not a bbox heuristic.)
  *
  * IMPORTANT: the `.osm` extract MUST be **bbox-clipped to exactly this rectangle**
  * (`osmium extract -b minLng,minLat,maxLng,maxLat …`), so the extract's coverage

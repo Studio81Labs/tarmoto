@@ -50,8 +50,11 @@ actually intersects. That means the extract just has to COVER the region; the
 importer handles the overhang. The bbox you configure must still match the region
 the extract covers.
 
-Without a region the importer never tombstones (it only carries over + inserts),
-so any extract is fine there.
+Without a region the importer does not tombstone rows for being **absent** from
+the snapshot (it can't tell "removed" from "outside this extract"), so any extract
+is fine there. It still deactivates a row whose exact `(osm_way_id, segment_index)`
+the snapshot reassigns to a different road — that's definitive key reuse, not a
+bbox guess.
 
 ## Config
 

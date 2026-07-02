@@ -653,14 +653,18 @@ export class RoadsService {
       avg_iri: string;
       reading_count: string;
     }[] = await this.segmentRepo.query(
+      // Join road_segments so a tombstoned segment (#835) — which /roads/:id,
+      // tiles, and discovery now hide — returns no trend for a cached id either.
       `SELECT
-         TO_CHAR(DATE_TRUNC('month', recorded_at), 'YYYY-MM') AS month,
-         AVG(iri_value) AS avg_iri,
+         TO_CHAR(DATE_TRUNC('month', sr.recorded_at), 'YYYY-MM') AS month,
+         AVG(sr.iri_value) AS avg_iri,
          COUNT(*)::int AS reading_count
-       FROM surface_readings
-       WHERE road_segment_id = $1
-         AND recorded_at > NOW() - INTERVAL '24 months'
-       GROUP BY DATE_TRUNC('month', recorded_at)
+       FROM surface_readings sr
+       JOIN road_segments rs
+         ON rs.id = sr.road_segment_id AND rs.deactivated_at IS NULL
+       WHERE sr.road_segment_id = $1
+         AND sr.recorded_at > NOW() - INTERVAL '24 months'
+       GROUP BY DATE_TRUNC('month', sr.recorded_at)
        ORDER BY month`,
       [segmentId],
     );
