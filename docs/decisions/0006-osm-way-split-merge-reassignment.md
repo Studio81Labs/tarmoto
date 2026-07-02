@@ -74,14 +74,19 @@ id instead of being tombstoned and reinserted. Two guards make the bypass safe o
 short segments. First, it keys on the _weaker_ coverage direction, not the max: a
 stub shorter than the tolerance touching a long segment's tip is fully within
 tolerance of that tip (one direction ≈ 1) but covers almost none of the long side
-(the other ≈ 0). Second, it also requires the two segments' **endpoints to agree**
-(start/end within tolerance, either orientation, since OSM can reverse node
-order): coverage is a proximity measure, so two short lines that merely _cross_ at
-a point score ~1 both ways despite zero shared length — endpoint agreement is the
-shape check that separates a real overlap (endpoints coincide) from a crossing
-(endpoints ~√2·tolerance apart). A match failing either guard falls back to the
-length floor and is inserted/tombstoned rather than leaking its id onto a
-neighbouring road.
+(the other ≈ 0). Second — and decisively, because sampled coverage is a
+_proximity_ measure that degrades to ~1 both ways once both segments are shorter
+than the tolerance (an adjacent stub or a crossing then looks identical to a real
+overlap) — it requires a **real collinear overlap**: projecting both onto the
+existing segment's chord axis and intersecting their extents, with a lateral
+tolerance, must yield at least 0.9 of the longer segment's length. That stays ~0
+for a mere end-to-end touch (extents abut), for a crossing (one side collapses to
+a point on the axis), and for a sub-tolerance stub at a tip — none of which can
+leak an id onto a neighbour — while a genuinely unchanged segment measures its
+full length. A match failing either guard falls back to the length floor and is
+inserted/tombstoned. (The chord projection assumes near-straightness, which holds
+for the sub-floor segments the bypass concerns; longer matches go through the
+sampled-coverage floor.)
 
 Because each existing id is claimed once:
 

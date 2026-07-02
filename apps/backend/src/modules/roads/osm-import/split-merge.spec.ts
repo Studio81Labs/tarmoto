@@ -146,6 +146,25 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['micro']);
   });
 
+  it('does not carry between two collinear sub-tolerance segments that only abut', () => {
+    // A ~3 m existing connector (0–3 m) and a ~3 m incoming connector (3–6 m),
+    // collinear and sharing only the junction. Both are shorter than the 5 m
+    // tolerance, so every sample is within tolerance both ways (mutual ≈ 1) AND
+    // the corresponding endpoints are ~3 m apart (endpoint proximity passes) —
+    // yet the real collinear overlap is zero, so the bypass must NOT fire and the
+    // stub is stale rather than carried onto the abutting road.
+    const existing: ExistingSegment[] = [
+      { id: 'abut', coords: seg(0, 0.03 * M) },
+    ];
+    const incoming = [seg(0.03 * M, 0.06 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['abut']);
+  });
+
   it('does not carry between two short segments that only cross at a point', () => {
     // An ~8 m E–W existing segment and an ~8 m N–S incoming segment crossing at
     // their midpoints. Both are shorter than 2·tolerance, so every sample of each

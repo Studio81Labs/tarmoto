@@ -29,10 +29,12 @@ const DEFAULT_MIN_OVERLAP = 0.5;
 const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
-/** Coverage this strong in BOTH directions means each segment lies almost
- *  entirely on the other (a 1:1 match / unchanged segment). Combined with
- *  endpoint agreement (see `endpointsAlign`) it bypasses the short-match length
- *  floor, so an unchanged sub-floor segment keeps its id. */
+/** The "unchanged segment" threshold. A carry-over bypasses the short-match
+ *  length floor only when coverage is this strong in BOTH directions AND the real
+ *  collinear overlap (see `collinearOverlapMeters`) is at least this fraction of
+ *  the longer segment — i.e. the two are essentially the same line — so an
+ *  unchanged sub-floor segment keeps its id without a touch/crossing sneaking
+ *  through. */
 const NEAR_PERFECT_OVERLAP = 0.9;
 
 export interface ExistingSegment {
@@ -168,26 +170,64 @@ function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
   return out;
 }
 
-/** Do the two polylines start and end at (nearly) the same places — in either
- *  direction? A mutually near-perfect coverage score means each line lies almost
- *  entirely on the other, but two SHORT lines that merely CROSS at a point also
- *  score ~1 both ways (every sample is within tolerance of the crossing) despite
- *  zero shared length. Endpoint agreement is the shape check that separates a real
- *  overlap (endpoints coincide) from a crossing (endpoints ~√2·tol apart). OSM can
- *  reverse a way's node order between snapshots, so accept either orientation. */
-function endpointsAlign(
+/**
+ * Length in metres of the stretch where `b` genuinely runs ALONGSIDE `a` — a real
+ * collinear overlap, as opposed to a mere endpoint touch or a crossing.
+ *
+ * Sampled proximity can't tell these apart once both segments are shorter than the
+ * tolerance: every point is then trivially within tolerance of the other, so an
+ * adjacent stub or a crossing scores ~1 both ways with zero shared road. This
+ * instead projects both polylines onto `a`'s chord axis and intersects their
+ * extents, requiring `b` to stay within `tolM` LATERALLY of that axis:
+ *  - a genuine coincident overlap → intersection ≈ min length, lateral ≈ 0;
+ *  - two segments that only touch end-to-end → extents abut, intersection ≈ 0;
+ *  - a crossing → `b` collapses to a point on the axis, intersection ≈ 0.
+ *
+ * It is a chord (not arc) measure, so it is only trusted for the SHORT segments
+ * the length-floor bypass concerns, where ~straightness holds; longer matches go
+ * through the sampled-coverage floor instead.
+ */
+function collinearOverlapMeters(
   a: readonly LatLng[],
   b: readonly LatLng[],
   tolM: number,
-): boolean {
-  if (a.length < 2 || b.length < 2) return false;
-  const aS = a[0]!;
-  const aE = a[a.length - 1]!;
-  const bS = b[0]!;
-  const bE = b[b.length - 1]!;
-  const sameDir = planarMeters(aS, bS) <= tolM && planarMeters(aE, bE) <= tolM;
-  const reversed = planarMeters(aS, bE) <= tolM && planarMeters(aE, bS) <= tolM;
-  return sameDir || reversed;
+): number {
+  if (a.length < 2 || b.length < 2) return 0;
+  const origin = a[0]!;
+  const mx = Math.cos((origin.lat * Math.PI) / 180) * 111_320;
+  const project = (q: LatLng) => ({
+    x: wrapLngDelta(q.lng - origin.lng) * mx,
+    y: (q.lat - origin.lat) * 111_320,
+  });
+  const end = project(a[a.length - 1]!);
+  const len = Math.hypot(end.x, end.y);
+  if (len === 0) return 0;
+  const ux = end.x / len;
+  const uy = end.y / len;
+  const along = (p: { x: number; y: number }) => p.x * ux + p.y * uy;
+  const lateral = (p: { x: number; y: number }) =>
+    Math.abs(-p.x * uy + p.y * ux);
+
+  let aMin = Infinity;
+  let aMax = -Infinity;
+  for (const p of a) {
+    const s = along(project(p));
+    if (s < aMin) aMin = s;
+    if (s > aMax) aMax = s;
+  }
+  let bMin = Infinity;
+  let bMax = -Infinity;
+  let bMaxLateral = 0;
+  for (const p of b) {
+    const P = project(p);
+    const s = along(P);
+    if (s < bMin) bMin = s;
+    if (s > bMax) bMax = s;
+    const lat = lateral(P);
+    if (lat > bMaxLateral) bMaxLateral = lat;
+  }
+  if (bMaxLateral > tolM) return 0; // `b` runs across, not alongside, `a`
+  return Math.max(0, Math.min(aMax, bMax) - Math.max(aMin, bMin));
 }
 
 /** Fraction of `a`'s sampled points that lie within `tolM` of polyline `b`. */
@@ -271,20 +311,24 @@ export function planReassignment(
       // A PARTIAL majority must also clear a tolerance-aware length floor: two
       // short segments that merely touch at an endpoint each have ~`tolM` of
       // length within tolerance of the other's tip — a false majority for ~10 m
-      // stubs. Only a MUTUALLY near-perfect match whose endpoints also AGREE (each
-      // segment almost entirely on the other AND the two start/end at the same
-      // places — an unchanged segment) is genuine at any length and bypasses the
-      // floor, so an idempotent re-import of a <10 m connector keeps its id. Both
-      // guards are needed on short segments: `mutual` (not `score`) rejects a
-      // one-sided perfect match (a sub-tolerance stub touching a long neighbour's
-      // tip has score ≈ 1 but mutual ≈ 0), and endpoint agreement rejects two
-      // short lines that merely CROSS (mutual ≈ 1 both ways, endpoints far apart).
-      // Otherwise the length floor gates.
+      // stubs. A genuinely UNCHANGED segment bypasses the floor (so an idempotent
+      // re-import of a <10 m connector keeps its id), but "unchanged" must be a
+      // real collinear overlap, not sampled proximity: once both segments are
+      // shorter than the tolerance, an adjacent stub or a crossing also scores
+      // mutual ≈ 1. So the bypass requires the REAL collinear overlap length to be
+      // near-total (≥ 0.9 of the longer segment) — which stays ~0 for a touch or a
+      // crossing regardless of how short the segments are. `mutual` is kept as a
+      // cheap first gate. Otherwise the sampled-length floor gates.
+      const longerLen = Math.max(
+        polylineMeters(incoming[n]!),
+        polylineMeters(existing[e]!.coords),
+      );
+      const unchanged =
+        mutual >= NEAR_PERFECT_OVERLAP &&
+        collinearOverlapMeters(incoming[n]!, existing[e]!.coords, tolM) >=
+          NEAR_PERFECT_OVERLAP * longerLen;
       const eligible =
-        score > minOverlap &&
-        ((mutual >= NEAR_PERFECT_OVERLAP &&
-          endpointsAlign(incoming[n]!, existing[e]!.coords, tolM)) ||
-          overlapLen > 2 * tolM);
+        score > minOverlap && (unchanged || overlapLen > 2 * tolM);
       if (eligible) {
         pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
       }
