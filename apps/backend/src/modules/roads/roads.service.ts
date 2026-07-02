@@ -104,9 +104,8 @@ export class RoadsService {
     // ones, matching best-roads / clustering. A crowd-sourced row (null
     // osm_way_id) is a group of one, so every value equals its raw column and the
     // community sub-queries below run over the single id — behaviour unchanged.
-    // `way_segment_ids` is the exact id set the sub-queries expand to. Reviews are
-    // the exception — they stay keyed on the requested segment id to match the
-    // standalone /roads/:id/reviews endpoint (see the review query below).
+    // `way_segment_ids` is the exact id set every sub-query (reviews included)
+    // expands to; the standalone /roads/:id/reviews endpoint resolves the same set.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const segmentRows = await this.segmentRepo.query(
       `WITH target AS (
@@ -229,17 +228,16 @@ export class RoadsService {
         [waySegmentIds, asOf, ACTIVE_HAZARD_LIMIT],
       ),
       this.segmentRepo.query(
-        // Reviews stay keyed on the REQUESTED segment id (not the way set): the
-        // standalone /roads/:id/reviews endpoint the clients fetch to render the
-        // review panel is per-segment (ReviewsService.listForSegment), so
-        // aggregating here would make the panel overwrite the detail with a
-        // different set. Aligning both on the logical road is a reviews-subsystem
-        // change (per-road review identity + the write path) tracked in #809.
+        // Reviews aggregate over the whole way's segment set, like every other
+        // sub-query — a road's rating is the union across its ~100 m sub-segments,
+        // consistent with the aggregated list/detail (#809). The standalone
+        // /roads/:id/reviews endpoint (ReviewsService.listForSegment) resolves the
+        // SAME way set, so the embedded preview and the panel stay in sync.
         `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
         FROM road_reviews
-        WHERE road_segment_id = $1
+        WHERE road_segment_id = ANY($1)
           AND moderation_status = 'visible'`,
-        [segmentId],
+        [waySegmentIds],
       ),
       this.segmentRepo.query(
         // Left-join the helpful-vote counts via a lateral subquery so a
@@ -276,11 +274,11 @@ export class RoadsService {
           FROM road_review_votes v
           WHERE v.road_review_id = rr.id
         ) vc ON true
-        WHERE rr.road_segment_id = $1
+        WHERE rr.road_segment_id = ANY($1)
           AND rr.moderation_status = 'visible'
         ORDER BY rr.created_at DESC
         LIMIT $2`,
-        [segmentId, RECENT_REVIEW_LIMIT],
+        [waySegmentIds, RECENT_REVIEW_LIMIT],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(DISTINCT user_id)::int AS count
@@ -347,10 +345,9 @@ export class RoadsService {
       (riderRows as Array<{ count: number }>)[0]?.count ?? 0;
 
     return {
-      // The DTO id is the REQUESTED segment id, not the aggregated
-      // representative — clients feed it straight into the standalone
-      // /roads/:id/reviews panel, which is keyed per-segment (see the review
-      // query above), so the two must reference the same segment (#809 review).
+      // The DTO id is the REQUESTED segment id — clients feed it straight into the
+      // standalone /roads/:id/reviews panel, which resolves that id's whole way
+      // (like the embedded reviews above), so preview and panel stay in sync (#809).
       id: segmentId,
       road_name: (row.road_name as string) ?? null,
       road_number: (row.road_number as string) ?? null,

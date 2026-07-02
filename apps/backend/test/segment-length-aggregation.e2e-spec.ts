@@ -109,6 +109,10 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         [segmentIds],
       );
       await dataSource.query(
+        `DELETE FROM road_reviews WHERE road_segment_id = ANY($1::uuid[])`,
+        [segmentIds],
+      );
+      await dataSource.query(
         `DELETE FROM road_segments WHERE id = ANY($1::uuid[])`,
         [segmentIds],
       );
@@ -319,6 +323,29 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
       );
     }
 
+    // Reviews on TWO different sub-segments (indices 1 + 4) — not the requested
+    // index 0 — so the detail's review stats must span the whole way (#809). Two
+    // distinct users (unique per (user_id, road_segment_id)); fall back to one if
+    // the seed has only a single user.
+    const reviewUsers: { id: string }[] = await dataSource.query(
+      `SELECT id FROM users LIMIT 2`,
+    );
+    const haveReviews = reviewUsers.length >= 1;
+    if (haveReviews) {
+      const u0 = reviewUsers[0].id;
+      const u1 = reviewUsers[1]?.id ?? reviewUsers[0].id;
+      await dataSource.query(
+        `INSERT INTO road_reviews (road_segment_id, user_id, rating)
+         VALUES ($1, $2, 5)`,
+        [wayIds[1], u0],
+      );
+      await dataSource.query(
+        `INSERT INTO road_reviews (road_segment_id, user_id, rating)
+         VALUES ($1, $2, 3)`,
+        [wayIds[4], u1],
+      );
+    }
+
     const detail = await roads.findById(wayIds[0]);
     // Whole way, not the 120 m child.
     expect(detail.length_m).toBeCloseTo(600, 5);
@@ -327,14 +354,23 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     expect(detail.quality_breakdown.good).toBe(67);
     expect(detail.quality_breakdown.excellent).toBe(33);
     expect(detail.riders_per_month).toBeGreaterThanOrEqual(userId ? 1 : 0);
+    // Reviews aggregate across the way: both indices 1 + 4 count, avg (5+3)/2.
+    if (haveReviews && reviewUsers.length >= 2) {
+      expect(detail.review_count).toBe(2);
+      expect(detail.avg_review_rating).toBeCloseTo(4.0, 5);
+      expect(detail.recent_reviews).toHaveLength(2);
+    }
 
     // The DTO id echoes the REQUESTED sub-segment (index 3, not the index-0
-    // representative), so the reviews panel keyed on it stays per-segment; the
-    // road is still aggregated to 600 m.
+    // representative), but reviews still aggregate to the whole way, so the panel
+    // (which resolves the same way) matches; the road is aggregated to 600 m.
     const detailMid = await roads.findById(wayIds[3]);
     expect(detailMid.id).toBe(wayIds[3]);
     expect(detailMid.length_m).toBeCloseTo(600, 5); // whole road
     expect(detailMid.segment_length_m).toBeCloseTo(120, 5); // just this sub-segment
+    if (haveReviews && reviewUsers.length >= 2) {
+      expect(detailMid.review_count).toBe(2); // same whole-way reviews
+    }
 
     // A crowd-sourced segment (null osm_way_id) is a group of one — unchanged.
     const crowdDetail = await roads.findById(crowdId);

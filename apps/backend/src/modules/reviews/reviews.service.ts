@@ -154,10 +154,35 @@ export class ReviewsService {
     };
   }
 
+  /**
+   * Resolve the whole OSM way a segment belongs to as its set of sub-segment ids
+   * (`COALESCE(osm_way_id, id)` match). A crowd-sourced row (null osm_way_id) is a
+   * group of one, so this returns `[segmentId]` and behaviour is unchanged; an
+   * imported ~100 m child expands to every sub-segment of its way. Used so reviews
+   * are keyed on the logical ROAD, matching the aggregated /roads/:id detail (#809).
+   */
+  private async resolveWaySegmentIds(segmentId: string): Promise<string[]> {
+    const rows = await this.segmentRepo.query(
+      `SELECT rs.id
+       FROM road_segments rs
+       WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = (
+         SELECT COALESCE(osm_way_id::text, id::text)
+         FROM road_segments WHERE id = $1
+       )`,
+      [segmentId],
+    );
+    return rows.map((r) => r.id);
+  }
+
   async listForSegment(
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
+    // Reviews are keyed on the logical ROAD (the requested id's whole way), so the
+    // panel matches the aggregated /roads/:id detail — a road's reviews are the
+    // union across its ~100 m sub-segments (#809).
+    const wayIds = await this.resolveWaySegmentIds(segmentId);
+    if (wayIds.length === 0) return [];
     // Hidden (moderated) reviews stay out of the public list, but a rider
     // must still see their OWN hidden review — otherwise the mobile form
     // reads its absence as "create mode", the POST trips the unique
@@ -169,10 +194,10 @@ export class ReviewsService {
     const reviews = await this.reviewRepo.find({
       where: viewerUserId
         ? [
-            { road_segment_id: segmentId, moderation_status: 'visible' },
-            { road_segment_id: segmentId, user_id: viewerUserId },
+            { road_segment_id: In(wayIds), moderation_status: 'visible' },
+            { road_segment_id: In(wayIds), user_id: viewerUserId },
           ]
-        : { road_segment_id: segmentId, moderation_status: 'visible' },
+        : { road_segment_id: In(wayIds), moderation_status: 'visible' },
       relations: ['user'],
       order: { created_at: 'DESC' },
     });
