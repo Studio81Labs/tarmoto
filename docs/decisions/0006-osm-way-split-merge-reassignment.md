@@ -134,10 +134,12 @@ current extrema — so without a configured region the importer carries over and
 inserts but tombstones nothing; (b) the `(osm_way_id, segment_index)` identity
 index is rebuilt **partial on live rows** so a tombstone doesn't own its key (a
 returning key inserts fresh; a carry-over onto a formerly-tombstoned key doesn't
-hit a unique violation). Active read paths must filter `deactivated_at IS NULL`;
-wiring that filter through the discovery reads (best-roads, clustering, tiles, way
-aggregation) is the remaining slice before the scheduled job may be enabled — and
-until it is validated the importer stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`).
+hit a unique violation). The active discovery/aggregation reads filter
+`deactivated_at IS NULL` — best-roads, nearby, road + fun-zone detail aggregation,
+clustering, tiles, and route/commute quality enrichment — so a tombstoned road
+drops out of every current-network surface while its history rows survive. The
+scheduled job still stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`) until the
+misassignment rate is validated on a real region.
 
 Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
 the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split

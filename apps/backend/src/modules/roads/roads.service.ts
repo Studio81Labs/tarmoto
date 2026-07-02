@@ -58,7 +58,8 @@ export class RoadsService {
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
         ) AS distance_m
       FROM road_segments rs
-      WHERE ST_DWithin(
+      WHERE rs.deactivated_at IS NULL
+        AND ST_DWithin(
         rs.geom::geography,
         ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
         $3
@@ -110,7 +111,7 @@ export class RoadsService {
     const segmentRows = await this.segmentRepo.query(
       `WITH target AS (
         SELECT id AS requested_id, COALESCE(osm_way_id::text, id::text) AS way_key
-        FROM road_segments WHERE id = $1
+        FROM road_segments WHERE id = $1 AND deactivated_at IS NULL
       )
       SELECT
         ARRAY_AGG(rs.id) AS way_segment_ids,
@@ -138,6 +139,7 @@ export class RoadsService {
         )::json AS geojson
       FROM road_segments rs, target
       WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = target.way_key
+        AND rs.deactivated_at IS NULL
       GROUP BY target.way_key, target.requested_id`,
       [segmentId],
     );
@@ -307,7 +309,8 @@ export class RoadsService {
         FROM surface_readings sr
         INNER JOIN road_segments rs2 ON rs2.id = sr.road_segment_id
         INNER JOIN road_segments rs ON rs.id = $1
-        WHERE ST_DWithin(rs.geom, rs2.geom, 5000)
+        WHERE rs2.deactivated_at IS NULL
+          AND ST_DWithin(rs.geom, rs2.geom, 5000)
           AND sr.road_segment_id <> ALL($2)
           AND sr.recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', sr.recorded_at)
@@ -397,7 +400,8 @@ export class RoadsService {
           rs.road_name, rs.road_number, rs.surface_type,
           rs.quality_score, rs.curviness_score, rs.length_m, rs.confidence, rs.geom
         FROM road_segments rs
-        WHERE ST_Intersects(rs.geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))
+        WHERE rs.deactivated_at IS NULL
+          AND ST_Intersects(rs.geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))
           AND rs.quality_score IS NOT NULL
       ),
       -- Collapse OSM-imported ~100 m sub-segments into their parent way so the
@@ -542,6 +546,7 @@ export class RoadsService {
       FROM fun_zone_roads fzr
       INNER JOIN fun_zones fz ON fz.id = fzr.fun_zone_id
       INNER JOIN road_segments member ON member.id = fzr.road_segment_id
+        AND member.deactivated_at IS NULL
       INNER JOIN LATERAL (
         -- The stored member is one representative segment of an aggregated OSM
         -- way (#794); re-aggregate the whole way so the panel shows the real
@@ -567,6 +572,7 @@ export class RoadsService {
         FROM road_segments rs
         WHERE COALESCE(rs.osm_way_id::text, rs.id::text)
             = COALESCE(member.osm_way_id::text, member.id::text)
+          AND rs.deactivated_at IS NULL
           -- Match the clustering aggregation, which only groups quality-bearing
           -- segments; otherwise unassessed siblings inflate length/geom while the
           -- quality numerator skips them, depressing the shown quality score.

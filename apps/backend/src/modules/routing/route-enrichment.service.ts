@@ -95,6 +95,7 @@ export class RouteEnrichmentService {
              SUM(rs.length_m)::float AS total_length_m
            FROM road_segments rs
            WHERE rs.quality_score IS NOT NULL
+             AND rs.deactivated_at IS NULL
              AND ST_DWithin(
                rs.geom::geography,
                ST_GeomFromText($1, 4326)::geography,
@@ -105,7 +106,8 @@ export class RouteEnrichmentService {
         this.dataSource.query(
           `SELECT rs.surface_type, SUM(rs.length_m)::float AS length_m
            FROM road_segments rs
-           WHERE ST_DWithin(
+           WHERE rs.deactivated_at IS NULL
+             AND ST_DWithin(
              rs.geom::geography,
              ST_GeomFromText($1, 4326)::geography,
              $2

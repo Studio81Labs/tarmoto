@@ -507,6 +507,7 @@ export class CommuteService {
       `SELECT AVG(rs.quality_score)::float AS avg_quality
        FROM road_segments rs
        WHERE rs.quality_score IS NOT NULL
+         AND rs.deactivated_at IS NULL
          AND ST_DWithin(
            rs.geom::geography,
            ST_GeomFromText($1, 4326)::geography,

@@ -291,6 +291,7 @@ export class FunZoneClusteringService {
         SELECT DISTINCT COALESCE(osm_way_id::text, id::text) AS road_key
         FROM road_segments
         WHERE quality_score IS NOT NULL
+          AND deactivated_at IS NULL
           ${bboxClause}
       ),
       road AS (
@@ -321,7 +322,7 @@ export class FunZoneClusteringService {
         FROM road_segments rs
         JOIN assessed_ways aw
           ON aw.road_key = COALESCE(rs.osm_way_id::text, rs.id::text)
-        WHERE TRUE
+        WHERE rs.deactivated_at IS NULL
           ${bboxClause.replace(/geom/g, 'rs.geom')}
         GROUP BY COALESCE(rs.osm_way_id::text, rs.id::text)
       ),
