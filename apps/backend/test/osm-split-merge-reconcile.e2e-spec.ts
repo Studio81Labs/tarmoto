@@ -62,7 +62,13 @@ describe('OSM split/merge reconciliation (#835)', () => {
         OsmImportService,
         {
           provide: osmImportConfig.KEY,
-          useValue: { enabled: true, filePath: null },
+          // An explicit region enclosing this test's ways so stale detection is
+          // authoritative (a data-derived bbox would not tombstone).
+          useValue: {
+            enabled: true,
+            filePath: null,
+            bbox: [LNG - 0.1, LAT - 0.1, LNG + 0.2, LAT + 0.2],
+          },
         },
       ],
     }).compile();

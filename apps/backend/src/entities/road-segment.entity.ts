@@ -15,8 +15,12 @@ import { RoadReview } from './road-review.entity.js';
 @Index('idx_road_segments_geom', ['geom'], { spatial: true })
 @Index('idx_road_segments_quality', ['quality_score'])
 @Index('idx_road_segments_curviness', ['curviness_score'])
+// Partial on live rows (#835): a tombstoned row must not own its OSM key, so a
+// returning key inserts fresh and a carry-over onto a formerly-tombstoned key
+// doesn't hit a unique violation.
 @Index('uq_road_segments_osm_identity', ['osm_way_id', 'segment_index'], {
   unique: true,
+  where: 'deactivated_at IS NULL',
 })
 // OSM identity is all-or-nothing: a half-populated `(osm_way_id, NULL)`
 // would slip past the unique index (NULLs don't conflict) and let a

@@ -127,10 +127,17 @@ and applies the plan for the leftovers — carry-over as an **id-preserving UPDA
 that re-points the existing row onto the incoming geometry, insert as a fresh row,
 and stale as a **tombstone** (`road_segments.deactivated_at`, added by migration
 `1791`) rather than a hard delete, since the history tables FK to `road_segments`.
-Active read paths must filter `deactivated_at IS NULL`; wiring that filter through
-the discovery reads (best-roads, clustering, tiles, way aggregation) is the
-remaining slice before the scheduled job may be enabled — and until it is
-validated the importer stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`).
+Two subtleties: (a) tombstoning is only sound over an **explicit import region**
+(`TARMOTO_OSM_IMPORT_BBOX`) — a data-derived bbox would wrongly tombstone rows that
+fall in the rectangle but outside the extract, and miss removed roads beyond the
+current extrema — so without a configured region the importer carries over and
+inserts but tombstones nothing; (b) the `(osm_way_id, segment_index)` identity
+index is rebuilt **partial on live rows** so a tombstone doesn't own its key (a
+returning key inserts fresh; a carry-over onto a formerly-tombstoned key doesn't
+hit a unique violation). Active read paths must filter `deactivated_at IS NULL`;
+wiring that filter through the discovery reads (best-roads, clustering, tiles, way
+aggregation) is the remaining slice before the scheduled job may be enabled — and
+until it is validated the importer stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`).
 
 Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
 the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split

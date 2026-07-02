@@ -104,7 +104,12 @@ function buildOnConflictClause(): string {
       `"${TABLE}"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")`,
   ];
   const target = CONFLICT_COLUMNS.map((c) => `"${c}"`).join(', ');
-  return `( ${target} ) DO UPDATE SET ${set.join(', ')} WHERE ${changed.join(' OR ')}`;
+  // The identity index is partial on live rows (#835), so the arbiter must carry
+  // its predicate — a conflict only ever matches a LIVE row, never a tombstone.
+  return (
+    `( ${target} ) WHERE "deactivated_at" IS NULL ` +
+    `DO UPDATE SET ${set.join(', ')} WHERE ${changed.join(' OR ')}`
+  );
 }
 
 /** Pre-built so it isn't reconstructed per chunk. */
@@ -231,7 +236,17 @@ export class OsmImportService {
       return { upserted: 0, carriedOver: 0, deactivated: 0 };
     }
 
-    const existing = await this.loadExistingInBbox(incoming);
+    // Stale detection is only sound over an EXPLICIT region (the extract's
+    // boundary, TARMOTO_OSM_IMPORT_BBOX): a data-derived bbox (the extent of the
+    // incoming roads) would tombstone existing rows that fall in the rectangle but
+    // outside this extract, and miss removed roads beyond the current extrema.
+    // With a region we load every existing row inside it (so edge-removed roads
+    // are candidates) and may tombstone; without one we load only the incoming
+    // extent for carry-over matching and never tombstone.
+    const region = this.config.bbox;
+    const existing = await this.loadExistingInBbox(
+      region ?? this.dataBbox(incoming),
+    );
     const incomingKeys = new Set(
       incoming.map((r) => this.identityKey(r.osm_way_id, r.segment_index)),
     );
@@ -264,6 +279,8 @@ export class OsmImportService {
       ...unchanged,
       ...newIncoming.filter((_, i) => !carried.has(i)),
     ];
+    // Only tombstone when the region is authoritative (see above).
+    const staleIds = region ? plan.stale : [];
 
     await this.repo.manager.transaction(async (tx) => {
       for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
@@ -283,24 +300,26 @@ export class OsmImportService {
           c.existingId,
         ]);
       }
-      if (plan.stale.length > 0) {
+      if (staleIds.length > 0) {
         await tx.query(
           `UPDATE ${TABLE} SET deactivated_at = NOW()
            WHERE id = ANY($1) AND deactivated_at IS NULL`,
-          [plan.stale],
+          [staleIds],
         );
       }
     });
 
+    const skippedStale = region ? 0 : plan.stale.length;
     this.logger.log(
       `OSM import: upserted ${upsertRows.length}, carried over ` +
-        `${plan.carryOver.length}, deactivated ${plan.stale.length} ` +
-        `(${existing.length} existing / ${incoming.length} incoming in bbox)`,
+        `${plan.carryOver.length}, deactivated ${staleIds.length} ` +
+        `(${existing.length} existing / ${incoming.length} incoming; ` +
+        `region ${region ? 'configured' : 'UNSET → stale detection off, ' + skippedStale + ' unmatched left active'})`,
     );
     return {
       upserted: upsertRows.length,
       carriedOver: plan.carryOver.length,
-      deactivated: plan.stale.length,
+      deactivated: staleIds.length,
     };
   }
 
@@ -312,20 +331,12 @@ export class OsmImportService {
     return line.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! }));
   }
 
-  /**
-   * Existing ACTIVE, OSM-imported rows overlapping the incoming snapshot's bbox —
-   * the reassignment candidate pool. Crowd-sourced rows (null `osm_way_id`) are
-   * excluded: they aren't part of the OSM network, so the importer never
-   * reassigns or tombstones them.
-   */
-  private async loadExistingInBbox(incoming: RoadSegmentRow[]): Promise<
-    Array<{
-      id: string;
-      osm_way_id: string;
-      segment_index: number;
-      coords: LatLng[];
-    }>
-  > {
+  /** Bounding box `[minLng, minLat, maxLng, maxLat]` of the incoming geometries —
+   *  used for carry-over matching only when no explicit region is configured
+   *  (never for stale detection; see `reconcile`). */
+  private dataBbox(
+    incoming: RoadSegmentRow[],
+  ): [number, number, number, number] {
     let minLng = Infinity;
     let minLat = Infinity;
     let maxLng = -Infinity;
@@ -338,6 +349,25 @@ export class OsmImportService {
         if (lat! > maxLat) maxLat = lat!;
       }
     }
+    return [minLng, minLat, maxLng, maxLat];
+  }
+
+  /**
+   * Existing ACTIVE, OSM-imported rows overlapping `bbox` — the reassignment
+   * candidate pool. Crowd-sourced rows (null `osm_way_id`) are excluded: they
+   * aren't part of the OSM network, so the importer never reassigns or tombstones
+   * them.
+   */
+  private async loadExistingInBbox(
+    bbox: [number, number, number, number],
+  ): Promise<
+    Array<{
+      id: string;
+      osm_way_id: string;
+      segment_index: number;
+      coords: LatLng[];
+    }>
+  > {
     // Annotate the binding (rather than an `as` cast) so `r` is typed under both
     // the local and strict OpenAPI-gen tsconfigs, which disagree on whether a cast
     // is redundant.
@@ -353,7 +383,7 @@ export class OsmImportService {
        WHERE deactivated_at IS NULL
          AND osm_way_id IS NOT NULL
          AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [minLng, minLat, maxLng, maxLat],
+      bbox,
     );
     return rows.map((r) => ({
       id: r.id,

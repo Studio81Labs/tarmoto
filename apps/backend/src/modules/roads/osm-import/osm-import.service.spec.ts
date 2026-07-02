@@ -27,8 +27,9 @@ function straightWay(id: number): OsmWay {
 
 describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
   it('targets the (osm_way_id, segment_index) identity', () => {
+    // Partial-index arbiter: the conflict target carries the live-row predicate.
     expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
-      '( "osm_way_id", "segment_index" ) DO UPDATE SET',
+      '( "osm_way_id", "segment_index" ) WHERE "deactivated_at" IS NULL DO UPDATE SET',
     );
   });
 
@@ -124,14 +125,18 @@ describe('OsmImportService', () => {
   let createQueryBuilder: jest.Mock;
   let loadExisting: jest.Mock;
   let managerQuery: jest.Mock;
-  let osmConfig: { enabled: boolean; filePath: string | null };
+  let osmConfig: {
+    enabled: boolean;
+    filePath: string | null;
+    bbox: [number, number, number, number] | null;
+  };
 
   /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
   const valuesOnCall = (n: number): RoadSegmentRow[] =>
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
   beforeEach(async () => {
-    osmConfig = { enabled: false, filePath: null };
+    osmConfig = { enabled: false, filePath: null, bbox: null };
     qb = {
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -284,8 +289,10 @@ describe('OsmImportService', () => {
       expect(qb.execute).not.toHaveBeenCalled();
     });
 
-    it('tombstones an existing row nothing in the snapshot matches', async () => {
-      // Existing row lives far from the incoming way → no geometry match → stale.
+    it('tombstones an existing row nothing matches — only with an explicit region', async () => {
+      // Stale detection is region-authoritative: set a bbox so an unmatched row is
+      // tombstoned. Existing row lives far from the incoming way → no match.
+      osmConfig.bbox = [-1, -1, 20, 20];
       loadExisting.mockResolvedValueOnce([
         existingRow('gone-uuid', '5', 0, [
           [10, 10],
@@ -308,6 +315,26 @@ describe('OsmImportService', () => {
       expect(deactivate).toBeDefined();
       expect(deactivate![1]).toEqual([['gone-uuid']]);
       expect(deactivate![0]).not.toMatch(/DELETE/i);
+    });
+
+    it('does NOT tombstone when no region is configured (data bbox is not authoritative)', async () => {
+      // Without an explicit region a data-derived bbox can't distinguish "removed"
+      // from "outside this extract", so an unmatched row is left active.
+      osmConfig.bbox = null;
+      loadExisting.mockResolvedValueOnce([
+        existingRow('outside-uuid', '5', 0, [
+          [10, 10],
+          [10, 10.0009],
+        ]),
+      ]);
+
+      const result = await service.importFrom([straightWay(2)]);
+
+      expect(result.deactivated).toBe(0);
+      const deactivate = (
+        managerQuery.mock.calls as Array<[string, unknown[]]>
+      ).find(([sql]) => sql.includes('deactivated_at = NOW()'));
+      expect(deactivate).toBeUndefined();
     });
   });
 
