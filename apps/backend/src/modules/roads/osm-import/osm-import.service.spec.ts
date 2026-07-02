@@ -370,29 +370,30 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom([incomingDownstream]);
 
-      expect(result).toMatchObject({ carriedOver: 1, deactivated: 0 });
+      expect(result).toMatchObject({ carriedOver: 1, deactivated: 1 });
       const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
       // Downstream carries the reused key; upstream is not overwritten.
       const carry = calls.find(([sql]) =>
         sql.includes('deactivated_at = NULL'),
       );
       expect(carry![1][8]).toBe('downstream');
-      // Nothing tombstoned; the upstream's reused identity is freed instead.
-      expect(
-        calls.some(([sql]) => sql.includes('deactivated_at = NOW()')),
-      ).toBe(false);
+      // The old upstream holder is tombstoned (history survives), not orphaned.
+      const deactivate = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NOW()'),
+      );
+      expect(deactivate![1]).toEqual([['upstream']]);
+      // Only the carry-over target's identity is nulled (it's re-keyed next).
       const free = calls.find(([sql]) =>
         sql.includes('osm_way_id = NULL, segment_index = NULL'),
       );
-      expect(free![1][0]).toEqual(
-        expect.arrayContaining(['upstream', 'downstream']),
-      );
+      expect(free![1]).toEqual([['downstream']]);
     });
 
-    it('vacates an out-of-bbox live owner of a claimed key before upserting', async () => {
+    it('tombstones an out-of-bbox live owner of a claimed key before upserting', async () => {
       // The global ON CONFLICT arbiter can match a live row OUTSIDE this tile that
       // owns the incoming key (a segment split across the boundary). It isn't in the
-      // bbox load, so the upsert would overwrite it in place. It must be vacated.
+      // bbox load, so the upsert would overwrite it in place. It is tombstoned (not
+      // identity-nulled, which would orphan it) so the incoming inserts fresh.
       osmConfig.bbox = [-1, -1, 1, 1];
       // call 1: loadExistingInBbox → none in-bbox; call 2: loadOutOfBboxKeyOwners
       // → an out-of-tile live row owns the incoming key.
@@ -402,12 +403,16 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom([straightWay(1)]);
 
-      expect(result).toMatchObject({ upserted: 1, carriedOver: 0 });
-      const free = (managerQuery.mock.calls as Array<[string, unknown[]]>).find(
-        ([sql]) => sql.includes('osm_way_id = NULL, segment_index = NULL'),
-      );
-      expect(free).toBeDefined();
-      expect(free![1]).toEqual([['out-of-tile']]);
+      expect(result).toMatchObject({
+        upserted: 1,
+        carriedOver: 0,
+        deactivated: 1,
+      });
+      const deactivate = (
+        managerQuery.mock.calls as Array<[string, unknown[]]>
+      ).find(([sql]) => sql.includes('deactivated_at = NOW()'));
+      expect(deactivate).toBeDefined();
+      expect(deactivate![1]).toEqual([['out-of-tile']]);
       // The incoming inserts fresh (its own key is now free).
       expect(qb.execute).toHaveBeenCalledTimes(1);
     });

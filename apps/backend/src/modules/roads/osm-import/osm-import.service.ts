@@ -350,68 +350,67 @@ export class OsmImportService {
       ...unchanged,
       ...newIncoming.filter((_, i) => !carried.has(i)),
     ];
-    // Only tombstone (by absence) when the region is authoritative (see above).
-    const staleIds = region ? plan.stale : [];
     const carryTargetIds = plan.carryOver.map((c) => c.existingId);
-    // A key the snapshot now assigns to a different row must be VACATED even
-    // without a region — its reuse is proof the old holder lost that identity, so
-    // we null the old row's identity (leaving the row live, since we don't
-    // tombstone by absence without a region). Only the reused keys, never the
-    // out-of-extract stale rows.
     const claimedKeys = new Set(
       [...unchanged, ...newIncoming].map((r) =>
         this.identityKey(r.osm_way_id, r.segment_index),
       ),
     );
     const staleSet = new Set(plan.stale);
-    const reusedKeyIds = region
-      ? []
-      : leftoverExisting
-          .filter(
-            (e) =>
-              staleSet.has(e.id) &&
-              claimedKeys.has(this.identityKey(e.osm_way_id, e.segment_index)),
-          )
-          .map((e) => e.id);
 
-    // The ON CONFLICT arbiter is GLOBAL, but `existingByKey` is bbox-scoped: a
-    // claimed key can already be owned by a LIVE row OUTSIDE this tile (a segment
-    // split/moved across the boundary). That owner never entered the reuse check,
-    // so the upsert would silently update it in place and move its history onto the
-    // new geometry. `newIncoming` keys are, by definition, absent from the bbox set
-    // — so any live owner of one is out-of-bbox. Load and vacate them (null
-    // identity; the row stays live for its own tile's run) so the upsert inserts
-    // fresh instead.
+    // A key the new snapshot assigns to a DIFFERENT row must have its old holder
+    // vacated so the re-key/insert doesn't collide. We TOMBSTONE those holders
+    // (rather than null their identity): a reused key is definitive proof the old
+    // holder lost that identity, and nulling `osm_way_id` would orphan the row —
+    // `loadExistingInBbox` skips NULL osm ids, so no later tile could ever
+    // reconcile it and it would linger live as a phantom crowd row. Two sources:
+    //  - in-bbox stale rows whose key the snapshot reassigned (always, even with
+    //    no region — this is key reuse, not stale-by-absence);
+    //  - out-of-bbox LIVE owners of a claimed key: the ON CONFLICT arbiter is
+    //    global but `existingByKey` is bbox-scoped, so a key owned by a live row
+    //    just outside this tile (a segment split/moved across the boundary) would
+    //    otherwise be silently overwritten in place.
+    const inBboxReusedIds = leftoverExisting
+      .filter(
+        (e) =>
+          staleSet.has(e.id) &&
+          claimedKeys.has(this.identityKey(e.osm_way_id, e.segment_index)),
+      )
+      .map((e) => e.id);
     const outOfBboxOwnerIds = await this.loadOutOfBboxKeyOwners(
       newIncoming,
       new Set(existing.map((e) => e.id)),
     );
+    // Tombstone: stale-by-absence (region only) + reused-key holders (always).
+    const deactivateIds = [
+      ...new Set([
+        ...(region ? plan.stale : []),
+        ...inBboxReusedIds,
+        ...outOfBboxOwnerIds,
+      ]),
+    ];
 
     await this.repo.manager.transaction(async (tx) => {
       // Apply order matters — a split/merge can move an `(osm_way_id,
       // segment_index)` key from one live row to another, so free every key that's
       // being reassigned BEFORE anything claims it, or the partial unique index
       // rejects the re-key.
-      // 1. Tombstone stale rows: the partial index then drops their keys.
-      if (staleIds.length > 0) {
+      // 1. Tombstone stale + reused-key rows: the partial index then drops their
+      //    keys, preserving the row (and its history FKs) rather than orphaning it.
+      if (deactivateIds.length > 0) {
         await tx.query(
           `UPDATE ${TABLE} SET deactivated_at = NOW()
            WHERE id = ANY($1) AND deactivated_at IS NULL`,
-          [staleIds],
+          [deactivateIds],
         );
       }
-      // 2. Free the OLD identity of every row being re-keyed — carry-over targets
-      //    (a rotation could swap keys between live rows), out-of-bbox owners of a
-      //    claimed key, and (without a region) rows whose key was reused by a
-      //    different road — so step 3 and the upsert can't collide.
-      const toFree = [
-        ...new Set([...carryTargetIds, ...reusedKeyIds, ...outOfBboxOwnerIds]),
-      ];
-      if (toFree.length > 0) {
+      // 2. Null the carry-over targets' OLD identity (they're immediately re-keyed
+      //    in step 3) so a rotation swapping keys between live rows can't collide.
+      if (carryTargetIds.length > 0) {
         await tx.query(
           `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
            WHERE id = ANY($1)`,
-          [toFree],
+          [carryTargetIds],
         );
       }
       // 3. Carry-over: set the new identity + geometry on each freed row.
@@ -435,23 +434,26 @@ export class OsmImportService {
       }
     });
 
-    const skippedStale = region ? 0 : plan.stale.length;
+    const byAbsenceSkipped = region
+      ? 0
+      : plan.stale.length - inBboxReusedIds.length;
     this.logger.log(
       `OSM import: upserted ${upsertRows.length}, carried over ` +
-        `${plan.carryOver.length}, deactivated ${staleIds.length} ` +
+        `${plan.carryOver.length}, deactivated ${deactivateIds.length} ` +
         `(${existing.length} existing / ${incoming.length} incoming; ` +
-        `region ${region ? 'configured' : 'UNSET → stale detection off, ' + skippedStale + ' unmatched left active'})`,
+        `region ${region ? 'configured' : 'UNSET → ' + byAbsenceSkipped + ' by-absence rows left active'})`,
     );
     return {
       upserted: upsertRows.length,
       carriedOver: plan.carryOver.length,
-      deactivated: staleIds.length,
+      deactivated: deactivateIds.length,
     };
   }
 
   /** Live rows OUTSIDE the loaded bbox that own one of the incoming `newIncoming`
-   *  keys — the global-uniqueness owners the bbox load can't see. Their identity is
-   *  vacated so the upsert doesn't silently overwrite an out-of-tile road. */
+   *  keys — the global-uniqueness owners the bbox load can't see. They are
+   *  tombstoned (not identity-nulled, which would orphan them) so the upsert
+   *  doesn't silently overwrite an out-of-tile road. */
   private async loadOutOfBboxKeyOwners(
     newIncoming: RoadSegmentRow[],
     bboxIds: Set<string>,
