@@ -57,8 +57,7 @@ so an unclipped extract is fine there.
 | `TARMOTO_OSM_IMPORT_FILE`    | —       | absolute path to the prepared `.osm` file (required when enabled)                           |
 | `TARMOTO_OSM_IMPORT_BBOX`    | —       | `minLng,minLat,maxLng,maxLat` region for stale detection; the extract must be clipped to it |
 
-The extract itself bounds the region — there is no bbox. Dormant by default:
-an off tick is a cheap no-op.
+Dormant by default: an off tick is a cheap no-op.
 
 ## Cadence & manual runs
 
