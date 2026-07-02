@@ -278,15 +278,88 @@ describe('OsmImportService', () => {
         carriedOver: 1,
         deactivated: 0,
       });
-      // Carry-over is an id-preserving UPDATE targeting the existing id.
-      expect(managerQuery).toHaveBeenCalledTimes(1);
-      const [sql, params] = managerQuery.mock.calls[0] as [string, unknown[]];
-      expect(sql).toContain('UPDATE road_segments SET');
-      expect(sql).toContain('deactivated_at = NULL');
-      expect(params[0]).toBe('2'); // new osm_way_id
-      expect(params[8]).toBe('old-uuid'); // WHERE id
+      // Carry-over is an id-preserving UPDATE (that also revives + re-keys) — find
+      // it among the transaction's statements (a free-key null precedes it).
+      const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
+      const carry = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NULL'),
+      );
+      expect(carry).toBeDefined();
+      expect(carry![0]).toContain('UPDATE road_segments SET');
+      expect(carry![1][0]).toBe('2'); // new osm_way_id
+      expect(carry![1][8]).toBe('old-uuid'); // WHERE id
+      // The target's old key is freed first so the re-key can't hit the index.
+      const freeKey = calls.find(([sql]) =>
+        sql.includes('osm_way_id = NULL, segment_index = NULL'),
+      );
+      expect(freeKey).toBeDefined();
+      expect(freeKey![1]).toEqual([['old-uuid']]);
       // Nothing inserted for the carried segment.
       expect(qb.execute).not.toHaveBeenCalled();
+    });
+
+    it('does NOT upsert onto a reused (osm_way_id, segment_index) that is a different road', async () => {
+      // A split kept way 100 on the DOWNSTREAM piece: old 100/0 = upstream, new
+      // 100/0 = downstream. A straight key-match upsert would move the upstream
+      // row's history onto the downstream geometry. With a region, the key match is
+      // routed to geometry reassignment instead: the downstream row carries the
+      // key, the upstream row is tombstoned.
+      osmConfig.bbox = [-1, -1, 20, 20];
+      loadExisting.mockResolvedValueOnce([
+        existingRow('upstream', '100', 0, [
+          [0, 0],
+          [0, 0.0009],
+        ]),
+        existingRow('downstream', '100', 1, [
+          [0, 0.0009],
+          [0, 0.0018],
+        ]),
+      ]);
+      // Incoming way 100 is now the downstream ~100 m (its segment 0 == downstream).
+      const incomingDownstream: OsmWay = {
+        id: 100,
+        tags: { highway: 'residential' },
+        coords: [
+          { lat: 0.0009, lng: 0 },
+          { lat: 0.0018, lng: 0 },
+        ],
+      };
+
+      const result = await service.importFrom([incomingDownstream]);
+
+      expect(result).toMatchObject({ carriedOver: 1, deactivated: 1 });
+      const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
+      // The DOWNSTREAM row carries the reused key (100, 0) — not the upstream row.
+      const carry = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NULL'),
+      );
+      expect(carry![1][1]).toBe(0); // segment_index
+      expect(carry![1][8]).toBe('downstream'); // WHERE id
+      // The old upstream row (which shared the key) is tombstoned, not overwritten.
+      const deactivate = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NOW()'),
+      );
+      expect(deactivate![1]).toEqual([['upstream']]);
+    });
+
+    it('tombstones every existing row when a configured region imports empty', async () => {
+      // A configured region with zero drivable rows is authoritative: the region
+      // was cleared, so its existing rows must be deactivated (not left live).
+      osmConfig.bbox = [-1, -1, 20, 20];
+      loadExisting.mockResolvedValueOnce([
+        existingRow('cleared', '7', 0, [
+          [0, 0],
+          [0, 0.0009],
+        ]),
+      ]);
+
+      const result = await service.importFrom([]);
+
+      expect(result.deactivated).toBe(1);
+      const deactivate = (
+        managerQuery.mock.calls as Array<[string, unknown[]]>
+      ).find(([sql]) => sql.includes('deactivated_at = NOW()'));
+      expect(deactivate![1]).toEqual([['cleared']]);
     });
 
     it('tombstones an existing row nothing matches — only with an explicit region', async () => {

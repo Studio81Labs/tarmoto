@@ -286,8 +286,13 @@ export class OsmImportService {
       ? rawIncoming.filter((r) => this.intersectsRegion(r, region))
       : rawIncoming;
 
-    if (incoming.length === 0) {
-      this.logger.log('OSM import: empty snapshot, nothing to reconcile');
+    // With a configured region an EMPTY tile is still authoritative — every road
+    // in it was removed / reclassified non-drivable, so its existing rows must be
+    // tombstoned. Only short-circuit the no-region case (nothing to compare, and
+    // we never tombstone without a region). A parse error would have thrown before
+    // reaching here, so an empty snapshot here is a genuine empty region.
+    if (incoming.length === 0 && !region) {
+      this.logger.log('OSM import: empty snapshot, no region — nothing to do');
       return { upserted: 0, carriedOver: 0, deactivated: 0 };
     }
 
@@ -301,24 +306,38 @@ export class OsmImportService {
     const existing = await this.loadExistingInBbox(
       region ?? this.dataBbox(incoming),
     );
-    const incomingKeys = new Set(
-      incoming.map((r) => this.identityKey(r.osm_way_id, r.segment_index)),
-    );
-    const existingKeys = new Set(
-      existing.map((e) => this.identityKey(e.osm_way_id, e.segment_index)),
+    const existingByKey = new Map(
+      existing.map((e) => [this.identityKey(e.osm_way_id, e.segment_index), e]),
     );
 
-    // Unchanged identity → straight upsert (id preserved by the conflict clause).
-    // New identity → carry-over or fresh-insert candidate. Existing rows the
-    // snapshot no longer contains → carry-over or stale candidate.
-    const unchanged = incoming.filter((r) =>
-      existingKeys.has(this.identityKey(r.osm_way_id, r.segment_index)),
-    );
-    const newIncoming = incoming.filter(
-      (r) => !existingKeys.has(this.identityKey(r.osm_way_id, r.segment_index)),
-    );
+    // A key match is "unchanged" (straight upsert, id preserved) only when it is
+    // still the same ROAD. An OSM split can KEEP the way id on a downstream piece,
+    // so `(osm_way_id, segment_index)` can appear in both snapshots for DIFFERENT
+    // geometry; upserting that in place would move the old row's history onto the
+    // wrong road. When a region is configured (so the displaced old row can be
+    // safely tombstoned), a key match whose geometry no longer overlaps is instead
+    // pushed into the geometry-reassignment pool. Identical geometry short-circuits
+    // the (relatively costly) overlap check.
+    const unchanged: RoadSegmentRow[] = [];
+    const newIncoming: RoadSegmentRow[] = [];
+    const keptKeys = new Set<string>();
+    for (const r of incoming) {
+      const key = this.identityKey(r.osm_way_id, r.segment_index);
+      const match = existingByKey.get(key);
+      const isUnchanged =
+        match !== undefined &&
+        (!region ||
+          this.coordsEqual(match.coords, r.geom.coordinates) ||
+          this.sameRoad(match.coords, r.geom));
+      if (isUnchanged) {
+        unchanged.push(r);
+        keptKeys.add(key);
+      } else {
+        newIncoming.push(r);
+      }
+    }
     const leftoverExisting = existing.filter(
-      (e) => !incomingKeys.has(this.identityKey(e.osm_way_id, e.segment_index)),
+      (e) => !keptKeys.has(this.identityKey(e.osm_way_id, e.segment_index)),
     );
 
     const plan = planReassignment(
@@ -335,11 +354,31 @@ export class OsmImportService {
     ];
     // Only tombstone when the region is authoritative (see above).
     const staleIds = region ? plan.stale : [];
+    const carryTargetIds = plan.carryOver.map((c) => c.existingId);
 
     await this.repo.manager.transaction(async (tx) => {
-      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
-        await this.flush(tx, upsertRows.slice(i, i + UPSERT_CHUNK));
+      // Apply order matters — a split/merge can move an `(osm_way_id,
+      // segment_index)` key from one live row to another, so free every key that's
+      // being reassigned BEFORE anything claims it, or the partial unique index
+      // rejects the re-key.
+      // 1. Tombstone stale rows: the partial index then drops their keys.
+      if (staleIds.length > 0) {
+        await tx.query(
+          `UPDATE ${TABLE} SET deactivated_at = NOW()
+           WHERE id = ANY($1) AND deactivated_at IS NULL`,
+          [staleIds],
+        );
       }
+      // 2. Null the carry-over targets' OLD identity so a rotation (two live rows
+      //    swapping keys) can't collide when re-keyed in step 3.
+      if (carryTargetIds.length > 0) {
+        await tx.query(
+          `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
+           WHERE id = ANY($1)`,
+          [carryTargetIds],
+        );
+      }
+      // 3. Carry-over: set the new identity + geometry on each freed row.
       for (const c of plan.carryOver) {
         const row = newIncoming[c.incomingIndex]!;
         await tx.query(CARRY_OVER_UPDATE, [
@@ -354,12 +393,9 @@ export class OsmImportService {
           c.existingId,
         ]);
       }
-      if (staleIds.length > 0) {
-        await tx.query(
-          `UPDATE ${TABLE} SET deactivated_at = NOW()
-           WHERE id = ANY($1) AND deactivated_at IS NULL`,
-          [staleIds],
-        );
+      // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
+      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
+        await this.flush(tx, upsertRows.slice(i, i + UPSERT_CHUNK));
       }
     });
 
@@ -375,6 +411,37 @@ export class OsmImportService {
       carriedOver: plan.carryOver.length,
       deactivated: staleIds.length,
     };
+  }
+
+  /** Same road as far as the reassignment matcher is concerned — identical or a
+   *  reshape that still overlaps. Reuses `planReassignment` on the singleton pair
+   *  so a key match with NON-overlapping geometry (a split that kept the way id on
+   *  a different piece) is caught and pushed into reassignment. */
+  private sameRoad(
+    existingCoords: LatLng[],
+    incoming: GeoJSON.LineString,
+  ): boolean {
+    return (
+      planReassignment(
+        [{ id: '_', coords: existingCoords }],
+        [this.toLatLngs(incoming)],
+      ).carryOver.length > 0
+    );
+  }
+
+  /** Cheap vertex-wise equality (≈1 cm tolerance) so an unchanged re-import skips
+   *  the overlap check; `ST_AsGeoJSON` rounding won't defeat it. */
+  private coordsEqual(a: LatLng[], b: GeoJSON.Position[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (
+        Math.abs(a[i]!.lng - b[i]![0]!) > 1e-7 ||
+        Math.abs(a[i]!.lat - b[i]![1]!) > 1e-7
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private identityKey(osmWayId: string, segmentIndex: number): string {
