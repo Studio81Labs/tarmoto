@@ -29,13 +29,12 @@ const DEFAULT_MIN_OVERLAP = 0.5;
 const DEFAULT_TOLERANCE_M = 5;
 /** Spacing of the coverage samples taken along a segment. */
 const DEFAULT_SAMPLE_M = 20;
-/** The "unchanged segment" threshold. A carry-over bypasses the short-match
- *  length floor only when coverage is this strong in BOTH directions AND the real
- *  bend-tolerant overlap (see `realOverlapMeters`) is at least this fraction of
- *  the longer segment — i.e. the two are essentially the same line — so an
- *  unchanged sub-floor segment keeps its id without a touch/crossing sneaking
- *  through. */
-const NEAR_PERFECT_OVERLAP = 0.9;
+/** A tie between two candidate matches is broken in favour of the more EXACT one
+ *  (smaller `separationMeters`); a match at most this far apart over its overlap
+ *  counts as "exact" and outranks a longer within-tolerance parallel neighbour, so
+ *  separated carriageways keep their own ids. Half the tolerance: comfortably
+ *  above resampling noise, below a real lane gap. */
+const EXACT_SEPARATION_FRACTION = 0.5;
 
 export interface ExistingSegment {
   id: string;
@@ -217,24 +216,34 @@ function realOverlapMeters(
   return Math.min(coveredArcA, sweptArcB);
 }
 
-/** How far apart two polylines run — the symmetric max sampled point-to-line
- *  distance (a discrete Hausdorff). ~0 for (near-)identical geometry, growing
- *  with the gap between parallel neighbours; used only to break ties in favour of
- *  the more exact match. */
+/** How far apart two polylines run WHERE THEY OVERLAP — the symmetric mean
+ *  point-to-line distance over the samples within `tolM` of the other line. ~0
+ *  for (near-)identical geometry, ~the gap for a parallel neighbour. Measured over
+ *  the overlapping region (not the whole segment) so a shorter EXACT match reads
+ *  as more exact than a longer within-tolerance PARALLEL one; used to prefer the
+ *  exact match. Returns Infinity when nothing overlaps. */
 function separationMeters(
   a: readonly LatLng[],
   b: readonly LatLng[],
+  tolM: number,
   sampleM: number,
 ): number {
-  const directed = (from: readonly LatLng[], to: readonly LatLng[]): number => {
-    let max = 0;
+  const directedMean = (
+    from: readonly LatLng[],
+    to: readonly LatLng[],
+  ): number => {
+    let sum = 0;
+    let count = 0;
     for (const p of sampleAlong(from, sampleM)) {
       const d = pointToPolylineMeters(p, to);
-      if (d > max) max = d;
+      if (d <= tolM) {
+        sum += d;
+        count++;
+      }
     }
-    return max;
+    return count === 0 ? Infinity : sum / count;
   };
-  return Math.max(directed(a, b), directed(b, a));
+  return Math.max(directedMean(a, b), directedMean(b, a));
 }
 
 /** The point at arc-length `atM` along `coords` (clamped to the ends). */
@@ -319,91 +328,68 @@ export function planReassignment(
     existingIdx: number;
     incomingIndex: number;
     score: number;
-    overlapLen: number;
+    overlap: number;
     separation: number;
   }> = [];
   for (let e = 0; e < existing.length; e++) {
     for (let n = 0; n < incoming.length; n++) {
-      const fwd = overlapFraction(
+      // The real, bend-tolerant shared length (follows the arc; collapses to ~0
+      // for a touch, crossing, or abutting stub — see `realOverlapMeters`). This is
+      // the SOLE overlap signal: it does not inflate for two segments that merely
+      // lie within tolerance of each other, so it needs no separate endpoint-touch
+      // length floor or near-1:1 bypass.
+      const overlap = realOverlapMeters(
         incoming[n]!,
         existing[e]!.coords,
         tolM,
         sampleM,
       );
-      const rev = overlapFraction(
-        existing[e]!.coords,
-        incoming[n]!,
-        tolM,
-        sampleM,
-      );
-      // Eligibility (bidirectional): a real carry-over is a 1:1 match, or one
-      // segment contained in the other (a split/merge) — max ~1.0 — while a short
-      // partial overlap of two mostly-different stretches stays low both ways.
-      const score = Math.max(fwd, rev);
-      // Mutual coverage — the WEAKER direction. Near 1.0 only when each segment
-      // lies almost entirely on the other (a true 1:1 near-identity). A one-sided
-      // perfect match — a stub shorter than the tolerance touching a long
-      // segment's tip, so every stub sample is within tolerance (rev ≈ 1) but only
-      // the tip of the long side is covered (fwd ≈ 0) — stays low here.
-      const mutual = Math.min(fwd, rev);
-      // Shared LENGTH — the length of the stretch the two segments genuinely
-      // share, taken as the SMALLER of the two directional covered lengths
-      // (incoming fraction × incoming length, and existing fraction × existing
-      // length). Using the incoming side alone would let an endpoint-only touch
-      // between a short stub and a long neighbour inflate the shared length: the
-      // stub covers only ~tolerance of the long incoming, but scaling that small
-      // fraction by the long length yields metres of phantom overlap that defeats
-      // the floor. The min is the conservative real overlap; it also ranks an
-      // uneven split by the longer child (a 10 m + 90 m split each fully contained
-      // scores min 10 m vs 90 m, so the 90 m inherits the history).
-      const overlapLen = Math.min(
-        fwd * polylineMeters(incoming[n]!),
-        rev * polylineMeters(existing[e]!.coords),
-      );
-      // A PARTIAL majority must also clear a tolerance-aware length floor: two
-      // short segments that merely touch at an endpoint each have ~`tolM` of
-      // length within tolerance of the other's tip — a false majority for ~10 m
-      // stubs. A genuinely UNCHANGED segment bypasses the floor (so an idempotent
-      // re-import of a <10 m connector keeps its id), but "unchanged" must be a
-      // REAL overlap, not sampled proximity: once both segments are shorter than
-      // the tolerance, an adjacent stub or a crossing also scores mutual ≈ 1. So
-      // the bypass requires the bend-tolerant real overlap to be near-total (≥ 0.9
-      // of the longer segment) — it follows the arc (a bent unchanged connector
-      // still matches) yet stays ~0 for a touch or a crossing regardless of how
-      // short the segments are. `mutual` is kept as a cheap first gate. Otherwise
-      // the sampled-length floor gates.
-      const longerLen = Math.max(
+      // A carry-over requires the real overlap to be a STRICT MAJORITY of the
+      // SHORTER segment. Using the shorter length as the denominator lets a
+      // genuinely contained split/merge piece qualify at ANY length (an 8 m child
+      // of a 15 m parent overlaps ~100% of itself), while a mostly-different or
+      // extended stretch — overlapping only a minority of the shorter side — is
+      // inserted fresh rather than inheriting another road's reviews. Touches and
+      // crossings have ~0 real overlap and never qualify.
+      const shorterLen = Math.min(
         polylineMeters(incoming[n]!),
         polylineMeters(existing[e]!.coords),
       );
-      const unchanged =
-        mutual >= NEAR_PERFECT_OVERLAP &&
-        realOverlapMeters(incoming[n]!, existing[e]!.coords, tolM, sampleM) >=
-          NEAR_PERFECT_OVERLAP * longerLen;
-      const eligible =
-        score > minOverlap && (unchanged || overlapLen > 2 * tolM);
-      if (eligible) {
-        pairs.push({
-          existingIdx: e,
-          incomingIndex: n,
-          score,
-          overlapLen,
-          separation: separationMeters(
-            incoming[n]!,
-            existing[e]!.coords,
-            sampleM,
-          ),
-        });
-      }
+      if (shorterLen === 0 || overlap <= minOverlap * shorterLen) continue;
+      // Confidence for the carried row: how completely the two cover each other.
+      const score = Math.max(
+        overlapFraction(incoming[n]!, existing[e]!.coords, tolM, sampleM),
+        overlapFraction(existing[e]!.coords, incoming[n]!, tolM, sampleM),
+      );
+      pairs.push({
+        existingIdx: e,
+        incomingIndex: n,
+        score,
+        overlap,
+        // Exactness — how far the two run apart over their overlap. Prefers an
+        // exact same-geometry match over a longer within-tolerance PARALLEL
+        // neighbour (separated carriageways), which would otherwise cross-assign.
+        separation: separationMeters(
+          incoming[n]!,
+          existing[e]!.coords,
+          tolM,
+          sampleM,
+        ),
+      });
     }
   }
-  // Longest shared stretch first; then the more EXACT match (smallest separation)
-  // so two parallel neighbours within tolerance don't get cross-assigned by index
-  // order when their overlap ties; index order is the final deterministic
-  // tie-break so the plan is stable across runs on unchanged data.
+  // Greedy order: EXACT same-geometry matches first (so a longer within-tolerance
+  // parallel neighbour can't outrank a shorter exact match — separated
+  // carriageways keep their own ids), then the longest real overlap, then the more
+  // exact match, then index order as the final deterministic tie-break so the plan
+  // is stable across runs on unchanged data.
+  const exactSep = tolM * EXACT_SEPARATION_FRACTION;
+  const tier = (p: { separation: number }): number =>
+    p.separation <= exactSep ? 0 : 1;
   pairs.sort(
     (x, y) =>
-      y.overlapLen - x.overlapLen ||
+      tier(x) - tier(y) ||
+      y.overlap - x.overlap ||
       x.separation - y.separation ||
       x.existingIdx - y.existingIdx ||
       x.incomingIndex - y.incomingIndex,

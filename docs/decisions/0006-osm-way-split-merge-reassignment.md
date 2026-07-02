@@ -37,14 +37,9 @@ Reassign identity by **geometry overlap** for the changed ranges, so history
 follows the road, not the way id.
 
 Before upserting a region, match each **incoming** ~100 m segment against the
-**existing** rows in the same area by how much of the incoming segment's length
-lies on an existing segment's geometry (sampled-point coverage within a small
-tolerance). A greedy pass — highest overlap first, each existing row inherited by
-at most one incoming segment — produces three sets. When overlaps tie (e.g. two
-parallel carriageways closer than the tolerance, presented in a different order
-than the DB rows), the **more exact geometry match wins** (smallest symmetric
-sampled distance) before falling back to index order, so an id is never
-cross-assigned to a neighbour when its own geometry is present:
+**existing** rows in the same area by their real geometric overlap. A greedy pass
+— best match first, each existing row inherited by at most one incoming segment —
+produces three sets:
 
 - **carry-over** — the incoming segment inherits the existing row's UUID (and all
   its FKs/history); the upsert updates that row's OSM columns in place.
@@ -55,41 +50,39 @@ cross-assigned to a neighbour when its own geometry is present:
   `fun_zone_roads`) still FKs to it, and a delete would either fail on those
   constraints or destroy the very history this policy exists to preserve.
 
-Overlap is measured **bidirectionally** — the max of "fraction of the incoming
-on the existing" and "fraction of the existing on the incoming". A 1:1 match or
-a contained stretch (either side of a split/merge) scores ~1.0, while a short
-partial overlap of two mostly-different stretches stays low both ways. A
-carry-over requires a **strict majority** (> 0.5), so a segment overlapping only
-a minority of an existing row (a mostly-new or extended stretch) is inserted
-fresh rather than silently inheriting another road's reviews. A **partial**
-majority also requires the shared **length** to exceed a tolerance-aware floor
-(> 2·tolerance): two segments that merely touch at an endpoint each have
-~tolerance of length within tolerance of the other's tip — a false majority for
-short stubs — so the floor stops one stub's identity leaking onto an adjacent
-road. The shared length is the **smaller of the two directional covered lengths**
-(incoming-fraction × incoming-length and existing-fraction × existing-length):
-measuring only the incoming side would let a short stub touching the _end_ of a
-long incoming segment inflate the covered length (a small fraction of a long
-neighbour is still several metres) and defeat the floor, even though the real
-overlap is ~zero. A **mutually near-perfect** match (each segment covers ≥ 0.9 of
-the other — an unchanged segment) bypasses the floor entirely: it is genuine at
-any length, so an idempotent re-import of a sub-10 m connector/driveway keeps its
-id instead of being tombstoned and reinserted. Two guards make the bypass safe on
-short segments. First, it keys on the _weaker_ coverage direction, not the max: a
-stub shorter than the tolerance touching a long segment's tip is fully within
-tolerance of that tip (one direction ≈ 1) but covers almost none of the long side
-(the other ≈ 0). Second — and decisively, because sampled coverage is a
-_proximity_ measure that degrades to ~1 both ways once both segments are shorter
-than the tolerance (an adjacent stub or a crossing then looks identical to a real
-overlap) — it requires a **real, bend-tolerant overlap** of at least 0.9 of the
-longer segment's length. That overlap walks the incoming's arc-length samples and
-takes the _smaller_ of (a) how much of the incoming lies within tolerance of the
-existing and (b) the span of the existing's own arc that those feet sweep across.
-A genuine overlap advances along both — following bends, so an unchanged _curved_
-sub-floor connector still measures its full length — whereas a touch, a crossing,
-or a sub-tolerance tip stub pins every foot to one spot, collapsing the swept span
-(and thus the min) to ~0 regardless of how short the segments are. A match failing
-either guard falls back to the length floor and is inserted/tombstoned.
+**The overlap metric.** Naïve sampled proximity — the fraction of one segment's
+points lying within a tolerance of the other — breaks down badly for the short
+(~100 m and much smaller) segments here: once two segments are shorter than the
+tolerance, _every_ point is trivially within tolerance of the other, so an
+abutting stub, a crossing, or an endpoint touch all score a full "overlap" despite
+sharing no road. So overlap is instead the **real, bend-tolerant shared length**:
+walk the incoming's arc-length samples and take the _smaller_ of (a) how much of
+the incoming lies within tolerance of the existing and (b) the span of the
+existing's own arc that those matched feet sweep across. A genuine overlap
+advances along both — following bends, so an unchanged _curved_ connector measures
+its full length — whereas a touch, crossing, or abutting stub pins every foot to
+one spot, collapsing the swept span (and thus the min) to ~0 regardless of how
+short the segments are.
+
+**Eligibility.** A carry-over requires that real overlap to exceed a **strict
+majority of the shorter segment** (> 0.5). Using the shorter length as the
+denominator means a genuinely contained split/merge piece qualifies at _any_
+length — an 8 m child of a 15 m parent overlaps ~100 % of itself — so a real split
+into sub-tolerance children still preserves the parent's id, while a mostly-new or
+extended stretch that overlaps only a minority of the shorter side is inserted
+fresh rather than inheriting another road's reviews. There is no separate length
+floor or near-1:1 bypass: the single real-overlap majority subsumes both, because
+the metric already reads ~0 for the degenerate touch/crossing/abut cases.
+
+**Exactness tie-break.** The greedy orders **exact same-geometry matches first**
+(separation — the mean point-to-line distance _over the overlapping region_ — at
+most half the tolerance), then by longest real overlap, then by smallest
+separation, then index. Measuring separation only over the overlap (not the whole
+segment) lets a _shorter exact_ match beat a _longer within-tolerance parallel_
+one: two separated carriageways closer than the tolerance each keep their own id
+instead of one carrying its history onto its neighbour, even when the parallel
+neighbour covers a longer stretch or the rows arrive in a different order than the
+DB.
 
 Because each existing id is claimed once:
 
@@ -109,12 +102,12 @@ id-preserving update, stale as a tombstone/deactivation) is a follow-up wiring
 slice — a follow-up that must add the deactivation column/flag rather than hard-
 delete, since the history tables FK to `road_segments`.
 
-Defaults: **overlap threshold 0.5** — a strict majority, i.e. a carry-over needs
-a score above `0.5`; **tolerance 5 m** (tight, because an OSM re-split reuses the
-same node coordinates so matching stretches are near-exact; a looser value would
-inflate a partial overlap past the cutoff); **sample spacing 20 m** (samples
-placed evenly by arc-length, so the on-line fraction approximates the overlapping
-_length_).
+Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
+the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split
+reuses the same node coordinates so matching stretches are near-exact; a looser
+value would inflate a partial overlap past the cutoff); **sample spacing 20 m**
+(samples placed evenly by arc-length); **exact-match separation half the
+tolerance** (2.5 m — above resampling noise, below a real lane gap).
 
 ## Consequences
 

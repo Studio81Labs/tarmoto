@@ -60,6 +60,54 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual([]);
   });
 
+  it('genuine short split: parent id follows the longer sub-floor child', () => {
+    // A ~15 m connector split into 8 m (index 0) + 7 m (index 1) children. Both
+    // are below 2·tolerance and neither is near-1:1 with the parent, but each is a
+    // genuine contained overlap, so the parent's id must follow the longer child
+    // rather than being marked stale with both children inserted fresh.
+    const existing: ExistingSegment[] = [{ id: 'p', coords: seg(0, 0.15 * M) }];
+    const incoming = [seg(0, 0.08 * M), seg(0.08 * M, 0.15 * M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toHaveLength(1);
+    expect(plan.carryOver[0]!.existingId).toBe('p');
+    expect(plan.carryOver[0]!.incomingIndex).toBe(0); // the 8 m child
+    expect(plan.inserts).toEqual([1]); // the 7 m child is a fresh row
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('prefers a shorter exact match over a longer parallel one', () => {
+    // Incoming 100 m way. Existing B lies exactly on its first 60 m; stale
+    // existing A is a full-length carriageway 3 m to the side. A has the longer
+    // overlap (~100 m vs ~60 m), so ranking by length alone would carry A's id
+    // onto the incoming and drop B. Exactness must win: B keeps the road, A stales.
+    const incomingLine: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: M, lng: 0 },
+    ];
+    const parallelA: LatLng[] = [
+      { lat: 0, lng: 0.03 * M }, // ~3 m to the side, full length
+      { lat: M, lng: 0.03 * M },
+    ];
+    const exactB: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: 0.6 * M, lng: 0 }, // exact, first 60 m only
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'A', coords: parallelA },
+      { id: 'B', coords: exactB },
+    ];
+
+    const plan = planReassignment(existing, [incomingLine]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'B', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual(['A']);
+  });
+
   it('2→1 merge: one id inherits the merged road, the other goes stale', () => {
     // Two existing 100 m segments merged into one 200 m way.
     const existing: ExistingSegment[] = [
