@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
@@ -251,9 +251,11 @@ export class ReviewsService {
     segmentId: string,
     dto: CreateReviewDto,
   ): Promise<ReviewResponseDto> {
-    // Verify segment exists
+    // Verify the segment exists AND is live — a review posted to a tombstoned
+    // road (which /roads/:id 404s) would be saved but then hidden by the way
+    // resolver, i.e. an invisible review (#835).
     const segment = await this.segmentRepo.findOne({
-      where: { id: segmentId },
+      where: { id: segmentId, deactivated_at: IsNull() },
     });
     if (!segment) {
       throw new NotFoundException('Road segment not found');
@@ -453,8 +455,10 @@ export class ReviewsService {
       );
     }
 
+    // Only accept photo uploads for a LIVE segment (mirrors create/detail): a
+    // cached tombstoned id would otherwise stash uploads against a hidden road.
     const segment = await this.segmentRepo.findOne({
-      where: { id: segmentId },
+      where: { id: segmentId, deactivated_at: IsNull() },
     });
     if (!segment) {
       throw new NotFoundException('Road segment not found');

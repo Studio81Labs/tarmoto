@@ -231,8 +231,21 @@ export class OsmImportService {
    * as a tombstone (`deactivated_at`), never a delete.
    */
   private async reconcile(
-    incoming: RoadSegmentRow[],
+    rawIncoming: RoadSegmentRow[],
   ): Promise<OsmImportResult> {
+    // `osmium extract -b` does NOT clip geometries — it emits every COMPLETE way
+    // that crosses the bbox, so a boundary-crossing way yields full-length rows
+    // outside the configured region. Constrain the incoming set to the region:
+    // otherwise one tile would upsert out-of-tile keys whose old out-of-tile rows
+    // (loaded only from THIS bbox) can't carry over, and an adjacent tile would
+    // then see those keys as unchanged and tombstone the old rows, orphaning
+    // history. A segment straddling the edge is kept by both tiles — the upsert is
+    // idempotent on identical geometry.
+    const region = this.config.bbox;
+    const incoming = region
+      ? rawIncoming.filter((r) => this.overlapsBbox(r, region))
+      : rawIncoming;
+
     if (incoming.length === 0) {
       this.logger.log('OSM import: empty snapshot, nothing to reconcile');
       return { upserted: 0, carriedOver: 0, deactivated: 0 };
@@ -245,7 +258,6 @@ export class OsmImportService {
     // With a region we load every existing row inside it (so edge-removed roads
     // are candidates) and may tombstone; without one we load only the incoming
     // extent for carry-over matching and never tombstone.
-    const region = this.config.bbox;
     const existing = await this.loadExistingInBbox(
       region ?? this.dataBbox(incoming),
     );
@@ -327,6 +339,33 @@ export class OsmImportService {
 
   private identityKey(osmWayId: string, segmentIndex: number): string {
     return `${osmWayId}:${segmentIndex}`;
+  }
+
+  /** Whether the segment's coordinate bounding box overlaps `[minLng, minLat,
+   *  maxLng, maxLat]`. Used to drop out-of-region rows a complete-way extract
+   *  emits past the tile boundary. Over-keeping a straddling ~100 m segment is
+   *  harmless (its upsert is idempotent); only a fully-outside segment — whose
+   *  tiny bbox can't reach the region — is dropped. */
+  private overlapsBbox(
+    row: RoadSegmentRow,
+    [minLng, minLat, maxLng, maxLat]: [number, number, number, number],
+  ): boolean {
+    let sMinLng = Infinity;
+    let sMinLat = Infinity;
+    let sMaxLng = -Infinity;
+    let sMaxLat = -Infinity;
+    for (const [lng, lat] of row.geom.coordinates) {
+      if (lng! < sMinLng) sMinLng = lng!;
+      if (lng! > sMaxLng) sMaxLng = lng!;
+      if (lat! < sMinLat) sMinLat = lat!;
+      if (lat! > sMaxLat) sMaxLat = lat!;
+    }
+    return (
+      sMaxLng >= minLng &&
+      sMinLng <= maxLng &&
+      sMaxLat >= minLat &&
+      sMinLat <= maxLat
+    );
   }
 
   private toLatLngs(line: GeoJSON.LineString): LatLng[] {

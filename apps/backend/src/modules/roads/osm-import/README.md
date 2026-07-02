@@ -32,13 +32,10 @@ curl -L -o czech-republic-latest.osm.pbf \
 osmium cat czech-republic-latest.osm.pbf -o /data/czech.osm
 ```
 
-### Bbox-clip when you set a region (required for stale detection)
+### Set a region for stale detection
 
-If you set `TARMOTO_OSM_IMPORT_BBOX` (so the importer may **tombstone** removed
-roads), the `.osm` file MUST be clipped to that exact rectangle — otherwise a
-row that sits inside the rectangle but outside the extract's real (polygon) shape
-would be tombstoned even though the file never mentions it. Clip with the SAME
-bounds you configure:
+To let the importer **tombstone** removed roads, set `TARMOTO_OSM_IMPORT_BBOX` and
+prepare the extract for the SAME rectangle:
 
 ```bash
 # minLng,minLat,maxLng,maxLat — identical to TARMOTO_OSM_IMPORT_BBOX
@@ -46,8 +43,15 @@ osmium extract -b 12.09,48.55,18.86,51.06 \
   czech-republic-latest.osm.pbf -o /data/czech.osm
 ```
 
+`osmium extract -b` does not clip geometries — it keeps every complete way that
+crosses the bbox — but the importer **constrains generated rows to the configured
+bbox** itself, so a way straddling the edge only reconciles in the tile(s) it
+actually intersects. That means the extract just has to COVER the region; the
+importer handles the overhang. The bbox you configure must still match the region
+the extract covers.
+
 Without a region the importer never tombstones (it only carries over + inserts),
-so an unclipped extract is fine there.
+so any extract is fine there.
 
 ## Config
 

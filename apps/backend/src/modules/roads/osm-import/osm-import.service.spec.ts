@@ -317,6 +317,24 @@ describe('OsmImportService', () => {
       expect(deactivate![0]).not.toMatch(/DELETE/i);
     });
 
+    it('drops incoming rows outside the configured region (complete-way overhang)', async () => {
+      // osmium extract -b keeps whole crossing ways, so rows can land outside the
+      // region; the importer must constrain to the bbox or a neighbouring tile
+      // would later tombstone their old rows. straightWay sits at (0,0); the region
+      // is far away, so the row is filtered out and nothing is written.
+      osmConfig.bbox = [100, 100, 101, 101];
+
+      const result = await service.importFrom([straightWay(1)]);
+
+      expect(result).toMatchObject({
+        upserted: 0,
+        carriedOver: 0,
+        deactivated: 0,
+      });
+      expect(qb.execute).not.toHaveBeenCalled();
+      expect(managerQuery).not.toHaveBeenCalled();
+    });
+
     it('does NOT tombstone when no region is configured (data bbox is not authoritative)', async () => {
       // Without an explicit region a data-derived bbox can't distinguish "removed"
       // from "outside this extract", so an unmatched row is left active.
