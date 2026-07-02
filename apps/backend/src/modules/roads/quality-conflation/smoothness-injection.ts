@@ -29,8 +29,10 @@ import type { OsmSmoothness } from './quality-smoothness.js';
  *
  * Streaming (via `sax`, matching the importer) with output backpressure: only
  * one way is ever held in flight, so a national extract rewrites in bounded
- * memory. The caller owns both stream lifecycles — this resolves when the input
- * has been fully parsed and all writes issued; it does not `end()` the output.
+ * memory. On any terminal path — success, parse error, or output error — the
+ * input is unpiped and destroyed (mirroring the importer), so a rejection never
+ * leaves the source reading while a retry is scheduled. It does not `end()` the
+ * output: the caller flushes and renames it.
  */
 export async function injectSmoothnessTags(
   input: Readable,
@@ -113,10 +115,21 @@ export async function injectSmoothnessTags(
       write(`</${name}>`);
     });
 
-    parser.on('end', () => resolve({ waysTagged }));
-    parser.on('error', (err: Error) => reject(err));
-    input.on('error', (err: Error) => reject(err));
-    output.on('error', (err: Error) => reject(err));
+    // Tear down the input→parser pipe on every terminal path — success, parse
+    // error, or output error (e.g. ENOSPC). Without this a rejection would leave
+    // the source still piped and reading on a large extract, wasting IO and
+    // keeping the fd/listeners alive while BullMQ reschedules. Mirrors the
+    // importer's `parseOsmXml` finally. `settle` is idempotent (destroy/unpipe
+    // are safe to repeat), so whichever terminal event fires first wins.
+    const settle = (finish: () => void): void => {
+      input.unpipe(parser);
+      input.destroy();
+      finish();
+    };
+    parser.on('end', () => settle(() => resolve({ waysTagged })));
+    parser.on('error', (err: Error) => settle(() => reject(err)));
+    input.on('error', (err: Error) => settle(() => reject(err)));
+    output.on('error', (err: Error) => settle(() => reject(err)));
 
     input.pipe(parser);
   });

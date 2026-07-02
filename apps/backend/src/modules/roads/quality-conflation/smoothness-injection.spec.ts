@@ -100,18 +100,17 @@ describe('injectSmoothnessTags', () => {
     expect(out).toContain('v="A &amp; B &lt;X&gt;"');
   });
 
-  it('propagates a parse error', async () => {
+  it('propagates a parse error and tears down the input stream', async () => {
     const output = new Writable({
       write(_c, _e, cb): void {
         cb();
       },
     });
+    const input = Readable.from(['<osm><way id="1"><nd ></osm-broken']);
     await expect(
-      injectSmoothnessTags(
-        Readable.from(['<osm><way id="1"><nd ></osm-broken']),
-        output,
-        new Map(),
-      ),
+      injectSmoothnessTags(input, output, new Map()),
     ).rejects.toBeDefined();
+    // The source is destroyed so a scheduled retry doesn't keep it reading.
+    expect(input.destroyed).toBe(true);
   });
 });
