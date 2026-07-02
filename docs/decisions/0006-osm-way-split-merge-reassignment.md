@@ -40,7 +40,11 @@ Before upserting a region, match each **incoming** ~100 m segment against the
 **existing** rows in the same area by how much of the incoming segment's length
 lies on an existing segment's geometry (sampled-point coverage within a small
 tolerance). A greedy pass — highest overlap first, each existing row inherited by
-at most one incoming segment — produces three sets:
+at most one incoming segment — produces three sets. When overlaps tie (e.g. two
+parallel carriageways closer than the tolerance, presented in a different order
+than the DB rows), the **more exact geometry match wins** (smallest symmetric
+sampled distance) before falling back to index order, so an id is never
+cross-assigned to a neighbour when its own geometry is present:
 
 - **carry-over** — the incoming segment inherits the existing row's UUID (and all
   its FKs/history); the upsert updates that row's OSM columns in place.
@@ -77,16 +81,15 @@ tolerance of that tip (one direction ≈ 1) but covers almost none of the long s
 (the other ≈ 0). Second — and decisively, because sampled coverage is a
 _proximity_ measure that degrades to ~1 both ways once both segments are shorter
 than the tolerance (an adjacent stub or a crossing then looks identical to a real
-overlap) — it requires a **real collinear overlap**: projecting both onto the
-existing segment's chord axis and intersecting their extents, with a lateral
-tolerance, must yield at least 0.9 of the longer segment's length. That stays ~0
-for a mere end-to-end touch (extents abut), for a crossing (one side collapses to
-a point on the axis), and for a sub-tolerance stub at a tip — none of which can
-leak an id onto a neighbour — while a genuinely unchanged segment measures its
-full length. A match failing either guard falls back to the length floor and is
-inserted/tombstoned. (The chord projection assumes near-straightness, which holds
-for the sub-floor segments the bypass concerns; longer matches go through the
-sampled-coverage floor.)
+overlap) — it requires a **real, bend-tolerant overlap** of at least 0.9 of the
+longer segment's length. That overlap walks the incoming's arc-length samples and
+takes the _smaller_ of (a) how much of the incoming lies within tolerance of the
+existing and (b) the span of the existing's own arc that those feet sweep across.
+A genuine overlap advances along both — following bends, so an unchanged _curved_
+sub-floor connector still measures its full length — whereas a touch, a crossing,
+or a sub-tolerance tip stub pins every foot to one spot, collapsing the swept span
+(and thus the min) to ~0 regardless of how short the segments are. A match failing
+either guard falls back to the length floor and is inserted/tombstoned.
 
 Because each existing id is claimed once:
 

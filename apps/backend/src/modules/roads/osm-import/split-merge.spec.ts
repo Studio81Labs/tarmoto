@@ -146,6 +146,62 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['micro']);
   });
 
+  it('keeps the id of an unchanged sub-floor segment with a sharp bend', () => {
+    // A ~9 m service connector as an L: a 4.5 m east leg then a 4.5 m north leg.
+    // Its end-to-end chord is only ~6.4 m, so a chord-based overlap would fall
+    // below 0.9×9 and wrongly drop it; the arc-following real overlap measures the
+    // full 9 m, so an idempotent re-import carries the id over.
+    const d = 0.045 * M; // ~4.5 m per leg
+    const bent = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: d },
+      { lat: d, lng: d },
+    ];
+    const existing: ExistingSegment[] = [{ id: 'bend', coords: bent }];
+
+    const plan = planReassignment(existing, [bent]);
+
+    expect(plan.carryOver).toEqual([
+      { existingId: 'bend', incomingIndex: 0, score: 1 },
+    ]);
+    expect(plan.inserts).toEqual([]);
+    expect(plan.stale).toEqual([]);
+  });
+
+  it('prefers the exact geometry match over index order for parallel neighbours', () => {
+    // Two parallel carriageways ~3 m apart (within the 5 m tolerance), presented
+    // to the DB in the opposite order from the incoming snapshot. Every cross-pair
+    // scores a full overlap, so index order alone would hand A's id to B; the
+    // separation tie-breaker keeps each id on its own exact geometry.
+    const gap = 0.03 * M; // ~3 m lateral separation
+    const north: LatLng[] = [
+      { lat: gap, lng: 0 },
+      { lat: gap, lng: M },
+    ];
+    const south: LatLng[] = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: M },
+    ];
+    const existing: ExistingSegment[] = [
+      { id: 'north', coords: north },
+      { id: 'south', coords: south },
+    ];
+    // Incoming order is reversed relative to the existing rows.
+    const incoming = [south, north];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.stale).toEqual([]);
+    expect(plan.inserts).toEqual([]);
+    // north (existing) must keep its geometry: incoming index 1 is `north`.
+    expect(
+      plan.carryOver.map((c) => [c.existingId, c.incomingIndex]).sort(),
+    ).toEqual([
+      ['north', 1],
+      ['south', 0],
+    ]);
+  });
+
   it('does not carry between two collinear sub-tolerance segments that only abut', () => {
     // A ~3 m existing connector (0–3 m) and a ~3 m incoming connector (3–6 m),
     // collinear and sharing only the junction. Both are shorter than the 5 m

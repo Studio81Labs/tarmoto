@@ -31,7 +31,7 @@ const DEFAULT_TOLERANCE_M = 5;
 const DEFAULT_SAMPLE_M = 20;
 /** The "unchanged segment" threshold. A carry-over bypasses the short-match
  *  length floor only when coverage is this strong in BOTH directions AND the real
- *  collinear overlap (see `collinearOverlapMeters`) is at least this fraction of
+ *  bend-tolerant overlap (see `realOverlapMeters`) is at least this fraction of
  *  the longer segment — i.e. the two are essentially the same line — so an
  *  unchanged sub-floor segment keeps its id without a touch/crossing sneaking
  *  through. */
@@ -126,6 +126,117 @@ function pointToPolylineMeters(p: LatLng, poly: readonly LatLng[]): number {
   return min;
 }
 
+/** Distance in metres from `p` to segment `a`–`b`, plus how far along that leg
+ *  (0..1) the closest point (the foot of the projection) lies. */
+function footOnSegment(
+  p: LatLng,
+  a: LatLng,
+  b: LatLng,
+): { dist: number; t: number } {
+  const meanLatRad = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const mx = Math.cos(meanLatRad) * 111_320;
+  const project = (q: LatLng) => ({
+    x: wrapLngDelta(q.lng - a.lng) * mx,
+    y: q.lat * 111_320,
+  });
+  const P = project(p);
+  const A = project(a);
+  const B = project(b);
+  const abx = B.x - A.x;
+  const aby = B.y - A.y;
+  const lenSq = abx * abx + aby * aby;
+  if (lenSq === 0) return { dist: Math.hypot(P.x - A.x, P.y - A.y), t: 0 };
+  let t = ((P.x - A.x) * abx + (P.y - A.y) * aby) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return {
+    dist: Math.hypot(P.x - (A.x + t * abx), P.y - (A.y + t * aby)),
+    t,
+  };
+}
+
+/** Closest point on `poly` to `p`: its distance in metres and the ARC-LENGTH
+ *  position (metres from `poly`'s start) of that foot. The arc position lets a
+ *  caller tell whether successive points genuinely travel ALONG `poly` (a real
+ *  overlap) or all fold onto one spot (a touch/crossing). */
+function footOnPolyline(
+  p: LatLng,
+  poly: readonly LatLng[],
+): { dist: number; arcPos: number } {
+  let best = { dist: Infinity, arcPos: 0 };
+  let acc = 0;
+  for (let i = 1; i < poly.length; i++) {
+    const a = poly[i - 1]!;
+    const b = poly[i]!;
+    const legLen = planarMeters(a, b);
+    const { dist, t } = footOnSegment(p, a, b);
+    if (dist < best.dist) best = { dist, arcPos: acc + t * legLen };
+    acc += legLen;
+  }
+  return best;
+}
+
+/**
+ * Length in metres of the stretch where `a` genuinely runs ALONG `b` — a real,
+ * bend-tolerant overlap, as opposed to a mere endpoint touch or a crossing.
+ *
+ * Sampled proximity alone can't tell these apart once both segments are shorter
+ * than the tolerance (every point is then trivially within tolerance of the
+ * other), and a straight-chord projection underestimates a genuinely unchanged
+ * but BENT segment. So this walks `a`'s arc-length samples and takes the smaller
+ * of two quantities:
+ *  - how much of `a`'s own length lies within `tolM` of `b`, and
+ *  - the span of `b`'s ARC that those feet sweep across.
+ *
+ * A real overlap advances along BOTH (min ≈ shared length, following bends); a
+ * touch or crossing pins every foot to one spot on `b`, so the swept span — and
+ * thus the min — collapses to ~0 regardless of how short the segments are.
+ */
+function realOverlapMeters(
+  a: readonly LatLng[],
+  b: readonly LatLng[],
+  tolM: number,
+  sampleM: number,
+): number {
+  if (a.length < 2 || b.length < 2) return 0;
+  const samples = sampleAlong(a, sampleM);
+  if (samples.length < 2) return 0;
+  const aLen = polylineMeters(a);
+  let matched = 0;
+  let sweepMin = Infinity;
+  let sweepMax = -Infinity;
+  for (const p of samples) {
+    const foot = footOnPolyline(p, b);
+    if (foot.dist <= tolM) {
+      matched++;
+      if (foot.arcPos < sweepMin) sweepMin = foot.arcPos;
+      if (foot.arcPos > sweepMax) sweepMax = foot.arcPos;
+    }
+  }
+  const coveredArcA = (matched / samples.length) * aLen;
+  const sweptArcB = sweepMax >= sweepMin ? sweepMax - sweepMin : 0;
+  return Math.min(coveredArcA, sweptArcB);
+}
+
+/** How far apart two polylines run — the symmetric max sampled point-to-line
+ *  distance (a discrete Hausdorff). ~0 for (near-)identical geometry, growing
+ *  with the gap between parallel neighbours; used only to break ties in favour of
+ *  the more exact match. */
+function separationMeters(
+  a: readonly LatLng[],
+  b: readonly LatLng[],
+  sampleM: number,
+): number {
+  const directed = (from: readonly LatLng[], to: readonly LatLng[]): number => {
+    let max = 0;
+    for (const p of sampleAlong(from, sampleM)) {
+      const d = pointToPolylineMeters(p, to);
+      if (d > max) max = d;
+    }
+    return max;
+  };
+  return Math.max(directed(a, b), directed(b, a));
+}
+
 /** The point at arc-length `atM` along `coords` (clamped to the ends). */
 function pointAtLength(coords: readonly LatLng[], atM: number): LatLng {
   let acc = 0;
@@ -170,66 +281,6 @@ function sampleAlong(coords: readonly LatLng[], sampleM: number): LatLng[] {
   return out;
 }
 
-/**
- * Length in metres of the stretch where `b` genuinely runs ALONGSIDE `a` — a real
- * collinear overlap, as opposed to a mere endpoint touch or a crossing.
- *
- * Sampled proximity can't tell these apart once both segments are shorter than the
- * tolerance: every point is then trivially within tolerance of the other, so an
- * adjacent stub or a crossing scores ~1 both ways with zero shared road. This
- * instead projects both polylines onto `a`'s chord axis and intersects their
- * extents, requiring `b` to stay within `tolM` LATERALLY of that axis:
- *  - a genuine coincident overlap → intersection ≈ min length, lateral ≈ 0;
- *  - two segments that only touch end-to-end → extents abut, intersection ≈ 0;
- *  - a crossing → `b` collapses to a point on the axis, intersection ≈ 0.
- *
- * It is a chord (not arc) measure, so it is only trusted for the SHORT segments
- * the length-floor bypass concerns, where ~straightness holds; longer matches go
- * through the sampled-coverage floor instead.
- */
-function collinearOverlapMeters(
-  a: readonly LatLng[],
-  b: readonly LatLng[],
-  tolM: number,
-): number {
-  if (a.length < 2 || b.length < 2) return 0;
-  const origin = a[0]!;
-  const mx = Math.cos((origin.lat * Math.PI) / 180) * 111_320;
-  const project = (q: LatLng) => ({
-    x: wrapLngDelta(q.lng - origin.lng) * mx,
-    y: (q.lat - origin.lat) * 111_320,
-  });
-  const end = project(a[a.length - 1]!);
-  const len = Math.hypot(end.x, end.y);
-  if (len === 0) return 0;
-  const ux = end.x / len;
-  const uy = end.y / len;
-  const along = (p: { x: number; y: number }) => p.x * ux + p.y * uy;
-  const lateral = (p: { x: number; y: number }) =>
-    Math.abs(-p.x * uy + p.y * ux);
-
-  let aMin = Infinity;
-  let aMax = -Infinity;
-  for (const p of a) {
-    const s = along(project(p));
-    if (s < aMin) aMin = s;
-    if (s > aMax) aMax = s;
-  }
-  let bMin = Infinity;
-  let bMax = -Infinity;
-  let bMaxLateral = 0;
-  for (const p of b) {
-    const P = project(p);
-    const s = along(P);
-    if (s < bMin) bMin = s;
-    if (s > bMax) bMax = s;
-    const lat = lateral(P);
-    if (lat > bMaxLateral) bMaxLateral = lat;
-  }
-  if (bMaxLateral > tolM) return 0; // `b` runs across, not alongside, `a`
-  return Math.max(0, Math.min(aMax, bMax) - Math.max(aMin, bMin));
-}
-
 /** Fraction of `a`'s sampled points that lie within `tolM` of polyline `b`. */
 function overlapFraction(
   a: readonly LatLng[],
@@ -269,6 +320,7 @@ export function planReassignment(
     incomingIndex: number;
     score: number;
     overlapLen: number;
+    separation: number;
   }> = [];
   for (let e = 0; e < existing.length; e++) {
     for (let n = 0; n < incoming.length; n++) {
@@ -313,32 +365,46 @@ export function planReassignment(
       // length within tolerance of the other's tip — a false majority for ~10 m
       // stubs. A genuinely UNCHANGED segment bypasses the floor (so an idempotent
       // re-import of a <10 m connector keeps its id), but "unchanged" must be a
-      // real collinear overlap, not sampled proximity: once both segments are
-      // shorter than the tolerance, an adjacent stub or a crossing also scores
-      // mutual ≈ 1. So the bypass requires the REAL collinear overlap length to be
-      // near-total (≥ 0.9 of the longer segment) — which stays ~0 for a touch or a
-      // crossing regardless of how short the segments are. `mutual` is kept as a
-      // cheap first gate. Otherwise the sampled-length floor gates.
+      // REAL overlap, not sampled proximity: once both segments are shorter than
+      // the tolerance, an adjacent stub or a crossing also scores mutual ≈ 1. So
+      // the bypass requires the bend-tolerant real overlap to be near-total (≥ 0.9
+      // of the longer segment) — it follows the arc (a bent unchanged connector
+      // still matches) yet stays ~0 for a touch or a crossing regardless of how
+      // short the segments are. `mutual` is kept as a cheap first gate. Otherwise
+      // the sampled-length floor gates.
       const longerLen = Math.max(
         polylineMeters(incoming[n]!),
         polylineMeters(existing[e]!.coords),
       );
       const unchanged =
         mutual >= NEAR_PERFECT_OVERLAP &&
-        collinearOverlapMeters(incoming[n]!, existing[e]!.coords, tolM) >=
+        realOverlapMeters(incoming[n]!, existing[e]!.coords, tolM, sampleM) >=
           NEAR_PERFECT_OVERLAP * longerLen;
       const eligible =
         score > minOverlap && (unchanged || overlapLen > 2 * tolM);
       if (eligible) {
-        pairs.push({ existingIdx: e, incomingIndex: n, score, overlapLen });
+        pairs.push({
+          existingIdx: e,
+          incomingIndex: n,
+          score,
+          overlapLen,
+          separation: separationMeters(
+            incoming[n]!,
+            existing[e]!.coords,
+            sampleM,
+          ),
+        });
       }
     }
   }
-  // Longest shared stretch first; ties resolve deterministically by index so the
-  // plan is stable across runs on unchanged data.
+  // Longest shared stretch first; then the more EXACT match (smallest separation)
+  // so two parallel neighbours within tolerance don't get cross-assigned by index
+  // order when their overlap ties; index order is the final deterministic
+  // tie-break so the plan is stable across runs on unchanged data.
   pairs.sort(
     (x, y) =>
       y.overlapLen - x.overlapLen ||
+      x.separation - y.separation ||
       x.existingIdx - y.existingIdx ||
       x.incomingIndex - y.incomingIndex,
   );
