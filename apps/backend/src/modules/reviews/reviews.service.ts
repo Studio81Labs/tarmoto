@@ -171,7 +171,8 @@ export class ReviewsService {
        WHERE COALESCE(rs.osm_way_id::text, rs.id::text) = (
          SELECT COALESCE(osm_way_id::text, id::text)
          FROM road_segments WHERE id = $1
-       )`,
+       )
+         AND rs.deactivated_at IS NULL`,
       [segmentId],
     );
     return rows.map((r) => r.id);

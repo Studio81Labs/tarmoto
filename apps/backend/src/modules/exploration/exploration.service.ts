@@ -28,13 +28,18 @@ export class ExplorationService {
 
   async getStats(userId: string): Promise<ExplorationStatsDto> {
     const [riddenResult, totalResult, distanceResult] = await Promise.all([
+      // Numerator: distinct LIVE road segments the rider has completed. Join
+      // road_segments so a segment tombstoned after being ridden (#835) drops out
+      // of the count too — otherwise, with the active-only denominator below, the
+      // ratio could exceed 100 %.
       this.rideSegmentRepo
         .createQueryBuilder('rs')
         .select('COUNT(DISTINCT rs.road_segment_id)', 'count')
         .innerJoin('rs.ride', 'r')
+        .innerJoin('road_segments', 'seg', 'seg.id = rs.road_segment_id')
         .where('r.user_id = :userId', { userId })
         .andWhere("r.status = 'completed'")
-        .andWhere('rs.road_segment_id IS NOT NULL')
+        .andWhere('seg.deactivated_at IS NULL')
         .getRawOne<{ count: string }>(),
       // Denominator is the ACTIVE network — tombstoned (split/merged-away) roads
       // must not dilute the explored percentage (#835).
