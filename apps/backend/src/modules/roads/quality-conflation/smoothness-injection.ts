@@ -11,11 +11,14 @@ import type { OsmSmoothness } from './quality-smoothness.js';
  * into a derived `.osm` extract that GraphHopper re-imports. This transform
  * reads the same `.osm` XML the importer consumes (osmium-produced; see the
  * importer README), passes every element through unchanged, and for each way
- * whose id is in `assignments` writes `<tag k="smoothness" v="…"/>` — replacing
- * any pre-existing `smoothness` on that way so re-running is **idempotent** and
- * never duplicates the tag. Unmatched ways (and their tags) are untouched, so a
- * road without crowdsourced quality keeps whatever OSM already said (or nothing
- * → `MISSING` → neutral).
+ * whose id is in `assignments` writes `<tag k="smoothness" v="…"/>` so
+ * re-running is **idempotent** and never duplicates the tag.
+ *
+ * The conflation **owns the `smoothness` channel** (ADR-0005): every source
+ * `smoothness` tag is stripped, whether or not the way is matched. A matched way
+ * gets our conflated value; an unscored way is left with **no** `smoothness` so
+ * it reads `MISSING`/neutral and is never penalised by the request-time
+ * `preferQuality` rule. (A road's other tags are untouched — only `smoothness`.)
  *
  * Output is **semantically** faithful, not byte-faithful: elements normalise to
  * open/close form (`<node …></node>` for a source `<node …/>`) and attribute
@@ -75,14 +78,15 @@ export async function injectSmoothnessTags(
         inWay = true;
         waySmoothness =
           attrs.id !== undefined ? (assignments.get(attrs.id) ?? null) : null;
-      } else if (
-        inWay &&
-        waySmoothness !== null &&
-        tag.name === 'tag' &&
-        attrs.k === 'smoothness'
-      ) {
-        // Matched way already carries a smoothness tag — drop it; the fresh
-        // value is written on the way's close. Keeps re-runs idempotent.
+      } else if (inWay && tag.name === 'tag' && attrs.k === 'smoothness') {
+        // The conflation OWNS the `smoothness` channel (ADR-0005): strip ANY
+        // source smoothness — matched or not. On a matched way our value is
+        // re-written at the way's close (idempotent); on an UNSCORED way the tag
+        // is dropped entirely so the way becomes MISSING/neutral and is never
+        // penalised by the request-time `preferQuality` rule. Leaving a source
+        // `smoothness=bad` on a way we have no score for would let GraphHopper
+        // de-weight a road with no crowdsourced quality — the exact contract
+        // violation ADR-0005 forbids.
         skippingSmoothness = true;
         return;
       }

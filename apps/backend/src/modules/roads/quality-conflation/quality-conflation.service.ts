@@ -1,4 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
 import { once } from 'node:events';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
@@ -99,6 +100,12 @@ export class QualityConflationService {
    * Triggering GraphHopper to re-import the derived file is an operator/infra
    * step (the graph bakes `smoothness` at import time): point the GraphHopper
    * import at `outputFilePath`. This method only produces that file.
+   *
+   * The write is **atomic**: output goes to a temp sibling that is renamed onto
+   * `outputFilePath` only after it finishes cleanly. A wrong input path,
+   * malformed XML, full disk, or mid-run crash therefore leaves the previous
+   * good extract intact (BullMQ retries), rather than truncating the very file
+   * GraphHopper is documented to import.
    */
   async runConflation(): Promise<{ waysTagged: number; assignments: number }> {
     const { inputFilePath, outputFilePath } = this.conflationConfig;
@@ -113,17 +120,27 @@ export class QualityConflationService {
       assignments.map((a) => [a.osmWayId, a.smoothness]),
     );
 
+    const tmpPath = `${outputFilePath}.tmp`;
     const input = createReadStream(inputFilePath);
-    const output = createWriteStream(outputFilePath);
-    const { waysTagged } = await injectSmoothnessTags(
-      input,
-      output,
-      bySmoothness,
-    );
-    // The injector issues every write but doesn't close the output — flush and
-    // wait for the file to finish so a caller (or the next import) sees it whole.
-    output.end();
-    await once(output, 'finish');
+    const output = createWriteStream(tmpPath);
+    let waysTagged: number;
+    try {
+      ({ waysTagged } = await injectSmoothnessTags(
+        input,
+        output,
+        bySmoothness,
+      ));
+      // The injector issues every write but doesn't close the output — flush and
+      // wait for the temp file to finish before the atomic rename.
+      output.end();
+      await once(output, 'finish');
+    } catch (err) {
+      // Abandon the partial temp file; the previous good extract is untouched.
+      output.destroy();
+      await rm(tmpPath, { force: true }).catch(() => undefined);
+      throw err;
+    }
+    await rename(tmpPath, outputFilePath);
 
     this.logger.log(
       `Quality conflation wrote ${outputFilePath}: ${waysTagged} way(s) tagged ` +

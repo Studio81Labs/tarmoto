@@ -177,5 +177,30 @@ describe('QualityConflationService', () => {
         await rm(dir, { recursive: true, force: true });
       }
     });
+
+    it('preserves the previous extract when the run fails (atomic write)', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'conflation-'));
+      const missingInput = join(dir, 'does-not-exist.osm');
+      const output = join(dir, 'out.osm');
+      try {
+        await writeFile(output, 'PREVIOUS GOOD EXTRACT');
+        const { service } = makeService(
+          [{ osmWayId: '100', representativeQuality: 4.6, segmentCount: 2 }],
+          null,
+          {
+            enabled: true,
+            inputFilePath: missingInput,
+            outputFilePath: output,
+          },
+        );
+
+        await expect(service.runConflation()).rejects.toBeDefined();
+        // The last good extract is untouched and no temp file is left behind.
+        expect(await readFile(output, 'utf8')).toBe('PREVIOUS GOOD EXTRACT');
+        await expect(readFile(`${output}.tmp`, 'utf8')).rejects.toThrow();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

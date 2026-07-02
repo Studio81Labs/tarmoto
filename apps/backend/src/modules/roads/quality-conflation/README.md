@@ -55,6 +55,14 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
   excluded, so a road removed from OSM stops contributing stale quality.
 - **Scored only.** Ways whose segments are all `quality_score IS NULL` produce
   no assignment (neutral), matching the request-time no-op contract.
+- **Owns the `smoothness` channel.** The injector strips **every** source
+  `smoothness` tag (ADR-0005): a matched way gets our conflated value; an
+  unscored way is left with none → `MISSING`/neutral. Otherwise a source
+  `smoothness=bad` on a road we have no data for would be de-weighted by
+  `preferQuality` — penalising it against the contract.
+- **Atomic output.** The derived extract is written to a temp sibling and
+  renamed on success, so a failed/partial run never truncates the last good
+  extract GraphHopper imports.
 - **Region-bounded.** When `TARMOTO_OSM_IMPORT_BBOX` is set the job only conflates
   ways intersecting that rectangle — the same region the OSM extract and the
   GraphHopper graph cover. Unset → the whole live network.

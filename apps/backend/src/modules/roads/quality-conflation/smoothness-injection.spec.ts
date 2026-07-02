@@ -72,12 +72,17 @@ describe('injectSmoothnessTags', () => {
     expect(out.match(/k="smoothness"/g)).toHaveLength(1);
   });
 
-  it('leaves an existing smoothness on an UNMATCHED way untouched', async () => {
+  it('strips a source smoothness on an UNSCORED way (owns the channel)', async () => {
+    // ADR-0005: `smoothness` carries only Tarmoto quality, so a source value on
+    // a way we have no score for must be removed → MISSING/neutral, never
+    // penalised by preferQuality. Other tags on the way survive.
     const xml =
-      '<osm><way id="200"><nd ref="1"/><tag k="smoothness" v="bad"/></way></osm>';
+      '<osm><way id="200"><nd ref="1"/><tag k="smoothness" v="bad"/>' +
+      '<tag k="highway" v="track"/></way></osm>';
     const { out, waysTagged } = await inject(xml, { '100': 'excellent' });
     expect(waysTagged).toBe(0);
-    expect(out).toContain('<tag k="smoothness" v="bad">');
+    expect(out).not.toContain('smoothness');
+    expect(out).toContain('<tag k="highway" v="track">');
   });
 
   it('running the output through the injector again is a no-op fixpoint', async () => {
