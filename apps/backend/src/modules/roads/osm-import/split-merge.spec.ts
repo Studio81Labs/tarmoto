@@ -385,6 +385,29 @@ describe('planReassignment (OSM split/merge)', () => {
     expect(plan.stale).toEqual(['ew']);
   });
 
+  it('does not carry onto a lone parallel neighbour with no exact candidate', () => {
+    // The only existing row in the window is a ~3.5 m parallel offset from the
+    // incoming (a carriageway removed, or a new parallel added). Overlap and
+    // heading both look full, and there is no exact competitor to outrank it, so
+    // only the acceptance separation gate stops it inheriting the stale id.
+    const existing: ExistingSegment[] = [
+      {
+        id: 'para',
+        coords: [
+          { lat: 0, lng: 0.035 * M }, // ~3.5 m to the side
+          { lat: M, lng: 0.035 * M },
+        ],
+      },
+    ];
+    const incoming = [seg(0, M)];
+
+    const plan = planReassignment(existing, incoming);
+
+    expect(plan.carryOver).toEqual([]);
+    expect(plan.inserts).toEqual([0]);
+    expect(plan.stale).toEqual(['para']);
+  });
+
   it('keeps a true match over a barely-offset (~2 m) parallel neighbour', () => {
     // The exact tier is tight: a 100 m parallel row only ~2 m away must NOT count
     // as an exact same-geometry match, so a true row covering the first 60 m keeps

@@ -40,6 +40,14 @@ const EXACT_SEPARATION_FRACTION = 0.2;
  *  sharing road — this rejects an acute crossing whose feet would otherwise advance
  *  smoothly along the other line. */
 const HEADING_TOLERANCE_RAD = (20 * Math.PI) / 180;
+/** Maximum separation (as a fraction of the tolerance) for a carry-over to be
+ *  eligible AT ALL — not just to sort ahead. A genuine re-import or re-split reuses
+ *  the same OSM nodes, so a true match is near-exact; a match offset by more than
+ *  this is treated as a distinct PARALLEL road and inserted fresh rather than
+ *  inheriting a stale id, even when it is the only candidate in the window. Half
+ *  the tolerance (~2.5 m): tolerates modest node shifts, rejects a lane-gap
+ *  neighbour. */
+const MAX_CARRY_SEPARATION_FRACTION = 0.5;
 
 export interface ExistingSegment {
   id: string;
@@ -445,6 +453,18 @@ export function planReassignment(
         polylineMeters(existing[e]!.coords),
       );
       if (shorterLen === 0 || overlap <= minOverlap * shorterLen) continue;
+      // Exactness — how far the two run apart where they best correspond. A carry-
+      // over must be near-exact (a genuine re-import/re-split reuses the same
+      // nodes): a more-offset match is a distinct PARALLEL road and is inserted
+      // fresh rather than inheriting a stale id, EVEN IF it is the only candidate
+      // — the exactness ordering below is only a tie-break, so this gate is what
+      // stops a lone parallel neighbour from silently absorbing another road's id.
+      const separation = separationMeters(
+        incoming[n]!,
+        existing[e]!.coords,
+        tolM,
+      );
+      if (separation > tolM * MAX_CARRY_SEPARATION_FRACTION) continue;
       // Confidence for the carried row: how completely the two cover each other.
       const score = Math.max(
         overlapFraction(incoming[n]!, existing[e]!.coords, tolM, sampleM),
@@ -455,10 +475,7 @@ export function planReassignment(
         incomingIndex: n,
         score,
         overlap,
-        // Exactness — how far the two run apart over their overlap. Prefers an
-        // exact same-geometry match over a longer within-tolerance PARALLEL
-        // neighbour (separated carriageways), which would otherwise cross-assign.
-        separation: separationMeters(incoming[n]!, existing[e]!.coords, tolM),
+        separation,
       });
     }
   }

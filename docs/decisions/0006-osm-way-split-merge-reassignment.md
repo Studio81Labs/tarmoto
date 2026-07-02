@@ -76,15 +76,22 @@ an acute crossing — whose foot glides smoothly along the other line but ~30° 
 contributes no shared length, not just the perpendicular crossing whose foot is
 pinned.
 
-**Eligibility.** A carry-over requires that real overlap to exceed a **strict
-majority of the shorter segment** (> 0.5). Using the shorter length as the
-denominator means a genuinely contained split/merge piece qualifies at _any_
-length — an 8 m child of a 15 m parent overlaps ~100 % of itself — so a real split
-into sub-tolerance children still preserves the parent's id, while a mostly-new or
-extended stretch that overlaps only a minority of the shorter side is inserted
-fresh rather than inheriting another road's reviews. There is no separate length
-floor or near-1:1 bypass: the single real-overlap majority subsumes both, because
-the metric already reads ~0 for the degenerate touch/crossing/abut cases.
+**Eligibility.** A carry-over requires two things. First, the real overlap must
+exceed a **strict majority of the shorter segment** (> 0.5). Using the shorter
+length as the denominator means a genuinely contained split/merge piece qualifies
+at _any_ length — an 8 m child of a 15 m parent overlaps ~100 % of itself — so a
+real split into sub-tolerance children still preserves the parent's id, while a
+mostly-new or extended stretch that overlaps only a minority of the shorter side is
+inserted fresh. There is no separate length floor or near-1:1 bypass: the single
+real-overlap majority subsumes both, because the metric already reads ~0 for the
+degenerate touch/crossing/abut cases. Second, the match must be **near-exact** —
+separation at most half the tolerance (~2.5 m). A genuine re-import or re-split
+reuses the same OSM nodes, so a true match is near-exact; a more-offset match is a
+distinct _parallel_ road and is inserted fresh rather than inheriting a stale id.
+This is an acceptance gate, not merely the sorter tie-break below: without it, a
+_lone_ parallel neighbour in a window (a carriageway removed, a new parallel added)
+— with no exact competitor to lose to — would silently absorb the stale id and its
+reviews/hazards.
 
 **Exactness tie-break.** The greedy orders **exact same-geometry matches first**
 (separation at most a _tight_ fraction of the tolerance — a fifth, ≈ 1 m, above
@@ -125,8 +132,9 @@ reuses the same node coordinates so matching stretches are near-exact; a looser
 value would inflate a partial overlap past the cutoff); **sample spacing 20 m**
 (coverage samples; the real-overlap and separation measures resample far finer);
 **exact-match separation a fifth of the tolerance** (≈ 1 m — above resampling
-noise, below a real lane gap); **heading tolerance 20°** (beyond it two segments
-are crossing, not sharing road). The tolerance and sample-spacing knobs are
+noise, below a real lane gap); **max carry separation half the tolerance** (~2.5 m
+— a match offset more than this is a distinct parallel road, not a carry-over);
+**heading tolerance 20°** (beyond it two segments are crossing, not sharing road). The tolerance and sample-spacing knobs are
 validated positive and finite (and the overlap threshold a fraction in (0, 1)):
 the sampler's step derives from them, so a zero would make it loop forever — the
 core throws instead.
