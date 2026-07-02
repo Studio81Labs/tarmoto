@@ -545,12 +545,27 @@ export class RoadsService {
         fzr.contribution_score
       FROM fun_zone_roads fzr
       INNER JOIN fun_zones fz ON fz.id = fzr.fun_zone_id
-      -- Keep the membership even if the stored representative sub-segment is
-      -- tombstoned: the lateral re-aggregates the way from its LIVE siblings
-      -- (rs.deactivated_at IS NULL) and HAVING COUNT(*) > 0 drops a way only when
-      -- ALL its in-zone assessed segments are dead. Filtering the representative
-      -- here would instead hide a still-live road until the next reclustering.
+      -- Keep a membership whose stored representative sub-segment is tombstoned
+      -- ONLY when the SAME road is still there — a live sibling of the member's way
+      -- within ~30 m of the (dead) member's own geometry. That preserves a road
+      -- whose representative sub-segment died but whose other sub-segments live on,
+      -- while dropping a membership whose way key was REUSED for a different road
+      -- after a split (tombstones keep their osm_way_id, and a live row may now
+      -- reuse it): without this gate the lateral would expand the dead member's key
+      -- onto that replacement road and show it with the stale contribution_score.
+      -- A live member always passes. The next reclustering rewrites memberships.
       INNER JOIN road_segments member ON member.id = fzr.road_segment_id
+        AND (
+          member.deactivated_at IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM road_segments s
+            WHERE s.deactivated_at IS NULL
+              AND COALESCE(s.osm_way_id::text, s.id::text)
+                = COALESCE(member.osm_way_id::text, member.id::text)
+              AND ST_DWithin(s.geom::geography, member.geom::geography, 30)
+          )
+        )
       INNER JOIN LATERAL (
         -- The stored member is one representative segment of an aggregated OSM
         -- way (#794); re-aggregate the whole way so the panel shows the real
