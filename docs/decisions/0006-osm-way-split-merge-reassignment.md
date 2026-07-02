@@ -120,11 +120,17 @@ Because each existing id is claimed once:
 
 The matching heart is a **pure, PostGIS-free core** (`split-merge.ts`,
 `planReassignment`) operating on coordinate arrays with a planar overlap metric —
-exact enough on ~100 m spans and unit-testable from synthetic geometries. Loading
-the candidate existing rows and applying the plan (carry-over as an
-id-preserving update, stale as a tombstone/deactivation) is a follow-up wiring
-slice — a follow-up that must add the deactivation column/flag rather than hard-
-delete, since the history tables FK to `road_segments`.
+exact enough on ~100 m spans and unit-testable from synthetic geometries. The
+importer wires it in (#835): it buffers the regional snapshot, loads the existing
+active OSM rows overlapping its bbox, upserts the unchanged-identity rows in place,
+and applies the plan for the leftovers — carry-over as an **id-preserving UPDATE**
+that re-points the existing row onto the incoming geometry, insert as a fresh row,
+and stale as a **tombstone** (`road_segments.deactivated_at`, added by migration
+`1791`) rather than a hard delete, since the history tables FK to `road_segments`.
+Active read paths must filter `deactivated_at IS NULL`; wiring that filter through
+the discovery reads (best-roads, clustering, tiles, way aggregation) is the
+remaining slice before the scheduled job may be enabled — and until it is
+validated the importer stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`).
 
 Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
 the shorter segment's length; **tolerance 5 m** (tight, because an OSM re-split

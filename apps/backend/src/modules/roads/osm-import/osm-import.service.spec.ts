@@ -122,6 +122,8 @@ describe('OsmImportService', () => {
     execute: jest.Mock;
   };
   let createQueryBuilder: jest.Mock;
+  let loadExisting: jest.Mock;
+  let managerQuery: jest.Mock;
   let osmConfig: { enabled: boolean; filePath: string | null };
 
   /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
@@ -138,12 +140,26 @@ describe('OsmImportService', () => {
       execute: jest.fn().mockResolvedValue({}),
     };
     createQueryBuilder = jest.fn().mockReturnValue(qb);
+    // `loadExistingInBbox` — no existing rows by default, so every incoming
+    // segment is a fresh insert (no carry-over / stale). The transaction runs the
+    // callback against a manager whose insert builder is the shared `qb`.
+    loadExisting = jest.fn().mockResolvedValue([]);
+    managerQuery = jest.fn().mockResolvedValue(undefined);
+    const manager = { createQueryBuilder, query: managerQuery };
+    const repo = {
+      query: loadExisting,
+      manager: {
+        transaction: jest.fn((cb: (m: typeof manager) => Promise<unknown>) =>
+          cb(manager),
+        ),
+      },
+    } as unknown as Repository<RoadSegment>;
     const moduleRef = await Test.createTestingModule({
       providers: [
         OsmImportService,
         {
           provide: getRepositoryToken(RoadSegment),
-          useValue: { createQueryBuilder } as Partial<Repository<RoadSegment>>,
+          useValue: repo,
         },
         {
           provide: osmImportConfig.KEY,
@@ -222,6 +238,77 @@ describe('OsmImportService', () => {
 
     expect(result.upserted).toBe(2);
     expect(qb.execute).toHaveBeenCalledTimes(1);
+  });
+
+  describe('split/merge reconciliation (#835)', () => {
+    /** An existing row shaped like `loadExistingInBbox`'s raw query result. */
+    function existingRow(
+      id: string,
+      osmWayId: string,
+      segmentIndex: number,
+      coords: Array<[number, number]>, // [lng, lat]
+    ) {
+      return {
+        id,
+        osm_way_id: osmWayId,
+        segment_index: segmentIndex,
+        geom: { type: 'LineString', coordinates: coords },
+      };
+    }
+
+    it('carries an existing id onto a re-keyed incoming segment (same geometry)', async () => {
+      // The way's id changed (1 → 2) but the geometry is identical, so the old
+      // row's id + history must follow it rather than being inserted fresh.
+      loadExisting.mockResolvedValueOnce([
+        existingRow('old-uuid', '1', 0, [
+          [0, 0],
+          [0, 0.0009],
+        ]),
+      ]);
+
+      const result = await service.importFrom([straightWay(2)]);
+
+      expect(result).toMatchObject({
+        upserted: 0,
+        carriedOver: 1,
+        deactivated: 0,
+      });
+      // Carry-over is an id-preserving UPDATE targeting the existing id.
+      expect(managerQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = managerQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('UPDATE road_segments SET');
+      expect(sql).toContain('deactivated_at = NULL');
+      expect(params[0]).toBe('2'); // new osm_way_id
+      expect(params[8]).toBe('old-uuid'); // WHERE id
+      // Nothing inserted for the carried segment.
+      expect(qb.execute).not.toHaveBeenCalled();
+    });
+
+    it('tombstones an existing row nothing in the snapshot matches', async () => {
+      // Existing row lives far from the incoming way → no geometry match → stale.
+      loadExisting.mockResolvedValueOnce([
+        existingRow('gone-uuid', '5', 0, [
+          [10, 10],
+          [10, 10.0009],
+        ]),
+      ]);
+
+      const result = await service.importFrom([straightWay(2)]);
+
+      expect(result).toMatchObject({
+        upserted: 1, // the incoming way inserted fresh
+        carriedOver: 0,
+        deactivated: 1,
+      });
+      // A deactivate UPDATE bounded to the stale id — never a DELETE.
+      const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
+      const deactivate = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NOW()'),
+      );
+      expect(deactivate).toBeDefined();
+      expect(deactivate![1]).toEqual([['gone-uuid']]);
+      expect(deactivate![0]).not.toMatch(/DELETE/i);
+    });
   });
 
   describe('importFromConfiguredFile', () => {

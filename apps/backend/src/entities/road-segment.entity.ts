@@ -110,6 +110,18 @@ export class RoadSegment {
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   last_updated!: Date;
 
+  /**
+   * When set, this segment is no longer part of the current OSM snapshot (its way
+   * was removed, or split/merged away — see ADR-0006) but is retained rather than
+   * deleted: `surface_readings` / `road_reviews` / `hazard_reports` /
+   * `fun_zone_roads` FK to it, and its crowdsourced history is preserved. Active
+   * read paths filter on `deactivated_at IS NULL`; NULL = live (the default for
+   * every crowd-sourced and current row). Maintained by the OSM importer's
+   * split/merge reconciliation (#835).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  deactivated_at!: Date | null;
+
   @OneToMany(() => SurfaceReading, (r) => r.road_segment)
   surface_readings!: SurfaceReading[];
 
