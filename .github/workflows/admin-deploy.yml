@@ -20,7 +20,7 @@ name: Admin Deploy
 #   var    ADMIN_WORKER_NAME           Worker name for this env
 #                                      (e.g. tarmoto-admin / tarmoto-admin-staging)
 #   var    INTERNAL_API_BASE_URL       backend origin the worker proxies to
-#   secret TARMOTO_INTERNAL_API_TOKEN   MUST equal the backend's token on the
+#   secret INTERNAL_API_TOKEN          MUST equal the backend's token on the
 #                                       same environment
 
 on:
@@ -131,14 +131,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ADMIN_API_BASE_URL: ${{ vars.INTERNAL_API_BASE_URL }}
-          INTERNAL_API_TOKEN: ${{ secrets.TARMOTO_INTERNAL_API_TOKEN }}
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$WORKER_NAME" || { echo "::error::ADMIN_WORKER_NAME var is not set in env ${ENV_NAME}"; exit 1; }
           test -n "$WORKERS_SUBDOMAIN" || { echo "::error::ADMIN_WORKERS_SUBDOMAIN repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN secret is required"; exit 1; }
-          test -n "$INTERNAL_API_TOKEN" || { echo "::error::TARMOTO_INTERNAL_API_TOKEN secret is required in env ${ENV_NAME}"; exit 1; }
+          test -n "$INTERNAL_API_TOKEN" || { echo "::error::INTERNAL_API_TOKEN secret is required in env ${ENV_NAME}"; exit 1; }
 
           # Default the backend origin per environment when the var is unset,
           # matching companion-deploy's convention.
