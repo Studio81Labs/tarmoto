@@ -9,6 +9,7 @@ import { RoadsService } from './roads.service.js';
 import { FunZoneClusteringService } from './fun-zone-clustering.service.js';
 import { OsmImportService } from './osm-import/osm-import.service.js';
 import { osmImportConfig } from './osm-import/osm-import.config.js';
+import { QualityConflationService } from './quality-conflation/quality-conflation.service.js';
 
 @Module({
   imports: [
@@ -16,7 +17,17 @@ import { osmImportConfig } from './osm-import/osm-import.config.js';
     ConfigModule.forFeature(osmImportConfig),
   ],
   controllers: [RoadsController],
-  providers: [RoadsService, FunZoneClusteringService, OsmImportService],
-  exports: [RoadsService, FunZoneClusteringService, OsmImportService],
+  providers: [
+    RoadsService,
+    FunZoneClusteringService,
+    OsmImportService,
+    QualityConflationService,
+  ],
+  exports: [
+    RoadsService,
+    FunZoneClusteringService,
+    OsmImportService,
+    QualityConflationService,
+  ],
 })
 export class RoadsModule {}
