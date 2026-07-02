@@ -457,7 +457,10 @@ export class OsmImportService {
     bboxIds: Set<string>,
   ): Promise<string[]> {
     if (newIncoming.length === 0) return [];
-    const rows = await this.repo.query(
+    // Annotate the binding (not an `as` cast) so `r` is typed under both the local
+    // and strict OpenAPI-gen tsconfigs, which disagree on whether a cast is
+    // redundant.
+    const rows: Array<{ id: string }> = await this.repo.query(
       `SELECT rs.id
        FROM ${TABLE} rs
        JOIN unnest($1::bigint[], $2::int[]) AS k(w, i)
