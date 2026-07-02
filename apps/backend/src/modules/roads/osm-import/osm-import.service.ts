@@ -377,12 +377,17 @@ export class OsmImportService {
       segment_index: number;
       geom: GeoJSON.LineString;
     }> = await this.repo.query(
+      // `&&` (bbox overlap) is only the GiST prefilter — a curved/L-shaped segment
+      // OUTSIDE the region can still have a bounding box that clips the envelope.
+      // `ST_Intersects` is the exact test, so a row is a stale candidate only when
+      // its geometry genuinely lies in the region.
       `SELECT id, osm_way_id::text AS osm_way_id, segment_index,
               ST_AsGeoJSON(geom)::json AS geom
        FROM ${TABLE}
        WHERE deactivated_at IS NULL
          AND osm_way_id IS NOT NULL
-         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+         AND ST_Intersects(geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))`,
       bbox,
     );
     return rows.map((r) => ({
