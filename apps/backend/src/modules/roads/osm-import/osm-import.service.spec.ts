@@ -342,6 +342,53 @@ describe('OsmImportService', () => {
       expect(deactivate![1]).toEqual([['upstream']]);
     });
 
+    it('checks reused keys even without a region (vacates, does not overwrite)', async () => {
+      // No region: the geometry check still runs, so a reused key (old 100/0 =
+      // upstream, incoming 100/0 = downstream) is NOT straight-upserted onto the
+      // upstream row. Downstream carries the key; the upstream keeps living but its
+      // now-reused identity is nulled (we don't tombstone by absence without a
+      // region).
+      osmConfig.bbox = null;
+      loadExisting.mockResolvedValueOnce([
+        existingRow('upstream', '100', 0, [
+          [0, 0],
+          [0, 0.0009],
+        ]),
+        existingRow('downstream', '100', 1, [
+          [0, 0.0009],
+          [0, 0.0018],
+        ]),
+      ]);
+      const incomingDownstream: OsmWay = {
+        id: 100,
+        tags: { highway: 'residential' },
+        coords: [
+          { lat: 0.0009, lng: 0 },
+          { lat: 0.0018, lng: 0 },
+        ],
+      };
+
+      const result = await service.importFrom([incomingDownstream]);
+
+      expect(result).toMatchObject({ carriedOver: 1, deactivated: 0 });
+      const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
+      // Downstream carries the reused key; upstream is not overwritten.
+      const carry = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NULL'),
+      );
+      expect(carry![1][8]).toBe('downstream');
+      // Nothing tombstoned; the upstream's reused identity is freed instead.
+      expect(
+        calls.some(([sql]) => sql.includes('deactivated_at = NOW()')),
+      ).toBe(false);
+      const free = calls.find(([sql]) =>
+        sql.includes('osm_way_id = NULL, segment_index = NULL'),
+      );
+      expect(free![1][0]).toEqual(
+        expect.arrayContaining(['upstream', 'downstream']),
+      );
+    });
+
     it('tombstones every existing row when a configured region imports empty', async () => {
       // A configured region with zero drivable rows is authoritative: the region
       // was cleared, so its existing rows must be deactivated (not left live).

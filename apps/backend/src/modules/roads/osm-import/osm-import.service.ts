@@ -314,10 +314,9 @@ export class OsmImportService {
     // still the same ROAD. An OSM split can KEEP the way id on a downstream piece,
     // so `(osm_way_id, segment_index)` can appear in both snapshots for DIFFERENT
     // geometry; upserting that in place would move the old row's history onto the
-    // wrong road. When a region is configured (so the displaced old row can be
-    // safely tombstoned), a key match whose geometry no longer overlaps is instead
-    // pushed into the geometry-reassignment pool. Identical geometry short-circuits
-    // the (relatively costly) overlap check.
+    // wrong road. So a key match whose geometry no longer overlaps is pushed into
+    // the geometry-reassignment pool instead — regardless of region. Identical
+    // geometry short-circuits the (relatively costly) overlap check.
     const unchanged: RoadSegmentRow[] = [];
     const newIncoming: RoadSegmentRow[] = [];
     const keptKeys = new Set<string>();
@@ -326,8 +325,7 @@ export class OsmImportService {
       const match = existingByKey.get(key);
       const isUnchanged =
         match !== undefined &&
-        (!region ||
-          this.coordsEqual(match.coords, r.geom.coordinates) ||
+        (this.coordsEqual(match.coords, r.geom.coordinates) ||
           this.sameRoad(match.coords, r.geom));
       if (isUnchanged) {
         unchanged.push(r);
@@ -352,9 +350,29 @@ export class OsmImportService {
       ...unchanged,
       ...newIncoming.filter((_, i) => !carried.has(i)),
     ];
-    // Only tombstone when the region is authoritative (see above).
+    // Only tombstone (by absence) when the region is authoritative (see above).
     const staleIds = region ? plan.stale : [];
     const carryTargetIds = plan.carryOver.map((c) => c.existingId);
+    // A key the snapshot now assigns to a different row must be VACATED even
+    // without a region — its reuse is proof the old holder lost that identity, so
+    // we null the old row's identity (leaving the row live, since we don't
+    // tombstone by absence without a region). Only the reused keys, never the
+    // out-of-extract stale rows.
+    const claimedKeys = new Set(
+      [...unchanged, ...newIncoming].map((r) =>
+        this.identityKey(r.osm_way_id, r.segment_index),
+      ),
+    );
+    const staleSet = new Set(plan.stale);
+    const reusedKeyIds = region
+      ? []
+      : leftoverExisting
+          .filter(
+            (e) =>
+              staleSet.has(e.id) &&
+              claimedKeys.has(this.identityKey(e.osm_way_id, e.segment_index)),
+          )
+          .map((e) => e.id);
 
     await this.repo.manager.transaction(async (tx) => {
       // Apply order matters — a split/merge can move an `(osm_way_id,
@@ -369,13 +387,15 @@ export class OsmImportService {
           [staleIds],
         );
       }
-      // 2. Null the carry-over targets' OLD identity so a rotation (two live rows
-      //    swapping keys) can't collide when re-keyed in step 3.
-      if (carryTargetIds.length > 0) {
+      // 2. Free the OLD identity of every row being re-keyed — carry-over targets
+      //    (a rotation could swap keys between live rows) and, without a region,
+      //    rows whose key was reused by a different road — so step 3 can't collide.
+      const toFree = [...carryTargetIds, ...reusedKeyIds];
+      if (toFree.length > 0) {
         await tx.query(
           `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
            WHERE id = ANY($1)`,
-          [carryTargetIds],
+          [toFree],
         );
       }
       // 3. Carry-over: set the new identity + geometry on each freed row.
