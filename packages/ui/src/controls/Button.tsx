@@ -3,8 +3,9 @@ import { cn } from "../utils/cn";
 
 /**
  * Button · the "commit" surface. Spec: §17.
- * Three sizes (sm 34 · md 40 · lg 48) × seven variants
- * (primary · accent · secondary · ghost · danger · danger-solid · on-dark).
+ * Three sizes (sm 34 · md 40 · lg 48) × nine variants
+ * (primary · accent · secondary · ghost · danger · danger-solid ·
+ * success · warning · on-dark).
  * `sm` is 34 px so it lines up with the 34 px form inputs/selects.
  *
  * `danger` is the low-emphasis outline (e.g. a "Delete…" entry point that
@@ -12,6 +13,14 @@ import { cn } from "../utils/cn";
  * destructive *confirm* itself inside that dialog. Both use the `quality-q1`
  * token; the solid pairs it with `text-ink` (≈4.5:1, matching the brand's
  * ink-on-warm CTAs) rather than cream (which fails AA on `sm`).
+ *
+ * `success` (a positive commit — Accept an invite, an "Added" done-state) and
+ * `warning` (a cautionary action — "Cancel subscription") reuse the quality ramp
+ * the same way: `q5` (emerald) and `q2` (amber), each paired with `text-ink`.
+ * They are **solid only** — those stops are light, so, unlike `danger`, they
+ * meet AA as a *background* with ink text, not as outline text on cream. So
+ * there is deliberately no `success`/`warning` outline; for a low-emphasis entry
+ * point use `secondary`/`ghost`.
  *
  * Use a Pill (§08) for filter chips, toolbar items, status indicators
  * — Button is for verbs that change state.
@@ -23,6 +32,8 @@ export type ButtonVariant =
   | "ghost"
   | "danger"
   | "danger-solid"
+  | "success"
+  | "warning"
   | "on-dark";
 
 export type ButtonSize = "sm" | "md" | "lg";
@@ -79,6 +90,10 @@ const variantClass: Record<ButtonVariant, string> = {
     "bg-transparent text-quality-q1 border-quality-q1 hover:bg-quality-q1/10",
   "danger-solid":
     "bg-quality-q1 text-ink border-transparent hover:brightness-95 disabled:hover:brightness-100",
+  success:
+    "bg-quality-q5 text-ink border-transparent hover:brightness-95 disabled:hover:brightness-100",
+  warning:
+    "bg-quality-q2 text-ink border-transparent hover:brightness-95 disabled:hover:brightness-100",
   "on-dark": "bg-cream/10 text-cream border-cream/15 hover:bg-cream/15",
 };
 
