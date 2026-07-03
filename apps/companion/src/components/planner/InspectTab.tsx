@@ -3,7 +3,11 @@ import { t } from "@/i18n";
 import { useMemo } from "react";
 import { Mono } from "@tarmoto/ui";
 import { deriveFlaggedSections, surfaceMixToPercents } from "@/lib/planner/api";
-import type { RouteQualitySummary, RouteSegment } from "@/lib/planner/types";
+import type {
+  DayPlan,
+  RouteQualitySummary,
+  RouteSegment,
+} from "@/lib/planner/types";
 import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { TripDay, Waypoint } from "@/lib/types";
@@ -24,6 +28,10 @@ import { SurfaceMixBar } from "./SurfaceMixBar";
 interface InspectTabProps {
   day: TripDay | null;
   selectedSegmentId: string | null;
+  /** Scope the readout to one DayPlan (selected in the day column). */
+  plan?: DayPlan | null;
+  /** Back to the whole-route readout. */
+  onClearPlan?: () => void;
   /** Open a section's Road Preview + fly the map to it. */
   onInspectSegment: (segmentId: string) => void;
   /** Insert an avoidance via around the section and re-route. */
@@ -69,17 +77,32 @@ export function daySurfaceMix(
 export function InspectTab({
   day,
   selectedSegmentId,
+  plan = null,
+  onClearPlan,
   onInspectSegment,
   onRerouteSegment,
 }: InspectTabProps) {
-  const segments = useMemo(
+  const allSegments = useMemo(
     () => (day ? deriveDayQualitySegments(day) : []),
     [day],
   );
+  // A selected DayPlan scopes the readout to its slice of the route.
+  const segments = useMemo(
+    () =>
+      plan
+        ? allSegments.filter((segment) => plan.segmentIds.includes(segment.id))
+        : allSegments,
+    [allSegments, plan],
+  );
   const flagged = useMemo(() => deriveFlaggedSections(segments), [segments]);
   const surfaceMix = useMemo(
-    () => (day ? daySurfaceMix(day, segments) : []),
-    [day, segments],
+    () =>
+      plan
+        ? plan.quality.surfaceMix
+        : day
+          ? daySurfaceMix(day, allSegments)
+          : [],
+    [plan, day, allSegments],
   );
   const spine = useMemo(
     () =>
@@ -100,8 +123,38 @@ export function InspectTab({
   const startLabel = spine[0]?.name ?? "Start";
   const finishLabel = spine[spine.length - 1]?.name ?? "Finish";
 
+  const metrics = plan
+    ? {
+        distance: plan.distanceKm ? plan.distanceKm.toFixed(1) : "—",
+        time: plan.timeMin ? formatDuration(plan.timeMin) : "—",
+        score:
+          plan.quality.score !== null ? plan.quality.score.toFixed(1) : "—",
+      }
+    : {
+        distance: day.distanceKm ? day.distanceKm.toFixed(1) : "—",
+        time: day.durationMinutes ? formatDuration(day.durationMinutes) : "—",
+        score: day.avgQuality ? day.avgQuality.toFixed(1) : "—",
+      };
+
   return (
     <div className="flex flex-col gap-6">
+      {plan ? (
+        <div className="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-cream px-3 py-2">
+          <span className="text-[12px] font-bold text-ink">
+            {t("Inspecting Day ")}
+            {plan.dayNumber} · {plan.startTown} → {plan.endTown}
+          </span>
+          {onClearPlan ? (
+            <button
+              type="button"
+              onClick={onClearPlan}
+              className="font-mono text-[10px] font-bold tracking-[0.4px] text-fg-dim transition hover:text-ink"
+            >
+              {t("WHOLE ROUTE")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {/* route summary card */}
       <div className="overflow-hidden rounded-[14px] border border-line bg-cream">
         <div className="px-4 py-3.5">
@@ -131,21 +184,14 @@ export function InspectTab({
             [
               {
                 key: "DISTANCE",
-                value: day.distanceKm ? day.distanceKm.toFixed(1) : "—",
+                value: metrics.distance,
                 unit: "km",
                 accent: false,
               },
-              {
-                key: "TIME",
-                value: day.durationMinutes
-                  ? formatDuration(day.durationMinutes)
-                  : "—",
-                unit: "",
-                accent: false,
-              },
+              { key: "TIME", value: metrics.time, unit: "", accent: false },
               {
                 key: "QUALITY",
-                value: day.avgQuality ? day.avgQuality.toFixed(1) : "—",
+                value: metrics.score,
                 unit: "/ 5",
                 accent: true,
               },

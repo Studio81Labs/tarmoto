@@ -37,6 +37,7 @@ import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
 import {
   coordinateAtKm,
+  kmAlongRouteAt,
   rawBreakTargetKms,
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
@@ -303,11 +304,19 @@ export default function TripPlannerPage() {
   const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
   // ── Plan & inspect panel: tab state + bidirectional panel↔map wiring ──
   const [panelTab, setPanelTab] = useState<PlannerTab>("BUILD");
+  // Day column selection — scopes the INSPECT tab to one DayPlan.
+  const [selectedPlanIndex, setSelectedPlanIndex] = useState<number | null>(
+    null,
+  );
   // A route-section click on the map opens its Road Preview; surface the
   // matching panel context too so the flagged-card highlight is visible.
   useEffect(() => {
     if (selectedPlannerSegmentId) setPanelTab("INSPECT");
   }, [selectedPlannerSegmentId]);
+  useEffect(() => {
+    // A re-split renumbers days — drop the day-scope selection.
+    setSelectedPlanIndex(null);
+  }, [dayPlans]);
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -428,6 +437,33 @@ export default function TripPlannerPage() {
         });
     }
   }, [selectedDay, renameWaypoint]);
+  // Dropping a day-break marker pins that break at the drop's along-route
+  // km and re-splits the surrounding days around it (addendum §6).
+  const handleMoveDayBreak = useCallback(
+    (boundary: number, location: { lng: number; lat: number }) => {
+      const trip = activeTripRef.current;
+      const plans = useTripStore.getState().dayPlans;
+      const coordinates =
+        trip && trip.days.length === 1
+          ? trip.days[0]?.routeGeometry?.coordinates
+          : undefined;
+      if (!coordinates || !plans || boundary < 1 || boundary > plans.length - 1)
+        return;
+      const droppedKm = kmAlongRouteAt(coordinates, location);
+      const movedBreakKm = plans[boundary - 1]?.endKm ?? null;
+      if (movedBreakKm === null || droppedKm <= 0) return;
+      // Keep every OTHER existing pin; the moved boundary re-pins at the
+      // drop. Unpinned breaks recompute around the pins on re-split.
+      const otherPins = useTripStore
+        .getState()
+        .pinnedBreakKms.filter((km) => Math.abs(km - movedBreakKm) > 1);
+      useTripStore
+        .getState()
+        .setPinnedBreaks([...otherPins, Math.round(droppedKm * 10) / 10]);
+      void handleSplit();
+    },
+    [handleSplit],
+  );
   const liveRouteEnabled =
     routeDirty &&
     selectedDay !== null &&
@@ -1546,13 +1582,21 @@ export default function TripPlannerPage() {
                     </button>
                   </div>
                 ) : null}
-                {dayPlans.map((plan) => (
-                  <div
+                {dayPlans.map((plan, planIndex) => (
+                  <button
                     key={plan.dayNumber}
+                    type="button"
                     aria-label={`Day ${plan.dayNumber}`}
-                    className={`rounded-[12px] border border-line bg-cream p-3 text-left transition ${
-                      splitState === "stale" ? "opacity-45" : ""
-                    }`}
+                    aria-pressed={selectedPlanIndex === planIndex}
+                    onClick={() => {
+                      setSelectedPlanIndex(planIndex);
+                      setPanelTab("INSPECT");
+                    }}
+                    className={`w-full rounded-[12px] border bg-cream p-3 text-left transition hover:border-line-strong ${
+                      selectedPlanIndex === planIndex
+                        ? "border-accent"
+                        : "border-line"
+                    } ${splitState === "stale" ? "opacity-45" : ""}`}
                   >
                     <div className="flex items-center gap-2">
                       <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
@@ -1591,7 +1635,7 @@ export default function TripPlannerPage() {
                         {t("BREAK PINNED ")}
                       </p>
                     ) : null}
-                  </div>
+                  </button>
                 ))}
               </>
             )}
@@ -1625,6 +1669,7 @@ export default function TripPlannerPage() {
               collaboratorCursors={collabSession.cursors}
               suggestions={collabSession.suggestions}
               dayBreaks={dayBreakMarkers}
+              onMoveDayBreak={handleMoveDayBreak}
               {...(serverTripId
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
@@ -2131,6 +2176,12 @@ export default function TripPlannerPage() {
             <InspectTab
               day={displayedTrip?.days[selectedDayIndex] ?? null}
               selectedSegmentId={selectedPlannerSegmentId}
+              plan={
+                selectedPlanIndex !== null
+                  ? (dayPlans?.[selectedPlanIndex] ?? null)
+                  : null
+              }
+              onClearPlan={() => setSelectedPlanIndex(null)}
               onInspectSegment={handleInspectSegment}
               onRerouteSegment={handleRerouteSegment}
             />

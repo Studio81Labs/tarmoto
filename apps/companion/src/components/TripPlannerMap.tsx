@@ -185,6 +185,15 @@ interface TripPlannerMapProps {
    */
   dayBreaks?: DayBreakMarker[];
   /**
+   * Called when a rider drops a day-break marker at a new location —
+   * the page pins that break and re-splits around it (addendum §6).
+   * Undefined keeps break markers static.
+   */
+  onMoveDayBreak?: (
+    boundary: number,
+    location: { lng: number; lat: number },
+  ) => void;
+  /**
    * Bump to trigger a one-shot refit to the current route bounds,
    * independent of the per-`trip.id` auto-fit. The auto-fit fires
    * once per trip so waypoint edits don't rip the viewport
@@ -213,6 +222,7 @@ export const TripPlannerMap = forwardRef<
     collaboratorCursors,
     suggestions,
     dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -235,6 +245,7 @@ export const TripPlannerMap = forwardRef<
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
         dayBreaks={dayBreaks}
+        onMoveDayBreak={onMoveDayBreak}
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
       />
@@ -281,6 +292,9 @@ const FetchedTripPlannerMap = forwardRef<
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
+    onMoveDayBreak?:
+      | ((boundary: number, location: { lng: number; lat: number }) => void)
+      | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
@@ -297,6 +311,7 @@ const FetchedTripPlannerMap = forwardRef<
     collaboratorCursors,
     suggestions,
     dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -321,6 +336,7 @@ const FetchedTripPlannerMap = forwardRef<
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
       dayBreaks={dayBreaks}
+      onMoveDayBreak={onMoveDayBreak}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
     />
@@ -350,6 +366,9 @@ const TripPlannerMapContent = forwardRef<
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
+    onMoveDayBreak?:
+      | ((boundary: number, location: { lng: number; lat: number }) => void)
+      | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
@@ -368,6 +387,7 @@ const TripPlannerMapContent = forwardRef<
     collaboratorCursors,
     suggestions,
     dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -746,6 +766,57 @@ const TripPlannerMapContent = forwardRef<
     suggestionCollection,
     waypointCollection,
   ]);
+  // ── Day-break marker dragging (addendum §6) ──
+  // A compact grab-drop gesture: mousedown on a break marker arms it,
+  // the release location is handed to the page, which pins the break at
+  // that along-route km and re-splits. The marker "jumps" to the pinned
+  // break when the new DayPlans land — no mid-drag ghost needed.
+  const onMoveDayBreakRef = useRef(onMoveDayBreak);
+  useEffect(() => {
+    onMoveDayBreakRef.current = onMoveDayBreak;
+  }, [onMoveDayBreak]);
+  const breakDragEnabled = onMoveDayBreak != null;
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !breakDragEnabled) return;
+    let activeBoundary: number | null = null;
+    const begin = (event: MapLayerMouseEvent) => {
+      const boundary = event.features?.[0]?.properties?.boundary as
+        | number
+        | undefined;
+      if (typeof boundary !== "number") return;
+      event.preventDefault();
+      activeBoundary = boundary;
+      swallowNextClickRef.current = true;
+      map.getCanvas().style.cursor = "grabbing";
+    };
+    const finish = (event: MapMouseEvent) => {
+      if (activeBoundary === null) return;
+      const boundary = activeBoundary;
+      activeBoundary = null;
+      map.getCanvas().style.cursor = "";
+      onMoveDayBreakRef.current?.(boundary, {
+        lng: event.lngLat.lng,
+        lat: event.lngLat.lat,
+      });
+    };
+    const enter = () => {
+      if (activeBoundary === null) map.getCanvas().style.cursor = "grab";
+    };
+    const leave = () => {
+      if (activeBoundary === null) map.getCanvas().style.cursor = "";
+    };
+    map.on("mousedown", DAY_BREAK_CIRCLE_LAYER, begin);
+    map.on("mouseup", finish);
+    map.on("mouseenter", DAY_BREAK_CIRCLE_LAYER, enter);
+    map.on("mouseleave", DAY_BREAK_CIRCLE_LAYER, leave);
+    return () => {
+      map.off("mousedown", DAY_BREAK_CIRCLE_LAYER, begin);
+      map.off("mouseup", finish);
+      map.off("mouseenter", DAY_BREAK_CIRCLE_LAYER, enter);
+      map.off("mouseleave", DAY_BREAK_CIRCLE_LAYER, leave);
+    };
+  }, [ready, breakDragEnabled]);
   // Line-coloring toggle — recolors the route line in place.
   useEffect(() => {
     const map = handleRef.current?.map;

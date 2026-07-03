@@ -167,6 +167,29 @@ function dayQuality(
   };
 }
 
+/** Along-route km of the vertex nearest to a point (break-drag drops). */
+export function kmAlongRouteAt(
+  coordinates: ReadonlyArray<ReadonlyArray<number>>,
+  location: { lng: number; lat: number },
+): number {
+  let km = 0;
+  let bestKm = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let previous: { lng: number; lat: number } | null = null;
+  for (const coordinate of coordinates) {
+    const [lng, lat] = coordinate;
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    if (previous) km += haversineKm(previous.lat, previous.lng, lat, lng);
+    const distance = haversineKm(lat, lng, location.lat, location.lng);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestKm = km;
+    }
+    previous = { lng, lat };
+  }
+  return bestKm;
+}
+
 /** Coordinate at a given along-route km on a raw LineString (break markers). */
 export function coordinateAtKm(
   coordinates: ReadonlyArray<ReadonlyArray<number>>,
