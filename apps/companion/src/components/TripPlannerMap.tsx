@@ -1992,6 +1992,11 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "text-offset": [0, 1.25],
         "text-size": 11,
         "text-anchor": "top",
+        // Single hosted font, not a stack: OpenFreeMap's glyph server only
+        // serves single-face fontstacks, so MapLibre's default stack (and
+        // any comma-joined list) 404s on every label range and falls back
+        // to noisy local glyph rendering.
+        "text-font": ["Noto Sans Regular"],
       },
       paint: {
         // Ink label with a cream halo for legibility on the cream basemap
@@ -2151,6 +2156,8 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "text-offset": [0, 1.1],
         "text-size": 10,
         "text-anchor": "top",
+        // See WAYPOINT_LABEL: single hosted font avoids glyph 404 spam.
+        "text-font": ["Noto Sans Regular"],
       },
       paint: {
         "text-color": "#F9A8D4",
