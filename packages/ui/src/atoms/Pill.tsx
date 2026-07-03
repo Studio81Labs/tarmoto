@@ -3,11 +3,26 @@ import { cn } from "../utils/cn";
 
 /**
  * Pill · the workhorse chip. Spec: §08.
- * Four variants only — primary (ink), accent, ghost (outline), danger.
- * Plus an `onDark` variant for use inside ink panels.
+ * Base variants — primary (ink), accent, ghost (outline), danger.
+ * Plus an `on-dark` variant for use inside ink panels, and three solid status
+ * tones — `success` (emerald), `warning` (amber), `neutral` (muted paper) — for
+ * status chips (subscription state, collection visibility, …).
  * Padding 5/10 · radius 999 · 11px / 700.
+ *
+ * The status tones reuse the quality ramp (`q5`/`q2`, matching `Button`) as a
+ * **solid fill with `text-ink`**: those stops are light, so — like `accent` —
+ * they read on cream as a filled chip, not as tinted text. `neutral` is the
+ * sunken paper surface with dim ink, for an inactive/none state.
  */
-export type PillVariant = "primary" | "accent" | "ghost" | "danger" | "on-dark";
+export type PillVariant =
+  | "primary"
+  | "accent"
+  | "ghost"
+  | "danger"
+  | "success"
+  | "warning"
+  | "neutral"
+  | "on-dark";
 
 export interface PillProps {
   children: ReactNode;
@@ -31,6 +46,9 @@ const variantClass: Record<PillVariant, string> = {
   accent: "bg-accent text-ink border-0",
   ghost: "bg-transparent text-ink border border-line-strong",
   danger: "bg-transparent text-quality-q1 border border-quality-q1",
+  success: "bg-quality-q5 text-ink border-0",
+  warning: "bg-quality-q2 text-ink border-0",
+  neutral: "bg-paper-2 text-fg-dim border-0",
   "on-dark": "bg-cream/10 text-cream border border-cream/15",
 };
 
