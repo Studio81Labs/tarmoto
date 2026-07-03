@@ -434,6 +434,47 @@ export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
   return waypoints.find((w) => w.type === "end");
 }
 
+/** Matches the auto-generated names the planner assigns to routing waypoints. */
+const DEFAULT_ROLE_NAME_RE = /^(Start|Finish|Via \d+|Reroute via)$/;
+
+/**
+ * Role-from-index: among the ROUTING waypoints (start/via/end — stop types
+ * like fuel or accommodation keep their type and don't participate), the
+ * first is the start, the last is the finish, everything between is a via.
+ * Called after any reorder/removal so dragging a via to the top makes it
+ * the start (demoting the old start to a via), and deleting the start
+ * promotes the next routing waypoint. Auto-generated names ("Start",
+ * "Via 2", …) are re-derived to match the new role; custom names (geocoded
+ * towns) are preserved.
+ */
+export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
+  const routing = waypoints
+    .map((waypoint, index) => ({ waypoint, index }))
+    .filter(
+      ({ waypoint }) =>
+        waypoint.type === "start" ||
+        waypoint.type === "via" ||
+        waypoint.type === "end",
+    );
+  if (routing.length === 0) return waypoints;
+
+  const next = [...waypoints];
+  let changed = false;
+  routing.forEach(({ waypoint, index }, order) => {
+    const role: Waypoint["type"] =
+      order === 0 ? "start" : order === routing.length - 1 ? "end" : "via";
+    if (waypoint.type === role) return;
+    changed = true;
+    let name = waypoint.name;
+    if (name === undefined || DEFAULT_ROLE_NAME_RE.test(name)) {
+      name =
+        role === "start" ? "Start" : role === "end" ? "Finish" : `Via ${order}`;
+    }
+    next[index] = { ...waypoint, type: role, name };
+  });
+  return changed ? next : waypoints;
+}
+
 /**
  * Index at which to insert a via so it lands BEFORE the day's finish (explicit
  * `end` or terminal `accommodation`). Returns `waypoints.length` (append) when
@@ -755,7 +796,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const days = [...activeTrip.days];
           days[dayIndex] = updatePlannerDayRoute(
             day,
-            day.waypoints.filter((w) => w.id !== waypointId),
+            // Deleting the start/finish promotes its neighbour (role from index).
+            reassignWaypointRoles(
+              day.waypoints.filter((w) => w.id !== waypointId),
+            ),
             activeTrip.parameters,
           );
           return {
@@ -843,7 +887,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           waypoints.splice(toIndex, 0, moved);
           days[dayIndex] = updatePlannerDayRoute(
             day,
-            waypoints,
+            // Roles derive from position: dragging a via to the top makes
+            // it the start; to the bottom, the finish.
+            reassignWaypointRoles(waypoints),
             activeTrip.parameters,
           );
           return {
@@ -1091,7 +1137,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const days = [...activeTrip.days];
           days[idx] = updatePlannerDayRoute(
             day,
-            day.waypoints.filter((w) => w.id !== waypointId),
+            // Deleting the start/finish promotes its neighbour (role from index).
+            reassignWaypointRoles(
+              day.waypoints.filter((w) => w.id !== waypointId),
+            ),
             activeTrip.parameters,
           );
           return {

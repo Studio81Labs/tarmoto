@@ -901,7 +901,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(useTripStore.getState().stalePreviewDays).toContain(2);
   });
 
-  it("reordering a terminal stay off the end clears the now-finishless link", () => {
+  it("reordering a terminal stay off the end promotes the trailing via to the finish (role-from-index)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // [start(1,1)]
     s.addWaypoint(0, {
@@ -919,17 +919,22 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     s.addDay(); // day 2 linked, seeded from the terminal stay (2,2)
     expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
 
-    // Drag the stay BEFORE the via → day 1 has no terminal finish anymore.
+    // Drag the stay BEFORE the via. Roles derive from position, so the
+    // now-trailing via is promoted to the day's finish — the day never
+    // goes finishless while it has two routing waypoints.
     useTripStore.setState({ selectedDayIndex: 1 });
     s.reorderWaypoints(0, 2, 1);
     expect(
       useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type),
-    ).toEqual(["start", "accommodation", "via"]);
+    ).toEqual(["start", "accommodation", "end"]);
 
-    // No predecessor finish to mirror → the link is cleared (not left dangling).
-    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
-      false,
-    );
+    // The linked successor re-seeds its start from the promoted finish.
+    const day2 = useTripStore.getState().activeTrip!.days[1]!;
+    expect(day2.startLinked).toBe(true);
+    expect(day2.waypoints.find((w) => w.type === "start")!.location).toEqual({
+      lng: 5,
+      lat: 5,
+    });
   });
 
   it("adding a stay after an explicit end re-seeds the linked successor to the stay", () => {
@@ -2219,5 +2224,97 @@ describe("useTripStore insertWaypointBefore (reroute via)", () => {
     });
     expect(useTripStore.getState().routeDirty).toBe(true);
     expect(useTripStore.getState().stalePreviewDays).toContain(1);
+  });
+});
+
+describe("useTripStore role-from-index waypoints (addendum §1)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seed() {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "add-via");
+  }
+  const types = () =>
+    useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type);
+  const names = () =>
+    useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.name);
+
+  it("dragging the via to the top makes it the start and demotes the old start", () => {
+    seed(); // [start, via, end]
+    useTripStore.getState().reorderWaypoints(0, 1, 0);
+    expect(types()).toEqual(["start", "via", "end"]);
+    // The moved via is now named Start; the old start became a via.
+    expect(names()).toEqual(["Start", "Via 1", "Finish"]);
+  });
+
+  it("dragging the start to the bottom makes it the finish", () => {
+    seed(); // [start, via, end]
+    useTripStore.getState().reorderWaypoints(0, 0, 2);
+    // Order after move: [via, end, start] → roles by index.
+    expect(types()).toEqual(["start", "via", "end"]);
+  });
+
+  it("preserves custom (geocoded) names across a re-role", () => {
+    seed();
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    const via = day.waypoints[1]!;
+    // Simulate a geocoded custom name.
+    useTripStore.setState((state) => {
+      const trip = state.activeTrip!;
+      const waypoints = trip.days[0]!.waypoints.map((w) =>
+        w.id === via.id ? { ...w, name: "Velké Meziříčí" } : w,
+      );
+      return {
+        activeTrip: {
+          ...trip,
+          days: [{ ...trip.days[0]!, waypoints }],
+        },
+      };
+    });
+    useTripStore.getState().reorderWaypoints(0, 1, 0);
+    expect(names()[0]).toBe("Velké Meziříčí");
+    expect(types()[0]).toBe("start");
+  });
+
+  it("removing the start promotes the next routing waypoint", () => {
+    seed();
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().removeWaypointById(start.id);
+    expect(types()).toEqual(["start", "end"]);
+  });
+
+  it("stop-type waypoints keep their type and never take a role", () => {
+    seed();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      name: "Gas",
+      location: { lat: 4, lng: 4 },
+      type: "fuel",
+    });
+    // Move the fuel stop to the top — roles must skip it.
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const fuelIndex = waypoints.findIndex((w) => w.id === "fuel-1");
+    useTripStore.getState().reorderWaypoints(0, fuelIndex, 0);
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after[0]!.type).toBe("fuel");
+    // Routing roles still valid on the remaining routing waypoints.
+    const routingTypes = after
+      .filter((w) => w.type !== "fuel")
+      .map((w) => w.type);
+    expect(routingTypes[0]).toBe("start");
+    expect(routingTypes[routingTypes.length - 1]).toBe("end");
+  });
+
+  it("supports a loop: finish placed on the start coordinate", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-end");
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(waypoints).toHaveLength(2);
+    expect(waypoints[0]!.type).toBe("start");
+    expect(waypoints[1]!.type).toBe("end");
+    expect(waypoints[1]!.location).toEqual(waypoints[0]!.location);
   });
 });

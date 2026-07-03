@@ -2458,24 +2458,24 @@ function WaypointEditor({
   return (
     <div className="space-y-2">
       <p className="text-xs text-fg-dim">
-        {t("Drag via points to reorder them. Start and finish stay pinned. ")}
+        {t(
+          "Drag to reorder — roles follow position: first is the start, last is the finish. ",
+        )}
       </p>
       {waypoints.map((waypoint, index) => {
-        const draggable = waypoint.type !== "start" && waypoint.type !== "end";
         return (
           <div
             key={waypoint.id}
-            draggable={draggable}
+            draggable
             onDragStart={() => {
-              if (!draggable) return;
               setDragIndex(index);
             }}
             onDragOver={(event) => {
-              if (dragIndex === null || !draggable) return;
+              if (dragIndex === null) return;
               event.preventDefault();
             }}
             onDrop={() => {
-              if (dragIndex === null || dragIndex === index || !draggable) {
+              if (dragIndex === null || dragIndex === index) {
                 setDragIndex(null);
                 return;
               }
@@ -2483,18 +2483,11 @@ function WaypointEditor({
               setDragIndex(null);
             }}
             onDragEnd={() => setDragIndex(null)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-              draggable
-                ? "border-line bg-cream/70 text-ink"
-                : "border-line bg-paper text-fg-dim"
-            }`}
+            className="flex items-center gap-2 rounded-lg border border-line bg-cream/70 px-3 py-2 text-sm text-ink"
           >
-            <GripVertical
-              size={14}
-              className={draggable ? "text-fg-dim" : "text-fg-faint"}
-            />
+            <GripVertical size={14} className="text-fg-dim" />
             <span className="min-w-12 text-xs uppercase tracking-wide text-fg-dim">
-              {waypoint.type}
+              {waypoint.type === "end" ? "finish" : waypoint.type}
             </span>
             <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
           </div>
