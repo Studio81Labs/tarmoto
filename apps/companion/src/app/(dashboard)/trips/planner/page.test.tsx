@@ -309,6 +309,7 @@ type TripStoreSnapshot = {
   clearSplit: () => void;
   setPinnedBreaks: (kms: number[]) => void;
   materializeSplit: () => void;
+  renameWaypoint: (waypointId: string, name: string) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
   appendPlannerWaypoint: (
     dayIndex: number,
@@ -489,6 +490,7 @@ describe("TripPlannerPage", () => {
       clearSplit: vi.fn(),
       setPinnedBreaks: vi.fn(),
       materializeSplit: vi.fn(),
+      renameWaypoint: vi.fn(),
       addWaypoint: vi.fn(),
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),

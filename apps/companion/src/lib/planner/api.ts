@@ -10,7 +10,7 @@ import {
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
 import { deriveQualitySegments } from "./derive";
-import { mockRoadPreview } from "./mocks";
+import { mockGeocode, mockReverseGeocode, mockRoadPreview } from "./mocks";
 import type {
   FlaggedSection,
   GeneratedPlannerRoute,
@@ -262,6 +262,14 @@ export function createPlannerApi(): PlannerApi {
       init?: { signal?: AbortSignal },
     ): Promise<PlannerPoi[]> {
       return fetchPois(route, types, init);
+    },
+
+    geocode(query: string) {
+      return Promise.resolve(mockGeocode(query));
+    },
+
+    reverseGeocode(lat: number, lng: number) {
+      return Promise.resolve(mockReverseGeocode(lat, lng));
     },
   };
 }

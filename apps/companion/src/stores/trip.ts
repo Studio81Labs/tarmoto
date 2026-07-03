@@ -235,6 +235,12 @@ interface TripState {
     waypoint: Waypoint,
   ) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  /**
+   * Rename a waypoint on the active planner day (reverse-geocoded pin
+   * names, typed-search picks). Not a routing input — no dirty flag, no
+   * undo entry, no split invalidation.
+   */
+  renameWaypoint: (waypointId: string, name: string) => void;
   moveWaypoint: (
     dayIndex: number,
     waypointId: string,
@@ -698,6 +704,25 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
     selectPlannerSegment: (segmentId) =>
       set({ selectedPlannerSegmentId: segmentId }),
+
+    renameWaypoint: (waypointId, name) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip) return state;
+        let changed = false;
+        const days = trip.days.map((day) => {
+          if (!day.waypoints.some((w) => w.id === waypointId)) return day;
+          changed = true;
+          return {
+            ...day,
+            waypoints: day.waypoints.map((w) =>
+              w.id === waypointId ? { ...w, name } : w,
+            ),
+          };
+        });
+        if (!changed) return state;
+        return { activeTrip: { ...trip, days } };
+      }),
 
     applySplit: (dayPlans, pinnedBreakKms) =>
       set((state) => ({

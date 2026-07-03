@@ -2425,3 +2425,32 @@ describe("useTripStore split lifecycle (addendum)", () => {
     expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
   });
 });
+
+describe("useTripStore renameWaypoint", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("renames without dirtying the route or invalidating a split", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false, splitState: "split" });
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+
+    useTripStore.getState().renameWaypoint(start.id, "Jihlava");
+
+    const renamed = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
+    expect(renamed.name).toBe("Jihlava");
+    expect(useTripStore.getState().routeDirty).toBe(false);
+    expect(useTripStore.getState().splitState).toBe("split");
+  });
+
+  it("is a no-op for unknown waypoint ids", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().renameWaypoint("nope", "X");
+    expect(useTripStore.getState().activeTrip).toBe(before);
+  });
+});

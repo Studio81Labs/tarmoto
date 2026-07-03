@@ -145,4 +145,10 @@ export interface PlannerApi {
     types: PlannerPoiType[],
     init?: { signal?: AbortSignal },
   ): Promise<PlannerPoi[]>;
+
+  /** Typed waypoint search in the panel (MOCK — corridor-city fixtures). */
+  geocode(query: string): Promise<GeoResult[]>;
+
+  /** Name a map-placed pin from its coordinate (MOCK — nearest fixture). */
+  reverseGeocode(lat: number, lng: number): Promise<string>;
 }

@@ -41,7 +41,10 @@ import {
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
 import { fetchOvernightTowns } from "@/lib/planner/api";
+import { plannerApi } from "@/lib/planner/api";
+import type { GeoResult } from "@/lib/planner/types";
 import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
+import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
 import {
   deriveDayQualitySegments,
   findPlannerQualitySegment,
@@ -255,6 +258,10 @@ export default function TripPlannerPage() {
   const splitState = useTripStore((s) => s.splitState);
   const dayPlans = useTripStore((s) => s.dayPlans);
   const applySplit = useTripStore((s) => s.applySplit);
+  const renameWaypoint = useTripStore((s) => s.renameWaypoint);
+  const insertWaypointBeforeEnd = useTripStore(
+    (s) => s.insertWaypointBeforeEnd,
+  );
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
@@ -400,6 +407,27 @@ export default function TripPlannerPage() {
         : [];
     });
   }, [splitState, dayPlans, displayedTrip]);
+  // Map-placed pins carry auto-generated names ("Start", "Via 2") —
+  // reverse-geocode them to a place name once per placement (addendum §2).
+  const reverseGeocodedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const waypoints = selectedDay?.waypoints ?? [];
+    for (const waypoint of waypoints) {
+      const name = waypoint.name ?? "";
+      if (!/^(Start|Finish|Via \d+|Reroute via)$/.test(name)) continue;
+      const key = `${waypoint.id}:${waypoint.location.lat.toFixed(4)}:${waypoint.location.lng.toFixed(4)}`;
+      if (reverseGeocodedRef.current.has(key)) continue;
+      reverseGeocodedRef.current.add(key);
+      void plannerApi
+        .reverseGeocode(waypoint.location.lat, waypoint.location.lng)
+        .then((placeName) => {
+          if (placeName) renameWaypoint(waypoint.id, placeName);
+        })
+        .catch(() => {
+          // Naming is cosmetic — keep the default label on failure.
+        });
+    }
+  }, [selectedDay, renameWaypoint]);
   const liveRouteEnabled =
     routeDirty &&
     selectedDay !== null &&
@@ -625,6 +653,31 @@ export default function TripPlannerPage() {
       roadPreference,
       surfacePreference,
     ],
+  );
+  // Panel typed search: picking a result relocates the row's waypoint
+  // (forward geocode → coordinates) and adopts the place name.
+  const handleRelocateWaypoint = useCallback(
+    (waypointId: string, result: GeoResult) => {
+      moveWaypoint(
+        selectedDayIndex,
+        waypointId,
+        { lng: result.lng, lat: result.lat },
+        plannerParams,
+      );
+      renameWaypoint(waypointId, result.name);
+    },
+    [moveWaypoint, plannerParams, renameWaypoint, selectedDayIndex],
+  );
+  const handleAddViaFromSearch = useCallback(
+    (result: GeoResult) => {
+      insertWaypointBeforeEnd(selectedDayIndex, {
+        id: `search-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: result.name,
+        location: { lng: result.lng, lat: result.lat },
+        type: "via",
+      });
+    },
+    [insertWaypointBeforeEnd, selectedDayIndex],
   );
 
   // Mirror the current planner controls into the store so the map's
@@ -1750,6 +1803,8 @@ export default function TripPlannerPage() {
                       onReorder={(fromIndex, toIndex) =>
                         reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
                       }
+                      onRelocate={handleRelocateWaypoint}
+                      onAddVia={handleAddViaFromSearch}
                     />
                   </div>
                 ) : (
@@ -2559,6 +2614,8 @@ function WaypointEditor({
   dayNumber,
   waypoints,
   onReorder,
+  onRelocate,
+  onAddVia,
 }: {
   dayNumber: number;
   waypoints: Array<{
@@ -2567,6 +2624,8 @@ function WaypointEditor({
     type: string;
   }>;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  onRelocate?: (waypointId: string, result: GeoResult) => void;
+  onAddVia?: (result: GeoResult) => void;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   if (waypoints.length === 0) {
@@ -2612,10 +2671,33 @@ function WaypointEditor({
             <span className="min-w-12 text-xs uppercase tracking-wide text-fg-dim">
               {waypoint.type === "end" ? "finish" : waypoint.type}
             </span>
-            <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
+            {onRelocate ? (
+              // Typed geocode search per row: the current name is the
+              // placeholder; picking a match relocates this waypoint.
+              <GeocodeSearchField
+                placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
+                ariaLabel={`Search location for ${waypoint.type === "end" ? "finish" : waypoint.type} waypoint`}
+                onSelect={(result) => onRelocate(waypoint.id, result)}
+              />
+            ) : (
+              <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
+            )}
           </div>
         );
       })}
+      {onAddVia && waypoints.length >= 2 ? (
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2 text-sm">
+          <span className="min-w-12 text-xs uppercase tracking-wide text-fg-mute">
+            via
+          </span>
+          <GeocodeSearchField
+            placeholder={t("Add via point by place… ")}
+            ariaLabel="Search location for a new via point"
+            onSelect={onAddVia}
+            clearOnSelect
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
