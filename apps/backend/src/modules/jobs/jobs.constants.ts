@@ -131,6 +131,16 @@ export const QUEUE_NAMES = {
    * fresh for both.
    */
   OSM_IMPORT: 'osm.import',
+
+  /**
+   * Success-continuation of `osm.import` (not independently scheduled).
+   * Conflates `road_segments` quality into a derived `.osm` extract by injecting
+   * an OSM `smoothness` tag per way (#779, ADR-0005) so GraphHopper can weight
+   * quality-aware routes. Enqueued by the OSM import processor only after a
+   * successful import so it can't race a running/failed one; dormant (the
+   * processor no-ops) until `TARMOTO_QUALITY_CONFLATION_ENABLED=true`.
+   */
+  QUALITY_CONFLATION: 'quality.conflation',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -160,6 +170,7 @@ export const JOB_NAMES = {
   NAP_CLOSURE_POLL_RUN: 'run',
   POI_IMPORT_RUN: 'run',
   OSM_IMPORT_RUN: 'run',
+  QUALITY_CONFLATION_RUN: 'run',
 } as const;
 
 /**

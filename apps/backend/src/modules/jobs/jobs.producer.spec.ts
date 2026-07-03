@@ -17,11 +17,13 @@ describe('JobsProducer', () => {
   let accountDeletionFinalize: QueueMock;
   let badgesRecheck: QueueMock;
   let digestWeekly: QueueMock;
+  let qualityConflation: QueueMock;
 
   beforeEach(async () => {
     accountDeletionFinalize = makeQueue(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE);
     badgesRecheck = makeQueue(QUEUE_NAMES.BADGES_RECHECK);
     digestWeekly = makeQueue(QUEUE_NAMES.DIGEST_WEEKLY);
+    qualityConflation = makeQueue(QUEUE_NAMES.QUALITY_CONFLATION);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -37,6 +39,10 @@ describe('JobsProducer', () => {
         {
           provide: getQueueToken(QUEUE_NAMES.DIGEST_WEEKLY),
           useValue: digestWeekly,
+        },
+        {
+          provide: getQueueToken(QUEUE_NAMES.QUALITY_CONFLATION),
+          useValue: qualityConflation,
         },
       ],
     }).compile();
@@ -78,5 +84,24 @@ describe('JobsProducer', () => {
       { user_id: 'u1' },
       expect.objectContaining({ jobId: 'badges-recheck:u1' }),
     );
+  });
+
+  it('enqueues a quality-conflation run with no jobId (fresh per import)', async () => {
+    await producer.enqueueQualityConflation();
+    expect(qualityConflation.add).toHaveBeenCalledWith(
+      JOB_NAMES.QUALITY_CONFLATION_RUN,
+      {},
+      expect.objectContaining({ attempts: 5 }),
+    );
+    // No jobId → each successful import enqueues a distinct run.
+    expect(
+      (
+        qualityConflation.add.mock.calls[0] as [
+          string,
+          unknown,
+          { jobId?: string },
+        ]
+      )[2].jobId,
+    ).toBeUndefined();
   });
 });

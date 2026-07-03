@@ -79,6 +79,8 @@ export class QueueHealthService {
     private readonly poiImport: Queue,
     @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
     private readonly osmImport: Queue,
+    @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
+    private readonly qualityConflation: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -98,6 +100,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.NAP_CLOSURE_POLL]: this.napClosurePoll,
       [QUEUE_NAMES.POI_IMPORT]: this.poiImport,
       [QUEUE_NAMES.OSM_IMPORT]: this.osmImport,
+      [QUEUE_NAMES.QUALITY_CONFLATION]: this.qualityConflation,
     };
   }
 

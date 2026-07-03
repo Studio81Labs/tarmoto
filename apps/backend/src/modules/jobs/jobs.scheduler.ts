@@ -174,6 +174,10 @@ export class JobsScheduler implements OnApplicationBootstrap {
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
       },
+      // Note: the road-quality conflation (#779) is NOT scheduled here — it is a
+      // success-continuation enqueued by the OSM import processor, so it can
+      // never race a long-running or failed import the way a fixed-time cron
+      // would.
     ];
   }
 

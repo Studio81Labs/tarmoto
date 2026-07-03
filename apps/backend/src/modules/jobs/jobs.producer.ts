@@ -58,7 +58,26 @@ export class JobsProducer {
     private readonly badgesRecheck: Queue<BadgesRecheckUserJobData>,
     @InjectQueue(QUEUE_NAMES.DIGEST_WEEKLY)
     private readonly digestWeekly: Queue<DigestWeeklyComposeJobData>,
+    @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
+    private readonly qualityConflation: Queue,
   ) {}
+
+  /**
+   * Enqueue a road-quality conflation run (#779). Enqueued by the OSM import
+   * processor as a **success-continuation**, so it never runs on a partial or
+   * failed import snapshot — an independent cron could fire the 02:00 job while
+   * the 01:00 import was still running or had failed, baking stale/mismatched
+   * `smoothness` into the derived extract. No jobId: each successful import
+   * enqueues a fresh run (imports are weekly, so there's nothing to dedupe). The
+   * conflation processor itself no-ops when the job is disabled.
+   */
+  async enqueueQualityConflation(): Promise<void> {
+    await this.qualityConflation.add(
+      JOB_NAMES.QUALITY_CONFLATION_RUN,
+      {},
+      { ...DEFAULT_JOB_OPTIONS },
+    );
+  }
 
   /**
    * Enqueue a per-user account-deletion finalize. Idempotent on
