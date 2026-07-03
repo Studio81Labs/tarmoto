@@ -14,7 +14,10 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
                                               ▼
                                 inject smoothness tag into derived .osm
                                               │
-                                              ▼ (operator/infra)
+                                              ▼
+                        fire re-import webhook ──► receiver: cache-bust + restart
+                                              │              (same-host or remote)
+                                              ▼
                                    GraphHopper graph re-import
                                               │
                                               ▼
@@ -41,15 +44,19 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
   `<tag k="smoothness" v="…"/>` onto each matched way, **replacing** any existing
   `smoothness` so re-running is idempotent. Semantically (not byte-) faithful;
   bounded memory (one way in flight).
-- **`quality-conflation.config.ts`** — `TARMOTO_QUALITY_CONFLATION_ENABLED`
-  (default off) + input/output `.osm` paths; region reuses
-  `TARMOTO_OSM_IMPORT_BBOX`.
+- **`graphhopper-reimport.service.ts`** — `GraphHopperReimportService.trigger()`
+  fires the configured re-import webhook after a successful conflation (see
+  [Re-import orchestration hook](#re-import-orchestration-hook)). No-op when
+  unconfigured; throws on a failed webhook so the job retries.
+- **`*.config.ts`** — `TARMOTO_QUALITY_CONFLATION_ENABLED` (default off) +
+  input/output `.osm` paths (region reuses `TARMOTO_OSM_IMPORT_BBOX`), and the
+  `TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_*` webhook settings.
 - Wired as the **`quality.conflation` BullMQ queue** (`jobs.constants.ts`),
-  processed by `QualityConflationProcessor`. It is **not** independently
-  scheduled: the OSM import processor enqueues it as a **success-continuation**,
-  so it only runs after a successful import and can never race a long-running or
-  failed one (a fixed 02:00 cron could). Dormant (the processor no-ops) unless
-  enabled.
+  processed by `QualityConflationProcessor` (which runs the conflation then fires
+  the re-import hook). It is **not** independently scheduled: the OSM import
+  processor enqueues it as a **success-continuation**, so it only runs after a
+  successful import and can never race a long-running or failed one (a fixed
+  02:00 cron could). Dormant (the processor no-ops) unless enabled.
 
 ### Behaviour
 
@@ -81,7 +88,7 @@ loss is measured on a real region.
 ## Operator prep
 
 Point the job at the extract to tag (normally the same one GraphHopper imports)
-and a derived output path, and enable it:
+and a derived output path on a volume GraphHopper can read, and enable it:
 
 ```bash
 TARMOTO_QUALITY_CONFLATION_ENABLED=true
@@ -90,19 +97,54 @@ TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/czech.quality.osm
 # region reuses TARMOTO_OSM_IMPORT_BBOX
 ```
 
-The job writes `…/czech.quality.osm` weekly; wire the **GraphHopper import to that
-file** so the fresh `smoothness` bakes into the graph on re-import.
+The job writes `…/czech.quality.osm` after each successful OSM import; point the
+**GraphHopper import at that file** (`-i /data/czech.quality.osm`, or convert to
+`.pbf` with `osmium cat`) so the fresh `smoothness` bakes into the graph.
 
-## Not done here (needs running infra)
+## Re-import orchestration hook
 
-Two things can't be built or validated without a running GraphHopper + a real
-extract, so they stay operator/follow-up:
+GraphHopper has no re-import API and reuses its `graph-cache` on restart, and it
+may run in a sibling container or on a separate VPS — so the backend does not
+restart it directly. After a successful conflation, `QualityConflationProcessor`
+fires a **generic authenticated webhook** (`GraphHopperReimportService`); the
+receiver owns the cache-bust + restart. GraphHopper's location is therefore a
+config detail, not a code change:
 
-1. **Graph re-import trigger.** GraphHopper bakes `smoothness` at import time;
-   pointing its import at the derived `.osm` and re-importing (reusing the #778
-   infra) is an ops step, not something this job triggers.
-2. **Proof.** Show a `preferQuality` route demonstrably avoiding a low-quality
-   way vs the baseline on the Czech extract (ADR-0005's Phase-1 acceptance).
+```bash
+# unset → no-op (the extract is still written; re-import manually)
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_URL=https://…/reimport
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_TOKEN=…        # optional → Authorization: Bearer …
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_METHOD=POST    # or GET (e.g. Coolify /api/v1/deploy)
+```
+
+A configured webhook that returns non-2xx or can't connect **throws**, so the job
+fails visibly and BullMQ retries (the file write is idempotent) rather than
+leaving routing silently stale. The query string is redacted in logs/errors so a
+token/UUID never leaks.
+
+**Receiver contract** — whatever the URL points at must, on each call:
+
+1. make the derived extract GraphHopper's input (shared volume same-host, or
+   sync/copy to the remote host), then
+2. delete the `graph-cache` and restart GraphHopper (its start re-imports).
+
+Concretely:
+
+- **Same host, sibling container (default).** Point the URL at your orchestrator's
+  redeploy hook for the GraphHopper service (this repo deploys via the Coolify
+  API — a Coolify deploy webhook fits), and make that service's start clear
+  `graph-cache` before importing (`rm -rf /data/graph-cache`, per
+  `infra/docker/docker-compose.yml`). Or run a tiny sidecar exposing the URL that
+  does the `rm` + `docker restart tarmoto-graphhopper`.
+- **Separate VPS.** The same webhook on the other host (its own Coolify/sidecar);
+  the only extra step is getting the derived file there (object-store sync or
+  `scp` in the receiver) before the restart.
+
+## Still needs running infra — the proof
+
+The one thing left that can't be produced in-repo: show a `preferQuality` route
+demonstrably avoiding a low-quality way vs the baseline on the Czech extract
+(ADR-0005's Phase-1 acceptance) once the above is wired against a live graph.
 
 Until the graph carries the tag, `GraphHopperProvider.preferQuality` stays a
 no-op behind `TARMOTO_GRAPHHOPPER_QUALITY_ENABLED` (default off) — the
