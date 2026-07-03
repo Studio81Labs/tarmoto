@@ -83,36 +83,40 @@ services:
     # tile build. Start it explicitly with `--profile routing up valhalla` (or
     # by naming the service: `up valhalla`).
     profiles: ["routing"]
-    # nilsnolde/docker-valhalla is the MAINTAINED image; the old gis-ops
-    # registry is archived and its frozen `latest` ships a valhalla commit
-    # range with a tile-build crash (valhalla/valhalla#4904, fixed by #5005)
-    # that reproducibly aborts multi-country builds.
+    # nilsnolde/docker-valhalla is the maintained continuation of the
+    # archived gis-ops registry (same project, arm64-native builds).
     image: ghcr.io/nilsnolde/docker-valhalla/valhalla:latest
     ports:
       - "8002:8002"
     volumes:
       - ../valhalla/custom_files:/custom_files
     environment:
-      # First start downloads these extracts + builds tiles into the volume;
-      # later starts reuse them automatically (the image stores the pbf hash
-      # and skips the rebuild when the data is unchanged). Space-separated
-      # list — the CZ→AT→SI→HR(+HU) corridor covers central-Europe test
-      # routes (e.g. Prague→Split) at ~2.3 GB of extracts; full Europe
-      # (~30 GB pbf, 6h+ build, >32 GB RAM) is deliberately NOT used here.
-      # After changing this list, delete infra/valhalla/custom_files and
-      # restart the service to force a rebuild.
-      tile_urls: >-
-        https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
-        https://download.geofabrik.de/europe/austria-latest.osm.pbf
-        https://download.geofabrik.de/europe/slovenia-latest.osm.pbf
-        https://download.geofabrik.de/europe/croatia-latest.osm.pbf
-        https://download.geofabrik.de/europe/hungary-latest.osm.pbf
+      # Tiles build from the PRE-MERGED corridor extract in
+      # infra/valhalla/custom_files/corridor.osm.pbf (CZ+AT+SI+HR+HU,
+      # ~2.4 GB). Feeding valhalla the five raw Geofabrik extracts crashes
+      # its 3.5.x tile build on border-overlap tiles (each extract ships
+      # buffered, duplicated border data; symptom: vector::_M_range_check,
+      # valhalla/valhalla#4904) — osmium-merging them first dedupes the
+      # overlaps. Regenerate with:
+      #   docker run --rm -v "$PWD/infra/valhalla/custom_files:/data" \
+      #     stefda/osmium-tool osmium merge /data/<extract>.osm.pbf ... \
+      #     -o /data/corridor.osm.pbf --overwrite
+      # then delete valhalla_tiles/ + file_hashes.txt and restart. Croatia
+      # was last taken from the 2026-01-01 snapshot. No tile_urls: the
+      # image builds from the local file.
       # Must be False so the FIRST run actually builds tiles from the pbf.
       # (True = "ignore the pbf, load existing tiles" — which crash-loops on an
       # empty volume because there are no tiles yet.)
       use_tiles_ignore_pbf: "False"
       build_elevation: "False"
-      build_admins: "True"
+      # Admins OFF: the graph-enhance stage crashes deterministically on two
+      # Croatian tiles (Neum-corridor / Istria admin polygons) with
+      # vector::_M_range_check when admin lookup is enabled — reproduced on
+      # both the archived gis-ops and current nilsnolde images. Costs
+      # country-aware access defaults + border penalties, which local dev
+      # doesn't need. Re-try True after a valhalla release fixes the
+      # admin-polygon handling for this data.
+      build_admins: "False"
       build_time_zones: "False"
       server_threads: "2"
     restart: unless-stopped
