@@ -1411,7 +1411,9 @@ const TripPlannerMapContent = forwardRef<
         </div>
       </div>
 
-      <div className="absolute right-3 top-3 z-10 w-72 rounded-[14px] bg-ink p-4 text-cream shadow-[0_14px_36px_rgba(14,14,16,0.28)]">
+      {/* Hidden below 2xl: on narrow viewports the map column is too tight
+          for both the toolbar and this info card — they'd overlap. */}
+      <div className="absolute right-3 top-3 z-10 hidden w-72 rounded-[14px] bg-ink p-4 text-cream shadow-[0_14px_36px_rgba(14,14,16,0.28)] 2xl:block">
         <div className="flex items-center gap-2 text-sm font-semibold text-cream">
           <Route size={16} className="text-accent" />
           {t("Planner map ")}
