@@ -1,10 +1,12 @@
 import type { RoutePreviewSegment, Trip } from "@/lib/types";
 import {
-  buildTripPlannerRouteCollection,
+  buildPlannerQualityRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
-  DAY_COLORS,
+  findPlannerQualitySegment,
   getTripPlannerBounds,
+  plannerRouteLineColor,
+  plannerSegmentBounds,
 } from "../trip-planner-map";
 
 function trip(overrides?: Partial<Trip>): Trip {
@@ -90,47 +92,63 @@ function trip(overrides?: Partial<Trip>): Trip {
   };
 }
 
-describe("buildTripPlannerRouteCollection", () => {
+describe("buildPlannerQualityRouteCollection", () => {
   it("falls back to ordered waypoints when a day lacks route geometry", () => {
-    const collection = buildTripPlannerRouteCollection(trip());
+    const collection = buildPlannerQualityRouteCollection(trip());
 
-    expect(collection.features).toHaveLength(2);
-    expect(collection.features[0]).toMatchObject({
-      properties: {
-        dayNumber: 1,
-        title: "Day one",
-      },
-      geometry: {
-        type: "LineString",
-        coordinates: [
-          [14.41, 50.08],
-          [14.52, 50.13],
-          [14.61, 50.19],
-        ],
-      },
-    });
+    const day1 = collection.features.filter(
+      (f) => f.properties.dayNumber === 1,
+    );
+    expect(day1.length).toBeGreaterThanOrEqual(1);
+    // Segments cover the waypoint line end-to-end.
+    expect(day1[0]!.geometry.coordinates[0]).toEqual([14.41, 50.08]);
+    const last = day1[day1.length - 1]!;
+    expect(
+      last.geometry.coordinates[last.geometry.coordinates.length - 1],
+    ).toEqual([14.61, 50.19]);
   });
 
   it("prefers persisted route geometry when present", () => {
-    const collection = buildTripPlannerRouteCollection(trip());
+    const collection = buildPlannerQualityRouteCollection(trip());
 
-    expect(collection.features[1]).toMatchObject({
-      properties: {
-        dayNumber: 2,
-        title: "Day two",
-      },
-      geometry: {
-        coordinates: [
-          [14.7, 50.25],
-          [14.82, 50.3],
-          [14.95, 50.36],
-        ],
-      },
-    });
+    const day2 = collection.features.filter(
+      (f) => f.properties.dayNumber === 2,
+    );
+    expect(day2.length).toBeGreaterThanOrEqual(1);
+    expect(day2[0]!.geometry.coordinates[0]).toEqual([14.7, 50.25]);
+    const last = day2[day2.length - 1]!;
+    expect(
+      last.geometry.coordinates[last.geometry.coordinates.length - 1],
+    ).toEqual([14.95, 50.36]);
+  });
+
+  it("stamps quality properties onto every segment feature", () => {
+    const collection = buildPlannerQualityRouteCollection(trip());
+
+    expect(collection.features.length).toBeGreaterThan(0);
+    for (const feature of collection.features) {
+      expect(feature.properties.segmentId).toMatch(/^d\d+-s\d+$/);
+      expect(["good", "fair", "rough", "no_data"]).toContain(
+        feature.properties.band,
+      );
+      expect(typeof feature.properties.surface).toBe("string");
+      expect(feature.properties.passes).toBeGreaterThanOrEqual(0);
+      if (feature.properties.band === "no_data") {
+        expect(feature.properties.score).toBeNull();
+      } else {
+        expect(feature.properties.score).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("is deterministic for the same trip geometry", () => {
+    expect(buildPlannerQualityRouteCollection(trip())).toEqual(
+      buildPlannerQualityRouteCollection(trip()),
+    );
   });
 
   it("falls back to waypoints when route geometry does not contain two valid points", () => {
-    const collection = buildTripPlannerRouteCollection(
+    const collection = buildPlannerQualityRouteCollection(
       trip({
         days: [
           {
@@ -166,15 +184,14 @@ describe("buildTripPlannerRouteCollection", () => {
       }),
     );
 
-    expect(collection.features).toHaveLength(1);
-    expect(collection.features[0]?.geometry.coordinates).toEqual([
-      [14.41, 50.08],
-      [14.61, 50.19],
+    expect(collection.features.length).toBeGreaterThanOrEqual(1);
+    expect(collection.features[0]?.geometry.coordinates[0]).toEqual([
+      14.41, 50.08,
     ]);
   });
 
   it("skips days that do not have enough points to draw a line", () => {
-    const collection = buildTripPlannerRouteCollection(
+    const collection = buildPlannerQualityRouteCollection(
       trip({
         days: [
           {
@@ -200,74 +217,96 @@ describe("buildTripPlannerRouteCollection", () => {
     expect(collection.features).toHaveLength(0);
   });
 
-  it("emits one route feature per day with a stable color and selected flag", () => {
-    const collection = buildTripPlannerRouteCollection(trip(), 1);
+  it("marks segments of the selected day and dims the rest", () => {
+    const collection = buildPlannerQualityRouteCollection(trip(), 1);
 
-    expect(collection.features).toHaveLength(2);
-
-    const day1 = collection.features[0]!;
-    expect(day1.properties.dayNumber).toBe(1);
-    expect(day1.properties.color).toBe(DAY_COLORS[0]);
-    expect(day1.properties.selected).toBe(true);
-
-    const day2 = collection.features[1]!;
-    expect(day2.properties.dayNumber).toBe(2);
-    expect(day2.properties.color).toBe(DAY_COLORS[1]);
-    expect(day2.properties.selected).toBe(false);
+    const day1 = collection.features.filter(
+      (f) => f.properties.dayNumber === 1,
+    );
+    const day2 = collection.features.filter(
+      (f) => f.properties.dayNumber === 2,
+    );
+    expect(day1.every((f) => f.properties.selected)).toBe(true);
+    expect(day2.every((f) => !f.properties.selected)).toBe(true);
   });
 
   it("marks every day as selected when no selectedDayNumber is provided", () => {
-    const collection = buildTripPlannerRouteCollection(trip());
-
-    expect(collection.features).toHaveLength(2);
-    expect(collection.features[0]!.properties.selected).toBe(true);
-    expect(collection.features[1]!.properties.selected).toBe(true);
+    const collection = buildPlannerQualityRouteCollection(trip());
+    expect(collection.features.every((f) => f.properties.selected)).toBe(true);
   });
 
   it("emits only the selected day when focusSelectedDay is true", () => {
-    const collection = buildTripPlannerRouteCollection(trip(), 2, true);
+    const collection = buildPlannerQualityRouteCollection(trip(), 2, true);
 
-    expect(collection.features).toHaveLength(1);
-    expect(collection.features[0]!.properties.dayNumber).toBe(2);
-    expect(collection.features[0]!.properties.selected).toBe(true);
+    expect(collection.features.length).toBeGreaterThanOrEqual(1);
+    expect(collection.features.every((f) => f.properties.dayNumber === 2)).toBe(
+      true,
+    );
+    expect(collection.features.every((f) => f.properties.selected)).toBe(true);
   });
 
   it("emits all days when focusSelectedDay is false", () => {
-    const collection = buildTripPlannerRouteCollection(trip(), 1, false);
+    const collection = buildPlannerQualityRouteCollection(trip(), 1, false);
+    const dayNumbers = new Set(
+      collection.features.map((f) => f.properties.dayNumber),
+    );
+    expect(dayNumbers).toEqual(new Set([1, 2]));
+  });
+});
 
-    expect(collection.features).toHaveLength(2);
+describe("findPlannerQualitySegment / plannerSegmentBounds", () => {
+  it("resolves a segment id from the collection back to its segment", () => {
+    const collection = buildPlannerQualityRouteCollection(trip());
+    const id = collection.features[0]!.properties.segmentId;
+
+    const segment = findPlannerQualitySegment(trip(), id);
+    expect(segment).not.toBeNull();
+    expect(segment!.id).toBe(id);
+    expect(segment!.geometry).toEqual(collection.features[0]!.geometry);
   });
 
-  it("cycles colors when a trip has more days than DAY_COLORS", () => {
-    const manyDayTrip = trip({
-      days: Array.from({ length: DAY_COLORS.length + 1 }, (_, i) => ({
-        dayNumber: i + 1,
-        title: `Day ${i + 1}`,
-        distanceKm: 100,
-        durationMinutes: 120,
-        elevationGain: 400,
-        avgQuality: 4,
-        waypoints: [
-          {
-            id: `start-${i + 1}`,
-            name: "Start",
-            location: { lng: 14 + i * 0.1, lat: 50 },
-            type: "start" as const,
-          },
-          {
-            id: `end-${i + 1}`,
-            name: "End",
-            location: { lng: 14 + i * 0.1 + 0.05, lat: 50.1 },
-            type: "end" as const,
-          },
-        ],
-      })),
-    });
+  it("returns null for unknown ids and null input", () => {
+    expect(findPlannerQualitySegment(trip(), "d9-s9")).toBeNull();
+    expect(findPlannerQualitySegment(null, "d1-s0")).toBeNull();
+    expect(findPlannerQualitySegment(trip(), null)).toBeNull();
+  });
 
-    const collection = buildTripPlannerRouteCollection(manyDayTrip);
-    const lastFeature = collection.features[DAY_COLORS.length]!;
-    // Day (DAY_COLORS.length + 1) wraps back to index 0
-    expect(lastFeature.properties.color).toBe(DAY_COLORS[0]);
+  it("computes a bounding box that contains the segment", () => {
+    const segment = findPlannerQualitySegment(
+      trip(),
+      buildPlannerQualityRouteCollection(trip()).features[0]!.properties
+        .segmentId,
+    )!;
+    const bounds = plannerSegmentBounds(segment)!;
+    expect(bounds[0]).toBeLessThanOrEqual(bounds[2]);
+    expect(bounds[1]).toBeLessThanOrEqual(bounds[3]);
+    for (const [lng, lat] of segment.geometry.coordinates as [
+      number,
+      number,
+    ][]) {
+      expect(lng).toBeGreaterThanOrEqual(bounds[0]);
+      expect(lng).toBeLessThanOrEqual(bounds[2]);
+      expect(lat).toBeGreaterThanOrEqual(bounds[1]);
+      expect(lat).toBeLessThanOrEqual(bounds[3]);
+    }
+  });
+});
+
+describe("plannerRouteLineColor", () => {
+  const surfaceColors = { asphalt: "#111111", unknown: "#222222" };
+
+  it("colors by band in quality mode", () => {
+    const expression = plannerRouteLineColor("quality", surfaceColors);
+    expect(expression[0]).toBe("match");
+    expect(expression[1]).toEqual(["get", "band"]);
+    expect(expression).toContain("good");
+  });
+
+  it("colors by surface in surface mode", () => {
+    const expression = plannerRouteLineColor("surface", surfaceColors);
+    expect(expression[0]).toBe("match");
+    expect(expression[1]).toEqual(["get", "surface"]);
+    expect(expression).toContain("#111111");
   });
 });
 

@@ -40,6 +40,7 @@ const mockMap = {
   queryRenderedFeatures: vi.fn(),
   querySourceFeatures: vi.fn(),
   setPaintProperty: vi.fn(),
+  setLayoutProperty: vi.fn(),
   setFilter: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
@@ -66,6 +67,15 @@ let lastDrawOptions: {
 } | null = null;
 
 vi.mock("@/components/map/MapCanvas", () => ({
+  TARMOTO_QUALITY_LAYER: "tarmoto-quality",
+  SURFACE_COLORS: {
+    asphalt: "#3B82F6",
+    concrete: "#6B7280",
+    cobblestone: "#A78BFA",
+    gravel: "#D97706",
+    dirt: "#92400E",
+    unknown: "#64748B",
+  },
   MapCanvas: forwardRef(function MockMapCanvas(
     props: {
       showQuality: boolean;
@@ -214,6 +224,7 @@ describe("TripPlannerMap", () => {
     mockMap.queryRenderedFeatures.mockReset();
     mockMap.querySourceFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
+    mockMap.setLayoutProperty.mockReset();
     mockMap.setFilter.mockReset();
     mockMap.fitBounds.mockReset();
     mockMap.unproject.mockReset();
@@ -254,22 +265,67 @@ describe("TripPlannerMap", () => {
     vi.useRealTimers();
   });
 
-  it("toggles the shared MapCanvas quality and surface overlays", () => {
+  it("switches the line-coloring mode between road quality and surface", () => {
+    // The recolor effect no-ops unless the route layer exists on the map.
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "trip-planner-route-line" ? { id: layerId } : undefined,
+    );
     render(<TripPlannerMap trip={trip()} month={7} />);
 
+    // Quality is the default mode; the tile overlay follows the mode.
     const canvas = screen.getByTestId("planner-map-canvas");
     expect(canvas).toHaveAttribute("data-show-quality", "true");
     expect(canvas).toHaveAttribute("data-show-surface", "false");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Surface overlay off" }),
-    );
-    expect(canvas).toHaveAttribute("data-show-surface", "true");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Road quality overlay on" }),
+      screen.getByRole("button", { name: "Color the route line by surface" }),
     );
     expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "true");
+    // The route line itself recolors via a surface match expression.
+    const lineColorCalls = mockMap.setPaintProperty.mock.calls.filter(
+      ([layerId, prop]) =>
+        layerId === "trip-planner-route-line" && prop === "line-color",
+    );
+    expect(lineColorCalls.at(-1)?.[2]?.[1]).toEqual(["get", "surface"]);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Color the route line by road quality",
+      }),
+    );
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+  });
+
+  it("swaps to the aerial basemap independently of the coloring mode", () => {
+    // setAerialBasemapVisible no-ops unless the aerial layer exists.
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "planner-aerial" ? { id: layerId } : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const canvas = screen.getByTestId("planner-map-canvas");
+    fireEvent.click(screen.getByRole("button", { name: "Aerial" }));
+
+    // Aerial raster becomes visible…
+    expect(mockMap.setLayoutProperty).toHaveBeenCalledWith(
+      "planner-aerial",
+      "visibility",
+      "visible",
+    );
+    // …and the all-roads tile overlays are hidden over imagery, while the
+    // coloring mode itself is untouched (still quality).
+    expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    expect(mockMap.setLayoutProperty).toHaveBeenLastCalledWith(
+      "planner-aerial",
+      "visibility",
+      "none",
+    );
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
   });
 
   it("snaps right-click contextmenu onto nearby road geometry before showing the placement menu", () => {
@@ -2046,7 +2102,7 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
-  it("passes N day features to the route source for a multi-day trip", async () => {
+  it("passes per-segment quality features covering every day to the route source", async () => {
     const multiDayTrip: Trip = {
       ...trip(),
       num_days: 2,
@@ -2105,8 +2161,17 @@ describe("TripPlannerMap", () => {
           (call) =>
             (call[1] as { data: { features: unknown[] } }).data.features,
         )
-        .find((f) => f.length > 0);
-      expect(features).toHaveLength(2);
+        .find((f) => f.length > 0) as
+        | Array<{ properties: { dayNumber: number; segmentId: string } }>
+        | undefined;
+      // Per-segment features now — both days must be represented and every
+      // feature must carry a clickable segment id.
+      expect(features).toBeDefined();
+      const dayNumbers = new Set(features!.map((f) => f.properties.dayNumber));
+      expect(dayNumbers).toEqual(new Set([1, 2]));
+      expect(
+        features!.every((f) => /^d\d+-s\d+$/.test(f.properties.segmentId)),
+      ).toBe(true);
     });
   });
 });

@@ -1,30 +1,30 @@
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
+import { deriveQualitySegments } from "@/lib/planner/derive";
+import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
+import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 
 export type PlannerBbox = [number, number, number, number];
 
-/**
- * Distinct, readable hex colors for each trip day's route line on the cream
- * basemap. Cycled via `(dayNumber - 1) % DAY_COLORS.length` so trips with
- * more than 7 days reuse the palette from the beginning.
- */
-export const DAY_COLORS = [
-  "#2563EB", // blue-600
-  "#16A34A", // green-600
-  "#DC2626", // red-600
-  "#9333EA", // purple-600
-  "#EA580C", // orange-600
-  "#0891B2", // cyan-700
-  "#CA8A04", // yellow-600
-] as const;
+/** How the planner's route line is colored (independent of the basemap). */
+export type PlannerLineColorMode = "quality" | "surface";
 
-type RouteProperties = {
+/**
+ * Per-segment properties on the planner's quality-segmented route line.
+ * `band`/`surface` drive the data-driven `line-color` expressions;
+ * `segmentId` is the click target for the Road Preview Card; `selected`
+ * dims the non-selected days' lines.
+ */
+export type QualityRouteProperties = {
+  segmentId: string;
   dayNumber: number;
-  title: string;
-  distanceKm: number;
-  pointCount: number;
-  color: string;
+  band: QualityBand;
+  surface: string;
+  score: number | null;
+  passes: number;
+  lengthKm: number;
   selected: boolean;
 };
 
@@ -41,52 +41,151 @@ type SegmentHighlightProperties = {
   orderInDay: number;
 };
 
-export function buildTripPlannerRouteCollection(
+/**
+ * Quality-segmented route line: one feature per derived quality segment so
+ * each section is individually colorable and clickable. Replaces the old
+ * per-day single-color line — day context now comes from the day list plus
+ * dimming of non-selected days (`selected`).
+ */
+export function buildPlannerQualityRouteCollection(
   trip: Trip | null,
   selectedDayNumber?: number,
   focusSelectedDay?: boolean,
-): FeatureCollection<LineString, RouteProperties> {
-  if (!trip) return emptyLineCollection();
+): FeatureCollection<LineString, QualityRouteProperties> {
+  if (!trip) return emptyQualityLineCollection();
 
-  const features = trip.days
-    .map((day) => {
-      // When focusSelectedDay is active, skip every day except the selected one.
-      if (focusSelectedDay && day.dayNumber !== selectedDayNumber) return null;
+  const features: Feature<LineString, QualityRouteProperties>[] = [];
+  for (const day of trip.days) {
+    // When focusSelectedDay is active, skip every day except the selected one.
+    if (focusSelectedDay && day.dayNumber !== selectedDayNumber) continue;
+    const selected =
+      selectedDayNumber !== undefined
+        ? day.dayNumber === selectedDayNumber
+        : true;
 
-      const coordinates = getDayRouteCoordinates(day);
-      if (coordinates.length < 2) return null;
-
-      const color = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length]!;
-      const selected =
-        selectedDayNumber !== undefined
-          ? day.dayNumber === selectedDayNumber
-          : true;
-
-      const feature: Feature<LineString, RouteProperties> = {
+    for (const segment of deriveDayQualitySegments(day)) {
+      features.push({
         type: "Feature",
         properties: {
-          dayNumber: day.dayNumber,
-          title: day.title ?? `Day ${day.dayNumber}`,
-          distanceKm: day.distanceKm,
-          pointCount: coordinates.length,
-          color,
+          segmentId: segment.id,
+          dayNumber: segment.dayNumber,
+          band: segment.band,
+          surface: segment.surface,
+          score: segment.score,
+          passes: segment.passes,
+          lengthKm: segment.lengthKm,
           selected,
         },
-        geometry: {
-          type: "LineString",
-          coordinates,
-        },
-      };
-      return feature;
-    })
-    .filter((feature): feature is Feature<LineString, RouteProperties> =>
-      Boolean(feature),
-    );
+        geometry: segment.geometry,
+      });
+    }
+  }
 
   return {
     type: "FeatureCollection",
     features,
   };
+}
+
+/**
+ * Quality segments for one trip day, derived on demand from whatever
+ * geometry the day has (routed polyline, or the raw waypoint line while
+ * routing is still pending). Deterministic, so callers may re-derive freely
+ * — the map collection, the Inspect strip, and segment lookups always agree.
+ */
+export function deriveDayQualitySegments(day: TripDay): RouteSegment[] {
+  const coordinates = getDayRouteCoordinates(day);
+  if (coordinates.length < 2) return [];
+  return deriveQualitySegments(
+    coordinates.map(([lng, lat]) => ({ lat, lng })),
+    day.dayNumber,
+  );
+}
+
+/** Locate a derived quality segment by id across all days of the trip. */
+export function findPlannerQualitySegment(
+  trip: Trip | null,
+  segmentId: string | null,
+): RouteSegment | null {
+  if (!trip || !segmentId) return null;
+  for (const day of trip.days) {
+    const match = deriveDayQualitySegments(day).find(
+      (segment) => segment.id === segmentId,
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
+/** Bounding box of a single quality segment (for flyTo from the panel). */
+export function plannerSegmentBounds(
+  segment: RouteSegment,
+): PlannerBbox | null {
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const coordinate of segment.geometry.coordinates) {
+    const [lng, lat] = coordinate;
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    if (lng < west) west = lng;
+    if (lng > east) east = lng;
+    if (lat < south) south = lat;
+    if (lat > north) north = lat;
+  }
+  if (!Number.isFinite(west) || !Number.isFinite(south)) return null;
+  return [west, south, east, north];
+}
+
+/**
+ * Data-driven `line-color` expression for the planner route line. Quality
+ * mode colors by band; surface mode colors by surface type using the same
+ * palette as the all-roads tile overlay (passed in by the map component so
+ * the two can't drift apart).
+ */
+export function plannerRouteLineColor(
+  mode: PlannerLineColorMode,
+  surfaceColors: Record<string, string>,
+): ExpressionSpecification {
+  if (mode === "surface") {
+    return [
+      "match",
+      ["get", "surface"],
+      "asphalt",
+      surfaceColors.asphalt ?? QUALITY_BAND_COLORS.no_data,
+      "concrete",
+      surfaceColors.concrete ?? QUALITY_BAND_COLORS.no_data,
+      "cobblestone",
+      surfaceColors.cobblestone ?? QUALITY_BAND_COLORS.no_data,
+      "gravel",
+      surfaceColors.gravel ?? QUALITY_BAND_COLORS.no_data,
+      "dirt",
+      surfaceColors.dirt ?? QUALITY_BAND_COLORS.no_data,
+      surfaceColors.unknown ?? QUALITY_BAND_COLORS.no_data,
+    ] as ExpressionSpecification;
+  }
+  return [
+    "match",
+    ["get", "band"],
+    "good",
+    QUALITY_BAND_COLORS.good,
+    "fair",
+    QUALITY_BAND_COLORS.fair,
+    "rough",
+    QUALITY_BAND_COLORS.rough,
+    QUALITY_BAND_COLORS.no_data,
+  ] as ExpressionSpecification;
+}
+
+/** Midpoint vertex of a segment (Street View link, popover anchoring). */
+export function plannerSegmentMidpoint(
+  segment: RouteSegment,
+): { lng: number; lat: number } | null {
+  const coordinates = segment.geometry.coordinates;
+  const middle = coordinates[Math.floor(coordinates.length / 2)];
+  const [lng, lat] = middle ?? [];
+  if (typeof lng !== "number" || typeof lat !== "number") return null;
+  return { lng, lat };
 }
 
 export function buildTripPlannerWaypointCollection(
@@ -382,7 +481,10 @@ function fallbackWaypointLabel(type: string): string {
   return firstChar.toUpperCase() + normalizedType.slice(1);
 }
 
-function emptyLineCollection(): FeatureCollection<LineString, RouteProperties> {
+function emptyQualityLineCollection(): FeatureCollection<
+  LineString,
+  QualityRouteProperties
+> {
   return {
     type: "FeatureCollection",
     features: [],

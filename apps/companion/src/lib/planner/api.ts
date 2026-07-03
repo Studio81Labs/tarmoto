@@ -8,8 +8,8 @@ import {
   type RouteResponse,
   type RoutePoiSuggestion,
 } from "@/lib/api";
-import { mockJoinQuality, mockRoadPreview } from "./mocks";
-import { segmentizeRoute } from "./segmentize";
+import { deriveQualitySegments } from "./derive";
+import { mockRoadPreview } from "./mocks";
 import type {
   FlaggedSection,
   GeneratedPlannerRoute,
@@ -175,8 +175,10 @@ export function createPlannerApi(): PlannerApi {
         },
         init?.signal !== undefined ? { signal: init.signal } : {},
       );
-      const slices = segmentizeRoute(raw.geometry, init?.dayNumber ?? 1);
-      const segments = mockJoinQuality(slices);
+      const segments = deriveQualitySegments(
+        raw.geometry,
+        init?.dayNumber ?? 1,
+      );
       return {
         raw,
         segments,

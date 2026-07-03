@@ -297,6 +297,8 @@ type TripStoreSnapshot = {
   setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
+  selectedPlannerSegmentId: string | null;
+  selectPlannerSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
   appendPlannerWaypoint: (
     dayIndex: number,
@@ -304,6 +306,11 @@ type TripStoreSnapshot = {
     parameters?: Trip["parameters"],
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: unknown,
+  ) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   moveWaypoint: (
     dayIndex: number,
@@ -463,9 +470,12 @@ describe("TripPlannerPage", () => {
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
+      selectedPlannerSegmentId: null,
+      selectPlannerSegment: vi.fn(),
       addWaypoint: vi.fn(),
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
+      insertWaypointBefore: vi.fn(),
       removeWaypoint: vi.fn(),
       moveWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),

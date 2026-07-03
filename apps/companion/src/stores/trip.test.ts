@@ -2113,3 +2113,111 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(day2Start.location).toEqual({ lng: 9, lat: 9 });
   });
 });
+
+describe("useTripStore Plan & inspect segment selection", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("selectPlannerSegment sets and clears the selection", () => {
+    useTripStore.getState().selectPlannerSegment("d1-s2");
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBe("d1-s2");
+    useTripStore.getState().selectPlannerSegment(null);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+
+  it("setActiveTrip and undo clear a stale segment selection", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+});
+
+describe("useTripStore insertWaypointBefore (reroute via)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seedRoute() {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "add-via");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+  }
+
+  it("inserts immediately before the anchor waypoint", () => {
+    seedRoute();
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+
+    useTripStore.getState().insertWaypointBefore(0, via.id, {
+      id: "reroute-1",
+      name: "Reroute via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+
+    const types = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.id);
+    expect(types.indexOf("reroute-1")).toBe(types.indexOf(via.id) - 1);
+  });
+
+  it("falls back to the finish boundary when the anchor is missing or null", () => {
+    seedRoute();
+    useTripStore.getState().insertWaypointBefore(0, null, {
+      id: "reroute-2",
+      name: "Reroute via",
+      location: { lat: 4, lng: 4 },
+      type: "via",
+    });
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    // Lands before the end waypoint.
+    expect(waypoints[waypoints.length - 1]!.type).toBe("end");
+    expect(waypoints[waypoints.length - 2]!.id).toBe("reroute-2");
+
+    useTripStore.getState().insertWaypointBefore(0, "nope", {
+      id: "reroute-3",
+      name: "Reroute via",
+      location: { lat: 4.5, lng: 4.5 },
+      type: "via",
+    });
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after[after.length - 2]!.id).toBe("reroute-3");
+  });
+
+  it("never inserts ahead of the day's start", () => {
+    seedRoute();
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().insertWaypointBefore(0, start.id, {
+      id: "reroute-4",
+      name: "Reroute via",
+      location: { lat: 1.5, lng: 1.5 },
+      type: "via",
+    });
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(waypoints[0]!.type).toBe("start");
+    expect(waypoints[1]!.id).toBe("reroute-4");
+  });
+
+  it("marks the route dirty and the day stale so live routing re-runs", () => {
+    seedRoute();
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().insertWaypointBefore(0, via.id, {
+      id: "reroute-5",
+      name: "Reroute via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toContain(1);
+  });
+});

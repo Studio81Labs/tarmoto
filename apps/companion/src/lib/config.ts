@@ -26,3 +26,16 @@ export const API_BASE_SERVER = `${API_HOST || "http://localhost:3000"}/api/v1`;
 export const MAP_STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
   "https://tiles.openfreemap.org/styles/liberty";
+
+/**
+ * Raster tile URL template for the planner's aerial basemap. Defaults to the
+ * public ČÚZK orthophoto tile service (WMTS-compatible REST endpoint, no key
+ * required); point NEXT_PUBLIC_AERIAL_TILES_URL at a different XYZ/WMTS/WMS
+ * template to override.
+ */
+export const AERIAL_TILES_URL =
+  process.env.NEXT_PUBLIC_AERIAL_TILES_URL ??
+  "https://ags.cuzk.gov.cz/arcgis/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}";
+
+/** Attribution line shown while the aerial basemap is active. */
+export const AERIAL_ATTRIBUTION = "© ČÚZK";

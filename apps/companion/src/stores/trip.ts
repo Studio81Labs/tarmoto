@@ -166,6 +166,14 @@ interface TripState {
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
 
+  /**
+   * Quality segment selected in the Plan & inspect planner — set by a route
+   * click on the map OR a flagged-section card in the panel, so the two
+   * surfaces stay in sync. Ids live in the derived-quality-segment id space
+   * (`deriveDayQualitySegments`), not `day.segments`.
+   */
+  selectedPlannerSegmentId: string | null;
+
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
@@ -176,6 +184,7 @@ interface TripState {
 
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
+  selectPlannerSegment: (segmentId: string | null) => void;
 
   // Waypoint management
   addWaypoint: (dayIndex: number, waypoint: Waypoint) => void;
@@ -185,6 +194,17 @@ interface TripState {
     parameters?: Trip["parameters"],
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: Waypoint) => void;
+  /**
+   * Insert a waypoint immediately before the waypoint with the given id
+   * (route-order aware — used by "Reroute around this"). A null id, or an id
+   * that isn't in the day, falls back to the finish boundary like
+   * `insertWaypointBeforeEnd`. Never inserts before the day's start.
+   */
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: Waypoint,
+  ) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   moveWaypoint: (
     dayIndex: number,
@@ -541,6 +561,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
+    selectedPlannerSegmentId: null,
     undoStack: [],
     redoStack: [],
 
@@ -556,6 +577,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
+        selectedPlannerSegmentId: null,
         undoStack: [],
         redoStack: [],
         canUndo: false,
@@ -587,6 +609,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     focusSegment: (segmentId) => set({ focusedSegmentId: segmentId }),
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
+    selectPlannerSegment: (segmentId) =>
+      set({ selectedPlannerSegmentId: segmentId }),
 
     addWaypoint: (dayIndex, waypoint) =>
       set((state) => {
@@ -651,6 +675,43 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           ...applyPostCommitSync(committed, state, dayIndex),
         };
       }),
+
+    insertWaypointBefore: (dayIndex, beforeWaypointId, waypoint) =>
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
+          if (!activeTrip) return activeTrip;
+          const day = activeTrip.days[dayIndex];
+          if (!day) return activeTrip;
+          const days = [...activeTrip.days];
+          const waypoints = [...day.waypoints];
+          const anchorIndex = beforeWaypointId
+            ? waypoints.findIndex((w) => w.id === beforeWaypointId)
+            : -1;
+          // Missing anchor → finish boundary; found anchor → clamp so the
+          // via can never land ahead of the day's start.
+          const insertionIndex =
+            anchorIndex >= 0
+              ? Math.max(1, anchorIndex)
+              : viaInsertIndex(waypoints);
+          waypoints.splice(insertionIndex, 0, waypoint);
+          days[dayIndex] = updatePlannerDayRoute(
+            day,
+            waypoints,
+            activeTrip.parameters,
+          );
+          return {
+            ...activeTrip,
+            days,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+        // A reroute via is a route edit — arm Save and the live-routing hook.
+        routeDirty: true,
+        stalePreviewDays: markDayStale(
+          get().stalePreviewDays,
+          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+        ),
+      })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
       set((state) => ({
@@ -839,6 +900,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
+          selectedPlannerSegmentId: null,
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -870,6 +932,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
+          selectedPlannerSegmentId: null,
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -1303,6 +1366,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
+        selectedPlannerSegmentId: null,
         undoStack: [],
         redoStack: [],
       }),

@@ -26,7 +26,26 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
+import {
+  MapCanvas,
+  SURFACE_COLORS,
+  TARMOTO_QUALITY_LAYER,
+  type MapCanvasHandle,
+} from "@/components/map/MapCanvas";
+import {
+  ensureAerialBasemap,
+  setAerialBasemapVisible,
+} from "@/components/map/AerialBasemap";
+import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
+import {
+  QUALITY_BAND_COLORS,
+  QUALITY_BAND_LABELS_SHORT,
+} from "@/lib/planner/quality-bands";
+import {
+  planRerouteAroundSegment,
+  rerouteViaWaypoint,
+} from "@/lib/planner/reroute";
+import type { RouteSegment } from "@/lib/planner/types";
 import {
   createRegionDrawControl,
   type RegionDrawControl,
@@ -47,10 +66,14 @@ import {
   buildPlannerPassMarkerCollection,
 } from "@/lib/trip-planner-overlays";
 import {
-  buildTripPlannerRouteCollection,
+  buildPlannerQualityRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
+  findPlannerQualitySegment,
   getTripPlannerBounds,
+  plannerRouteLineColor,
+  plannerSegmentBounds,
+  type PlannerLineColorMode,
 } from "@/lib/trip-planner-map";
 import { useTripStore, dayFinishWaypoint } from "@/stores/trip";
 import {
@@ -82,11 +105,18 @@ import { usePreferencesStore } from "@/stores/preferences";
 export interface TripPlannerMapHandle {
   /** Fit the viewport to the current route bounds. No-op when no bounds. */
   fitRoute: () => void;
+  /**
+   * Fly to a quality segment's bounds (panel → map). No-op when the
+   * segment id doesn't resolve against the current trip geometry.
+   */
+  flyToSegment: (segmentId: string) => void;
 }
 
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
+const ROUTE_CASING_LINE = "trip-planner-route-casing";
 const ROUTE_LINE = "trip-planner-route-line";
+const ROUTE_HIT_LINE = "trip-planner-route-hit";
 const WAYPOINT_CIRCLE = "trip-planner-waypoint-circle";
 const WAYPOINT_LABEL = "trip-planner-waypoint-label";
 const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
@@ -360,8 +390,11 @@ const TripPlannerMapContent = forwardRef<
   }, [onMoveWaypoint]);
   const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
-  const [showQuality, setShowQuality] = useState(true);
-  const [showSurface, setShowSurface] = useState(false);
+  // Two INDEPENDENT map toggles (design): how the route line is colored,
+  // and which basemap sits under it.
+  const [lineColorMode, setLineColorMode] =
+    useState<PlannerLineColorMode>("quality");
+  const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(
     controlledDrawnRegion ?? null,
@@ -384,6 +417,13 @@ const TripPlannerMapContent = forwardRef<
   // Sidebar publishes the focused segment id so the map can paint the
   // matching slice of the route in a contrasting color (issue #473).
   const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
+  // Plan & inspect selection — shared with the panel so a route click here
+  // and a flagged-card click there open the same Road Preview.
+  const selectedPlannerSegmentId = useTripStore(
+    (s) => s.selectedPlannerSegmentId,
+  );
+  const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
 
   // ── Context-menu waypoint placement (Task 10) ────────────────────────────
   // Task 9 store actions for context-menu placement.
@@ -429,12 +469,18 @@ const TripPlannerMapContent = forwardRef<
   // ─────────────────────────────────────────────────────────────────────────
   const routeCollection = useMemo(
     () =>
-      buildTripPlannerRouteCollection(
+      buildPlannerQualityRouteCollection(
         trip,
         selectedDayNumber,
         focusSelectedDay,
       ),
     [trip, selectedDayNumber, focusSelectedDay],
+  );
+  // Resolve the selected quality segment against current geometry — a stale
+  // id (after a reroute or undo) simply resolves to null and closes the card.
+  const previewSegment = useMemo(
+    () => findPlannerQualitySegment(trip, selectedPlannerSegmentId),
+    [trip, selectedPlannerSegmentId],
   );
   const waypointCollection = useMemo(
     () =>
@@ -484,10 +530,28 @@ const TripPlannerMapContent = forwardRef<
     () => buildSuggestionCollection(suggestions),
     [suggestions],
   );
-  const segmentHighlightCollection = useMemo(
-    () => buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId),
-    [trip, focusedSegmentId],
-  );
+  const segmentHighlightCollection = useMemo(() => {
+    // Plan & inspect selection wins: its derived geometry is exact, no
+    // distance-slicing needed. Fall back to the legacy sidebar focus
+    // (day.segments id space) when no quality segment is selected.
+    if (previewSegment) {
+      return {
+        type: "FeatureCollection" as const,
+        features: [
+          {
+            type: "Feature" as const,
+            properties: {
+              segmentId: previewSegment.id,
+              dayNumber: previewSegment.dayNumber,
+              orderInDay: 0,
+            },
+            geometry: previewSegment.geometry,
+          },
+        ],
+      };
+    }
+    return buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId);
+  }, [trip, focusedSegmentId, previewSegment]);
   const selectedFunZone =
     funZones.find((zone) => zone.id === selectedFunZoneId) ?? null;
   const highlightedClosures =
@@ -563,6 +627,31 @@ const TripPlannerMapContent = forwardRef<
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
     installFunZoneLayer(map);
+    // ── Route-section click → Road Preview Card (any segment, not just
+    // flagged ones). Waypoints render on top and are the drag targets, so a
+    // click that also hits a waypoint is theirs, not ours.
+    map.on("mouseenter", ROUTE_HIT_LINE, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", ROUTE_HIT_LINE, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "";
+    });
+    map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const overWaypoint =
+        map.getLayer(WAYPOINT_CIRCLE) &&
+        map.queryRenderedFeatures(event.point, {
+          layers: [WAYPOINT_CIRCLE],
+        }).length > 0;
+      if (overWaypoint) return;
+      const segmentId = event.features?.[0]?.properties?.segmentId as
+        | string
+        | undefined;
+      if (!segmentId) return;
+      useTripStore.getState().selectPlannerSegment(segmentId);
+    });
     drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => updateDrawnRegion(bbox),
@@ -617,6 +706,23 @@ const TripPlannerMapContent = forwardRef<
     suggestionCollection,
     waypointCollection,
   ]);
+  // Line-coloring toggle — recolors the route line in place.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !map.getLayer(ROUTE_LINE)) return;
+    map.setPaintProperty(
+      ROUTE_LINE,
+      "line-color",
+      plannerRouteLineColor(lineColorMode, SURFACE_COLORS),
+    );
+  }, [lineColorMode, ready]);
+  // Basemap toggle — swaps the imagery UNDER the route line; the quality
+  // line and every planner overlay stay drawn on top.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    setAerialBasemapVisible(map, basemap === "aerial");
+  }, [basemap, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onCursorMove) return;
@@ -1084,6 +1190,44 @@ const TripPlannerMapContent = forwardRef<
       },
     );
   }, [tripBounds]);
+  const flyToSegment = useCallback((segmentId: string) => {
+    const map = handleRef.current?.map;
+    const segment = findPlannerQualitySegment(
+      useTripStore.getState().activeTrip,
+      segmentId,
+    );
+    const bounds = segment ? plannerSegmentBounds(segment) : null;
+    if (!map || !bounds) return;
+    map.fitBounds(
+      [
+        [bounds[0], bounds[1]],
+        [bounds[2], bounds[3]],
+      ],
+      { padding: 120, maxZoom: 12 },
+    );
+  }, []);
+  // "Reroute around this" (v1): nudge the route by inserting a via offset
+  // from the flagged segment; live routing recomputes through it.
+  const handleReroute = useCallback(
+    (segment: RouteSegment) => {
+      const activeTrip = useTripStore.getState().activeTrip;
+      const dayIndex =
+        activeTrip?.days.findIndex(
+          (day) => day.dayNumber === segment.dayNumber,
+        ) ?? -1;
+      const day = dayIndex >= 0 ? activeTrip?.days[dayIndex] : undefined;
+      const plan = day ? planRerouteAroundSegment(day, segment) : null;
+      if (plan && dayIndex >= 0) {
+        insertWaypointBefore(
+          dayIndex,
+          plan.insertBeforeWaypointId,
+          rerouteViaWaypoint(plan, segment.id),
+        );
+      }
+      selectPlannerSegment(null);
+    },
+    [insertWaypointBefore, selectPlannerSegment],
+  );
 
   useEffect(() => {
     // One-shot auto-fit per trip, but ONLY for a trip we first see with a
@@ -1129,8 +1273,9 @@ const TripPlannerMapContent = forwardRef<
     ref,
     () => ({
       fitRoute: fitMapToTrip,
+      flyToSegment,
     }),
-    [fitMapToTrip],
+    [fitMapToTrip, flyToSegment],
   );
   useEffect(() => {
     return () => {
@@ -1143,31 +1288,62 @@ const TripPlannerMapContent = forwardRef<
       ref={handleRef}
       center={{ lng: 14.5, lat: 50.1 }}
       zoom={7}
-      showQuality={showQuality}
-      showSurface={showSurface}
+      // The all-roads tile overlay follows the line-coloring mode so the
+      // route and its surroundings speak the same color vocabulary; it is
+      // hidden entirely over aerial imagery.
+      showQuality={basemap === "map" && lineColorMode === "quality"}
+      showSurface={basemap === "map" && lineColorMode === "surface"}
       onReady={handleReady}
       // v2 planner renders on a cream basemap (grey roads) regardless of the
       // viewer's scheme, matching the design.
       forceColorScheme="light"
     >
       <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
+        {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
+        <div
+          role="group"
+          aria-label="Basemap"
+          className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
+        >
+          {(
+            [
+              ["map", "Map"],
+              ["aerial", "Aerial"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={basemap === id}
+              onClick={() => setBasemap(id)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                basemap === id
+                  ? "bg-ink text-cream"
+                  : "text-fg-dim hover:text-ink"
+              }`}
+            >
+              {t(label === "Map" ? "Map " : "Aerial ")}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-2">
+          {/* Line-coloring toggle — recolors the route line. */}
           <button
             type="button"
-            aria-pressed={showQuality}
-            aria-label={`Road quality overlay ${showQuality ? "on" : "off"}`}
-            onClick={() => setShowQuality((value) => !value)}
-            className={toggleClassName(showQuality)}
+            aria-pressed={lineColorMode === "quality"}
+            aria-label="Color the route line by road quality"
+            onClick={() => setLineColorMode("quality")}
+            className={toggleClassName(lineColorMode === "quality")}
           >
             <Layers3 size={14} />
             {t("Road quality ")}
           </button>
           <button
             type="button"
-            aria-pressed={showSurface}
-            aria-label={`Surface overlay ${showSurface ? "on" : "off"}`}
-            onClick={() => setShowSurface((value) => !value)}
-            className={toggleClassName(showSurface)}
+            aria-pressed={lineColorMode === "surface"}
+            aria-label="Color the route line by surface"
+            onClick={() => setLineColorMode("surface")}
+            className={toggleClassName(lineColorMode === "surface")}
           >
             <Layers3 size={14} />
             {t("Surface ")}
@@ -1508,6 +1684,47 @@ const TripPlannerMapContent = forwardRef<
           )}
         </div>
       </div>
+      {/* ── Route legend for the active line-coloring mode ── */}
+      {routeCollection.features.length > 0 ? (
+        <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+          {lineColorMode === "quality"
+            ? (
+                Object.entries(QUALITY_BAND_COLORS) as [
+                  keyof typeof QUALITY_BAND_COLORS,
+                  string,
+                ][]
+              ).map(([band, color]) => (
+                <span key={band} className="flex items-center gap-1.5">
+                  <span
+                    className="h-1 w-3.5 rounded-sm"
+                    style={{ background: color }}
+                  />
+                  <span className="text-[11px] font-semibold text-fg-dim">
+                    {QUALITY_BAND_LABELS_SHORT[band]}
+                  </span>
+                </span>
+              ))
+            : Object.entries(SURFACE_COLORS).map(([surface, color]) => (
+                <span key={surface} className="flex items-center gap-1.5">
+                  <span
+                    className="h-1 w-3.5 rounded-sm"
+                    style={{ background: color }}
+                  />
+                  <span className="text-[11px] font-semibold capitalize text-fg-dim">
+                    {surface}
+                  </span>
+                </span>
+              ))}
+        </div>
+      ) : null}
+      {/* ── Road Preview Card — opened by clicking any route section ── */}
+      {previewSegment ? (
+        <RoadPreviewPopover
+          segment={previewSegment}
+          onClose={() => selectPlannerSegment(null)}
+          {...(editable ? { onReroute: handleReroute } : {})}
+        />
+      ) : null}
       {/* ── Context menu overlay (Task 10) ── */}
       {contextMenu ? (
         <div
@@ -1602,10 +1819,38 @@ function snapPointerToRoad(
   );
 }
 function ensurePlannerLayers(map: MapLibreMap): void {
+  // Aerial basemap raster sits under every planner layer AND under the
+  // tarmoto tile overlays (the lowest custom layer MapCanvas installs).
+  ensureAerialBasemap(map, TARMOTO_QUALITY_LAYER);
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
       type: "geojson",
-      data: buildTripPlannerRouteCollection(null),
+      data: buildPlannerQualityRouteCollection(null),
+    });
+  }
+  // Cream casing under the colored segments so the quality line reads
+  // against both the cream basemap and aerial imagery (design frames).
+  if (!map.getLayer(ROUTE_CASING_LINE)) {
+    map.addLayer({
+      id: ROUTE_CASING_LINE,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#F5EFE6",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          ["case", ["get", "selected"], 6, 3.5],
+          10,
+          ["case", ["get", "selected"], 9, 6],
+          14,
+          ["case", ["get", "selected"], 12, 8],
+        ],
+        "line-opacity": ["case", ["get", "selected"], 0.85, 0.4],
+      },
     });
   }
   if (!map.getLayer(ROUTE_LINE)) {
@@ -1613,9 +1858,11 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       id: ROUTE_LINE,
       type: "line",
       source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        // Each day's route carries its own stable color from DAY_COLORS.
-        "line-color": ["get", "color"],
+        // Quality-segmented coloring by default; the [Road quality|Surface]
+        // toggle swaps this expression via setPaintProperty.
+        "line-color": plannerRouteLineColor("quality", SURFACE_COLORS),
         // Selected day is rendered wider and fully opaque; non-selected days are
         // thinner and dimmed so the focused day is always visually dominant.
         // MapLibre allows only ONE zoom-based subexpression and it must be the
@@ -1636,6 +1883,21 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           ["case", ["get", "selected"], 7, 4],
         ],
         "line-opacity": ["case", ["get", "selected"], 1, 0.45],
+      },
+    });
+  }
+  // Invisible wide hit line so ANY route section is comfortably clickable
+  // (opens the Road Preview Card) without fattening the visible line.
+  if (!map.getLayer(ROUTE_HIT_LINE)) {
+    map.addLayer({
+      id: ROUTE_HIT_LINE,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#000000",
+        "line-opacity": 0,
+        "line-width": 22,
       },
     });
   }
@@ -1705,16 +1967,27 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           7,
           5.5,
         ],
+        // Design vocabulary: start green, vias/stops teal, finish CORAL —
+        // the same colors the panel's route spine uses, so panel and map
+        // always agree on what "finish" looks like.
         "circle-color": [
           "match",
           ["get", "waypointType"],
           "start",
-          "#22C55E",
+          "#1F8A5B",
           "end",
-          "#F97316",
-          "#0ED3CF",
+          "#FF6A1A",
+          "#1FA6B8",
         ],
-        "circle-stroke-color": "#020617",
+        // Finish gets an ink ring (accent-on-cream needs the darker ring);
+        // everything else keeps a light ring per the design frames.
+        "circle-stroke-color": [
+          "match",
+          ["get", "waypointType"],
+          "end",
+          "#0E0E10",
+          "#FFFFFF",
+        ],
         "circle-stroke-width": 2,
       },
     });
