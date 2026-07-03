@@ -14,7 +14,6 @@ import {
   Loader2,
   MapPin,
   Mountain,
-  Printer,
   Route,
   Share2,
   Shield,
@@ -298,23 +297,6 @@ export default function TripDetailPage() {
             {t("Share ")}
           </Button>
           <TripExportMenu trip={trip} />
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Printer size={14} />}
-            renderLink={({ className, children }) => (
-              <Link
-                href={`/trips/${loaded.detail.id}/print`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={className}
-              >
-                {children}
-              </Link>
-            )}
-          >
-            {t("Print ")}
-          </Button>
           {isOwner && (
             <Button
               variant="danger"

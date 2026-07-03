@@ -488,8 +488,6 @@ export const en = {
   "No routes in this collection yet": "No routes in this collection yet",
   "No suggestions yet \u2014 be the first to propose a route change. ":
     "No suggestions yet \u2014 be the first to propose a route change. ",
-  "No trip to print. Open a trip in the planner first. ":
-    "No trip to print. Open a trip in the planner first. ",
   "No trips match your filters": "No trips match your filters",
   "No trips match your search.": "No trips match your search.",
   "No trips match your search. ": "No trips match your search. ",
@@ -569,8 +567,6 @@ export const en = {
     "Previewing {month} conditions on {previewDay}.",
   "Previous ": "Previous ",
   "Previous page": "Previous page",
-  "Print ": "Print ",
-  "Print / Save as PDF ": "Print / Save as PDF ",
   "Privacy & Data": "Privacy & Data",
   "Private ": "Private ",
   "Product analytics": "Product analytics",

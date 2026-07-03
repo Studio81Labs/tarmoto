@@ -26,7 +26,6 @@
 | T11  | Share trip link            | Click Share, copy link                                  | Link opens trip view for authenticated group members               |
 | T12  | Collaboration              | Open shared trip, drag waypoint, submit suggestion      | Other members see pending suggestion with accept/reject            |
 | T13  | Closures visible           | Open planner in region with known seasonal closures     | Closed roads marked with icon, hover shows dates                   |
-| T14  | Print trip                 | Navigate to `/trips/[id]/print`                         | Printer-friendly layout with route summary and daily breakdown     |
 | T14a | Place start/end via menu   | Right-click map → "Set start here", then "Set end here" | Road-following route appears; map keeps current zoom               |
 | T14b | Add via point              | With start+end set, right-click → "Add via here"        | Route threads through new point, re-snaps to roads                 |
 | T14c | Drag to re-route           | Drag a waypoint pin                                     | Route recomputes live (debounced), stays on roads                  |

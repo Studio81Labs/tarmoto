@@ -1206,7 +1206,7 @@ export default function TripPlannerPage() {
           >
             {t("Import GPX")}
           </Button>
-          <TripExportMenu trip={displayedTrip} context="planner" />
+          <TripExportMenu trip={displayedTrip} />
           <Button
             variant="secondary"
             size="sm"

@@ -56,7 +56,7 @@
      level because Tailwind uses the same `--color-slate-*` tokens for
      both `bg-*` and `text-*` utilities; remapping a single token there
      would force foreground and background to share the same colour,
-     which breaks cases like `bg-white text-slate-900` (print pages) or
+     which breaks cases like `bg-white text-slate-900` or
      `bg-accent text-slate-950` (primary CTAs). Background and text
      translations are handled separately in @layer utilities below. */
   --color-slate-850: #ede6da;
@@ -284,7 +284,7 @@
      (and the matching pseudo-state variants — hover / focus / active /
      group-hover) instead of remapping --color-slate-* in @theme so that
      the matching text-slate-X utilities keep their native dark colours —
-     that way `bg-white text-slate-900` (print pages) and
+     that way `bg-white text-slate-900` and
      `bg-accent text-slate-950` (primary CTAs) still get the dark
      foreground they were designed for.
 
