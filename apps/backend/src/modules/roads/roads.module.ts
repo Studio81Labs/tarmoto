@@ -11,12 +11,15 @@ import { OsmImportService } from './osm-import/osm-import.service.js';
 import { osmImportConfig } from './osm-import/osm-import.config.js';
 import { QualityConflationService } from './quality-conflation/quality-conflation.service.js';
 import { qualityConflationConfig } from './quality-conflation/quality-conflation.config.js';
+import { GraphHopperReimportService } from './quality-conflation/graphhopper-reimport.service.js';
+import { graphhopperReimportConfig } from './quality-conflation/graphhopper-reimport.config.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RoadSegment, FunZone, FunZoneRoad]),
     ConfigModule.forFeature(osmImportConfig),
     ConfigModule.forFeature(qualityConflationConfig),
+    ConfigModule.forFeature(graphhopperReimportConfig),
   ],
   controllers: [RoadsController],
   providers: [
@@ -24,12 +27,14 @@ import { qualityConflationConfig } from './quality-conflation/quality-conflation
     FunZoneClusteringService,
     OsmImportService,
     QualityConflationService,
+    GraphHopperReimportService,
   ],
   exports: [
     RoadsService,
     FunZoneClusteringService,
     OsmImportService,
     QualityConflationService,
+    GraphHopperReimportService,
   ],
 })
 export class RoadsModule {}
