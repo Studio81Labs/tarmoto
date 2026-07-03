@@ -1,0 +1,231 @@
+"use client";
+import { t } from "@/i18n";
+import { useMemo } from "react";
+import { Mono } from "@tarmoto/ui";
+import { deriveFlaggedSections, surfaceMixToPercents } from "@/lib/planner/api";
+import type { RouteQualitySummary, RouteSegment } from "@/lib/planner/types";
+import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
+import { filterRoutingWaypoints } from "@/lib/trip-routing";
+import type { TripDay, Waypoint } from "@/lib/types";
+import { normalizeDayFinish } from "@/stores/trip";
+import { formatDuration } from "@/lib/utils";
+import { FlaggedSectionCard } from "./FlaggedSectionCard";
+import { SectionStamp } from "./PlannerPanel";
+import { RouteQualityStrip } from "./RouteQualityStrip";
+import { SurfaceMixBar } from "./SurfaceMixBar";
+
+/**
+ * INSPECT tab — the hero of Plan & inspect: route summary (real routing
+ * stats), the quality-along-route strip, the surface mix, and flagged
+ * sections. Distance/time/score come from the backend routing response
+ * stored on the day; per-segment quality is the mock join (see
+ * lib/planner) until the quality pipeline serves it.
+ */
+interface InspectTabProps {
+  day: TripDay | null;
+  selectedSegmentId: string | null;
+  /** Open a section's Road Preview + fly the map to it. */
+  onInspectSegment: (segmentId: string) => void;
+  /** Insert an avoidance via around the section and re-route. */
+  onRerouteSegment: (segmentId: string) => void;
+}
+
+const ROLE_COLORS: Record<"start" | "via" | "finish", string> = {
+  start: "#1F8A5B",
+  via: "#1FA6B8",
+  finish: "#FF6A1A",
+};
+
+function waypointRole(
+  waypoint: Waypoint,
+  index: number,
+  count: number,
+): "start" | "via" | "finish" {
+  if (waypoint.type === "start" || index === 0) return "start";
+  if (waypoint.type === "end" || index === count - 1) return "finish";
+  return "via";
+}
+
+/**
+ * Surface mix for the day: prefer the real routing response mix; fall back
+ * to weighting the (mock) quality segments by length for loaded/imported
+ * trips that never went through live routing.
+ */
+export function daySurfaceMix(
+  day: TripDay,
+  segments: readonly RouteSegment[],
+): RouteQualitySummary["surfaceMix"] {
+  if (day.surfaceMix && Object.keys(day.surfaceMix).length > 0) {
+    return surfaceMixToPercents(day.surfaceMix);
+  }
+  const metresBySurface: Record<string, number> = {};
+  for (const segment of segments) {
+    metresBySurface[segment.surface] =
+      (metresBySurface[segment.surface] ?? 0) + segment.lengthKm * 1000;
+  }
+  return surfaceMixToPercents(metresBySurface);
+}
+
+export function InspectTab({
+  day,
+  selectedSegmentId,
+  onInspectSegment,
+  onRerouteSegment,
+}: InspectTabProps) {
+  const segments = useMemo(
+    () => (day ? deriveDayQualitySegments(day) : []),
+    [day],
+  );
+  const flagged = useMemo(() => deriveFlaggedSections(segments), [segments]);
+  const surfaceMix = useMemo(
+    () => (day ? daySurfaceMix(day, segments) : []),
+    [day, segments],
+  );
+  const spine = useMemo(
+    () =>
+      day ? filterRoutingWaypoints(normalizeDayFinish(day.waypoints)) : [],
+    [day],
+  );
+
+  if (!day || segments.length === 0) {
+    return (
+      <p className="text-[12px] leading-relaxed text-fg-dim">
+        {t(
+          "Build a route first — place a start and finish on the map (right-click) or generate a draft from the BUILD tab. Once a route exists you can inspect its road quality here. ",
+        )}
+      </p>
+    );
+  }
+
+  const startLabel = spine[0]?.name ?? "Start";
+  const finishLabel = spine[spine.length - 1]?.name ?? "Finish";
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* route summary card */}
+      <div className="overflow-hidden rounded-[14px] border border-line bg-cream">
+        <div className="px-4 py-3.5">
+          {spine.map((waypoint, index) => {
+            const role = waypointRole(waypoint, index, spine.length);
+            return (
+              <div
+                key={waypoint.id}
+                className={`flex items-center gap-2.5 ${index < spine.length - 1 ? "mb-2" : ""}`}
+              >
+                <span
+                  className="h-[9px] w-[9px] shrink-0 rounded-full"
+                  style={{ background: ROLE_COLORS[role] }}
+                />
+                <Mono className="w-11 shrink-0 text-[9.5px] text-fg-mute">
+                  {role.toUpperCase()}
+                </Mono>
+                <span className="truncate text-[13.5px] font-bold tracking-[-0.2px] text-ink">
+                  {waypoint.name ?? role}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex border-t border-line">
+          {(
+            [
+              {
+                key: "DISTANCE",
+                value: day.distanceKm ? day.distanceKm.toFixed(1) : "—",
+                unit: "km",
+                accent: false,
+              },
+              {
+                key: "TIME",
+                value: day.durationMinutes
+                  ? formatDuration(day.durationMinutes)
+                  : "—",
+                unit: "",
+                accent: false,
+              },
+              {
+                key: "QUALITY",
+                value: day.avgQuality ? day.avgQuality.toFixed(1) : "—",
+                unit: "/ 5",
+                accent: true,
+              },
+            ] as const
+          ).map((stat, index) => (
+            <div
+              key={stat.key}
+              className={`flex-1 px-3.5 py-3 ${index > 0 ? "border-l border-line" : ""}`}
+            >
+              <Mono className="text-[8.5px] tracking-[0.8px] text-fg-mute">
+                {stat.key}
+              </Mono>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span
+                  className={`text-[19px] font-extrabold tracking-[-0.6px] ${
+                    stat.accent ? "text-accent" : "text-ink"
+                  }`}
+                >
+                  {stat.value}
+                </span>
+                {stat.unit ? (
+                  <span className="text-[10.5px] font-semibold text-fg-mute">
+                    {stat.unit}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* quality along route */}
+      <div>
+        <SectionStamp n="01">{t("Road quality along route ")}</SectionStamp>
+        <RouteQualityStrip
+          segments={segments}
+          startLabel={startLabel}
+          endLabel={finishLabel}
+          onSegmentClick={onInspectSegment}
+        />
+      </div>
+
+      {/* surface mix */}
+      <div>
+        <SectionStamp n="02">{t("Surface mix ")}</SectionStamp>
+        <SurfaceMixBar mix={surfaceMix} />
+      </div>
+
+      {/* flagged sections */}
+      <div>
+        <SectionStamp n="03">
+          {t("Flagged sections ")}· {flagged.length}
+        </SectionStamp>
+        {flagged.length === 0 ? (
+          <p className="text-[11.5px] leading-relaxed text-fg-mute">
+            {t(
+              "Nothing flagged — every section of this route is measured at Fair or better. ",
+            )}
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2">
+              {flagged.map((flag) => (
+                <FlaggedSectionCard
+                  key={flag.segmentId}
+                  flag={flag}
+                  selected={selectedSegmentId === flag.segmentId}
+                  onOpen={onInspectSegment}
+                  onReroute={onRerouteSegment}
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-[11.5px] leading-relaxed text-fg-mute">
+              {t(
+                "Tap a flagged section to preview the road before you commit — measured quality where we have it, street-level imagery where we don’t. ",
+              )}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

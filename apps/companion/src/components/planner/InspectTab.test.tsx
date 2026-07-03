@@ -1,0 +1,182 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { InspectTab, daySurfaceMix } from "./InspectTab";
+import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
+import { deriveFlaggedSections } from "@/lib/planner/api";
+import type { TripDay } from "@/lib/types";
+
+function routedDay(overrides?: Partial<TripDay>): TripDay {
+  return {
+    dayNumber: 1,
+    title: "Day one",
+    distanceKm: 80.4,
+    durationMinutes: 66,
+    elevationGain: 900,
+    avgQuality: 3.8,
+    surfaceMix: { asphalt: 57_000, gravel: 23_400 },
+    routeGeometry: {
+      type: "LineString",
+      coordinates: Array.from({ length: 30 }, (_, i) => [
+        14.2 + i * 0.04,
+        49.4 + Math.sin(i * 0.6) * 0.02,
+      ]),
+    },
+    waypoints: [
+      {
+        id: "w-start",
+        name: "Jihlava",
+        location: { lng: 14.2, lat: 49.4 },
+        type: "start",
+      },
+      {
+        id: "w-via",
+        name: "Velké Meziříčí",
+        location: { lng: 14.8, lat: 49.42 },
+        type: "via",
+      },
+      {
+        id: "w-end",
+        name: "Pardubice",
+        location: { lng: 15.36, lat: 49.41 },
+        type: "end",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("InspectTab", () => {
+  it("shows the empty state when no route exists yet", () => {
+    render(
+      <InspectTab
+        day={null}
+        selectedSegmentId={null}
+        onInspectSegment={vi.fn()}
+        onRerouteSegment={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Build a route first/)).toBeInTheDocument();
+  });
+
+  it("renders the route spine and real routing stats", () => {
+    render(
+      <InspectTab
+        day={routedDay()}
+        selectedSegmentId={null}
+        onInspectSegment={vi.fn()}
+        onRerouteSegment={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Jihlava")).toBeInTheDocument();
+    expect(screen.getByText("Velké Meziříčí")).toBeInTheDocument();
+    expect(screen.getByText("Pardubice")).toBeInTheDocument();
+    expect(screen.getByText("START")).toBeInTheDocument();
+    expect(screen.getByText("VIA")).toBeInTheDocument();
+    expect(screen.getByText("FINISH")).toBeInTheDocument();
+    expect(screen.getByText("80.4")).toBeInTheDocument();
+    expect(screen.getByText("3.8")).toBeInTheDocument();
+    // Real surface mix from the routing response: 71% / 29%.
+    expect(screen.getByText("71%")).toBeInTheDocument();
+    expect(screen.getByText("29%")).toBeInTheDocument();
+  });
+
+  it("opens a section preview from the quality strip", () => {
+    const onInspectSegment = vi.fn();
+    const day = routedDay();
+    render(
+      <InspectTab
+        day={day}
+        selectedSegmentId={null}
+        onInspectSegment={onInspectSegment}
+        onRerouteSegment={vi.fn()}
+      />,
+    );
+
+    const [firstSection] = screen.getAllByRole("button", {
+      name: /Preview .* section/,
+    });
+    fireEvent.click(firstSection!);
+    expect(onInspectSegment).toHaveBeenCalledWith(
+      deriveDayQualitySegments(day)[0]!.id,
+    );
+  });
+
+  it("wires flagged-section cards to inspect and reroute", () => {
+    // Find a day whose deterministic mock join yields both flag kinds.
+    let day = routedDay();
+    for (let seed = 0; seed < 40; seed += 1) {
+      const candidate = routedDay({
+        routeGeometry: {
+          type: "LineString",
+          coordinates: Array.from({ length: 30 }, (_, i) => [
+            14.2 + i * 0.04,
+            49.4 + seed * 0.05 + Math.sin(i * 0.6) * 0.02,
+          ]),
+        },
+      });
+      const flags = deriveFlaggedSections(deriveDayQualitySegments(candidate));
+      if (
+        flags.some((f) => f.kind === "rough") &&
+        flags.some((f) => f.kind === "no_data")
+      ) {
+        day = candidate;
+        break;
+      }
+    }
+    const flags = deriveFlaggedSections(deriveDayQualitySegments(day));
+    const rough = flags.find((f) => f.kind === "rough");
+    const noData = flags.find((f) => f.kind === "no_data");
+    if (!rough || !noData) throw new Error("fixture must flag both kinds");
+
+    const onInspectSegment = vi.fn();
+    const onRerouteSegment = vi.fn();
+    render(
+      <InspectTab
+        day={day}
+        selectedSegmentId={null}
+        onInspectSegment={onInspectSegment}
+        onRerouteSegment={onRerouteSegment}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Reroute around flagged section: ${rough.label}`,
+      }),
+    );
+    expect(onRerouteSegment).toHaveBeenCalledWith(rough.segmentId);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Inspect flagged section: ${noData.label}`,
+      }),
+    );
+    expect(onInspectSegment).toHaveBeenCalledWith(noData.segmentId);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Preview flagged section: ${rough.label}`,
+      }),
+    );
+    expect(onInspectSegment).toHaveBeenCalledWith(rough.segmentId);
+  });
+});
+
+describe("daySurfaceMix", () => {
+  it("prefers the real routing surface mix", () => {
+    const day = routedDay();
+    expect(daySurfaceMix(day, deriveDayQualitySegments(day))).toEqual([
+      { surface: "asphalt", pct: 71 },
+      { surface: "gravel", pct: 29 },
+    ]);
+  });
+
+  it("falls back to segment-derived mix when the day has none", () => {
+    const day = routedDay({ surfaceMix: undefined });
+    const segments = deriveDayQualitySegments(day);
+    const mix = daySurfaceMix(day, segments);
+    expect(mix.length).toBeGreaterThan(0);
+    expect(mix.reduce((sum, entry) => sum + entry.pct, 0)).toBeGreaterThan(95);
+  });
+});

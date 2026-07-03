@@ -41,10 +41,7 @@ import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
 } from "@/lib/planner/quality-bands";
-import {
-  planRerouteAroundSegment,
-  rerouteViaWaypoint,
-} from "@/lib/planner/reroute";
+import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
 import type { RouteSegment } from "@/lib/planner/types";
 import {
   createRegionDrawControl,
@@ -1210,20 +1207,11 @@ const TripPlannerMapContent = forwardRef<
   // from the flagged segment; live routing recomputes through it.
   const handleReroute = useCallback(
     (segment: RouteSegment) => {
-      const activeTrip = useTripStore.getState().activeTrip;
-      const dayIndex =
-        activeTrip?.days.findIndex(
-          (day) => day.dayNumber === segment.dayNumber,
-        ) ?? -1;
-      const day = dayIndex >= 0 ? activeTrip?.days[dayIndex] : undefined;
-      const plan = day ? planRerouteAroundSegment(day, segment) : null;
-      if (plan && dayIndex >= 0) {
-        insertWaypointBefore(
-          dayIndex,
-          plan.insertBeforeWaypointId,
-          rerouteViaWaypoint(plan, segment.id),
-        );
-      }
+      rerouteAroundSegmentInTrip(
+        useTripStore.getState().activeTrip,
+        segment,
+        insertWaypointBefore,
+      );
       selectPlannerSegment(null);
     },
     [insertWaypointBefore, selectPlannerSegment],

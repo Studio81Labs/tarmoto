@@ -1181,6 +1181,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           durationMinutes: result.duration_min,
           avgQuality: result.avg_quality ?? 0,
           elevationGain: result.elevation_gain_m,
+          surfaceMix: result.surface_mix,
         };
         return {
           ...state,

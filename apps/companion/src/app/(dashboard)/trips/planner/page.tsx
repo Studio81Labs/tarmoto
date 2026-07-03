@@ -16,7 +16,6 @@ import {
   Clock3,
   GripVertical,
   Link2,
-  MapPin,
   Milestone,
   Plus,
   ShieldCheck,
@@ -31,9 +30,17 @@ import {
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
+import { InspectTab } from "@/components/planner/InspectTab";
+import {
+  PlannerPanel,
+  SectionStamp,
+  type PlannerTab,
+} from "@/components/planner/PlannerPanel";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
+import { findPlannerQualitySegment } from "@/lib/trip-planner-map";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
@@ -238,6 +245,11 @@ export default function TripPlannerPage() {
   const appendPlannerWaypoint = useTripStore((s) => s.appendPlannerWaypoint);
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
   const moveWaypoint = useTripStore((s) => s.moveWaypoint);
+  const selectedPlannerSegmentId = useTripStore(
+    (s) => s.selectedPlannerSegmentId,
+  );
+  const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
@@ -277,6 +289,31 @@ export default function TripPlannerPage() {
   // fires automatically because `selectedDay.dayNumber` appears in
   // `stalePreviewDays`. This is the intended behavior for phase 2.
   const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  // ── Plan & inspect panel: tab state + bidirectional panel↔map wiring ──
+  const [panelTab, setPanelTab] = useState<PlannerTab>("BUILD");
+  // A route-section click on the map opens its Road Preview; surface the
+  // matching panel context too so the flagged-card highlight is visible.
+  useEffect(() => {
+    if (selectedPlannerSegmentId) setPanelTab("INSPECT");
+  }, [selectedPlannerSegmentId]);
+  const handleInspectSegment = useCallback(
+    (segmentId: string) => {
+      selectPlannerSegment(segmentId);
+      mapRef.current?.flyToSegment(segmentId);
+    },
+    [selectPlannerSegment],
+  );
+  const handleRerouteSegment = useCallback(
+    (segmentId: string) => {
+      const trip = activeTripRef.current;
+      const segment = findPlannerQualitySegment(trip, segmentId);
+      if (segment) {
+        rerouteAroundSegmentInTrip(trip, segment, insertWaypointBefore);
+      }
+      selectPlannerSegment(null);
+    },
+    [insertWaypointBefore, selectPlannerSegment],
+  );
   const liveRouteEnabled =
     routeDirty &&
     selectedDay !== null &&
@@ -1599,204 +1636,207 @@ export default function TripPlannerPage() {
           )}
         </div>
 
-        {/* RIGHT — Parameters panel (always visible). Spec leads with
-            Days segmented + Road preference radio cards; the existing
-            advanced controls (daily km, surfaces, min quality, avoid
-            flags, route builder, passes, closures, stops) live behind
-            an Advanced disclosure so the spec idle visual stays clean
-            while every test selector remains reachable. */}
-        <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-line bg-paper px-5 py-[18px]">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-            {t("Parameters")}
-          </span>
-          <h2 className="mt-1.5 font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-            {t("Tune the AI draft")}
-          </h2>
-          <p className="mb-[18px] mt-1 text-[12px] text-fg-dim">
-            {t("Changes re-run Fun Zone discovery live.")}
-          </p>
-
-          <div className="flex flex-col gap-[18px]">
-            {/* Days segmented control — full 1..14 supported range so a
-                persisted `days=1` or `days=10` trip lands on a visible
-                selected segment instead of leaving the control with no
-                highlighted option. Spec shows 2..8; we cover the full
-                state range to keep the visible control and submitted
-                value consistent. */}
-            <div>
-              <div className="mb-2 flex justify-between">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                  {t("Days")}
-                </span>
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-                  {days}
-                </span>
-              </div>
-              <div className="grid grid-cols-7 gap-1">
-                {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setDays(n)}
-                    aria-label={`Set days to ${n}`}
-                    className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
-                      days === n
-                        ? "border-ink bg-ink text-cream"
-                        : "border-line bg-cream text-fg-dim hover:text-ink"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-              {/* sr-only semantic input keeps `getByLabelText("Number of
-                  days")` resolvable for the existing tests; changes
-                  fire through the same setDays handler. `tabIndex={-1}`
-                  removes it from sequential focus so keyboard users
-                  don't land on an invisible control. */}
-              <label htmlFor="trip-planner-days" className="sr-only">
-                {t("Number of days")}
-              </label>
-              <input
-                id="trip-planner-days"
-                type="number"
-                min={1}
-                max={14}
-                value={days}
-                tabIndex={-1}
-                onChange={(event) =>
-                  setDays(clampNumberInput(event.target.value, 1, 14, 3))
-                }
-                className="sr-only"
-              />
-            </div>
-
-            {/* Road preference radio cards — includes a "Balanced" card
-                for the `mixed` planner default so the visible UI and
-                submitted payload stay in sync. Spec's 3-card design
-                doesn't surface `mixed`, but it's the default planner
-                state and a persisted trip can carry it; hiding it
-                would leave the control with nothing selected. */}
-            <div>
-              <label
-                htmlFor="trip-planner-road-preference"
-                className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim"
-              >
-                {t("Road preference")}
-              </label>
-              <div className="flex flex-col gap-1.5">
-                {(
-                  [
-                    {
-                      value: "curvy",
-                      label: t("Maximum twisty"),
-                      sub: t("Fun-factor first, chain passes"),
-                    },
-                    {
-                      value: "scenic",
-                      label: t("Scenic balance"),
-                      sub: t("Views + curves mixed"),
-                    },
-                    {
-                      value: "mixed",
-                      label: t("Balanced"),
-                      sub: t("All-rounder default"),
-                    },
-                    {
-                      value: "direct",
-                      label: t("Efficient loop"),
-                      sub: t("Minimize backtracking"),
-                    },
-                  ] as const
-                ).map((opt) => {
-                  const selected = roadPreference === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() =>
-                        setRoadPreference(
-                          opt.value as TripParameters["roadPreference"],
-                        )
+        {/* RIGHT — Plan & inspect panel: BUILD / INSPECT / CONDITIONS /
+            STOPS. Every legacy control keeps its selector — BUILD hosts
+            the route spine + generation controls, INSPECT the quality
+            readout, CONDITIONS the passes/closures panels, STOPS the
+            stop suggestions. Panes stay mounted while hidden. */}
+        <PlannerPanel
+          tab={panelTab}
+          onTabChange={setPanelTab}
+          build={
+            <div className="flex flex-col gap-6">
+              <div>
+                <SectionStamp n="01">{t("Route ")}</SectionStamp>
+                {selectedDay ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <PlannerStat
+                        label="Distance"
+                        value={`${selectedDay.distanceKm.toFixed(1)} km`}
+                        icon={Milestone}
+                      />
+                      <PlannerStat
+                        label="Ride time"
+                        value={`${selectedDay.durationMinutes} min`}
+                        icon={Clock3}
+                      />
+                      <PlannerStat
+                        label="Quality"
+                        value={
+                          selectedDay.avgQuality
+                            ? selectedDay.avgQuality.toFixed(1)
+                            : "—"
+                        }
+                        icon={ShieldCheck}
+                      />
+                    </div>
+                    <WaypointEditor
+                      dayNumber={selectedDay.dayNumber}
+                      waypoints={selectedDay.waypoints}
+                      onReorder={(fromIndex, toIndex) =>
+                        reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
                       }
-                      aria-pressed={selected}
-                      className={`rounded-[8px] border px-3 py-2.5 text-left transition ${
-                        selected
-                          ? "border-ink bg-cream"
-                          : "border-line bg-transparent hover:bg-cream/50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          aria-hidden="true"
-                          className={`flex h-[14px] w-[14px] items-center justify-center rounded-full border-[1.5px] ${
-                            selected ? "border-ink" : "border-fg-mute"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs leading-relaxed text-fg-dim">
+                    {t(
+                      "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <SectionStamp n="02">{t("Propose a route ")}</SectionStamp>
+                <p className="mb-4 text-[12px] leading-relaxed text-fg-dim">
+                  {t(
+                    "Set your preferences and let Tarmoto draft a route from your start point — then inspect and refine. ",
+                  )}
+                </p>
+
+                {/* Road preference radio cards — includes a "Balanced" card
+                    for the `mixed` planner default so the visible UI and
+                    submitted payload stay in sync. */}
+                <div>
+                  <label
+                    htmlFor="trip-planner-road-preference"
+                    className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim"
+                  >
+                    {t("Road preference")}
+                  </label>
+                  <div className="flex flex-col gap-1.5">
+                    {(
+                      [
+                        {
+                          value: "curvy",
+                          label: t("Maximum twisty"),
+                          sub: t("Fun-factor first, chain passes"),
+                        },
+                        {
+                          value: "scenic",
+                          label: t("Scenic balance"),
+                          sub: t("Views + curves mixed"),
+                        },
+                        {
+                          value: "mixed",
+                          label: t("Balanced"),
+                          sub: t("All-rounder default"),
+                        },
+                        {
+                          value: "direct",
+                          label: t("Efficient loop"),
+                          sub: t("Minimize backtracking"),
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const selected = roadPreference === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() =>
+                            setRoadPreference(
+                              opt.value as TripParameters["roadPreference"],
+                            )
+                          }
+                          aria-pressed={selected}
+                          className={`rounded-[8px] border px-3 py-2.5 text-left transition ${
+                            selected
+                              ? "border-ink bg-cream"
+                              : "border-line bg-transparent hover:bg-cream/50"
                           }`}
                         >
-                          {selected && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-ink" />
-                          )}
-                        </span>
-                        <span className="text-[13px] font-semibold text-ink">
-                          {opt.label}
-                        </span>
-                      </div>
-                      <p className="ml-6 mt-1 text-[11px] text-fg-mute">
-                        {opt.sub}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* sr-only select keeps `getByLabelText("Road preference")`
-                  + `fireEvent.change` resolvable; carries the full
-                  4-option enum so tests that select `mixed` still
-                  reach a real value. `tabIndex={-1}` removes it from
-                  sequential focus so keyboard users don't land on an
-                  invisible control. */}
-              <select
-                id="trip-planner-road-preference"
-                value={roadPreference}
-                tabIndex={-1}
-                onChange={(event) =>
-                  setRoadPreference(
-                    event.target.value as TripParameters["roadPreference"],
-                  )
-                }
-                className="sr-only"
-              >
-                <option value="curvy">{t("Maximum curviness")}</option>
-                <option value="scenic">{t("Scenic roads")}</option>
-                <option value="mixed">{t("Mixed (balanced)")}</option>
-                <option value="direct">{t("Direct / efficient")}</option>
-              </select>
-            </div>
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              aria-hidden="true"
+                              className={`flex h-[14px] w-[14px] items-center justify-center rounded-full border-[1.5px] ${
+                                selected ? "border-ink" : "border-fg-mute"
+                              }`}
+                            >
+                              {selected && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-ink" />
+                              )}
+                            </span>
+                            <span className="text-[13px] font-semibold text-ink">
+                              {opt.label}
+                            </span>
+                          </div>
+                          <p className="ml-6 mt-1 text-[11px] text-fg-mute">
+                            {opt.sub}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* sr-only select keeps `getByLabelText("Road preference")`
+                      + `fireEvent.change` resolvable. */}
+                  <select
+                    id="trip-planner-road-preference"
+                    value={roadPreference}
+                    tabIndex={-1}
+                    onChange={(event) =>
+                      setRoadPreference(
+                        event.target.value as TripParameters["roadPreference"],
+                      )
+                    }
+                    className="sr-only"
+                  >
+                    <option value="curvy">{t("Maximum curviness")}</option>
+                    <option value="scenic">{t("Scenic roads")}</option>
+                    <option value="mixed">{t("Mixed (balanced)")}</option>
+                    <option value="direct">{t("Direct / efficient")}</option>
+                  </select>
+                </div>
 
-            {/* Advanced — every legacy control lives here so the rider
-                still has access to surfaces, daily km, min quality,
-                avoid flags, route builder, and passes / closures
-                without cluttering the spec's two-control simplicity. */}
-            {/* Phase A keeps the Advanced disclosure open by default —
-                closures / passes / route-builder warnings are content
-                the rider relies on, and existing Playwright e2es
-                assert `toBeVisible()` on text rendered inside this
-                group. A follow-up phase B can collapse the disclosure
-                once those surfaces are reshaped for the spec's
-                minimal idle visual. The state is controlled
-                explicitly so user collapses survive subsequent
-                parent re-renders. */}
-            <details
-              className="border-t border-line pt-[14px]"
-              open={advancedOpen}
-              onToggle={(event) =>
-                setAdvancedOpen((event.target as HTMLDetailsElement).open)
-              }
-            >
-              <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
-                {t("Advanced")}
-              </summary>
-              <div className="mt-3 flex flex-col gap-3">
-                <div>
+                {/* Days segmented control — full 1..14 supported range. */}
+                <div className="mt-4">
+                  <div className="mb-2 flex justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+                      {t("Days")}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
+                      {days}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setDays(n)}
+                        aria-label={`Set days to ${n}`}
+                        className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                          days === n
+                            ? "border-ink bg-ink text-cream"
+                            : "border-line bg-cream text-fg-dim hover:text-ink"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  {/* sr-only semantic input keeps `getByLabelText("Number of
+                      days")` resolvable for the existing tests. */}
+                  <label htmlFor="trip-planner-days" className="sr-only">
+                    {t("Number of days")}
+                  </label>
+                  <input
+                    id="trip-planner-days"
+                    type="number"
+                    min={1}
+                    max={14}
+                    value={days}
+                    tabIndex={-1}
+                    onChange={(event) =>
+                      setDays(clampNumberInput(event.target.value, 1, 14, 3))
+                    }
+                    className="sr-only"
+                  />
+                </div>
+
+                <div className="mt-4">
                   <label
                     htmlFor="trip-planner-daily-km"
                     className="mb-1 block text-xs text-fg-dim"
@@ -1814,123 +1854,132 @@ export default function TripPlannerPage() {
                   />
                 </div>
 
-                <div>
-                  <p className="mb-2 block text-xs text-fg-dim">
-                    {t("Surface preference")}
-                  </p>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                    {SURFACE_OPTIONS.map((surface) => (
-                      <Checkbox
-                        key={surface.value}
-                        checked={surfacePreference.includes(surface.value)}
-                        onChange={() => handleSurfaceToggle(surface.value)}
-                        label={surface.label}
-                        ariaLabel={surface.label}
-                        className="py-1"
-                      />
-                    ))}
-                  </div>
-                </div>
+                <Button
+                  variant="primary"
+                  size="md"
+                  block
+                  className="mt-4"
+                  loading={isGenerating}
+                  disabled={isGenerating}
+                  onClick={handleGenerate}
+                >
+                  {isGenerating ? t("Generating…") : t("Generate route")}
+                </Button>
+              </div>
 
-                <div>
-                  <label
-                    htmlFor="trip-planner-min-quality"
-                    className="mb-1 block text-xs text-fg-dim"
-                  >
-                    {t("Minimum road quality")}
-                  </label>
-                  <Select
-                    id="trip-planner-min-quality"
-                    value={minQuality}
-                    onChange={(value) => setMinQuality(Number(value))}
-                    tone="cream"
-                  >
-                    <option value="1">{t("Any condition")}</option>
-                    <option value="2">{t("Fair or better")}</option>
-                    <option value="3">{t("Good or better")}</option>
-                    <option value="4">{t("Excellent only")}</option>
-                  </Select>
-                </div>
-
-                <div className="flex flex-col items-start gap-2 pt-2">
-                  <Checkbox
-                    checked={avoidHighways}
-                    onChange={handleAvoidHighwaysChange}
-                    label={t("Avoid highways")}
-                  />
-                  <Checkbox
-                    checked={avoidTolls}
-                    onChange={handleAvoidTollsChange}
-                    label={t("Avoid tolls")}
-                  />
-                  <Checkbox
-                    checked={avoidUnpaved}
-                    onChange={handleAvoidUnpavedChange}
-                    label={t("Avoid unpaved roads")}
-                  />
-                </div>
-
-                <div className="space-y-3 border-t border-line pt-2">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                    <MapPin size={14} className="text-accent" />
-                    {t("Route builder")}
-                  </div>
-                  {selectedDay ? (
-                    <>
-                      <div className="grid grid-cols-3 gap-2">
-                        <PlannerStat
-                          label="Distance"
-                          value={`${selectedDay.distanceKm.toFixed(1)} km`}
-                          icon={Milestone}
-                        />
-                        <PlannerStat
-                          label="Ride time"
-                          value={`${selectedDay.durationMinutes} min`}
-                          icon={Clock3}
-                        />
-                        <PlannerStat
-                          label="Quality"
-                          value={
-                            selectedDay.avgQuality
-                              ? selectedDay.avgQuality.toFixed(1)
-                              : "—"
-                          }
-                          icon={ShieldCheck}
-                        />
-                      </div>
-                      <WaypointEditor
-                        dayNumber={selectedDay.dayNumber}
-                        waypoints={selectedDay.waypoints}
-                        onReorder={(fromIndex, toIndex) =>
-                          reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
-                        }
-                      />
-                    </>
-                  ) : (
-                    <p className="text-xs text-fg-dim">
-                      {t(
-                        "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
-                      )}
+              {/* Advanced — surfaces, min quality, avoid flags. */}
+              <details
+                className="border-t border-line pt-[14px]"
+                open={advancedOpen}
+                onToggle={(event) =>
+                  setAdvancedOpen((event.target as HTMLDetailsElement).open)
+                }
+              >
+                <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
+                  {t("Advanced")}
+                </summary>
+                <div className="mt-3 flex flex-col gap-3">
+                  <div>
+                    <p className="mb-2 block text-xs text-fg-dim">
+                      {t("Surface preference")}
                     </p>
-                  )}
-                </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                      {SURFACE_OPTIONS.map((surface) => (
+                        <Checkbox
+                          key={surface.value}
+                          checked={surfacePreference.includes(surface.value)}
+                          onChange={() => handleSurfaceToggle(surface.value)}
+                          label={surface.label}
+                          ariaLabel={surface.label}
+                          className="py-1"
+                        />
+                      ))}
+                    </div>
+                  </div>
 
+                  <div>
+                    <label
+                      htmlFor="trip-planner-min-quality"
+                      className="mb-1 block text-xs text-fg-dim"
+                    >
+                      {t("Minimum road quality")}
+                    </label>
+                    <Select
+                      id="trip-planner-min-quality"
+                      value={minQuality}
+                      onChange={(value) => setMinQuality(Number(value))}
+                      tone="cream"
+                    >
+                      <option value="1">{t("Any condition")}</option>
+                      <option value="2">{t("Fair or better")}</option>
+                      <option value="3">{t("Good or better")}</option>
+                      <option value="4">{t("Excellent only")}</option>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col items-start gap-2 pt-2">
+                    <Checkbox
+                      checked={avoidHighways}
+                      onChange={handleAvoidHighwaysChange}
+                      label={t("Avoid highways")}
+                    />
+                    <Checkbox
+                      checked={avoidTolls}
+                      onChange={handleAvoidTollsChange}
+                      label={t("Avoid tolls")}
+                    />
+                    <Checkbox
+                      checked={avoidUnpaved}
+                      onChange={handleAvoidUnpavedChange}
+                      label={t("Avoid unpaved roads")}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              <div>
+                <SectionStamp n="03">{t("Region discovery ")}</SectionStamp>
+                <p className="text-[12px] leading-relaxed text-fg-dim">
+                  {t("Draw a region on the map to surface ")}
+                  <b className="text-ink">{t("Fun Zones")}</b>
+                  {t(
+                    " — dense clusters of high-quality road — then build a route through them. Use the Draw region button on the map. ",
+                  )}
+                </p>
+              </div>
+            </div>
+          }
+          inspect={
+            <InspectTab
+              day={displayedTrip?.days[selectedDayIndex] ?? null}
+              selectedSegmentId={selectedPlannerSegmentId}
+              onInspectSegment={handleInspectSegment}
+              onRerouteSegment={handleRerouteSegment}
+            />
+          }
+          conditions={
+            <div className="flex flex-col gap-6">
+              <div>
+                <SectionStamp n="01">{t("Seasonal passes ")}</SectionStamp>
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
                   routes={closureRoutes}
                   data={passesData}
                 />
+              </div>
+              <div>
+                <SectionStamp n="02">{t("Closures & roadworks ")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
                   routes={closureRoutes}
                   data={closuresData}
                 />
-                <TripStopsPanel trip={displayedTrip} />
               </div>
-            </details>
-          </div>
-        </aside>
+            </div>
+          }
+          stops={<TripStopsPanel trip={displayedTrip} />}
+        />
       </div>
 
       <TripImportDialog

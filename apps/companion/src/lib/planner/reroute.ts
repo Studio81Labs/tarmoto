@@ -1,6 +1,6 @@
 import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
-import type { TripDay, Waypoint } from "@/lib/types";
+import type { Trip, TripDay, Waypoint } from "@/lib/types";
 import type { RouteSegment } from "./types";
 
 /**
@@ -56,6 +56,34 @@ export function planRerouteAroundSegment(
   }
 
   return { location, insertBeforeWaypointId };
+}
+
+/**
+ * Full reroute action shared by the Road Preview Card and the Inspect
+ * tab's flagged-section REROUTE button: plan the avoidance via for the
+ * segment's day and insert it through the store action. Returns false when
+ * the segment can't be rerouted (no routed geometry / unknown day).
+ */
+export function rerouteAroundSegmentInTrip(
+  trip: Trip | null,
+  segment: RouteSegment,
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: Waypoint,
+  ) => void,
+): boolean {
+  const dayIndex =
+    trip?.days.findIndex((day) => day.dayNumber === segment.dayNumber) ?? -1;
+  const day = dayIndex >= 0 ? trip?.days[dayIndex] : undefined;
+  const plan = day ? planRerouteAroundSegment(day, segment) : null;
+  if (!plan || dayIndex < 0) return false;
+  insertWaypointBefore(
+    dayIndex,
+    plan.insertBeforeWaypointId,
+    rerouteViaWaypoint(plan, segment.id),
+  );
+  return true;
 }
 
 /** Build the via waypoint a reroute plan inserts. */

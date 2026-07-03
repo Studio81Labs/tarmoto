@@ -184,6 +184,12 @@ export interface TripDay {
   durationMinutes: number;
   elevationGain: number;
   avgQuality: number;
+  /**
+   * Metres ridden per surface key for this day's routed geometry, straight
+   * from the routing response. Present only after live routing previews the
+   * day; loaded/imported trips derive a fallback mix from quality segments.
+   */
+  surfaceMix?: Record<string, number> | undefined;
   overnightStop?: POI | undefined;
   segments?: RoutePreviewSegment[] | undefined;
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
