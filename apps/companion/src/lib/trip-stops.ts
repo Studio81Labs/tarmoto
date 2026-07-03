@@ -3,6 +3,7 @@ import type {
   PoiKind,
   RoutePoiSuggestion,
 } from "@/lib/api";
+import { sampleRoutePoints } from "@/lib/route-sampling";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
 
@@ -60,7 +61,10 @@ export function buildDayRoutePoints(
 ): Array<{ lat: number; lng: number }> {
   const coords = day.routeGeometry?.coordinates;
   if (coords && coords.length >= 2) {
-    return coords.flatMap(([lng, lat]) =>
+    // Downsample dense routed geometry — the along-route POI check
+    // buffers by km, and the full polyline can exceed the backend's
+    // JSON body limit.
+    return sampleRoutePoints(coords).flatMap(([lng, lat]) =>
       lng !== undefined && lat !== undefined ? [{ lat, lng }] : [],
     );
   }

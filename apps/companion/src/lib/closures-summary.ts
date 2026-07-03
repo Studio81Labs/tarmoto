@@ -1,5 +1,6 @@
 import { haversineKm } from "@tarmoto/shared";
 import type { RoadClosure } from "./api";
+import { sampleRoutePoints } from "./route-sampling";
 import type { Trip } from "./types";
 
 export type PlannerClosure = RoadClosure;
@@ -108,7 +109,10 @@ export function buildTripClosureRoutes(
         label: day.title
           ? `Day ${day.dayNumber} · ${day.title}`
           : `Day ${day.dayNumber}`,
-        points: coords.flatMap(([lng, lat]) =>
+        // Downsampled: the closures/passes checks buffer the route by
+        // hundreds of metres+, and the full live-routed polyline can
+        // exceed the backend's JSON body limit.
+        points: sampleRoutePoints(coords).flatMap(([lng, lat]) =>
           lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],
         ),
       },

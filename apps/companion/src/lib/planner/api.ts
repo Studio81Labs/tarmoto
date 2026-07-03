@@ -8,6 +8,7 @@ import {
   type RouteResponse,
   type RoutePoiSuggestion,
 } from "@/lib/api";
+import { sampleRoutePoints } from "@/lib/route-sampling";
 import { deriveQualitySegments } from "./derive";
 import { mockRoadPreview } from "./mocks";
 import type {
@@ -146,7 +147,9 @@ async function fetchPois(
   const [alongRoute, stays] = await Promise.all([
     alongRouteKinds.length > 0
       ? poiApi.getAlongRoute(
-          { route: [...route], kinds: alongRouteKinds },
+          // Downsampled — the check buffers by km and dense polylines
+          // can exceed the backend's JSON body limit.
+          { route: [...sampleRoutePoints(route)], kinds: alongRouteKinds },
           init,
         )
       : Promise.resolve(null),
