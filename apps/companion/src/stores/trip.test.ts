@@ -1,4 +1,6 @@
-import { useTripStore } from "./trip";
+import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
+import { splitIntoDays } from "@/lib/planner/day-splitter";
+import { dayFinishWaypoint, useTripStore } from "./trip";
 import type { RouteResponse } from "@/lib/api";
 import type { TripParameters } from "@/lib/types";
 
@@ -2316,5 +2318,110 @@ describe("useTripStore role-from-index waypoints (addendum §1)", () => {
     expect(waypoints[0]!.type).toBe("start");
     expect(waypoints[1]!.type).toBe("end");
     expect(waypoints[1]!.location).toEqual(waypoints[0]!.location);
+  });
+});
+
+describe("useTripStore split lifecycle (addendum)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  const KM_PER_DEG_LAT = 111.194926;
+  const degPerKm = 1 / KM_PER_DEG_LAT;
+
+  function seedRoutedTrip(totalKm = 600) {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 45, lng: 15 }, "set-start");
+    s.placeWaypoint({ lat: 45 + totalKm * degPerKm, lng: 15 }, "set-end");
+    s.placeWaypoint({ lat: 45 + 100 * degPerKm, lng: 15 }, "add-via");
+    // Simulate the live-routing result: dense meridian geometry.
+    const geometry = Array.from({ length: totalKm + 1 }, (_, km) => ({
+      lat: 45 + km * degPerKm,
+      lng: 15,
+    }));
+    useTripStore.getState().applyRouteResult(1, {
+      geometry,
+      distance_km: totalKm,
+      duration_min: totalKm,
+      avg_quality: 3.9,
+      curviness_score: 40,
+      elevation_gain_m: 4000,
+      surface_mix: { asphalt: totalKm * 1000 },
+    });
+  }
+
+  function plansFor(totalKm = 600) {
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    const segments = deriveDayQualitySegments(day);
+    return splitIntoDays(segments, {
+      dailyKmTarget: 250,
+      forcedDays: null,
+      totalTimeMin: totalKm,
+    });
+  }
+
+  it("starts unsplit; applySplit enters 'split'; route edits go 'stale'", () => {
+    seedRoutedTrip();
+    expect(useTripStore.getState().splitState).toBe("unsplit");
+
+    useTripStore.getState().applySplit(plansFor());
+    expect(useTripStore.getState().splitState).toBe("split");
+    expect(useTripStore.getState().dayPlans!.length).toBeGreaterThanOrEqual(2);
+
+    // A waypoint edit invalidates the split but keeps the plans for display.
+    useTripStore.getState().placeWaypoint({ lat: 45.5, lng: 15.1 }, "add-via");
+    expect(useTripStore.getState().splitState).toBe("stale");
+    expect(useTripStore.getState().dayPlans).not.toBeNull();
+
+    // Pref changes (markRouteDirty) also invalidate.
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().markRouteDirty();
+    expect(useTripStore.getState().splitState).toBe("stale");
+  });
+
+  it("loads a saved multi-day trip as an existing split", () => {
+    seedRoutedTrip();
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().materializeSplit();
+    const materialized = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(materialized);
+
+    expect(useTripStore.getState().splitState).toBe("split");
+    expect(useTripStore.getState().dayPlans!.length).toBe(
+      materialized.days.length,
+    );
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().splitState).toBe("unsplit");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+  });
+
+  it("materializeSplit rewrites days that satisfy the save gate", () => {
+    seedRoutedTrip();
+    const plans = plansFor();
+    useTripStore.getState().applySplit(plans);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    expect(trip.days).toHaveLength(plans.length);
+    expect(trip.num_days).toBe(plans.length);
+
+    let coveredKm = 0;
+    trip.days.forEach((day, index) => {
+      // Complete per the save gate: start + finish + geometry.
+      expect(day.waypoints.some((w) => w.type === "start")).toBe(true);
+      expect(dayFinishWaypoint(day.waypoints)).toBeDefined();
+      expect(day.routeGeometry!.coordinates.length).toBeGreaterThanOrEqual(2);
+      expect(day.distanceKm).toBeCloseTo(plans[index]!.distanceKm, 0);
+      expect(day.startLinked).toBe(index > 0);
+      coveredKm += day.distanceKm;
+    });
+    expect(coveredKm).toBeCloseTo(600, 0);
+
+    // The via placed at ~km 100 belongs to day 1.
+    expect(trip.days[0]!.waypoints.some((w) => w.type === "via")).toBe(true);
+    expect(trip.days[1]!.waypoints.some((w) => w.type === "via")).toBe(false);
+
+    // Original endpoints survive at the outer boundaries.
+    expect(trip.days[0]!.waypoints[0]!.name).toBe("Start");
+    expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
   });
 });

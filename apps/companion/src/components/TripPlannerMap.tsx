@@ -98,6 +98,13 @@ import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
 import { formatDistance, roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
+export interface DayBreakMarker {
+  lng: number;
+  lat: number;
+  label: string;
+  pinned: boolean;
+}
+
 /** Imperative handle exposed on the TripPlannerMap ref (Task 11). */
 export interface TripPlannerMapHandle {
   /** Fit the viewport to the current route bounds. No-op when no bounds. */
@@ -127,6 +134,9 @@ const CURSOR_LAYER = "trip-planner-collab-cursors";
 const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
 const SUGGESTION_SOURCE = "trip-planner-suggestions";
 const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
+const DAY_BREAK_SOURCE = "trip-planner-day-breaks";
+const DAY_BREAK_CIRCLE_LAYER = "trip-planner-day-break-circle";
+const DAY_BREAK_LABEL_LAYER = "trip-planner-day-break-label";
 const SEGMENT_HIGHLIGHT_SOURCE = "trip-planner-segment-highlight";
 const SEGMENT_HIGHLIGHT_GLOW_LAYER = "trip-planner-segment-highlight-glow";
 const SEGMENT_HIGHLIGHT_LINE_LAYER = "trip-planner-segment-highlight-line";
@@ -170,6 +180,11 @@ interface TripPlannerMapProps {
    */
   onCursorMove?: (lat: number, lng: number) => void;
   /**
+   * Day-break markers from the splitter — one per day boundary. Rendered
+   * as pinned dots with the overnight-town label.
+   */
+  dayBreaks?: DayBreakMarker[];
+  /**
    * Bump to trigger a one-shot refit to the current route bounds,
    * independent of the per-`trip.id` auto-fit. The auto-fit fires
    * once per trip so waypoint edits don't rip the viewport
@@ -197,6 +212,7 @@ export const TripPlannerMap = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
     onCursorMove,
     fitRouteToken,
   },
@@ -218,6 +234,7 @@ export const TripPlannerMap = forwardRef<
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
+        dayBreaks={dayBreaks}
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
       />
@@ -236,6 +253,7 @@ export const TripPlannerMap = forwardRef<
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
+      dayBreaks={dayBreaks}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
     />
@@ -262,6 +280,7 @@ const FetchedTripPlannerMap = forwardRef<
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
+    dayBreaks?: DayBreakMarker[] | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
@@ -277,6 +296,7 @@ const FetchedTripPlannerMap = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
     onCursorMove,
     fitRouteToken,
   },
@@ -300,6 +320,7 @@ const FetchedTripPlannerMap = forwardRef<
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
+      dayBreaks={dayBreaks}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
     />
@@ -328,6 +349,7 @@ const TripPlannerMapContent = forwardRef<
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
+    dayBreaks?: DayBreakMarker[] | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
@@ -345,6 +367,7 @@ const TripPlannerMapContent = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
     onCursorMove,
     fitRouteToken,
   },
@@ -527,6 +550,24 @@ const TripPlannerMapContent = forwardRef<
     () => buildSuggestionCollection(suggestions),
     [suggestions],
   );
+  const dayBreakCollection = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: (dayBreaks ?? []).map((breakMarker, index) => ({
+        type: "Feature" as const,
+        properties: {
+          label: breakMarker.label,
+          pinned: breakMarker.pinned,
+          boundary: index + 1,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [breakMarker.lng, breakMarker.lat],
+        },
+      })),
+    }),
+    [dayBreaks],
+  );
   const segmentHighlightCollection = useMemo(() => {
     // Plan & inspect selection wins: its derived geometry is exact, no
     // distance-slicing needed. Fall back to the legacy sidebar focus
@@ -687,6 +728,7 @@ const TripPlannerMapContent = forwardRef<
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
     syncGeoJsonSource(map, CURSOR_SOURCE, cursorCollection);
     syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
+    syncGeoJsonSource(map, DAY_BREAK_SOURCE, dayBreakCollection);
     syncGeoJsonSource(
       map,
       SEGMENT_HIGHLIGHT_SOURCE,
@@ -696,6 +738,7 @@ const TripPlannerMapContent = forwardRef<
     closureLineCollection,
     closureMarkerCollection,
     cursorCollection,
+    dayBreakCollection,
     passMarkerCollection,
     ready,
     routeCollection,
@@ -2001,6 +2044,46 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       paint: {
         // Ink label with a cream halo for legibility on the cream basemap
         // (was light text + dark halo for the old dark map).
+        "text-color": "#0E0E10",
+        "text-halo-color": "#F5EFE6",
+        "text-halo-width": 1.4,
+      },
+    });
+  }
+  // Day-break markers (splitter boundaries): a pin-style dot + town label.
+  if (!map.getSource(DAY_BREAK_SOURCE)) {
+    map.addSource(DAY_BREAK_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(DAY_BREAK_CIRCLE_LAYER)) {
+    map.addLayer({
+      id: DAY_BREAK_CIRCLE_LAYER,
+      type: "circle",
+      source: DAY_BREAK_SOURCE,
+      paint: {
+        "circle-radius": 8,
+        // Pinned (manual) breaks render accent; computed ones ink.
+        "circle-color": ["case", ["get", "pinned"], "#FF6A1A", "#0E0E10"],
+        "circle-stroke-color": "#F5EFE6",
+        "circle-stroke-width": 2.5,
+      },
+    });
+  }
+  if (!map.getLayer(DAY_BREAK_LABEL_LAYER)) {
+    map.addLayer({
+      id: DAY_BREAK_LABEL_LAYER,
+      type: "symbol",
+      source: DAY_BREAK_SOURCE,
+      layout: {
+        "text-field": ["get", "label"],
+        "text-offset": [0, 1.3],
+        "text-size": 11,
+        "text-anchor": "top",
+        "text-font": ["Noto Sans Regular"],
+      },
+      paint: {
         "text-color": "#0E0E10",
         "text-halo-color": "#F5EFE6",
         "text-halo-width": 1.4,

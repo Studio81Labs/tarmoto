@@ -299,6 +299,16 @@ type TripStoreSnapshot = {
   hoverSegment: (segmentId: string | null) => void;
   selectedPlannerSegmentId: string | null;
   selectPlannerSegment: (segmentId: string | null) => void;
+  splitState: "unsplit" | "split" | "stale";
+  dayPlans: import("@/lib/planner/types").DayPlan[] | null;
+  pinnedBreakKms: number[];
+  applySplit: (
+    dayPlans: import("@/lib/planner/types").DayPlan[],
+    pinnedBreakKms?: number[],
+  ) => void;
+  clearSplit: () => void;
+  setPinnedBreaks: (kms: number[]) => void;
+  materializeSplit: () => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
   appendPlannerWaypoint: (
     dayIndex: number,
@@ -472,6 +482,13 @@ describe("TripPlannerPage", () => {
       hoverSegment: vi.fn(),
       selectedPlannerSegmentId: null,
       selectPlannerSegment: vi.fn(),
+      splitState: "unsplit" as const,
+      dayPlans: null,
+      pinnedBreakKms: [],
+      applySplit: vi.fn(),
+      clearSplit: vi.fn(),
+      setPinnedBreaks: vi.fn(),
+      materializeSplit: vi.fn(),
       addWaypoint: vi.fn(),
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
@@ -1745,84 +1762,90 @@ describe("TripPlannerPage", () => {
     ).not.toBeDisabled();
   });
 
-  it("offers relink when the predecessor finishes at a terminal accommodation", () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          dayNumber: 1,
-          waypoints: [
-            {
-              id: "s1",
-              name: "Start",
-              type: "start",
-              location: { lng: 10, lat: 46 },
-            },
-            {
-              id: "h1",
-              name: "Hotel",
-              type: "accommodation", // generated overnight finish, no `end`
-              location: { lng: 11, lat: 46.5 },
-            },
-          ],
-        },
-        {
-          ...activeTrip.days[0]!,
-          dayNumber: 2,
-          startLinked: false, // link broken by a manual start edit
-          waypoints: [
-            {
-              id: "s2",
-              name: "Start",
-              type: "start",
-              location: { lng: 12, lat: 47 },
-            },
-            {
-              id: "e2",
-              name: "End",
-              type: "end",
-              location: { lng: 13, lat: 47.5 },
-            },
-          ],
-        },
-      ],
-    };
+  it("shows the empty day column while the trip is unsplit", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.splitState = "unsplit";
+    storeState.dayPlans = null;
 
     render(<TripPlannerPage />);
 
-    // Day 2 must offer "Link to previous day" even though day 1 finishes at an
-    // accommodation rather than an explicit end.
+    expect(screen.getByText(/No days yet/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Day 1")).not.toBeInTheDocument();
+  });
+
+  const samplePlans = [
+    {
+      dayNumber: 1,
+      segmentIds: ["d1-s0"],
+      distanceKm: 240,
+      timeMin: 250,
+      quality: {
+        distanceKm: 240,
+        timeMin: 250,
+        score: 4.1,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Start",
+      endTown: "Brno",
+      suggestedStays: [],
+      endKm: 240,
+    },
+    {
+      dayNumber: 2,
+      segmentIds: ["d1-s1"],
+      distanceKm: 210,
+      timeMin: 220,
+      quality: {
+        distanceKm: 210,
+        timeMin: 220,
+        score: 3.6,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Brno",
+      endTown: "Finish",
+      suggestedStays: [],
+      noTownNearby: true,
+      endKm: 450,
+    },
+  ];
+
+  it("renders DayPlans in the day column once split", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.splitState = "split";
+    storeState.dayPlans = samplePlans;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Day 2")).toBeInTheDocument();
+    expect(screen.getByText("START → BRNO")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Link to previous day" }),
+      screen.getByText(/No overnight town near this break/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Route changed/)).not.toBeInTheDocument();
+    // Split button reads Re-split while split.
+    expect(
+      screen.getByRole("button", { name: /Re-split/i }),
     ).toBeInTheDocument();
   });
 
-  it("shows Add day button and disables it at 14 days (MAX_TRIP_DAYS)", () => {
-    // Create a 14-day trip (max)
-    const days = Array.from({ length: 14 }, (_, i) => ({
-      ...activeTrip.days[0]!,
-      dayNumber: i + 1,
-      title: `Day ${i + 1}`,
-      waypoints: i === 0 ? activeTrip.days[0]!.waypoints : [],
-    }));
-    storeState.activeTrip = { ...activeTrip, days };
+  it("dims stale days and offers a RE-SPLIT shortcut after a route edit", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.splitState = "stale";
+    storeState.dayPlans = samplePlans;
 
     render(<TripPlannerPage />);
 
-    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
-    expect(addDayBtn).toBeInTheDocument();
-    expect(addDayBtn).toBeDisabled();
-  });
-
-  it("calls addDay when Add day button is clicked (below 14 days)", () => {
-    storeState.activeTrip = activeTrip; // 1 day
-
-    render(<TripPlannerPage />);
-
-    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
-    expect(addDayBtn).not.toBeDisabled();
-    fireEvent.click(addDayBtn);
-    expect(storeState.addDay).toHaveBeenCalledTimes(1);
+    // Both the day-column banner and the BUILD-tab hint surface the change.
+    expect(screen.getAllByText(/Route changed/).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(
+      screen.getByRole("button", { name: "RE-SPLIT" }),
+    ).toBeInTheDocument();
+    // Days remain visible (dimmed) for orientation.
+    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
   });
 });

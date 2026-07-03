@@ -167,6 +167,40 @@ function dayQuality(
   };
 }
 
+/** Coordinate at a given along-route km on a raw LineString (break markers). */
+export function coordinateAtKm(
+  coordinates: ReadonlyArray<ReadonlyArray<number>>,
+  targetKm: number,
+): { lng: number; lat: number } | null {
+  let km = 0;
+  let previous: { lng: number; lat: number } | null = null;
+  for (const coordinate of coordinates) {
+    const [lng, lat] = coordinate;
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    if (previous) km += haversineKm(previous.lat, previous.lng, lat, lng);
+    if (km >= targetKm) return { lng, lat };
+    previous = { lng, lat };
+  }
+  return previous;
+}
+
+/**
+ * Raw (unsnapped) break targets for a route — used to pre-fetch overnight
+ * town candidates near each target before running the split.
+ */
+export function rawBreakTargetKms(
+  totalKm: number,
+  dailyKmTarget: number,
+  forcedDays: number | null,
+): number[] {
+  return targetBreaksForRegion(
+    0,
+    totalKm,
+    Math.max(1, dailyKmTarget),
+    forcedDays,
+  );
+}
+
 export function splitIntoDays(
   segments: RouteSegment[],
   opts: SplitOptions,

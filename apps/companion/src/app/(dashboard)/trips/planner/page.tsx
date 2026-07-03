@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
 import {
   useTripStore,
-  MAX_TRIP_DAYS,
   normalizeDayFinish,
   dayFinishWaypoint,
 } from "@/stores/trip";
@@ -15,13 +14,10 @@ import {
   Save,
   Clock3,
   GripVertical,
-  Link2,
   Milestone,
-  Plus,
   ShieldCheck,
   RotateCcw,
   RotateCw,
-  Trash2,
   Users,
   Upload,
   FileUp,
@@ -39,8 +35,17 @@ import {
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import {
+  coordinateAtKm,
+  rawBreakTargetKms,
+  splitIntoDays,
+} from "@/lib/planner/day-splitter";
+import { fetchOvernightTowns } from "@/lib/planner/api";
 import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
-import { findPlannerQualitySegment } from "@/lib/trip-planner-map";
+import {
+  deriveDayQualitySegments,
+  findPlannerQualitySegment,
+} from "@/lib/trip-planner-map";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
@@ -224,9 +229,6 @@ export default function TripPlannerPage() {
   // ── Multi-day store selectors ────────────────────────────────────────
   const selectedDayIndex = useTripStore((s) => s.selectedDayIndex);
   const setSelectedDay = useTripStore((s) => s.setSelectedDay);
-  const addDay = useTripStore((s) => s.addDay);
-  const removeDay = useTripStore((s) => s.removeDay);
-  const relinkDayStart = useTripStore((s) => s.relinkDayStart);
   // Stable selector identity — the store fn is recreated each call, but
   // we select the *selected day's waypoints array* so useMemo below only fires
   // when the waypoints array actually changes (reference equality).
@@ -250,6 +252,9 @@ export default function TripPlannerPage() {
   );
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
   const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
+  const splitState = useTripStore((s) => s.splitState);
+  const dayPlans = useTripStore((s) => s.dayPlans);
+  const applySplit = useTripStore((s) => s.applySplit);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
@@ -314,6 +319,87 @@ export default function TripPlannerPage() {
     },
     [insertWaypointBefore, selectPlannerSegment],
   );
+  // ── Phase 2: on-demand day split (addendum §4/§5) ──
+  // Daily km is the primary input; a day count is an OPTIONAL override.
+  const [forcedDays, setForcedDays] = useState<number | null>(null);
+  const [splitting, setSplitting] = useState(false);
+  const handleSplit = useCallback(async () => {
+    const trip = activeTripRef.current;
+    const routeDay = trip?.days[0];
+    const coordinates = routeDay?.routeGeometry?.coordinates;
+    if (!routeDay || !coordinates || coordinates.length < 2) {
+      toast.error(t("Build a route first — the splitter needs a routed line."));
+      return;
+    }
+    setSplitting(true);
+    try {
+      const segments = deriveDayQualitySegments(routeDay);
+      const totalKm = routeDay.distanceKm;
+      const targets = rawBreakTargetKms(totalKm, dailyKmTarget, forcedDays);
+      // Overnight-town candidates near each raw break (real POI endpoint);
+      // a failed fetch just means breaks land at raw distances.
+      const towns = await fetchOvernightTowns(coordinates, targets).catch(
+        () => [],
+      );
+      const plans = splitIntoDays(
+        segments,
+        {
+          dailyKmTarget,
+          forcedDays,
+          totalTimeMin: routeDay.durationMinutes,
+        },
+        towns,
+        useTripStore.getState().pinnedBreakKms,
+      );
+      if (plans.length === 0) {
+        toast.error(t("Could not split this route into days."));
+        return;
+      }
+      applySplit(plans);
+    } finally {
+      setSplitting(false);
+    }
+  }, [applySplit, dailyKmTarget, forcedDays]);
+  // Changing the DAY CONTROLS while split means "recompute now" — route
+  // and pref edits, by contrast, only mark the split stale (§5).
+  const splitInputsRef = useRef({ dailyKmTarget, forcedDays });
+  useEffect(() => {
+    const previous = splitInputsRef.current;
+    splitInputsRef.current = { dailyKmTarget, forcedDays };
+    if (splitState !== "split") return;
+    if (
+      previous.dailyKmTarget === dailyKmTarget &&
+      previous.forcedDays === forcedDays
+    ) {
+      return;
+    }
+    void handleSplit();
+  }, [dailyKmTarget, forcedDays, splitState, handleSplit]);
+  // Day-break markers for the map — one per split boundary (not the finish).
+  const dayBreakMarkers = useMemo(() => {
+    if (splitState === "unsplit" || !dayPlans || dayPlans.length < 2) return [];
+    const trip = displayedTrip;
+    // Working-day model only: a loaded multi-day trip has per-day geometry
+    // and draws its own boundaries via the waypoint markers.
+    const coordinates =
+      trip && trip.days.length === 1
+        ? trip.days[0]?.routeGeometry?.coordinates
+        : undefined;
+    if (!coordinates || coordinates.length < 2) return [];
+    return dayPlans.slice(0, -1).flatMap((plan) => {
+      const at = coordinateAtKm(coordinates, plan.endKm);
+      return at
+        ? [
+            {
+              lng: at.lng,
+              lat: at.lat,
+              label: plan.endTown,
+              pinned: plan.breakPinned === true,
+            },
+          ]
+        : [];
+    });
+  }, [splitState, dayPlans, displayedTrip]);
   const liveRouteEnabled =
     routeDirty &&
     selectedDay !== null &&
@@ -746,7 +832,16 @@ export default function TripPlannerPage() {
     // Resolve or lazily create the backend trip. Reuse the same pattern
     // as the existing handleSave so collab/deep-link trips are updated
     // in place rather than duplicated.
-    const currentTrip = activeTripRef.current;
+    // Persist the computed split: rewrite trip.days from the DayPlans so
+    // the existing per-day save contract carries them (addendum decision).
+    if (
+      useTripStore.getState().splitState === "split" &&
+      useTripStore.getState().activeTrip?.days.length === 1
+    ) {
+      useTripStore.getState().materializeSplit();
+    }
+    const currentTrip =
+      useTripStore.getState().activeTrip ?? activeTripRef.current;
     const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
     // Use the store's saveDays() to derive the canonical per-day payload.
     // Calling getState() inside a click handler / useCallback is safe Zustand
@@ -1127,7 +1222,9 @@ export default function TripPlannerPage() {
     setActiveTrip,
     setGenerating,
   ]);
-  const handleSelectOption = useCallback(
+  // Dormant until the multi-day option cards return (see the placeholder
+  // comment in the JSX) — underscore keeps the unused-var lint quiet.
+  const _handleSelectOption = useCallback(
     async (option: GeneratedTripOption) => {
       if (generationLockRef.current) return;
       if (option.selected || !serverTripId) {
@@ -1349,126 +1446,101 @@ export default function TripPlannerPage() {
             </div>
           </div>
 
-          {/* Legs list (replaces bottom timeline strip). When no trip
-              is loaded, render 3 disabled placeholder day chips so the
-              existing test (`getByRole('button', { name: /Day 1/ })`)
-              still resolves and stays non-interactive. */}
+          {/* Day column (addendum): days are DERIVED by the splitter, not
+              hand-edited. unsplit = empty column; split = DayPlans; stale =
+              dimmed DayPlans + re-split hint. With no trip loaded, render 3
+              disabled placeholder chips so the existing test
+              (`getByRole('button', { name: /Day 1/ })`) still resolves. */}
           <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
-            {timelineDays.map((day, i) => {
-              const isActive = !!activeTrip && selectedDayIndex === i;
-              // startLinked is only present on real TripDay objects (not placeholders)
-              const startLinked =
-                "startLinked" in day ? day.startLinked : undefined;
-              // Only offer relink once the predecessor actually has a finish to
-              // mirror — an explicit `end` OR a terminal accommodation (a
-              // generated overnight day). Relinking with no predecessor finish
-              // would form an invalid link (the store guards this too, so the
-              // button would otherwise be a no-op).
-              const prevHasFinish = !!dayFinishWaypoint(
-                activeTrip?.days[i - 1]?.waypoints ?? [],
-              );
-              const showRelink =
-                !!activeTrip &&
-                i >= 1 &&
-                startLinked === false &&
-                prevHasFinish;
-              return (
-                <div
+            {!activeTrip ? (
+              timelineDays.map((day) => (
+                <button
                   key={day.dayNumber}
-                  className="relative flex flex-col gap-1"
+                  type="button"
+                  disabled
+                  aria-label={`Day ${day.dayNumber}`}
+                  className="rounded-[12px] border border-line bg-cream p-3 text-left opacity-50"
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!activeTrip) return;
-                      setSelectedDay(i);
-                    }}
-                    disabled={!activeTrip}
-                    aria-pressed={isActive}
-                    aria-label={`Day ${day.dayNumber}${day.title ? ` ${day.title}` : ""}`}
-                    className={`rounded-[12px] border p-3 pr-9 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isActive
-                        ? "border-ink bg-ink text-cream"
-                        : "border-line bg-cream text-ink hover:border-line-strong"
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
+                      {String(day.dayNumber).padStart(2, "0")}
+                    </div>
+                    <div className="truncate text-[13px] font-bold text-ink">
+                      {t("Day")} {day.dayNumber}
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : !dayPlans || dayPlans.length === 0 ? (
+              <p className="px-1 pt-2 text-[12px] leading-relaxed text-fg-dim">
+                {t(
+                  "No days yet — the route is live while you build it. When it's ready, use Split into days in the BUILD tab to lay out the itinerary. ",
+                )}
+              </p>
+            ) : (
+              <>
+                {splitState === "stale" ? (
+                  <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
+                    <span className="text-[11.5px] font-semibold text-ink">
+                      {t("Route changed ")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleSplit()}
+                      className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
+                    >
+                      {t("RE-SPLIT")}
+                    </button>
+                  </div>
+                ) : null}
+                {dayPlans.map((plan) => (
+                  <div
+                    key={plan.dayNumber}
+                    aria-label={`Day ${plan.dayNumber}`}
+                    className={`rounded-[12px] border border-line bg-cream p-3 text-left transition ${
+                      splitState === "stale" ? "opacity-45" : ""
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div
-                          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] font-mono text-[11px] font-bold ${
-                            isActive
-                              ? "bg-cream/15 text-cream"
-                              : "bg-paper text-ink"
-                          }`}
-                        >
-                          {String(day.dayNumber).padStart(2, "0")}
+                      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
+                        {String(plan.dayNumber).padStart(2, "0")}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-bold text-ink">
+                          {t("Day")} {plan.dayNumber}
                         </div>
-                        <div className="truncate text-[13px] font-bold">
-                          {day.title
-                            ? day.title
-                            : `${t("Day")} ${day.dayNumber}`}
+                        <div className="truncate font-mono text-[10px] text-fg-mute">
+                          {plan.startTown.toUpperCase()} →{" "}
+                          {plan.endTown.toUpperCase()}
                         </div>
                       </div>
                     </div>
-                    <div
-                      className={`mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] ${
-                        isActive ? "text-cream/70" : "text-fg-dim"
-                      }`}
-                    >
-                      {day.distanceKm ? (
-                        <span>{Math.round(day.distanceKm)} KM</span>
+                    <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-fg-dim">
+                      <span>{Math.round(plan.distanceKm)} KM</span>
+                      {plan.timeMin ? (
+                        <span>{formatDuration(plan.timeMin)}</span>
                       ) : null}
-                      {day.elevationGain ? (
-                        <span>↗ {Math.round(day.elevationGain)}M</span>
-                      ) : null}
-                      {day.durationMinutes ? (
-                        <span>{formatDuration(day.durationMinutes)}</span>
+                      {plan.quality.score !== null ? (
+                        <span className="text-accent">
+                          {plan.quality.score.toFixed(1)} / 5
+                        </span>
                       ) : null}
                     </div>
-                  </button>
-                  {/* Per-day remove button — sibling of tab button, absolutely positioned top-right */}
-                  {!!activeTrip && activeTrip.days.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeDay(i);
-                      }}
-                      aria-label={t("Remove day {n}", { n: day.dayNumber })}
-                      className={`absolute right-2 top-2 z-10 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] transition hover:opacity-70 ${
-                        isActive ? "text-cream/70" : "text-fg-dim"
-                      }`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                  {/* "Link to previous day" — shown for days ≥1 where the
-                      rider manually broke the start link */}
-                  {showRelink && (
-                    <button
-                      type="button"
-                      onClick={() => relinkDayStart(i)}
-                      className="flex items-center gap-1.5 rounded-[8px] border border-line px-3 py-1.5 text-left text-[11px] text-fg-dim transition hover:border-line-strong hover:text-ink"
-                    >
-                      <Link2 size={11} />
-                      {t("Link to previous day")}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {/* "+ Add day" button — shown only when an active trip exists */}
-            {!!activeTrip && (
-              <button
-                type="button"
-                onClick={addDay}
-                disabled={activeTrip.days.length >= MAX_TRIP_DAYS}
-                aria-label={t("Add day")}
-                className="flex items-center gap-1.5 rounded-[12px] border border-dashed border-line px-3 py-2.5 text-[13px] text-fg-dim transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Plus size={14} />
-                {t("Add day")}
-              </button>
+                    {plan.noTownNearby ? (
+                      <p className="mt-1.5 text-[10.5px] leading-snug text-fg-mute">
+                        {t(
+                          "No overnight town near this break — it lands at the raw distance. ",
+                        )}
+                      </p>
+                    ) : null}
+                    {plan.breakPinned ? (
+                      <p className="mt-1.5 font-mono text-[9.5px] tracking-[0.4px] text-fg-mute">
+                        {t("BREAK PINNED ")}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </aside>
@@ -1499,6 +1571,7 @@ export default function TripPlannerPage() {
               }
               collaboratorCursors={collabSession.cursors}
               suggestions={collabSession.suggestions}
+              dayBreaks={dayBreakMarkers}
               {...(serverTripId
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
@@ -1790,51 +1863,24 @@ export default function TripPlannerPage() {
                   </select>
                 </div>
 
-                {/* Days segmented control — full 1..14 supported range. */}
-                <div className="mt-4">
-                  <div className="mb-2 flex justify-between">
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                      {t("Days")}
-                    </span>
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-                      {days}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setDays(n)}
-                        aria-label={`Set days to ${n}`}
-                        className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
-                          days === n
-                            ? "border-ink bg-ink text-cream"
-                            : "border-line bg-cream text-fg-dim hover:text-ink"
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                  {/* sr-only semantic input keeps `getByLabelText("Number of
-                      days")` resolvable for the existing tests. */}
-                  <label htmlFor="trip-planner-days" className="sr-only">
-                    {t("Number of days")}
-                  </label>
-                  <input
-                    id="trip-planner-days"
-                    type="number"
-                    min={1}
-                    max={14}
-                    value={days}
-                    tabIndex={-1}
-                    onChange={(event) =>
-                      setDays(clampNumberInput(event.target.value, 1, 14, 3))
-                    }
-                    className="sr-only"
-                  />
-                </div>
+                {/* sr-only semantic input keeps `getByLabelText("Number of
+                    days")` resolvable for the existing tests; the visible
+                    day controls moved to §03 Split into days. */}
+                <label htmlFor="trip-planner-days" className="sr-only">
+                  {t("Number of days")}
+                </label>
+                <input
+                  id="trip-planner-days"
+                  type="number"
+                  min={1}
+                  max={14}
+                  value={days}
+                  tabIndex={-1}
+                  onChange={(event) =>
+                    setDays(clampNumberInput(event.target.value, 1, 14, 3))
+                  }
+                  className="sr-only"
+                />
 
                 <div className="mt-4">
                   <label
@@ -1855,7 +1901,7 @@ export default function TripPlannerPage() {
                 </div>
 
                 <Button
-                  variant="primary"
+                  variant="secondary"
                   size="md"
                   block
                   className="mt-4"
@@ -1863,8 +1909,85 @@ export default function TripPlannerPage() {
                   disabled={isGenerating}
                   onClick={handleGenerate}
                 >
-                  {isGenerating ? t("Generating…") : t("Generate route")}
+                  {isGenerating ? t("Drafting…") : t("Draft route")}
                 </Button>
+              </div>
+
+              {/* §03 DAYS & SPLIT — the route is LIVE; days are computed on
+                  demand (addendum). Daily km is primary; day count is an
+                  optional override. */}
+              <div>
+                <SectionStamp n="03">{t("Split into days ")}</SectionStamp>
+                <div className="mb-2 flex justify-between">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+                    {t("Days")}
+                  </span>
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
+                    {forcedDays ?? t("Auto")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForcedDays(null)}
+                  aria-pressed={forcedDays === null}
+                  className={`mb-1 w-full rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                    forcedDays === null
+                      ? "border-ink bg-ink text-cream"
+                      : "border-line bg-cream text-fg-dim hover:text-ink"
+                  }`}
+                >
+                  {t("Auto (from daily km)")}
+                </button>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => {
+                        setForcedDays(n);
+                        setDays(n);
+                      }}
+                      aria-label={`Force ${n} days`}
+                      className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                        forcedDays === n
+                          ? "border-ink bg-ink text-cream"
+                          : "border-line bg-cream text-fg-dim hover:text-ink"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                {(() => {
+                  const routeKm = displayedTrip?.days[0]?.distanceKm ?? 0;
+                  const perDay = forcedDays ? routeKm / forcedDays : null;
+                  return perDay !== null && perDay > 400 ? (
+                    <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
+                      {t(
+                        "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route. ",
+                      )}
+                    </p>
+                  ) : null;
+                })()}
+                <Button
+                  variant="accent"
+                  size="md"
+                  block
+                  uppercase
+                  className="mt-3"
+                  loading={splitting}
+                  disabled={splitting || !displayedTrip?.days[0]?.routeGeometry}
+                  onClick={() => void handleSplit()}
+                >
+                  {splitState === "unsplit"
+                    ? t("Split into days")
+                    : t("Re-split")}
+                </Button>
+                {splitState === "stale" ? (
+                  <p className="mt-2 text-[11.5px] leading-snug text-accent">
+                    {t("Route changed — re-split to refresh the days. ")}
+                  </p>
+                ) : null}
               </div>
 
               {/* Advanced — surfaces, min quality, avoid flags. */}
@@ -1938,7 +2061,7 @@ export default function TripPlannerPage() {
               </details>
 
               <div>
-                <SectionStamp n="03">{t("Region discovery ")}</SectionStamp>
+                <SectionStamp n="04">{t("Region discovery ")}</SectionStamp>
                 <p className="text-[12px] leading-relaxed text-fg-dim">
                   {t("Draw a region on the map to surface ")}
                   <b className="text-ink">{t("Fun Zones")}</b>

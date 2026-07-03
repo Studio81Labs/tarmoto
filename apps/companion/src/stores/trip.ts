@@ -2,8 +2,11 @@ import { create } from "zustand";
 
 /** Maximum number of days in a multi-day trip (companion mirror of the backend cap). */
 export const MAX_TRIP_DAYS = 14;
+import type { Position as GeoJSONPosition } from "geojson";
+import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
+import type { DayPlan, SplitState } from "@/lib/planner/types";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
 import type {
   RoutePreviewSegment,
@@ -173,6 +176,32 @@ interface TripState {
    * (`deriveDayQualitySegments`), not `day.segments`.
    */
   selectedPlannerSegmentId: string | null;
+
+  /**
+   * Two-phase planner lifecycle (addendum): the route is LIVE; days are
+   * computed on demand. 'unsplit' = no days yet (left column empty);
+   * 'split' = dayPlans current; 'stale' = route/prefs changed since the
+   * last split — days render dimmed until the rider re-splits.
+   */
+  splitState: SplitState;
+  /** Day plans from the last split (kept for dimmed display while stale). */
+  dayPlans: DayPlan[] | null;
+  /** Manual day-break overrides (along-route km) that survive re-splits. */
+  pinnedBreakKms: number[];
+
+  /** Store the splitter result and enter the 'split' state. */
+  applySplit: (dayPlans: DayPlan[], pinnedBreakKms?: number[]) => void;
+  /** Drop the split back to 'unsplit' (route stays). */
+  clearSplit: () => void;
+  /** Pin/replace the manual break overrides (addendum §6). */
+  setPinnedBreaks: (kms: number[]) => void;
+  /**
+   * Rewrite `activeTrip.days` from the current dayPlans so the existing
+   * save contract persists the split: day k = boundary start + the
+   * original vias/stops that fall inside + boundary finish, with the
+   * route polyline sliced per day. No-op unless state is 'split'.
+   */
+  materializeSplit: () => void;
 
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
@@ -603,6 +632,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     focusedSegmentId: null,
     hoveredSegmentId: null,
     selectedPlannerSegmentId: null,
+    splitState: "unsplit",
+    dayPlans: null,
+    pinnedBreakKms: [],
     undoStack: [],
     redoStack: [],
 
@@ -619,6 +651,15 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         focusedSegmentId: null,
         hoveredSegmentId: null,
         selectedPlannerSegmentId: null,
+        // A loaded multi-day trip is already "split" — show its days in
+        // the day column; a fresh draft/single-day trip starts unsplit.
+        splitState:
+          activeTrip && activeTrip.days.length > 1 ? "split" : "unsplit",
+        dayPlans:
+          activeTrip && activeTrip.days.length > 1
+            ? dayPlansFromTripDays(activeTrip.days)
+            : null,
+        pinnedBreakKms: [],
         undoStack: [],
         redoStack: [],
         canUndo: false,
@@ -629,6 +670,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     markRouteDirty: () =>
       set((s) => ({
         routeDirty: true,
+        // Routing inputs changed — a computed split no longer matches the
+        // route. Keep the plans for dimmed display, but flag them stale.
+        ...(s.splitState === "split"
+          ? { splitState: "stale" as SplitState }
+          : {}),
         // Avoid-option toggles are trip-level, but only mark ROUTABLE days
         // (>=2 routing waypoints) stale. Empty/under-specified days can't be
         // re-routed by the live hook (it bails for <2 routing waypoints), so
@@ -652,6 +698,112 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
     selectPlannerSegment: (segmentId) =>
       set({ selectedPlannerSegmentId: segmentId }),
+
+    applySplit: (dayPlans, pinnedBreakKms) =>
+      set((state) => ({
+        dayPlans,
+        splitState: "split",
+        pinnedBreakKms: pinnedBreakKms ?? state.pinnedBreakKms,
+      })),
+    clearSplit: () =>
+      set({ splitState: "unsplit", dayPlans: null, pinnedBreakKms: [] }),
+    setPinnedBreaks: (kms) => set({ pinnedBreakKms: kms }),
+
+    materializeSplit: () =>
+      set((state) => {
+        const trip = state.activeTrip;
+        const plans = state.dayPlans;
+        if (
+          !trip ||
+          !plans ||
+          plans.length === 0 ||
+          state.splitState !== "split" ||
+          // Working-day model only: a loaded multi-day trip already has
+          // materialized days; re-slicing from day 1's geometry alone
+          // would corrupt them.
+          trip.days.length !== 1
+        ) {
+          return state;
+        }
+        const routeDay = trip.days[0];
+        const coordinates = routeDay?.routeGeometry?.coordinates;
+        if (!routeDay || !coordinates || coordinates.length < 2) return state;
+
+        const kmAt = cumulativeKm(coordinates);
+        const totalKm = kmAt[kmAt.length - 1] ?? 0;
+        if (totalKm <= 0) return state;
+        // Along-route position of every original waypoint (nearest vertex).
+        const waypointKms = routeDay.waypoints.map((waypoint) =>
+          nearestVertexKm(coordinates, kmAt, waypoint.location),
+        );
+
+        const days: TripDay[] = plans.map((plan, index) => {
+          const fromKm = index === 0 ? 0 : (plans[index - 1]?.endKm ?? 0);
+          const toKm = index === plans.length - 1 ? totalKm : plan.endKm;
+          const sliced = sliceCoordinatesByKm(coordinates, kmAt, fromKm, toKm);
+          const startCoord = sliced[0]!;
+          const endCoord = sliced[sliced.length - 1]!;
+
+          const interior = routeDay.waypoints.filter((waypoint, wIndex) => {
+            if (waypoint.type === "start" || waypoint.type === "end")
+              return false;
+            const km = waypointKms[wIndex]!;
+            return km > fromKm + 0.5 && km < toKm - 0.5;
+          });
+
+          const startWaypoint: Waypoint =
+            index === 0
+              ? (routeDay.waypoints.find((w) => w.type === "start") ?? {
+                  id: `split-start-${plan.dayNumber}`,
+                  name: plan.startTown,
+                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                  type: "start",
+                })
+              : {
+                  id: `split-start-${plan.dayNumber}`,
+                  name: plan.startTown,
+                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                  type: "start",
+                };
+          const endWaypoint: Waypoint =
+            index === plans.length - 1
+              ? (routeDay.waypoints.find((w) => w.type === "end") ?? {
+                  id: `split-end-${plan.dayNumber}`,
+                  name: plan.endTown,
+                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                  type: "end",
+                })
+              : {
+                  id: `split-end-${plan.dayNumber}`,
+                  name: plan.endTown,
+                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                  type: "end",
+                };
+
+          const share = totalKm > 0 ? (toKm - fromKm) / totalKm : 0;
+          return {
+            dayNumber: plan.dayNumber,
+            title: `Day ${plan.dayNumber}`,
+            waypoints: [startWaypoint, ...interior, endWaypoint],
+            routeGeometry: { type: "LineString", coordinates: sliced },
+            distanceKm: plan.distanceKm,
+            durationMinutes: plan.timeMin,
+            elevationGain: Math.round(routeDay.elevationGain * share),
+            avgQuality: plan.quality.score ?? 0,
+            segments: [],
+            startLinked: index > 0,
+          };
+        });
+
+        return {
+          activeTrip: {
+            ...trip,
+            days,
+            num_days: days.length,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }),
 
     addWaypoint: (dayIndex, waypoint) =>
       set((state) => {
@@ -947,6 +1099,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           focusedSegmentId: null,
           hoveredSegmentId: null,
           selectedPlannerSegmentId: null,
+          ...(state.splitState === "split"
+            ? { splitState: "stale" as SplitState }
+            : {}),
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -979,6 +1134,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           focusedSegmentId: null,
           hoveredSegmentId: null,
           selectedPlannerSegmentId: null,
+          ...(state.splitState === "split"
+            ? { splitState: "stale" as SplitState }
+            : {}),
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -1417,6 +1575,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         focusedSegmentId: null,
         hoveredSegmentId: null,
         selectedPlannerSegmentId: null,
+        splitState: "unsplit",
+        dayPlans: null,
+        pinnedBreakKms: [],
         undoStack: [],
         redoStack: [],
       }),
@@ -1468,6 +1629,11 @@ function commitTripChange(
     redoStack: [],
     canUndo: undoStack.length > 0,
     canRedo: false,
+    // Any waypoint mutation invalidates a computed split (addendum §3):
+    // days dim until the rider explicitly re-splits.
+    ...(state.splitState === "split"
+      ? { splitState: "stale" as SplitState }
+      : {}),
   };
 }
 
@@ -1527,4 +1693,88 @@ function mergePlannerParameters(
     ...next,
     days: Math.max(next.days, dayCount),
   };
+}
+
+// ── Split materialization helpers (addendum §4) ──────────────────────────────
+
+function cumulativeKm(coordinates: GeoJSONPosition[]): number[] {
+  const kms: number[] = [0];
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const [lng1, lat1] = coordinates[i - 1] ?? [];
+    const [lng2, lat2] = coordinates[i] ?? [];
+    const step =
+      typeof lng1 === "number" &&
+      typeof lat1 === "number" &&
+      typeof lng2 === "number" &&
+      typeof lat2 === "number"
+        ? haversineKm(lat1, lng1, lat2, lng2)
+        : 0;
+    kms.push((kms[i - 1] ?? 0) + step);
+  }
+  return kms;
+}
+
+function nearestVertexKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  location: { lat: number; lng: number },
+): number {
+  let bestKm = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < coordinates.length; i += 1) {
+    const [lng, lat] = coordinates[i] ?? [];
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    const distance = haversineKm(lat, lng, location.lat, location.lng);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestKm = kmAt[i] ?? 0;
+    }
+  }
+  return bestKm;
+}
+
+function sliceCoordinatesByKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  fromKm: number,
+  toKm: number,
+): GeoJSONPosition[] {
+  const sliced = coordinates.filter((_, index) => {
+    const km = kmAt[index] ?? 0;
+    return km >= fromKm && km <= toKm;
+  });
+  return sliced.length >= 2
+    ? sliced
+    : coordinates.slice(0, Math.min(2, coordinates.length));
+}
+
+/**
+ * Display DayPlans for a trip loaded WITH days (saved multi-day trips):
+ * the day column shows them as an existing split. Segment/stay detail
+ * isn't reconstructed — only what the column renders.
+ */
+function dayPlansFromTripDays(days: TripDay[]): DayPlan[] {
+  let endKm = 0;
+  return days.map((day) => {
+    endKm += day.distanceKm;
+    const startName = day.waypoints.find((w) => w.type === "start")?.name;
+    const finishName = dayFinishWaypoint(day.waypoints)?.name;
+    return {
+      dayNumber: day.dayNumber,
+      segmentIds: [],
+      distanceKm: day.distanceKm,
+      timeMin: day.durationMinutes,
+      quality: {
+        distanceKm: day.distanceKm,
+        timeMin: day.durationMinutes,
+        score: day.avgQuality || null,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: startName ?? "Start",
+      endTown: finishName ?? "Finish",
+      suggestedStays: [],
+      endKm: Math.round(endKm * 10) / 10,
+    };
+  });
 }

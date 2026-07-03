@@ -1,4 +1,4 @@
-import { SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
+import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   poiApi,
   routingApi,
@@ -162,6 +162,69 @@ async function fetchPois(
     ...(alongRoute?.data.pois.map(alongRoutePoiToPlannerPoi) ?? []),
     ...(stays?.data.accommodations.map(accommodationToPlannerPoi) ?? []),
   ];
+}
+
+/**
+ * Overnight-town candidates for day-break snapping: one small
+ * accommodations query around each raw break target (real /poi endpoint).
+ * A failed query just yields no candidates for that break — the splitter
+ * falls back to the raw distance there.
+ */
+export async function fetchOvernightTowns(
+  coordinates: ReadonlyArray<ReadonlyArray<number>>,
+  targetKms: readonly number[],
+  init?: { signal?: AbortSignal },
+): Promise<PlannerPoi[]> {
+  if (coordinates.length < 2 || targetKms.length === 0) return [];
+  // Cumulative km per vertex to locate each target's coordinate.
+  const kms: number[] = [0];
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const [lng1, lat1] = coordinates[i - 1] ?? [];
+    const [lng2, lat2] = coordinates[i] ?? [];
+    const step =
+      typeof lng1 === "number" &&
+      typeof lat1 === "number" &&
+      typeof lng2 === "number" &&
+      typeof lat2 === "number"
+        ? haversineKm(lat1, lng1, lat2, lng2)
+        : 0;
+    kms.push((kms[i - 1] ?? 0) + step);
+  }
+  const anchors = targetKms.map((target) => {
+    let best = 0;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < kms.length; i += 1) {
+      const delta = Math.abs((kms[i] ?? 0) - target);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = i;
+      }
+    }
+    const [lng, lat] = coordinates[best] ?? [];
+    return typeof lng === "number" && typeof lat === "number"
+      ? { lat, lng }
+      : null;
+  });
+
+  const results = await Promise.allSettled(
+    anchors.map((anchor) =>
+      anchor
+        ? poiApi.getAccommodations(
+            { lat: anchor.lat, lng: anchor.lng, radius_km: 25 },
+            init,
+          )
+        : Promise.reject(new Error("no anchor")),
+    ),
+  );
+  const towns = new Map<string, PlannerPoi>();
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    for (const stay of result.value.data.accommodations) {
+      const poi = accommodationToPlannerPoi(stay);
+      towns.set(poi.id, poi);
+    }
+  }
+  return [...towns.values()];
 }
 
 export function createPlannerApi(): PlannerApi {
