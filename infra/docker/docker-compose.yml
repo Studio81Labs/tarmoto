@@ -89,10 +89,20 @@ services:
     volumes:
       - ../valhalla/custom_files:/custom_files
     environment:
-      # First start downloads this extract + builds tiles into the volume;
+      # First start downloads these extracts + builds tiles into the volume;
       # later starts reuse them automatically (the image stores the pbf hash
-      # and skips the rebuild when the data is unchanged).
-      tile_urls: https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+      # and skips the rebuild when the data is unchanged). Space-separated
+      # list — the CZ→AT→SI→HR(+HU) corridor covers central-Europe test
+      # routes (e.g. Prague→Split) at ~2.3 GB of extracts; full Europe
+      # (~30 GB pbf, 6h+ build, >32 GB RAM) is deliberately NOT used here.
+      # After changing this list, delete infra/valhalla/custom_files and
+      # restart the service to force a rebuild.
+      tile_urls: >-
+        https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+        https://download.geofabrik.de/europe/austria-latest.osm.pbf
+        https://download.geofabrik.de/europe/slovenia-latest.osm.pbf
+        https://download.geofabrik.de/europe/croatia-latest.osm.pbf
+        https://download.geofabrik.de/europe/hungary-latest.osm.pbf
       # Must be False so the FIRST run actually builds tiles from the pbf.
       # (True = "ignore the pbf, load existing tiles" — which crash-loops on an
       # empty volume because there are no tiles yet.)

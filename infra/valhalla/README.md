@@ -2,7 +2,8 @@
 
 The route planner routes against a local Valhalla (OSS) instead of a public
 demo. Chosen for per-request dynamic costing (motorcycle / curvy later, no
-rebuild). Czech-Republic extract by default.
+rebuild). Default coverage is the CZ → AT → SI → HR (+HU) corridor so
+central-Europe test routes (e.g. Prague → Split) work out of the box.
 
 ## Build + run (first start builds tiles — slow, one-time)
 
@@ -14,9 +15,13 @@ trigger the heavy first-run tile build). Start it explicitly:
     # first run downloads the extract + builds tiles into infra/valhalla/custom_files
     # (git-ignored); subsequent runs reuse them.
 
-For a larger region, change `tile_urls` in the compose service (e.g.
-`https://download.geofabrik.de/europe/dach-latest.osm.pbf`) and delete
-`infra/valhalla/custom_files` to force a rebuild.
+For a different region, change `tile_urls` in the compose service (it takes
+a space-separated list of Geofabrik extracts) and delete
+`infra/valhalla/custom_files` to force a rebuild. Routing outside the built
+extracts fails or snaps to the nearest covered road — coverage is exactly
+the union of the listed extracts. Full `europe-latest.osm.pbf` works in
+principle but means a ~30 GB download, a 6h+ tile build, and >32 GB RAM —
+prefer listing the countries you actually ride.
 
 ## Point the backend at it
 
