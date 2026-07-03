@@ -78,6 +78,41 @@ export interface PlannerPoi {
   kmAlongRoute?: number;
 }
 
+/** Planner trip split lifecycle (addendum): route is live, days are on demand. */
+export type SplitState = "unsplit" | "split" | "stale";
+
+export interface SplitOptions {
+  dailyKmTarget: number;
+  /** Explicit day-count override; null = auto (derived from dailyKmTarget). */
+  forcedDays: number | null;
+  /** Route-level ride time, distributed across days by distance share. */
+  totalTimeMin?: number;
+}
+
+export interface DayPlan {
+  dayNumber: number;
+  /** Quality segments whose midpoint falls inside this day. */
+  segmentIds: string[];
+  distanceKm: number;
+  timeMin: number;
+  quality: RouteQualitySummary;
+  startTown: string;
+  endTown: string;
+  /** True when no overnight town was near the target break distance. */
+  noTownNearby?: boolean;
+  suggestedStays: PlannerPoi[];
+  /** Manual break override at this day's end — survives re-splits. */
+  breakPinned?: boolean;
+  /** Along-route km where this day ends; the last day ends at totalKm. */
+  endKm: number;
+}
+
+export interface GeoResult {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
 export interface GeneratedPlannerRoute {
   /** The untouched backend routing response (geometry, stats). */
   raw: RouteResponse;
