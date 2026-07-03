@@ -5,17 +5,14 @@ import {
   ChevronDown,
   Download,
   FileDown,
-  FileText,
   Link as LinkIcon,
   Loader2,
-  Printer,
   Smartphone,
 } from "lucide-react";
 import { ApiError, tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
 import {
-  TRIP_PRINT_STORAGE_KEY,
   buildMobileDeepLink,
   buildTripShareUrl,
   tripFileName,
@@ -24,33 +21,16 @@ import {
 import { Button } from "@tarmoto/ui";
 interface TripExportMenuProps {
   trip: Trip | null;
-  /**
-   * Whether this menu is rendered next to a backend-persisted trip
-   * ("saved-trip", default) or against the in-memory planner draft
-   * ("planner"). Drives the PDF download route: `saved-trip` opens the
-   * per-id print page so members/region come from the API, `planner`
-   * opens the local-snapshot print page.
-   *
-   * Avoid status-based heuristics here — a backend-persisted trip can
-   * legitimately be in `draft` status (created but not yet route-
-   * generated), so guessing from `trip.status` would silently route
-   * those trips to the planner print path and drop API-only fields.
-   */
-  context?: "saved-trip" | "planner";
 }
 /**
- * Export menu for a planned trip (US-39): GPX download, shareable link,
- * mobile deep-link handoff with token, printable summary, and a one-click
- * PDF download (browser print-to-PDF on a print-only page).
+ * Export menu for a planned trip (US-39): GPX download, shareable link, and a
+ * mobile deep-link handoff with token.
  *
  * Disabled until a trip is loaded — the actions all need trip data, and the
  * menu doubles as a visual cue that "Load demo trip" or a generated trip is
  * the next step.
  */
-export function TripExportMenu({
-  trip,
-  context = "saved-trip",
-}: TripExportMenuProps) {
+export function TripExportMenu({ trip }: TripExportMenuProps) {
   const [open, setOpen] = useState(false);
   const [pushPending, setPushPending] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -135,47 +115,6 @@ export function TripExportMenu({
       setPushPending(false);
     }
   }
-  /**
-   * Open the print page for `trip`, optionally with the `autoprint` flag
-   * that lets the page trigger `window.print()` after hydration.
-   *
-   * Routes by the explicit `context` prop, not by inspecting `trip.status`:
-   * a backend-persisted trip can legitimately be in `draft` status (created
-   * but not yet route-generated), so a status check would silently send it
-   * down the planner-print path and drop the members/region the per-id
-   * print page fetches from the API.
-   *
-   * Planner-context trips need the local snapshot stashed in localStorage
-   * because `window.open(..., "noopener")` severs the creator
-   * relationship and the new tab starts with an empty Zustand store.
-   * `sessionStorage` would be the natural fit but the HTML spec skips its
-   * copy when `noopener` severs the creator link; localStorage is shared
-   * across same-origin tabs so the hand-off works regardless. The print
-   * page clears the key as soon as it hydrates.
-   */
-  function openPrintPage(autoprint: boolean) {
-    if (!trip) return;
-    if (context === "planner") {
-      try {
-        localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
-      } catch {
-        /* private mode or storage full — the print page falls back to demo */
-      }
-    }
-    const flag = autoprint ? "autoprint=1" : "";
-    const url =
-      context === "saved-trip"
-        ? `/trips/${encodeURIComponent(trip.id)}/print${flag ? `?${flag}` : ""}`
-        : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}${flag ? `&${flag}` : ""}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-    setOpen(false);
-  }
-  function handlePrint() {
-    openPrintPage(false);
-  }
-  function handlePdf() {
-    openPrintPage(true);
-  }
   return (
     <div className="relative" ref={menuRef}>
       <Button
@@ -203,12 +142,6 @@ export function TripExportMenu({
             onClick={handleGpx}
           />
           <MenuItem
-            icon={<FileText size={14} />}
-            label="Download PDF"
-            hint="Printable trip plan, A4/Letter"
-            onClick={handlePdf}
-          />
-          <MenuItem
             icon={<LinkIcon size={14} />}
             label="Copy share link"
             hint="Anyone with the link can view"
@@ -230,12 +163,6 @@ export function TripExportMenu({
             }
             onClick={() => void handlePushMobile()}
             disabled={pushPending}
-          />
-          <MenuItem
-            icon={<Printer size={14} />}
-            label="Print summary"
-            hint="Turn list with waypoints"
-            onClick={handlePrint}
           />
         </div>
       )}

@@ -71,8 +71,7 @@ export default function DataPage() {
   // in-memory Zustand store starts empty; without this gate, the
   // first click races AuthSync and `accountApi.requestDataExport`
   // ships without a bearer → 401 → "Could not start export"
-  // error toast. Same fix as `/trips/[tripId]/print` and
-  // `/rides/[rideId]`.
+  // error toast. Same fix as `/rides/[rideId]`.
   const accessToken = useAuthStore((s) => s.accessToken);
   const [exportState, setExportState] = useState<ExportState>({ kind: "idle" });
   const [confirmOpen, setConfirmOpen] = useState(false);
