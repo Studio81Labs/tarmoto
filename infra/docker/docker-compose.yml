@@ -83,7 +83,11 @@ services:
     # tile build. Start it explicitly with `--profile routing up valhalla` (or
     # by naming the service: `up valhalla`).
     profiles: ["routing"]
-    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    # nilsnolde/docker-valhalla is the MAINTAINED image; the old gis-ops
+    # registry is archived and its frozen `latest` ships a valhalla commit
+    # range with a tile-build crash (valhalla/valhalla#4904, fixed by #5005)
+    # that reproducibly aborts multi-country builds.
+    image: ghcr.io/nilsnolde/docker-valhalla/valhalla:latest
     ports:
       - "8002:8002"
     volumes:
