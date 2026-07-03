@@ -55,13 +55,12 @@ export class OsrmProvider implements RoutingProvider {
     options?: RoutingOptions,
   ): Promise<RouteAlternative[]> {
     const coords = `${originLng},${originLat};${destLng},${destLat}`;
-    // OSRM's `driving` profile honours `exclude=motorway`. `toll`
-    // exclusion is only available on profiles that have been compiled
-    // with toll metadata — the public demo doesn't, but a custom
-    // self-hosted OSRM can. We pass it through anyway: an upstream
-    // that doesn't recognise the value still routes correctly (it's
-    // not strictly invalid), and a self-hosted backend that does
-    // recognise it gets the avoidance the rider asked for.
+    // `exclude=` support depends on how the OSRM graph was compiled — the
+    // public demo server rejects ANY exclude class with 400 InvalidValue
+    // ("Exclude flag combination is not supported."), while a self-hosted
+    // OSRM built with the classes honours them. We send the avoidances
+    // optimistically and fall back to a no-exclude retry on rejection
+    // (see fetchOsrm) so the demo fallback still routes.
     //
     // Build the query string manually rather than via URLSearchParams:
     // the WHATWG URL spec percent-encodes commas, producing
@@ -82,28 +81,22 @@ export class OsrmProvider implements RoutingProvider {
     const osrmAlternatives = includePrimary
       ? Math.max(0, maxAlternatives - 1)
       : maxAlternatives;
-    const queryParts: string[] = [
-      `alternatives=${osrmAlternatives}`,
-      `overview=full`,
-      `geometries=geojson`,
-    ];
-    const exclude: string[] = [];
-    if (options?.avoidHighways) exclude.push('motorway');
-    if (options?.avoidTolls) exclude.push('toll');
-    if (exclude.length > 0) {
-      queryParts.push(`exclude=${exclude.join(',')}`);
-    }
-    const url = `${this.baseUrl}/route/v1/driving/${coords}?${queryParts.join('&')}`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      this.logger.error(
-        `OSRM request failed: ${response.status} ${response.statusText}`,
-      );
-      return [];
-    }
-
-    const data = (await response.json()) as OsrmResponse;
+    const exclude = buildExclude(options);
+    const data = await this.fetchOsrm(
+      (withExclude) =>
+        this.buildRouteUrl(
+          coords,
+          [
+            `alternatives=${osrmAlternatives}`,
+            `overview=full`,
+            `geometries=geojson`,
+          ],
+          withExclude ? exclude : [],
+        ),
+      exclude.length > 0,
+      'request',
+    );
+    if (!data) return [];
     if (data.code !== 'Ok' || !data.routes?.length) {
       return [];
     }
@@ -129,9 +122,10 @@ export class OsrmProvider implements RoutingProvider {
   }
 
   /**
-   * Minimal interface-satisfaction stub. OsrmProvider is an unused fallback;
-   * `ValhallaProvider` is the live `ROUTING_PROVIDER`. This routes via OSRM
-   * using the same `/route/v1/driving/{coords}` URL pattern as getAlternatives.
+   * Routes via OSRM using the same `/route/v1/driving/{coords}` URL pattern
+   * as getAlternatives. OsrmProvider is the last-resort fallback when no
+   * GraphHopper/Valhalla env is configured (see routingProviderFactory) —
+   * i.e. the default engine on an env-less local checkout.
    */
   async route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
@@ -139,21 +133,18 @@ export class OsrmProvider implements RoutingProvider {
   ): Promise<RouteResult | null> {
     if (waypoints.length < 2) return null;
     const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
-    const queryParts: string[] = ['overview=full', 'geometries=geojson'];
-    const exclude: string[] = [];
-    if (options?.avoidHighways) exclude.push('motorway');
-    if (options?.avoidTolls) exclude.push('toll');
-    if (exclude.length > 0) queryParts.push(`exclude=${exclude.join(',')}`);
-    const url = `${this.baseUrl}/route/v1/driving/${coords}?${queryParts.join('&')}`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      this.logger.error(
-        `OSRM route failed: ${response.status} ${response.statusText}`,
-      );
-      return null;
-    }
-    const data = (await response.json()) as OsrmResponse;
+    const exclude = buildExclude(options);
+    const data = await this.fetchOsrm(
+      (withExclude) =>
+        this.buildRouteUrl(
+          coords,
+          ['overview=full', 'geometries=geojson'],
+          withExclude ? exclude : [],
+        ),
+      exclude.length > 0,
+      'route',
+    );
+    if (!data) return null;
     if (data.code !== 'Ok' || !data.routes?.length) return null;
     const r = data.routes[0];
     if (!r) return null;
@@ -168,4 +159,52 @@ export class OsrmProvider implements RoutingProvider {
       }),
     };
   }
+
+  private buildRouteUrl(
+    coords: string,
+    queryParts: string[],
+    exclude: string[],
+  ): string {
+    const parts =
+      exclude.length > 0
+        ? [...queryParts, `exclude=${exclude.join(',')}`]
+        : queryParts;
+    return `${this.baseUrl}/route/v1/driving/${coords}?${parts.join('&')}`;
+  }
+
+  /**
+   * Fetch an OSRM response, retrying once WITHOUT the `exclude=` parameter
+   * when the upstream rejects it with 400 (the public demo server's graph
+   * has no exclude classes compiled in, so any avoidance fails the whole
+   * request). Routing without the rider's avoidances beats not routing at
+   * all — but it is logged loudly, because the returned route may use
+   * roads the rider asked to avoid.
+   */
+  private async fetchOsrm(
+    buildUrl: (withExclude: boolean) => string,
+    hasExclude: boolean,
+    context: string,
+  ): Promise<OsrmResponse | null> {
+    let response = await fetch(buildUrl(true));
+    if (response.status === 400 && hasExclude) {
+      this.logger.warn(
+        `OSRM ${context} rejected exclude= (400) — retrying WITHOUT avoidances; this OSRM graph has no exclude classes, so avoid-highways/tolls are ignored`,
+      );
+      response = await fetch(buildUrl(false));
+    }
+    if (!response.ok) {
+      this.logger.error(
+        `OSRM ${context} failed: ${response.status} ${response.statusText}`,
+      );
+      return null;
+    }
+    return (await response.json()) as OsrmResponse;
+  }
+}
+
+function buildExclude(options?: RoutingOptions): string[] {
+  const exclude: string[] = [];
+  if (options?.avoidHighways) exclude.push('motorway');
+  if (options?.avoidTolls) exclude.push('toll');
+  return exclude;
 }
