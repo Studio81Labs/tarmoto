@@ -43,6 +43,27 @@ export const graphhopperReimportConfig = registerAs(
         `TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_METHOD must be POST or GET, got "${rawMethod}"`,
       );
     }
+    // Validate the URL up front (and never echo the raw value — it can carry a
+    // query token/UUID). This also means a fetch-time failure is network-level,
+    // whose message carries host:port at most and never the query string — so it
+    // is safe for the service to surface as an error `cause`. A malformed URL
+    // discovered only at fetch time would instead put the raw URL in Node's
+    // TypeError message.
+    if (webhookUrl) {
+      let parsed: URL;
+      try {
+        parsed = new URL(webhookUrl);
+      } catch {
+        throw new Error(
+          'TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_URL must be a valid URL',
+        );
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(
+          'TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_URL must be an http(s) URL',
+        );
+      }
+    }
     return {
       webhookUrl: webhookUrl ? webhookUrl : null,
       token: token ? token : null,

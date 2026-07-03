@@ -62,10 +62,14 @@ export class GraphHopperReimportService {
         signal: AbortSignal.timeout(REIMPORT_TIMEOUT_MS),
       });
     } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : String(err);
+      // Do NOT interpolate the raw fetch message: it can embed the raw URL
+      // (query token/UUID). The URL is validated at config load, so this is a
+      // network-level failure whose message carries host:port at most — safe to
+      // ride along as `cause` for debugging — while our own message shows only
+      // the redacted URL.
       throw new Error(
         `GraphHopper re-import webhook (${method} ${redactUrl(webhookUrl)}) ` +
-          `failed to connect: ${reason}`,
+          `failed to connect`,
         { cause: err },
       );
     }
