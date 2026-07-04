@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { routingApi, type RouteResponse } from "@/lib/api";
 import {
-  routingApi,
-  type RouteRequestBody,
-  type RouteResponse,
-} from "@/lib/api";
+  concatLegRouteResponses,
+  type PlannerRoutingLeg,
+  type TripLegBreak,
+} from "@/lib/planner/leg-routing";
 
 export function usePlannerRouting(
-  waypoints: ReadonlyArray<{ lat: number; lng: number }>,
-  options: RouteRequestBody["options"],
+  // Route computation is per LEG (revision 3 §C): each consecutive
+  // routing-waypoint pair is requested separately with its effective
+  // road preference, then concatenated back into one RouteResponse.
+  legs: readonly PlannerRoutingLeg[],
   // `onResult` receives the `requestKey` that was current when THIS request
   // fired, so a response that resolves after the caller switched context (e.g.
   // a different planner day) is applied to the day it was computed for — not
   // whatever is selected at resolution time.
-  onResult: (r: RouteResponse, requestKey: number | null) => void,
+  onResult: (
+    r: RouteResponse,
+    legBreaks: TripLegBreak[],
+    requestKey: number | null,
+  ) => void,
   onError: (message: string) => void,
   enabled = true,
   requestKey: number | null = null,
@@ -29,7 +36,7 @@ export function usePlannerRouting(
       setRouting(false);
       return;
     }
-    if (waypoints.length < 2) {
+    if (legs.length === 0) {
       setRouting(false);
       return;
     }
@@ -37,26 +44,35 @@ export function usePlannerRouting(
     const reqId = ++reqIdRef.current;
     // Capture the key at request-fire time. The effect re-runs (and this is
     // recaptured) whenever the inputs change, so it always matches the
-    // waypoints this request was built from.
+    // legs this request was built from.
     const firedRequestKey = requestKey;
     const handle = setTimeout(() => {
       setRouting(true);
-      routingApi
-        .route(
-          {
-            waypoints: [...waypoints],
-            ...(options !== undefined ? { options } : {}),
-          },
-          { signal: controller.signal },
-        )
-        .then(({ data }) => {
+      Promise.all(
+        legs.map((leg) =>
+          routingApi
+            .route(
+              {
+                waypoints: [leg.from, leg.to],
+                ...(leg.options !== undefined ? { options: leg.options } : {}),
+              },
+              { signal: controller.signal },
+            )
+            .then(({ data }) => data),
+        ),
+      )
+        .then((responses) => {
           // Also bail when this request's controller was aborted (the prior
-          // effect's cleanup aborts it when routing is disabled or drops below
-          // two waypoints). The early-return paths don't advance reqIdRef, so
-          // without this an already-resolved fetch could apply stale geometry
-          // to the now-current trip.
+          // effect's cleanup aborts it when routing is disabled or the legs
+          // vanish). The early-return paths don't advance reqIdRef, so
+          // without this an already-resolved fetch could apply stale
+          // geometry to the now-current trip.
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
-          cbRef.current.onResult(data, firedRequestKey);
+          const { merged, legBreaks } = concatLegRouteResponses(
+            legs,
+            responses,
+          );
+          cbRef.current.onResult(merged, legBreaks, firedRequestKey);
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
@@ -72,7 +88,7 @@ export function usePlannerRouting(
       clearTimeout(handle);
       controller.abort();
     };
-  }, [waypoints, options, enabled, requestKey]);
+  }, [legs, enabled, requestKey]);
 
   return { routing };
 }

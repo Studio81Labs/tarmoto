@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { poiApi, routingApi, type RouteResponse } from "@/lib/api";
+import { poiApi, routingApi, usersApi, type RouteResponse } from "@/lib/api";
 import { fetchFunZonesInBbox } from "@/lib/discover";
 import {
   createPlannerApi,
@@ -11,12 +11,15 @@ import type { RouteSegment } from "../types";
 vi.mock("@/lib/api", () => ({
   routingApi: { route: vi.fn() },
   poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
+  usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
 vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
 
 const routeMock = vi.mocked(routingApi.route);
 const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
 const accommodationsMock = vi.mocked(poiApi.getAccommodations);
+const getMeMock = vi.mocked(usersApi.getMe);
+const updateMeMock = vi.mocked(usersApi.updateMe);
 
 function segment(overrides: Partial<RouteSegment>): RouteSegment {
   return {
@@ -485,5 +488,178 @@ describe("plannerApi.draftRoute (revision 2 §E cases 2/3)", () => {
     expect(result.vias).toEqual([]);
     expect(result.summary.distanceKm).toBe(120);
     expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("plannerApi.draftRoundtrip (revision 3 §E)", () => {
+  const zonesMock = vi.mocked(fetchFunZonesInBbox);
+  const start = { lat: 49, lng: 15 };
+
+  beforeEach(() => {
+    routeMock.mockReset();
+    zonesMock.mockReset();
+  });
+
+  function mockLoopDistances(kmPerCall: number[]) {
+    let call = 0;
+    routeMock.mockImplementation((body) => {
+      const waypoints = (
+        body as { waypoints: Array<{ lat: number; lng: number }> }
+      ).waypoints;
+      const km = kmPerCall[Math.min(call, kmPerCall.length - 1)]!;
+      call += 1;
+      return Promise.resolve({
+        data: {
+          geometry: waypoints,
+          distance_km: km,
+          duration_min: km,
+          avg_quality: 4,
+          curviness_score: 30,
+          elevation_gain_m: 100,
+          surface_mix: { asphalt: km * 1000 },
+        },
+      } as never);
+    });
+  }
+
+  it("loops out and back to the start with a turnaround via", async () => {
+    mockLoopDistances([250]);
+    zonesMock.mockResolvedValue([] as never);
+
+    const result = await createPlannerApi().draftRoundtrip(start, {
+      distanceKm: 250,
+      direction: "E",
+      preference: "efficient_loop",
+    });
+
+    const request = routeMock.mock.calls[0]![0] as {
+      waypoints: Array<{ lat: number; lng: number }>;
+      options?: { preference?: string };
+    };
+    // start → turnaround → start; the loop mode costs like 'direct'.
+    expect(request.waypoints[0]).toEqual(start);
+    expect(request.waypoints.at(-1)).toEqual(start);
+    expect(request.waypoints).toHaveLength(3);
+    expect(request.options?.preference).toBe("direct");
+    // Heading E: the turnaround sits east of the start at ~equal latitude.
+    const turn = request.waypoints[1]!;
+    expect(turn.lng).toBeGreaterThan(start.lng);
+    expect(Math.abs(turn.lat - start.lat)).toBeLessThan(0.05);
+    expect(result.reachedTargetKm).toBe(true);
+    expect(result.vias.at(-1)).toMatchObject({ name: "Turnaround" });
+  });
+
+  it("re-scales the loop once when the first measure lands far from target", async () => {
+    mockLoopDistances([120, 240]);
+    zonesMock.mockResolvedValue([] as never);
+
+    const result = await createPlannerApi().draftRoundtrip(start, {
+      distanceKm: 250,
+      direction: "N",
+      preference: "balanced",
+    });
+
+    expect(routeMock).toHaveBeenCalledTimes(2);
+    expect(result.summary.distanceKm).toBe(240);
+    expect(result.reachedTargetKm).toBe(true);
+  });
+
+  it("reports honestly when the loop stays short of the soft target", async () => {
+    mockLoopDistances([120, 150]);
+    zonesMock.mockResolvedValue([] as never);
+
+    const result = await createPlannerApi().draftRoundtrip(start, {
+      distanceKm: 400,
+      direction: "S",
+      preference: "direct",
+    });
+
+    expect(result.reachedTargetKm).toBe(false);
+  });
+
+  it("threads lobe Fun Zones and searches the drawn region when given", async () => {
+    mockLoopDistances([260]);
+    zonesMock.mockResolvedValue([
+      {
+        id: "z1",
+        name: "Zone z1",
+        composite_score: 90,
+        boundary: [{ lat: 49.2, lng: 15.4 }],
+      },
+    ] as never);
+
+    const result = await createPlannerApi().draftRoundtrip(start, {
+      distanceKm: 250,
+      direction: "E",
+      preference: "maximum_twisty",
+      region: [14, 48, 16, 50],
+    });
+
+    expect(zonesMock).toHaveBeenCalledWith([14, 48, 16, 50], undefined);
+    expect(result.vias.map((v) => v.name)).toEqual(["Zone z1", "Turnaround"]);
+    // Zone vias anchor the shape — no re-scaling second call.
+    expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("plannerApi user route prefs (revision 3 §F)", () => {
+  beforeEach(() => {
+    getMeMock.mockReset();
+    updateMeMock.mockReset();
+  });
+
+  const wire = {
+    road_preference: "maximum_twisty",
+    avoid_highways: true,
+    avoid_tolls: false,
+    avoid_unpaved: true,
+    surfaces: ["asphalt", "gravel", "lava"],
+    min_quality: "excellent_only",
+  };
+
+  it("reads saved defaults from users.preferences, dropping unknown surfaces", async () => {
+    getMeMock.mockResolvedValue({
+      data: { preferences: { route_prefs: wire } },
+    } as never);
+
+    const prefs = await createPlannerApi().getUserRoutePrefs();
+
+    expect(prefs).toEqual({
+      roadPreference: "maximum_twisty",
+      avoidHighways: true,
+      avoidTolls: false,
+      avoidUnpaved: true,
+      surfaces: ["asphalt", "gravel"],
+      minQuality: "excellent_only",
+    });
+  });
+
+  it("returns null when the rider never saved prefs", async () => {
+    getMeMock.mockResolvedValue({ data: { preferences: {} } } as never);
+    expect(await createPlannerApi().getUserRoutePrefs()).toBeNull();
+  });
+
+  it("persists prefs via the profile preferences merge", async () => {
+    updateMeMock.mockResolvedValue({ data: {} } as never);
+    await createPlannerApi().saveUserRoutePrefs({
+      roadPreference: "scenic_balance",
+      avoidHighways: false,
+      avoidTolls: true,
+      avoidUnpaved: false,
+      surfaces: ["concrete"],
+      minQuality: "any",
+    });
+    expect(updateMeMock).toHaveBeenCalledWith({
+      preferences: {
+        route_prefs: {
+          road_preference: "scenic_balance",
+          avoid_highways: false,
+          avoid_tolls: true,
+          avoid_unpaved: false,
+          surfaces: ["concrete"],
+          min_quality: "any",
+        },
+      },
+    });
   });
 });

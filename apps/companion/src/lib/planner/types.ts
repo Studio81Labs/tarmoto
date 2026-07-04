@@ -26,6 +26,11 @@ export interface RouteSegment {
   lengthKm: number;
   /** Trip day the segment belongs to (1-based). */
   dayNumber: number;
+  /**
+   * Leg this segment belongs to when the day was routed per leg
+   * (revision 3 §C) — associates map segments with their leg control.
+   */
+  legId?: string;
 }
 
 export interface FlaggedSection {
@@ -179,6 +184,50 @@ export interface PlannerApi {
     opts: DraftOptions,
     init?: { signal?: AbortSignal },
   ): Promise<DraftRouteResult>;
+
+  /**
+   * Start-only drafting (revision 3 §E): proposes a loop returning to
+   * the start, sized by `distanceKm` (SOFT target, independent of the
+   * multi-day daily-km field) in the chosen compass direction. REAL
+   * routing measures the loop; Fun Zones in the directional lobe are
+   * threaded when available; never padded with dull detours.
+   */
+  draftRoundtrip(
+    start: { lat: number; lng: number },
+    opts: RoundtripOptions,
+    init?: { signal?: AbortSignal },
+  ): Promise<DraftRoundtripResult>;
+
+  /**
+   * The rider's saved planner defaults (revision 3 §F) — REAL, stored in
+   * the `users.preferences` JSONB via GET/PATCH /users/me. Null until
+   * the rider has ever saved prefs.
+   */
+  getUserRoutePrefs(init?: {
+    signal?: AbortSignal;
+  }): Promise<import("./prefs").UserRoutePrefs | null>;
+  saveUserRoutePrefs(prefs: import("./prefs").UserRoutePrefs): Promise<void>;
+}
+
+/** Options confirmed in the roundtrip dialog (revision 3 §E). */
+export interface RoundtripOptions {
+  /** Soft target loop length in km (~50–1500; default 250). */
+  distanceKm: number;
+  direction: "N" | "E" | "S" | "W" | "NE" | "NW" | "SE" | "SW" | "random";
+  preference: import("./prefs").RoadPreference;
+  /** Drawn map region — wins over `direction` for Fun-Zone search. */
+  region?: [number, number, number, number] | null;
+}
+
+export interface DraftRoundtripResult {
+  segments: RouteSegment[];
+  summary: RouteQualitySummary;
+  reachedTargetKm: boolean;
+  /**
+   * The loop's shape as waypoints (turnaround + Fun-Zone vias, travel
+   * order) — apply to the trip so live routing redraws the same loop.
+   */
+  vias: Array<{ lat: number; lng: number; name: string }>;
 }
 
 /** Inputs for {@link PlannerApi.draftRoute} (revision 2 §F). */

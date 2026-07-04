@@ -96,10 +96,32 @@ export function buildPlannerQualityRouteCollection(
 export function deriveDayQualitySegments(day: TripDay): RouteSegment[] {
   const coordinates = getDayRouteCoordinates(day);
   if (coordinates.length < 2) return [];
-  return deriveQualitySegments(
-    coordinates.map(([lng, lat]) => ({ lat, lng })),
-    day.dayNumber,
-  );
+  const points = coordinates.map(([lng, lat]) => ({ lat, lng }));
+  // Per-leg routed days (revision 3 §C): derive each leg's stretch on its
+  // own so every segment carries its legId — but only when the leg map
+  // actually describes THIS geometry (it always comes from the same
+  // applyRouteResult; the guard covers the waypoint-line fallback).
+  const legBreaks = day.legBreaks;
+  if (
+    legBreaks &&
+    legBreaks.length > 0 &&
+    day.routeGeometry?.coordinates.length === coordinates.length &&
+    legBreaks.every((b) => b.startVertex < points.length)
+  ) {
+    return legBreaks.flatMap((brk, index) => {
+      const endVertex =
+        index < legBreaks.length - 1
+          ? legBreaks[index + 1]!.startVertex
+          : points.length - 1;
+      const legPoints = points.slice(brk.startVertex, endVertex + 1);
+      if (legPoints.length < 2) return [];
+      return deriveQualitySegments(legPoints, day.dayNumber, {
+        index,
+        id: brk.legId,
+      });
+    });
+  }
+  return deriveQualitySegments(points, day.dayNumber);
 }
 
 /** Locate a derived quality segment by id across all days of the trip. */

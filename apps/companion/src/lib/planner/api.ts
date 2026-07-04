@@ -2,11 +2,13 @@ import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   poiApi,
   routingApi,
+  usersApi,
   type AccommodationSuggestion,
   type PoiKind,
   type RouteRequestBody,
   type RouteResponse,
   type RoutePoiSuggestion,
+  type UserRoutePrefsWire,
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
 import { fetchFunZonesInBbox } from "@/lib/discover";
@@ -19,15 +21,18 @@ import {
   type DraftZone,
 } from "./draft-vias";
 import { mockGeocode, mockReverseGeocode, mockRoadPreview } from "./mocks";
+import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
   DraftRouteResult,
+  DraftRoundtripResult,
   FlaggedSection,
   GeneratedPlannerRoute,
   PlannerApi,
   PlannerPoi,
   PlannerPoiType,
   RoadPreview,
+  RoundtripOptions,
   RouteQualitySummary,
   RouteSegment,
 } from "./types";
@@ -388,6 +393,143 @@ export function createPlannerApi(): PlannerApi {
     reverseGeocode(lat: number, lng: number) {
       return Promise.resolve(mockReverseGeocode(lat, lng));
     },
+
+    async draftRoundtrip(
+      start: { lat: number; lng: number },
+      opts: RoundtripOptions,
+      init?: { signal?: AbortSignal },
+    ): Promise<DraftRoundtripResult> {
+      const target = Math.max(20, opts.distanceKm);
+      const bearingDeg =
+        opts.direction === "random"
+          ? Math.random() * 360
+          : ROUNDTRIP_BEARING_DEG[opts.direction];
+      const routeOptions: RouteRequestBody["options"] = {
+        // The loop's road character routes like its point-to-point
+        // equivalent; 'efficient_loop' costs like 'direct'.
+        preference:
+          opts.preference === "efficient_loop" ? "direct" : opts.preference,
+      };
+
+      let radiusKm = target / (2 * ROUNDTRIP_ROAD_FACTOR);
+      let turn = offsetPointKm(start, bearingDeg, radiusKm);
+
+      // Fun Zones in the loop's lobe (drawn region wins when present).
+      let zones: DraftZone[] = [];
+      try {
+        zones = await fetchFunZonesInBbox(
+          opts.region ?? corridorBbox(start, turn),
+          init,
+        );
+      } catch {
+        // No zones ≠ no loop — the geometric turnaround still rides.
+      }
+      const zoneVias = draftViasThroughZones(zones, start, turn, 2);
+
+      const loopWaypoints = () => [
+        start,
+        ...zoneVias.map(({ lat, lng }) => ({ lat, lng })),
+        turn,
+        start,
+      ];
+      let measured = await routeReal(loopWaypoints(), routeOptions, init);
+
+      // One sizing iteration: scale the turnaround radius toward the soft
+      // target. Skipped when zone vias anchor the shape — stretching past
+      // the good roads would defeat the point of threading them.
+      const firstKm = measured.raw.distance_km;
+      if (
+        zoneVias.length === 0 &&
+        firstKm > 0 &&
+        Math.abs(firstKm - target) / target > 0.15
+      ) {
+        const scale = Math.min(2.5, Math.max(0.4, target / firstKm));
+        radiusKm *= scale;
+        turn = offsetPointKm(start, bearingDeg, radiusKm);
+        measured = await routeReal(loopWaypoints(), routeOptions, init);
+      }
+
+      return {
+        segments: measured.segments,
+        summary: measured.summary,
+        reachedTargetKm:
+          measured.raw.distance_km >= target * DRAFT_TARGET_TOLERANCE,
+        vias: [
+          ...zoneVias,
+          { lat: turn.lat, lng: turn.lng, name: "Turnaround" },
+        ],
+      };
+    },
+
+    async getUserRoutePrefs(init?: {
+      signal?: AbortSignal;
+    }): Promise<UserRoutePrefs | null> {
+      const { data } = await usersApi.getMe(
+        init?.signal !== undefined ? { signal: init.signal } : {},
+      );
+      const wire = (
+        data.preferences as { route_prefs?: UserRoutePrefsWire } | undefined
+      )?.route_prefs;
+      return wire ? routePrefsFromWire(wire) : null;
+    },
+
+    async saveUserRoutePrefs(prefs: UserRoutePrefs): Promise<void> {
+      await usersApi.updateMe({
+        preferences: { route_prefs: routePrefsToWire(prefs) },
+      });
+    },
+  };
+}
+
+// ── Roundtrip drafting helpers (revision 3 §E) ───────────────────────
+
+/** Loop length ≈ 2 × crow-flies radius × this road-shape factor. */
+const ROUNDTRIP_ROAD_FACTOR = 1.4;
+
+const ROUNDTRIP_BEARING_DEG: Record<
+  Exclude<RoundtripOptions["direction"], "random">,
+  number
+> = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+
+const KM_PER_DEG_LAT = 111.32;
+
+function offsetPointKm(
+  origin: { lat: number; lng: number },
+  bearingDeg: number,
+  distanceKm: number,
+): { lat: number; lng: number } {
+  const bearingRad = (bearingDeg * Math.PI) / 180;
+  const dLat = (distanceKm * Math.cos(bearingRad)) / KM_PER_DEG_LAT;
+  const dLng =
+    (distanceKm * Math.sin(bearingRad)) /
+    (KM_PER_DEG_LAT * Math.max(0.2, Math.cos((origin.lat * Math.PI) / 180)));
+  return { lat: origin.lat + dLat, lng: origin.lng + dLng };
+}
+
+// ── Saved planner defaults, users.preferences JSONB wire mapping (§F) ─
+
+function routePrefsFromWire(wire: UserRoutePrefsWire): UserRoutePrefs {
+  return {
+    roadPreference: wire.road_preference,
+    avoidHighways: wire.avoid_highways,
+    avoidTolls: wire.avoid_tolls,
+    avoidUnpaved: wire.avoid_unpaved,
+    surfaces: wire.surfaces.filter(
+      (surface): surface is (typeof SURFACE_VALUES)[number] =>
+        (SURFACE_VALUES as readonly string[]).includes(surface),
+    ),
+    minQuality: wire.min_quality,
+  };
+}
+
+function routePrefsToWire(prefs: UserRoutePrefs): UserRoutePrefsWire {
+  return {
+    road_preference: prefs.roadPreference,
+    avoid_highways: prefs.avoidHighways,
+    avoid_tolls: prefs.avoidTolls,
+    avoid_unpaved: prefs.avoidUnpaved,
+    surfaces: prefs.surfaces,
+    min_quality: prefs.minQuality,
   };
 }
 

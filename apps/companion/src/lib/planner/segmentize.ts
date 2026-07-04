@@ -49,6 +49,9 @@ export function segmentCountForDistance(distanceKm: number): number {
 export function segmentizeRoute(
   points: ReadonlyArray<{ lat: number; lng: number }>,
   dayNumber: number,
+  // Per-leg derivation (revision 3 §C) namespaces ids per leg so a day
+  // routed as N legs still yields unique, deterministic segment ids.
+  idPrefix?: string,
 ): SegmentSlice[] {
   if (points.length < 2) return [];
 
@@ -63,7 +66,7 @@ export function segmentizeRoute(
   if (totalKm === 0) {
     return [
       {
-        id: segmentId(dayNumber, 0),
+        id: segmentId(dayNumber, 0, idPrefix),
         geometry: toLineString(points),
         lengthKm: 0,
         dayNumber,
@@ -89,7 +92,7 @@ export function segmentizeRoute(
 
     const slicePoints = points.slice(startIdx, endIdx + 1);
     slices.push({
-      id: segmentId(dayNumber, seg),
+      id: segmentId(dayNumber, seg, idPrefix),
       geometry: toLineString(slicePoints),
       lengthKm: (stepKm[endIdx] ?? 0) - (stepKm[startIdx] ?? 0),
       dayNumber,
@@ -99,8 +102,12 @@ export function segmentizeRoute(
   return slices;
 }
 
-function segmentId(dayNumber: number, index: number): string {
-  return `d${dayNumber}-s${index}`;
+function segmentId(
+  dayNumber: number,
+  index: number,
+  idPrefix?: string,
+): string {
+  return `${idPrefix ?? `d${dayNumber}`}-s${index}`;
 }
 
 function toLineString(

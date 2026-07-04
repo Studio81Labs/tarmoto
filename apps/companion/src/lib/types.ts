@@ -194,6 +194,12 @@ export interface TripDay {
   segments?: RoutePreviewSegment[] | undefined;
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
   startLinked?: boolean;
+  /**
+   * Client-only (never saved): where each routing leg starts in
+   * `routeGeometry` when the day was routed per leg (revision 3 §C).
+   * Lets quality segments be tagged with their legId on derivation.
+   */
+  legBreaks?: Array<{ legId: string; startVertex: number }> | undefined;
 }
 
 /**

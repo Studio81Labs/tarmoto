@@ -330,7 +330,11 @@ interface TripState {
    * passes the day it routed so concurrent multi-day routing lands in the
    * correct slot regardless of `selectedDayIndex` at call time.
    */
-  applyRouteResult: (dayNumber: number, result: RouteResponse) => void;
+  applyRouteResult: (
+    dayNumber: number,
+    result: RouteResponse,
+    legBreaks?: Array<{ legId: string; startVertex: number }>,
+  ) => void;
 
   /**
    * Append a new day to the active trip (capped at MAX_TRIP_DAYS). The new
@@ -1423,7 +1427,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       return result;
     },
 
-    applyRouteResult: (dayNumber, result) =>
+    applyRouteResult: (dayNumber, result, legBreaks) =>
       set((state) => {
         const { activeTrip } = state;
         if (!activeTrip) return state;
@@ -1444,6 +1448,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           avgQuality: result.avg_quality ?? 0,
           elevationGain: result.elevation_gain_m,
           surfaceMix: result.surface_mix,
+          // Always overwritten (or cleared) so a stale leg mapping can't
+          // outlive the geometry it described. Client-only; never saved.
+          legBreaks,
         };
         return {
           ...state,

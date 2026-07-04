@@ -1038,7 +1038,8 @@ describe("TripPlannerPage", () => {
 
     expect(screen.getByLabelText("Number of days")).toHaveValue(14);
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
-    expect(screen.getByLabelText("Road preference")).toHaveValue("mixed");
+    // Invalid road value falls back to the revision 3 default: direct.
+    expect(screen.getByLabelText("Road preference")).toHaveValue("direct");
     expect(screen.getByLabelText("Minimum road quality")).toHaveValue("1");
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).not.toBeChecked();
@@ -1081,7 +1082,8 @@ describe("TripPlannerPage", () => {
     expect(window.location.search).toContain("road=scenic");
 
     fireEvent.change(screen.getByLabelText("Road preference"), {
-      target: { value: "mixed" },
+      // 'direct' is the default road preference (revision 3 §A).
+      target: { value: "direct" },
     });
     expect(window.location.search).not.toMatch(/[?&]road=/);
   });
@@ -1508,7 +1510,7 @@ describe("TripPlannerPage", () => {
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // The 5th argument is `enabled`
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("does NOT call usePlannerRouting with enabled=true when the day is not stale", () => {
@@ -1521,7 +1523,7 @@ describe("TripPlannerPage", () => {
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("calls usePlannerRouting with enabled=true when routeDirty and selected day is stale", () => {
@@ -1533,7 +1535,7 @@ describe("TripPlannerPage", () => {
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    expect(lastCall?.[4]).toBe(true);
+    expect(lastCall?.[3]).toBe(true);
   });
 
   it("routes start→overnight for an accommodation-terminated day (live inputs match Save)", () => {
@@ -1565,12 +1567,17 @@ describe("TripPlannerPage", () => {
     render(<TripPlannerPage />);
 
     // The terminal accommodation is normalized to the day's finish, so the
-    // live-routing inputs (arg 0) carry BOTH points — the preview routes to the
+    // live-routing legs (arg 0) span BOTH points — the preview routes to the
     // overnight, matching the route saveDays/the backend will persist.
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall?.[0]).toEqual([
-      { lat: 46, lng: 10 },
-      { lat: 46.5, lng: 11 },
+      expect.objectContaining({
+        legId: "s->h",
+        from: { lat: 46, lng: 10 },
+        to: { lat: 46.5, lng: 11 },
+        // The loaded trip's own "mixed" parameter maps to 'balanced'.
+        options: expect.objectContaining({ preference: "balanced" }),
+      }),
     ]);
   });
 
@@ -1597,7 +1604,7 @@ describe("TripPlannerPage", () => {
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // day 1 is not in stalePreviewDays so enabled=false
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {

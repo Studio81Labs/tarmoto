@@ -16,8 +16,19 @@ import type { RouteSegment } from "./types";
 export function deriveQualitySegments(
   points: ReadonlyArray<{ lat: number; lng: number }>,
   dayNumber: number,
+  // Present when the day was routed per leg (revision 3 §C): namespaces
+  // segment ids per leg and tags every segment with its legId.
+  leg?: { index: number; id: string },
 ): RouteSegment[] {
-  return mockJoinQuality(segmentizeRoute(points, dayNumber));
+  const slices = segmentizeRoute(
+    points,
+    dayNumber,
+    leg ? `d${dayNumber}-l${leg.index}` : undefined,
+  );
+  const segments = mockJoinQuality(slices);
+  return leg
+    ? segments.map((segment) => ({ ...segment, legId: leg.id }))
+    : segments;
 }
 
 /** Same join for GeoJSON LineString geometry ([lng, lat] coordinate order). */
