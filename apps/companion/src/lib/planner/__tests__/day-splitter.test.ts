@@ -113,6 +113,18 @@ describe("splitIntoDays", () => {
     expect(plans[0]!.endKm).toBeCloseTo(300, 0);
   });
 
+  it("honours forcedDays on a route much shorter than the daily target", () => {
+    // Forcing 2 days on 115 km @ 250/day: the equal 57.5 km shares ARE the
+    // intended day length — the runt rebalance must not judge them against
+    // the 250 km target and collapse the split back to 1 day.
+    const plans = splitIntoDays(makeSegments(115), {
+      dailyKmTarget: 250,
+      forcedDays: 2,
+    });
+    expect(plans).toHaveLength(2);
+    expect(plans[0]!.endKm).toBeCloseTo(57.5, 0);
+  });
+
   it("merges a runt final day into its predecessor", () => {
     // 520 km @ 250/day → raw breaks at 250 and 500 leave a 20 km last day
     // (< 40% of 250) — the 500 break is dropped.

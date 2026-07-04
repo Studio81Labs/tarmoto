@@ -1536,8 +1536,10 @@ const TripPlannerMapContent = forwardRef<
           {t("Planner map ")}
         </div>
         <p className="mt-2 text-sm text-cream/90">
+          {/* The working (unsplit) trip has no day concept — only real
+              multi-day trips mention days here (revision 2 §A). */}
           {trip
-            ? `${trip.days.length} day${trip.days.length === 1 ? "" : "s"} · ${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
+            ? `${trip.days.length > 1 ? `${trip.days.length} days · ` : ""}${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
             : "Load the demo trip or import GPX/KML to see your route on the map."}
         </p>
         <p className="mt-2 text-xs text-cream/55">

@@ -277,11 +277,18 @@ export function splitIntoDays(
   breaks.sort((a, b) => a.km - b.km);
 
   // Rebalance: a runt final day merges into its predecessor by dropping
-  // the last (unpinned) break.
+  // the last (unpinned) break. A forced day count is an explicit override
+  // — its equal shares ARE the intended day length, so judge "runt"
+  // against them, not the daily-km target (which would collapse a forced
+  // split of a short route back to fewer days).
+  const referenceDayKm =
+    pins.length === 0 && opts.forcedDays !== null && opts.forcedDays >= 1
+      ? totalKm / opts.forcedDays
+      : dailyKmTarget;
   while (breaks.length > 0) {
     const last = breaks[breaks.length - 1]!;
     const lastDayKm = totalKm - last.km;
-    if (lastDayKm >= MIN_LAST_DAY_SHARE * dailyKmTarget || last.pinned) break;
+    if (lastDayKm >= MIN_LAST_DAY_SHARE * referenceDayKm || last.pinned) break;
     breaks.pop();
   }
 

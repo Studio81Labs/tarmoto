@@ -1560,8 +1560,9 @@ export default function TripPlannerPage() {
             {totalDistanceKm !== null ? (
               <p className="truncate font-mono text-[10px] tracking-[0.3px] text-fg-mute">
                 {daysVisible && dayPlans
-                  ? t("{days} days · {km} km", {
+                  ? t("{days} day{s} · {km} km", {
                       days: dayPlans.length,
+                      s: dayPlans.length === 1 ? "" : "s",
                       km: totalDistanceKm,
                     })
                   : t("{km} km", { km: totalDistanceKm })}
@@ -1689,7 +1690,10 @@ export default function TripPlannerPage() {
           <aside className="flex min-h-0 flex-col border-r border-line">
             <div className="border-b border-line px-5 pb-3 pt-[18px]">
               <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                {t("Itinerary · {days} days", { days: dayPlans.length })}
+                {t("Itinerary · {days} day{s}", {
+                  days: dayPlans.length,
+                  s: dayPlans.length === 1 ? "" : "s",
+                })}
               </span>
             </div>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
