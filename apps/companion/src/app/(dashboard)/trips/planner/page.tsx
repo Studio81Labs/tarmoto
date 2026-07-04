@@ -1467,6 +1467,19 @@ export default function TripPlannerPage() {
           >
             {savingRoute ? t("Saving…") : t("Save route")}
           </Button>
+          {/* Metadata + itinerary save ("push" the planned trip to the
+              rider's phone). Static label so the accessible name stays
+              unique next to Save route's "Saving…" in-flight state. */}
+          {displayedTrip ? (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={saving || isGenerating}
+              onClick={handleSave}
+            >
+              {t("Push to phone →")}
+            </Button>
+          ) : null}
           {!displayedTrip && (
             <Button
               variant="secondary"
@@ -1591,6 +1604,11 @@ export default function TripPlannerPage() {
                     onClick={() => {
                       setSelectedPlanIndex(planIndex);
                       setPanelTab("INSPECT");
+                      // Loaded multi-day trips: the card also selects the
+                      // real day (drives per-day live routing + preview).
+                      if (activeTrip && planIndex < activeTrip.days.length) {
+                        setSelectedDay(planIndex);
+                      }
                     }}
                     className={`w-full rounded-[12px] border bg-cream p-3 text-left transition hover:border-line-strong ${
                       selectedPlanIndex === planIndex
@@ -1724,84 +1742,6 @@ export default function TripPlannerPage() {
               <div className="flex items-center gap-2 rounded-full bg-paper/90 px-4 py-2 shadow-sm">
                 <Loader2 size={16} className="animate-spin text-accent" />
                 <p className="text-sm font-medium text-ink">{t("Routing…")}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Floating multi-day footer — only when we have real days
-              from a loaded trip. The placeholder-day case (no trip)
-              keeps the map fully clear. */}
-          {activeTrip && activeTrip.days.length > 0 && (
-            <div className="absolute bottom-4 left-4 right-4 z-10 rounded-[14px] border border-line-strong bg-cream p-3.5 shadow-[0_12px_32px_rgba(14,14,16,0.14)]">
-              <div className="mb-2.5 flex items-center justify-between gap-2">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                  {t("Multi-day itinerary")}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || isGenerating}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-cream transition hover:opacity-90 disabled:opacity-60"
-                >
-                  {/* Visible text stays static so the toolbar Save
-                      button ("Saving…" in flight) keeps a unique
-                      accessible name for selectors like
-                      `getByRole({ name: "Saving…" })`. The disabled
-                      state here conveys the in-flight feedback. */}
-                  {t("Push to phone →")}
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-                {activeTrip.days.map((day, i) => {
-                  const isActive = selectedDayIndex === i;
-                  return (
-                    <button
-                      key={day.dayNumber}
-                      type="button"
-                      onClick={() => setSelectedDay(i)}
-                      aria-pressed={isActive}
-                      className={`rounded-[10px] border p-2.5 text-left transition ${
-                        isActive
-                          ? "border-ink bg-ink text-cream"
-                          : "border-line bg-paper text-ink hover:border-line-strong"
-                      }`}
-                    >
-                      <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <span
-                          className={`font-mono text-[10px] font-bold uppercase tracking-[1.6px] ${
-                            isActive ? "text-accent" : "text-fg-dim"
-                          }`}
-                        >
-                          {t("Day")} {day.dayNumber}
-                        </span>
-                      </div>
-                      <div className="truncate text-[13px] font-bold">
-                        {day.title ?? `${t("Day")} ${day.dayNumber}`}
-                      </div>
-                      <div
-                        className={`mt-1.5 flex flex-wrap gap-2 font-mono text-[11px] ${
-                          isActive ? "text-cream/70" : "text-fg-dim"
-                        }`}
-                      >
-                        {day.distanceKm ? (
-                          <span>{Math.round(day.distanceKm)} KM</span>
-                        ) : null}
-                        {day.waypoints?.length ? (
-                          <span>{day.waypoints.length} STOPS</span>
-                        ) : null}
-                      </div>
-                      {day.overnightStop?.name && (
-                        <div
-                          className={`mt-1.5 truncate font-mono text-[11px] ${
-                            isActive ? "text-cream/55" : "text-fg-mute"
-                          }`}
-                        >
-                          {t("Overnight ·")} {day.overnightStop.name}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
               </div>
             </div>
           )}

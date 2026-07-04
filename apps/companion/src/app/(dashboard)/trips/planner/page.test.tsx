@@ -1620,17 +1620,35 @@ describe("TripPlannerPage", () => {
       ],
     };
     storeState.selectedDayIndex = 0;
+    // A loaded multi-day trip presents as an existing split (the day
+    // column renders DayPlans; the floating footer is gone).
+    storeState.splitState = "split";
+    storeState.dayPlans = [1, 2].map((n) => ({
+      dayNumber: n,
+      segmentIds: [],
+      distanceKm: 80,
+      timeMin: 90,
+      quality: {
+        distanceKm: 80,
+        timeMin: 90,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Start",
+      endTown: "Finish",
+      suggestedStays: [],
+      endKm: 80 * n,
+    }));
 
     render(<TripPlannerPage />);
 
-    // Both day tabs are rendered (sidebar + floating footer each render tabs,
-    // so we check count ≥ 2 for each day label)
     const day1Buttons = screen.getAllByRole("button", { name: /Day 1/i });
     const day2Buttons = screen.getAllByRole("button", { name: /Day 2/i });
     expect(day1Buttons.length).toBeGreaterThanOrEqual(1);
     expect(day2Buttons.length).toBeGreaterThanOrEqual(1);
 
-    // Click the first Day 2 tab (sidebar) — should call store setSelectedDay(1)
+    // Clicking the Day 2 card selects the real day for per-day routing.
     fireEvent.click(day2Buttons[0]!);
     expect(storeState.setSelectedDay).toHaveBeenCalledWith(1);
   });
