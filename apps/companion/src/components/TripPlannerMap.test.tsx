@@ -5,9 +5,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { createRef, forwardRef, useEffect, useImperativeHandle } from "react";
 import { expression } from "@maplibre/maplibre-gl-style-spec";
-import { TripPlannerMap } from "./TripPlannerMap";
+import { TripPlannerMap, type TripPlannerMapHandle } from "./TripPlannerMap";
 import type { Trip } from "@/lib/types";
 import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
@@ -904,18 +904,23 @@ describe("TripPlannerMap", () => {
     });
   });
 
-  it("refits when the user clicks Fit to route", async () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
+  it("refits via the imperative fitRoute handle (toolbar Fit route)", async () => {
+    // The in-map Fit-to-route pill was dropped — the toolbar button is
+    // the single fit control, wired through the ref handle.
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={trip()} month={7} />);
 
     await waitFor(() => {
       expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
     });
     mockMap.fitBounds.mockClear();
+    expect(
+      screen.queryByRole("button", { name: /fit map to the whole route/i }),
+    ).not.toBeInTheDocument();
 
-    const fitBtn = screen.getByRole("button", {
-      name: /fit map to the whole route/i,
+    act(() => {
+      ref.current?.fitRoute();
     });
-    fitBtn.click();
 
     expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
     expect(mockMap.fitBounds).toHaveBeenCalledWith(

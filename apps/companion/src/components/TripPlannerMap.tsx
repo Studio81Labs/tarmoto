@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, Maximize2, Square, X } from "lucide-react";
+import { Layers3, Square, X } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -1324,22 +1324,6 @@ const TripPlannerMapContent = forwardRef<
           >
             <Layers3 size={14} />
             {t("Surface ")}
-          </button>
-          <button
-            type="button"
-            aria-label="Fit map to the whole route"
-            onClick={fitMapToTrip}
-            disabled={!ready || !tripBounds}
-            // `ready` reflects the maplibre load, which only happens in the
-            // browser, so this control's disabled state is inherently
-            // client-only. On a real load it's `false` on both SSR and the
-            // first client render; the attribute only diverges when Fast
-            // Refresh preserves a loaded map across an HMR re-render.
-            suppressHydrationWarning
-            className={`${CREAM_PILL} disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            <Maximize2 size={14} />
-            {t("Fit to route ")}
           </button>
         </div>
 
