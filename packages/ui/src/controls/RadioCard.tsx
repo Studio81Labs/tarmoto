@@ -34,7 +34,10 @@ export function RadioCardGroup<T extends string>({
           <label
             key={opt.value}
             className={cn(
-              "block cursor-pointer rounded-lg border px-3 py-2.5",
+              // `relative`: see Checkbox — keeps the sr-only input's
+              // absolute position inside the card so focus can't
+              // scroll-jump the container.
+              "relative block cursor-pointer rounded-lg border px-3 py-2.5",
               "font-sans text-ink",
               "transition-colors duration-100",
               // The native input is sr-only, so the only way a keyboard
