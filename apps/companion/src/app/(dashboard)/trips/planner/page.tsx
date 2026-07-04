@@ -1259,10 +1259,16 @@ export default function TripPlannerPage() {
       minQuality,
     ],
   );
+  const prefsLoadStartedRef = useRef(false);
   useEffect(() => {
     // Load the rider's saved defaults once; pre-apply them ONLY on a
     // fresh planner (no tripId, no shared-URL control overrides) — a
     // loaded trip's own parameters and an explicit URL always win.
+    // Gated on authReady like the trip fetch above: on a hard load the
+    // auth store has no token yet and the GET would 401 silently,
+    // leaving the saved defaults unapplied.
+    if (!authReady || prefsLoadStartedRef.current) return;
+    prefsLoadStartedRef.current = true;
     let cancelled = false;
     const search = typeof window === "undefined" ? "" : window.location.search;
     const params = new URLSearchParams(search);
@@ -1292,8 +1298,9 @@ export default function TripPlannerPage() {
     return () => {
       cancelled = true;
     };
-    // Mount-only: reads the initial URL, like the tripId effect above.
-  }, []);
+    // Runs once when auth is ready; reads the initial URL like the
+    // tripId effect above.
+  }, [authReady]);
   useEffect(() => {
     // Debounced write-back of rider-made pref changes as the new saved
     // defaults. Trip-load sync never triggers this (prefsTouchedRef).
