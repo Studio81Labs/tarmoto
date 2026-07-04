@@ -68,6 +68,7 @@ import {
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
 import { fetchFunZonesInBbox } from "@/lib/discover";
+import { plannerApi } from "@/lib/planner/api";
 import {
   FUN_ZONES_FILL,
   installFunZoneLayer,
@@ -102,7 +103,7 @@ const WAYPOINT_SOURCE = "trip-planner-waypoints";
 const ROUTE_CASING_LINE = "trip-planner-route-casing";
 const ROUTE_LINE = "trip-planner-route-line";
 const ROUTE_HIT_LINE = "trip-planner-route-hit";
-const WAYPOINT_CIRCLE = "trip-planner-waypoint-circle";
+const WAYPOINT_PIN = "trip-planner-waypoint-pin";
 const WAYPOINT_LABEL = "trip-planner-waypoint-label";
 const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
 const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
@@ -140,6 +141,11 @@ interface TripPlannerMapProps {
     waypointId: string,
     location: { lng: number; lat: number },
   ) => void;
+  /**
+   * Called from a waypoint pin's context menu "Remove point" action.
+   * Undefined hides the action (read-only maps).
+   */
+  onRemoveWaypoint?: (waypointId: string) => void;
   selectedDayNumber?: number;
   /**
    * When true, only the selected day's route is rendered on the map.
@@ -198,6 +204,7 @@ export const TripPlannerMap = forwardRef<
     passesData,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -221,6 +228,7 @@ export const TripPlannerMap = forwardRef<
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
         onMoveWaypoint={onMoveWaypoint}
+        onRemoveWaypoint={onRemoveWaypoint}
         selectedDayNumber={selectedDayNumber}
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
@@ -241,6 +249,7 @@ export const TripPlannerMap = forwardRef<
       onDrawnRegionChange={onDrawnRegionChange}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
+      onRemoveWaypoint={onRemoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
@@ -268,6 +277,7 @@ const FetchedTripPlannerMap = forwardRef<
           location: { lng: number; lat: number },
         ) => void)
       | undefined;
+    onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
@@ -287,6 +297,7 @@ const FetchedTripPlannerMap = forwardRef<
     onDrawnRegionChange,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -312,6 +323,7 @@ const FetchedTripPlannerMap = forwardRef<
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
+      onRemoveWaypoint={onRemoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
@@ -342,6 +354,7 @@ const TripPlannerMapContent = forwardRef<
           location: { lng: number; lat: number },
         ) => void)
       | undefined;
+    onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
@@ -363,6 +376,7 @@ const TripPlannerMapContent = forwardRef<
     passesData,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -461,6 +475,19 @@ const TripPlannerMapContent = forwardRef<
   } | null>(null);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  // Right-clicking a waypoint pin opens ITS menu instead of placement:
+  // point info (role, coordinates, resolved place name) + Remove.
+  const [waypointMenu, setWaypointMenu] = useState<{
+    waypointId: string;
+    name: string;
+    role: string;
+    lng: number;
+    lat: number;
+    x: number;
+    y: number;
+    address: string | null;
+  } | null>(null);
+  const closeWaypointMenu = useCallback(() => setWaypointMenu(null), []);
 
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {
@@ -501,6 +528,12 @@ const TripPlannerMapContent = forwardRef<
       ),
     [trip, selectedDayNumber, focusSelectedDay],
   );
+  // Latest waypoint collection for the drag preview below — the drag
+  // effect must not re-run per render, so it reads through a ref.
+  const waypointCollectionRef = useRef(waypointCollection);
+  useEffect(() => {
+    waypointCollectionRef.current = waypointCollection;
+  }, [waypointCollection]);
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
   const { closures } = closuresData;
   const { passes } = passesData;
@@ -587,7 +620,8 @@ const TripPlannerMapContent = forwardRef<
       return;
     }
     closeContextMenu();
-  }, [closeContextMenu]);
+    closeWaypointMenu();
+  }, [closeContextMenu, closeWaypointMenu]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -612,9 +646,9 @@ const TripPlannerMapContent = forwardRef<
     map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
       const overWaypoint =
-        map.getLayer(WAYPOINT_CIRCLE) &&
+        map.getLayer(WAYPOINT_PIN) &&
         map.queryRenderedFeatures(event.point, {
-          layers: [WAYPOINT_CIRCLE],
+          layers: [WAYPOINT_PIN],
         }).length > 0;
       if (overWaypoint) return;
       const segmentId = event.features?.[0]?.properties?.segmentId as
@@ -867,6 +901,55 @@ const TripPlannerMapContent = forwardRef<
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, ready]);
+  // ── Waypoint pin context menu: info + remove (rider feedback) ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const onPinContextMenu = (event: MapLayerMouseEvent) => {
+      event.preventDefault();
+      const feature = event.features?.[0];
+      const props = feature?.properties as
+        | { waypointId?: string; label?: string; waypointType?: string }
+        | undefined;
+      if (!props?.waypointId) return;
+      const [lng, lat] =
+        feature?.geometry.type === "Point"
+          ? (feature.geometry.coordinates as [number, number])
+          : [event.lngLat.lng, event.lngLat.lat];
+      const waypointId = props.waypointId;
+      setContextMenu(null);
+      setWaypointMenu({
+        waypointId,
+        name: props.label ?? t("Waypoint"),
+        role:
+          props.waypointType === "end"
+            ? "finish"
+            : (props.waypointType ?? "via"),
+        lng,
+        lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+        address: null,
+      });
+      // Resolve the place name lazily; keep the menu snappy meanwhile.
+      void plannerApi
+        .reverseGeocode(lat, lng)
+        .then((address) => {
+          setWaypointMenu((menu) =>
+            menu && menu.waypointId === waypointId
+              ? { ...menu, address }
+              : menu,
+          );
+        })
+        .catch(() => {
+          // Address is informational — coordinates already show.
+        });
+    };
+    map.on("contextmenu", WAYPOINT_PIN, onPinContextMenu);
+    return () => {
+      map.off("contextmenu", WAYPOINT_PIN, onPinContextMenu);
+    };
+  }, [ready, editable]);
   // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -877,6 +960,15 @@ const TripPlannerMapContent = forwardRef<
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
       event.preventDefault();
+      // A right-click ON a waypoint pin belongs to the pin's own menu
+      // (info + remove) — never the placement menu.
+      if (
+        map.getLayer(WAYPOINT_PIN) &&
+        map.queryRenderedFeatures(event.point, { layers: [WAYPOINT_PIN] })
+          .length > 0
+      ) {
+        return;
+      }
       // Rider feedback: waypoints MUST be placeable inside a drawn region
       // (that's exactly where a drafted route lives). Region move/resize
       // are left-drag gestures, so a right-click never conflicts with
@@ -1005,16 +1097,44 @@ const TripPlannerMapContent = forwardRef<
     const handleLeave = () => {
       if (!active) setCursor("");
     };
+    // Rider feedback: the pin must STAY UNDER THE POINTER while
+    // dragging, not jump on drop — preview the position by patching the
+    // waypoint source locally. React state stays untouched until the
+    // drop commits (or the source re-syncs from state on cancel).
+    const previewDragPosition = (lngLat: { lng: number; lat: number }) => {
+      if (!active?.moved) return;
+      const collection = waypointCollectionRef.current;
+      syncGeoJsonSource(map, WAYPOINT_SOURCE, {
+        ...collection,
+        features: collection.features.map((feature) =>
+          feature.properties?.waypointId === active?.waypointId &&
+          feature.geometry.type === "Point"
+            ? {
+                ...feature,
+                geometry: {
+                  ...feature.geometry,
+                  coordinates: [lngLat.lng, lngLat.lat],
+                },
+              }
+            : feature,
+        ),
+      });
+    };
+    const restoreDragPreview = () => {
+      syncGeoJsonSource(map, WAYPOINT_SOURCE, waypointCollectionRef.current);
+    };
     const handleMouseMove = (event: MapMouseEvent) => {
       if (!active) return;
       event.preventDefault();
       setCursor("grabbing");
       noteIfPastTolerance(event.point);
+      previewDragPosition(event.lngLat);
     };
     const handleTouchMove = (event: MapTouchEvent) => {
       if (!active) return;
       event.preventDefault();
       noteIfPastTolerance(event.point);
+      previewDragPosition(event.lngLat);
     };
     const cancelDrag = () => {
       // Used when the gesture ends without a usable pointer position
@@ -1024,6 +1144,7 @@ const TripPlannerMapContent = forwardRef<
       if (!active) return;
       active = null;
       setCursor("");
+      restoreDragPreview();
       // A cancelled touch never produces the synthetic post-pointer
       // `click` that would normally clear this flag — without this,
       // the rider's next legitimate map click would be silently
@@ -1050,6 +1171,7 @@ const TripPlannerMapContent = forwardRef<
       // `swallowNextClickRef` swallow the synthetic click so the tap is
       // a true no-op.
       if (!drag.moved) return;
+      restoreDragPreview();
       const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
       const target = snapped ?? {
         lng: roundCoordinate(lngLat.lng),
@@ -1069,6 +1191,12 @@ const TripPlannerMapContent = forwardRef<
       finishDrag(event.lngLat, event.point);
     };
     const beginDrag = (event: MapMouseEvent | MapTouchEvent) => {
+      // Primary button only — a right-click on a pin belongs to its
+      // context menu, and arming a drag here would swallow that gesture.
+      const original = (event as MapMouseEvent).originalEvent as
+        | MouseEvent
+        | undefined;
+      if (original && "button" in original && original.button !== 0) return;
       const features = (event as MapMouseEvent & { features?: unknown[] })
         .features as
         | Array<{
@@ -1103,10 +1231,10 @@ const TripPlannerMapContent = forwardRef<
       setCursor("grabbing");
     };
 
-    map.on("mouseenter", WAYPOINT_CIRCLE, handleEnter);
-    map.on("mouseleave", WAYPOINT_CIRCLE, handleLeave);
-    map.on("mousedown", WAYPOINT_CIRCLE, beginDrag);
-    map.on("touchstart", WAYPOINT_CIRCLE, beginDrag);
+    map.on("mouseenter", WAYPOINT_PIN, handleEnter);
+    map.on("mouseleave", WAYPOINT_PIN, handleLeave);
+    map.on("mousedown", WAYPOINT_PIN, beginDrag);
+    map.on("touchstart", WAYPOINT_PIN, beginDrag);
     map.on("mousemove", handleMouseMove);
     map.on("touchmove", handleTouchMove);
     map.on("mouseup", handleMouseUp);
@@ -1147,10 +1275,10 @@ const TripPlannerMapContent = forwardRef<
     window.addEventListener("touchcancel", onWindowTouchCancel);
 
     return () => {
-      map.off("mouseenter", WAYPOINT_CIRCLE, handleEnter);
-      map.off("mouseleave", WAYPOINT_CIRCLE, handleLeave);
-      map.off("mousedown", WAYPOINT_CIRCLE, beginDrag);
-      map.off("touchstart", WAYPOINT_CIRCLE, beginDrag);
+      map.off("mouseenter", WAYPOINT_PIN, handleEnter);
+      map.off("mouseleave", WAYPOINT_PIN, handleLeave);
+      map.off("mousedown", WAYPOINT_PIN, beginDrag);
+      map.off("touchstart", WAYPOINT_PIN, beginDrag);
       map.off("mousemove", handleMouseMove);
       map.off("touchmove", handleTouchMove);
       map.off("mouseup", handleMouseUp);
@@ -1171,7 +1299,11 @@ const TripPlannerMapContent = forwardRef<
       ],
       {
         padding: 72,
-        duration: 0,
+        // Animated like the geolocate fly-to (rider feedback) — both the
+        // toolbar Fit route and the fit-on-route-build glide instead of
+        // snapping.
+        duration: 1200,
+        essential: true,
         maxZoom: 11,
       },
     );
@@ -1426,6 +1558,41 @@ const TripPlannerMapContent = forwardRef<
         />
       ) : null}
       {/* ── Context menu overlay (Task 10) ── */}
+      {waypointMenu ? (
+        <div
+          role="dialog"
+          aria-label={t("Waypoint details")}
+          className="fixed z-30 w-60 overflow-hidden rounded-xl border border-line bg-cream shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+          style={{ left: waypointMenu.x, top: waypointMenu.y }}
+        >
+          <div className="px-3.5 pb-2.5 pt-3">
+            <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              {waypointMenu.role}
+            </p>
+            <p className="mt-0.5 truncate text-[13px] font-bold text-ink">
+              {waypointMenu.name}
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-snug text-fg-dim">
+              {waypointMenu.address ?? t("Looking up the place… ")}
+            </p>
+            <p className="mt-1 font-mono text-[10px] tracking-[0.3px] text-fg-mute">
+              {waypointMenu.lat.toFixed(5)}, {waypointMenu.lng.toFixed(5)}
+            </p>
+          </div>
+          {onRemoveWaypoint ? (
+            <button
+              type="button"
+              onClick={() => {
+                onRemoveWaypoint(waypointMenu.waypointId);
+                closeWaypointMenu();
+              }}
+              className="w-full border-t border-line px-3.5 py-2.5 text-left text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
+            >
+              {t("Remove point")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {contextMenu ? (
         <div
           role="menu"
@@ -1496,6 +1663,52 @@ function snapPointerToRoad(
     features,
   );
 }
+const WAYPOINT_PIN_IMAGE_PREFIX = "tarmoto-waypoint-pin-";
+
+/**
+ * Canvas-drawn teardrop pins per waypoint role (2× for crisp rendering).
+ * jsdom has no 2D context — tests simply get no images, and the symbol
+ * layer renders nothing there.
+ */
+function installWaypointPinImages(map: MapLibreMap): void {
+  const roles: Array<[string, string, string]> = [
+    ["start", "#1F8A5B", "#FFFFFF"],
+    ["via", "#1FA6B8", "#FFFFFF"],
+    ["end", "#FF6A1A", "#0E0E10"],
+  ];
+  for (const [role, fill, ring] of roles) {
+    const imageId = `${WAYPOINT_PIN_IMAGE_PREFIX}${role}`;
+    if (map.hasImage?.(imageId)) continue;
+    const width = 60;
+    const height = 80;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) continue;
+    const cx = width / 2;
+    const headR = 20;
+    const headCy = headR + 4;
+    // Teardrop: circle head + tapered tip down to the anchor point.
+    ctx.beginPath();
+    ctx.arc(cx, headCy, headR, Math.PI * 0.75, Math.PI * 0.25);
+    ctx.lineTo(cx, height - 4);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = ring;
+    ctx.stroke();
+    // Inner dot for the classic pin look.
+    ctx.beginPath();
+    ctx.arc(cx, headCy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = ring;
+    ctx.fill();
+    const image = ctx.getImageData(0, 0, width, height);
+    map.addImage(imageId, image, { pixelRatio: 2 });
+  }
+}
+
 function ensurePlannerLayers(map: MapLibreMap): void {
   // Aerial basemap raster sits under every planner layer AND under the
   // tarmoto tile overlays (the lowest custom layer MapCanvas installs).
@@ -1630,43 +1843,30 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       data: buildTripPlannerWaypointCollection(null),
     });
   }
-  if (!map.getLayer(WAYPOINT_CIRCLE)) {
+  installWaypointPinImages(map);
+  if (!map.getLayer(WAYPOINT_PIN)) {
     map.addLayer({
-      id: WAYPOINT_CIRCLE,
-      type: "circle",
+      id: WAYPOINT_PIN,
+      type: "symbol",
       source: WAYPOINT_SOURCE,
-      paint: {
-        "circle-radius": [
-          "match",
-          ["get", "waypointType"],
-          "start",
-          7,
-          "end",
-          7,
-          5.5,
-        ],
-        // Design vocabulary: start green, vias/stops teal, finish CORAL —
-        // the same colors the panel's route spine uses, so panel and map
+      layout: {
+        // Teardrop pins (rider feedback) in the spine's role colors:
+        // start green, vias/stops teal, finish coral — panel and map
         // always agree on what "finish" looks like.
-        "circle-color": [
+        "icon-image": [
           "match",
           ["get", "waypointType"],
           "start",
-          "#1F8A5B",
+          `${WAYPOINT_PIN_IMAGE_PREFIX}start`,
           "end",
-          "#FF6A1A",
-          "#1FA6B8",
+          `${WAYPOINT_PIN_IMAGE_PREFIX}end`,
+          `${WAYPOINT_PIN_IMAGE_PREFIX}via`,
         ],
-        // Finish gets an ink ring (accent-on-cream needs the darker ring);
-        // everything else keeps a light ring per the design frames.
-        "circle-stroke-color": [
-          "match",
-          ["get", "waypointType"],
-          "end",
-          "#0E0E10",
-          "#FFFFFF",
-        ],
-        "circle-stroke-width": 2,
+        // Drawn at 2× for crisp rendering; the tip sits on the location.
+        "icon-size": 0.5,
+        "icon-anchor": "bottom",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }

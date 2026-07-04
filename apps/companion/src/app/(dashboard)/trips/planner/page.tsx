@@ -22,6 +22,7 @@ import {
   Check,
   ChevronDown,
   MoveRight,
+  X,
   Save,
   SlidersHorizontal,
   GripVertical,
@@ -322,6 +323,7 @@ export default function TripPlannerPage() {
   );
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
   const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
+  const removeWaypointById = useTripStore((s) => s.removeWaypointById);
   const splitStatus = useTripStore((s) => s.splitStatus);
   const planningMode = useTripStore((s) => s.planningMode);
   const setPlanningMode = useTripStore((s) => s.setPlanningMode);
@@ -619,6 +621,9 @@ export default function TripPlannerPage() {
     routeDirty &&
     selectedDay !== null &&
     stalePreviewDays.includes(selectedDay.dayNumber);
+  // Set by the draft flows: the next live-routing result represents a
+  // freshly built route, so the map should zoom to fit it.
+  const fitAfterRouteRef = useRef(false);
   const handleRouteResult = useCallback(
     (
       result: Parameters<typeof applyRouteResult>[1],
@@ -630,7 +635,18 @@ export default function TripPlannerPage() {
       // before this response resolved, which would otherwise corrupt the
       // now-current day and clear its stale flag.
       if (requestDayNumber == null) return;
+      // Fit when a route is BUILT (the day had no routed line yet, or a
+      // draft just replaced it) — but never on ordinary edits, which
+      // must preserve the rider's zoom/pan (#559).
+      const day = activeTripRef.current?.days.find(
+        (d) => d.dayNumber === requestDayNumber,
+      );
+      const hadGeometry = Boolean(day?.routeGeometry?.coordinates?.length);
       applyRouteResult(requestDayNumber, result, legBreaks);
+      if (!hadGeometry || fitAfterRouteRef.current) {
+        fitAfterRouteRef.current = false;
+        setFitRouteToken((token) => token + 1);
+      }
     },
     [applyRouteResult],
   );
@@ -1569,6 +1585,7 @@ export default function TripPlannerPage() {
               type: "via",
             });
           });
+          fitAfterRouteRef.current = true;
         }
         if (!result.inflated && result.reachedTargetKm) {
           // Case 3 — already a full day's ride; drafted natural.
@@ -1671,6 +1688,7 @@ export default function TripPlannerPage() {
             type: "via",
           });
         });
+        fitAfterRouteRef.current = true;
         const draftedKm = Math.round(result.summary.distanceKm);
         if (result.reachedTargetKm) {
           setDraftNote(null);
@@ -1838,15 +1856,6 @@ export default function TripPlannerPage() {
               </p>
             ) : null}
           </div>
-          {displayedTrip?.status === "draft" && (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-ink">
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 rounded-full bg-ink"
-              />
-              {t("AI draft")}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -2064,6 +2073,7 @@ export default function TripPlannerPage() {
               onMoveWaypoint={(dayNumber, waypointId, location) =>
                 moveWaypoint(dayNumber - 1, waypointId, location, plannerParams)
               }
+              onRemoveWaypoint={removeWaypointById}
               collaboratorCursors={collabSession.cursors}
               suggestions={collabSession.suggestions}
               dayBreaks={dayBreakMarkers}
@@ -2155,6 +2165,7 @@ export default function TripPlannerPage() {
                   legPrefs={legPrefs}
                   tripPreference={roadPreference}
                   onChangeLegPref={handleChangeLegPref}
+                  onRemove={removeWaypointById}
                   onReorder={(fromIndex, toIndex) =>
                     reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
                   }
@@ -3127,6 +3138,7 @@ function WaypointEditor({
   legPrefs = [],
   tripPreference = "direct",
   onChangeLegPref,
+  onRemove,
   onReorder,
   onRelocate,
   onAddVia,
@@ -3144,6 +3156,8 @@ function WaypointEditor({
     fromWaypointId: string,
     preference: LegPref["preference"],
   ) => void;
+  /** Remove a waypoint from the spine (roles re-derive from position). */
+  onRemove?: (waypointId: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onRelocate?: (waypointId: string, result: GeoResult) => void;
   onAddVia?: (result: GeoResult) => void;
@@ -3244,6 +3258,18 @@ function WaypointEditor({
                   </span>
                 )}
               </div>
+              {onRemove ? (
+                <button
+                  type="button"
+                  aria-label={t("Remove {name}", {
+                    name: waypoint.name ?? `waypoint ${index + 1}`,
+                  })}
+                  onClick={() => onRemove(waypoint.id)}
+                  className="shrink-0 rounded p-0.5 text-fg-mute transition hover:text-quality-q1"
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
             </div>
             {legAfter && onChangeLegPref ? (
               <div className="relative pl-[21px]">

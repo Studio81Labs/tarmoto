@@ -925,7 +925,7 @@ describe("TripPlannerMap", () => {
     expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
     expect(mockMap.fitBounds).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ padding: 72, duration: 0, maxZoom: 11 }),
+      expect.objectContaining({ padding: 72, duration: 1200, maxZoom: 11 }),
     );
   });
 
@@ -1233,7 +1233,7 @@ describe("TripPlannerMap", () => {
 
     const preventDefault = vi.fn();
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault,
         features: [
           {
@@ -1297,7 +1297,7 @@ describe("TripPlannerMap", () => {
     // Begin a real drag (past click tolerance) with the first callback
     // installed.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1372,7 +1372,7 @@ describe("TripPlannerMap", () => {
 
     const preventDefault = vi.fn();
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault,
         features: [],
         point: { x: 100, y: 100 },
@@ -1429,7 +1429,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1499,7 +1499,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1575,7 +1575,7 @@ describe("TripPlannerMap", () => {
     // emit a synthetic click. Our threshold must match exactly,
     // otherwise the gap (3 < dist <= 4) keeps the swallow flag armed.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1652,7 +1652,7 @@ describe("TripPlannerMap", () => {
     // exercises the no-op-store-update path so we can verify the
     // listeners stay attached even when React does not re-render.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1687,7 +1687,7 @@ describe("TripPlannerMap", () => {
     expect(preventDefault).not.toHaveBeenCalled();
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1741,7 +1741,7 @@ describe("TripPlannerMap", () => {
     // Touch a waypoint, never move past tolerance, then cancel —
     // common when an OS gesture (e.g. system back swipe) interrupts.
     act(() => {
-      layerHandlers.get("touchstart:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("touchstart:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1803,7 +1803,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1890,7 +1890,7 @@ describe("TripPlannerMap", () => {
     // mouseup `lngLat` differs from the marker's stored location, so
     // committing it would silently nudge the waypoint by a few pixels.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1958,7 +1958,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
