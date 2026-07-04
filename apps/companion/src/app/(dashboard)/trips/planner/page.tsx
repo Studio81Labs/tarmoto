@@ -1922,24 +1922,6 @@ export default function TripPlannerPage() {
                   className="sr-only"
                 />
 
-                <div className="mt-4">
-                  <label
-                    htmlFor="trip-planner-daily-km"
-                    className="mb-1 block text-xs text-fg-dim"
-                  >
-                    {t("Daily km target")}
-                  </label>
-                  <NumberField
-                    id="trip-planner-daily-km"
-                    min={100}
-                    max={500}
-                    step={25}
-                    value={dailyKmTarget}
-                    onChange={setDailyKmTarget}
-                    tone="cream"
-                  />
-                </div>
-
                 <Button
                   variant="secondary"
                   size="md"
@@ -1997,6 +1979,23 @@ export default function TripPlannerPage() {
                       {n}
                     </button>
                   ))}
+                </div>
+                <div className="mt-3">
+                  <label
+                    htmlFor="trip-planner-daily-km"
+                    className="mb-1 block text-xs text-fg-dim"
+                  >
+                    {t("Daily km target")}
+                  </label>
+                  <NumberField
+                    id="trip-planner-daily-km"
+                    min={100}
+                    max={500}
+                    step={25}
+                    value={dailyKmTarget}
+                    onChange={setDailyKmTarget}
+                    tone="cream"
+                  />
                 </div>
                 {(() => {
                   const routeKm = displayedTrip?.days[0]?.distanceKm ?? 0;
