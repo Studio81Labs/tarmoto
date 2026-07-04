@@ -11,6 +11,9 @@ import {
 } from "@/stores/trip";
 import {
   ArrowLeft,
+  CalendarDays,
+  Check,
+  ChevronDown,
   Save,
   GripVertical,
   RotateCcw,
@@ -40,8 +43,6 @@ import {
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
 import { fetchOvernightTowns } from "@/lib/planner/api";
-import { fetchFunZonesInBbox } from "@/lib/discover";
-import { draftViasThroughZones } from "@/lib/planner/draft-vias";
 import { plannerApi } from "@/lib/planner/api";
 import type { GeoResult } from "@/lib/planner/types";
 import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
@@ -147,13 +148,14 @@ const URL_PARAM_KEYS = {
 export default function TripPlannerPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
-  // Controlled Advanced disclosure — starts open (Playwright e2es +
-  // closures / route-builder warnings the rider relies on need the
-  // children visible on first render) and respects subsequent user
-  // toggles via the native `<details>` onToggle event. A hardcoded
-  // `open` attribute would re-open the section on every parent
-  // re-render, clobbering user collapses.
-  const [advancedOpen, setAdvancedOpen] = useState(true);
+  // Controlled "Plan as multi-day trip" disclosure — collapsed by default
+  // (revision 2 §D: splitting is an optional layer most riders never
+  // touch). Controlled rather than a bare `open` attribute so parent
+  // re-renders can't clobber the rider's toggle.
+  const [multiDayOpen, setMultiDayOpen] = useState(false);
+  // Honest sizing note from the last draft (revision 2 §E): set when the
+  // soft daily-km target couldn't be reached with genuinely good roads.
+  const [draftNote, setDraftNote] = useState<string | null>(null);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [travelMonth, setTravelMonth] = useState<number>(() =>
@@ -256,7 +258,9 @@ export default function TripPlannerPage() {
   );
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
   const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
-  const splitState = useTripStore((s) => s.splitState);
+  const splitStatus = useTripStore((s) => s.splitStatus);
+  const planningMode = useTripStore((s) => s.planningMode);
+  const setPlanningMode = useTripStore((s) => s.setPlanningMode);
   const dayPlans = useTripStore((s) => s.dayPlans);
   const applySplit = useTripStore((s) => s.applySplit);
   const renameWaypoint = useTripStore((s) => s.renameWaypoint);
@@ -388,7 +392,7 @@ export default function TripPlannerPage() {
   useEffect(() => {
     const previous = splitInputsRef.current;
     splitInputsRef.current = { dailyKmTarget, forcedDays };
-    if (splitState !== "split") return;
+    if (splitStatus !== "split") return;
     if (
       previous.dailyKmTarget === dailyKmTarget &&
       previous.forcedDays === forcedDays
@@ -396,10 +400,17 @@ export default function TripPlannerPage() {
       return;
     }
     void handleSplit();
-  }, [dailyKmTarget, forcedDays, splitState, handleSplit]);
+  }, [dailyKmTarget, forcedDays, splitStatus, handleSplit]);
+  // When a trip arrives already split (saved multi-day trip, planner
+  // reopened), surface the multi-day section so its controls are in
+  // view. Only fires on status transitions — a rider's manual collapse
+  // while split stays collapsed.
+  useEffect(() => {
+    if (splitStatus !== "none") setMultiDayOpen(true);
+  }, [splitStatus]);
   // Day-break markers for the map — one per split boundary (not the finish).
   const dayBreakMarkers = useMemo(() => {
-    if (splitState === "unsplit" || !dayPlans || dayPlans.length < 2) return [];
+    if (splitStatus === "none" || !dayPlans || dayPlans.length < 2) return [];
     const trip = displayedTrip;
     // Working-day model only: a loaded multi-day trip has per-day geometry
     // and draws its own boundaries via the waypoint markers.
@@ -421,7 +432,7 @@ export default function TripPlannerPage() {
           ]
         : [];
     });
-  }, [splitState, dayPlans, displayedTrip]);
+  }, [splitStatus, dayPlans, displayedTrip]);
   // Map-placed pins carry auto-generated names ("Start", "Via 2") —
   // reverse-geocode them to a place name once per placement (addendum §2).
   const reverseGeocodedRef = useRef(new Set<string>());
@@ -767,19 +778,6 @@ export default function TripPlannerPage() {
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
-  type TimelineDayLike = {
-    dayNumber: number;
-    title?: string | undefined;
-    distanceKm?: number | undefined;
-    elevationGain?: number | undefined;
-    durationMinutes?: number | undefined;
-    overnightStop?: { name: string } | undefined;
-  };
-  const timelineDays: TimelineDayLike[] = activeTrip?.days ?? [
-    { dayNumber: 1 },
-    { dayNumber: 2 },
-    { dayNumber: 3 },
-  ];
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
     setImportOpen(true);
@@ -953,7 +951,7 @@ export default function TripPlannerPage() {
     // Persist the computed split: rewrite trip.days from the DayPlans so
     // the existing per-day save contract carries them (addendum decision).
     if (
-      useTripStore.getState().splitState === "split" &&
+      useTripStore.getState().splitStatus === "split" &&
       useTripStore.getState().activeTrip?.days.length === 1
     ) {
       useTripStore.getState().materializeSplit();
@@ -1251,69 +1249,88 @@ export default function TripPlannerPage() {
   const handleGenerate = useCallback(async () => {
     if (generationLockRef.current) return;
     const activeTripAtStart = activeTripRef.current;
-    // ── Start + finish already set: drafting doesn't need the backend
-    // loop generator (the A→B route is live). Instead, thread the drawn
-    // region's best Fun Zones between the endpoints as vias and let live
-    // routing redraw through them. Days stay with the splitter.
+    // ── Start + finish set (revision 2 §E cases 2/3): drafting measures
+    // the DIRECT route against the daily-km sizing value, then either
+    // inflates a short hop through Fun Zones toward it (soft target) or
+    // leaves a full-day route natural with light corridor flavor. The
+    // draft returns the vias; live routing redraws through them. Days
+    // stay with the splitter — a draft never creates them.
     const routeDay = activeTripAtStart?.days[0];
     const startWp = routeDay?.waypoints.find((w) => w.type === "start");
     const finishWp = routeDay ? dayFinishWaypoint(routeDay.waypoints) : null;
     if (startWp && finishWp && startWp !== finishWp) {
-      if (!plannerRegion) {
-        toast.error(
-          t(
-            "Start and finish are already routed live. Draw a region to draft the route through its Fun Zones.",
-          ),
-        );
-        return;
-      }
+      setGenerating(true);
       try {
-        const zones = await fetchFunZonesInBbox(plannerRegion);
-        const vias = draftViasThroughZones(
-          zones,
+        const result = await plannerApi.draftRoute(
+          { lat: startWp.location.lat, lng: startWp.location.lng },
+          { lat: finishWp.location.lat, lng: finishWp.location.lng },
           {
-            lat: startWp.location.lat,
-            lng: startWp.location.lng,
-          },
-          {
-            lat: finishWp.location.lat,
-            lng: finishWp.location.lng,
+            region: plannerRegion,
+            prefs: routeOptions,
+            dailyKmForSizing: dailyKmTarget,
           },
         );
-        if (vias.length === 0) {
-          toast.error(t("No Fun Zones found in the drawn region."));
-          return;
-        }
-        // Replace existing plain vias with the drafted ones (stops like
-        // fuel/stays are kept). Sequential before-finish inserts preserve
-        // the travel order.
-        const store = useTripStore.getState();
-        for (const waypoint of routeDay!.waypoints) {
-          if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
-        }
-        vias.forEach((via, index) => {
-          useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
-            id: `draft-${Date.now()}-${index}`,
-            name: via.name,
-            location: { lat: via.lat, lng: via.lng },
-            type: "via",
+        const draftedKm = Math.round(result.summary.distanceKm);
+        if (result.vias.length > 0) {
+          // Replace existing plain vias with the drafted ones (stops like
+          // fuel/stays are kept). Sequential before-finish inserts
+          // preserve the travel order.
+          const store = useTripStore.getState();
+          for (const waypoint of routeDay!.waypoints) {
+            if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
+          }
+          result.vias.forEach((via, index) => {
+            useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
+              id: `draft-${Date.now()}-${index}`,
+              name: via.name,
+              location: { lat: via.lat, lng: via.lng },
+              type: "via",
+            });
           });
-        });
-        toast.success(
-          t("Drafted through {count} Fun Zone{s}.", {
-            count: vias.length,
-            s: vias.length === 1 ? "" : "s",
-          }),
-        );
+        }
+        if (!result.inflated && result.reachedTargetKm) {
+          // Case 3 — already a full day's ride; drafted natural.
+          setDraftNote(null);
+          toast.success(
+            result.vias.length > 0
+              ? t("Drafted ≈{km} km through {count} Fun Zone{s} on the way.", {
+                  km: draftedKm,
+                  count: result.vias.length,
+                  s: result.vias.length === 1 ? "" : "s",
+                })
+              : t("≈{km} km — already a full day's ride, left as routed.", {
+                  km: draftedKm,
+                }),
+          );
+        } else if (result.reachedTargetKm) {
+          setDraftNote(null);
+          toast.success(
+            t("Drafted ≈{km} km through {count} Fun Zone{s}.", {
+              km: draftedKm,
+              count: result.vias.length,
+              s: result.vias.length === 1 ? "" : "s",
+            }),
+          );
+        } else {
+          // Honest report — the soft target is a goal, not a contract.
+          const note = t("≈{km} km — limited fun roads nearby.", {
+            km: draftedKm,
+          });
+          setDraftNote(note);
+          toast.success(note);
+        }
       } catch {
-        toast.error(t("Could not load Fun Zones for the drawn region."));
+        toast.error(t("Could not draft the route right now."));
+      } finally {
+        setGenerating(false);
       }
       return;
     }
-    // ── Start only: the backend generator drafts a roundtrip from the
-    // start. Auto days = a single-day loop sized by the daily km target;
-    // the splitter takes it from there. A forced day count is honored.
-    const generationParams = { ...plannerParams, days: forcedDays ?? 1 };
+    // ── Start only (revision 2 §E case 1): the backend generator drafts
+    // a roundtrip returning to the start, sized by the daily-km value —
+    // always a single day's worth of riding. Days only ever come from
+    // the splitter afterwards.
+    const generationParams = { ...plannerParams, days: 1 };
     const validationError = validateGenerationInput(
       activeTripAtStart,
       generationParams,
@@ -1421,9 +1438,10 @@ export default function TripPlannerPage() {
     }
   }, [
     currentUserId,
-    forcedDays,
+    dailyKmTarget,
     plannerParams,
     plannerRegion,
+    routeOptions,
     selectedDayIndex,
     serverTripId,
     setActiveTrip,
@@ -1510,6 +1528,12 @@ export default function TripPlannerPage() {
     );
     return sum > 0 ? Math.round(sum) : null;
   }, [displayedTrip]);
+  // Revision 2 §B: the day column exists ONLY after an actual split
+  // inside the multi-day opt-in — otherwise there is no day concept.
+  const daysVisible =
+    planningMode === "multiday" &&
+    splitStatus !== "none" &&
+    (dayPlans?.length ?? 0) > 0;
   return (
     <div className="flex h-full min-h-0 flex-col bg-cream">
       {/* Slim top toolbar — keeps Save / Undo / Redo / Import / Export /
@@ -1517,9 +1541,43 @@ export default function TripPlannerPage() {
           column primary CTA per spec; Parameters / Segments toggles
           drop since both panels are always visible in the 3-col grid. */}
       <div className="flex items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
-        <h1 className="min-w-0 truncate text-sm font-semibold text-ink">
-          {displayedTrip?.name ?? t("New Trip")}
-        </h1>
+        {/* Trip identity lives up here (design v2 top bar): the left day
+            column only exists after a split, so it can't own the title.
+            Header shows a day count ONLY post-split (revision 2 §C). */}
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href="/trips"
+            className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-bold text-fg-dim transition hover:text-ink"
+          >
+            <ArrowLeft size={14} />
+            {t("Trips")}
+          </Link>
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
+          <div className="min-w-0">
+            <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink">
+              {displayedTrip?.name ?? t("New Trip")}
+            </h1>
+            {totalDistanceKm !== null ? (
+              <p className="truncate font-mono text-[10px] tracking-[0.3px] text-fg-mute">
+                {daysVisible && dayPlans
+                  ? t("{days} days · {km} km", {
+                      days: dayPlans.length,
+                      km: totalDistanceKm,
+                    })
+                  : t("{km} km", { km: totalDistanceKm })}
+              </p>
+            ) : null}
+          </div>
+          {displayedTrip?.status === "draft" && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-ink">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full bg-ink"
+              />
+              {t("AI draft")}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -1617,89 +1675,26 @@ export default function TripPlannerPage() {
 
       {/* Phase 2: multi-day option cards return here */}
 
-      {/* 3-column grid — left legs, center map (+ floating footer card),
-          right parameters. Spec: v2-pages.jsx Trip Planner. */}
-      <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr_340px]">
-        {/* LEFT — back link + spec header + scrollable legs list */}
-        <aside className="flex min-h-0 flex-col border-r border-line">
-          <div className="border-b border-line px-5 pb-3 pt-[18px]">
-            <Link
-              href="/trips"
-              className="mb-2.5 inline-flex items-center gap-1.5 text-[12px] text-fg-dim transition hover:text-ink"
-            >
-              <ArrowLeft size={14} />
-              {t("Trips")}
-            </Link>
-            <div className="mb-1.5 flex items-center justify-between gap-2">
+      {/* Grid — the left day column exists ONLY after a split inside the
+          multi-day opt-in (revision 2 §B); otherwise the map takes the
+          space. Right panel is always present. */}
+      <div
+        className={`grid min-h-0 flex-1 ${
+          daysVisible ? "grid-cols-[340px_1fr_340px]" : "grid-cols-[1fr_340px]"
+        }`}
+      >
+        {/* LEFT — itinerary surface: the split's day cards. Absent (not
+            empty-state) before a split. */}
+        {daysVisible && dayPlans ? (
+          <aside className="flex min-h-0 flex-col border-r border-line">
+            <div className="border-b border-line px-5 pb-3 pt-[18px]">
               <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                {t("Route · Day {n} of {total}", {
-                  n: selectedDayIndex + 1,
-                  total: Math.max(1, timelineDays.length),
-                })}
-              </span>
-              {displayedTrip?.status === "draft" && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-ink">
-                  <span
-                    aria-hidden="true"
-                    className="h-1.5 w-1.5 rounded-full bg-ink"
-                  />
-                  {t("AI draft")}
-                </span>
-              )}
-            </div>
-            <h2 className="mt-2 font-sans text-[22px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-              {displayedTrip?.name ?? t("New Trip")}
-            </h2>
-            <div className="mt-2.5 flex flex-wrap gap-3.5 font-mono text-[12px] text-fg-dim">
-              {totalDistanceKm !== null && (
-                <span>
-                  <span className="font-bold text-ink">{totalDistanceKm}</span>{" "}
-                  {t("km")}
-                </span>
-              )}
-              <span>
-                <span className="font-bold text-ink">
-                  {timelineDays.length}
-                </span>{" "}
-                {timelineDays.length === 1 ? t("day") : t("days")}
+                {t("Itinerary · {days} days", { days: dayPlans.length })}
               </span>
             </div>
-          </div>
-
-          {/* Day column (addendum): days are DERIVED by the splitter, not
-              hand-edited. unsplit = empty column; split = DayPlans; stale =
-              dimmed DayPlans + re-split hint. With no trip loaded, render 3
-              disabled placeholder chips so the existing test
-              (`getByRole('button', { name: /Day 1/ })`) still resolves. */}
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
-            {!activeTrip ? (
-              timelineDays.map((day) => (
-                <button
-                  key={day.dayNumber}
-                  type="button"
-                  disabled
-                  aria-label={`Day ${day.dayNumber}`}
-                  className="rounded-[12px] border border-line bg-cream p-3 text-left opacity-50"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
-                      {String(day.dayNumber).padStart(2, "0")}
-                    </div>
-                    <div className="truncate text-[13px] font-bold text-ink">
-                      {t("Day")} {day.dayNumber}
-                    </div>
-                  </div>
-                </button>
-              ))
-            ) : !dayPlans || dayPlans.length === 0 ? (
-              <p className="px-1 pt-2 text-[12px] leading-relaxed text-fg-dim">
-                {t(
-                  "No days yet — the route is live while you build it. When it's ready, use Split into days in the BUILD tab to lay out the itinerary. ",
-                )}
-              </p>
-            ) : (
+            <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
               <>
-                {splitState === "stale" ? (
+                {splitStatus === "stale" ? (
                   <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
                     <span className="text-[11.5px] font-semibold text-ink">
                       {t("Route changed ")}
@@ -1732,7 +1727,7 @@ export default function TripPlannerPage() {
                       selectedPlanIndex === planIndex
                         ? "border-accent"
                         : "border-line"
-                    } ${splitState === "stale" ? "opacity-45" : ""}`}
+                    } ${splitStatus === "stale" ? "opacity-45" : ""}`}
                   >
                     <div className="flex items-center gap-2">
                       <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
@@ -1774,9 +1769,9 @@ export default function TripPlannerPage() {
                   </button>
                 ))}
               </>
-            )}
-          </div>
-        </aside>
+            </div>
+          </aside>
+        ) : null}
 
         {/* CENTER — Map canvas + floating multi-day footer card */}
         <div
@@ -1888,13 +1883,11 @@ export default function TripPlannerPage() {
                 />
               </div>
 
+              {/* §02 ROUTE PREFERENCES — routing-affecting prefs live in
+                  the main flow (revision 2 §D): every change re-fires
+                  live routing. */}
               <div>
-                <SectionStamp n="02">{t("Propose a route ")}</SectionStamp>
-                <p className="mb-4 text-[12px] leading-relaxed text-fg-dim">
-                  {t(
-                    "With only a start set, drafting proposes a roundtrip from it (sized by your daily km). With a finish too, it threads the drawn region's Fun Zones between your endpoints. ",
-                  )}
-                </p>
+                <SectionStamp n="02">{t("Route preferences ")}</SectionStamp>
 
                 {/* Road preference radio cards — includes a "Balanced" card
                     for the `mixed` planner default so the visible UI and
@@ -1990,9 +1983,79 @@ export default function TripPlannerPage() {
                   </select>
                 </div>
 
+                <div className="mt-4">
+                  <p className="mb-2 block text-xs text-fg-dim">
+                    {t("Surface preference")}
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {SURFACE_OPTIONS.map((surface) => (
+                      <Checkbox
+                        key={surface.value}
+                        checked={surfacePreference.includes(surface.value)}
+                        onChange={() => handleSurfaceToggle(surface.value)}
+                        label={surface.label}
+                        ariaLabel={surface.label}
+                        className="py-1"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label
+                    htmlFor="trip-planner-min-quality"
+                    className="mb-1 block text-xs text-fg-dim"
+                  >
+                    {t("Minimum road quality")}
+                  </label>
+                  <Select
+                    id="trip-planner-min-quality"
+                    value={minQuality}
+                    onChange={(value) => handleMinQualityChange(Number(value))}
+                    tone="cream"
+                  >
+                    <option value="1">{t("Any condition")}</option>
+                    <option value="2">{t("Fair or better")}</option>
+                    <option value="3">{t("Good or better")}</option>
+                    <option value="4">{t("Excellent only")}</option>
+                  </Select>
+                </div>
+
+                <div className="mt-4">
+                  <p className="mb-2 block text-xs text-fg-dim">{t("Avoid")}</p>
+                  <div className="flex flex-col items-start gap-2">
+                    <Checkbox
+                      checked={avoidHighways}
+                      onChange={handleAvoidHighwaysChange}
+                      label={t("Avoid highways")}
+                    />
+                    <Checkbox
+                      checked={avoidTolls}
+                      onChange={handleAvoidTollsChange}
+                      label={t("Avoid tolls")}
+                    />
+                    <Checkbox
+                      checked={avoidUnpaved}
+                      onChange={handleAvoidUnpavedChange}
+                      label={t("Avoid unpaved roads")}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* §03 DRAFT ROUTE — the propose action produces the LINE
+                  only (revision 2 §E); days never come from here. */}
+              <div>
+                <SectionStamp n="03">{t("Draft route ")}</SectionStamp>
+                <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
+                  {t(
+                    "Already placed your points? Your route is ready. Or let Tarmoto draft one — start only proposes a roundtrip sized by your daily km; with a finish too, a short hop is stretched through nearby Fun Zones and a full-day ride stays natural. It only proposes the route line. ",
+                  )}
+                </p>
+
                 {/* sr-only semantic input keeps `getByLabelText("Number of
-                    days")` resolvable for the existing tests; the visible
-                    day controls moved to §03 Split into days. */}
+                    days")` resolvable for the existing tests; drafting
+                    itself always proposes a single day's worth of riding. */}
                 <label htmlFor="trip-planner-days" className="sr-only">
                   {t("Number of days")}
                 </label>
@@ -2013,61 +2076,98 @@ export default function TripPlannerPage() {
                   variant="secondary"
                   size="md"
                   block
-                  className="mt-4"
                   loading={isGenerating}
                   disabled={isGenerating}
                   onClick={handleGenerate}
                 >
                   {isGenerating ? t("Drafting…") : t("Draft route")}
                 </Button>
+                {draftNote ? (
+                  <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
+                    {draftNote}
+                  </p>
+                ) : null}
+
+                <div className="mt-4 rounded-[11px] border border-line bg-cream px-3.5 py-3">
+                  <p className="text-[13px] font-extrabold text-ink">
+                    {t("Draw region · Fun Zones")}
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] leading-snug text-fg-dim">
+                    {t(
+                      "Find dense clusters of great road with the Draw region button on the map — drafting keeps the route inside it. ",
+                    )}
+                  </p>
+                </div>
+
+                {totalDistanceKm !== null && splitStatus === "none" ? (
+                  <div className="mt-4 flex items-center gap-2.5 rounded-[10px] border border-quality-q5/40 bg-quality-q5/15 px-3.5 py-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-quality-q5"
+                    >
+                      <Check size={11} strokeWidth={3.5} className="text-ink" />
+                    </span>
+                    <p className="text-[12px] leading-snug text-fg-dim">
+                      <b className="text-ink">
+                        {t("Route ready — {km} km.", { km: totalDistanceKm })}
+                      </b>{" "}
+                      {t("Save it as-is, or add days below. ")}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
-              {/* §03 DAYS & SPLIT — the route is LIVE; days are computed on
-                  demand (addendum). Daily km is primary; day count is an
-                  optional override. */}
-              <div>
-                <SectionStamp n="03">{t("Split into days ")}</SectionStamp>
-                <div className="mb-2 flex justify-between">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                    {t("Days")}
+              {/* Everything below is the OPTIONAL day-planning layer
+                  (revision 2 §D) — most riders never open it. */}
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-line" />
+                <span className="font-mono text-[9px] font-bold tracking-[1.2px] text-fg-mute">
+                  {t("OPTIONAL")}
+                </span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+
+              {/* PLAN AS MULTI-DAY TRIP — collapsed by default; expanding
+                  it IS the day-planning opt-in (planningMode='multiday').
+                  The daily-km input lives here, nowhere else in BUILD. */}
+              <details
+                className="overflow-hidden rounded-[13px] border border-line-strong bg-cream"
+                open={multiDayOpen}
+                onToggle={(event) => {
+                  const open = (event.target as HTMLDetailsElement).open;
+                  setMultiDayOpen(open);
+                  if (open) {
+                    setPlanningMode("multiday");
+                  } else if (splitStatus === "none") {
+                    // Collapsing before ever splitting backs out of the
+                    // day concept entirely; an existing split keeps it.
+                    setPlanningMode("single");
+                  }
+                }}
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-line bg-paper text-fg-dim"
+                  >
+                    <CalendarDays size={16} />
                   </span>
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-                    {forcedDays ?? t("Auto")}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-extrabold text-ink">
+                      {t("Plan as multi-day trip")}
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] text-fg-dim">
+                      {t("Optional — add daily stages, stays & viewpoints")}
+                    </span>
                   </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setForcedDays(null)}
-                  aria-pressed={forcedDays === null}
-                  className={`mb-1 w-full rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
-                    forcedDays === null
-                      ? "border-ink bg-ink text-cream"
-                      : "border-line bg-cream text-fg-dim hover:text-ink"
-                  }`}
-                >
-                  {t("Auto (from daily km)")}
-                </button>
-                <div className="grid grid-cols-7 gap-1">
-                  {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => {
-                        setForcedDays(n);
-                        setDays(n);
-                      }}
-                      aria-label={`Force ${n} days`}
-                      className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
-                        forcedDays === n
-                          ? "border-ink bg-ink text-cream"
-                          : "border-line bg-cream text-fg-dim hover:text-ink"
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3">
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 text-fg-mute transition-transform ${
+                      multiDayOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </summary>
+                <div className="border-t border-line px-4 pb-4 pt-3.5">
                   <label
                     htmlFor="trip-planner-daily-km"
                     className="mb-1 block text-xs text-fg-dim"
@@ -2083,121 +2183,80 @@ export default function TripPlannerPage() {
                     onChange={setDailyKmTarget}
                     tone="cream"
                   />
-                </div>
-                {(() => {
-                  const routeKm = displayedTrip?.days[0]?.distanceKm ?? 0;
-                  const perDay = forcedDays ? routeKm / forcedDays : null;
-                  return perDay !== null && perDay > 400 ? (
-                    <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
-                      {t(
-                        "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route. ",
-                      )}
+                  <div className="mb-2 mt-4 flex justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+                      {t("Days")}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
+                      {forcedDays ?? t("Auto")}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForcedDays(null)}
+                    aria-pressed={forcedDays === null}
+                    className={`mb-1 w-full rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                      forcedDays === null
+                        ? "border-ink bg-ink text-cream"
+                        : "border-line bg-cream text-fg-dim hover:text-ink"
+                    }`}
+                  >
+                    {t("Auto (from daily km)")}
+                  </button>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setForcedDays(n);
+                          setDays(n);
+                        }}
+                        aria-label={`Force ${n} days`}
+                        className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                          forcedDays === n
+                            ? "border-ink bg-ink text-cream"
+                            : "border-line bg-cream text-fg-dim hover:text-ink"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  {(() => {
+                    const routeKm = displayedTrip?.days[0]?.distanceKm ?? 0;
+                    const perDay = forcedDays ? routeKm / forcedDays : null;
+                    return perDay !== null && perDay > 400 ? (
+                      <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
+                        {t(
+                          "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route. ",
+                        )}
+                      </p>
+                    ) : null;
+                  })()}
+                  <Button
+                    variant="accent"
+                    size="md"
+                    block
+                    uppercase
+                    className="mt-3"
+                    loading={splitting}
+                    disabled={
+                      splitting || !displayedTrip?.days[0]?.routeGeometry
+                    }
+                    onClick={() => void handleSplit()}
+                  >
+                    {splitStatus === "none"
+                      ? t("Split into days")
+                      : t("Re-split")}
+                  </Button>
+                  {splitStatus === "stale" ? (
+                    <p className="mt-2 text-[11.5px] leading-snug text-accent">
+                      {t("Route changed — re-split to refresh the days. ")}
                     </p>
-                  ) : null;
-                })()}
-                <Button
-                  variant="accent"
-                  size="md"
-                  block
-                  uppercase
-                  className="mt-3"
-                  loading={splitting}
-                  disabled={splitting || !displayedTrip?.days[0]?.routeGeometry}
-                  onClick={() => void handleSplit()}
-                >
-                  {splitState === "unsplit"
-                    ? t("Split into days")
-                    : t("Re-split")}
-                </Button>
-                {splitState === "stale" ? (
-                  <p className="mt-2 text-[11.5px] leading-snug text-accent">
-                    {t("Route changed — re-split to refresh the days. ")}
-                  </p>
-                ) : null}
-              </div>
-
-              {/* Advanced — surfaces, min quality, avoid flags. */}
-              <details
-                className="border-t border-line pt-[14px]"
-                open={advancedOpen}
-                onToggle={(event) =>
-                  setAdvancedOpen((event.target as HTMLDetailsElement).open)
-                }
-              >
-                <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
-                  {t("Advanced")}
-                </summary>
-                <div className="mt-3 flex flex-col gap-3">
-                  <div>
-                    <p className="mb-2 block text-xs text-fg-dim">
-                      {t("Surface preference")}
-                    </p>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                      {SURFACE_OPTIONS.map((surface) => (
-                        <Checkbox
-                          key={surface.value}
-                          checked={surfacePreference.includes(surface.value)}
-                          onChange={() => handleSurfaceToggle(surface.value)}
-                          label={surface.label}
-                          ariaLabel={surface.label}
-                          className="py-1"
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="trip-planner-min-quality"
-                      className="mb-1 block text-xs text-fg-dim"
-                    >
-                      {t("Minimum road quality")}
-                    </label>
-                    <Select
-                      id="trip-planner-min-quality"
-                      value={minQuality}
-                      onChange={(value) =>
-                        handleMinQualityChange(Number(value))
-                      }
-                      tone="cream"
-                    >
-                      <option value="1">{t("Any condition")}</option>
-                      <option value="2">{t("Fair or better")}</option>
-                      <option value="3">{t("Good or better")}</option>
-                      <option value="4">{t("Excellent only")}</option>
-                    </Select>
-                  </div>
-
-                  <div className="flex flex-col items-start gap-2 pt-2">
-                    <Checkbox
-                      checked={avoidHighways}
-                      onChange={handleAvoidHighwaysChange}
-                      label={t("Avoid highways")}
-                    />
-                    <Checkbox
-                      checked={avoidTolls}
-                      onChange={handleAvoidTollsChange}
-                      label={t("Avoid tolls")}
-                    />
-                    <Checkbox
-                      checked={avoidUnpaved}
-                      onChange={handleAvoidUnpavedChange}
-                      label={t("Avoid unpaved roads")}
-                    />
-                  </div>
+                  ) : null}
                 </div>
               </details>
-
-              <div>
-                <SectionStamp n="04">{t("Region discovery ")}</SectionStamp>
-                <p className="text-[12px] leading-relaxed text-fg-dim">
-                  {t("Draw a region on the map to surface ")}
-                  <b className="text-ink">{t("Fun Zones")}</b>
-                  {t(
-                    " — dense clusters of high-quality road — then build a route through them. Use the Draw region button on the map. ",
-                  )}
-                </p>
-              </div>
             </div>
           }
           inspect={

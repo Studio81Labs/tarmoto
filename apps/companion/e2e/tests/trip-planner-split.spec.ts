@@ -28,12 +28,14 @@ test.describe("trip planner — split into days", () => {
       timeout: 10_000,
     });
 
-    // Unsplit: the day column shows the empty-state hint.
-    await expect(page.getByText(/No days yet/)).toBeVisible({
-      timeout: 10_000,
-    });
+    // Pre-split there is NO day concept: no day column, no header count
+    // (revision 2 §B/§C).
+    await expect(page.getByLabel("Day 1")).toHaveCount(0);
+    await expect(page.getByText(/\d+ days ·/)).toHaveCount(0);
 
-    // Force 2 days and split (BUILD tab is the default).
+    // Day planning is an opt-in: expand "Plan as multi-day trip" first
+    // (BUILD tab is the default), then force 2 days and split.
+    await page.getByText("Plan as multi-day trip").click();
     await page.getByRole("button", { name: "Force 2 days" }).click();
     await page.getByRole("button", { name: /^Split into days$/i }).click();
 

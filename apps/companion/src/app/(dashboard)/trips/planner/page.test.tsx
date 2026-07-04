@@ -299,7 +299,9 @@ type TripStoreSnapshot = {
   hoverSegment: (segmentId: string | null) => void;
   selectedPlannerSegmentId: string | null;
   selectPlannerSegment: (segmentId: string | null) => void;
-  splitState: "unsplit" | "split" | "stale";
+  planningMode: "single" | "multiday";
+  setPlanningMode: (mode: "single" | "multiday") => void;
+  splitStatus: "none" | "split" | "stale";
   dayPlans: import("@/lib/planner/types").DayPlan[] | null;
   pinnedBreakKms: number[];
   applySplit: (
@@ -483,7 +485,9 @@ describe("TripPlannerPage", () => {
       hoverSegment: vi.fn(),
       selectedPlannerSegmentId: null,
       selectPlannerSegment: vi.fn(),
-      splitState: "unsplit" as const,
+      planningMode: "single" as const,
+      setPlanningMode: vi.fn(),
+      splitStatus: "none" as const,
       dayPlans: null,
       pinnedBreakKms: [],
       applySplit: vi.fn(),
@@ -578,12 +582,15 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
   });
 
-  it("keeps placeholder timeline tabs non-interactive until a trip exists", () => {
+  it("renders no day column (not even placeholders) before a split", () => {
     render(<TripPlannerPage />);
 
-    expect(screen.getByRole("button", { name: /Day 1/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Day 2/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Day 3/i })).toBeDisabled();
+    // Revision 2 §B: the day column is ABSENT pre-split — no empty
+    // state, no placeholder chips, no day concept anywhere.
+    expect(
+      screen.queryByRole("button", { name: /Day 1/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
         selectedDayNumber: 1,
@@ -1622,7 +1629,8 @@ describe("TripPlannerPage", () => {
     storeState.selectedDayIndex = 0;
     // A loaded multi-day trip presents as an existing split (the day
     // column renders DayPlans; the floating footer is gone).
-    storeState.splitState = "split";
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
     storeState.dayPlans = [1, 2].map((n) => ({
       dayNumber: n,
       segmentIds: [],
@@ -1782,15 +1790,17 @@ describe("TripPlannerPage", () => {
     ).not.toBeDisabled();
   });
 
-  it("shows the empty day column while the trip is unsplit", () => {
+  it("hides the day column and header day count while the trip is unsplit", () => {
     storeState.activeTrip = activeTrip;
-    storeState.splitState = "unsplit";
+    storeState.splitStatus = "none";
     storeState.dayPlans = null;
 
     render(<TripPlannerPage />);
 
-    expect(screen.getByText(/No days yet/)).toBeInTheDocument();
+    // No day concept anywhere in 'single' mode (revision 2 §A/§B/§C).
+    expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Day 1")).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d+ days ·/)).not.toBeInTheDocument();
   });
 
   const samplePlans = [
@@ -1833,7 +1843,8 @@ describe("TripPlannerPage", () => {
 
   it("renders DayPlans in the day column once split", () => {
     storeState.activeTrip = activeTrip;
-    storeState.splitState = "split";
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
     storeState.dayPlans = samplePlans;
 
     render(<TripPlannerPage />);
@@ -1853,7 +1864,8 @@ describe("TripPlannerPage", () => {
 
   it("dims stale days and offers a RE-SPLIT shortcut after a route edit", () => {
     storeState.activeTrip = activeTrip;
-    storeState.splitState = "stale";
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "stale";
     storeState.dayPlans = samplePlans;
 
     render(<TripPlannerPage />);
@@ -1867,5 +1879,35 @@ describe("TripPlannerPage", () => {
     ).toBeInTheDocument();
     // Days remain visible (dimmed) for orientation.
     expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
+  });
+
+  it("shows the day count in the header only after a split", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = samplePlans;
+
+    render(<TripPlannerPage />);
+
+    // Post-split header: "N days · <total> km" (revision 2 §C).
+    expect(screen.getByText(/2 days · 240 km/)).toBeInTheDocument();
+  });
+
+  it("expanding Plan as multi-day trip is the day-planning opt-in", () => {
+    storeState.activeTrip = activeTrip;
+    const { container } = render(<TripPlannerPage />);
+
+    const details = container.querySelector("details")!;
+    // Collapsed by default — the optional layer stays out of the way.
+    expect(details.open).toBe(false);
+
+    details.open = true;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+    expect(storeState.setPlanningMode).toHaveBeenCalledWith("multiday");
+
+    // Collapsing before ever splitting backs out of the day concept.
+    details.open = false;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+    expect(storeState.setPlanningMode).toHaveBeenLastCalledWith("single");
   });
 });
