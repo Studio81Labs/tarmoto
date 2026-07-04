@@ -702,6 +702,29 @@ export default function TripPlannerPage() {
     },
     [moveWaypoint, plannerParams, renameWaypoint, selectedDayIndex],
   );
+  // Empty START/FINISH spine rows: typing a place creates the endpoint
+  // (same store path as a map click), then adopts the geocoded name.
+  const handleCreateEndpoint = useCallback(
+    (role: "start" | "end", result: GeoResult) => {
+      useTripStore
+        .getState()
+        .placeWaypoint(
+          { lat: result.lat, lng: result.lng },
+          role === "start" ? "set-start" : "set-end",
+          plannerParams,
+        );
+      const state = useTripStore.getState();
+      const day = state.activeTrip?.days[state.selectedDayIndex];
+      const created =
+        role === "start"
+          ? day?.waypoints.find((w) => w.type === "start")
+          : day
+            ? dayFinishWaypoint(day.waypoints)
+            : undefined;
+      if (created) renameWaypoint(created.id, result.name);
+    },
+    [plannerParams, renameWaypoint],
+  );
   const handleAddViaFromSearch = useCallback(
     (result: GeoResult) => {
       insertWaypointBeforeEnd(selectedDayIndex, {
@@ -1757,25 +1780,15 @@ export default function TripPlannerPage() {
             <div className="flex flex-col gap-6">
               <div>
                 <SectionStamp n="01">{t("Route ")}</SectionStamp>
-                {selectedDay ? (
-                  <div className="space-y-3">
-                    <WaypointEditor
-                      dayNumber={selectedDay.dayNumber}
-                      waypoints={selectedDay.waypoints}
-                      onReorder={(fromIndex, toIndex) =>
-                        reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
-                      }
-                      onRelocate={handleRelocateWaypoint}
-                      onAddVia={handleAddViaFromSearch}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-xs leading-relaxed text-fg-dim">
-                    {t(
-                      "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
-                    )}
-                  </p>
-                )}
+                <WaypointEditor
+                  waypoints={selectedDay?.waypoints ?? []}
+                  onReorder={(fromIndex, toIndex) =>
+                    reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
+                  }
+                  onRelocate={handleRelocateWaypoint}
+                  onAddVia={handleAddViaFromSearch}
+                  onCreateEndpoint={handleCreateEndpoint}
+                />
               </div>
 
               <div>
@@ -2563,13 +2576,12 @@ const SPINE_ROLE_COLORS: Record<string, string> = {
 };
 
 function WaypointEditor({
-  dayNumber,
   waypoints,
   onReorder,
   onRelocate,
   onAddVia,
+  onCreateEndpoint,
 }: {
-  dayNumber: number;
   waypoints: Array<{
     id: string;
     name?: string | undefined;
@@ -2578,20 +2590,41 @@ function WaypointEditor({
   onReorder: (fromIndex: number, toIndex: number) => void;
   onRelocate?: (waypointId: string, result: GeoResult) => void;
   onAddVia?: (result: GeoResult) => void;
+  onCreateEndpoint?: (role: "start" | "end", result: GeoResult) => void;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [addingVia, setAddingVia] = useState(false);
-  if (waypoints.length === 0) {
-    return (
-      <p className="text-xs text-fg-dim">
-        {t("No waypoints yet for Day ")}
-        {dayNumber}
-        {t(". Click the map to begin the route. ")}
-      </p>
-    );
-  }
+  const hasStart = waypoints.some((w) => w.type === "start");
+  const hasFinish = waypoints.some(
+    (w, index) =>
+      w.type === "end" ||
+      (w.type === "accommodation" && index === waypoints.length - 1),
+  );
   return (
     <div className="space-y-2">
+      {/* Empty endpoint rows: the spine always shows START and FINISH so
+          the rider can fill them by typing a place here OR by clicking
+          the map — whichever comes first. */}
+      {!hasStart && onCreateEndpoint ? (
+        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+          <span
+            aria-hidden="true"
+            className="h-[9px] w-[9px] shrink-0 rounded-full"
+            style={{ background: SPINE_ROLE_COLORS.start }}
+          />
+          <div className="min-w-0 flex-1">
+            <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              start
+            </span>
+            <GeocodeSearchField
+              placeholder={t("Type a place or click the map… ")}
+              ariaLabel="Search location for start waypoint"
+              onSelect={(result) => onCreateEndpoint("start", result)}
+              clearOnSelect
+            />
+          </div>
+        </div>
+      ) : null}
       {waypoints.map((waypoint, index) => {
         const role = waypoint.type === "end" ? "finish" : waypoint.type;
         const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
@@ -2649,6 +2682,26 @@ function WaypointEditor({
           </div>
         );
       })}
+      {!hasFinish && onCreateEndpoint ? (
+        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+          <span
+            aria-hidden="true"
+            className="h-[9px] w-[9px] shrink-0 rounded-full"
+            style={{ background: SPINE_ROLE_COLORS.end }}
+          />
+          <div className="min-w-0 flex-1">
+            <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              finish
+            </span>
+            <GeocodeSearchField
+              placeholder={t("Type a place or click the map… ")}
+              ariaLabel="Search location for finish waypoint"
+              onSelect={(result) => onCreateEndpoint("end", result)}
+              clearOnSelect
+            />
+          </div>
+        </div>
+      ) : null}
       {onAddVia && waypoints.length >= 2 ? (
         addingVia ? (
           <div className="flex items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5">
