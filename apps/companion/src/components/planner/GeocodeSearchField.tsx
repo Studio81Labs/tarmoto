@@ -16,6 +16,13 @@ interface GeocodeSearchFieldProps {
   onSelect: (result: GeoResult) => void;
   /** Clear the input after a pick (add-via mode) instead of showing it. */
   clearOnSelect?: boolean;
+  /**
+   * "spine": styled as the route-spine name line (bold ink, no search
+   * icon) — the current waypoint name doubles as the placeholder, so the
+   * row reads like the design's static label until the rider types.
+   */
+  variant?: "default" | "spine";
+  autoFocus?: boolean;
 }
 
 const DEBOUNCE_MS = 200;
@@ -25,6 +32,8 @@ export function GeocodeSearchField({
   ariaLabel,
   onSelect,
   clearOnSelect = false,
+  variant = "default",
+  autoFocus = false,
 }: GeocodeSearchFieldProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
@@ -71,15 +80,22 @@ export function GeocodeSearchField({
   return (
     <div ref={containerRef} className="relative min-w-0 flex-1">
       <div className="flex items-center gap-1.5">
-        <Search size={11} className="shrink-0 text-fg-mute" />
+        {variant === "default" ? (
+          <Search size={11} className="shrink-0 text-fg-mute" />
+        ) : null}
         <input
           type="text"
           value={query}
           aria-label={ariaLabel}
           placeholder={placeholder}
+          autoFocus={autoFocus}
           onChange={(event) => setQuery(event.target.value)}
           onFocus={() => setOpen(results.length > 0)}
-          className="w-full min-w-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-fg-mute"
+          className={
+            variant === "spine"
+              ? "w-full min-w-0 bg-transparent text-[13px] font-bold text-ink outline-none placeholder:font-bold placeholder:text-ink focus:placeholder:text-fg-faint"
+              : "w-full min-w-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-fg-mute"
+          }
         />
       </div>
       {open ? (

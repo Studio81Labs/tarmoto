@@ -12,10 +12,7 @@ import {
 import {
   ArrowLeft,
   Save,
-  Clock3,
   GripVertical,
-  Milestone,
-  ShieldCheck,
   RotateCcw,
   RotateCw,
   Users,
@@ -23,6 +20,7 @@ import {
   FileUp,
   Maximize2,
   Loader2,
+  Plus,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -1761,27 +1759,6 @@ export default function TripPlannerPage() {
                 <SectionStamp n="01">{t("Route ")}</SectionStamp>
                 {selectedDay ? (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2">
-                      <PlannerStat
-                        label="Distance"
-                        value={`${selectedDay.distanceKm.toFixed(1)} km`}
-                        icon={Milestone}
-                      />
-                      <PlannerStat
-                        label="Ride time"
-                        value={`${selectedDay.durationMinutes} min`}
-                        icon={Clock3}
-                      />
-                      <PlannerStat
-                        label="Quality"
-                        value={
-                          selectedDay.avgQuality
-                            ? selectedDay.avgQuality.toFixed(1)
-                            : "—"
-                        }
-                        icon={ShieldCheck}
-                      />
-                    </div>
                     <WaypointEditor
                       dayNumber={selectedDay.dayNumber}
                       waypoints={selectedDay.waypoints}
@@ -2579,27 +2556,12 @@ function buildImportedRoutePayload(trip: Trip) {
     }),
   };
 }
-function PlannerStat({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Clock3;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-cream/70 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-fg-dim">
-        {label}
-      </div>
-      <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
-        <Icon size={12} className="text-fg-dim" />
-        {value}
-      </div>
-    </div>
-  );
-}
+const SPINE_ROLE_COLORS: Record<string, string> = {
+  start: "#1F8A5B",
+  via: "#1FA6B8",
+  end: "#FF6A1A",
+};
+
 function WaypointEditor({
   dayNumber,
   waypoints,
@@ -2618,6 +2580,7 @@ function WaypointEditor({
   onAddVia?: (result: GeoResult) => void;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [addingVia, setAddingVia] = useState(false);
   if (waypoints.length === 0) {
     return (
       <p className="text-xs text-fg-dim">
@@ -2629,12 +2592,9 @@ function WaypointEditor({
   }
   return (
     <div className="space-y-2">
-      <p className="text-xs text-fg-dim">
-        {t(
-          "Drag to reorder — roles follow position: first is the start, last is the finish. ",
-        )}
-      </p>
       {waypoints.map((waypoint, index) => {
+        const role = waypoint.type === "end" ? "finish" : waypoint.type;
+        const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
         return (
           <div
             key={waypoint.id}
@@ -2655,38 +2615,77 @@ function WaypointEditor({
               setDragIndex(null);
             }}
             onDragEnd={() => setDragIndex(null)}
-            className="flex items-center gap-2 rounded-lg border border-line bg-cream/70 px-3 py-2 text-sm text-ink"
+            className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
           >
-            <GripVertical size={14} className="text-fg-dim" />
-            <span className="min-w-12 text-xs uppercase tracking-wide text-fg-dim">
-              {waypoint.type === "end" ? "finish" : waypoint.type}
-            </span>
-            {onRelocate ? (
-              // Typed geocode search per row: the current name is the
-              // placeholder; picking a match relocates this waypoint.
-              <GeocodeSearchField
-                placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
-                ariaLabel={`Search location for ${waypoint.type === "end" ? "finish" : waypoint.type} waypoint`}
-                onSelect={(result) => onRelocate(waypoint.id, result)}
-              />
-            ) : (
-              <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
-            )}
+            <GripVertical
+              size={13}
+              className="shrink-0 cursor-grab text-fg-mute"
+            />
+            <span
+              aria-hidden="true"
+              className="h-[9px] w-[9px] shrink-0 rounded-full"
+              style={{ background: dotColor }}
+            />
+            <div className="min-w-0 flex-1">
+              <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                {role}
+              </span>
+              {onRelocate ? (
+                // The name line is a typed geocode search: the current
+                // name is the placeholder, so the row reads like a label
+                // until the rider types a new place.
+                <GeocodeSearchField
+                  variant="spine"
+                  placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
+                  ariaLabel={`Search location for ${role} waypoint`}
+                  onSelect={(result) => onRelocate(waypoint.id, result)}
+                />
+              ) : (
+                <span className="block truncate text-[13px] font-bold text-ink">
+                  {waypoint.name ?? `Waypoint ${index + 1}`}
+                </span>
+              )}
+            </div>
           </div>
         );
       })}
       {onAddVia && waypoints.length >= 2 ? (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2 text-sm">
-          <span className="min-w-12 text-xs uppercase tracking-wide text-fg-mute">
-            via
-          </span>
-          <GeocodeSearchField
-            placeholder={t("Add via point by place… ")}
-            ariaLabel="Search location for a new via point"
-            onSelect={onAddVia}
-            clearOnSelect
-          />
-        </div>
+        addingVia ? (
+          <div className="flex items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5">
+            <span
+              aria-hidden="true"
+              className="h-[9px] w-[9px] shrink-0 rounded-full"
+              style={{ background: SPINE_ROLE_COLORS.via }}
+            />
+            <GeocodeSearchField
+              placeholder={t("Search a place… ")}
+              ariaLabel="Search location for a new via point"
+              autoFocus
+              clearOnSelect
+              onSelect={(result) => {
+                onAddVia(result);
+                setAddingVia(false);
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t("Cancel adding via point")}
+              onClick={() => setAddingVia(false)}
+              className="shrink-0 font-mono text-[10px] font-bold text-fg-mute transition hover:text-ink"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingVia(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5 text-[12.5px] font-bold text-fg-dim transition hover:border-ink hover:text-ink"
+          >
+            <Plus size={13} />
+            {t("Add via point")}
+          </button>
+        )
       ) : null}
     </div>
   );
