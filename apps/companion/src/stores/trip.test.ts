@@ -2358,23 +2358,57 @@ describe("useTripStore split lifecycle (addendum)", () => {
     });
   }
 
+  it("planningMode: defaults single; applySplit opts into multiday; leaving multiday drops the split", () => {
+    seedRoutedTrip();
+    expect(useTripStore.getState().planningMode).toBe("single");
+
+    // Running a split IS acting on the multi-day section (revision 2 §A).
+    useTripStore.getState().applySplit(plansFor());
+    expect(useTripStore.getState().planningMode).toBe("multiday");
+    expect(useTripStore.getState().splitStatus).toBe("split");
+
+    // Backing out to single mode removes the day concept entirely.
+    useTripStore.getState().setPlanningMode("single");
+    expect(useTripStore.getState().splitStatus).toBe("none");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+    expect(useTripStore.getState().pinnedBreakKms).toEqual([]);
+
+    // Opting in again has no day side effects until an actual split.
+    useTripStore.getState().setPlanningMode("multiday");
+    expect(useTripStore.getState().splitStatus).toBe("none");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+  });
+
+  it("loads a saved multi-day trip in multiday mode; fresh trips stay single", () => {
+    seedRoutedTrip();
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().materializeSplit();
+    const materialized = useTripStore.getState().activeTrip!;
+
+    useTripStore.getState().setActiveTrip(materialized);
+    expect(useTripStore.getState().planningMode).toBe("multiday");
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().planningMode).toBe("single");
+  });
+
   it("starts unsplit; applySplit enters 'split'; route edits go 'stale'", () => {
     seedRoutedTrip();
-    expect(useTripStore.getState().splitState).toBe("unsplit");
+    expect(useTripStore.getState().splitStatus).toBe("none");
 
     useTripStore.getState().applySplit(plansFor());
-    expect(useTripStore.getState().splitState).toBe("split");
+    expect(useTripStore.getState().splitStatus).toBe("split");
     expect(useTripStore.getState().dayPlans!.length).toBeGreaterThanOrEqual(2);
 
     // A waypoint edit invalidates the split but keeps the plans for display.
     useTripStore.getState().placeWaypoint({ lat: 45.5, lng: 15.1 }, "add-via");
-    expect(useTripStore.getState().splitState).toBe("stale");
+    expect(useTripStore.getState().splitStatus).toBe("stale");
     expect(useTripStore.getState().dayPlans).not.toBeNull();
 
     // Pref changes (markRouteDirty) also invalidate.
     useTripStore.getState().applySplit(plansFor());
     useTripStore.getState().markRouteDirty();
-    expect(useTripStore.getState().splitState).toBe("stale");
+    expect(useTripStore.getState().splitStatus).toBe("stale");
   });
 
   it("loads a saved multi-day trip as an existing split", () => {
@@ -2384,13 +2418,13 @@ describe("useTripStore split lifecycle (addendum)", () => {
     const materialized = useTripStore.getState().activeTrip!;
     useTripStore.getState().setActiveTrip(materialized);
 
-    expect(useTripStore.getState().splitState).toBe("split");
+    expect(useTripStore.getState().splitStatus).toBe("split");
     expect(useTripStore.getState().dayPlans!.length).toBe(
       materialized.days.length,
     );
 
     useTripStore.getState().setActiveTrip(null);
-    expect(useTripStore.getState().splitState).toBe("unsplit");
+    expect(useTripStore.getState().splitStatus).toBe("none");
     expect(useTripStore.getState().dayPlans).toBeNull();
   });
 
@@ -2432,7 +2466,7 @@ describe("useTripStore renameWaypoint", () => {
   it("renames without dirtying the route or invalidating a split", () => {
     useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    useTripStore.setState({ routeDirty: false, splitState: "split" });
+    useTripStore.setState({ routeDirty: false, splitStatus: "split" });
     const start = useTripStore
       .getState()
       .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
@@ -2444,7 +2478,7 @@ describe("useTripStore renameWaypoint", () => {
       .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
     expect(renamed.name).toBe("Jihlava");
     expect(useTripStore.getState().routeDirty).toBe(false);
-    expect(useTripStore.getState().splitState).toBe("split");
+    expect(useTripStore.getState().splitStatus).toBe("split");
   });
 
   it("is a no-op for unknown waypoint ids", () => {

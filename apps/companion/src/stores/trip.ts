@@ -6,7 +6,7 @@ import type { Position as GeoJSONPosition } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
-import type { DayPlan, SplitState } from "@/lib/planner/types";
+import type { DayPlan, PlanningMode, SplitStatus } from "@/lib/planner/types";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
 import type {
   RoutePreviewSegment,
@@ -178,20 +178,30 @@ interface TripState {
   selectedPlannerSegmentId: string | null;
 
   /**
-   * Two-phase planner lifecycle (addendum): the route is LIVE; days are
-   * computed on demand. 'unsplit' = no days yet (left column empty);
-   * 'split' = dayPlans current; 'stale' = route/prefs changed since the
-   * last split — days render dimmed until the rider re-splits.
+   * Did the rider opt into day-planning (revision 2 §A)? 'single' means
+   * no day concept exists anywhere: no day column, no daily-km, no split.
    */
-  splitState: SplitState;
+  planningMode: PlanningMode;
+  /**
+   * Two-phase planner lifecycle (addendum): the route is LIVE; days are
+   * computed on demand. Only meaningful in 'multiday'. 'none' = no days
+   * yet; 'split' = dayPlans current; 'stale' = route/prefs changed since
+   * the last split — days render dimmed until the rider re-splits.
+   */
+  splitStatus: SplitStatus;
   /** Day plans from the last split (kept for dimmed display while stale). */
   dayPlans: DayPlan[] | null;
   /** Manual day-break overrides (along-route km) that survive re-splits. */
   pinnedBreakKms: number[];
 
+  /**
+   * Flip the day-planning opt-in. Entering 'single' also drops any
+   * existing split — days exist only inside the multi-day layer.
+   */
+  setPlanningMode: (mode: PlanningMode) => void;
   /** Store the splitter result and enter the 'split' state. */
   applySplit: (dayPlans: DayPlan[], pinnedBreakKms?: number[]) => void;
-  /** Drop the split back to 'unsplit' (route stays). */
+  /** Drop the split back to 'none' (route stays). */
   clearSplit: () => void;
   /** Pin/replace the manual break overrides (addendum §6). */
   setPinnedBreaks: (kms: number[]) => void;
@@ -638,7 +648,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     focusedSegmentId: null,
     hoveredSegmentId: null,
     selectedPlannerSegmentId: null,
-    splitState: "unsplit",
+    planningMode: "single",
+    splitStatus: "none",
     dayPlans: null,
     pinnedBreakKms: [],
     undoStack: [],
@@ -658,9 +669,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         hoveredSegmentId: null,
         selectedPlannerSegmentId: null,
         // A loaded multi-day trip is already "split" — show its days in
-        // the day column; a fresh draft/single-day trip starts unsplit.
-        splitState:
-          activeTrip && activeTrip.days.length > 1 ? "split" : "unsplit",
+        // the day column; a fresh draft/single-day trip starts in single
+        // mode with no day concept at all (revision 2 §A).
+        planningMode:
+          activeTrip && activeTrip.days.length > 1 ? "multiday" : "single",
+        splitStatus:
+          activeTrip && activeTrip.days.length > 1 ? "split" : "none",
         dayPlans:
           activeTrip && activeTrip.days.length > 1
             ? dayPlansFromTripDays(activeTrip.days)
@@ -678,8 +692,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: true,
         // Routing inputs changed — a computed split no longer matches the
         // route. Keep the plans for dimmed display, but flag them stale.
-        ...(s.splitState === "split"
-          ? { splitState: "stale" as SplitState }
+        ...(s.splitStatus === "split"
+          ? { splitStatus: "stale" as SplitStatus }
           : {}),
         // Avoid-option toggles are trip-level, but only mark ROUTABLE days
         // (>=2 routing waypoints) stale. Empty/under-specified days can't be
@@ -724,14 +738,30 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         return { activeTrip: { ...trip, days } };
       }),
 
+    setPlanningMode: (mode) =>
+      set(
+        // Leaving multi-day drops the day concept entirely — splits only
+        // exist inside the opt-in layer (revision 2 §A).
+        mode === "single"
+          ? {
+              planningMode: mode,
+              splitStatus: "none",
+              dayPlans: null,
+              pinnedBreakKms: [],
+            }
+          : { planningMode: mode },
+      ),
+
     applySplit: (dayPlans, pinnedBreakKms) =>
       set((state) => ({
         dayPlans,
-        splitState: "split",
+        // Running a split IS acting on the multi-day section.
+        planningMode: "multiday",
+        splitStatus: "split",
         pinnedBreakKms: pinnedBreakKms ?? state.pinnedBreakKms,
       })),
     clearSplit: () =>
-      set({ splitState: "unsplit", dayPlans: null, pinnedBreakKms: [] }),
+      set({ splitStatus: "none", dayPlans: null, pinnedBreakKms: [] }),
     setPinnedBreaks: (kms) => set({ pinnedBreakKms: kms }),
 
     materializeSplit: () =>
@@ -742,7 +772,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           !trip ||
           !plans ||
           plans.length === 0 ||
-          state.splitState !== "split" ||
+          state.splitStatus !== "split" ||
           // Working-day model only: a loaded multi-day trip already has
           // materialized days; re-slicing from day 1's geometry alone
           // would corrupt them.
@@ -1124,8 +1154,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           focusedSegmentId: null,
           hoveredSegmentId: null,
           selectedPlannerSegmentId: null,
-          ...(state.splitState === "split"
-            ? { splitState: "stale" as SplitState }
+          ...(state.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
             : {}),
           undoStack,
           redoStack,
@@ -1159,8 +1189,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           focusedSegmentId: null,
           hoveredSegmentId: null,
           selectedPlannerSegmentId: null,
-          ...(state.splitState === "split"
-            ? { splitState: "stale" as SplitState }
+          ...(state.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
             : {}),
           undoStack,
           redoStack,
@@ -1600,7 +1630,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         focusedSegmentId: null,
         hoveredSegmentId: null,
         selectedPlannerSegmentId: null,
-        splitState: "unsplit",
+        planningMode: "single",
+        splitStatus: "none",
         dayPlans: null,
         pinnedBreakKms: [],
         undoStack: [],
@@ -1656,8 +1687,8 @@ function commitTripChange(
     canRedo: false,
     // Any waypoint mutation invalidates a computed split (addendum §3):
     // days dim until the rider explicitly re-splits.
-    ...(state.splitState === "split"
-      ? { splitState: "stale" as SplitState }
+    ...(state.splitStatus === "split"
+      ? { splitStatus: "stale" as SplitStatus }
       : {}),
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { poiApi, routingApi, type RouteResponse } from "@/lib/api";
+import { fetchFunZonesInBbox } from "@/lib/discover";
 import {
   createPlannerApi,
   deriveFlaggedSections,
@@ -11,6 +12,7 @@ vi.mock("@/lib/api", () => ({
   routingApi: { route: vi.fn() },
   poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
 }));
+vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
 
 const routeMock = vi.mocked(routingApi.route);
 const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
@@ -326,5 +328,162 @@ describe("plannerApi.getPois", () => {
     expect(await createPlannerApi().getPois(route, [])).toEqual([]);
     expect(alongRouteMock).not.toHaveBeenCalled();
     expect(accommodationsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("plannerApi.draftRoute (revision 2 §E cases 2/3)", () => {
+  const zonesMock = vi.mocked(fetchFunZonesInBbox);
+
+  beforeEach(() => {
+    routeMock.mockReset();
+    zonesMock.mockReset();
+  });
+
+  const start = { lat: 49, lng: 15 };
+  const finish = { lat: 50, lng: 15 };
+
+  function zone(
+    id: string,
+    score: number,
+    lat: number,
+    lng: number,
+  ): {
+    id: string;
+    name: string;
+    composite_score: number;
+    boundary: unknown[];
+  } {
+    return {
+      id,
+      name: `Zone ${id}`,
+      composite_score: score,
+      boundary: [{ lat, lng }],
+    };
+  }
+
+  /** Route responses keyed by waypoint count + which via lats are present. */
+  function mockRouteDistances(
+    resolve: (waypoints: Array<{ lat: number; lng: number }>) => number,
+  ) {
+    routeMock.mockImplementation((body) => {
+      const waypoints = (
+        body as { waypoints: Array<{ lat: number; lng: number }> }
+      ).waypoints;
+      const km = resolve(waypoints);
+      return Promise.resolve({
+        data: {
+          geometry: waypoints.flatMap((w, i) =>
+            i === 0
+              ? [w]
+              : [{ lat: (waypoints[i - 1]!.lat + w.lat) / 2, lng: w.lng }, w],
+          ),
+          distance_km: km,
+          duration_min: km,
+          avg_quality: 4,
+          curviness_score: 30,
+          elevation_gain_m: 100,
+          surface_mix: { asphalt: km * 1000 },
+        },
+      } as never);
+    });
+  }
+
+  it("case 3: a full-day direct route stays natural — corridor zones only, never inflation", async () => {
+    mockRouteDistances((wps) => (wps.length === 2 ? 300 : 320));
+    zonesMock.mockResolvedValue([
+      zone("on-corridor", 80, 49.5, 15.05),
+      zone("far-away", 95, 49.5, 16.5),
+    ] as never);
+
+    const result = await createPlannerApi().draftRoute(start, finish, {
+      region: null,
+      prefs: undefined,
+      dailyKmForSizing: 250,
+    });
+
+    expect(result.inflated).toBe(false);
+    expect(result.reachedTargetKm).toBe(true);
+    // Only the zone near the direct line is threaded as flavor.
+    expect(result.vias.map((v) => v.name)).toEqual(["Zone on-corridor"]);
+    expect(result.summary.distanceKm).toBe(320);
+  });
+
+  it("case 2: inflates a short hop through the best zones until the target is met", async () => {
+    // Direct 120 km; threading the best zone stretches to 260 ≥ 250.
+    mockRouteDistances((wps) => (wps.length === 2 ? 120 : 260));
+    zonesMock.mockResolvedValue([
+      zone("best", 90, 49.5, 15.4),
+      zone("second", 70, 49.4, 14.6),
+    ] as never);
+
+    const result = await createPlannerApi().draftRoute(start, finish, {
+      region: [14, 48.5, 16, 50.5],
+      prefs: undefined,
+      dailyKmForSizing: 250,
+    });
+
+    expect(zonesMock).toHaveBeenCalledWith([14, 48.5, 16, 50.5], undefined);
+    expect(result.inflated).toBe(true);
+    expect(result.reachedTargetKm).toBe(true);
+    expect(result.vias.map((v) => v.name)).toEqual(["Zone best"]);
+    expect(result.summary.distanceKm).toBe(260);
+    // Stopped at the target — no wasteful extra measuring calls.
+    expect(routeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("case 2: reports honestly when good roads run out short of the target", async () => {
+    // Only one zone; even with it the ride is 180 < 0.9 × 250.
+    mockRouteDistances((wps) => (wps.length === 2 ? 120 : 180));
+    zonesMock.mockResolvedValue([zone("only", 60, 49.5, 15.3)] as never);
+
+    const result = await createPlannerApi().draftRoute(start, finish, {
+      region: null,
+      prefs: undefined,
+      dailyKmForSizing: 250,
+    });
+
+    expect(result.inflated).toBe(true);
+    expect(result.reachedTargetKm).toBe(false);
+    expect(result.summary.distanceKm).toBe(180);
+  });
+
+  it("case 2: skips a detour that balloons past the overshoot ceiling", async () => {
+    // Zone "huge" (best score) balloons the day to 600 km; zone "sane"
+    // lands at 260. The draft must pick "sane".
+    mockRouteDistances((wps) => {
+      if (wps.length === 2) return 120;
+      return wps.some((w) => Math.abs(w.lat - 49.8) < 0.01) ? 600 : 260;
+    });
+    zonesMock.mockResolvedValue([
+      zone("huge", 95, 49.8, 15.9),
+      zone("sane", 80, 49.5, 15.3),
+    ] as never);
+
+    const result = await createPlannerApi().draftRoute(start, finish, {
+      region: null,
+      prefs: undefined,
+      dailyKmForSizing: 250,
+    });
+
+    expect(result.vias.map((v) => v.name)).toEqual(["Zone sane"]);
+    expect(result.summary.distanceKm).toBe(260);
+    expect(result.reachedTargetKm).toBe(true);
+  });
+
+  it("returns the plain direct route when the zone lookup fails", async () => {
+    mockRouteDistances(() => 120);
+    zonesMock.mockRejectedValue(new Error("fun zones down"));
+
+    const result = await createPlannerApi().draftRoute(start, finish, {
+      region: null,
+      prefs: undefined,
+      dailyKmForSizing: 250,
+    });
+
+    expect(result.inflated).toBe(false);
+    expect(result.reachedTargetKm).toBe(false);
+    expect(result.vias).toEqual([]);
+    expect(result.summary.distanceKm).toBe(120);
+    expect(routeMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,9 +9,19 @@ import {
   type RoutePoiSuggestion,
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
+import { fetchFunZonesInBbox } from "@/lib/discover";
 import { deriveQualitySegments } from "./derive";
+import {
+  corridorBbox,
+  draftViasThroughZones,
+  zonesNearCorridor,
+  MAX_DRAFT_VIAS,
+  type DraftZone,
+} from "./draft-vias";
 import { mockGeocode, mockReverseGeocode, mockRoadPreview } from "./mocks";
 import type {
+  DraftOptions,
+  DraftRouteResult,
   FlaggedSection,
   GeneratedPlannerRoute,
   PlannerApi,
@@ -227,28 +237,135 @@ export async function fetchOvernightTowns(
   return [...towns.values()];
 }
 
+/** One REAL routing round-trip: backend Valhalla proxy + mock quality join. */
+async function routeReal(
+  waypoints: ReadonlyArray<{ lat: number; lng: number }>,
+  options: RouteRequestBody["options"],
+  init?: { signal?: AbortSignal; dayNumber?: number },
+): Promise<GeneratedPlannerRoute> {
+  const { data: raw } = await routingApi.route(
+    {
+      waypoints: [...waypoints],
+      ...(options !== undefined ? { options } : {}),
+    },
+    init?.signal !== undefined ? { signal: init.signal } : {},
+  );
+  const segments = deriveQualitySegments(raw.geometry, init?.dayNumber ?? 1);
+  return {
+    raw,
+    segments,
+    summary: buildRouteQualitySummary(raw, segments),
+  };
+}
+
+/** "Close enough" to the soft sizing target (revision 2 §E — soft goal). */
+export const DRAFT_TARGET_TOLERANCE = 0.9;
+/** Inflation ceiling: stop trading detours once a day balloons past this. */
+export const DRAFT_MAX_OVERSHOOT = 1.35;
+/** Case 3 "light flavor": zones must sit this close to the direct line. */
+export const DRAFT_CORRIDOR_FLAVOR_KM = 25;
+/** Zone candidates worth a measuring routing call while inflating. */
+const DRAFT_CANDIDATE_LIMIT = 5;
+
 export function createPlannerApi(): PlannerApi {
   return {
-    async generateRoute(
+    generateRoute(
       waypoints: ReadonlyArray<{ lat: number; lng: number }>,
       options: RouteRequestBody["options"],
       init?: { signal?: AbortSignal; dayNumber?: number },
     ): Promise<GeneratedPlannerRoute> {
-      const { data: raw } = await routingApi.route(
-        {
-          waypoints: [...waypoints],
-          ...(options !== undefined ? { options } : {}),
-        },
-        init?.signal !== undefined ? { signal: init.signal } : {},
-      );
-      const segments = deriveQualitySegments(
-        raw.geometry,
-        init?.dayNumber ?? 1,
-      );
+      return routeReal(waypoints, options, init);
+    },
+
+    async draftRoute(
+      start: { lat: number; lng: number },
+      finish: { lat: number; lng: number },
+      opts: DraftOptions,
+      init?: { signal?: AbortSignal },
+    ): Promise<DraftRouteResult> {
+      const target = opts.dailyKmForSizing;
+      // The DIRECT route decides the branch (revision 2 §E cases 2/3).
+      const direct = await routeReal([start, finish], opts.prefs, init);
+
+      let zones: DraftZone[] = [];
+      try {
+        zones = await fetchFunZonesInBbox(
+          opts.region ?? corridorBbox(start, finish),
+          init,
+        );
+      } catch {
+        // No zones ≠ no draft: the direct route is still the honest answer;
+        // reachedTargetKm reports whether it covers the day on its own.
+      }
+
+      if (direct.raw.distance_km >= target) {
+        // Case 3 — a full day already: never inflate. Thread only zones
+        // sitting on the corridor, as flavor.
+        const flavorZones = zonesNearCorridor(
+          zones,
+          start,
+          finish,
+          DRAFT_CORRIDOR_FLAVOR_KM,
+        );
+        const vias = draftViasThroughZones(flavorZones, start, finish, 2);
+        const flavored =
+          vias.length > 0
+            ? await routeReal([start, ...vias, finish], opts.prefs, init)
+            : direct;
+        return {
+          segments: flavored.segments,
+          summary: flavored.summary,
+          inflated: false,
+          reachedTargetKm: true,
+          vias,
+        };
+      }
+
+      // Case 2 — INFLATE: stretch toward the target with genuinely good
+      // roads only (Fun Zones), best-scoring first, measuring after each
+      // addition. Stop at the target, when candidates run out, or when a
+      // detour would balloon the day past the overshoot ceiling.
+      const candidates = zones
+        .slice()
+        .sort((a, b) => b.composite_score - a.composite_score)
+        .slice(0, DRAFT_CANDIDATE_LIMIT);
+      let chosenZones: DraftZone[] = [];
+      let vias: DraftRouteResult["vias"] = [];
+      let best = direct;
+      for (const zone of candidates) {
+        if (chosenZones.length >= MAX_DRAFT_VIAS) break;
+        const tryZones = [...chosenZones, zone];
+        const tryVias = draftViasThroughZones(
+          tryZones,
+          start,
+          finish,
+          MAX_DRAFT_VIAS,
+        );
+        if (tryVias.length === vias.length) continue; // unusable boundary
+        const measured = await routeReal(
+          [start, ...tryVias, finish],
+          opts.prefs,
+          init,
+        );
+        const km = measured.raw.distance_km;
+        if (
+          km > target * DRAFT_MAX_OVERSHOOT &&
+          Math.abs(km - target) >= Math.abs(best.raw.distance_km - target)
+        ) {
+          continue; // this detour overshoots without getting closer — skip it
+        }
+        chosenZones = tryZones;
+        vias = tryVias;
+        best = measured;
+        if (best.raw.distance_km >= target) break;
+      }
       return {
-        raw,
-        segments,
-        summary: buildRouteQualitySummary(raw, segments),
+        segments: best.segments,
+        summary: best.summary,
+        inflated: vias.length > 0,
+        reachedTargetKm:
+          best.raw.distance_km >= target * DRAFT_TARGET_TOLERANCE,
+        vias,
       };
     },
 

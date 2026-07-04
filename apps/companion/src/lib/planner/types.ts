@@ -78,8 +78,19 @@ export interface PlannerPoi {
   kmAlongRoute?: number;
 }
 
-/** Planner trip split lifecycle (addendum): route is live, days are on demand. */
-export type SplitState = "unsplit" | "split" | "stale";
+/**
+ * Did the rider opt into day-planning? A route is a complete product on
+ * its own (revision 2 §A) — 'multiday' is entered only via the explicit
+ * "Plan as multi-day trip" section, never implied.
+ */
+export type PlanningMode = "single" | "multiday";
+
+/**
+ * Day-split lifecycle — only meaningful while planningMode is 'multiday'.
+ * 'none' = never split (no day concept anywhere); 'split' = dayPlans
+ * current; 'stale' = route/prefs changed since the last split.
+ */
+export type SplitStatus = "none" | "split" | "stale";
 
 export interface SplitOptions {
   dailyKmTarget: number;
@@ -151,4 +162,44 @@ export interface PlannerApi {
 
   /** Name a map-placed pin from its coordinate (MOCK — nearest fixture). */
   reverseGeocode(lat: number, lng: number): Promise<string>;
+
+  /**
+   * Start+finish drafting (revision 2 §E cases 2/3): measures the direct
+   * route (REAL routing), then either inflates a short hop toward the
+   * daily-km sizing target by threading Fun-Zone vias, or leaves a
+   * full-day route natural with at most light corridor flavor. Produces
+   * geometry only — never days. The start-only roundtrip (case 1) is NOT
+   * served here: it goes through the REAL backend trip generator
+   * (`POST /trips/:id/generate`), which sizes the loop from the same
+   * daily-km value.
+   */
+  draftRoute(
+    start: { lat: number; lng: number },
+    finish: { lat: number; lng: number },
+    opts: DraftOptions,
+    init?: { signal?: AbortSignal },
+  ): Promise<DraftRouteResult>;
+}
+
+/** Inputs for {@link PlannerApi.draftRoute} (revision 2 §F). */
+export interface DraftOptions {
+  /** Drawn map region ([west, south, east, north]) to pull Fun Zones from;
+   * null/omitted = search a corridor-sized bbox around the endpoints. */
+  region?: [number, number, number, number] | null;
+  prefs: RouteRequestBody["options"];
+  /** Soft target for roundtrip/inflation sizing only — never creates days. */
+  dailyKmForSizing: number;
+}
+
+export interface DraftRouteResult {
+  segments: RouteSegment[];
+  summary: RouteQualitySummary;
+  /** True when the draft stretched a short hop toward the sizing target. */
+  inflated: boolean;
+  /** False = genuinely good roads ran out short of the soft target —
+   * surface the honest "limited fun roads nearby" note. */
+  reachedTargetKm: boolean;
+  /** Fun-Zone vias the draft threaded, in travel order — apply these to
+   * the trip so live routing redraws the same line. */
+  vias: Array<{ lat: number; lng: number; name: string }>;
 }
