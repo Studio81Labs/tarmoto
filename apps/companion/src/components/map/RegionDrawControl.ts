@@ -100,6 +100,10 @@ export function createRegionDrawControl(
   }
 
   function onDown(e: MapMouseEvent) {
+    // Primary button only: a right-click inside the bbox must reach the
+    // planner's context menu (waypoint placement), not arm a phantom
+    // region-move drag and yank the tool out of idle.
+    if ((e.originalEvent?.button ?? 0) !== 0) return;
     if (mode === "drawing") {
       e.preventDefault();
       dragKind = "create";
