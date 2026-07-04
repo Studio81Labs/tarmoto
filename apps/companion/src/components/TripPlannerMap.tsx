@@ -16,16 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import {
-  AlertTriangle,
-  Layers3,
-  Maximize2,
-  Mountain,
-  Route,
-  Sparkles,
-  Square,
-  X,
-} from "lucide-react";
+import { Layers3, Maximize2, Square, X } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -51,12 +42,7 @@ import {
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
-import {
-  buildTripClosureRoutes,
-  detourLengthKm,
-  formatClosureWindow,
-} from "@/lib/closures-summary";
-import { monthLabel } from "@/lib/passes-summary";
+import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import {
   buildPlannerClosureLineCollection,
   buildPlannerClosureMarkerCollection,
@@ -81,12 +67,7 @@ import {
   snapWaypointToRoadFeatures,
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
-import {
-  fetchFunZoneDetail,
-  fetchFunZonesInBbox,
-  type FunZoneDetail,
-  type FunZoneListItem,
-} from "@/lib/discover";
+import { fetchFunZonesInBbox } from "@/lib/discover";
 import {
   FUN_ZONES_FILL,
   installFunZoneLayer,
@@ -96,7 +77,7 @@ import {
 import type { Trip } from "@/lib/types";
 import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
-import { formatDistance, roundCoordinate } from "@/lib/utils";
+import { roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 export interface DayBreakMarker {
   lng: number;
@@ -375,7 +356,7 @@ const TripPlannerMapContent = forwardRef<
 >(function TripPlannerMapContent(
   {
     trip,
-    month,
+    month: _month,
     drawnRegion: controlledDrawnRegion,
     onDrawnRegionChange,
     closuresData,
@@ -439,20 +420,9 @@ const TripPlannerMapContent = forwardRef<
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(
     controlledDrawnRegion ?? null,
   );
-  const [funZones, setFunZones] = useState<FunZoneListItem[]>([]);
-  const [funZonesLoading, setFunZonesLoading] = useState(false);
-  const [funZonesError, setFunZonesError] = useState<string | null>(null);
-  const [funZonesRetryNonce, setFunZonesRetryNonce] = useState(0);
   const [selectedFunZoneId, setSelectedFunZoneId] = useState<string | null>(
     null,
   );
-  const [selectedFunZoneDetail, setSelectedFunZoneDetail] =
-    useState<FunZoneDetail | null>(null);
-  const [selectedFunZoneLoading, setSelectedFunZoneLoading] = useState(false);
-  const [selectedFunZoneError, setSelectedFunZoneError] = useState<
-    string | null
-  >(null);
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   // Sidebar publishes the focused segment id so the map can paint the
   // matching slice of the route in a contrasting color (issue #473).
@@ -532,24 +502,8 @@ const TripPlannerMapContent = forwardRef<
     [trip, selectedDayNumber, focusSelectedDay],
   );
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
-  const waypointCount = waypointCollection.features.length;
-  const {
-    closures,
-    routeClosures,
-    routeCounts,
-    loading: closuresLoading,
-    routeLoading: routeClosuresLoading,
-    routeError: closuresRouteError,
-  } = closuresData;
-  const {
-    passes,
-    routePasses,
-    routeClosedCount,
-    routeUnknownCount,
-    loading: passesLoading,
-    routeLoading: routePassesLoading,
-    routeError: passesRouteError,
-  } = passesData;
+  const { closures } = closuresData;
+  const { passes } = passesData;
   const closureLineCollection = useMemo(
     () => buildPlannerClosureLineCollection(closures),
     [closures],
@@ -610,47 +564,6 @@ const TripPlannerMapContent = forwardRef<
     }
     return buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId);
   }, [trip, focusedSegmentId, previewSegment]);
-  const selectedFunZone =
-    funZones.find((zone) => zone.id === selectedFunZoneId) ?? null;
-  const highlightedClosures =
-    routeClosures.length > 0 ? routeClosures : closures;
-  const highlightedPasses =
-    routePasses.length > 0
-      ? routePasses.filter((pass) => pass.status !== "open")
-      : passes;
-  const activeMonthLabel = monthLabel(month);
-  const conditionsLoading =
-    closuresLoading ||
-    routeClosuresLoading ||
-    passesLoading ||
-    routePassesLoading;
-  const routeWarningParts: string[] = [];
-  const routeErrors = dedupeMessages([closuresRouteError, passesRouteError]);
-  const routeErrorsBlock =
-    routeErrors.length > 0 ? (
-      <div className="mt-2 space-y-1">
-        {routeErrors.map((message) => (
-          <p key={message} className="text-xs text-rose-300">
-            {message}
-          </p>
-        ))}
-      </div>
-    ) : null;
-  if (routeCounts.total > 0) {
-    routeWarningParts.push(
-      `${routeCounts.total} route ${routeCounts.total === 1 ? "closure" : "closures"}`,
-    );
-  }
-  if (routeClosedCount > 0) {
-    routeWarningParts.push(
-      `${routeClosedCount} closed ${routeClosedCount === 1 ? "pass" : "passes"}`,
-    );
-  }
-  if (routeUnknownCount > 0) {
-    routeWarningParts.push(
-      `${routeUnknownCount} unknown ${routeUnknownCount === 1 ? "pass" : "passes"}`,
-    );
-  }
   useEffect(() => {
     // Drop the "already fitted" marker when the trip is closed so
     // the next opened trip gets its initial fit. We intentionally
@@ -881,18 +794,12 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     if (!drawnRegion) {
-      setFunZones([]);
-      setFunZonesLoading(false);
-      setFunZonesError(null);
       setSelectedFunZoneId(null);
-      setSelectedFunZoneDetail(null);
       updateFunZoneLayerData(map, []);
       return;
     }
     const controller = new AbortController();
     let cancelled = false;
-    setFunZonesLoading(true);
-    setFunZonesError(null);
     const timer = window.setTimeout(async () => {
       try {
         const zones = await fetchFunZonesInBbox(drawnRegion, {
@@ -902,7 +809,6 @@ const TripPlannerMapContent = forwardRef<
         const rankedZones = [...zones].sort(
           (a, b) => b.composite_score - a.composite_score,
         );
-        setFunZones(rankedZones);
         updateFunZoneLayerData(map, rankedZones);
         setSelectedFunZoneId((current) =>
           current && rankedZones.some((zone) => zone.id === current)
@@ -912,11 +818,7 @@ const TripPlannerMapContent = forwardRef<
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         console.warn("[planner] fun zones fetch failed", err);
-        setFunZones([]);
         updateFunZoneLayerData(map, []);
-        setFunZonesError("Couldn't load Fun Zones.");
-      } finally {
-        if (!cancelled) setFunZonesLoading(false);
       }
     }, FUN_ZONE_FETCH_DEBOUNCE_MS);
     return () => {
@@ -924,42 +826,12 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [drawnRegion, funZonesRetryNonce, ready]);
+  }, [drawnRegion, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     setFunZoneSelection(map, selectedFunZoneId);
   }, [ready, selectedFunZoneId]);
-  useEffect(() => {
-    if (!selectedFunZoneId) {
-      setSelectedFunZoneDetail(null);
-      setSelectedFunZoneError(null);
-      setSelectedFunZoneLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    let cancelled = false;
-    setSelectedFunZoneLoading(true);
-    setSelectedFunZoneError(null);
-    fetchFunZoneDetail(selectedFunZoneId, { signal: controller.signal })
-      .then((detail) => {
-        if (cancelled) return;
-        setSelectedFunZoneDetail(detail);
-        if (!detail) setSelectedFunZoneError("Fun Zone details unavailable.");
-      })
-      .catch((err) => {
-        if ((err as { name?: string }).name === "AbortError") return;
-        console.warn("[planner] fun zone detail fetch failed", err);
-        if (!cancelled) setSelectedFunZoneError("Couldn't load top roads.");
-      })
-      .finally(() => {
-        if (!cancelled) setSelectedFunZoneLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [selectedFunZoneId]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -1528,271 +1400,6 @@ const TripPlannerMapContent = forwardRef<
         </div>
       </div>
 
-      {/* Hidden below 2xl: on narrow viewports the map column is too tight
-          for both the toolbar and this info card — they'd overlap. */}
-      <div className="absolute right-3 top-3 z-10 hidden w-72 rounded-[14px] bg-ink p-4 text-cream shadow-[0_14px_36px_rgba(14,14,16,0.28)] 2xl:block">
-        <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-          <Route size={16} className="text-accent" />
-          {t("Planner map ")}
-        </div>
-        <p className="mt-2 text-sm text-cream/90">
-          {/* The working (unsplit) trip has no day concept — only real
-              multi-day trips mention days here (revision 2 §A). */}
-          {trip
-            ? `${trip.days.length > 1 ? `${trip.days.length} days · ` : ""}${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
-            : "Place a start point or import GPX/KML to see your route on the map."}
-        </p>
-        <p className="mt-2 text-xs text-cream/55">
-          {t(
-            "Generated routes use backend road geometry from the start waypoint and planner parameters. ",
-          )}
-        </p>
-
-        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-              <Sparkles size={14} className="text-accent" />
-              {t("Fun Zones")}
-            </div>
-            {drawnRegion ? (
-              <span className="rounded bg-accent/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                {t("Drawn")}
-              </span>
-            ) : null}
-          </div>
-
-          {!drawnRegion ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Draw a region to discover Fun Zones.")}
-            </p>
-          ) : funZonesLoading && funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Loading Fun Zones…")}
-            </p>
-          ) : funZonesError ? (
-            <div className="mt-2">
-              <p className="text-xs text-rose-300">{funZonesError}</p>
-              <button
-                type="button"
-                onClick={() => setFunZonesRetryNonce((value) => value + 1)}
-                className="mt-2 text-xs font-medium text-accent hover:underline"
-              >
-                {t("Retry")}
-              </button>
-            </div>
-          ) : funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("No Fun Zones in this region yet. Try a larger area.")}
-            </p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {funZones.slice(0, 3).map((zone, index) => {
-                const active = zone.id === selectedFunZoneId;
-                return (
-                  <button
-                    key={zone.id}
-                    type="button"
-                    onClick={() => setSelectedFunZoneId(zone.id)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                      active
-                        ? "border-accent bg-accent/10"
-                        : "border-cream/[0.12] bg-cream/[0.05] hover:border-cream/25"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-cream">
-                          {index + 1}. {zone.name ?? fallbackZoneName(zone)}
-                        </p>
-                        <p className="mt-1 text-[11px] text-cream/60">
-                          {zone.road_count}
-                          {t(" roads")}
-                          {zone.total_curve_km != null
-                            ? ` · ${Math.round(zone.total_curve_km)} km curves`
-                            : ""}
-                        </p>
-                        {zone.best_season ? (
-                          <p className="mt-1 text-[11px] text-cream/55">
-                            {zone.best_season}
-                          </p>
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 text-xs font-semibold text-accent">
-                        {zone.composite_score.toFixed(1)}
-                        {t(" score")}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-              {funZones.length > 3 ? (
-                <p className="text-[11px] text-cream/55">
-                  {t("+ {count} more in this region", {
-                    count: funZones.length - 3,
-                  })}
-                </p>
-              ) : null}
-            </div>
-          )}
-
-          {selectedFunZone ? (
-            <div className="mt-3 border-t border-cream/[0.12] pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-cream/90">
-                  {selectedFunZone.name ?? fallbackZoneName(selectedFunZone)}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFunZoneId(null)}
-                  className="text-[11px] text-cream/55 hover:text-cream/80"
-                >
-                  {t("Clear")}
-                </button>
-              </div>
-              <p className="mt-1 text-[11px] text-cream/55">
-                {selectedFunZone.composite_score.toFixed(1)}
-                {t(" score")}
-                {selectedFunZone.avg_quality != null
-                  ? ` · ${selectedFunZone.avg_quality.toFixed(1)} avg quality`
-                  : ""}
-              </p>
-              {selectedFunZoneLoading ? (
-                <p className="mt-2 text-[11px] text-cream/55">
-                  {t("Loading top roads…")}
-                </p>
-              ) : selectedFunZoneError ? (
-                <p className="mt-2 text-[11px] text-rose-300">
-                  {selectedFunZoneError}
-                </p>
-              ) : selectedFunZoneDetail?.top_roads.length ? (
-                <div className="mt-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cream/55">
-                    {t("Top roads")}
-                  </p>
-                  <ul className="mt-1 space-y-1">
-                    {selectedFunZoneDetail.top_roads
-                      .slice(0, 3)
-                      .map((road: FunZoneDetail["top_roads"][number]) => (
-                        <li
-                          key={road.id}
-                          className="flex items-center justify-between gap-2 text-[11px] text-cream/60"
-                        >
-                          <span className="truncate">
-                            {road.road_name ??
-                              road.road_number ??
-                              t("Unnamed road")}
-                          </span>
-                          <span className="shrink-0 text-cream/55">
-                            {(road.length_m / 1000).toFixed(1)}
-                            {t(" km")}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-            <AlertTriangle size={14} className="text-amber-300" />
-            {t("Conditions for ")}
-            {activeMonthLabel}
-          </div>
-
-          {conditionsLoading ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Loading passes and closures\u2026 ")}
-            </p>
-          ) : (
-            <>
-              {routeWarningParts.length > 0 ? (
-                <p className="mt-2 text-xs text-amber-200">
-                  {t("Route warnings: ")}
-                  {routeWarningParts.join(" · ")}.
-                </p>
-              ) : routeErrors.length > 0 ? (
-                routeErrorsBlock
-              ) : (
-                <p className="mt-2 text-xs text-emerald-300">
-                  {t("No route closures or pass warnings for this month. ")}
-                </p>
-              )}
-
-              {routeWarningParts.length > 0 ? routeErrorsBlock : null}
-
-              {highlightedClosures.length > 0 ? (
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
-                    <AlertTriangle size={12} />
-                    {t("Closures ")}
-                  </div>
-                  <ul className="mt-2 space-y-2">
-                    {highlightedClosures.slice(0, 2).map((closure) => {
-                      const detourKm =
-                        closure.reason === "roadworks"
-                          ? detourLengthKm(closure)
-                          : null;
-                      return (
-                        <li
-                          key={closure.id}
-                          className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
-                        >
-                          <p className="text-xs font-medium text-cream">
-                            {closure.title}
-                          </p>
-                          <p className="mt-1 text-[11px] text-cream/60">
-                            {reasonLabel(closure.reason)}
-                          </p>
-                          <p className="mt-1 text-[11px] text-cream/55">
-                            {formatClosureWindow(closure)}
-                          </p>
-                          {detourKm != null ? (
-                            <p className="mt-1 text-[11px] text-cyan-300">
-                              {t("Detour approx. {distance}", {
-                                distance: formatDistance(detourKm, unitSystem),
-                              })}
-                            </p>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-
-              {highlightedPasses.length > 0 ? (
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
-                    <Mountain size={12} />
-                    {t("Passes ")}
-                  </div>
-                  <ul className="mt-2 space-y-2">
-                    {highlightedPasses.slice(0, 2).map((pass) => (
-                      <li
-                        key={pass.id}
-                        className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
-                      >
-                        <p className="text-xs font-medium text-cream">
-                          {pass.name}
-                        </p>
-                        <p className="mt-1 text-[11px] text-cream/60">
-                          {t("{status} · {elevation} m", {
-                            status: statusLabel(pass.status),
-                            elevation: pass.elevation_m.toLocaleString(),
-                          })}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
       {/* ── Route legend for the active line-coloring mode ── */}
       {routeCollection.features.length > 0 ? (
         <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
@@ -1873,28 +1480,6 @@ function toggleClassName(active: boolean): string {
   return active
     ? `${PILL_BASE} border-accent bg-cream text-accent`
     : CREAM_PILL;
-}
-function fallbackZoneName(zone: FunZoneListItem): string {
-  const points = zone.boundary as unknown as Array<{
-    lat: number;
-    lng: number;
-  }>;
-  if (points.length === 0) return t("Unnamed Fun Zone");
-  const lat =
-    points.reduce((sum: number, point) => sum + point.lat, 0) / points.length;
-  const lng =
-    points.reduce((sum: number, point) => sum + point.lng, 0) / points.length;
-  return t("Zone near {lat}, {lng}", {
-    lat: lat.toFixed(2),
-    lng: lng.toFixed(2),
-  });
-}
-function dedupeMessages(messages: Array<string | null>): string[] {
-  return [
-    ...new Set(
-      messages.filter((message): message is string => message !== null),
-    ),
-  ];
 }
 
 function snapPointerToRoad(
@@ -2405,34 +1990,4 @@ function syncGeoJsonSource(
     type: "geojson",
     data,
   });
-}
-function reasonLabel(
-  reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other",
-): string {
-  switch (reason) {
-    case "roadworks":
-      return "Roadworks";
-    case "seasonal":
-      return "Seasonal";
-    case "weather":
-      return "Weather";
-    case "event":
-      return "Event";
-    case "other":
-      return "Other";
-    case "closure":
-    default:
-      return "Closure";
-  }
-}
-function statusLabel(status: "open" | "closed" | "unknown"): string {
-  switch (status) {
-    case "open":
-      return "Open";
-    case "closed":
-      return "Closed";
-    case "unknown":
-    default:
-      return "Unknown";
-  }
 }

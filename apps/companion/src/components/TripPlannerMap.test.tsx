@@ -531,7 +531,7 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
-  it("fetches Fun Zones for the drawn region and exposes selected top roads", async () => {
+  it("fetches Fun Zones for the drawn region and feeds the map layer", async () => {
     const zones = [
       {
         id: "zone-1",
@@ -551,26 +551,8 @@ describe("TripPlannerMap", () => {
       },
     ];
     vi.mocked(fetchFunZonesInBbox).mockResolvedValueOnce(zones as never);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: zones[0],
-      top_roads: [
-        {
-          id: "road-1",
-          road_name: "SS38",
-          road_number: "SS38",
-          quality_score: 4.7,
-          curviness_score: 4.5,
-          surface_type: "asphalt",
-          length_m: 12340,
-          confidence: 90,
-          elevation_min: 900,
-          elevation_max: 2700,
-          elevation_profile: null,
-          geometry: [],
-          contribution_score: 9.2,
-        },
-      ],
-    } as never);
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -579,34 +561,27 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onModeChange?.("idle");
     });
 
-    expect(screen.getByText("Loading Fun Zones…")).toBeInTheDocument();
-
     await waitFor(() =>
       expect(fetchFunZonesInBbox).toHaveBeenCalledWith(
         [10.3, 46.45, 10.6, 46.7],
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
-    expect(screen.getByRole("button", { name: /Stelvio sweepers/i }));
-    expect(screen.getByText("4.6 score")).toBeInTheDocument();
-    expect(screen.getByText(/summer/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Stelvio sweepers/i }));
-
+    // Zones land on the map layer; the in-map info card was removed, so
+    // no list UI renders.
     await waitFor(() =>
-      expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-        "zone-1",
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [
+            expect.objectContaining({
+              properties: expect.objectContaining({ id: "zone-1" }),
+            }),
+          ],
+        }),
       ),
     );
-    expect(screen.getByText("Top roads")).toBeInTheDocument();
-    expect(screen.getByText("SS38")).toBeInTheDocument();
-    expect(screen.getByText("12.3 km")).toBeInTheDocument();
-    expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
-      "==",
-      ["get", "id"],
-      "zone-1",
-    ]);
+    expect(screen.queryByText(/Stelvio sweepers/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Planner map/)).not.toBeInTheDocument();
   });
 
   it("selects a Fun Zone map feature inside the drawn region", async () => {
@@ -618,25 +593,6 @@ describe("TripPlannerMap", () => {
       return mockMap;
     });
     drawControl.hitTest.mockReturnValue(true);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: {
-        id: "zone-1",
-        name: "Stelvio sweepers",
-        composite_score: 4.6,
-        road_count: 12,
-        total_curve_km: 48,
-        avg_quality: 4.2,
-        best_season: "summer",
-        boundary: [
-          { lng: 10.3, lat: 46.45 },
-          { lng: 10.6, lat: 46.45 },
-          { lng: 10.6, lat: 46.7 },
-          { lng: 10.3, lat: 46.7 },
-          { lng: 10.3, lat: 46.45 },
-        ],
-      },
-      top_roads: [],
-    } as never);
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -655,10 +611,6 @@ describe("TripPlannerMap", () => {
       ]),
     );
     expect(drawControl.hitTest).not.toHaveBeenCalled();
-    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-      "zone-1",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
   });
 
   it("does not add a waypoint when selecting a Fun Zone outside the drawn region", async () => {
@@ -675,25 +627,6 @@ describe("TripPlannerMap", () => {
     });
     drawControl.hitTest.mockReturnValue(false);
     mockMap.queryRenderedFeatures.mockReturnValue([]);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: {
-        id: "zone-1",
-        name: "Stelvio sweepers",
-        composite_score: 4.6,
-        road_count: 12,
-        total_curve_km: 48,
-        avg_quality: 4.2,
-        best_season: "summer",
-        boundary: [
-          { lng: 10.3, lat: 46.45 },
-          { lng: 10.6, lat: 46.45 },
-          { lng: 10.6, lat: 46.7 },
-          { lng: 10.3, lat: 46.7 },
-          { lng: 10.3, lat: 46.45 },
-        ],
-      },
-      top_roads: [],
-    } as never);
 
     render(
       <TripPlannerMap
@@ -721,10 +654,6 @@ describe("TripPlannerMap", () => {
       ]),
     );
     expect(handleAddWaypoint).not.toHaveBeenCalled();
-    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-      "zone-1",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
   });
 
   it("clears Fun Zone results when the drawn region is cleared", async () => {
@@ -747,6 +676,9 @@ describe("TripPlannerMap", () => {
       },
     ] as never);
 
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+
     render(<TripPlannerMap trip={trip()} month={7} />);
 
     act(() => {
@@ -754,14 +686,22 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onModeChange?.("idle");
     });
     await waitFor(() => expect(fetchFunZonesInBbox).toHaveBeenCalled());
-    await screen.findByText(/Stelvio sweepers/);
+    await waitFor(() =>
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [expect.objectContaining({ type: "Feature" })],
+        }),
+      ),
+    );
 
+    setData.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
 
-    expect(screen.queryByText(/Stelvio sweepers/)).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Draw a region to discover Fun Zones."),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({ features: [] }),
+      ),
+    );
   });
 
   it("clears the drawn region when the rider presses Delete or Backspace", () => {
@@ -1026,7 +966,7 @@ describe("TripPlannerMap", () => {
     ]);
   });
 
-  it("shows in-map seasonal condition details and registers closure/pass overlay sources", () => {
+  it("registers closure/pass overlay sources for the map layers", () => {
     useClosuresMock.mockReturnValue({
       closures: [
         {
@@ -1091,12 +1031,9 @@ describe("TripPlannerMap", () => {
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
-    expect(screen.getByText("Conditions for July")).toBeInTheDocument();
-    expect(screen.getByText("Stelvio summit roadworks")).toBeInTheDocument();
-    expect(screen.getByText("Roadworks")).toBeInTheDocument();
-    expect(screen.getByText("Jul 1 - Jul 21")).toBeInTheDocument();
-    expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
-    expect(screen.getByText("Open · 2,757 m")).toBeInTheDocument();
+    // The in-map info card was removed — conditions surface on the map
+    // (overlay sources below) and in the CONDITIONS panel tab.
+    expect(screen.queryByText("Conditions for July")).not.toBeInTheDocument();
 
     expect(mockMap.addSource).toHaveBeenCalledWith(
       "trip-planner-closure-lines",
@@ -1106,39 +1043,6 @@ describe("TripPlannerMap", () => {
       "trip-planner-pass-markers",
       expect.objectContaining({ type: "geojson" }),
     );
-  });
-
-  it("shows route-check failures instead of a false safe-route message", () => {
-    useClosuresMock.mockReturnValue({
-      closures: [],
-      routeClosures: [],
-      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
-      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
-      loading: false,
-      routeLoading: false,
-      error: null,
-      routeError: "Failed to check route closures",
-      previewDate: new Date("2026-07-15T12:00:00Z"),
-    });
-    usePassesMock.mockReturnValue({
-      passes: [],
-      routePasses: [],
-      routeClosedCount: 0,
-      routeUnknownCount: 0,
-      loading: false,
-      routeLoading: false,
-      error: null,
-      routeError: "Failed to check route passes",
-    });
-
-    render(<TripPlannerMap trip={trip()} month={7} />);
-
-    expect(
-      screen.getByText("Failed to check route closures"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("No route closures or pass warnings for this month."),
-    ).not.toBeInTheDocument();
   });
 
   it("registers the segment-highlight source and renders nothing when no segment is focused", () => {
@@ -2100,9 +2004,6 @@ describe("TripPlannerMap", () => {
     expect(useClosuresMock).not.toHaveBeenCalled();
     expect(usePassesMock).not.toHaveBeenCalled();
     expect(buildTripClosureRoutesMock).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("No route closures or pass warnings for this month."),
-    ).toBeInTheDocument();
   });
 
   it("passes per-segment quality features covering every day to the route source", async () => {
