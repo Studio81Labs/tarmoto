@@ -743,26 +743,29 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
-  it("Reset clears the working trip after confirmation", () => {
+  // Reset/Discard confirm through the app-styled ConfirmDialog — the
+  // planner never opens system dialogs (they block the whole tab).
+  it("Reset clears the working trip after in-app confirmation", () => {
     storeState.activeTrip = activeTrip;
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset planner" }));
 
     expect(setActiveTrip).toHaveBeenCalledWith(null);
-    confirmSpy.mockRestore();
   });
 
-  it("Reset does nothing when the confirmation is declined", () => {
+  it("Reset does nothing when the confirmation is cancelled", () => {
     storeState.activeTrip = activeTrip;
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(setActiveTrip).not.toHaveBeenCalledWith(null);
-    confirmSpy.mockRestore();
+    expect(
+      screen.queryByRole("button", { name: "Reset planner" }),
+    ).not.toBeInTheDocument();
   });
 
   it("Discard deletes the bound server trip and navigates back to trips", async () => {
@@ -776,28 +779,33 @@ describe("TripPlannerPage", () => {
     tripsApiGetMock.mockRejectedValue(new Error("offline"));
     tripsApiDeleteMock.mockResolvedValue({ data: {} } as never);
     storeState.activeTrip = activeTrip;
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
 
     await waitFor(() =>
       expect(tripsApiDeleteMock).toHaveBeenCalledWith(serverTripId),
     );
     expect(mockPush).toHaveBeenCalledWith("/trips");
-    confirmSpy.mockRestore();
   });
 
   it("Discard without a persisted trip just leaves the planner", async () => {
     storeState.activeTrip = activeTrip; // in-memory draft id
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/trips"));
     expect(tripsApiDeleteMock).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+  });
+
+  it("dropped the demo-trip shortcut from the toolbar", () => {
+    render(<TripPlannerPage />);
+    expect(
+      screen.queryByRole("button", { name: "Load demo trip" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a drafted loop in roundtrip mode: Recalculate reopens the dialog", () => {

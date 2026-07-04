@@ -1540,7 +1540,7 @@ const TripPlannerMapContent = forwardRef<
               multi-day trips mention days here (revision 2 §A). */}
           {trip
             ? `${trip.days.length > 1 ? `${trip.days.length} days · ` : ""}${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
-            : "Load the demo trip or import GPX/KML to see your route on the map."}
+            : "Place a start point or import GPX/KML to see your route on the map."}
         </p>
         <p className="mt-2 text-xs text-cream/55">
           {t(

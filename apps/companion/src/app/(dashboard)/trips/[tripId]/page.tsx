@@ -21,6 +21,7 @@ import {
   User,
 } from "lucide-react";
 import { ApiError, tripsApi } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
@@ -137,15 +138,12 @@ export default function TripDetailPage() {
     };
   }, [tripId, router, authReady]);
   const collabSession = useTripCollabSession(loaded ? loaded.detail.id : null);
+  // Deleting confirms through the app dialog — system dialogs are
+  // disallowed.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const handleDelete = useCallback(async () => {
     if (!loaded) return;
-    if (
-      !confirm(
-        `Delete "${loaded.detail.title}"? This permanently removes all days, waypoints, and collaboration history. This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    setConfirmDeleteOpen(false);
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -304,13 +302,27 @@ export default function TripDetailPage() {
               loading={deleting}
               leftIcon={<Trash2 size={14} />}
               aria-label={t("Delete trip")}
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
             >
               {t("Delete ")}
             </Button>
           )}
         </div>
       </header>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={t("Delete this trip?")}
+        message={t(
+          '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone. ',
+          { name: loaded.detail.title },
+        )}
+        tone="danger"
+        confirmLabel={t("Delete permanently")}
+        busy={deleting}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => void handleDelete()}
+      />
 
       {deleteError && (
         <div

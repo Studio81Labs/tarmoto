@@ -95,7 +95,7 @@ import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
-import { DEMO_TRIP } from "@/lib/demo-trip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
 import {
   generatedOptionsFromResponse,
@@ -914,17 +914,16 @@ export default function TripPlannerPage() {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
+  // Reset / Discard confirm through the app-styled ConfirmDialog —
+  // system dialogs are disallowed (they block the tab and ignore the
+  // design system).
+  const [pendingConfirm, setPendingConfirm] = useState<
+    "reset" | "discard" | null
+  >(null);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
   // the canvas is blank again. Pref controls keep their values.
-  const handleReset = useCallback(() => {
-    if (
-      !window.confirm(
-        t("Start over? This clears the current route from the planner."),
-      )
-    ) {
-      return;
-    }
+  const performReset = useCallback(() => {
     setActiveTrip(null);
     setPlannerRegion(null);
     setGeneratedOptions([]);
@@ -944,14 +943,7 @@ export default function TripPlannerPage() {
   }, [setActiveTrip]);
   // Discard: delete the persisted trip (routes save server-side) and
   // leave the planner back to the trips list.
-  const handleDiscard = useCallback(async () => {
-    if (
-      !window.confirm(
-        t("Discard this route? A saved trip will be deleted for good."),
-      )
-    ) {
-      return;
-    }
+  const performDiscard = useCallback(async () => {
     const persistedTripId =
       serverTripId ??
       (activeTripRef.current && UUID_RE.test(activeTripRef.current.id)
@@ -1924,33 +1916,22 @@ export default function TripPlannerPage() {
               server-side, so backing out needs an explicit discard). */}
           {displayedTrip ? (
             <>
-              <Button variant="secondary" size="sm" onClick={handleReset}>
-                {t("Reset")}
-              </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                className="text-quality-q1"
-                onClick={() => void handleDiscard()}
+                onClick={() => setPendingConfirm("reset")}
+              >
+                {t("Reset")}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setPendingConfirm("discard")}
               >
                 {t("Discard")}
               </Button>
             </>
           ) : null}
-          {!displayedTrip && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setGeneratedOptions([]);
-                setGeneratedOptionsSignature(null);
-                setSelectedOptionId(null);
-                setActiveTrip(DEMO_TRIP);
-              }}
-            >
-              {t("Load demo trip")}
-            </Button>
-          )}
         </div>
       </div>
 
@@ -2690,6 +2671,33 @@ export default function TripPlannerPage() {
         drafting={isGenerating}
         onClose={() => setRoundtripOpen(false)}
         onConfirm={(opts) => void handleDraftRoundtrip(opts)}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={
+          pendingConfirm === "discard"
+            ? t("Discard this route?")
+            : t("Start over?")
+        }
+        message={
+          pendingConfirm === "discard"
+            ? t(
+                "The route is removed and a saved trip is deleted for good. This cannot be undone. ",
+              )
+            : t("This clears the current route from the planner. ")
+        }
+        tone={pendingConfirm === "discard" ? "danger" : "default"}
+        confirmLabel={
+          pendingConfirm === "discard" ? t("Discard route") : t("Reset planner")
+        }
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          const action = pendingConfirm;
+          setPendingConfirm(null);
+          if (action === "reset") performReset();
+          else if (action === "discard") void performDiscard();
+        }}
       />
     </div>
   );

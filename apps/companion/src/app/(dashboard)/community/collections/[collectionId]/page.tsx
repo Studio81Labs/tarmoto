@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Button,
   Card,
@@ -698,6 +699,7 @@ function VisibilitySelector({
 }
 function ShareButton({ collection }: { collection: RouteCollectionView }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [fallbackOpen, setFallbackOpen] = useState(false);
   useEffect(() => {
     if (state === "idle") return;
     const timeoutId = window.setTimeout(() => setState("idle"), 2000);
@@ -715,42 +717,61 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       setState("copied");
     } catch {
       // Clipboard rejects on insecure origins / denied permission. Surface a
-      // visible "Copy failed" and fall back to a prompt pre-filled with the
-      // *share* URL — the page URL is the owner-only `/collections/:id` route,
-      // so telling the owner to copy the browser address would hand recipients
-      // a 404. The prompt lets them copy a link that actually works.
+      // visible "Copy failed" and fall back to an app dialog showing the
+      // *share* URL (system prompts are disallowed) — the page URL is the
+      // owner-only `/collections/:id` route, so telling the owner to copy
+      // the browser address would hand recipients a 404.
       setState("failed");
-      if (typeof window !== "undefined") {
-        window.prompt(t("Copy this share link:"), url);
-      }
+      setFallbackOpen(true);
     }
   };
   return (
-    <Tooltip
-      content={
-        sharable
-          ? state === "failed"
-            ? t("Couldn't copy automatically — link shown so you can copy it")
-            : t("Copy share link")
-          : t("Make this collection unlisted or public to share")
-      }
-    >
-      <Button
-        variant="secondary"
-        uppercase
-        disabled={!sharable}
-        leftIcon={
-          state === "copied" ? <Check size={14} /> : <Share2 size={14} />
-        }
-        onClick={() => void handle()}
+    <>
+      <ConfirmDialog
+        open={fallbackOpen}
+        title={t("Copy this share link")}
+        message={t(
+          "Automatic copying was blocked — select and copy the link below. ",
+        )}
+        confirmLabel={t("Done")}
+        hideCancel
+        onCancel={() => setFallbackOpen(false)}
+        onConfirm={() => setFallbackOpen(false)}
       >
-        {state === "copied"
-          ? t("Copied")
-          : state === "failed"
-            ? t("Copy failed")
-            : t("Share")}
-      </Button>
-    </Tooltip>
+        <input
+          readOnly
+          value={url}
+          aria-label={t("Share link")}
+          onFocus={(event) => event.target.select()}
+          className="w-full rounded-[8px] border border-line-strong bg-paper px-3 py-2 font-mono text-[12px] text-ink outline-none"
+        />
+      </ConfirmDialog>
+      <Tooltip
+        content={
+          sharable
+            ? state === "failed"
+              ? t("Couldn't copy automatically — link shown so you can copy it")
+              : t("Copy share link")
+            : t("Make this collection unlisted or public to share")
+        }
+      >
+        <Button
+          variant="secondary"
+          uppercase
+          disabled={!sharable}
+          leftIcon={
+            state === "copied" ? <Check size={14} /> : <Share2 size={14} />
+          }
+          onClick={() => void handle()}
+        >
+          {state === "copied"
+            ? t("Copied")
+            : state === "failed"
+              ? t("Copy failed")
+              : t("Share")}
+        </Button>
+      </Tooltip>
+    </>
   );
 }
 

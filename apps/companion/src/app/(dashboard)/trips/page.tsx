@@ -50,6 +50,7 @@ import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
 import { Button, MiniRouteSvg, PageHeader } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
@@ -110,6 +111,12 @@ export default function TripListPage() {
   >(null);
   const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  // Deletes confirm through the app dialog — system dialogs are disallowed.
+  const [confirmDelete, setConfirmDelete] = useState<
+    | { kind: "folder"; folder: TripFolder }
+    | { kind: "trip"; trip: TripSummary }
+    | null
+  >(null);
   const markBusy = (id: string) => {
     setBusyTripIds((prev) => {
       const next = new Set(prev);
@@ -235,13 +242,6 @@ export default function TripListPage() {
   // PATCH per trip — that would be redundant work and would race the
   // cascade.
   const handleDeleteFolder = async (folder: TripFolder) => {
-    if (
-      !confirm(
-        `Delete folder "${folder.name}"? Trips inside will become unfiled.`,
-      )
-    ) {
-      return;
-    }
     const previousFolders = folders;
     // Snapshot the affected trip ids — not the entire trips array — so
     // a concurrent duplicate / delete / move running during the await
@@ -379,7 +379,6 @@ export default function TripListPage() {
     }
   };
   const deleteTrip = async (trip: TripSummary) => {
-    if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
     // Read fresh state so concurrent optimistic updates don't clobber each
     // other when two actions fire in the same render.
     const before = useTripStore.getState().trips;
@@ -505,7 +504,7 @@ export default function TripListPage() {
           onSelect={(next) => setFilters({ ...filters, folderScope: next })}
           onNew={() => setFolderModal({ mode: "create" })}
           onRename={(folder) => setFolderModal({ mode: "rename", folder })}
-          onDelete={handleDeleteFolder}
+          onDelete={(folder) => setConfirmDelete({ kind: "folder", folder })}
         />
 
         <TripToolbar
@@ -554,7 +553,7 @@ export default function TripListPage() {
                 folders={folders}
                 busy={busyTripIds.has(trip.id)}
                 onDuplicate={() => duplicateTrip(trip)}
-                onDelete={() => deleteTrip(trip)}
+                onDelete={() => setConfirmDelete({ kind: "trip", trip })}
                 onMove={(folderId) => moveTripToFolder(trip, folderId)}
               />
             ))}
@@ -576,6 +575,41 @@ export default function TripListPage() {
           onSubmit={submitFolderModal}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title={
+          confirmDelete?.kind === "folder"
+            ? t("Delete this folder?")
+            : t("Delete this trip?")
+        }
+        message={
+          confirmDelete?.kind === "folder"
+            ? t('"{name}" is deleted; trips inside become unfiled. ', {
+                name: confirmDelete.folder.name,
+              })
+            : confirmDelete
+              ? t('"{name}" is deleted for good. This cannot be undone. ', {
+                  name: confirmDelete.trip.name,
+                })
+              : ""
+        }
+        tone="danger"
+        confirmLabel={
+          confirmDelete?.kind === "folder"
+            ? t("Delete folder")
+            : t("Delete trip")
+        }
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          const pending = confirmDelete;
+          setConfirmDelete(null);
+          if (!pending) return;
+          if (pending.kind === "folder")
+            void handleDeleteFolder(pending.folder);
+          else void deleteTrip(pending.trip);
+        }}
+      />
     </div>
   );
 }
