@@ -55,6 +55,7 @@ import { fetchOvernightTowns } from "@/lib/planner/api";
 import { plannerApi } from "@/lib/planner/api";
 import {
   buildPrefsSummary,
+  DEFAULT_ROAD_PREFERENCE,
   effectiveLegPreference,
   fromTripRoadPreference,
   legId as legPairId,
@@ -235,9 +236,12 @@ export default function TripPlannerPage() {
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
   );
-  const [roadPreference, setRoadPreference] = useState<
-    TripParameters["roadPreference"]
-  >(PLANNER_DEFAULTS.roadPreference);
+  // Trip-wide road character in the FIVE-value planner vocabulary
+  // (revision 3 §A) — the legacy TripParameters vocabulary only exists at
+  // the persistence/URL seams via to/fromTripRoadPreference.
+  const [roadPreference, setRoadPreference] = useState<RoadPreference>(
+    DEFAULT_ROAD_PREFERENCE,
+  );
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
     () => [...PLANNER_DEFAULTS.surfacePreference],
   );
@@ -364,8 +368,9 @@ export default function TripPlannerPage() {
       surfaces: surfacePreference,
       prefer_quality: minQuality >= 3,
       // Trip-wide road character (revision 3 §A) — per-leg overrides
-      // replace this on their own leg's request below.
-      preference: fromTripRoadPreference(roadPreference),
+      // replace this on their own leg's request below. 'efficient_loop'
+      // costs like the engine default, same as 'direct'.
+      preference: roadPreference,
     }),
     [
       avoidHighways,
@@ -419,10 +424,7 @@ export default function TripPlannerPage() {
     return legs.map((leg, index) => {
       const from = routingWaypoints[index]!;
       const to = routingWaypoints[index + 1]!;
-      const effective = effectiveLegPreference(
-        leg,
-        fromTripRoadPreference(roadPreference),
-      );
+      const effective = effectiveLegPreference(leg, roadPreference);
       return {
         legId: legPairId(leg.fromWaypointId, leg.toWaypointId),
         from: { lat: from.lat, lng: from.lng },
@@ -687,7 +689,7 @@ export default function TripPlannerPage() {
       const params = hydrated.parameters;
       setDays(params.days);
       setDailyKmTarget(params.dailyKmTarget);
-      setRoadPreference(params.roadPreference);
+      setRoadPreference(fromTripRoadPreference(params.roadPreference));
       setSurfacePreference(params.surfacePreference);
       setMinQuality(params.minQuality);
       setAvoidHighways(params.avoidHighways);
@@ -789,7 +791,7 @@ export default function TripPlannerPage() {
           const params = hydrated.parameters;
           setDays(params.days);
           setDailyKmTarget(params.dailyKmTarget);
-          setRoadPreference(params.roadPreference);
+          setRoadPreference(fromTripRoadPreference(params.roadPreference));
           setSurfacePreference(params.surfacePreference);
           setMinQuality(params.minQuality);
           setAvoidHighways(params.avoidHighways);
@@ -821,7 +823,7 @@ export default function TripPlannerPage() {
     () => ({
       days,
       dailyKmTarget,
-      roadPreference,
+      roadPreference: toTripRoadPreference(roadPreference),
       surfacePreference,
       avoidHighways,
       avoidTolls,
@@ -1261,7 +1263,7 @@ export default function TripPlannerPage() {
   // they dirty the route (staling any split) and re-fire live routing
   // through the per-leg request options (revision 3 §C).
   const handleRoadPreferenceChange = useCallback(
-    (value: TripParameters["roadPreference"]) => {
+    (value: RoadPreference) => {
       setRoadPreference(value);
       prefsTouchedRef.current = true;
       markRouteDirty();
@@ -1310,7 +1312,7 @@ export default function TripPlannerPage() {
   // per-trip.
   const currentRoutePrefs = useMemo<UserRoutePrefs>(
     () => ({
-      roadPreference: fromTripRoadPreference(roadPreference),
+      roadPreference,
       avoidHighways,
       avoidTolls,
       avoidUnpaved,
@@ -1348,7 +1350,7 @@ export default function TripPlannerPage() {
         if (cancelled) return;
         setSavedRoutePrefs(prefs);
         if (prefs && !hasOverrides) {
-          setRoadPreference(toTripRoadPreference(prefs.roadPreference));
+          setRoadPreference(prefs.roadPreference);
           setAvoidHighways(prefs.avoidHighways);
           setAvoidTolls(prefs.avoidTolls);
           setAvoidUnpaved(prefs.avoidUnpaved);
@@ -1407,7 +1409,7 @@ export default function TripPlannerPage() {
     const params = activeTrip.parameters;
     setDays(params.days);
     setDailyKmTarget(params.dailyKmTarget);
-    setRoadPreference(params.roadPreference);
+    setRoadPreference(fromTripRoadPreference(params.roadPreference));
     setSurfacePreference(params.surfacePreference);
     setMinQuality(params.minQuality);
     setAvoidHighways(params.avoidHighways);
@@ -1439,7 +1441,7 @@ export default function TripPlannerPage() {
       if (dirty) {
         setDays(fromUrl.days);
         setDailyKmTarget(fromUrl.dailyKmTarget);
-        setRoadPreference(fromUrl.roadPreference);
+        setRoadPreference(fromTripRoadPreference(fromUrl.roadPreference));
         setSurfacePreference(fromUrl.surfacePreference);
         setMinQuality(fromUrl.minQuality);
         setAvoidHighways(fromUrl.avoidHighways);
@@ -1454,7 +1456,7 @@ export default function TripPlannerPage() {
     syncPlannerControlsToUrl({
       days,
       dailyKmTarget,
-      roadPreference,
+      roadPreference: toTripRoadPreference(roadPreference),
       surfacePreference,
       avoidHighways,
       avoidTolls,
@@ -2151,7 +2153,7 @@ export default function TripPlannerPage() {
                 <WaypointEditor
                   waypoints={selectedDay?.waypoints ?? []}
                   legPrefs={legPrefs}
-                  tripPreference={fromTripRoadPreference(roadPreference)}
+                  tripPreference={roadPreference}
                   onChangeLegPref={handleChangeLegPref}
                   onReorder={(fromIndex, toIndex) =>
                     reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
@@ -2172,11 +2174,15 @@ export default function TripPlannerPage() {
                   type="button"
                   aria-expanded={prefsOpen}
                   onClick={() => setPrefsOpen((open) => !open)}
-                  className="flex w-full items-center gap-2.5 rounded-[11px] border border-line bg-cream px-3.5 py-3 text-left transition hover:border-line-strong"
+                  className={`flex w-full items-center gap-2.5 rounded-[11px] border px-3.5 py-3 text-left transition ${
+                    prefsOpen
+                      ? "border-accent bg-accent/[0.04]"
+                      : "border-line bg-cream hover:border-line-strong"
+                  }`}
                 >
                   <SlidersHorizontal
                     size={15}
-                    className="shrink-0 text-fg-mute"
+                    className={`shrink-0 ${prefsOpen ? "text-accent" : "text-fg-mute"}`}
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block">
@@ -2201,11 +2207,22 @@ export default function TripPlannerPage() {
                   />
                 </button>
 
-                <div className={prefsOpen ? "mt-3" : "hidden"}>
-                  {/* Road preference — compact 2×2 chip grid per the
-                    design (centered bold labels, selected chip filled
-                    ink). The four point-to-point characters (revision 3
-                    §A); 'Efficient loop' lives in the roundtrip dialog. */}
+                <div
+                  className={
+                    prefsOpen
+                      ? "mt-2.5 rounded-[12px] border border-line-strong bg-cream px-3.5 pb-1 pt-3.5"
+                      : "hidden"
+                  }
+                >
+                  <p className="mb-3.5 text-[11px] leading-relaxed text-fg-mute">
+                    {t(
+                      "Applied to every new trip. Changing a value re-draws the route on the map live. ",
+                    )}
+                  </p>
+                  {/* Road preference — the design's chip grid: all five
+                    characters, Efficient loop spanning both columns
+                    (revision 3 §A vocabulary; the loop mode also drives
+                    the roundtrip dialog default). */}
                   <div>
                     <label
                       htmlFor="trip-planner-road-preference"
@@ -2217,10 +2234,25 @@ export default function TripPlannerPage() {
                       {(
                         [
                           { value: "direct", label: t("Direct") },
-                          { value: "mixed", label: t("Balanced") },
-                          { value: "scenic", label: t("Scenic balance") },
-                          { value: "curvy", label: t("Maximum twisty") },
-                        ] as const
+                          { value: "balanced", label: t("Balanced") },
+                          {
+                            value: "scenic_balance",
+                            label: t("Scenic balance"),
+                          },
+                          {
+                            value: "maximum_twisty",
+                            label: t("Maximum twisty"),
+                          },
+                          {
+                            value: "efficient_loop",
+                            label: t("Efficient loop"),
+                            fullWidth: true,
+                          },
+                        ] as ReadonlyArray<{
+                          value: RoadPreference;
+                          label: string;
+                          fullWidth?: boolean;
+                        }>
                       ).map((opt) => {
                         const selected = roadPreference === opt.value;
                         return (
@@ -2228,12 +2260,12 @@ export default function TripPlannerPage() {
                             key={opt.value}
                             type="button"
                             onClick={() =>
-                              handleRoadPreferenceChange(
-                                opt.value as TripParameters["roadPreference"],
-                              )
+                              handleRoadPreferenceChange(opt.value)
                             }
                             aria-pressed={selected}
                             className={`rounded-[10px] border px-3 py-2.5 text-center text-[12px] font-bold transition ${
+                              opt.fullWidth ? "col-span-2" : ""
+                            } ${
                               selected
                                 ? "border-ink bg-ink text-cream"
                                 : "border-line bg-cream text-ink hover:border-line-strong"
@@ -2248,12 +2280,14 @@ export default function TripPlannerPage() {
                       + `fireEvent.change` resolvable. */}
                     <select
                       id="trip-planner-road-preference"
-                      value={roadPreference}
+                      value={toTripRoadPreference(roadPreference)}
                       tabIndex={-1}
                       onChange={(event) =>
                         handleRoadPreferenceChange(
-                          event.target
-                            .value as TripParameters["roadPreference"],
+                          fromTripRoadPreference(
+                            event.target
+                              .value as TripParameters["roadPreference"],
+                          ),
                         )
                       }
                       className="sr-only"
@@ -2637,10 +2671,7 @@ export default function TripPlannerPage() {
       <RoundtripDialog
         key={roundtripOpen ? "roundtrip-open" : "roundtrip-closed"}
         open={roundtripOpen}
-        defaultPreference={
-          lastRoundtripOpts?.preference ??
-          fromTripRoadPreference(roadPreference)
-        }
+        defaultPreference={lastRoundtripOpts?.preference ?? roadPreference}
         initialDistanceKm={lastRoundtripOpts?.distanceKm ?? 250}
         initialDirection={lastRoundtripOpts?.direction ?? "random"}
         recalculate={isLoopRoute}
