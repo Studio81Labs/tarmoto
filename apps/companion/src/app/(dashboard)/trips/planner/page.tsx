@@ -2219,10 +2219,10 @@ export default function TripPlannerPage() {
                       "Applied to every new trip. Changing a value re-draws the route on the map live. ",
                     )}
                   </p>
-                  {/* Road preference — the design's chip grid: all five
-                    characters, Efficient loop spanning both columns
-                    (revision 3 §A vocabulary; the loop mode also drives
-                    the roundtrip dialog default). */}
+                  {/* Road preference — one card per row (rider
+                    preference over the design's 2-col chips): all five
+                    characters in the revision 3 §A vocabulary; the loop
+                    mode also drives the roundtrip dialog default. */}
                   <div>
                     <label
                       htmlFor="trip-planner-road-preference"
@@ -2230,28 +2230,38 @@ export default function TripPlannerPage() {
                     >
                       {t("Road preference")}
                     </label>
-                    <div className="grid grid-cols-2 gap-[7px]">
+                    <div className="flex flex-col gap-1.5">
                       {(
                         [
-                          { value: "direct", label: t("Direct") },
-                          { value: "balanced", label: t("Balanced") },
+                          {
+                            value: "direct",
+                            label: t("Direct"),
+                            sub: t("Shortest sensible — no fun detours"),
+                          },
+                          {
+                            value: "balanced",
+                            label: t("Balanced"),
+                            sub: t("Fun and progress in balance"),
+                          },
                           {
                             value: "scenic_balance",
                             label: t("Scenic balance"),
+                            sub: t("Views + curves mixed"),
                           },
                           {
                             value: "maximum_twisty",
                             label: t("Maximum twisty"),
+                            sub: t("Fun-factor first, chain passes"),
                           },
                           {
                             value: "efficient_loop",
                             label: t("Efficient loop"),
-                            fullWidth: true,
+                            sub: t("Roundtrips — minimize backtracking"),
                           },
                         ] as ReadonlyArray<{
                           value: RoadPreference;
                           label: string;
-                          fullWidth?: boolean;
+                          sub: string;
                         }>
                       ).map((opt) => {
                         const selected = roadPreference === opt.value;
@@ -2263,15 +2273,22 @@ export default function TripPlannerPage() {
                               handleRoadPreferenceChange(opt.value)
                             }
                             aria-pressed={selected}
-                            className={`rounded-[10px] border px-3 py-2.5 text-center text-[12px] font-bold transition ${
-                              opt.fullWidth ? "col-span-2" : ""
-                            } ${
+                            className={`rounded-[10px] border px-3 py-2.5 text-left transition ${
                               selected
                                 ? "border-ink bg-ink text-cream"
-                                : "border-line bg-cream text-ink hover:border-line-strong"
+                                : "border-line bg-cream hover:border-line-strong"
                             }`}
                           >
-                            {opt.label}
+                            <span className="block text-[12.5px] font-bold">
+                              {opt.label}
+                            </span>
+                            <span
+                              className={`mt-0.5 block text-[11px] ${
+                                selected ? "text-cream/70" : "text-fg-mute"
+                              }`}
+                            >
+                              {opt.sub}
+                            </span>
                           </button>
                         );
                       })}
