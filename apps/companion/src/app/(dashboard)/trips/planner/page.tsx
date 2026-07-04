@@ -287,8 +287,14 @@ export default function TripPlannerPage() {
       avoid_highways: avoidHighways,
       avoid_tolls: avoidTolls,
       avoid_unpaved: avoidUnpaved,
+      // Reserved fields today (backend ignores them), sent anyway so the
+      // client is already correct when routing gains quality/surface
+      // costing — and so pref changes alter the request, re-firing the
+      // live-routing hook via its options dependency.
+      surfaces: surfacePreference,
+      prefer_quality: minQuality >= 3,
     }),
-    [avoidHighways, avoidTolls, avoidUnpaved],
+    [avoidHighways, avoidTolls, avoidUnpaved, surfacePreference, minQuality],
   );
   // Gate live routing: only route when the selected day is stale (has
   // unsent edits since last applyRouteResult) AND the route is dirty.
@@ -1047,16 +1053,40 @@ export default function TripPlannerPage() {
     },
     [openImport],
   );
-  const handleSurfaceToggle = useCallback((surface: SurfaceType) => {
-    setSurfacePreference((current) => {
-      if (current.includes(surface)) {
-        return current.length === 1
-          ? current
-          : current.filter((value) => value !== surface);
-      }
-      return [...current, surface];
-    });
-  }, []);
+  const handleSurfaceToggle = useCallback(
+    (surface: SurfaceType) => {
+      setSurfacePreference((current) => {
+        if (current.includes(surface)) {
+          return current.length === 1
+            ? current
+            : current.filter((value) => value !== surface);
+        }
+        return [...current, surface];
+      });
+      // Routing input per the addendum (§3): re-fire live routing and
+      // invalidate a computed split.
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  // Road preference + min quality are routing inputs too (addendum §3):
+  // they dirty the route (staling any split). The live line itself only
+  // changes for prefs the engine costs today — road preference shapes
+  // the Draft route generation until routing gains a hook for it.
+  const handleRoadPreferenceChange = useCallback(
+    (value: TripParameters["roadPreference"]) => {
+      setRoadPreference(value);
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  const handleMinQualityChange = useCallback(
+    (value: number) => {
+      setMinQuality(value);
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
   // Wrapped avoid-option handlers: update state AND mark route dirty so
   // live routing fires on a loaded trip when the rider changes an option.
   // These are ONLY called from user-facing controls (the JSX checkboxes
@@ -1840,7 +1870,7 @@ export default function TripPlannerPage() {
                           key={opt.value}
                           type="button"
                           onClick={() =>
-                            setRoadPreference(
+                            handleRoadPreferenceChange(
                               opt.value as TripParameters["roadPreference"],
                             )
                           }
@@ -1880,7 +1910,7 @@ export default function TripPlannerPage() {
                     value={roadPreference}
                     tabIndex={-1}
                     onChange={(event) =>
-                      setRoadPreference(
+                      handleRoadPreferenceChange(
                         event.target.value as TripParameters["roadPreference"],
                       )
                     }
@@ -2059,7 +2089,9 @@ export default function TripPlannerPage() {
                     <Select
                       id="trip-planner-min-quality"
                       value={minQuality}
-                      onChange={(value) => setMinQuality(Number(value))}
+                      onChange={(value) =>
+                        handleMinQualityChange(Number(value))
+                      }
                       tone="cream"
                     >
                       <option value="1">{t("Any condition")}</option>
