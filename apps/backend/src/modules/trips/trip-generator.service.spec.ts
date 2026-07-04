@@ -416,8 +416,19 @@ describe('TripGeneratorService', () => {
         start_location: { lat: 47.0, lng: 11.5 },
       });
 
-      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      // 1-day trips are roundtrips: outbound leg + return leg.
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(2);
       expect(result.options[0].days).toHaveLength(1);
+      // The day is the MERGED loop: out + back distances summed. (The
+      // mock returns one canned geometry per leg, so literal geometric
+      // closure can't be asserted here — the merge itself is the
+      // contract: both legs' 220 km land in one day.)
+      const day = result.options[0].days[0];
+      expect(day.distance_km).toBe(440);
+      // The turnaround is persisted as a via so a waypoint-based
+      // re-route keeps the loop instead of collapsing start→end.
+      expect(day.waypoints.map((w) => w.waypoint_type)).toContain('via');
+      expect(day.waypoints[day.waypoints.length - 1].waypoint_type).toBe('end');
     });
 
     it('does NOT generate a degenerate start→start leg for a 1-day trip when fun zones exist', async () => {
@@ -430,7 +441,8 @@ describe('TripGeneratorService', () => {
         start_location: { lat: 47.0, lng: 11.5 },
       });
 
-      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      // Roundtrip: outbound + return legs.
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(2);
       const [originLat, originLng, destLat, destLng] = routingProvider
         .getAlternatives.mock.calls[0] as [
         number,
@@ -445,6 +457,19 @@ describe('TripGeneratorService', () => {
       expect(originLng).toBe(11.5);
       const isDegenerate = originLat === destLat && originLng === destLng;
       expect(isDegenerate).toBe(false);
+      // The return leg routes anchor → start.
+      const [backOriginLat, backOriginLng, backDestLat, backDestLng] =
+        routingProvider.getAlternatives.mock.calls[1] as [
+          number,
+          number,
+          number,
+          number,
+          number,
+        ];
+      expect(backOriginLat).toBe(destLat);
+      expect(backOriginLng).toBe(destLng);
+      expect(backDestLat).toBe(47.0);
+      expect(backDestLng).toBe(11.5);
     });
 
     it('defaults selected_option from trip.road_preference when caller omits option', async () => {

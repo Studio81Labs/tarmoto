@@ -59,6 +59,13 @@ import {
 interface Candidate {
   alt: RouteAlternative;
   metrics: RouteMetrics;
+  /**
+   * 1-day roundtrips only: index in `alt.geometry` where the outbound
+   * leg turns back toward the start. Persisted as a `via` waypoint so a
+   * later waypoint-based re-route keeps the loop shape instead of
+   * collapsing start→end (same point) to a 0 km leg.
+   */
+  viaIndex?: number;
 }
 
 /**
@@ -207,25 +214,62 @@ export class TripGeneratorService {
       // candidate set and a synthetic 0 km fallback day.
       includePrimary: true,
     };
-    const candidatesByDay = await Promise.all(
-      chain.map(async (leg) => {
-        const candidates = await this.candidatesForLeg(
+    let candidatesByDay: Candidate[][];
+    if (numDays === 1) {
+      // Single-day trips are ROUNDTRIPS: out to the day's anchor and back
+      // to the start (the multi-day chain closes its loop on the final
+      // day; the 1-day chain previously emitted only the outbound leg,
+      // stranding the rider at the anchor). Each outbound alternative is
+      // paired with the primary return route; the merged candidate is
+      // scored as one loop.
+      const leg = chain[0];
+      if (!leg) throw new Error('generate: empty day chain');
+      const [outCandidates, backCandidates] = await Promise.all([
+        this.candidatesForLeg(
           leg.from,
           leg.to,
           surfaceFilter,
           trip.min_quality,
           routingOptions,
-        );
-        if (candidates.length === 0) {
-          // Defensive: if even the primary OSRM route can't be enriched,
-          // synthesise a single great-circle "route" so the response
-          // still has the right shape rather than 500-ing on a regional
-          // OSRM outage.
-          return [this.fallbackCandidate(leg.from, leg.to)];
-        }
-        return candidates;
-      }),
-    );
+        ),
+        this.candidatesForLeg(
+          leg.to,
+          leg.from,
+          surfaceFilter,
+          trip.min_quality,
+          routingOptions,
+        ),
+      ]);
+      const out =
+        outCandidates.length > 0
+          ? outCandidates
+          : [this.fallbackCandidate(leg.from, leg.to)];
+      const back =
+        backCandidates[0] ?? this.fallbackCandidate(leg.to, leg.from);
+      candidatesByDay = [
+        out.map((candidate) => mergeRoundtripCandidate(candidate, back)),
+      ];
+    } else {
+      candidatesByDay = await Promise.all(
+        chain.map(async (leg) => {
+          const candidates = await this.candidatesForLeg(
+            leg.from,
+            leg.to,
+            surfaceFilter,
+            trip.min_quality,
+            routingOptions,
+          );
+          if (candidates.length === 0) {
+            // Defensive: if even the primary OSRM route can't be enriched,
+            // synthesise a single great-circle "route" so the response
+            // still has the right shape rather than 500-ing on a regional
+            // OSRM outage.
+            return [this.fallbackCandidate(leg.from, leg.to)];
+          }
+          return candidates;
+        }),
+      );
+    }
 
     // Build all three option presets from the shared candidate set.
     // The presets bias scoring (and option-level summary numbers) but
@@ -532,16 +576,26 @@ export class TripGeneratorService {
       notes: null,
     });
     let seq = 2;
-    for (const idx of fuelIndices) {
-      const p = route[idx];
+    const midStops: Array<{ idx: number; type: 'fuel' | 'via' }> =
+      fuelIndices.map((idx) => ({ idx, type: 'fuel' as const }));
+    if (
+      cand.viaIndex !== undefined &&
+      cand.viaIndex > 0 &&
+      cand.viaIndex < route.length - 1
+    ) {
+      midStops.push({ idx: cand.viaIndex, type: 'via' });
+    }
+    midStops.sort((a, b) => a.idx - b.idx);
+    for (const stop of midStops) {
+      const p = route[stop.idx];
       if (!p) continue;
       waypoints.push({
         sequence: seq++,
         lat: p.lat,
         lng: p.lng,
-        name: 'Fuel stop',
-        waypoint_type: 'fuel',
-        duration_min: 15,
+        name: stop.type === 'via' ? 'Turnaround' : 'Fuel stop',
+        waypoint_type: stop.type,
+        duration_min: stop.type === 'fuel' ? 15 : null,
         notes: null,
       });
     }
@@ -777,4 +831,48 @@ function isSurfaceMixMostlyAllowed(
   }
   if (totalM === 0) return true;
   return allowedM / totalM >= 0.5;
+}
+
+/**
+ * Merge an outbound candidate with the shared return route into one
+ * loop candidate: geometry concatenated (deduping the shared anchor
+ * vertex), distances/durations/elevation/hazards summed, quality-style
+ * metrics distance-weighted, and the turnaround recorded as `viaIndex`.
+ */
+function mergeRoundtripCandidate(out: Candidate, back: Candidate): Candidate {
+  const outKm = out.alt.distance_km;
+  const backKm = back.alt.distance_km;
+  const totalKm = outKm + backKm || 1;
+  const weighted = (a: number | null, b: number | null): number | null =>
+    a === null && b === null
+      ? null
+      : ((a ?? 0) * outKm + (b ?? 0) * backKm) / totalKm;
+  const surfaceMixMetres: Record<string, number> = {
+    ...out.metrics.surfaceMixMetres,
+  };
+  for (const [surface, metres] of Object.entries(
+    back.metrics.surfaceMixMetres,
+  )) {
+    surfaceMixMetres[surface] = (surfaceMixMetres[surface] ?? 0) + metres;
+  }
+  return {
+    alt: {
+      distance_km: outKm + backKm,
+      duration_min: out.alt.duration_min + back.alt.duration_min,
+      geometry: [...out.alt.geometry, ...back.alt.geometry.slice(1)],
+    },
+    metrics: {
+      avgQuality: weighted(out.metrics.avgQuality, back.metrics.avgQuality),
+      curvinessScore: weighted(
+        out.metrics.curvinessScore,
+        back.metrics.curvinessScore,
+      ),
+      scenicScore: weighted(out.metrics.scenicScore, back.metrics.scenicScore),
+      elevationGain: out.metrics.elevationGain + back.metrics.elevationGain,
+      elevationLoss: out.metrics.elevationLoss + back.metrics.elevationLoss,
+      hazardCount: out.metrics.hazardCount + back.metrics.hazardCount,
+      surfaceMixMetres,
+    },
+    viaIndex: out.alt.geometry.length - 1,
+  };
 }
