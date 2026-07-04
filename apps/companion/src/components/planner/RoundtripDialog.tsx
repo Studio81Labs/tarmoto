@@ -18,6 +18,11 @@ interface RoundtripDialogProps {
   open: boolean;
   /** Trip-wide road preference — the dialog's starting value. */
   defaultPreference: RoadPreference;
+  /** Starting values — the last confirmed options when recalculating. */
+  initialDistanceKm?: number;
+  initialDirection?: RoundtripOptions["direction"];
+  /** True when the route is already a drafted loop being recalculated. */
+  recalculate?: boolean;
   /** True when a map region is drawn — it wins over the direction pick. */
   hasRegion: boolean;
   drafting: boolean;
@@ -62,14 +67,17 @@ const PREFERENCE_OPTIONS: RoadPreference[] = [
 export function RoundtripDialog({
   open,
   defaultPreference,
+  initialDistanceKm = 250,
+  initialDirection = "random",
+  recalculate = false,
   hasRegion,
   drafting,
   onClose,
   onConfirm,
 }: RoundtripDialogProps) {
-  const [distanceKm, setDistanceKm] = useState(250);
+  const [distanceKm, setDistanceKm] = useState(initialDistanceKm);
   const [direction, setDirection] =
-    useState<RoundtripOptions["direction"]>("random");
+    useState<RoundtripOptions["direction"]>(initialDirection);
   const [preference, setPreference] =
     useState<RoadPreference>(defaultPreference);
 
@@ -84,12 +92,16 @@ export function RoundtripDialog({
     >
       <div className="w-full max-w-sm rounded-[14px] border border-line-strong bg-cream p-5 shadow-[0_18px_48px_rgba(14,14,16,0.3)]">
         <h2 className="font-sans text-[17px] font-extrabold tracking-[-0.3px] text-ink">
-          {t("Draft roundtrip")}
+          {recalculate ? t("Recalculate roundtrip") : t("Draft roundtrip")}
         </h2>
         <p className="mt-1 text-[12px] leading-relaxed text-fg-dim">
-          {t(
-            "A loop out and back to your start. The distance is a soft target — good roads decide the final length. ",
-          )}
+          {recalculate
+            ? t(
+                "Propose a fresh loop from your start — same options as last time unless you change them. ",
+              )
+            : t(
+                "A loop out and back to your start. The distance is a soft target — good roads decide the final length. ",
+              )}
         </p>
 
         <label
@@ -169,7 +181,7 @@ export function RoundtripDialog({
             disabled={drafting}
             onClick={() => onConfirm({ distanceKm, direction, preference })}
           >
-            {t("Draft roundtrip")}
+            {recalculate ? t("Recalculate") : t("Draft roundtrip")}
           </Button>
         </div>
       </div>

@@ -727,272 +727,149 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
   });
 
-  it("sends a valid daily-km band when saving a short daily target", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        dailyKmTarget: 100,
-      },
-    };
+  // "Push to phone" was pulled from the toolbar (rider feedback); its
+  // metadata/imported-route save flow stays dormant in _handleSave. The
+  // toolbar now offers Reset (start over in place) and Discard (delete
+  // the persisted trip and go back to the trips list).
+  it("offers Reset and Discard instead of Push to phone when a trip exists", () => {
+    storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          daily_km_min: 100,
-          daily_km_max: 100,
-        }),
-      ),
-    );
-  });
-
-  it("normalizes zero daily-km targets to the backend minimum instead of dropping them", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        dailyKmTarget: 0,
-      },
-    };
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          daily_km_min: 1,
-          daily_km_max: 1,
-        }),
-      ),
-    );
-  });
-
-  it("blocks contradictory unpaved surface filters before creating a trip", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        surfacePreference: ["gravel"],
-        avoidUnpaved: true,
-      },
-    };
-
-    render(
-      <>
-        <TripPlannerPage />
-        <ToastHost />
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     expect(
-      await screen.findByText(
-        "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
-      ),
-    ).toBeInTheDocument();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+      screen.queryByRole("button", { name: "Push to phone \u2192" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
-  it("does not save or redirect when the trip has no start waypoint", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          waypoints: [],
-        },
-      ],
-    };
-
-    render(
-      <>
-        <TripPlannerPage />
-        <ToastHost />
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    expect(
-      await screen.findByText("Add a start waypoint before saving this trip."),
-    ).toBeInTheDocument();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("preserves imported route geometry when saving an imported draft", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      id: "imported-123",
-      name: "Passo loop import",
-      importSourceFormat: "kml",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          routeGeometry: {
-            type: "LineString",
-            coordinates: [
-              [10.37, 46.47],
-              [10.45, 46.55],
-              [10.57, 46.61],
-            ],
-          },
-          waypoints: [
-            {
-              id: "wp-start",
-              name: "Bormio",
-              type: "start",
-              location: { lng: 10.37, lat: 46.47 },
-            },
-            {
-              id: "wp-via",
-              name: "Umbrail",
-              type: "photo",
-              location: { lng: 10.45, lat: 46.55 },
-            },
-            {
-              id: "wp-end",
-              name: "Prato allo Stelvio",
-              type: "end",
-              location: { lng: 10.57, lat: 46.61 },
-            },
-          ],
-        },
-      ],
-    };
+  it("Reset clears the working trip after confirmation", () => {
+    storeState.activeTrip = activeTrip;
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiImportRouteMock).toHaveBeenCalledWith({
-        title: "Passo loop import",
-        source_format: "kml",
-        geometry: [
-          { lng: 10.37, lat: 46.47 },
-          { lng: 10.45, lat: 46.55 },
-          { lng: 10.57, lat: 46.61 },
-        ],
-        waypoints: [
-          { lng: 10.37, lat: 46.47, name: "Bormio" },
-          { lng: 10.45, lat: 46.55, name: "Umbrail", type: "photo" },
-          { lng: 10.57, lat: 46.61, name: "Prato allo Stelvio" },
-        ],
-      }),
-    );
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith("/trips/imported-server-trip-1");
+    expect(setActiveTrip).toHaveBeenCalledWith(null);
+    confirmSpy.mockRestore();
   });
 
-  it("writes an imported draft into the promoted server trip instead of creating a duplicate", async () => {
-    const promotedTripId = "11111111-2222-4333-8444-555555555555";
-    storeState.activeTrip = {
-      ...activeTrip,
-      id: "imported-456",
-      name: "Promoted import",
-      importSourceFormat: "gpx",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          routeGeometry: {
-            type: "LineString",
-            coordinates: [
-              [10.37, 46.47],
-              [10.57, 46.61],
-            ],
-          },
-        },
-      ],
-    };
+  it("Reset does nothing when the confirmation is declined", () => {
+    storeState.activeTrip = activeTrip;
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
-    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
-      -1,
-    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
-
-    await act(async () => {
-      latestModalProps?.onPromoted?.(promotedTripId);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiReplaceImportedRouteMock).toHaveBeenCalledWith(
-        promotedTripId,
-        expect.objectContaining({
-          title: "Promoted import",
-          source_format: "gpx",
-          geometry: [
-            { lng: 10.37, lat: 46.47 },
-            { lng: 10.57, lat: 46.61 },
-          ],
-        }),
-      ),
-    );
-    expect(tripsApiImportRouteMock).not.toHaveBeenCalled();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
+    expect(setActiveTrip).not.toHaveBeenCalledWith(null);
+    confirmSpy.mockRestore();
   });
 
-  it("updates server-loaded trips from the current controls without regenerating existing route geometry", async () => {
+  it("Discard deletes the bound server trip and navigates back to trips", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
-    // A server-loaded trip in the planner is reached via `?tripId=` (the edit
-    // flow); without it the mount-time reset would treat this as create-new.
     window.history.replaceState(
       {},
       "",
       `/trips/planner?tripId=${serverTripId}`,
     );
-    tripsApiUpdateMock.mockResolvedValueOnce({
-      data: { id: serverTripId },
-    } as never);
+    // Hydration failing is fine — the id stays bound for deletion.
+    tripsApiGetMock.mockRejectedValue(new Error("offline"));
+    tripsApiDeleteMock.mockResolvedValue({ data: {} } as never);
+    storeState.activeTrip = activeTrip;
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() =>
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith(serverTripId),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/trips");
+    confirmSpy.mockRestore();
+  });
+
+  it("Discard without a persisted trip just leaves the planner", async () => {
+    storeState.activeTrip = activeTrip; // in-memory draft id
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/trips"));
+    expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("keeps a drafted loop in roundtrip mode: Recalculate reopens the dialog", () => {
+    // Finish placed back on the start coordinates = loop route.
     storeState.activeTrip = {
       ...activeTrip,
-      id: serverTripId,
-      name: "Server loaded route",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "turn",
+              name: "Turnaround",
+              type: "via",
+              location: { lng: 11, lat: 46.5 },
+            },
+            {
+              id: "e",
+              name: "Start",
+              type: "end",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
     };
 
     render(<TripPlannerPage />);
 
-    fireEvent.change(screen.getByLabelText("Number of days"), {
-      target: { value: "5" },
-    });
-    fireEvent.change(screen.getByLabelText("Daily km target"), {
-      target: { value: "180" },
-    });
-    fireEvent.change(screen.getByLabelText("Road preference"), {
-      target: { value: "direct" },
-    });
-    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
-      target: { value: "4" },
-    });
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
-        serverTripId,
-        expect.objectContaining({
-          title: "Server loaded route",
-          num_days: 5,
-          daily_km_min: 180,
-          daily_km_max: 180,
-          min_quality: 4,
-          road_preference: "fast",
-        }),
-      ),
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recalculate roundtrip" }),
     );
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${serverTripId}`);
+
+    // The options dialog opens (in recalculate wording) instead of the
+    // A\u2192B draft path, whose direct route would be 0 km.
+    expect(
+      screen.getByRole("dialog", { name: "Roundtrip options" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Recalculate roundtrip" }),
+    ).toBeInTheDocument();
+  });
+
+  it("labels the draft action Draft roundtrip when only a start exists", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Draft roundtrip" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {
@@ -1203,35 +1080,6 @@ describe("TripPlannerPage", () => {
         expect.objectContaining({ canCreateInviteLink: true }),
       );
     });
-  });
-
-  it("updates the promoted server trip instead of creating a duplicate draft", async () => {
-    const promotedTripId = "11111111-2222-4333-8444-555555555555";
-    tripsApiUpdateMock.mockResolvedValueOnce({
-      data: { id: promotedTripId },
-    } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
-      -1,
-    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
-
-    await act(async () => {
-      latestModalProps?.onPromoted?.(promotedTripId);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
-        promotedTripId,
-        expect.any(Object),
-      ),
-    );
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
   });
 
   // ── Save route (Task 11) ─────────────────────────────────────────────

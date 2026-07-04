@@ -158,6 +158,16 @@ const PLANNER_DEFAULTS = {
 } as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * Same map spot within ~1 m — identifies a loop route (finish placed back
+ * on the start by the roundtrip draft, or by hand).
+ */
+function sameSpot(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): boolean {
+  return Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lng - b.lng) < 1e-5;
+}
 const VALID_ROAD_PREFERENCES: ReadonlyArray<TripParameters["roadPreference"]> =
   ["curvy", "scenic", "mixed", "direct"];
 const VALID_SURFACES: ReadonlyArray<SurfaceType> = [
@@ -189,9 +199,15 @@ export default function TripPlannerPage() {
   // Honest sizing note from the last draft (revision 2 §E): set when the
   // soft daily-km target couldn't be reached with genuinely good roads.
   const [draftNote, setDraftNote] = useState<string | null>(null);
-  // Roundtrip options dialog (revision 3 §E) — opened by Draft route
-  // when no finish exists.
+  // Roundtrip options dialog (revision 3 §E) — opened by Draft roundtrip
+  // when no finish exists, and by Recalculate roundtrip on a drafted loop.
   const [roundtripOpen, setRoundtripOpen] = useState(false);
+  // Last confirmed roundtrip options: a drafted loop stays a roundtrip,
+  // and recalculating starts from what the rider picked last time.
+  const [lastRoundtripOpts, setLastRoundtripOpts] = useState<Pick<
+    RoundtripOptions,
+    "distanceKm" | "direction" | "preference"
+  > | null>(null);
   // §02 collapsed summary row (revision 3 §B) — expanded inline.
   const [prefsOpen, setPrefsOpen] = useState(false);
   // Saved user defaults (revision 3 §F): loaded once, pre-applied to
@@ -898,7 +914,66 @@ export default function TripPlannerPage() {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
-  const handleSave = useCallback(async () => {
+  // Start over WITHOUT leaving the planner (rider feedback): drop the
+  // working route, drawn region, splits and any server-trip binding so
+  // the canvas is blank again. Pref controls keep their values.
+  const handleReset = useCallback(() => {
+    if (
+      !window.confirm(
+        t("Start over? This clears the current route from the planner."),
+      )
+    ) {
+      return;
+    }
+    setActiveTrip(null);
+    setPlannerRegion(null);
+    setGeneratedOptions([]);
+    setGeneratedOptionsSignature(null);
+    setSelectedOptionId(null);
+    setServerTripId(null);
+    setServerTripOwnerId(null);
+    setServerTripCallerRole(null);
+    setDraftNote(null);
+    setLegPrefs([]);
+    setForcedDays(null);
+    setLastRoundtripOpts(null);
+    setMultiDayOpen(false);
+    const url = new URL(window.location.href);
+    url.search = "";
+    window.history.replaceState({}, "", url);
+  }, [setActiveTrip]);
+  // Discard: delete the persisted trip (routes save server-side) and
+  // leave the planner back to the trips list.
+  const handleDiscard = useCallback(async () => {
+    if (
+      !window.confirm(
+        t("Discard this route? A saved trip will be deleted for good."),
+      )
+    ) {
+      return;
+    }
+    const persistedTripId =
+      serverTripId ??
+      (activeTripRef.current && UUID_RE.test(activeTripRef.current.id)
+        ? activeTripRef.current.id
+        : null);
+    if (persistedTripId) {
+      try {
+        await tripsApi.delete(persistedTripId);
+      } catch {
+        toast.error(
+          t("Could not delete the saved trip — it may still be listed."),
+        );
+      }
+    }
+    setActiveTrip(null);
+    router.push("/trips");
+  }, [router, serverTripId, setActiveTrip]);
+  // Dormant: the "Push to phone" toolbar action was pulled from the UI
+  // (rider feedback — not needed for now). Kept intact for when the
+  // itinerary-push flow returns; it is still the metadata+imported-route
+  // save path the tests exercised.
+  const _handleSave = useCallback(async () => {
     if (!displayedTrip || saving || isGenerating || generationLockRef.current) {
       return;
     }
@@ -1462,7 +1537,16 @@ export default function TripPlannerPage() {
     const routeDay = activeTripAtStart?.days[0];
     const startWp = routeDay?.waypoints.find((w) => w.type === "start");
     const finishWp = routeDay ? dayFinishWaypoint(routeDay.waypoints) : null;
-    if (startWp && finishWp && startWp !== finishWp) {
+    // A drafted loop (finish back on the start) is still a roundtrip —
+    // recalculating reopens the options dialog, never the A→B draft
+    // (whose "direct route" would be 0 km).
+    const isLoop = Boolean(
+      startWp &&
+      finishWp &&
+      startWp !== finishWp &&
+      sameSpot(startWp.location, finishWp.location),
+    );
+    if (startWp && finishWp && startWp !== finishWp && !isLoop) {
       setGenerating(true);
       try {
         const result = await plannerApi.draftRoute(
@@ -1604,6 +1688,9 @@ export default function TripPlannerPage() {
           setDraftNote(note);
           toast.success(note);
         }
+        // Remember the confirmed options: the loop stays a roundtrip and
+        // "Recalculate roundtrip" starts from these next time.
+        setLastRoundtripOpts(opts);
         setRoundtripOpen(false);
       } catch {
         toast.error(t("Could not draft a roundtrip right now."));
@@ -1706,15 +1793,22 @@ export default function TripPlannerPage() {
     planningMode === "multiday" &&
     splitStatus !== "none" &&
     (dayPlans?.length ?? 0) > 0;
-  // Start without a finish = roundtrip mode (revision 3 §D): Draft opens
-  // the roundtrip options dialog instead of drafting point-to-point.
-  const spineHasStart = Boolean(
-    selectedDay?.waypoints.some((w) => w.type === "start"),
+  // Roundtrip mode (revision 3 §D + rider feedback): a start without a
+  // finish, OR a drafted loop whose finish sits back on the start — a
+  // confirmed roundtrip must STAY a roundtrip, so Draft becomes
+  // "Recalculate roundtrip" instead of falling into the A→B path.
+  const spineStart =
+    selectedDay?.waypoints.find((w) => w.type === "start") ?? null;
+  const spineFinish = selectedDay
+    ? (dayFinishWaypoint(selectedDay.waypoints) ?? null)
+    : null;
+  const isLoopRoute = Boolean(
+    spineStart &&
+    spineFinish &&
+    spineStart !== spineFinish &&
+    sameSpot(spineStart.location, spineFinish.location),
   );
-  const spineHasFinish = Boolean(
-    selectedDay ? dayFinishWaypoint(selectedDay.waypoints) : null,
-  );
-  const isRoundtripMode = spineHasStart && !spineHasFinish;
+  const isRoundtripMode = Boolean(spineStart) && (!spineFinish || isLoopRoute);
   return (
     <div className="flex h-full min-h-0 flex-col bg-cream">
       {/* Slim top toolbar — keeps Save / Undo / Redo / Import / Export /
@@ -1825,18 +1919,23 @@ export default function TripPlannerPage() {
           >
             {savingRoute ? t("Saving…") : t("Save route")}
           </Button>
-          {/* Metadata + itinerary save ("push" the planned trip to the
-              rider's phone). Static label so the accessible name stays
-              unique next to Save route's "Saving…" in-flight state. */}
+          {/* Reset starts over in place; Discard deletes any persisted
+              trip and leaves the planner (rider feedback — routes save
+              server-side, so backing out needs an explicit discard). */}
           {displayedTrip ? (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={saving || isGenerating}
-              onClick={handleSave}
-            >
-              {t("Push to phone →")}
-            </Button>
+            <>
+              <Button variant="secondary" size="sm" onClick={handleReset}>
+                {t("Reset")}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-quality-q1"
+                onClick={() => void handleDiscard()}
+              >
+                {t("Discard")}
+              </Button>
+            </>
           ) : null}
           {!displayedTrip && (
             <Button
@@ -2287,13 +2386,17 @@ export default function TripPlannerPage() {
               <div>
                 <SectionStamp n="03">{t("Draft route ")}</SectionStamp>
                 <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
-                  {isRoundtripMode
+                  {isLoopRoute
                     ? t(
-                        "No finish set — this is a roundtrip. Choose a loop distance and direction before drafting. ",
+                        "This route is a roundtrip. Recalculate to propose a fresh loop — tweak the distance, direction or road character first. ",
                       )
-                    : t(
-                        "Already placed your points? Your route is ready. Or let Tarmoto draft one — a short hop is stretched through nearby Fun Zones and a full-day ride stays natural. It only proposes the route line. ",
-                      )}
+                    : isRoundtripMode
+                      ? t(
+                          "No finish set — this is a roundtrip. Choose a loop distance and direction before drafting. ",
+                        )
+                      : t(
+                          "Already placed your points? Your route is ready. Or let Tarmoto draft one — a short hop is stretched through nearby Fun Zones and a full-day ride stays natural. It only proposes the route line. ",
+                        )}
                 </p>
 
                 {/* sr-only semantic input keeps `getByLabelText("Number of
@@ -2325,9 +2428,11 @@ export default function TripPlannerPage() {
                 >
                   {isGenerating
                     ? t("Drafting…")
-                    : isRoundtripMode
-                      ? t("Draft roundtrip…")
-                      : t("Draft route")}
+                    : isLoopRoute
+                      ? t("Recalculate roundtrip")
+                      : isRoundtripMode
+                        ? t("Draft roundtrip")
+                        : t("Draft route")}
                 </Button>
                 {draftNote ? (
                   <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
@@ -2569,11 +2674,18 @@ export default function TripPlannerPage() {
       />
 
       {/* Roundtrip options (revision 3 §E) — keyed on open so each visit
-          starts from the current trip-wide preference and defaults. */}
+          starts from the last confirmed options (recalculate) or the
+          current trip-wide preference (first draft). */}
       <RoundtripDialog
         key={roundtripOpen ? "roundtrip-open" : "roundtrip-closed"}
         open={roundtripOpen}
-        defaultPreference={fromTripRoadPreference(roadPreference)}
+        defaultPreference={
+          lastRoundtripOpts?.preference ??
+          fromTripRoadPreference(roadPreference)
+        }
+        initialDistanceKm={lastRoundtripOpts?.distanceKm ?? 250}
+        initialDirection={lastRoundtripOpts?.direction ?? "random"}
+        recalculate={isLoopRoute}
         hasRegion={Boolean(plannerRegion)}
         drafting={isGenerating}
         onClose={() => setRoundtripOpen(false)}
