@@ -826,9 +826,10 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not open the context menu when right-click lands on the drawn region", () => {
-    // hitTest is checked in the contextmenu handler; clicks over drawn regions
-    // are swallowed by the region tool (no placement menu shown).
+  it("opens the context menu inside a drawn region (waypoints are placeable there)", () => {
+    // Rider feedback: a drafted route lives INSIDE the drawn region, so
+    // right-click placement must work there. Region move/resize are
+    // left-drag gestures and never conflict with right-click.
     const eventHandlers = new Map<string, (event: unknown) => void>();
     mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
       if (typeof layerOrHandler === "string") return mockMap;
@@ -843,6 +844,8 @@ describe("TripPlannerMap", () => {
       return mockMap;
     });
     drawControl.hitTest.mockReturnValue(true);
+    // Placement road-snap queries rendered features on right-click.
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
 
     render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
@@ -856,11 +859,11 @@ describe("TripPlannerMap", () => {
         preventDefault: vi.fn(),
         point: { x: 200, y: 200 },
         lngLat: { lng: 14.55, lat: 50.2 },
+        originalEvent: { clientX: 200, clientY: 200 },
       });
     });
 
-    expect(drawControl.hitTest).toHaveBeenCalledWith({ x: 200, y: 200 });
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
   it("does NOT auto-refit when waypoint changes mutate bounds on the same trip (#559)", () => {

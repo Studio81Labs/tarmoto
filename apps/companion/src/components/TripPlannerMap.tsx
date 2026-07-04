@@ -1005,8 +1005,11 @@ const TripPlannerMapContent = forwardRef<
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
       event.preventDefault();
-      // Don't open over the region-draw tool.
-      if (drawRef.current?.hitTest(event.point)) return;
+      // Rider feedback: waypoints MUST be placeable inside a drawn region
+      // (that's exactly where a drafted route lives). Region move/resize
+      // are left-drag gestures, so a right-click never conflicts with
+      // them — the old hitTest guard blocked the whole rectangle. The
+      // effect installing this handler already bails while drawing.
       const snapped = snapPointerToRoad(map, event.point, event.lngLat) ?? {
         lng: roundCoordinate(event.lngLat.lng),
         lat: roundCoordinate(event.lngLat.lat),

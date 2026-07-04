@@ -40,6 +40,8 @@ import {
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
 import { fetchOvernightTowns } from "@/lib/planner/api";
+import { fetchFunZonesInBbox } from "@/lib/discover";
+import { draftViasThroughZones } from "@/lib/planner/draft-vias";
 import { plannerApi } from "@/lib/planner/api";
 import type { GeoResult } from "@/lib/planner/types";
 import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
@@ -1249,9 +1251,72 @@ export default function TripPlannerPage() {
   const handleGenerate = useCallback(async () => {
     if (generationLockRef.current) return;
     const activeTripAtStart = activeTripRef.current;
+    // ── Start + finish already set: drafting doesn't need the backend
+    // loop generator (the A→B route is live). Instead, thread the drawn
+    // region's best Fun Zones between the endpoints as vias and let live
+    // routing redraw through them. Days stay with the splitter.
+    const routeDay = activeTripAtStart?.days[0];
+    const startWp = routeDay?.waypoints.find((w) => w.type === "start");
+    const finishWp = routeDay ? dayFinishWaypoint(routeDay.waypoints) : null;
+    if (startWp && finishWp && startWp !== finishWp) {
+      if (!plannerRegion) {
+        toast.error(
+          t(
+            "Start and finish are already routed live. Draw a region to draft the route through its Fun Zones.",
+          ),
+        );
+        return;
+      }
+      try {
+        const zones = await fetchFunZonesInBbox(plannerRegion);
+        const vias = draftViasThroughZones(
+          zones,
+          {
+            lat: startWp.location.lat,
+            lng: startWp.location.lng,
+          },
+          {
+            lat: finishWp.location.lat,
+            lng: finishWp.location.lng,
+          },
+        );
+        if (vias.length === 0) {
+          toast.error(t("No Fun Zones found in the drawn region."));
+          return;
+        }
+        // Replace existing plain vias with the drafted ones (stops like
+        // fuel/stays are kept). Sequential before-finish inserts preserve
+        // the travel order.
+        const store = useTripStore.getState();
+        for (const waypoint of routeDay!.waypoints) {
+          if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
+        }
+        vias.forEach((via, index) => {
+          useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
+            id: `draft-${Date.now()}-${index}`,
+            name: via.name,
+            location: { lat: via.lat, lng: via.lng },
+            type: "via",
+          });
+        });
+        toast.success(
+          t("Drafted through {count} Fun Zone{s}.", {
+            count: vias.length,
+            s: vias.length === 1 ? "" : "s",
+          }),
+        );
+      } catch {
+        toast.error(t("Could not load Fun Zones for the drawn region."));
+      }
+      return;
+    }
+    // ── Start only: the backend generator drafts a roundtrip from the
+    // start. Auto days = a single-day loop sized by the daily km target;
+    // the splitter takes it from there. A forced day count is honored.
+    const generationParams = { ...plannerParams, days: forcedDays ?? 1 };
     const validationError = validateGenerationInput(
       activeTripAtStart,
-      plannerParams,
+      generationParams,
     );
     if (validationError) {
       toast.error(validationError);
@@ -1266,7 +1331,7 @@ export default function TripPlannerPage() {
       if (!activeTripAtStart) return;
       const generationInputAtStart = buildGenerationInputSignature(
         activeTripAtStart,
-        plannerParams,
+        generationParams,
         plannerRegion,
       );
       const existingTripId = resolveExistingTripId(
@@ -1275,7 +1340,7 @@ export default function TripPlannerPage() {
       );
       const metadataPayload = buildTripMetadataPayload(
         activeTripAtStart,
-        plannerParams,
+        generationParams,
       );
       const { data: saved } = existingTripId
         ? await tripsApi.update(existingTripId, metadataPayload)
@@ -1296,7 +1361,7 @@ export default function TripPlannerPage() {
       }
       const { data } = await tripsApi.generate(
         tripId,
-        buildGenerationPayload(plannerParams, startWaypoint, plannerRegion),
+        buildGenerationPayload(generationParams, startWaypoint, plannerRegion),
       );
       const latestTrip = activeTripRef.current;
       const latestTripId = latestTrip?.id ?? null;
@@ -1305,7 +1370,7 @@ export default function TripPlannerPage() {
         (latestTripId === activeTripAtStart.id || latestTripId === tripId);
       const generationInputNow = buildGenerationInputSignature(
         latestTrip,
-        plannerParams,
+        generationParams,
         plannerRegion,
       );
       if (
@@ -1320,14 +1385,14 @@ export default function TripPlannerPage() {
         return;
       }
       const response = data as GenerateTripResponse;
-      const options = generatedOptionsFromResponse(response, plannerParams);
+      const options = generatedOptionsFromResponse(response, generationParams);
       const selected =
         selectedGeneratedOption(options, response.selected_option) ?? null;
       setGeneratedOptions(options);
       setGeneratedOptionsSignature(
         buildGenerationInputSignature(
           selected?.trip ?? null,
-          plannerParams,
+          generationParams,
           plannerRegion,
         ),
       );
@@ -1356,8 +1421,10 @@ export default function TripPlannerPage() {
     }
   }, [
     currentUserId,
+    forcedDays,
     plannerParams,
     plannerRegion,
+    selectedDayIndex,
     serverTripId,
     setActiveTrip,
     setGenerating,
@@ -1825,7 +1892,7 @@ export default function TripPlannerPage() {
                 <SectionStamp n="02">{t("Propose a route ")}</SectionStamp>
                 <p className="mb-4 text-[12px] leading-relaxed text-fg-dim">
                   {t(
-                    "Set your preferences and let Tarmoto draft a route from your start point — then inspect and refine. ",
+                    "With only a start set, drafting proposes a roundtrip from it (sized by your daily km). With a finish too, it threads the drawn region's Fun Zones between your endpoints. ",
                   )}
                 </p>
 
