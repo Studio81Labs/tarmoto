@@ -2202,39 +2202,24 @@ export default function TripPlannerPage() {
                 </button>
 
                 <div className={prefsOpen ? "mt-3" : "hidden"}>
-                  {/* Road preference radio cards — the four point-to-point
-                    characters (revision 3 §A); 'Efficient loop' lives in
-                    the roundtrip dialog. */}
+                  {/* Road preference — compact 2×2 chip grid per the
+                    design (centered bold labels, selected chip filled
+                    ink). The four point-to-point characters (revision 3
+                    §A); 'Efficient loop' lives in the roundtrip dialog. */}
                   <div>
                     <label
                       htmlFor="trip-planner-road-preference"
-                      className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim"
+                      className="mb-2 block text-xs font-bold text-fg-dim"
                     >
                       {t("Road preference")}
                     </label>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="grid grid-cols-2 gap-[7px]">
                       {(
                         [
-                          {
-                            value: "direct",
-                            label: t("Direct"),
-                            sub: t("Shortest sensible — no fun detours"),
-                          },
-                          {
-                            value: "mixed",
-                            label: t("Balanced"),
-                            sub: t("Fun and progress in balance"),
-                          },
-                          {
-                            value: "scenic",
-                            label: t("Scenic balance"),
-                            sub: t("Views + curves mixed"),
-                          },
-                          {
-                            value: "curvy",
-                            label: t("Maximum twisty"),
-                            sub: t("Fun-factor first, chain passes"),
-                          },
+                          { value: "direct", label: t("Direct") },
+                          { value: "mixed", label: t("Balanced") },
+                          { value: "scenic", label: t("Scenic balance") },
+                          { value: "curvy", label: t("Maximum twisty") },
                         ] as const
                       ).map((opt) => {
                         const selected = roadPreference === opt.value;
@@ -2248,30 +2233,13 @@ export default function TripPlannerPage() {
                               )
                             }
                             aria-pressed={selected}
-                            className={`rounded-[8px] border px-3 py-2.5 text-left transition ${
+                            className={`rounded-[10px] border px-3 py-2.5 text-center text-[12px] font-bold transition ${
                               selected
-                                ? "border-ink bg-cream"
-                                : "border-line bg-transparent hover:bg-cream/50"
+                                ? "border-ink bg-ink text-cream"
+                                : "border-line bg-cream text-ink hover:border-line-strong"
                             }`}
                           >
-                            <div className="flex items-center gap-2.5">
-                              <span
-                                aria-hidden="true"
-                                className={`flex h-[14px] w-[14px] items-center justify-center rounded-full border-[1.5px] ${
-                                  selected ? "border-ink" : "border-fg-mute"
-                                }`}
-                              >
-                                {selected && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-ink" />
-                                )}
-                              </span>
-                              <span className="text-[13px] font-semibold text-ink">
-                                {opt.label}
-                              </span>
-                            </div>
-                            <p className="ml-6 mt-1 text-[11px] text-fg-mute">
-                              {opt.sub}
-                            </p>
+                            {opt.label}
                           </button>
                         );
                       })}
@@ -2298,27 +2266,9 @@ export default function TripPlannerPage() {
                   </div>
 
                   <div className="mt-4">
-                    <p className="mb-2 block text-xs text-fg-dim">
-                      {t("Surface preference")}
-                    </p>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                      {SURFACE_OPTIONS.map((surface) => (
-                        <Checkbox
-                          key={surface.value}
-                          checked={surfacePreference.includes(surface.value)}
-                          onChange={() => handleSurfaceToggle(surface.value)}
-                          label={surface.label}
-                          ariaLabel={surface.label}
-                          className="py-1"
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
                     <label
                       htmlFor="trip-planner-min-quality"
-                      className="mb-1 block text-xs text-fg-dim"
+                      className="mb-2 block text-xs font-bold text-fg-dim"
                     >
                       {t("Minimum road quality")}
                     </label>
@@ -2338,24 +2288,51 @@ export default function TripPlannerPage() {
                   </div>
 
                   <div className="mt-4">
-                    <p className="mb-2 block text-xs text-fg-dim">
+                    <p className="mb-1 block text-xs font-bold text-fg-dim">
+                      {t("Surface")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                      {SURFACE_OPTIONS.map((surface) => (
+                        <Checkbox
+                          key={surface.value}
+                          checked={surfacePreference.includes(surface.value)}
+                          onChange={() => handleSurfaceToggle(surface.value)}
+                          label={surface.label}
+                          ariaLabel={surface.label}
+                          className="py-1"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="mb-1 block text-xs font-bold text-fg-dim">
                       {t("Avoid")}
                     </p>
-                    <div className="flex flex-col items-start gap-2">
+                    {/* Short visible labels per the design (the "Avoid"
+                        heading carries the context); ariaLabel keeps the
+                        long accessible names the tests target. */}
+                    <div className="flex flex-col items-start gap-1">
                       <Checkbox
                         checked={avoidHighways}
                         onChange={handleAvoidHighwaysChange}
-                        label={t("Avoid highways")}
+                        label={t("Highways")}
+                        ariaLabel={t("Avoid highways")}
+                        className="py-1"
                       />
                       <Checkbox
                         checked={avoidTolls}
                         onChange={handleAvoidTollsChange}
-                        label={t("Avoid tolls")}
+                        label={t("Tolls")}
+                        ariaLabel={t("Avoid tolls")}
+                        className="py-1"
                       />
                       <Checkbox
                         checked={avoidUnpaved}
                         onChange={handleAvoidUnpavedChange}
-                        label={t("Avoid unpaved roads")}
+                        label={t("Unpaved roads")}
+                        ariaLabel={t("Avoid unpaved roads")}
+                        className="py-1"
                       />
                     </div>
                   </div>

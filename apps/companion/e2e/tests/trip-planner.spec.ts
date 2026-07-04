@@ -59,7 +59,7 @@ test.describe("trip planner", () => {
     // Save route is gated on a dirty draft (so a no-op save can't reroute a
     // loaded canonical/imported route). Toggle an avoid-routing option to mark
     // the draft edited — the planner wires this to markRouteDirty.
-    await page.getByText(/avoid highways/i).click();
+    await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Now "Save route" is enabled (dirty + existing geometry + ≥2 waypoints).
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
@@ -101,7 +101,7 @@ test.describe("trip planner", () => {
 
     // Dirty the draft (toggle an avoid option) so Save route enables — see the
     // manual-flow test above for why the dirty-gate exists.
-    await page.getByText(/avoid highways/i).click();
+    await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Save the route — this calls PUT /trips/:id/route on the existing trip.
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
@@ -209,7 +209,7 @@ test.describe("trip planner", () => {
     // to clear day 1 from stalePreviewDays — then switch to day 2 so live
     // routing fires + clears day 2. Only once stalePreviewDays is empty
     // does "Save route" enable.
-    await page.getByText(/avoid highways/i).click();
+    await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Give day-1 routing time to complete (300 ms debounce + mock latency).
     await page.waitForTimeout(1_500);

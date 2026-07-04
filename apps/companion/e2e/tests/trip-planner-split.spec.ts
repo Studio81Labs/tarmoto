@@ -46,7 +46,7 @@ test.describe("trip planner — split into days", () => {
     await expect(page.getByRole("button", { name: /Re-split/i })).toBeVisible();
 
     // A route edit marks the split stale.
-    await page.getByText(/avoid highways/i).click();
+    await page.getByLabel(/avoid highways/i).click({ force: true });
     await expect(page.getByText(/Route changed/).first()).toBeVisible();
 
     // Re-split refreshes the days.
