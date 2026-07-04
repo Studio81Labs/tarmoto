@@ -63,6 +63,23 @@ export class ValhallaProvider implements RoutingProvider {
     alternates?: number,
   ): string {
     const costing: Record<string, number> = {};
+    // Road character (revision 3): weight highway usage down as the rider
+    // asks for more fun. Applied BEFORE the avoid flags so a hard avoid
+    // always wins over a soft preference.
+    switch (options?.preference) {
+      case 'maximum_twisty':
+        costing.use_highways = 0.05;
+        break;
+      case 'scenic_balance':
+        costing.use_highways = 0.2;
+        break;
+      case 'balanced':
+        costing.use_highways = 0.5;
+        break;
+      // 'direct' / 'efficient_loop' / unset: engine default (fastest).
+      default:
+        break;
+    }
     if (options?.avoidHighways) costing.use_highways = 0;
     if (options?.avoidTolls) costing.use_tolls = 0;
     // Closure avoidance (#744): Valhalla's `exclude_polygons` is an array

@@ -59,6 +59,14 @@ export interface RoutingOptions {
    * Segments without crowdsourced data stay neutral — never penalised.
    */
   preferQuality?: boolean | undefined;
+  /**
+   * Road character for this request (revision 3 — per-leg planner
+   * costing): 'direct' | 'balanced' | 'scenic_balance' | 'maximum_twisty'
+   * | 'efficient_loop'. Independent of the avoid flags, which are hard
+   * constraints. Valhalla maps it onto use_highways weighting; engines
+   * that can't honour it silently no-op, per the contract above.
+   */
+  preference?: string | undefined;
 }
 
 /**

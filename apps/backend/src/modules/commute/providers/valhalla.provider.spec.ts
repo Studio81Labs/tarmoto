@@ -128,6 +128,74 @@ describe('ValhallaProvider.route', () => {
     expect(body.costing_options?.auto?.use_highways).toBe(0);
   });
 
+  it('maps the road preference onto use_highways weighting (revision 3)', async () => {
+    const trip = {
+      trip: {
+        legs: [
+          {
+            shape: encodePolyline6([
+              [0, 0],
+              [1, 1],
+            ]),
+            summary: { length: 1, time: 60 },
+          },
+        ],
+        summary: { length: 1, time: 60 },
+      },
+    };
+    const cases: Array<[string, number | undefined]> = [
+      ['maximum_twisty', 0.05],
+      ['scenic_balance', 0.2],
+      ['balanced', 0.5],
+      ['direct', undefined],
+      ['efficient_loop', undefined],
+    ];
+    for (const [preference, expected] of cases) {
+      fetchMock.mockResolvedValueOnce(jsonResponse(trip));
+      await makeProvider().route(
+        [
+          { lat: 0, lng: 0 },
+          { lat: 1, lng: 1 },
+        ],
+        { preference },
+      );
+      const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+      const body = JSON.parse(
+        calls.at(-1)![1].body as string,
+      ) as ValhallaRequestBody;
+      expect(body.costing_options?.auto?.use_highways).toBe(expected);
+    }
+  });
+
+  it('lets a hard avoidHighways win over a soft preference', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        trip: {
+          legs: [
+            {
+              shape: encodePolyline6([
+                [0, 0],
+                [1, 1],
+              ]),
+              summary: { length: 1, time: 60 },
+            },
+          ],
+          summary: { length: 1, time: 60 },
+        },
+      }),
+    );
+    await makeProvider().route(
+      [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ],
+      { preference: 'balanced', avoidHighways: true },
+    );
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    expect(body.costing_options?.auto?.use_highways).toBe(0);
+  });
+
   it('passes excludePolygons through as exclude_polygons (#744)', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

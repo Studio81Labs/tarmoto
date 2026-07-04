@@ -3163,6 +3163,16 @@ export interface components {
             lat: number;
             lng: number;
         };
+        UserRoutePrefsResponse: {
+            /** @enum {string} */
+            road_preference: "direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop";
+            avoid_highways: boolean;
+            avoid_tolls: boolean;
+            avoid_unpaved: boolean;
+            surfaces: string[];
+            /** @enum {string} */
+            min_quality: "any" | "fair_or_better" | "good_or_better" | "excellent_only";
+        };
         UserPreferencesResponse: {
             /** @enum {string} */
             units?: "metric" | "imperial";
@@ -3171,6 +3181,7 @@ export interface components {
             road_types?: string[];
             record_gps?: boolean;
             crash_detection?: boolean;
+            route_prefs?: components["schemas"]["UserRoutePrefsResponse"];
         };
         UserResponseDto: {
             id: string;
@@ -3920,6 +3931,16 @@ export interface components {
             /** @description Total length of the supplied route polyline, km. */
             route_length_km: number;
         };
+        UserRoutePrefsDto: {
+            /** @enum {string} */
+            road_preference: "direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop";
+            avoid_highways: boolean;
+            avoid_tolls: boolean;
+            avoid_unpaved: boolean;
+            surfaces: string[];
+            /** @enum {string} */
+            min_quality: "any" | "fair_or_better" | "good_or_better" | "excellent_only";
+        };
         UserPreferencesDto: {
             units?: string;
             daily_km?: number;
@@ -3927,6 +3948,7 @@ export interface components {
             road_types?: string[];
             record_gps?: boolean;
             crash_detection?: boolean;
+            route_prefs?: components["schemas"]["UserRoutePrefsDto"];
         };
         UpdateProfileDto: {
             display_name?: string;
@@ -4288,6 +4310,11 @@ export interface components {
             avoid_unpaved?: boolean;
             /** @description Reserved — accepted but not yet applied to live routing (phase 1). */
             surfaces?: string[];
+            /**
+             * @description Road character for this request (per-leg costing, revision 3). Mapped onto engine costing where supported (Valhalla use_highways weighting); engines that cannot honour it silently no-op.
+             * @enum {string}
+             */
+            preference?: "direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop";
         };
         SaveRouteDto: {
             days: components["schemas"]["SaveRouteDayDto"][];
@@ -5543,6 +5570,7 @@ export interface components {
 }
 export type SchemaRegisterDto = components['schemas']['RegisterDto'];
 export type SchemaLatLngResponse = components['schemas']['LatLngResponse'];
+export type SchemaUserRoutePrefsResponse = components['schemas']['UserRoutePrefsResponse'];
 export type SchemaUserPreferencesResponse = components['schemas']['UserPreferencesResponse'];
 export type SchemaUserResponseDto = components['schemas']['UserResponseDto'];
 export type SchemaAuthResponseDto = components['schemas']['AuthResponseDto'];
@@ -5618,6 +5646,7 @@ export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
 export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
 export type SchemaAlongRoutePoiListDto = components['schemas']['AlongRoutePoiListDto'];
+export type SchemaUserRoutePrefsDto = components['schemas']['UserRoutePrefsDto'];
 export type SchemaUserPreferencesDto = components['schemas']['UserPreferencesDto'];
 export type SchemaUpdateProfileDto = components['schemas']['UpdateProfileDto'];
 export type SchemaMeProfileDto = components['schemas']['MeProfileDto'];

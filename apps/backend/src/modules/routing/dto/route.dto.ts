@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -12,6 +13,21 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/**
+ * Road-character preferences (revision 3 §A). Independent of the avoid
+ * flags, which are hard constraints layered on top of any preference.
+ * 'efficient_loop' is the roundtrip drafting mode and routes like
+ * 'direct' at the costing level.
+ */
+export const ROUTE_PREFERENCES = [
+  'direct',
+  'balanced',
+  'scenic_balance',
+  'maximum_twisty',
+  'efficient_loop',
+] as const;
+export type RoutePreferenceOption = (typeof ROUTE_PREFERENCES)[number];
 
 /**
  * Upper bound on waypoints accepted by the routing + save endpoints. Caps
@@ -70,6 +86,17 @@ export class RouteOptionsDto {
   @IsArray()
   @IsString({ each: true })
   surfaces?: string[];
+  @ApiProperty({
+    required: false,
+    enum: ROUTE_PREFERENCES,
+    description:
+      'Road character for this request (per-leg costing, revision 3). ' +
+      'Mapped onto engine costing where supported (Valhalla use_highways ' +
+      'weighting); engines that cannot honour it silently no-op.',
+  })
+  @IsOptional()
+  @IsIn(ROUTE_PREFERENCES)
+  preference?: RoutePreferenceOption;
 }
 
 export class RouteRequestDto {

@@ -20,6 +20,7 @@ export class RoutingService {
         avoidHighways: dto.options?.avoid_highways,
         avoidTolls: dto.options?.avoid_tolls,
         preferQuality: dto.options?.prefer_quality,
+        preference: dto.options?.preference,
       },
     );
     if (!route) {
