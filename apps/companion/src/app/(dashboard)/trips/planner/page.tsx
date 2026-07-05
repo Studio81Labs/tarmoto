@@ -477,12 +477,21 @@ export default function TripPlannerPage() {
     },
     [selectPlannerSegment],
   );
+  // Shared with the map's Road Preview reroute: arm a one-shot animated
+  // fit for whenever the rerouted line lands.
+  const armFitAfterRoute = useCallback(() => {
+    fitAfterRouteRef.current = true;
+  }, []);
   const handleRerouteSegment = useCallback(
     (segmentId: string) => {
       const trip = activeTripRef.current;
       const segment = findPlannerQualitySegment(trip, segmentId);
       if (segment) {
         rerouteAroundSegmentInTrip(trip, segment, insertWaypointBefore);
+        // The rider is often zoomed into the flagged segment they just
+        // rerouted away from — animate back to the whole route once the
+        // new line lands so they keep the overview.
+        fitAfterRouteRef.current = true;
       }
       selectPlannerSegment(null);
     },
@@ -2098,6 +2107,7 @@ export default function TripPlannerPage() {
               drawnRegion={plannerRegion}
               onDrawnRegionChange={setPlannerRegion}
               onDrawModeChange={setRegionDrawMode}
+              onRerouteRequested={armFitAfterRoute}
               closuresData={closuresData}
               passesData={passesData}
               selectedDayNumber={selectedDay?.dayNumber ?? 1}

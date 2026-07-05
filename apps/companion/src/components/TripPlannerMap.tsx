@@ -225,6 +225,11 @@ interface TripPlannerMapProps {
    * Undefined hides the action (read-only maps).
    */
   onRemoveWaypoint?: (waypointId: string) => void;
+  /**
+   * Fired when the Road Preview popover's "Reroute around this" kicks
+   * off a reroute — the page arms an animated fit for the new line.
+   */
+  onRerouteRequested?: () => void;
   selectedDayNumber?: number;
   /**
    * When true, only the selected day's route is rendered on the map.
@@ -285,6 +290,7 @@ export const TripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -310,6 +316,7 @@ export const TripPlannerMap = forwardRef<
         onAddWaypoint={onAddWaypoint}
         onMoveWaypoint={onMoveWaypoint}
         onRemoveWaypoint={onRemoveWaypoint}
+        onRerouteRequested={onRerouteRequested}
         selectedDayNumber={selectedDayNumber}
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
@@ -332,6 +339,7 @@ export const TripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       onRemoveWaypoint={onRemoveWaypoint}
+      onRerouteRequested={onRerouteRequested}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
@@ -361,6 +369,7 @@ const FetchedTripPlannerMap = forwardRef<
         ) => void)
       | undefined;
     onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
+    onRerouteRequested?: (() => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
@@ -382,6 +391,7 @@ const FetchedTripPlannerMap = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -409,6 +419,7 @@ const FetchedTripPlannerMap = forwardRef<
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       onRemoveWaypoint={onRemoveWaypoint}
+      onRerouteRequested={onRerouteRequested}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
@@ -441,6 +452,7 @@ const TripPlannerMapContent = forwardRef<
         ) => void)
       | undefined;
     onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
+    onRerouteRequested?: (() => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
@@ -464,6 +476,7 @@ const TripPlannerMapContent = forwardRef<
     onAddWaypoint,
     onMoveWaypoint,
     onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
@@ -1791,9 +1804,12 @@ const TripPlannerMapContent = forwardRef<
         segment,
         insertWaypointBefore,
       );
+      // Same rider courtesy as the INSPECT-card reroute: the page arms
+      // an animated fit so the new line comes back into full view.
+      onRerouteRequested?.();
       selectPlannerSegment(null);
     },
-    [insertWaypointBefore, selectPlannerSegment],
+    [insertWaypointBefore, selectPlannerSegment, onRerouteRequested],
   );
 
   useEffect(() => {
