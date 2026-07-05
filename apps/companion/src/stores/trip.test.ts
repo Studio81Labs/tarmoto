@@ -1073,6 +1073,38 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     ]);
   });
 
+  it("removeWaypointById removes from the pin's OWNING day, not the selected one", () => {
+    // The map shows every day's pins — removing a Day 2 pin while Day 1
+    // is selected must delete it from Day 2 (it was a silent no-op).
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.addDay();
+    s.setSelectedDay(1);
+    s.placeWaypoint({ lat: 4, lng: 4 }, "set-start");
+    s.placeWaypoint({ lat: 6, lng: 6 }, "set-end");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "add-via");
+    const day2Via = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "via")!;
+
+    s.setSelectedDay(0);
+    useTripStore.getState().removeWaypointById(day2Via.id);
+
+    const days = useTripStore.getState().activeTrip!.days;
+    expect(days[1]!.waypoints.find((w) => w.id === day2Via.id)).toBeUndefined();
+    // Day 1 untouched.
+    expect(days[0]!.waypoints).toHaveLength(2);
+  });
+
+  it("removeWaypointById with an unknown id is a state no-op", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().removeWaypointById("nope");
+    expect(useTripStore.getState().activeTrip).toBe(before);
+  });
+
   it("setWaypointType changes the type of a waypoint on day 0", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

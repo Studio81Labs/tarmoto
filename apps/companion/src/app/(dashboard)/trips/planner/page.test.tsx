@@ -945,6 +945,63 @@ describe("TripPlannerPage", () => {
     draftSpy.mockRestore();
   });
 
+  it("applies the confirmed roundtrip preference to the live route inputs", async () => {
+    // The dialog's road preference is the loop's character — after the
+    // draft, live routing recomputes through the vias, so the page must
+    // adopt it or the loop silently falls back to the old trip-wide value.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
+      target: { value: "maximum_twisty" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+    expect(draftSpy.mock.calls[0]![1]).toEqual(
+      expect.objectContaining({ preference: "maximum_twisty" }),
+    );
+    // Dialog closed; the §02 summary now reads the confirmed character.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Roundtrip options" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(/^Maximum twisty · /)).toBeInTheDocument();
+    draftSpy.mockRestore();
+  });
+
   it("keeps a day's custom LEG overrides when the rider switches days", () => {
     // Leg overrides are stored per day: reconciliation may only run a
     // day's legs against that day's own spine, so viewing day 2 must

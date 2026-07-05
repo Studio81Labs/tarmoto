@@ -1744,6 +1744,12 @@ export default function TripPlannerPage() {
           { lat: startWp.location.lat, lng: startWp.location.lng },
           { ...opts, region: plannerRegion },
         );
+        // The confirmed dialog preference IS the loop's road character:
+        // apply it to the live route inputs too, or the recompute through
+        // the drafted vias would fall back to the old trip-wide value.
+        // Deliberately not marked as touched — a per-loop choice, not an
+        // edit of the rider's saved defaults (§F).
+        setRoadPreference(opts.preference);
         const store = useTripStore.getState();
         // The loop replaces plain vias; stops (fuel/stays) are kept.
         for (const waypoint of routeDay.waypoints) {

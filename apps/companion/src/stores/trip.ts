@@ -1424,9 +1424,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     removeWaypointById: (waypointId) =>
       set((state) => {
+        // The map renders every day's pins, so the id may belong to any
+        // day — resolve its OWNING day instead of assuming the selected
+        // one (a Day 2+ pin removal was a silent no-op otherwise).
+        const idx =
+          state.activeTrip?.days.findIndex((day) =>
+            day.waypoints.some((w) => w.id === waypointId),
+          ) ?? -1;
+        if (idx < 0) return state;
         const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const idx = state.selectedDayIndex;
           const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
@@ -1449,7 +1456,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
         return {
           ...committed,
-          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
+          ...applyPostCommitSync(committed, state, idx),
         };
       }),
 
