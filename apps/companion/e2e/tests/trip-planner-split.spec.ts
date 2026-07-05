@@ -52,8 +52,10 @@ test.describe("trip planner — split into days", () => {
     await page.getByLabel(/avoid highways/i).click({ force: true });
     await expect(page.getByText(/Route changed/).first()).toBeVisible();
 
-    // Re-split refreshes the days.
-    await page.getByRole("button", { name: "RE-SPLIT" }).click();
+    // Re-split refreshes the days. Two equivalent re-split buttons exist
+    // while stale (the BUILD primary now reads "Re-split" and role-name
+    // matching is case-insensitive) — exact-match the day-column shortcut.
+    await page.getByRole("button", { name: "RE-SPLIT", exact: true }).click();
     await expect(page.getByText(/Route changed/)).toHaveCount(0, {
       timeout: 10_000,
     });
