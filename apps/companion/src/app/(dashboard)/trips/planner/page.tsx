@@ -1609,7 +1609,10 @@ export default function TripPlannerPage() {
     // leaves a full-day route natural with light corridor flavor. The
     // draft returns the vias; live routing redraws through them. Days
     // stay with the splitter — a draft never creates them.
-    const routeDay = activeTripAtStart?.days[0];
+    // The SELECTED day: the draft button's visibility keys on it and the
+    // via inserts below target it, so reading any other day would draft
+    // one leg's endpoints into another leg's waypoints.
+    const routeDay = activeTripAtStart?.days[selectedDayIndex];
     const startWp = routeDay?.waypoints.find((w) => w.type === "start");
     const finishWp = routeDay ? dayFinishWaypoint(routeDay.waypoints) : null;
     // A drafted loop (finish back on the start) is still a roundtrip —
@@ -1714,7 +1717,8 @@ export default function TripPlannerPage() {
     async (
       opts: Pick<RoundtripOptions, "distanceKm" | "direction" | "preference">,
     ) => {
-      const routeDay = activeTripRef.current?.days[0];
+      // Selected day, matching the inserts below (see handleGenerate).
+      const routeDay = activeTripRef.current?.days[selectedDayIndex];
       const startWp = routeDay?.waypoints.find((w) => w.type === "start");
       if (!routeDay || !startWp) return;
       setGenerating(true);

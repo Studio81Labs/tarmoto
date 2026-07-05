@@ -843,10 +843,14 @@ function mergeRoundtripCandidate(out: Candidate, back: Candidate): Candidate {
   const outKm = out.alt.distance_km;
   const backKm = back.alt.distance_km;
   const totalKm = outKm + backKm || 1;
-  const weighted = (a: number | null, b: number | null): number | null =>
-    a === null && b === null
-      ? null
-      : ((a ?? 0) * outKm + (b ?? 0) * backKm) / totalKm;
+  // A leg without a metric must not count as zero over the full loop
+  // distance — that would penalize loops through under-mapped areas.
+  // Average only over the leg(s) that actually have the metric.
+  const weighted = (a: number | null, b: number | null): number | null => {
+    if (a === null) return b;
+    if (b === null) return a;
+    return (a * outKm + b * backKm) / totalKm;
+  };
   const surfaceMixMetres: Record<string, number> = {
     ...out.metrics.surfaceMixMetres,
   };

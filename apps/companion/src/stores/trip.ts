@@ -1874,16 +1874,56 @@ function nearestVertexKm(
   return bestKm;
 }
 
+/**
+ * The exact coordinate at `km` along the line — the vertex when one sits
+ * there, linearly interpolated inside its segment otherwise.
+ */
+function pointAtKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  km: number,
+): GeoJSONPosition | null {
+  for (let i = 0; i < kmAt.length - 1; i += 1) {
+    const k0 = kmAt[i] ?? 0;
+    const k1 = kmAt[i + 1] ?? 0;
+    if (km < k0 || km > k1 || k1 <= k0) continue;
+    const [lng0, lat0] = coordinates[i] ?? [];
+    const [lng1, lat1] = coordinates[i + 1] ?? [];
+    if (
+      typeof lng0 !== "number" ||
+      typeof lat0 !== "number" ||
+      typeof lng1 !== "number" ||
+      typeof lat1 !== "number"
+    ) {
+      continue;
+    }
+    const t = (km - k0) / (k1 - k0);
+    return [lng0 + (lng1 - lng0) * t, lat0 + (lat1 - lat0) * t];
+  }
+  return null;
+}
+
 function sliceCoordinatesByKm(
   coordinates: GeoJSONPosition[],
   kmAt: number[],
   fromKm: number,
   toKm: number,
 ): GeoJSONPosition[] {
-  const sliced = coordinates.filter((_, index) => {
+  // Interpolated endpoints: a break usually falls BETWEEN vertices, and
+  // dropping to the nearest one would leave a gap between consecutive
+  // days' geometry (and their start/end waypoints). Both neighbours slice
+  // at the same km, so they share the exact boundary coordinate.
+  const startPoint = pointAtKm(coordinates, kmAt, fromKm);
+  const endPoint = pointAtKm(coordinates, kmAt, toKm);
+  const interior = coordinates.filter((_, index) => {
     const km = kmAt[index] ?? 0;
-    return km >= fromKm && km <= toKm;
+    return km > fromKm && km < toKm;
   });
+  const sliced = [
+    ...(startPoint ? [startPoint] : []),
+    ...interior,
+    ...(endPoint ? [endPoint] : []),
+  ];
   return sliced.length >= 2
     ? sliced
     : coordinates.slice(0, Math.min(2, coordinates.length));

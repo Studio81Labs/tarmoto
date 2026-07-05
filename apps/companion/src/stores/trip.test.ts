@@ -2458,6 +2458,67 @@ describe("useTripStore split lifecycle (addendum)", () => {
     expect(trip.days[0]!.waypoints[0]!.name).toBe("Start");
     expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
   });
+
+  it("interpolates a between-vertices break so consecutive days share the exact boundary", () => {
+    // SPARSE geometry — one vertex every 40 km — so the 250 km break
+    // falls between vertices (240 / 280 km). Vertex-filtering alone
+    // would end day 1 at km 240 and start day 2 at km 280: a 40 km gap
+    // in the saved geometry and mismatched boundary waypoints.
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 45, lng: 15 }, "set-start");
+    s.placeWaypoint({ lat: 45 + 600 * degPerKm, lng: 15 }, "set-end");
+    const geometry = Array.from({ length: 16 }, (_, i) => ({
+      lat: 45 + i * 40 * degPerKm,
+      lng: 15,
+    }));
+    useTripStore.getState().applyRouteResult(1, {
+      geometry,
+      distance_km: 600,
+      duration_min: 600,
+      avg_quality: 4,
+      curviness_score: 40,
+      elevation_gain_m: 1000,
+      surface_mix: {},
+    });
+    const mkPlan = (dayNumber: number, endKm: number, distanceKm: number) => ({
+      dayNumber,
+      segmentIds: [],
+      distanceKm,
+      timeMin: distanceKm,
+      quality: {
+        distanceKm,
+        timeMin: distanceKm,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "A",
+      endTown: "B",
+      suggestedStays: [],
+      endKm,
+    });
+    useTripStore
+      .getState()
+      .applySplit([mkPlan(1, 250, 250), mkPlan(2, 600, 350)]);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    const day1Coords = trip.days[0]!.routeGeometry!.coordinates;
+    const day2Coords = trip.days[1]!.routeGeometry!.coordinates;
+    const boundaryLat = 45 + 250 * degPerKm;
+
+    // Both days carry the interpolated km-250 point — no gap, and the
+    // linked-start boundary waypoints sit on the same spot.
+    expect(day1Coords.at(-1)![1]).toBeCloseTo(boundaryLat, 4);
+    expect(day2Coords[0]).toEqual(day1Coords.at(-1));
+    expect(trip.days[1]!.waypoints[0]!.location.lat).toBeCloseTo(
+      boundaryLat,
+      4,
+    );
+    expect(
+      dayFinishWaypoint(trip.days[0]!.waypoints)!.location.lat,
+    ).toBeCloseTo(boundaryLat, 4);
+  });
 });
 
 describe("useTripStore renameWaypoint", () => {

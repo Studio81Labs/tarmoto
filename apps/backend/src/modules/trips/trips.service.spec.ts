@@ -2356,9 +2356,12 @@ describe('TripsService', () => {
             ],
           },
         ],
+        options: { preference: 'maximum_twisty' },
       });
 
-      // Only start/via/end waypoints are passed to the router.
+      // Only start/via/end waypoints are passed to the router — WITH the
+      // rider's road preference, so Save re-routes with the same costing
+      // the approved live preview used.
       expect(routingProvider.route).toHaveBeenCalledWith(
         [
           { lat: 50.08, lng: 14.42 },
@@ -2367,6 +2370,7 @@ describe('TripsService', () => {
         expect.objectContaining({
           avoidHighways: undefined,
           avoidTolls: undefined,
+          preference: 'maximum_twisty',
         }),
       );
       expect(enrichment.aggregate).toHaveBeenCalled();

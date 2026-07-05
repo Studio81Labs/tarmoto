@@ -431,6 +431,67 @@ describe('TripGeneratorService', () => {
       expect(day.waypoints[day.waypoints.length - 1].waypoint_type).toBe('end');
     });
 
+    it('averages loop metrics only over the legs that have data', async () => {
+      // Regression: a null metric on one half of the roundtrip used to
+      // count as ZERO over the full loop distance, halving the merged
+      // score whenever one leg crossed an under-mapped area.
+      tripRepo.findOne.mockResolvedValue(makeTrip({ num_days: 1 }));
+      // Distinct geometries per leg so the enrichment queries (keyed on
+      // the WKT parameter) can tell the legs apart.
+      const BACK_LNG = 11.987654;
+      routingProvider.getAlternatives
+        .mockResolvedValueOnce([
+          makeAlt({
+            geometry: [
+              { lat: 47.0, lng: 11.5 },
+              { lat: 47.2, lng: 11.4 },
+            ],
+          }),
+        ])
+        .mockResolvedValueOnce([
+          makeAlt({
+            geometry: [
+              { lat: 47.2, lng: 11.4 },
+              { lat: 47.0, lng: BACK_LNG },
+            ],
+          }),
+        ]);
+      dataSource.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('ST_Centroid')) {
+          return Promise.resolve([
+            { lat: 47.2, lng: 11.4, composite_score: 8 },
+          ]);
+        }
+        if (sql.includes('AVG(rs.quality_score)')) {
+          // The return leg has no quality-scored segments at all.
+          const wkt = String(params?.[0] ?? '');
+          if (wkt.includes(String(BACK_LNG))) return Promise.resolve([]);
+          return Promise.resolve([
+            {
+              avg_quality: 4,
+              avg_curviness: 60,
+              elevation_span: 500,
+              total_length_m: 30000,
+            },
+          ]);
+        }
+        if (sql.includes('FROM road_segments')) {
+          return Promise.resolve([]);
+        }
+        if (sql.includes('FROM hazard_reports')) {
+          return Promise.resolve([{ count: 0 }]);
+        }
+        return Promise.resolve([{ avg_scenic: 5, zone_count: 1 }]);
+      });
+
+      const result = await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+      });
+
+      // Equal-length legs: zero-dilution would have halved this to 2.
+      expect(result.options[0].days[0].avg_quality).toBe(4);
+    });
+
     it('does NOT generate a degenerate start→start leg for a 1-day trip when fun zones exist', async () => {
       // Regression for the bug where `pickAnchors(.., numDays - 1)`
       // collapsed to 0 anchors on a 1-day trip, producing a 0 km loop

@@ -1050,6 +1050,10 @@ export class TripsService {
         avoidHighways: options?.avoid_highways,
         avoidTolls: options?.avoid_tolls,
         preferQuality: options?.prefer_quality,
+        // Same costing as live routing — otherwise Save re-routes the
+        // approved preview with default costing and persists a
+        // different road character than the rider saw.
+        preference: options?.preference,
       },
     );
     if (!route) {

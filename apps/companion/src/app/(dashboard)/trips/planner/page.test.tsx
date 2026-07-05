@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import TripPlannerPage from "./page";
 import { ToastHost } from "@/components/ToastHost";
@@ -13,6 +14,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
+import { plannerApi } from "@/lib/planner/api";
 import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 
@@ -893,6 +895,54 @@ describe("TripPlannerPage", () => {
         "No finish set — Tarmoto will loop you back to your start.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("drafts a roundtrip from the SELECTED day's start, not day 1's", async () => {
+    // Two days with day 2 selected and start-only (roundtrip mode). The
+    // draft must read the SELECTED day's start — its via inserts target
+    // that day, so day 1's endpoints belong to a different leg.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [
+            {
+              id: "s2",
+              name: "Brno",
+              type: "start",
+              location: { lng: 16.6, lat: 49.2 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 1;
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+    expect(draftSpy.mock.calls[0]![0]).toEqual({ lat: 49.2, lng: 16.6 });
+    draftSpy.mockRestore();
   });
 
   it("keeps §03 dormant while no waypoints are placed", () => {
