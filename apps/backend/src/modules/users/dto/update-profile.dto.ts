@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsString,
   IsOptional,
   IsObject,
@@ -42,6 +43,10 @@ export class UserRoutePrefsDto {
   avoid_unpaved!: boolean;
 
   @ApiProperty({ type: [String] })
+  // IsArray is load-bearing: with `each` alone a bare string passes
+  // (it validates the value itself), lands in the JSONB, and crashes
+  // the companion's wire.surfaces.filter(...) on the next prefs load.
+  @IsArray()
   @IsString({ each: true })
   surfaces!: string[];
 

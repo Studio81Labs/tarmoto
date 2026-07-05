@@ -399,35 +399,42 @@ export default function TripPlannerPage() {
     ],
   );
   // ── Per-leg road filters (revision 3 §C) ───────────────────────────
-  // Overrides keyed by waypoint identity; unknown pairs inherit the
-  // trip-wide preference. Reconciled whenever the spine changes.
-  const [legPrefs, setLegPrefs] = useState<LegPref[]>([]);
+  // Overrides keyed by waypoint identity, stored PER DAY: reconciliation
+  // (which re-inherits broken pairs) must only ever run a day's legs
+  // against that day's own spine — switching the selected day is not a
+  // spine edit, so it must not discard another day's overrides.
+  const [legPrefsByDay, setLegPrefsByDay] = useState<Record<number, LegPref[]>>(
+    {},
+  );
+  const legPrefs = legPrefsByDay[selectedDayIndex] ?? EMPTY_LEG_PREFS;
   useEffect(() => {
     const ids = routingWaypoints.map((w) => w.id);
-    setLegPrefs((previous) => {
-      const next = reconcileLegPrefs(previous, ids);
-      return next.length === previous.length &&
+    setLegPrefsByDay((previous) => {
+      const current = previous[selectedDayIndex] ?? EMPTY_LEG_PREFS;
+      const next = reconcileLegPrefs(current, ids);
+      return next.length === current.length &&
         next.every(
           (leg, i) =>
-            leg.fromWaypointId === previous[i]!.fromWaypointId &&
-            leg.toWaypointId === previous[i]!.toWaypointId &&
-            leg.preference === previous[i]!.preference,
+            leg.fromWaypointId === current[i]!.fromWaypointId &&
+            leg.toWaypointId === current[i]!.toWaypointId &&
+            leg.preference === current[i]!.preference,
         )
         ? previous
-        : next;
+        : { ...previous, [selectedDayIndex]: next };
     });
-  }, [routingWaypoints]);
+  }, [routingWaypoints, selectedDayIndex]);
   const handleChangeLegPref = useCallback(
     (fromWaypointId: string, preference: LegPref["preference"]) => {
-      setLegPrefs((previous) =>
-        previous.map((leg) =>
+      setLegPrefsByDay((previous) => ({
+        ...previous,
+        [selectedDayIndex]: (previous[selectedDayIndex] ?? []).map((leg) =>
           leg.fromWaypointId === fromWaypointId ? { ...leg, preference } : leg,
         ),
-      );
+      }));
       // A leg's road character is a routing input — re-fire live routing.
       markRouteDirty();
     },
-    [markRouteDirty],
+    [markRouteDirty, selectedDayIndex],
   );
   // Per-leg routing requests (revision 3 §C): each consecutive pair is
   // requested with its EFFECTIVE preference; the hook concatenates the
@@ -1016,7 +1023,7 @@ export default function TripPlannerPage() {
     setServerTripOwnerId(null);
     setServerTripCallerRole(null);
     setDraftNote(null);
-    setLegPrefs([]);
+    setLegPrefsByDay({});
     setForcedDays(null);
     setLastRoundtripOpts(null);
     setMultiDayOpen(false);
@@ -3369,6 +3376,8 @@ function buildImportedRoutePayload(trip: Trip) {
     }),
   };
 }
+const EMPTY_LEG_PREFS: LegPref[] = [];
+
 const SPINE_ROLE_COLORS: Record<string, string> = {
   start: "#1F8A5B",
   via: "#1FA6B8",

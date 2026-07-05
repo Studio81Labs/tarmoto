@@ -945,6 +945,64 @@ describe("TripPlannerPage", () => {
     draftSpy.mockRestore();
   });
 
+  it("keeps a day's custom LEG overrides when the rider switches days", () => {
+    // Leg overrides are stored per day: reconciliation may only run a
+    // day's legs against that day's own spine, so viewing day 2 must
+    // not discard day 1's CUSTOM road-type choices.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("d1-s", "start", 10),
+            mkWp("d1-v", "via", 11),
+            mkWp("d1-e", "end", 12),
+          ],
+        },
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [mkWp("d2-s", "start", 12), mkWp("d2-e", "end", 13)],
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 0;
+
+    const { rerender } = render(<TripPlannerPage />);
+
+    // Override the first day-1 leg to Maximum twisty.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Maximum twisty" }));
+    const firstLegButton = () =>
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!;
+    expect(firstLegButton()).toHaveTextContent("Maximum twisty");
+    expect(firstLegButton()).toHaveTextContent("CUSTOM");
+
+    // Day 2's single leg has no override…
+    storeState.selectedDayIndex = 1;
+    rerender(<TripPlannerPage />);
+    expect(
+      screen.getAllByRole("button", { name: "Road type for this leg" }),
+    ).toHaveLength(1);
+    expect(firstLegButton()).toHaveTextContent("Trip default");
+    expect(firstLegButton()).not.toHaveTextContent("CUSTOM");
+
+    // …and returning to day 1 still shows the override.
+    storeState.selectedDayIndex = 0;
+    rerender(<TripPlannerPage />);
+    expect(firstLegButton()).toHaveTextContent("Maximum twisty");
+    expect(firstLegButton()).toHaveTextContent("CUSTOM");
+  });
+
   it("keeps §03 dormant while no waypoints are placed", () => {
     storeState.activeTrip = {
       ...activeTrip,
