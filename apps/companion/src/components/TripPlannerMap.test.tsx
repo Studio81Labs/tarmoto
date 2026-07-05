@@ -532,14 +532,80 @@ describe("TripPlannerMap", () => {
     });
     expect(onDrawnRegionChange).toHaveBeenCalledWith([14.4, 50.08, 14.7, 50.3]);
     expect(onDrawModeChange).toHaveBeenCalledWith("idle");
+    // No persistent instruction box lingers after the region exists.
     expect(
-      screen.getByText(
-        /Drag the region to move it, drag a handle to resize, or press Delete to remove\./,
-      ),
-    ).toBeInTheDocument();
+      screen.queryByText(/Drag the region to move it/),
+    ).not.toBeInTheDocument();
 
     act(() => ref.current?.cancelRegionDraw());
     expect(drawControl.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismisses the outline hint the moment the drag begins", () => {
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler !== "string") {
+        eventHandlers.set(event, layerOrHandler as (event: unknown) => void);
+      } else if (maybeHandler) {
+        eventHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onModeChange?.("drawing");
+    });
+    expect(
+      screen.getByText(/Click and drag on the map to outline a region\./),
+    ).toBeInTheDocument();
+
+    act(() => {
+      eventHandlers.get("mousedown")?.({});
+    });
+    expect(
+      screen.queryByText(/Click and drag on the map to outline a region\./),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the placement hint only until the trip has its first point", () => {
+    const emptyTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, waypoints: [] }],
+    };
+    const { rerender } = render(
+      <TripPlannerMap trip={emptyTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(
+      screen.getByText(
+        /Click the map to add points\. We snap to nearby roads when visible\./,
+      ),
+    ).toBeInTheDocument();
+
+    // First point placed → hint gone…
+    rerender(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
+
+    // …and it stays gone for this trip even if every point is removed.
+    rerender(
+      <TripPlannerMap trip={emptyTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
+  });
+
+  it("never shows the placement hint on read-only maps", () => {
+    const emptyTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, waypoints: [] }],
+    };
+    render(<TripPlannerMap trip={emptyTrip} month={7} />);
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
   });
 
   it("fetches Fun Zones for the drawn region and feeds the map layer", async () => {

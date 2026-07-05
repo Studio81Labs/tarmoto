@@ -473,6 +473,13 @@ const TripPlannerMapContent = forwardRef<
     useState<PlannerLineColorMode>("quality");
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
+  // Ephemeral how-to hints (rider feedback): each hint lives exactly as
+  // long as the action it describes is still pending, then it's gone.
+  // Placement hint: only until THIS trip gets its first point — placing
+  // one latches the hint off even if every point is removed again.
+  const [pointPlacedForTrip, setPointPlacedForTrip] = useState(false);
+  // Outline hint: only from entering draw mode until the drag begins.
+  const [outlineStarted, setOutlineStarted] = useState(false);
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(
     controlledDrawnRegion ?? null,
   );
@@ -865,6 +872,32 @@ const TripPlannerMapContent = forwardRef<
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
+  const waypointCount = useMemo(
+    () => trip?.days.reduce((sum, day) => sum + day.waypoints.length, 0) ?? 0,
+    [trip],
+  );
+  const hintTripId = trip?.id ?? null;
+  useEffect(() => {
+    setPointPlacedForTrip(false);
+  }, [hintTripId]);
+  useEffect(() => {
+    if (waypointCount > 0) setPointPlacedForTrip(true);
+  }, [waypointCount]);
+  useEffect(() => {
+    if (drawMode !== "drawing") {
+      setOutlineStarted(false);
+      return;
+    }
+    const map = handleRef.current?.map;
+    if (!map) return;
+    const onOutlineBegin = () => setOutlineStarted(true);
+    map.on("mousedown", onOutlineBegin);
+    map.on("touchstart", onOutlineBegin);
+    return () => {
+      map.off("mousedown", onOutlineBegin);
+      map.off("touchstart", onOutlineBegin);
+    };
+  }, [drawMode]);
   useEffect(() => {
     if (controlledDrawnRegion === undefined) return;
     setDrawnRegion(controlledDrawnRegion);
@@ -1507,27 +1540,19 @@ const TripPlannerMapContent = forwardRef<
           </button>
         </div>
 
-        <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
-          {drawMode === "drawing" ? (
-            <>
-              {t(
-                "Click and drag on the map to outline a region. Release to finish. ",
-              )}
-            </>
-          ) : drawnRegion ? (
-            <>
-              {t(
-                "Drag the region to move it, drag a handle to resize, or press Delete to remove. ",
-              )}
-            </>
-          ) : (
-            <>
-              {t("Click the map to add waypoints ")}
-              {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}
-              {t(". We snap to nearby roads when visible. ")}
-            </>
-          )}
-        </div>
+        {drawMode === "drawing" && !outlineStarted ? (
+          <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
+            {t(
+              "Click and drag on the map to outline a region. Release to finish. ",
+            )}
+          </div>
+        ) : drawMode === "idle" && editable && !pointPlacedForTrip ? (
+          <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
+            {t(
+              "Click the map to add points. We snap to nearby roads when visible. ",
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* ── Route legend for the active line-coloring mode ── */}

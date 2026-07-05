@@ -10,8 +10,6 @@ export const en = {
     ". Click the map to begin the route. ",
   ". Sign in to join the group plan, suggest route changes, and vote with the riders. ":
     ". Sign in to join the group plan, suggest route changes, and vote with the riders. ",
-  ". We snap to nearby roads when visible. ":
-    ". We snap to nearby roads when visible. ",
   ". You can view this trip without a Tarmoto account. ":
     ". You can view this trip without a Tarmoto account. ",
   ". Your shared rides and account settings stay intact, while ":
@@ -130,7 +128,8 @@ export const en = {
     "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app. ",
   "Clear place filter": "Clear place filter",
   "Clear region ": "Clear region ",
-  "Click the map to add waypoints ": "Click the map to add waypoints ",
+  "Click the map to add points. We snap to nearby roads when visible. ":
+    "Click the map to add points. We snap to nearby roads when visible. ",
   "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ":
     "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
   Close: "Close",
