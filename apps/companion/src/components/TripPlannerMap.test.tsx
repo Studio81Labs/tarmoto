@@ -554,7 +554,7 @@ describe("TripPlannerMap", () => {
       activePoiCategories: new Set(["viewpoint"]),
     });
 
-    render(
+    const { rerender } = render(
       <TripPlannerMap trip={bareTrip} month={7} onMoveWaypoint={vi.fn()} />,
     );
 
@@ -592,6 +592,32 @@ describe("TripPlannerMap", () => {
       useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
     expect(waypoints.map((w) => w.type)).toEqual(["start", "via", "end"]);
     expect(waypoints[1]?.name).toBe("Devět skal vista");
+
+    // A placed POI renders ONLY as its waypoint circle — the refetch
+    // drops its POI pin so two pins never stack (rider feedback). The
+    // page re-renders the map with the updated trip; mirror that here.
+    setData.mockClear();
+    rerender(
+      <TripPlannerMap
+        trip={useTripStore.getState().activeTrip}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+      />,
+    );
+    await waitFor(
+      () => {
+        expect(setData).toHaveBeenCalled();
+        const lastCall = setData.mock.calls.at(-1)?.[0] as {
+          features: Array<{ properties: { poiId: string } }>;
+        };
+        expect(
+          lastCall.features.some(
+            (f) => f.properties.poiId === "view-vysocina-1",
+          ),
+        ).toBe(false);
+      },
+      { timeout: 2000 },
+    );
   });
 
   it("drives region drawing through the handle — no in-map pills remain", () => {

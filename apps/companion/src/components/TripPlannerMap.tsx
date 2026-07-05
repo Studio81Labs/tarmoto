@@ -148,8 +148,9 @@ const POI_PIN_ICON_CHILDREN: Record<PoiCategory, string> = {
     '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
   mountain_pass:
     '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  // Design frame glyph — S-bends, not the lucide route icon.
   twisty_highlight:
-    '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+    '<path d="M5 20c3 0 3-5 6-5s3 5 6 5M5 9c3 0 3-5 6-5s3 5 6 5"/>',
 };
 
 /**
@@ -512,6 +513,19 @@ const TripPlannerMapContent = forwardRef<
   const closePoiMenu = useCallback(() => setPoiMenu(null), []);
   /** id → Poi for resolving pin clicks back to the fetched objects. */
   const poisByIdRef = useRef(new Map<string, Poi>());
+  // POIs already placed as waypoints (their waypoint id is
+  // poi-<poiId>-<timestamp>) render ONLY as their role-colored waypoint
+  // circle — never a second POI pin stacked underneath (rider feedback).
+  const usedPoiIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const day of trip?.days ?? []) {
+      for (const waypoint of day.waypoints) {
+        const match = /^poi-(.*)-\d+$/.exec(waypoint.id);
+        if (match?.[1]) ids.add(match[1]);
+      }
+    }
+    return ids;
+  }, [trip]);
   // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
   // on every parent render (the planner page passes an inline arrow,
   // and live collab cursor/suggestion updates re-render mid-drag) does
@@ -1101,7 +1115,8 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready || !editable) return;
     const categories = [...activePoiCategories];
-    const applyPois = (pois: Poi[]) => {
+    const applyPois = (fetched: Poi[]) => {
+      const pois = fetched.filter((poi) => !usedPoiIds.has(poi.id));
       poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
       const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
       source?.setData({
@@ -1153,7 +1168,7 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [activePoiCategories, poiViewportToken, ready, editable]);
+  }, [activePoiCategories, poiViewportToken, ready, editable, usedPoiIds]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -1970,7 +1985,10 @@ function snapPointerToRoad(
 const WAYPOINT_PIN_IMAGE_PREFIX = "tarmoto-waypoint-pin-";
 
 /**
- * Canvas-drawn teardrop pins per waypoint role (2× for crisp rendering).
+ * Canvas-drawn waypoint circles per role (2× for crisp rendering) — the
+ * design's unified pin language: a flat circle whose CENTER is the
+ * point, matching the POI pins. Start/via ring in white, the finish
+ * rings in ink (accent-on-cream needs the darker ring to read).
  * jsdom has no 2D context — tests simply get no images, and the symbol
  * layer renders nothing there.
  */
@@ -1983,32 +2001,21 @@ function installWaypointPinImages(map: MapLibreMap): void {
   for (const [role, fill, ring] of roles) {
     const imageId = `${WAYPOINT_PIN_IMAGE_PREFIX}${role}`;
     if (map.hasImage?.(imageId)) continue;
-    const width = 60;
-    const height = 80;
+    const size = 56;
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = size;
+    canvas.height = size;
     const ctx = canvas.getContext("2d");
     if (!ctx) continue;
-    const cx = width / 2;
-    const headR = 20;
-    const headCy = headR + 4;
-    // Teardrop: circle head + tapered tip down to the anchor point.
+    const center = size / 2;
     ctx.beginPath();
-    ctx.arc(cx, headCy, headR, Math.PI * 0.75, Math.PI * 0.25);
-    ctx.lineTo(cx, height - 4);
-    ctx.closePath();
+    ctx.arc(center, center, 24, 0, Math.PI * 2);
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 6;
     ctx.strokeStyle = ring;
     ctx.stroke();
-    // Inner dot for the classic pin look.
-    ctx.beginPath();
-    ctx.arc(cx, headCy, 7, 0, Math.PI * 2);
-    ctx.fillStyle = ring;
-    ctx.fill();
-    const image = ctx.getImageData(0, 0, width, height);
+    const image = ctx.getImageData(0, 0, size, size);
     map.addImage(imageId, image, { pixelRatio: 2 });
   }
 }
@@ -2023,10 +2030,15 @@ function installPoiPinImages(map: MapLibreMap): void {
   for (const [category, children] of Object.entries(POI_PIN_ICON_CHILDREN)) {
     const imageId = `${POI_PIN_IMAGE_PREFIX}${category}`;
     if (map.hasImage?.(imageId)) continue;
+    // Unified pin language: cream circle + ink glyph and ring — except
+    // twisty highlights, OUR derived layer, which invert to accent.
+    const accent = category === "twisty_highlight";
+    const fill = accent ? "#FF6A1A" : "#F5EFE6";
+    const ring = accent ? "#F5EFE6" : "#0E0E10";
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">' +
-      '<circle cx="28" cy="28" r="25" fill="#FF6A1A" stroke="#F5EFE6" stroke-width="4"/>' +
-      '<g transform="translate(15.5,15.5) scale(1.042)" fill="none" stroke="#F5EFE6" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+      `<circle cx="28" cy="28" r="24" fill="${fill}" stroke="${ring}" stroke-width="5"/>` +
+      `<g transform="translate(15,15) scale(1.083)" fill="none" stroke="${ring === "#F5EFE6" ? "#F5EFE6" : "#0E0E10"}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">` +
       children +
       "</g></svg>";
     const image = new Image(56, 56);
@@ -2265,10 +2277,11 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           `${WAYPOINT_PIN_IMAGE_PREFIX}end`,
           `${WAYPOINT_PIN_IMAGE_PREFIX}via`,
         ],
-        // The image is authored at 2× (pixelRatio 2 → 30×40 logical px);
-        // full size reads clearly and gives right-clicks a real target.
+        // The image is authored at 2× (pixelRatio 2 → 28 px logical);
+        // the circle's CENTER sits exactly on the waypoint location,
+        // same anchor rule as the POI pins.
         "icon-size": 1,
-        "icon-anchor": "bottom",
+        "icon-anchor": "center",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
       },
@@ -2281,7 +2294,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       source: WAYPOINT_SOURCE,
       layout: {
         "text-field": ["get", "label"],
-        "text-offset": [0, 1.25],
+        "text-offset": [0, 1.5],
         "text-size": 11,
         "text-anchor": "top",
         // Single hosted font, not a stack: OpenFreeMap's glyph server only
