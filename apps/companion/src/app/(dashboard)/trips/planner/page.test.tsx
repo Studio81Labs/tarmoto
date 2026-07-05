@@ -922,7 +922,7 @@ describe("TripPlannerPage", () => {
     ).not.toBeInTheDocument();
     // Approximate ride time rides along with the distance (310 min).
     expect(
-      screen.getByText(/Route ready — 240 km · ~5h 10m\./),
+      screen.getByText("Route ready — 240 km · ~5h 10m"),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/240 km · ~5h 10m/).length).toBeGreaterThan(0);
   });

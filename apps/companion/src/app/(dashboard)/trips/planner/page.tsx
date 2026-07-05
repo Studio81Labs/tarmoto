@@ -2559,16 +2559,16 @@ export default function TripPlannerPage() {
                       <Check size={11} strokeWidth={3.5} className="text-ink" />
                     </span>
                     <p className="text-[12px] leading-snug text-fg-dim">
-                      <b className="text-ink">
+                      <b className="block text-ink">
                         {totalTimeMin !== null
-                          ? t("Route ready — {km} km · ~{time}.", {
+                          ? t("Route ready — {km} km · ~{time}", {
                               km: totalDistanceKm,
                               time: formatDuration(totalTimeMin),
                             })
-                          : t("Route ready — {km} km.", {
+                          : t("Route ready — {km} km", {
                               km: totalDistanceKm,
                             })}
-                      </b>{" "}
+                      </b>
                       {t("Save it as-is, or add days below. ")}
                     </p>
                   </div>
