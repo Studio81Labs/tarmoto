@@ -2488,3 +2488,48 @@ describe("useTripStore renameWaypoint", () => {
     expect(useTripStore.getState().activeTrip).toBe(before);
   });
 });
+
+describe("placeWaypoint POI metadata (revision 4)", () => {
+  beforeEach(() => {
+    useTripStore.setState({ activeTrip: null, selectedDayIndex: 0 });
+  });
+
+  it("names the placed point and carries poiCategory through every role", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Devět skal vista",
+      poiCategory: "viewpoint",
+    });
+    s.placeWaypoint({ lat: 49.2, lng: 16.6 }, "set-end", undefined, {
+      name: "Hotel Ráztoka",
+      poiCategory: "biker_hotel",
+    });
+    s.placeWaypoint({ lat: 49.5, lng: 16.3 }, "add-via", undefined, {
+      name: "Benzina Frenštát",
+      poiCategory: "fuel",
+    });
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    expect(waypoints.map((w) => [w.type, w.name, w.poiCategory])).toEqual([
+      ["start", "Devět skal vista", "viewpoint"],
+      ["via", "Benzina Frenštát", "fuel"],
+      ["end", "Hotel Ráztoka", "biker_hotel"],
+    ]);
+  });
+
+  it("clears stale POI provenance when a start is re-placed without meta", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Devět skal vista",
+      poiCategory: "viewpoint",
+    });
+    useTripStore
+      .getState()
+      .placeWaypoint({ lat: 50.0, lng: 14.4 }, "set-new-start");
+    const start = useTripStore
+      .getState()
+      .activeTrip?.days[0]?.waypoints.find((w) => w.type === "start");
+    expect(start?.poiCategory).toBeUndefined();
+    expect(start?.location).toEqual({ lng: 14.4, lat: 50.0 });
+  });
+});

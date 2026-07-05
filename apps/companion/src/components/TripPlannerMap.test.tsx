@@ -585,6 +585,13 @@ describe("TripPlannerMap", () => {
     });
     expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
     expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    // The popover offers all three roles (rider feedback), not just via.
+    expect(
+      screen.getByRole("button", { name: "Set as start" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Set as finish" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
 
@@ -618,6 +625,43 @@ describe("TripPlannerMap", () => {
       },
       { timeout: 2000 },
     );
+  });
+
+  it("opens the point dialog on LEFT click of a plain waypoint", () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "wp-1",
+              waypointType: "start",
+              label: "Bormio",
+            },
+            geometry: { type: "Point", coordinates: [10.37, 46.47] },
+          },
+        ],
+        lngLat: { lng: 10.37, lat: 46.47 },
+        originalEvent: { clientX: 200, clientY: 200 },
+      });
+    });
+
+    expect(
+      screen.getByRole("dialog", { name: "Waypoint details" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Bormio")).toBeInTheDocument();
   });
 
   it("reopens the POI popover from a placed waypoint and offers Remove from route", () => {

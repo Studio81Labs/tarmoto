@@ -1,19 +1,21 @@
 import { buildPlacementMenu } from "./planner-context-menu";
 
 describe("buildPlacementMenu", () => {
-  it("offers only Set start when there is no start", () => {
-    expect(
-      buildPlacementMenu({ hasStart: false, hasEnd: false }).map((a) => a.id),
-    ).toEqual(["set-start"]);
+  it("always offers start, via and end with fresh-placement ids on an empty day", () => {
+    const menu = buildPlacementMenu({ hasStart: false, hasEnd: false });
+    expect(menu.map((a) => a.label)).toEqual([
+      "Set start here",
+      "Add via here",
+      "Set end here",
+    ]);
+    expect(menu.map((a) => a.id)).toEqual(["set-start", "add-via", "set-end"]);
   });
-  it("offers Set end + Add via when start exists but no end", () => {
+  it("flips to the replacing ids as start/end come to exist — labels stay put", () => {
     expect(
       buildPlacementMenu({ hasStart: true, hasEnd: false }).map((a) => a.id),
-    ).toEqual(["set-end", "add-via"]);
-  });
-  it("offers Add via + replace start/end when both exist", () => {
+    ).toEqual(["set-new-start", "add-via", "set-end"]);
     expect(
       buildPlacementMenu({ hasStart: true, hasEnd: true }).map((a) => a.id),
-    ).toEqual(["add-via", "set-new-start", "set-new-end"]);
+    ).toEqual(["set-new-start", "add-via", "set-new-end"]);
   });
 });

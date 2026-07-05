@@ -290,6 +290,12 @@ interface TripState {
     coords: { lat: number; lng: number },
     action: PlacementActionId,
     parameters?: TripParameters,
+    /**
+     * POI provenance for pins placed from the map's POI popover: names
+     * the waypoint and carries the category so the map renders the
+     * glyph-in-circle pin (revision 4).
+     */
+    meta?: { name?: string; poiCategory?: PoiCategory },
   ) => void;
 
   /**
@@ -1228,7 +1234,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
-    placeWaypoint: (coords, action, parameters) =>
+    placeWaypoint: (coords, action, parameters, meta) =>
       set((state) => {
         const committed = commitTripChange(state, (activeTrip) => {
           const isDraftCreation = activeTrip === null;
@@ -1254,15 +1260,22 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           if (action === "set-start" || action === "set-new-start") {
             const startIndex = waypoints.findIndex((w) => w.type === "start");
             if (startIndex >= 0) {
-              waypoints[startIndex] = {
+              const updated: Waypoint = {
                 ...waypoints[startIndex]!,
                 location: { lng: coords.lng, lat: coords.lat },
               };
+              // A re-placed start is a NEW place: refresh or drop the POI
+              // provenance so a stale glyph never survives the move.
+              if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
+              else delete updated.poiCategory;
+              if (meta?.name) updated.name = meta.name;
+              waypoints[startIndex] = updated;
             } else {
               waypoints.unshift({
                 ...newWaypoint,
                 type: "start",
-                name: "Start",
+                name: meta?.name ?? "Start",
+                ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
             // Manual start placement on a non-first day breaks the overnight link.
@@ -1281,20 +1294,35 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                   waypoints[i] = { ...waypoints[i]!, type: "via" };
                 }
               }
-              waypoints[finishIdx] = {
+              const updated: Waypoint = {
                 ...finish,
                 type: "end",
-                name: finish.type === "end" ? finish.name : "Finish",
+                name:
+                  meta?.name ??
+                  (finish.type === "end" ? finish.name : "Finish"),
                 location: { lng: coords.lng, lat: coords.lat },
               };
+              if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
+              else delete updated.poiCategory;
+              waypoints[finishIdx] = updated;
             } else {
-              waypoints.push({ ...newWaypoint, type: "end", name: "Finish" });
+              waypoints.push({
+                ...newWaypoint,
+                type: "end",
+                name: meta?.name ?? "Finish",
+                ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
+              });
             }
           } else {
             // add-via: insert before the day's finish (explicit end OR a
             // terminal accommodation on a generated overnight day), else append.
             const insertAt = viaInsertIndex(waypoints);
-            waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
+            waypoints.splice(insertAt, 0, {
+              ...newWaypoint,
+              type: "via",
+              ...(meta?.name ? { name: meta.name } : {}),
+              ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
+            });
           }
 
           days[idx] = updatePlannerDayRoute(

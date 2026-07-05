@@ -518,15 +518,19 @@ const TripPlannerMapContent = forwardRef<
   // POIs already placed as waypoints (their waypoint id is
   // poi-<poiId>-<timestamp>) render ONLY as their role-colored waypoint
   // circle — never a second POI pin stacked underneath (rider feedback).
-  const usedPoiIds = useMemo(() => {
+  const usedPois = useMemo(() => {
     const ids = new Set<string>();
+    const spots = new Set<string>();
     for (const day of trip?.days ?? []) {
       for (const waypoint of day.waypoints) {
         const match = /^poi-(.*)-\d+$/.exec(waypoint.id);
         if (match?.[1]) ids.add(match[1]);
+        // Start/finish placed from a POI keep planner ids — match those
+        // by exact coordinates instead.
+        spots.add(`${waypoint.location.lng},${waypoint.location.lat}`);
       }
     }
-    return ids;
+    return { ids, spots };
   }, [trip]);
   // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
   // on every parent render (the planner page passes an inline arrow,
@@ -632,6 +636,29 @@ const TripPlannerMapContent = forwardRef<
         (w) => w.location.lat === result.lat && w.location.lng === result.lng,
       );
       if (placed) next.renameWaypoint(placed.id, result.name);
+    },
+    [hasStart, hasEnd],
+  );
+  // POI pin -> start/finish: the placement rule engine handles the role
+  // juggling; the meta names the point and carries the glyph category.
+  const handlePlacePoiEndpoint = useCallback(
+    (poi: Poi, endpoint: "start" | "end") => {
+      const store = useTripStore.getState();
+      const action =
+        endpoint === "start"
+          ? hasStart
+            ? "set-new-start"
+            : "set-start"
+          : hasEnd
+            ? "set-new-end"
+            : "set-end";
+      store.placeWaypoint(
+        { lat: poi.lat, lng: poi.lng },
+        action,
+        store.draftPlannerParameters ?? undefined,
+        { name: poi.name, poiCategory: poi.category },
+      );
+      setPoiMenu(null);
     },
     [hasStart, hasEnd],
   );
@@ -855,11 +882,24 @@ const TripPlannerMapContent = forwardRef<
       const props = feature?.properties as
         | { waypointId?: string; poiCategory?: PoiCategory; label?: string }
         | undefined;
-      if (!props?.poiCategory || !props.waypointId) return;
+      if (!props?.waypointId) return;
       const [lng, lat] =
         feature?.geometry.type === "Point"
           ? (feature.geometry.coordinates as [number, number])
           : [event.lngLat.lng, event.lngLat.lat];
+      if (!props.poiCategory) {
+        // Plain waypoint: left-click opens the same point dialog as
+        // right-click (rider feedback).
+        swallowNextClickRef.current = true;
+        openWaypointMenuFromFeature(
+          props,
+          lng,
+          lat,
+          event.originalEvent.clientX,
+          event.originalEvent.clientY,
+        );
+        return;
+      }
       // Waypoint ids from POIs are poi-<poiId>-<timestamp>; the source
       // mapping mirrors the resolver (§B).
       const poiId =
@@ -1159,7 +1199,11 @@ const TripPlannerMapContent = forwardRef<
     if (!map || !ready || !editable) return;
     const categories = [...activePoiCategories];
     const applyPois = (fetched: Poi[]) => {
-      const pois = fetched.filter((poi) => !usedPoiIds.has(poi.id));
+      const pois = fetched.filter(
+        (poi) =>
+          !usedPois.ids.has(poi.id) &&
+          !usedPois.spots.has(`${poi.lng},${poi.lat}`),
+      );
       poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
       const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
       source?.setData({
@@ -1211,7 +1255,7 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [activePoiCategories, poiViewportToken, ready, editable, usedPoiIds]);
+  }, [activePoiCategories, poiViewportToken, ready, editable, usedPois]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -1247,6 +1291,50 @@ const TripPlannerMapContent = forwardRef<
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, ready]);
+  // Shared opener for the waypoint point dialog — reached by right-click
+  // AND left-click on a pin (rider feedback). Everything it touches is
+  // referentially stable, so ready-time closures may capture it.
+  const openWaypointMenuFromFeature = useCallback(
+    (
+      props: { waypointId?: string; label?: string; waypointType?: string },
+      lng: number,
+      lat: number,
+      clientX: number,
+      clientY: number,
+    ) => {
+      if (!props.waypointId) return;
+      const waypointId = props.waypointId;
+      setContextMenu(null);
+      setPoiMenu(null);
+      setWaypointMenu({
+        waypointId,
+        name: props.label ?? t("Waypoint"),
+        role:
+          props.waypointType === "end"
+            ? "finish"
+            : (props.waypointType ?? "via"),
+        lng,
+        lat,
+        x: clientX,
+        y: clientY,
+        address: null,
+      });
+      // Resolve the place name lazily; keep the menu snappy meanwhile.
+      void plannerApi
+        .reverseGeocode(lat, lng)
+        .then((address) => {
+          setWaypointMenu((menu) =>
+            menu && menu.waypointId === waypointId
+              ? { ...menu, address }
+              : menu,
+          );
+        })
+        .catch(() => {
+          // Address is informational — coordinates already show.
+        });
+    },
+    [],
+  );
   // ── Waypoint pin context menu: info + remove (rider feedback) ──
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -1266,40 +1354,52 @@ const TripPlannerMapContent = forwardRef<
         feature.geometry.type === "Point"
           ? (feature.geometry.coordinates as [number, number])
           : [event.lngLat.lng, event.lngLat.lat];
-      const waypointId = props.waypointId;
-      setContextMenu(null);
-      setWaypointMenu({
-        waypointId,
-        name: props.label ?? t("Waypoint"),
-        role:
-          props.waypointType === "end"
-            ? "finish"
-            : (props.waypointType ?? "via"),
+      openWaypointMenuFromFeature(
+        props,
         lng,
         lat,
-        x: event.originalEvent.clientX,
-        y: event.originalEvent.clientY,
-        address: null,
-      });
-      // Resolve the place name lazily; keep the menu snappy meanwhile.
-      void plannerApi
-        .reverseGeocode(lat, lng)
-        .then((address) => {
-          setWaypointMenu((menu) =>
-            menu && menu.waypointId === waypointId
-              ? { ...menu, address }
-              : menu,
-          );
-        })
-        .catch(() => {
-          // Address is informational — coordinates already show.
-        });
+        event.originalEvent.clientX,
+        event.originalEvent.clientY,
+      );
     };
     map.on("contextmenu", onPinContextMenu);
     return () => {
       map.off("contextmenu", onPinContextMenu);
     };
-  }, [ready, editable]);
+  }, [ready, editable, openWaypointMenuFromFeature]);
+  // ── Dialogs follow their point while the map moves (rider feedback):
+  // every open menu is anchored to a geo coordinate and reprojected on
+  // each map move instead of staying frozen at the click position. ──
+  const anyMapMenuOpen = Boolean(poiMenu || waypointMenu || contextMenu);
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !anyMapMenuOpen) return;
+    // jsdom's map mock projects nothing — menus just keep their spot.
+    if (typeof map.project !== "function") return;
+    const reposition = () => {
+      const rect = map.getCanvas()?.getBoundingClientRect?.();
+      if (!rect) return;
+      const toScreen = (lng: number, lat: number) => {
+        const point = map.project([lng, lat]);
+        return { x: rect.left + point.x + 10, y: rect.top + point.y + 10 };
+      };
+      setPoiMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.poi.lng, menu.poi.lat) } : menu,
+      );
+      setWaypointMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+      setContextMenu((menu) =>
+        menu
+          ? { ...menu, ...toScreen(menu.coords.lng, menu.coords.lat) }
+          : menu,
+      );
+    };
+    map.on("move", reposition);
+    return () => {
+      map.off("move", reposition);
+    };
+  }, [ready, anyMapMenuOpen]);
   // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -1923,6 +2023,26 @@ const TripPlannerMapContent = forwardRef<
                       <Plus size={14} strokeWidth={3} />
                       {t("Add as via")}
                     </button>
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlacePoiEndpoint(poiMenu.poi, "start")
+                        }
+                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Set as start")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlacePoiEndpoint(poiMenu.poi, "end")
+                        }
+                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Set as finish")}
+                      </button>
+                    </div>
                     {showAddAsStop ? (
                       <button
                         type="button"
