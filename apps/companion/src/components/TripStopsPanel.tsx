@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { ZoomIn } from "lucide-react";
+import { Loader2, ZoomIn } from "lucide-react";
 import { Select } from "@tarmoto/ui";
 import {
   POI_CATEGORY_META,
@@ -238,9 +238,16 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
             </p>
           </div>
         ) : loading && stops.length === 0 ? (
-          <p className="text-xs text-fg-mute">
-            {t("Measuring the corridor… ")}
-          </p>
+          <div className="flex items-center gap-2.5 rounded-[11px] border border-line bg-cream px-3.5 py-3">
+            <Loader2
+              size={14}
+              aria-hidden
+              className="shrink-0 animate-spin text-fg-mute"
+            />
+            <p className="text-[12px] leading-relaxed text-fg-dim">
+              {t("Measuring the corridor… ")}
+            </p>
+          </div>
         ) : stops.length === 0 ? (
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
