@@ -37,6 +37,7 @@ import {
   Star,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
+import type { PlannerClosure } from "@/lib/closures-summary";
 import { PassesPanel } from "@/components/PassesPanel";
 import { InspectTab } from "@/components/planner/InspectTab";
 import {
@@ -80,7 +81,10 @@ import type {
 import { RoundtripDialog } from "@/components/planner/RoundtripDialog";
 import type { GeoResult } from "@/lib/planner/types";
 import type { RoundtripOptions } from "@/lib/planner/types";
-import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
+import {
+  rerouteAroundConditionInTrip,
+  rerouteAroundSegmentInTrip,
+} from "@/lib/planner/reroute";
 import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
 import {
   deriveDayQualitySegments,
@@ -110,7 +114,10 @@ import {
   type GeneratedTripOption,
   type TripGenerationOptionId,
 } from "@/lib/trip-generation-options";
-import { currentUtcMonth } from "@/lib/passes-summary";
+import {
+  currentUtcMonth,
+  type MountainPass as MountainPassSummary,
+} from "@/lib/passes-summary";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import {
   findOwnerId,
@@ -482,6 +489,33 @@ export default function TripPlannerPage() {
   const armFitAfterRoute = useCallback(() => {
     fitAfterRouteRef.current = true;
   }, []);
+  // On-route condition cards (revision 7): the tab's REROUTE buttons run
+  // the same via-insert as the marker popover, then glide back to the
+  // whole route once the new line lands.
+  const handleRerouteClosure = useCallback(
+    (closure: PlannerClosure) => {
+      const anchor = closure.geometry[0];
+      if (!anchor) return;
+      const done = rerouteAroundConditionInTrip(
+        activeTripRef.current,
+        { id: closure.id, location: anchor, line: closure.geometry },
+        insertWaypointBefore,
+      );
+      if (done) fitAfterRouteRef.current = true;
+    },
+    [insertWaypointBefore],
+  );
+  const handleReroutePass = useCallback(
+    (pass: MountainPassSummary) => {
+      const done = rerouteAroundConditionInTrip(
+        activeTripRef.current,
+        { id: pass.id, location: { lng: pass.lng, lat: pass.lat } },
+        insertWaypointBefore,
+      );
+      if (done) fitAfterRouteRef.current = true;
+    },
+    [insertWaypointBefore],
+  );
   const handleRerouteSegment = useCallback(
     (segmentId: string) => {
       const trip = activeTripRef.current;
@@ -2750,6 +2784,14 @@ export default function TripPlannerPage() {
                   onMonthChange={setTravelMonth}
                   routes={closureRoutes}
                   data={passesData}
+                  showRegionalList={false}
+                  onFocusPass={(pass) =>
+                    mapRef.current?.openConditionPopover({
+                      kind: "pass",
+                      id: pass.id,
+                    })
+                  }
+                  onReroutePass={handleReroutePass}
                 />
               </div>
               <div>
@@ -2758,6 +2800,14 @@ export default function TripPlannerPage() {
                   month={travelMonth}
                   routes={closureRoutes}
                   data={closuresData}
+                  showRegionalList={false}
+                  onFocusClosure={(closure) =>
+                    mapRef.current?.openConditionPopover({
+                      kind: "closure",
+                      id: closure.id,
+                    })
+                  }
+                  onRerouteClosure={handleRerouteClosure}
                 />
               </div>
             </div>

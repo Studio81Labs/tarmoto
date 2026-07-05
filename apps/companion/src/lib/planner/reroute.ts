@@ -30,9 +30,15 @@ const MIN_OFFSET_KM = 0.8;
 const MAX_OFFSET_KM = 3;
 const KM_PER_DEGREE_LAT = 110.574;
 
+/** Minimal line-shaped input the planner needs — RouteSegment fits. */
+export interface RerouteTarget {
+  geometry: { coordinates: ReadonlyArray<ReadonlyArray<number>> };
+  lengthKm: number;
+}
+
 export function planRerouteAroundSegment(
   day: Pick<TripDay, "routeGeometry" | "waypoints">,
-  segment: RouteSegment,
+  segment: RerouteTarget,
 ): ReroutePlan | null {
   const polyline = day.routeGeometry?.coordinates;
   if (!polyline || polyline.length < 2) return null;
@@ -86,6 +92,90 @@ export function rerouteAroundSegmentInTrip(
   return true;
 }
 
+/**
+ * A map condition (closure / roadworks / pass) as a reroute target
+ * (revision 7): the marker anchor picks the day, the condition's own
+ * line (or a short route-aligned stub for point conditions like
+ * passes) drives the perpendicular offset.
+ */
+export interface PlannerConditionTarget {
+  id: string;
+  location: { lng: number; lat: number };
+  /** Line geometry when the condition has one (closures). */
+  line?: ReadonlyArray<{ lng: number; lat: number }>;
+}
+
+export function rerouteAroundConditionInTrip(
+  trip: Trip | null,
+  condition: PlannerConditionTarget,
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: Waypoint,
+  ) => void,
+): boolean {
+  if (!trip) return false;
+  let bestDayIndex = -1;
+  let bestKm = Number.POSITIVE_INFINITY;
+  trip.days.forEach((day, index) => {
+    const polyline = day.routeGeometry?.coordinates;
+    if (!polyline || polyline.length < 2) return;
+    for (const [lng, lat] of polyline) {
+      if (typeof lng !== "number" || typeof lat !== "number") continue;
+      const km = haversineKm(
+        lat,
+        lng,
+        condition.location.lat,
+        condition.location.lng,
+      );
+      if (km < bestKm) {
+        bestKm = km;
+        bestDayIndex = index;
+      }
+    }
+  });
+  if (bestDayIndex < 0) return false;
+  const day = trip.days[bestDayIndex]!;
+
+  let coordinates: number[][];
+  if (condition.line && condition.line.length >= 2) {
+    coordinates = condition.line.map((point) => [point.lng, point.lat]);
+  } else {
+    // Point condition: borrow the route's local direction around the
+    // nearest vertex so the perpendicular offset is meaningful.
+    const polyline = day.routeGeometry!.coordinates;
+    const vertex = nearestVertexIndex(polyline, condition.location);
+    const from = polyline[Math.max(0, vertex - 1)];
+    const to = polyline[Math.min(polyline.length - 1, vertex + 1)];
+    if (!from || !to) return false;
+    coordinates = [
+      [from[0]!, from[1]!],
+      [to[0]!, to[1]!],
+    ];
+  }
+  let lengthKm = 0;
+  for (let i = 1; i < coordinates.length; i += 1) {
+    lengthKm += haversineKm(
+      coordinates[i - 1]![1]!,
+      coordinates[i - 1]![0]!,
+      coordinates[i]![1]!,
+      coordinates[i]![0]!,
+    );
+  }
+
+  const plan = planRerouteAroundSegment(day, {
+    geometry: { coordinates },
+    lengthKm,
+  });
+  if (!plan) return false;
+  insertWaypointBefore(
+    bestDayIndex,
+    plan.insertBeforeWaypointId,
+    rerouteViaWaypoint(plan, `condition-${condition.id}`),
+  );
+  return true;
+}
+
 /** Build the via waypoint a reroute plan inserts. */
 export function rerouteViaWaypoint(
   plan: ReroutePlan,
@@ -100,7 +190,7 @@ export function rerouteViaWaypoint(
 }
 
 function segmentMidpoint(
-  segment: RouteSegment,
+  segment: RerouteTarget,
 ): { lng: number; lat: number } | null {
   const coordinates = segment.geometry.coordinates;
   const middle = coordinates[Math.floor(coordinates.length / 2)];
@@ -110,7 +200,7 @@ function segmentMidpoint(
 }
 
 function offsetPerpendicular(
-  segment: RouteSegment,
+  segment: RerouteTarget,
   midpoint: { lng: number; lat: number },
 ): { lng: number; lat: number } | null {
   const coordinates = segment.geometry.coordinates;

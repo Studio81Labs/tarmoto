@@ -47,6 +47,16 @@ interface ClosuresPanelProps {
    * can preview "what's closed tomorrow" / "next weekend".
    */
   previewDate?: Date | undefined;
+  /**
+   * Regional (non-route) closures list. The planner CONDITIONS tab
+   * hides it (revision 7 — ambient awareness lives on the map now);
+   * /explore keeps it as the regional discovery browser.
+   */
+  showRegionalList?: boolean | undefined;
+  /** Fly to the closure's marker + open its popover (revision 7). */
+  onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
+  /** Insert a via around this on-route closure and re-route. */
+  onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
 }
 export function ClosuresPanel({
   month,
@@ -55,6 +65,9 @@ export function ClosuresPanel({
   showRouteWarnings = true,
   data,
   previewDate,
+  showRegionalList = true,
+  onFocusClosure,
+  onRerouteClosure,
 }: ClosuresPanelProps) {
   if (data) {
     return (
@@ -63,6 +76,9 @@ export function ClosuresPanel({
         routes={routes}
         showRouteWarnings={showRouteWarnings}
         data={data}
+        showRegionalList={showRegionalList}
+        onFocusClosure={onFocusClosure}
+        onRerouteClosure={onRerouteClosure}
       />
     );
   }
@@ -73,6 +89,9 @@ export function ClosuresPanel({
       bbox={bbox}
       showRouteWarnings={showRouteWarnings}
       previewDate={previewDate}
+      showRegionalList={showRegionalList}
+      onFocusClosure={onFocusClosure}
+      onRerouteClosure={onRerouteClosure}
     />
   );
 }
@@ -82,6 +101,9 @@ function FetchedClosuresPanel({
   bbox,
   showRouteWarnings = true,
   previewDate,
+  showRegionalList,
+  onFocusClosure,
+  onRerouteClosure,
 }: Omit<ClosuresPanelProps, "data">) {
   const data = useClosures(
     month,
@@ -99,6 +121,9 @@ function FetchedClosuresPanel({
       routes={routes}
       showRouteWarnings={showRouteWarnings}
       data={data}
+      showRegionalList={showRegionalList}
+      onFocusClosure={onFocusClosure}
+      onRerouteClosure={onRerouteClosure}
     />
   );
 }
@@ -107,11 +132,17 @@ function ClosuresPanelBody({
   routes,
   showRouteWarnings,
   data,
+  showRegionalList = true,
+  onFocusClosure,
+  onRerouteClosure,
 }: {
   month: number;
   routes: PlannerClosureRoute[];
   showRouteWarnings: boolean;
   data: ClosuresQueryResult;
+  showRegionalList?: boolean | undefined;
+  onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
+  onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
 }) {
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
@@ -187,12 +218,13 @@ function ClosuresPanelBody({
                 <p className="text-xs text-amber-600">{routeError}</p>
               )}
               <ul className="space-y-2">
-                {routeClosures.slice(0, 3).map((closure) => (
-                  <ClosureRow
+                {routeClosures.slice(0, 5).map((closure) => (
+                  <OnRouteClosureCard
                     key={closure.id}
                     closure={closure}
-                    compact
                     units={unitSystem}
+                    onFocus={onFocusClosure}
+                    onReroute={onRerouteClosure}
                   />
                 ))}
               </ul>
@@ -211,7 +243,7 @@ function ClosuresPanelBody({
         </div>
       )}
 
-      {error ? (
+      {!showRegionalList ? null : error ? (
         <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
         <p className="text-xs text-fg-mute">{t("Loading closures\u2026")}</p>
@@ -254,6 +286,77 @@ function ClosuresPanelBody({
     </div>
   );
 }
+/**
+ * Full on-route card (revision 7): ON ROUTE badge, detail, REROUTE.
+ * Clicking the card is the shared marker interaction — fly to the
+ * closure and open its map popover.
+ */
+function OnRouteClosureCard({
+  closure,
+  units,
+  onFocus,
+  onReroute,
+}: {
+  closure: PlannerClosure;
+  units: UnitSystem;
+  onFocus?: ((closure: PlannerClosure) => void) | undefined;
+  onReroute?: ((closure: PlannerClosure) => void) | undefined;
+}) {
+  const detourKm =
+    closure.reason === "roadworks" ? detourLengthKm(closure) : null;
+  return (
+    <li className="rounded-xl border border-line bg-cream p-3">
+      <button
+        type="button"
+        onClick={() => onFocus?.(closure)}
+        className="block w-full text-left"
+        title={t("Show on map")}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-medium text-ink">
+              <span className="truncate">{closure.title}</span>
+              <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[1px] text-cream">
+                {t("On route")}
+              </span>
+            </p>
+            <p className="text-xs text-fg-mute">
+              {REASON_LABEL[closure.reason]}
+              {closure.region ? ` \u00B7 ${closure.region}` : ""}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 text-[11px] font-medium ${SEVERITY_CLASS[closure.severity]}`}
+          >
+            {SEVERITY_LABEL[closure.severity]}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-fg-dim">
+          {formatClosureWindow(closure)}
+        </p>
+        {closure.notes ? (
+          <p className="mt-1 text-xs text-fg-dim">{closure.notes}</p>
+        ) : null}
+        {detourKm != null && (
+          <p className="mt-2 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
+            {t("Detour ~")}
+            {formatDistance(detourKm, units)}
+          </p>
+        )}
+      </button>
+      {onReroute ? (
+        <button
+          type="button"
+          onClick={() => onReroute(closure)}
+          className="mt-2.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-extrabold uppercase tracking-[0.6px] text-ink transition hover:bg-paper"
+        >
+          {t("Reroute around it")}
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
 function ClosureRow({
   closure,
   compact = false,

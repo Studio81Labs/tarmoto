@@ -24,6 +24,16 @@ interface PassesPanelProps {
   routes?: PlannerClosureRoute[];
   showRouteWarnings?: boolean;
   data?: PassesQueryResult;
+  /**
+   * Regional pass catalog list. The planner CONDITIONS tab hides it
+   * (revision 7 — ambient awareness lives on the map); /explore keeps
+   * it for regional browsing.
+   */
+  showRegionalList?: boolean;
+  /** Fly to the pass marker + open its popover (revision 7). */
+  onFocusPass?: (pass: MountainPass) => void;
+  /** Insert a via around this on-route pass and re-route. */
+  onReroutePass?: (pass: MountainPass) => void;
 }
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
 const STATUS_DOT_CLASS: Record<PassStatus, string> = {
@@ -52,6 +62,9 @@ export function PassesPanel({
   routes = EMPTY_ROUTES,
   showRouteWarnings = true,
   data,
+  showRegionalList = true,
+  onFocusPass,
+  onReroutePass,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
   const isControlled =
@@ -74,6 +87,9 @@ export function PassesPanel({
         routes={routes}
         showRouteWarnings={showRouteWarnings}
         data={data}
+        showRegionalList={showRegionalList}
+        onFocusPass={onFocusPass}
+        onReroutePass={onReroutePass}
       />
     );
   }
@@ -85,6 +101,9 @@ export function PassesPanel({
       routes={routes}
       bbox={bbox}
       showRouteWarnings={showRouteWarnings}
+      showRegionalList={showRegionalList}
+      onFocusPass={onFocusPass}
+      onReroutePass={onReroutePass}
     />
   );
 }
@@ -95,6 +114,9 @@ function FetchedPassesPanel({
   routes,
   bbox,
   showRouteWarnings,
+  showRegionalList,
+  onFocusPass,
+  onReroutePass,
 }: {
   month: number;
   setMonth: (nextMonth: number) => void;
@@ -102,6 +124,9 @@ function FetchedPassesPanel({
   routes: PlannerClosureRoute[];
   bbox?: string | undefined;
   showRouteWarnings: boolean;
+  showRegionalList?: boolean | undefined;
+  onFocusPass?: ((pass: MountainPass) => void) | undefined;
+  onReroutePass?: ((pass: MountainPass) => void) | undefined;
 }) {
   const data = usePasses(month, routes, bbox ? { bbox } : undefined);
   return (
@@ -112,6 +137,9 @@ function FetchedPassesPanel({
       routes={routes}
       showRouteWarnings={showRouteWarnings}
       data={data}
+      showRegionalList={showRegionalList}
+      onFocusPass={onFocusPass}
+      onReroutePass={onReroutePass}
     />
   );
 }
@@ -122,6 +150,9 @@ function PassesPanelBody({
   routes,
   showRouteWarnings,
   data,
+  showRegionalList = true,
+  onFocusPass,
+  onReroutePass,
 }: {
   month: number;
   setMonth: (nextMonth: number) => void;
@@ -129,6 +160,9 @@ function PassesPanelBody({
   routes: PlannerClosureRoute[];
   showRouteWarnings: boolean;
   data: PassesQueryResult;
+  showRegionalList?: boolean | undefined;
+  onFocusPass?: ((pass: MountainPass) => void) | undefined;
+  onReroutePass?: ((pass: MountainPass) => void) | undefined;
 }) {
   const {
     passes,
@@ -205,12 +239,17 @@ function PassesPanelBody({
               {routeError && (
                 <p className="text-xs text-amber-600">{routeError}</p>
               )}
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {routePasses
                   .filter((pass) => pass.status !== "open")
-                  .slice(0, 3)
+                  .slice(0, 5)
                   .map((pass) => (
-                    <PassRow key={pass.id} pass={pass} />
+                    <OnRoutePassCard
+                      key={pass.id}
+                      pass={pass}
+                      onFocus={onFocusPass}
+                      onReroute={onReroutePass}
+                    />
                   ))}
               </ul>
             </>
@@ -228,7 +267,7 @@ function PassesPanelBody({
         </div>
       )}
 
-      {error ? (
+      {!showRegionalList ? null : error ? (
         <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
         <p className="text-xs text-fg-mute">{t("Loading passes\u2026")}</p>
@@ -311,6 +350,61 @@ function PassRow({ pass }: { pass: MountainPass }) {
     </li>
   );
 }
+/**
+ * Full on-route pass card (revision 7): ON ROUTE badge + status +
+ * REROUTE; clicking the card reuses the marker popover interaction.
+ */
+function OnRoutePassCard({
+  pass,
+  onFocus,
+  onReroute,
+}: {
+  pass: MountainPass;
+  onFocus?: ((pass: MountainPass) => void) | undefined;
+  onReroute?: ((pass: MountainPass) => void) | undefined;
+}) {
+  return (
+    <li className="rounded-xl border border-line bg-cream p-3">
+      <button
+        type="button"
+        onClick={() => onFocus?.(pass)}
+        className="block w-full text-left"
+        title={t("Show on map")}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">
+            <span className="truncate">{pass.name}</span>
+            <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[1px] text-cream">
+              {t("On route")}
+            </span>
+          </p>
+          <span
+            className={`shrink-0 text-[11px] font-medium ${
+              pass.status === "closed" ? "text-quality-q1" : "text-fg-dim"
+            }`}
+          >
+            {STATUS_LABEL[pass.status]}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-fg-mute">
+          {pass.elevation_m.toLocaleString()}
+          {t("m ")}
+          {pass.region ? ` \u00B7 ${pass.region}` : ""}
+        </p>
+      </button>
+      {onReroute ? (
+        <button
+          type="button"
+          onClick={() => onReroute(pass)}
+          className="mt-2.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-extrabold uppercase tracking-[0.6px] text-ink transition hover:bg-paper"
+        >
+          {t("Reroute around it")}
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
 function buildRouteSummary(closedCount: number, unknownCount: number): string {
   const parts: string[] = [];
   if (closedCount > 0) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TripDay, Waypoint } from "@/lib/types";
 import { planRerouteAroundSegment, rerouteViaWaypoint } from "../reroute";
+import { rerouteAroundConditionInTrip } from "../reroute";
 import type { RouteSegment } from "../types";
 
 /** Straight west→east route along 50°N with waypoints on the line. */
@@ -128,5 +129,115 @@ describe("rerouteViaWaypoint", () => {
     expect(waypoint.location).toEqual(plan.location);
     expect(waypoint.name).toBe("Reroute via");
     expect(waypoint.id).toContain("d1-s1");
+  });
+});
+
+describe("rerouteAroundConditionInTrip (revision 7)", () => {
+  const trip = {
+    id: "t1",
+    name: "Test",
+    status: "draft",
+    num_days: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    collaborators: [],
+    parameters: {
+      days: 1,
+      dailyKmTarget: 250,
+      roadPreference: "mixed",
+      surfacePreference: ["asphalt"],
+      avoidHighways: false,
+      avoidTolls: false,
+      avoidUnpaved: false,
+      minQuality: 3,
+    },
+    days: [
+      {
+        dayNumber: 1,
+        distanceKm: 50,
+        durationMinutes: 60,
+        elevationGain: 0,
+        avgQuality: 4,
+        segments: [],
+        routeGeometry: {
+          type: "LineString" as const,
+          coordinates: [
+            [15.0, 49.0],
+            [15.1, 49.05],
+            [15.2, 49.1],
+            [15.3, 49.15],
+            [15.4, 49.2],
+          ],
+        },
+        waypoints: [
+          {
+            id: "s",
+            name: "Start",
+            type: "start" as const,
+            location: { lng: 15.0, lat: 49.0 },
+          },
+          {
+            id: "e",
+            name: "End",
+            type: "end" as const,
+            location: { lng: 15.4, lat: 49.2 },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("inserts an offset via before the finish for a closure line on the route", () => {
+    const insert = vi.fn();
+    const done = rerouteAroundConditionInTrip(
+      trip as never,
+      {
+        id: "closure-1",
+        location: { lng: 15.2, lat: 49.1 },
+        line: [
+          { lng: 15.15, lat: 49.075 },
+          { lng: 15.25, lat: 49.125 },
+        ],
+      },
+      insert,
+    );
+    expect(done).toBe(true);
+    expect(insert).toHaveBeenCalledTimes(1);
+    const [dayIndex, beforeId, via] = insert.mock.calls[0]!;
+    expect(dayIndex).toBe(0);
+    expect(beforeId).toBe("e");
+    expect(via.type).toBe("via");
+    expect(via.id).toContain("condition-closure-1");
+    // The via lands offset from the condition, not on top of it.
+    expect(
+      Math.hypot(via.location.lng - 15.2, via.location.lat - 49.1),
+    ).toBeGreaterThan(0.005);
+  });
+
+  it("handles point conditions (passes) by borrowing the route direction", () => {
+    const insert = vi.fn();
+    const done = rerouteAroundConditionInTrip(
+      trip as never,
+      { id: "pass-1", location: { lng: 15.1, lat: 49.05 } },
+      insert,
+    );
+    expect(done).toBe(true);
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("declines when the trip has no routed geometry", () => {
+    const insert = vi.fn();
+    const bare = {
+      ...trip,
+      days: [{ ...trip.days[0]!, routeGeometry: undefined }],
+    };
+    expect(
+      rerouteAroundConditionInTrip(
+        bare as never,
+        { id: "x", location: { lng: 15.1, lat: 49.05 } },
+        insert,
+      ),
+    ).toBe(false);
+    expect(insert).not.toHaveBeenCalled();
   });
 });

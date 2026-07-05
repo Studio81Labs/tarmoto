@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ClosuresPanel } from "./ClosuresPanel";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -332,5 +332,85 @@ describe("ClosuresPanel three-state status (revision 6)", () => {
     expect(
       screen.queryByText("Closure data not available for this region yet."),
     ).toBeNull();
+  });
+});
+
+describe("ClosuresPanel on-route-only planner variant (revision 7)", () => {
+  const onRouteClosure = {
+    id: "c-route",
+    title: "Resurfacing works",
+    reason: "roadworks" as const,
+    severity: "partial" as const,
+    country_code: "CZ",
+    region: null,
+    starts_at: "2026-06-25T00:00:00Z",
+    ends_at: "2026-08-19T00:00:00Z",
+    notes: "Temporary signals.",
+    geometry: [
+      { lat: 49.5, lng: 18.2 },
+      { lat: 49.52, lng: 18.25 },
+    ],
+    detour: [
+      { lat: 49.5, lng: 18.2 },
+      { lat: 49.51, lng: 18.21 },
+      { lat: 49.52, lng: 18.25 },
+    ],
+    source: "operator" as const,
+    created_by: null,
+    created_at: "2026-06-01T00:00:00Z",
+    updated_at: "2026-06-01T00:00:00Z",
+  };
+  const data = {
+    closures: [onRouteClosure],
+    routeClosures: [onRouteClosure],
+    counts: { full: 0, partial: 1, advisory: 0, total: 1 },
+    routeCounts: { full: 0, partial: 1, advisory: 0, total: 1 },
+    loading: false,
+    routeLoading: false,
+    error: null,
+    routeError: null,
+    previewDate: new Date("2026-07-15T12:00:00Z"),
+  };
+  const route = [
+    {
+      id: "day-1",
+      label: "Day 1",
+      points: [
+        { lat: 49.49, lng: 18.18 },
+        { lat: 49.53, lng: 18.3 },
+      ],
+    },
+  ];
+
+  it("hides the regional list and renders on-route cards with badge + reroute", () => {
+    const onFocusClosure = vi.fn();
+    const onRerouteClosure = vi.fn();
+    render(
+      <ClosuresPanel
+        month={7}
+        routes={route}
+        data={data}
+        showRegionalList={false}
+        onFocusClosure={onFocusClosure}
+        onRerouteClosure={onRerouteClosure}
+      />,
+    );
+
+    // Regional tier is gone (the map owns ambient awareness now).
+    expect(screen.queryByText(/1 partial/)).toBeNull();
+
+    // The on-route card: badge, detour chip, reroute + focus actions.
+    expect(screen.getByText("On route")).toBeInTheDocument();
+    expect(screen.getByText(/Detour ~/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Reroute around it/i }));
+    expect(onRerouteClosure).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "c-route" }),
+    );
+
+    fireEvent.click(screen.getByTitle("Show on map"));
+    expect(onFocusClosure).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "c-route" }),
+    );
   });
 });

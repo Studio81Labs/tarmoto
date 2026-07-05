@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, Plus } from "lucide-react";
+import { Layers3, Plus, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -45,6 +45,13 @@ import {
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
+import {
+  detourLengthKm,
+  formatClosureWindow,
+  type PlannerClosure,
+} from "@/lib/closures-summary";
+import type { MountainPass as MountainPassSummary } from "@/lib/passes-summary";
+import { rerouteAroundConditionInTrip } from "@/lib/planner/reroute";
 import {
   buildPlannerClosureLineCollection,
   buildPlannerClosureMarkerCollection,
@@ -112,6 +119,11 @@ export interface TripPlannerMapHandle {
    * path.
    */
   openPoiPopover: (poi: Poi) => void;
+  /**
+   * Fly to a condition marker and open its popover (revision 7) — the
+   * CONDITIONS tab's on-route cards reuse the marker interaction.
+   */
+  openConditionPopover: (ref: { kind: "closure" | "pass"; id: string }) => void;
 }
 
 const ROUTE_SOURCE = "trip-planner-route";
@@ -135,6 +147,38 @@ const POI_CLUSTER_COUNT_LAYER = "trip-planner-poi-cluster-count";
 const POI_PIN_LAYER = "trip-planner-poi-pins";
 /** Viewport/filter refetch debounce for the category POI layer (§C). */
 const POI_FETCH_DEBOUNCE_MS = 400;
+/**
+ * Ambient condition markers reveal at planning zoom (revision 7) — at
+ * country zoom they'd be noise; the closure lines still hint presence.
+ */
+const CONDITION_MARKER_MINZOOM = 7;
+const CONDITION_IMAGE_PREFIX = "tarmoto-condition-";
+/**
+ * Diamond icon badges, deliberately OFF the road-quality palette so a
+ * closed road never reads as a "red quality" line: crimson closures,
+ * construction amber roadworks, slate/crimson mountain passes.
+ */
+const CONDITION_BADGES: Record<string, { color: string; glyph: string }> = {
+  "closure-full": {
+    color: "#C81E3C",
+    glyph: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  },
+  "closure-works": {
+    color: "#B45309",
+    glyph:
+      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  },
+  "pass-closed": {
+    color: "#C81E3C",
+    glyph:
+      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  },
+  "pass-unknown": {
+    color: "#5B6B8C",
+    glyph:
+      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  },
+};
 const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
 
 /**
@@ -520,6 +564,42 @@ const TripPlannerMapContent = forwardRef<
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
   // appending a duplicate waypoint at the same spot.
   const swallowNextClickRef = useRef(false);
+  // ── Ambient conditions layer (revision 7): toggle + marker popover ──
+  const [conditionsVisible, setConditionsVisible] = useState(true);
+  const [conditionMenu, setConditionMenu] = useState<
+    | {
+        kind: "closure";
+        closure: PlannerClosure;
+        affectsRoute: boolean;
+        lng: number;
+        lat: number;
+        x: number;
+        y: number;
+      }
+    | {
+        kind: "pass";
+        pass: MountainPassSummary;
+        affectsRoute: boolean;
+        lng: number;
+        lat: number;
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+  const closeConditionMenu = useCallback(() => setConditionMenu(null), []);
+  /** Latest condition arrays for ready-time click closures. */
+  const conditionsRef = useRef<{
+    closures: readonly PlannerClosure[];
+    passes: readonly MountainPassSummary[];
+    affectsClosureIds: ReadonlySet<string>;
+    affectsPassIds: ReadonlySet<string>;
+  }>({
+    closures: [],
+    passes: [],
+    affectsClosureIds: new Set(),
+    affectsPassIds: new Set(),
+  });
   // ── Category POI layer (revision 4 §C) ──
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const planningMode = useTripStore((s) => s.planningMode);
@@ -633,6 +713,35 @@ const TripPlannerMapContent = forwardRef<
   } | null>(null);
   const closeWaypointMenu = useCallback(() => setWaypointMenu(null), []);
 
+  // Reroute around an ambient condition (revision 7) — the ONLY marker
+  // reroute entry point; the tab cards call the same store path via the
+  // page. The page arms an animated fit through onRerouteRequested.
+  const handleConditionReroute = useCallback(
+    (menu: NonNullable<typeof conditionMenu>) => {
+      const target =
+        menu.kind === "closure"
+          ? {
+              id: menu.closure.id,
+              location: {
+                lng: menu.closure.geometry[0]?.lng ?? menu.lng,
+                lat: menu.closure.geometry[0]?.lat ?? menu.lat,
+              },
+              line: menu.closure.geometry,
+            }
+          : {
+              id: menu.pass.id,
+              location: { lng: menu.pass.lng, lat: menu.pass.lat },
+            };
+      const done = rerouteAroundConditionInTrip(
+        useTripStore.getState().activeTrip,
+        target,
+        insertWaypointBefore,
+      );
+      if (done) onRerouteRequested?.();
+      setConditionMenu(null);
+    },
+    [insertWaypointBefore, onRerouteRequested],
+  );
   // Address search (revision 4 §D, revised by rider feedback): picking a
   // result never places anything — it flies the map to the address and
   // opens the SAME placement menu as a right-click there, so the rider
@@ -757,6 +866,42 @@ const TripPlannerMapContent = forwardRef<
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
   const { closures } = closuresData;
   const { passes } = passesData;
+  const affectsClosureIds = useMemo(
+    () => new Set(closuresData.routeClosures.map((closure) => closure.id)),
+    [closuresData.routeClosures],
+  );
+  const affectsPassIds = useMemo(
+    () =>
+      new Set(
+        passesData.routePasses
+          .filter((pass) => pass.status !== "open")
+          .map((pass) => pass.id),
+      ),
+    [passesData.routePasses],
+  );
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    const visibility = conditionsVisible ? "visible" : "none";
+    for (const layer of [
+      CLOSURE_LINE_LAYER,
+      CLOSURE_MARKER_LAYER,
+      PASS_MARKER_LAYER,
+    ]) {
+      if (map.getLayer(layer)) {
+        map.setLayoutProperty(layer, "visibility", visibility);
+      }
+    }
+    if (!conditionsVisible) setConditionMenu(null);
+  }, [conditionsVisible, ready]);
+  useEffect(() => {
+    conditionsRef.current = {
+      closures,
+      passes,
+      affectsClosureIds,
+      affectsPassIds,
+    };
+  }, [closures, passes, affectsClosureIds, affectsPassIds]);
   const closureLineCollection = useMemo(
     () => buildPlannerClosureLineCollection(closures),
     [closures],
@@ -842,7 +987,8 @@ const TripPlannerMapContent = forwardRef<
     closeContextMenu();
     closeWaypointMenu();
     closePoiMenu();
-  }, [closeContextMenu, closeWaypointMenu, closePoiMenu]);
+    closeConditionMenu();
+  }, [closeContextMenu, closeWaypointMenu, closePoiMenu, closeConditionMenu]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -956,6 +1102,62 @@ const TripPlannerMapContent = forwardRef<
         placedWaypointId: props.waypointId,
       });
     });
+    // Ambient condition markers (revision 7): click -> popover with the
+    // condition's detail; the reroute action appears ONLY here (and on
+    // the on-route tab cards that reuse this popover).
+    map.on("click", CLOSURE_MARKER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const id = event.features?.[0]?.properties?.id as string | undefined;
+      const closure = id
+        ? conditionsRef.current.closures.find((c) => c.id === id)
+        : undefined;
+      if (!closure) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      const anchor = closure.geometry[0];
+      setConditionMenu({
+        kind: "closure",
+        closure,
+        affectsRoute: conditionsRef.current.affectsClosureIds.has(closure.id),
+        lng: anchor?.lng ?? event.lngLat.lng,
+        lat: anchor?.lat ?? event.lngLat.lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    map.on("click", PASS_MARKER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const id = event.features?.[0]?.properties?.id as string | undefined;
+      const pass = id
+        ? conditionsRef.current.passes.find((p) => p.id === id)
+        : undefined;
+      if (!pass) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      setConditionMenu({
+        kind: "pass",
+        pass,
+        affectsRoute: conditionsRef.current.affectsPassIds.has(pass.id),
+        lng: pass.lng,
+        lat: pass.lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    for (const layer of [CLOSURE_MARKER_LAYER, PASS_MARKER_LAYER]) {
+      map.on("mouseenter", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
     // Cluster click zooms toward the cluster's expansion level.
     map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
@@ -1400,7 +1602,9 @@ const TripPlannerMapContent = forwardRef<
   // ── Dialogs follow their point while the map moves (rider feedback):
   // every open menu is anchored to a geo coordinate and reprojected on
   // each map move instead of staying frozen at the click position. ──
-  const anyMapMenuOpen = Boolean(poiMenu || waypointMenu || contextMenu);
+  const anyMapMenuOpen = Boolean(
+    poiMenu || waypointMenu || contextMenu || conditionMenu,
+  );
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !anyMapMenuOpen) return;
@@ -1423,6 +1627,9 @@ const TripPlannerMapContent = forwardRef<
         menu
           ? { ...menu, ...toScreen(menu.coords.lng, menu.coords.lat) }
           : menu,
+      );
+      setConditionMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
       );
     };
     map.on("move", reposition);
@@ -1865,6 +2072,72 @@ const TripPlannerMapContent = forwardRef<
       flyToSegment,
       startRegionDraw: () => drawRef.current?.start(),
       cancelRegionDraw: () => drawRef.current?.cancel(),
+      openConditionPopover: (ref: { kind: "closure" | "pass"; id: string }) => {
+        const map = handleRef.current?.map;
+        if (!map) return;
+        const current = conditionsRef.current;
+        let lng: number | undefined;
+        let lat: number | undefined;
+        if (ref.kind === "closure") {
+          const closure = current.closures.find((c) => c.id === ref.id);
+          const anchor = closure?.geometry[0];
+          if (!closure || !anchor) return;
+          lng = anchor.lng;
+          lat = anchor.lat;
+          setConditionMenu({
+            kind: "closure",
+            closure,
+            affectsRoute: current.affectsClosureIds.has(closure.id),
+            lng,
+            lat,
+            x: 0,
+            y: 0,
+          });
+        } else {
+          const pass = current.passes.find((p) => p.id === ref.id);
+          if (!pass) return;
+          lng = pass.lng;
+          lat = pass.lat;
+          setConditionMenu({
+            kind: "pass",
+            pass,
+            affectsRoute: current.affectsPassIds.has(pass.id),
+            lng,
+            lat,
+            x: 0,
+            y: 0,
+          });
+        }
+        setContextMenu(null);
+        setWaypointMenu(null);
+        setPoiMenu(null);
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        const projected =
+          typeof map.project === "function" ? map.project([lng, lat]) : null;
+        setConditionMenu((menu) =>
+          menu
+            ? {
+                ...menu,
+                x:
+                  rect && projected
+                    ? rect.left + projected.x + 10
+                    : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+                y:
+                  rect && projected
+                    ? rect.top + projected.y + 10
+                    : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+              }
+            : menu,
+        );
+        if (typeof map.flyTo === "function") {
+          map.flyTo({
+            center: [lng, lat],
+            zoom: Math.max(map.getZoom?.() ?? 0, 9),
+            duration: 1200,
+            essential: true,
+          });
+        }
+      },
       openPoiPopover: (poi: Poi) => {
         const map = handleRef.current?.map;
         if (!map) return;
@@ -1977,6 +2250,18 @@ const TripPlannerMapContent = forwardRef<
             <Layers3 size={14} />
             {t("Surface ")}
           </button>
+          {/* Ambient conditions overlay (revision 7) — a distinct layer
+              toggle, independent of basemap and line coloring. */}
+          <button
+            type="button"
+            aria-pressed={conditionsVisible}
+            aria-label={t("Toggle the conditions overlay")}
+            onClick={() => setConditionsVisible((visible) => !visible)}
+            className={toggleClassName(conditionsVisible)}
+          >
+            <TriangleAlert size={14} />
+            {t("Conditions ")}
+          </button>
         </div>
 
         {drawMode === "drawing" && !outlineStarted ? (
@@ -1994,6 +2279,30 @@ const TripPlannerMapContent = forwardRef<
         ) : null}
       </div>
 
+      {/* ── Conditions marker legend (revision 7) ── */}
+      {conditionsVisible ? (
+        <div className="absolute bottom-20 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+          {(
+            [
+              ["#C81E3C", "Closure"],
+              ["#B45309", "Roadworks"],
+              ["#5B6B8C", "Pass closed/unknown"],
+            ] as const
+          ).map(([color, label]) => (
+            <span
+              key={label}
+              className="flex items-center gap-1.5 text-[11px] text-fg-dim"
+            >
+              <span
+                aria-hidden
+                className="inline-block h-2.5 w-2.5 rotate-45 rounded-[3px] border-2 bg-cream"
+                style={{ borderColor: color }}
+              />
+              {t(label)}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {/* ── Route legend for the active line-coloring mode ── */}
       {routeCollection.features.length > 0 ? (
         <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
@@ -2036,6 +2345,98 @@ const TripPlannerMapContent = forwardRef<
         />
       ) : null}
       {/* ── Context menu overlay (Task 10) ── */}
+      {conditionMenu
+        ? (() => {
+            const isClosure = conditionMenu.kind === "closure";
+            const title = isClosure
+              ? conditionMenu.closure.title
+              : conditionMenu.pass.name;
+            const typeLabel = isClosure
+              ? `${conditionMenu.closure.reason} · ${conditionMenu.closure.severity}`
+              : t("Seasonal pass");
+            const detourKm =
+              isClosure && conditionMenu.closure.reason === "roadworks"
+                ? detourLengthKm(conditionMenu.closure)
+                : null;
+            const badgeColor = isClosure
+              ? conditionMenu.closure.severity === "full"
+                ? "#C81E3C"
+                : "#B45309"
+              : conditionMenu.pass.status === "closed"
+                ? "#C81E3C"
+                : "#5B6B8C";
+            return (
+              <div
+                role="dialog"
+                aria-label={t("Condition details")}
+                className="fixed z-30 w-72 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+                style={{ left: conditionMenu.x, top: conditionMenu.y }}
+              >
+                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
+                  <span
+                    className="flex h-9 w-9 shrink-0 rotate-45 items-center justify-center rounded-[10px] border-2 bg-paper"
+                    style={{ borderColor: badgeColor }}
+                  >
+                    <TriangleAlert
+                      size={15}
+                      className="-rotate-45"
+                      style={{ color: badgeColor }}
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-bold text-ink">
+                      {title}
+                    </p>
+                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                      {typeLabel}
+                    </p>
+                  </div>
+                </div>
+                {conditionMenu.affectsRoute ? (
+                  <p className="mx-1.5 mb-2 inline-flex items-center gap-1.5 rounded-[8px] border border-accent bg-accent/10 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[1.2px] text-accent">
+                    <TriangleAlert size={11} />
+                    {t("Affects your route")}
+                  </p>
+                ) : null}
+                <div className="px-1.5 pb-2 text-[11.5px] leading-snug text-fg-dim">
+                  {isClosure ? (
+                    <>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
+                        {formatClosureWindow(conditionMenu.closure)}
+                      </p>
+                      {conditionMenu.closure.notes ? (
+                        <p className="mt-1">{conditionMenu.closure.notes}</p>
+                      ) : null}
+                      {detourKm != null ? (
+                        <p className="mt-1.5 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
+                          {t("Detour ~{km} km", {
+                            km: Math.round(detourKm * 10) / 10,
+                          })}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p>
+                      {`${conditionMenu.pass.elevation_m.toLocaleString()} m`}
+                      {conditionMenu.pass.region
+                        ? ` · ${conditionMenu.pass.region}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+                {conditionMenu.affectsRoute ? (
+                  <button
+                    type="button"
+                    onClick={() => handleConditionReroute(conditionMenu)}
+                    className="w-full rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+                  >
+                    {t("Reroute around it")}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()
+        : null}
       {poiMenu
         ? (() => {
             const meta = poiCategoryMeta(poiMenu.poi.category);
@@ -2262,6 +2663,31 @@ function installWaypointPinImages(map: MapLibreMap): void {
     ctx.stroke();
     const image = ctx.getImageData(0, 0, size, size);
     map.addImage(imageId, image, { pixelRatio: 2 });
+  }
+}
+
+/**
+ * Rotated-square (diamond) badges for the ambient conditions layer —
+ * cream fill, colored ring + glyph, visually distinct from both the
+ * quality line palette and the circular POI/waypoint pins.
+ */
+function installConditionImages(map: MapLibreMap): void {
+  for (const [key, badge] of Object.entries(CONDITION_BADGES)) {
+    const imageId = `${CONDITION_IMAGE_PREFIX}${key}`;
+    if (map.hasImage?.(imageId)) continue;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">' +
+      `<rect x="12" y="12" width="36" height="36" rx="9" transform="rotate(45 30 30)" fill="#F5EFE6" stroke="${badge.color}" stroke-width="4"/>` +
+      `<g transform="translate(21,21) scale(0.75)" fill="none" stroke="${badge.color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">` +
+      badge.glyph +
+      "</g></svg>";
+    const image = new Image(60, 60);
+    image.onload = () => {
+      if (!map.hasImage?.(imageId)) {
+        map.addImage(imageId, image, { pixelRatio: 2 });
+      }
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 }
 
@@ -2668,6 +3094,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
+  installConditionImages(map);
   if (!map.getSource(CLOSURE_MARKER_SOURCE)) {
     map.addSource(CLOSURE_MARKER_SOURCE, {
       type: "geojson",
@@ -2677,31 +3104,20 @@ function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getLayer(CLOSURE_MARKER_LAYER)) {
     map.addLayer({
       id: CLOSURE_MARKER_LAYER,
-      type: "circle",
+      type: "symbol",
       source: CLOSURE_MARKER_SOURCE,
-      paint: {
-        "circle-color": [
-          "match",
-          ["get", "severity"],
-          "full",
-          "#FB7185",
-          "partial",
-          "#FBBF24",
-          "#38BDF8",
+      // Zoom-gated (revision 7): country zoom hides individual markers.
+      minzoom: CONDITION_MARKER_MINZOOM,
+      layout: {
+        "icon-image": [
+          "case",
+          ["==", ["get", "severity"], "full"],
+          `${CONDITION_IMAGE_PREFIX}closure-full`,
+          `${CONDITION_IMAGE_PREFIX}closure-works`,
         ],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          7,
-          5,
-          12,
-          7,
-          15,
-          9,
-        ],
-        "circle-stroke-color": "#020617",
-        "circle-stroke-width": 2,
+        "icon-size": 1,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }
@@ -2714,31 +3130,22 @@ function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getLayer(PASS_MARKER_LAYER)) {
     map.addLayer({
       id: PASS_MARKER_LAYER,
-      type: "circle",
+      type: "symbol",
       source: PASS_MARKER_SOURCE,
-      paint: {
-        "circle-color": [
-          "match",
-          ["get", "status"],
-          "open",
-          "#4ADE80",
-          "closed",
-          "#FB7185",
-          "#94A3B8",
+      minzoom: CONDITION_MARKER_MINZOOM,
+      // Ambient awareness cares about passes you might NOT clear —
+      // open passes stay off the map (revision 7).
+      filter: ["!=", ["get", "status"], "open"],
+      layout: {
+        "icon-image": [
+          "case",
+          ["==", ["get", "status"], "closed"],
+          `${CONDITION_IMAGE_PREFIX}pass-closed`,
+          `${CONDITION_IMAGE_PREFIX}pass-unknown`,
         ],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          7,
-          4,
-          12,
-          6,
-          15,
-          8,
-        ],
-        "circle-stroke-color": "#020617",
-        "circle-stroke-width": 2,
+        "icon-size": 1,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }
