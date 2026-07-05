@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, Square, X } from "lucide-react";
+import { Layers3 } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -96,6 +96,14 @@ export interface TripPlannerMapHandle {
    * segment id doesn't resolve against the current trip geometry.
    */
   flyToSegment: (segmentId: string) => void;
+  /**
+   * Begin drawing a Fun-Zone region. Driven by the BUILD-column
+   * checkbox card — the map no longer renders its own Draw region
+   * button (rider feedback).
+   */
+  startRegionDraw: () => void;
+  /** Cancel an in-progress region draw (leaves a drawn region alone). */
+  cancelRegionDraw: () => void;
 }
 
 const ROUTE_SOURCE = "trip-planner-route";
@@ -149,6 +157,11 @@ interface TripPlannerMapProps {
   month: number;
   drawnRegion?: RegionDrawBbox | null;
   onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
+  /**
+   * Mirrors the region-draw state machine to the parent so the BUILD
+   * column's checkbox card can reflect drawing/idle without owning it.
+   */
+  onDrawModeChange?: (mode: RegionDrawMode) => void;
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
@@ -221,6 +234,7 @@ export const TripPlannerMap = forwardRef<
     month,
     drawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     closuresData,
     passesData,
     onAddWaypoint,
@@ -245,6 +259,7 @@ export const TripPlannerMap = forwardRef<
         month={month}
         drawnRegion={drawnRegion}
         onDrawnRegionChange={onDrawnRegionChange}
+        onDrawModeChange={onDrawModeChange}
         closuresData={closuresData}
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
@@ -268,6 +283,7 @@ export const TripPlannerMap = forwardRef<
       month={month}
       drawnRegion={drawnRegion}
       onDrawnRegionChange={onDrawnRegionChange}
+      onDrawModeChange={onDrawModeChange}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       onRemoveWaypoint={onRemoveWaypoint}
@@ -288,6 +304,7 @@ const FetchedTripPlannerMap = forwardRef<
     month: number;
     drawnRegion?: RegionDrawBbox | null | undefined;
     onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
+    onDrawModeChange?: ((mode: RegionDrawMode) => void) | undefined;
     onAddWaypoint?:
       | ((location: { lng: number; lat: number }) => void)
       | undefined;
@@ -316,6 +333,7 @@ const FetchedTripPlannerMap = forwardRef<
     month,
     drawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     onAddWaypoint,
     onMoveWaypoint,
     onRemoveWaypoint,
@@ -340,6 +358,7 @@ const FetchedTripPlannerMap = forwardRef<
       month={month}
       drawnRegion={drawnRegion}
       onDrawnRegionChange={onDrawnRegionChange}
+      onDrawModeChange={onDrawModeChange}
       closuresData={closuresData}
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
@@ -363,6 +382,7 @@ const TripPlannerMapContent = forwardRef<
     month: number;
     drawnRegion?: RegionDrawBbox | null | undefined;
     onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
+    onDrawModeChange?: ((mode: RegionDrawMode) => void) | undefined;
     closuresData: ClosuresQueryResult;
     passesData: PassesQueryResult;
     onAddWaypoint?:
@@ -393,6 +413,7 @@ const TripPlannerMapContent = forwardRef<
     month: _month,
     drawnRegion: controlledDrawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     closuresData,
     passesData,
     onAddWaypoint,
@@ -682,7 +703,10 @@ const TripPlannerMapContent = forwardRef<
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => updateDrawnRegion(bbox),
       onRegionCleared: () => updateDrawnRegion(null),
-      onModeChange: setDrawMode,
+      onModeChange: (mode) => {
+        setDrawMode(mode);
+        onDrawModeChange?.(mode);
+      },
     });
     const pointerOn = () => {
       if (drawRef.current?.getMode() !== "idle") return;
@@ -1405,6 +1429,8 @@ const TripPlannerMapContent = forwardRef<
     () => ({
       fitRoute: fitMapToTrip,
       flyToSegment,
+      startRegionDraw: () => drawRef.current?.start(),
+      cancelRegionDraw: () => drawRef.current?.cancel(),
     }),
     [fitMapToTrip, flyToSegment],
   );
@@ -1480,40 +1506,6 @@ const TripPlannerMapContent = forwardRef<
             {t("Surface ")}
           </button>
         </div>
-
-        {drawMode === "drawing" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.cancel()}
-            className={`${PILL_BASE} self-start border-accent bg-cream text-accent hover:bg-paper`}
-          >
-            <X size={14} />
-            {t("Cancel drawing ")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.start()}
-            disabled={!ready}
-            // Client-only disabled state — see the "Fit to route" note above.
-            suppressHydrationWarning
-            className={`${INK_PILL} self-start disabled:cursor-wait disabled:opacity-60`}
-          >
-            <Square size={14} />
-            {drawnRegion ? t("Redraw region ") : t("Draw region ")}
-          </button>
-        )}
-
-        {drawnRegion && drawMode !== "drawing" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.clearDrawn()}
-            className={`${CREAM_PILL} self-start`}
-          >
-            <X size={12} />
-            {t("Clear region ")}
-          </button>
-        ) : null}
 
         <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
           {drawMode === "drawing" ? (
@@ -1647,7 +1639,6 @@ const TripPlannerMapContent = forwardRef<
 const PILL_BASE =
   "flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition";
 const CREAM_PILL = `${PILL_BASE} border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink`;
-const INK_PILL = `${PILL_BASE} border-ink bg-ink text-cream hover:bg-ink/90`;
 
 function toggleClassName(active: boolean): string {
   return active

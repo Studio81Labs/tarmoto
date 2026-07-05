@@ -492,43 +492,54 @@ describe("TripPlannerMap", () => {
     expect(eventHandlers.has("contextmenu")).toBe(false);
   });
 
-  it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
+  it("drives region drawing through the handle — no in-map pills remain", () => {
+    // Rider feedback: the BUILD column's Fun-Zone checkbox owns the
+    // draw flow; the map exposes start/cancel imperatively and mirrors
+    // the mode back through onDrawModeChange.
+    const ref = createRef<TripPlannerMapHandle>();
+    const onDrawModeChange = vi.fn();
+    const onDrawnRegionChange = vi.fn();
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={trip()}
+        month={7}
+        onDrawnRegionChange={onDrawnRegionChange}
+        onDrawModeChange={onDrawModeChange}
+      />,
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Draw region" }));
+    expect(
+      screen.queryByRole("button", {
+        name: /draw region|cancel drawing|clear region|redraw region/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    act(() => ref.current?.startRegionDraw());
     expect(drawControl.start).toHaveBeenCalledTimes(1);
 
     act(() => {
       lastDrawOptions?.onModeChange?.("drawing");
     });
+    expect(onDrawModeChange).toHaveBeenCalledWith("drawing");
     expect(
-      screen.getByRole("button", { name: "Cancel drawing" }),
+      screen.getByText(/Click and drag on the map to outline a region\./),
     ).toBeInTheDocument();
 
     act(() => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
       lastDrawOptions?.onModeChange?.("idle");
     });
-    expect(
-      screen.getByRole("button", { name: "Clear region" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Redraw region" }),
-    ).toBeInTheDocument();
+    expect(onDrawnRegionChange).toHaveBeenCalledWith([14.4, 50.08, 14.7, 50.3]);
+    expect(onDrawModeChange).toHaveBeenCalledWith("idle");
     expect(
       screen.getByText(
         /Drag the region to move it, drag a handle to resize, or press Delete to remove\./,
       ),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
-    expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole("button", { name: "Clear region" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Draw region" }),
-    ).toBeInTheDocument();
+    act(() => ref.current?.cancelRegionDraw());
+    expect(drawControl.cancel).toHaveBeenCalledTimes(1);
   });
 
   it("fetches Fun Zones for the drawn region and feeds the map layer", async () => {
@@ -695,7 +706,7 @@ describe("TripPlannerMap", () => {
     );
 
     setData.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
+    fireEvent.keyDown(window, { key: "Delete" });
 
     await waitFor(() =>
       expect(setData).toHaveBeenCalledWith(
@@ -711,15 +722,9 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
       lastDrawOptions?.onModeChange?.("idle");
     });
-    expect(
-      screen.getByRole("button", { name: "Clear region" }),
-    ).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Delete" });
     expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole("button", { name: "Clear region" }),
-    ).not.toBeInTheDocument();
 
     // After clearing, Backspace must not trigger another clearDrawn call.
     fireEvent.keyDown(window, { key: "Backspace" });
@@ -743,27 +748,6 @@ describe("TripPlannerMap", () => {
     input.focus();
     fireEvent.keyDown(input, { key: "Delete" });
     expect(drawControl.clearDrawn).not.toHaveBeenCalled();
-  });
-
-  it("hides the Cancel drawing button while editing the drawn region", () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
-
-    act(() => {
-      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
-      lastDrawOptions?.onModeChange?.("idle");
-    });
-    act(() => {
-      lastDrawOptions?.onModeChange?.("editing");
-    });
-
-    expect(
-      screen.queryByRole("button", { name: "Cancel drawing" }),
-    ).not.toBeInTheDocument();
-    // The "Redraw region" entry-point should still be reachable so the
-    // rider can outline a fresh rectangle even while a drag is active.
-    expect(
-      screen.getByRole("button", { name: "Redraw region" }),
-    ).toBeInTheDocument();
   });
 
   it("opens the context menu inside a drawn region (waypoints are placeable there)", () => {

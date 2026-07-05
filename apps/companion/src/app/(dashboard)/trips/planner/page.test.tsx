@@ -920,7 +920,55 @@ describe("TripPlannerPage", () => {
     expect(
       screen.queryByText(/Already placed your points/),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/Route ready — 240 km/)).toBeInTheDocument();
+    // Approximate ride time rides along with the distance (310 min).
+    expect(
+      screen.getByText(/Route ready — 240 km · ~5h 10m\./),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/240 km · ~5h 10m/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Fun-Zone card as a checkbox that reflects the drawn region", () => {
+    render(<TripPlannerPage />);
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Draw region · Fun Zones/,
+    });
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText("Find dense clusters of great road."),
+    ).toBeInTheDocument();
+
+    // Checking with no region starts the map draw via the handle — the
+    // map is mocked here, so just assert the click doesn't blow up and
+    // the box stays unchecked until the map reports a mode change.
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("checks the Fun-Zone card and unchecks-to-remove when a region exists", () => {
+    // Region hydrated from the URL — same path a shared planner link uses.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?bbox=14.4,50.08,14.7,50.3",
+    );
+
+    render(<TripPlannerPage />);
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Draw region · Fun Zones/,
+    });
+    expect(checkbox).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByText(/Region set — drafting keeps the route inside it\./),
+    ).toBeInTheDocument();
+
+    // Unchecking with a drawn region removes it.
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText("Find dense clusters of great road."),
+    ).toBeInTheDocument();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {

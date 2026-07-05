@@ -34,6 +34,7 @@ import {
   Maximize2,
   Loader2,
   Plus,
+  Star,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -88,7 +89,10 @@ import {
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
-import type { RegionDrawBbox } from "@/components/map/RegionDrawControl";
+import type {
+  RegionDrawBbox,
+  RegionDrawMode,
+} from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
@@ -263,6 +267,9 @@ export default function TripPlannerPage() {
   const [plannerRegion, setPlannerRegion] = useState<RegionDrawBbox | null>(
     null,
   );
+  // Live mirror of the map's region-draw state machine so the BUILD
+  // column's Fun-Zone checkbox can reflect and drive it.
+  const [regionDrawMode, setRegionDrawMode] = useState<RegionDrawMode>("idle");
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
   >([]);
@@ -1799,6 +1806,16 @@ export default function TripPlannerPage() {
     );
     return sum > 0 ? Math.round(sum) : null;
   }, [displayedTrip]);
+  // Approximate ride time from the routing engine's per-day durations —
+  // shown next to the distance so riders can gauge the day at a glance.
+  const totalTimeMin = useMemo(() => {
+    if (!displayedTrip) return null;
+    const sum = displayedTrip.days.reduce(
+      (acc, day) => acc + (day.durationMinutes ?? 0),
+      0,
+    );
+    return sum > 0 ? Math.round(sum) : null;
+  }, [displayedTrip]);
   // Revision 2 §B: the day column exists ONLY after an actual split
   // inside the multi-day opt-in — otherwise there is no day concept.
   const daysVisible =
@@ -1821,6 +1838,20 @@ export default function TripPlannerPage() {
     sameSpot(spineStart.location, spineFinish.location),
   );
   const isRoundtripMode = Boolean(spineStart) && (!spineFinish || isLoopRoute);
+  // Fun-Zone region checkbox (rider feedback): checking starts the draw
+  // on the map, unchecking mid-draw cancels it, unchecking with a drawn
+  // region removes the region. The in-map Draw region button is gone.
+  const regionDrawing = regionDrawMode === "drawing";
+  const regionChecked = regionDrawing || plannerRegion !== null;
+  const handleToggleRegionDraw = useCallback(() => {
+    if (regionDrawMode === "drawing") {
+      mapRef.current?.cancelRegionDraw();
+    } else if (plannerRegion) {
+      setPlannerRegion(null);
+    } else {
+      mapRef.current?.startRegionDraw();
+    }
+  }, [regionDrawMode, plannerRegion]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-cream">
       {/* Slim top toolbar — keeps Save / Undo / Redo / Import / Export /
@@ -1853,6 +1884,9 @@ export default function TripPlannerPage() {
                       km: totalDistanceKm,
                     })
                   : t("{km} km", { km: totalDistanceKm })}
+                {totalTimeMin !== null
+                  ? ` · ~${formatDuration(totalTimeMin)}`
+                  : null}
               </p>
             ) : null}
           </div>
@@ -2063,6 +2097,7 @@ export default function TripPlannerPage() {
               month={travelMonth}
               drawnRegion={plannerRegion}
               onDrawnRegionChange={setPlannerRegion}
+              onDrawModeChange={setRegionDrawMode}
               closuresData={closuresData}
               passesData={passesData}
               selectedDayNumber={selectedDay?.dayNumber ?? 1}
@@ -2460,16 +2495,60 @@ export default function TripPlannerPage() {
                   </>
                 ) : null}
 
-                <div className="mt-4 rounded-[11px] border border-line bg-cream px-3.5 py-3">
-                  <p className="text-[13px] font-extrabold text-ink">
-                    {t("Draw region · Fun Zones")}
-                  </p>
-                  <p className="mt-0.5 text-[11.5px] leading-snug text-fg-dim">
-                    {t(
-                      "Find dense clusters of great road with the Draw region button on the map — drafting keeps the route inside it. ",
-                    )}
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={regionChecked}
+                  onClick={handleToggleRegionDraw}
+                  className={`mt-4 flex w-full items-center gap-3 rounded-[11px] border px-3.5 py-3 text-left transition ${
+                    regionChecked
+                      ? "border-accent bg-cream"
+                      : "border-line bg-cream hover:border-line-strong"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border-2 transition ${
+                      regionChecked
+                        ? "border-accent bg-accent"
+                        : "border-line-strong bg-paper"
+                    }`}
+                  >
+                    {regionChecked ? (
+                      <Check
+                        size={13}
+                        strokeWidth={3.5}
+                        className="text-cream"
+                      />
+                    ) : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block text-[13px] font-extrabold ${
+                        regionChecked ? "text-accent" : "text-ink"
+                      }`}
+                    >
+                      {t("Draw region · Fun Zones")}
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-dim">
+                      {regionDrawing
+                        ? t("Drag a box on the map to scan it. ")
+                        : plannerRegion
+                          ? t(
+                              "Region set — drafting keeps the route inside it. ",
+                            )
+                          : t("Find dense clusters of great road. ")}
+                    </span>
+                  </span>
+                  <Star
+                    size={14}
+                    aria-hidden="true"
+                    fill="currentColor"
+                    className={`shrink-0 ${
+                      regionChecked ? "text-accent" : "text-fg-mute"
+                    }`}
+                  />
+                </button>
 
                 {totalDistanceKm !== null && splitStatus === "none" ? (
                   <div className="mt-4 flex items-center gap-2.5 rounded-[10px] border border-quality-q5/40 bg-quality-q5/15 px-3.5 py-2.5">
@@ -2481,7 +2560,14 @@ export default function TripPlannerPage() {
                     </span>
                     <p className="text-[12px] leading-snug text-fg-dim">
                       <b className="text-ink">
-                        {t("Route ready — {km} km.", { km: totalDistanceKm })}
+                        {totalTimeMin !== null
+                          ? t("Route ready — {km} km · ~{time}.", {
+                              km: totalDistanceKm,
+                              time: formatDuration(totalTimeMin),
+                            })
+                          : t("Route ready — {km} km.", {
+                              km: totalDistanceKm,
+                            })}
                       </b>{" "}
                       {t("Save it as-is, or add days below. ")}
                     </p>
