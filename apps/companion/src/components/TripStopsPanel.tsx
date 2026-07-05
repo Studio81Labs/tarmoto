@@ -7,6 +7,7 @@ import {
   POI_CATEGORY_META,
   poiCategoryMeta,
 } from "@/components/planner/MapToolbar";
+import { haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
 import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
@@ -15,6 +16,23 @@ import { useTripStore } from "@/stores/trip";
 const CORRIDOR_OPTIONS = [5, 10, 20] as const;
 /** Route-change re-queries are debounced; filter changes apply fast. */
 const ROUTE_REQUERY_DEBOUNCE_MS = 400;
+
+function lineLengthKm(line: GeoJSON.LineString): number {
+  let km = 0;
+  for (let i = 1; i < line.coordinates.length; i += 1) {
+    const [lng1, lat1] = line.coordinates[i - 1] ?? [];
+    const [lng2, lat2] = line.coordinates[i] ?? [];
+    if (
+      typeof lng1 === "number" &&
+      typeof lat1 === "number" &&
+      typeof lng2 === "number" &&
+      typeof lat2 === "number"
+    ) {
+      km += haversineKm(lat1, lng1, lat2, lng2);
+    }
+  }
+  return km;
+}
 
 interface TripStopsPanelProps {
   trip: Trip | null;
@@ -42,13 +60,24 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
   const [stops, setStops] = useState<RouteStop[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // ROUTE-WIDE line: concatenate every day's geometry in order, so a
-  // split multi-day trip still reads as one corridor (§B).
-  const routeLine = useMemo(() => {
-    const coordinates =
-      trip?.days.flatMap((day) => day.routeGeometry?.coordinates ?? []) ?? [];
-    if (coordinates.length < 2) return null;
-    return { type: "LineString", coordinates } as GeoJSON.LineString;
+  // ROUTE-WIDE corridor (§B), split into chains of LINKED days: an
+  // unlinked successor means the hop between day N's finish and day
+  // N+1's start is not ridden, so concatenating across it would measure
+  // the corridor along a road the rider never takes.
+  const routeLines = useMemo(() => {
+    const chains: GeoJSON.LineString[] = [];
+    let current: GeoJSON.Position[] = [];
+    const flush = () => {
+      if (current.length >= 2)
+        chains.push({ type: "LineString", coordinates: current });
+      current = [];
+    };
+    for (const day of trip?.days ?? []) {
+      if (!day.startLinked) flush();
+      current = current.concat(day.routeGeometry?.coordinates ?? []);
+    }
+    flush();
+    return chains;
   }, [trip]);
 
   const categories = useMemo(
@@ -57,7 +86,7 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
   );
 
   useEffect(() => {
-    if (!routeLine || categories.length === 0) {
+    if (routeLines.length === 0 || categories.length === 0) {
       setStops([]);
       return;
     }
@@ -66,14 +95,40 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
     setLoading(true);
     const timer = window.setTimeout(async () => {
       try {
-        const result = await plannerApi.getRouteStops(
-          routeLine,
-          categories,
-          corridorKm,
-          minStayRating,
-          { signal: controller.signal },
+        const perChain = await Promise.all(
+          routeLines.map((line) =>
+            plannerApi.getRouteStops(
+              line,
+              categories,
+              corridorKm,
+              minStayRating,
+              { signal: controller.signal },
+            ),
+          ),
         );
-        if (!cancelled) setStops(result);
+        // Re-offset each chain's km onto the trip-wide ridden distance
+        // (the unridden hop between chains contributes nothing), then
+        // dedupe a stop that sits in two chains' corridors — keep its
+        // nearest hit so the "off route" figure stays honest.
+        let offsetKm = 0;
+        const byId = new Map<string, RouteStop>();
+        perChain.forEach((chainStops, index) => {
+          for (const stop of chainStops) {
+            const placed = {
+              ...stop,
+              kmAlongRoute:
+                Math.round((stop.kmAlongRoute + offsetKm) * 10) / 10,
+            };
+            const seen = byId.get(stop.id);
+            if (!seen || placed.distanceFromRouteKm < seen.distanceFromRouteKm)
+              byId.set(stop.id, placed);
+          }
+          offsetKm += lineLengthKm(routeLines[index]!);
+        });
+        const merged = [...byId.values()].sort(
+          (a, b) => a.kmAlongRoute - b.kmAlongRoute,
+        );
+        if (!cancelled) setStops(merged);
       } catch (err) {
         if ((err as { name?: string }).name !== "AbortError") {
           console.warn("[planner] route stops fetch failed", err);
@@ -87,7 +142,7 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [routeLine, categories, corridorKm, minStayRating]);
+  }, [routeLines, categories, corridorKm, minStayRating]);
 
   const activeLabels = categories
     .map((category) => poiCategoryMeta(category).label.toLowerCase())
@@ -216,14 +271,14 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
               {t("ALONG YOUR ROUTE")}
             </span>
           </div>
-          {routeLine ? (
+          {routeLines.length > 0 ? (
             <span className="font-mono text-[10px] text-fg-mute">
               {t("{count} STOPS", { count: stops.length })}
             </span>
           ) : null}
         </div>
 
-        {!routeLine ? (
+        {routeLines.length === 0 ? (
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
               {t(

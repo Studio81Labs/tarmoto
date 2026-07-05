@@ -769,6 +769,9 @@ export default function TripPlannerPage() {
       setAvoidHighways(params.avoidHighways);
       setAvoidTolls(params.avoidTolls);
       setAvoidUnpaved(params.avoidUnpaved);
+      // Collaborator values, not rider edits — never write them back as
+      // the rider's saved defaults (§F).
+      prefsTouchedRef.current = false;
     },
     [currentUserId, serverTripId, setActiveTrip],
   );
@@ -871,6 +874,9 @@ export default function TripPlannerPage() {
           setAvoidHighways(params.avoidHighways);
           setAvoidTolls(params.avoidTolls);
           setAvoidUnpaved(params.avoidUnpaved);
+          // Persisted trip parameters, not rider edits — keep them out
+          // of the saved-defaults write-back (§F).
+          prefsTouchedRef.current = false;
         }
       } catch {
         // Non-fatal — modal / hook will surface concrete errors on
@@ -1503,6 +1509,10 @@ export default function TripPlannerPage() {
     setAvoidHighways(params.avoidHighways);
     setAvoidTolls(params.avoidTolls);
     setAvoidUnpaved(params.avoidUnpaved);
+    // The values above are the TRIP's parameters, not rider edits: drop
+    // any earlier touch so the saved-defaults write-back (§F) can't
+    // persist a loaded/remote trip's parameters as the rider's defaults.
+    prefsTouchedRef.current = false;
   }, [activeTrip]);
   // Hydrate the planner controls from `?days=…&road=…` etc. **after** mount
   // so that the SSR/static prerender and the client's first render both

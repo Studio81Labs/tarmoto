@@ -1003,6 +1003,47 @@ describe("TripPlannerPage", () => {
     expect(firstLegButton()).toHaveTextContent("CUSTOM");
   });
 
+  it("does not persist a loaded trip's parameters as saved defaults", async () => {
+    // A rider-made pref edit writes back as the new saved defaults (§F),
+    // but a later trip hydration applies the TRIP's parameters — those
+    // must never ride the still-set touched flag into a second save.
+    useAuthStore.setState({
+      user: { id: "u-1", email: "r@example.com", displayName: "R" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    const loadSpy = vi
+      .spyOn(plannerApi, "getUserRoutePrefs")
+      .mockResolvedValue(null);
+    const saveSpy = vi
+      .spyOn(plannerApi, "saveUserRoutePrefs")
+      .mockResolvedValue(undefined);
+
+    const { rerender } = render(<TripPlannerPage />);
+    await waitFor(() => expect(loadSpy).toHaveBeenCalled());
+
+    // Rider edit → debounced write-back fires once.
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+
+    // A different trip hydrates the controls programmatically…
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "another-trip",
+      parameters: { ...activeTrip.parameters, avoidUnpaved: true },
+    };
+    rerender(<TripPlannerPage />);
+
+    // …and the debounce window passes without a second save.
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 1100)));
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    loadSpy.mockRestore();
+    saveSpy.mockRestore();
+  });
+
   it("keeps §03 dormant while no waypoints are placed", () => {
     storeState.activeTrip = {
       ...activeTrip,
