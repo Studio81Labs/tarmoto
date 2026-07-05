@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, NumberField, Select } from "@tarmoto/ui";
 import {
   ROAD_PREFERENCE_LABELS,
@@ -80,6 +80,20 @@ export function RoundtripDialog({
     useState<RoundtripOptions["direction"]>(initialDirection);
   const [preference, setPreference] =
     useState<RoadPreference>(defaultPreference);
+
+  // The planner keys this dialog per open, but correctness must not
+  // depend on the call site remembering that: re-seed the local state on
+  // every open so a long-lived mount can never confirm stale options
+  // (e.g. a road preference changed while the dialog was closed).
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setDistanceKm(initialDistanceKm);
+      setDirection(initialDirection);
+      setPreference(defaultPreference);
+    }
+    wasOpenRef.current = open;
+  }, [open, initialDistanceKm, initialDirection, defaultPreference]);
 
   if (!open) return null;
 

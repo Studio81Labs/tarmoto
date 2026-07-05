@@ -46,6 +46,9 @@ test.describe("trip planner — split into days", () => {
     await expect(page.getByRole("button", { name: /Re-split/i })).toBeVisible();
 
     // A route edit marks the split stale.
+    // Route preferences collapsed to a summary row in revision 3 —
+    // expand it before reaching for the avoid checkboxes.
+    await page.getByRole("button", { name: "Route preferences" }).click();
     await page.getByLabel(/avoid highways/i).click({ force: true });
     await expect(page.getByText(/Route changed/).first()).toBeVisible();
 

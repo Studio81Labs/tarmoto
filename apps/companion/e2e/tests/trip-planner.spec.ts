@@ -5,19 +5,29 @@ test.describe("trip planner", () => {
   // was removed in Phase-1. The three tests that drove that UI have been
   // deleted. See the commit message for details.
 
-  test("restoring a planner region surfaces Fun Zones and top roads", async ({
+  test("restoring a planner region checks the Fun-Zone box and scans it", async ({
     authedPage: page,
   }) => {
+    // The in-map Fun-Zone list card was retired (rider feedback): zones
+    // render as a map layer and the BUILD column checkbox owns the
+    // region state. Restoring ?bbox= must check the box and fetch the
+    // zones for the region.
+    const zonesRequest = page.waitForRequest(
+      (r) => r.url().includes("/roads/fun-zones") && r.method() === "GET",
+      { timeout: 10_000 },
+    );
     await page.goto("/trips/planner?bbox=10.3,46.45,10.6,46.7");
     const canvas = page.locator(".maplibregl-canvas").first();
     await expect(canvas).toBeVisible({ timeout: 10_000 });
 
-    await expect(page.getByText("Mock Ridge Fun Zone")).toBeVisible({
-      timeout: 10_000,
+    await zonesRequest;
+    const funZoneToggle = page.getByRole("checkbox", {
+      name: /Draw region · Fun Zones/,
     });
-    await page.getByRole("button", { name: /Mock Ridge Fun Zone/i }).click();
-    await expect(page.getByText("Top roads")).toBeVisible();
-    await expect(page.getByText("Mock Ridge Road")).toBeVisible();
+    await expect(funZoneToggle).toHaveAttribute("aria-checked", "true");
+    await expect(
+      page.getByText(/Region set — drafting keeps the route inside it/),
+    ).toBeVisible();
   });
 
   // Manual-flow: seed a trip that already has day-1 route geometry and open
@@ -59,6 +69,9 @@ test.describe("trip planner", () => {
     // Save route is gated on a dirty draft (so a no-op save can't reroute a
     // loaded canonical/imported route). Toggle an avoid-routing option to mark
     // the draft edited — the planner wires this to markRouteDirty.
+    // Route preferences collapsed to a summary row in revision 3 —
+    // expand it before reaching for the avoid checkboxes.
+    await page.getByRole("button", { name: "Route preferences" }).click();
     await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Now "Save route" is enabled (dirty + existing geometry + ≥2 waypoints).
@@ -101,6 +114,9 @@ test.describe("trip planner", () => {
 
     // Dirty the draft (toggle an avoid option) so Save route enables — see the
     // manual-flow test above for why the dirty-gate exists.
+    // Route preferences collapsed to a summary row in revision 3 —
+    // expand it before reaching for the avoid checkboxes.
+    await page.getByRole("button", { name: "Route preferences" }).click();
     await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Save the route — this calls PUT /trips/:id/route on the existing trip.
@@ -209,6 +225,9 @@ test.describe("trip planner", () => {
     // to clear day 1 from stalePreviewDays — then switch to day 2 so live
     // routing fires + clears day 2. Only once stalePreviewDays is empty
     // does "Save route" enable.
+    // Route preferences collapsed to a summary row in revision 3 —
+    // expand it before reaching for the avoid checkboxes.
+    await page.getByRole("button", { name: "Route preferences" }).click();
     await page.getByLabel(/avoid highways/i).click({ force: true });
 
     // Give day-1 routing time to complete (300 ms debounce + mock latency).

@@ -2561,3 +2561,24 @@ describe("renameActiveTrip", () => {
     expect(useTripStore.getState().activeTrip).toBe(before);
   });
 });
+
+describe("applySplit save-gate", () => {
+  it("marks the draft dirty so a split on a clean loaded route is saveable", () => {
+    useTripStore.setState({ routeDirty: false, splitStatus: "none" });
+    useTripStore.getState().applySplit([
+      {
+        dayNumber: 1,
+        segmentIds: [],
+        distanceKm: 120,
+        timeMin: 150,
+        quality: { score: 4, bands: [] } as never,
+        startTown: "A",
+        endTown: "B",
+        suggestedStays: [],
+        endKm: 120,
+      },
+    ]);
+    expect(useTripStore.getState().splitStatus).toBe("split");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+});

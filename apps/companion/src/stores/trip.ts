@@ -815,6 +815,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         planningMode: "multiday",
         splitStatus: "split",
         pinnedBreakKms: pinnedBreakKms ?? state.pinnedBreakKms,
+        // A split is a save-worthy change on its own: without this a
+        // clean loaded route could be split but never saved (the save
+        // gate keys on routeDirty), so materializeSplit would never run.
+        routeDirty: true,
       })),
     clearSplit: () =>
       set({ splitStatus: "none", dayPlans: null, pinnedBreakKms: [] }),

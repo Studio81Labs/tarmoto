@@ -2293,6 +2293,7 @@ export default function TripPlannerPage() {
                 <button
                   type="button"
                   aria-expanded={prefsOpen}
+                  aria-label={t("Route preferences")}
                   onClick={() => setPrefsOpen((open) => !open)}
                   className={`flex w-full items-center gap-2.5 rounded-[11px] border px-3.5 py-3 text-left transition ${
                     prefsOpen
