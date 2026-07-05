@@ -84,6 +84,42 @@ export interface PlannerPoi {
 }
 
 /**
+ * Curated POI vocabulary for the map-top toolbar + STOPS filters
+ * (revision 4 §A). Deliberately a closed set — no generic POI browser.
+ */
+export type PoiCategory =
+  | "fuel"
+  | "food"
+  | "cafe"
+  | "viewpoint"
+  | "campground"
+  | "biker_hotel"
+  | "mountain_pass"
+  | "twisty_highlight";
+
+/** Provenance of a category POI — kept for the later real wiring. */
+export type PoiSource = "osm" | "passes" | "tarmoto";
+
+/**
+ * Mixed-source POI behind the single `getPoisByCategories` resolver
+ * (revision 4 §B): fuel/food/cafe/viewpoint/campground/biker_hotel come
+ * from OSM, mountain_pass from the seasonal-pass source, and
+ * twisty_highlight from Tarmoto's own curviness + quality layer.
+ */
+export interface Poi {
+  id: string;
+  category: PoiCategory;
+  source: PoiSource;
+  name: string;
+  lat: number;
+  lng: number;
+  distanceFromRouteKm?: number;
+  kmAlongRoute?: number;
+  /** Source-specific extras, e.g. pass status or twisty score. */
+  meta?: Record<string, unknown>;
+}
+
+/**
  * Did the rider opt into day-planning? A route is a complete product on
  * its own (revision 2 §A) — 'multiday' is entered only via the explicit
  * "Plan as multi-day trip" section, never implied.
@@ -161,6 +197,18 @@ export interface PlannerApi {
     types: PlannerPoiType[],
     init?: { signal?: AbortSignal },
   ): Promise<PlannerPoi[]>;
+
+  /**
+   * Mixed-source POIs for the map-top category bar (revision 4 §B) —
+   * one resolver so callers don't care that fuel/food/… are OSM,
+   * mountain_pass is the seasonal-pass source, and twisty_highlight is
+   * Tarmoto's curviness layer. MOCK — CZ/Beskydy fixtures.
+   */
+  getPoisByCategories(
+    bbox: [number, number, number, number],
+    categories: PoiCategory[],
+    init?: { signal?: AbortSignal },
+  ): Promise<Poi[]>;
 
   /** Typed waypoint search in the panel (MOCK — corridor-city fixtures). */
   geocode(query: string): Promise<GeoResult[]>;

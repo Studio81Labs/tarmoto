@@ -298,6 +298,10 @@ type TripStoreSnapshot = {
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   selectedPlannerSegmentId: string | null;
+  activePoiCategories: ReadonlySet<import("@/lib/planner/types").PoiCategory>;
+  togglePoiCategory: (
+    category: import("@/lib/planner/types").PoiCategory,
+  ) => void;
   selectPlannerSegment: (segmentId: string | null) => void;
   planningMode: "single" | "multiday";
   setPlanningMode: (mode: "single" | "multiday") => void;
@@ -484,6 +488,8 @@ describe("TripPlannerPage", () => {
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       selectedPlannerSegmentId: null,
+      activePoiCategories: new Set<import("@/lib/planner/types").PoiCategory>(),
+      togglePoiCategory: vi.fn(),
       selectPlannerSegment: vi.fn(),
       planningMode: "single" as const,
       setPlanningMode: vi.fn(),

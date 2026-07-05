@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BedDouble, Camera, Coffee, Fuel, UtensilsCrossed } from "lucide-react";
 import { Checkbox, Select } from "@tarmoto/ui";
 import { useTripStops } from "@/hooks/useTripStops";
@@ -10,14 +10,22 @@ import {
   type PoiKind,
 } from "@/lib/trip-stops";
 import type { Trip } from "@/lib/types";
+import type { PoiCategory } from "@/lib/planner/types";
 import { formatDistance } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTripStore } from "@/stores/trip";
-const DEFAULT_POI_KINDS: PoiKind[] = [
-  "fuel_station",
-  "restaurant",
-  "cafe",
-  "viewpoint",
+/**
+ * STOPS filters are a VIEW over the shared `activePoiCategories` store
+ * slice (revision 4 §A) — the map-top POI bar toggles the same set, so
+ * checking a box here lights the matching chip on the map and vice
+ * versa. Only the categories the along-route POI endpoint understands
+ * appear as checkboxes.
+ */
+const KIND_BY_CATEGORY: ReadonlyArray<[PoiCategory, PoiKind]> = [
+  ["fuel", "fuel_station"],
+  ["food", "restaurant"],
+  ["cafe", "cafe"],
+  ["viewpoint", "viewpoint"],
 ];
 const POI_LABELS: Record<PoiKind, string> = {
   fuel_station: "Fuel stations",
@@ -41,7 +49,6 @@ interface TripStopsPanelProps {
   trip: Trip | null;
 }
 export function TripStopsPanel({ trip }: TripStopsPanelProps) {
-  const [poiKinds, setPoiKinds] = useState<PoiKind[]>(DEFAULT_POI_KINDS);
   const [minAccommodationStars, setMinAccommodationStars] = useState<
     number | undefined
   >(undefined);
@@ -51,6 +58,15 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
   const addWaypoint = useTripStore((s) => s.addWaypoint);
   const insertWaypointBeforeEnd = useTripStore(
     (s) => s.insertWaypointBeforeEnd,
+  );
+  const activePoiCategories = useTripStore((s) => s.activePoiCategories);
+  const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
+  const poiKinds = useMemo(
+    () =>
+      KIND_BY_CATEGORY.filter(([category]) =>
+        activePoiCategories.has(category),
+      ).map(([, kind]) => kind),
+    [activePoiCategories],
   );
   const { days, loading, error } = useTripStops(trip, {
     poiKinds,
@@ -107,17 +123,11 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
         <div>
           <p className="mb-2 text-xs text-fg-mute">{t("POI types")}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            {DEFAULT_POI_KINDS.map((kind) => (
+            {KIND_BY_CATEGORY.map(([category, kind]) => (
               <Checkbox
                 key={kind}
-                checked={poiKinds.includes(kind)}
-                onChange={() =>
-                  setPoiKinds((current) =>
-                    current.includes(kind)
-                      ? current.filter((value) => value !== kind)
-                      : [...current, kind],
-                  )
-                }
+                checked={activePoiCategories.has(category)}
+                onChange={() => togglePoiCategory(category)}
                 label={POI_LABELS[kind]}
                 ariaLabel={POI_LABELS[kind]}
                 className="py-1"

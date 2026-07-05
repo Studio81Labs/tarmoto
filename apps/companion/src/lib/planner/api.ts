@@ -20,7 +20,12 @@ import {
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
-import { mockGeocode, mockReverseGeocode, mockRoadPreview } from "./mocks";
+import {
+  mockGeocode,
+  mockPoisByCategories,
+  mockReverseGeocode,
+  mockRoadPreview,
+} from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -384,6 +389,10 @@ export function createPlannerApi(): PlannerApi {
       init?: { signal?: AbortSignal },
     ): Promise<PlannerPoi[]> {
       return fetchPois(route, types, init);
+    },
+
+    getPoisByCategories(bbox, categories) {
+      return Promise.resolve(mockPoisByCategories(bbox, categories));
     },
 
     geocode(query: string) {

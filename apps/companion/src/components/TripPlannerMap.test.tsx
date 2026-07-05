@@ -44,6 +44,12 @@ const mockMap = {
   setFilter: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
+  getBounds: vi.fn(() => ({
+    getWest: () => 12.0,
+    getSouth: () => 48.5,
+    getEast: () => 19.0,
+    getNorth: () => 51.1,
+  })),
   unproject: vi.fn((point: [number, number]) => ({
     lng: point[0] / 100,
     lat: point[1] / 100,
@@ -490,6 +496,102 @@ describe("TripPlannerMap", () => {
     render(<TripPlannerMap trip={trip()} month={7} />);
 
     expect(eventHandlers.has("contextmenu")).toBe(false);
+  });
+
+  it("shows the map toolbar (search + POI chips) only on editable maps", () => {
+    const { unmount } = render(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Address search")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Twisty highlights/ }),
+    ).toBeInTheDocument();
+    unmount();
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+    expect(screen.queryByLabelText("Address search")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Twisty highlights/ }),
+    ).toBeNull();
+  });
+
+  it("POI chips are multi-select and drive the SHARED store slice", () => {
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Fuel/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Mountain passes/ }));
+
+    const active = useTripStore.getState().activePoiCategories;
+    expect(active.has("fuel")).toBe(true);
+    expect(active.has("mountain_pass")).toBe(true);
+    expect(screen.getByRole("button", { name: /^Fuel/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("fetches category POIs for the viewport, opens the pin popover and adds a via BEFORE any route exists", async () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    // Only start + finish, NO route geometry — the §E critical scenario.
+    const bareTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, routeGeometry: undefined, segments: [] }],
+    };
+    useTripStore.setState({
+      activeTrip: bareTrip,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    render(
+      <TripPlannerMap trip={bareTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+
+    // Debounced viewport fetch lands in the clustered source.
+    await waitFor(
+      () =>
+        expect(setData).toHaveBeenCalledWith(
+          expect.objectContaining({
+            features: expect.arrayContaining([
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  category: "viewpoint",
+                  poiId: "view-vysocina-1",
+                }),
+              }),
+            ]),
+          }),
+        ),
+      { timeout: 2000 },
+    );
+
+    // Pin click -> popover with name, provenance and Add as via.
+    act(() => {
+      layerHandlers.get("click:trip-planner-poi-pins")?.({
+        features: [{ properties: { poiId: "view-vysocina-1" } }],
+        originalEvent: { clientX: 320, clientY: 240 },
+      });
+    });
+    expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
+    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    expect(waypoints.map((w) => w.type)).toEqual(["start", "via", "end"]);
+    expect(waypoints[1]?.name).toBe("Devět skal vista");
   });
 
   it("drives region drawing through the handle — no in-map pills remain", () => {

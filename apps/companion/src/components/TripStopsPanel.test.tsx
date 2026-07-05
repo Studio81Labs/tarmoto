@@ -127,7 +127,24 @@ describe("TripStopsPanel", () => {
       isGenerating: false,
       focusedSegmentId: null,
       hoveredSegmentId: null,
+      // Shared map-bar/STOPS filter state (revision 4 §A) — these tests
+      // exercise the panel with all four along-route kinds active.
+      activePoiCategories: new Set(["fuel", "food", "cafe", "viewpoint"]),
     });
+  });
+
+  it("drives the SHARED activePoiCategories set — the map POI bar reads the same slice", () => {
+    render(<TripStopsPanel trip={useTripStore.getState().activeTrip} />);
+
+    fireEvent.click(screen.getByLabelText("Viewpoints"));
+    expect(useTripStore.getState().activePoiCategories.has("viewpoint")).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByLabelText("Viewpoints"));
+    expect(useTripStore.getState().activePoiCategories.has("viewpoint")).toBe(
+      true,
+    );
   });
 
   it("shows overnight stays and along-route stops and lets riders add them", async () => {

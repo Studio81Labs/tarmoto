@@ -6,7 +6,12 @@ import type { Position as GeoJSONPosition } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
-import type { DayPlan, PlanningMode, SplitStatus } from "@/lib/planner/types";
+import type {
+  DayPlan,
+  PlanningMode,
+  PoiCategory,
+  SplitStatus,
+} from "@/lib/planner/types";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
 import type {
   RoutePreviewSegment,
@@ -178,6 +183,13 @@ interface TripState {
   selectedPlannerSegmentId: string | null;
 
   /**
+   * Active POI categories (revision 4 §A) — ONE source of truth driving
+   * BOTH the map-top POI chip bar and the STOPS-tab filters. Multi-select;
+   * an empty set means no POI pins and no checked STOPS filters.
+   */
+  activePoiCategories: ReadonlySet<PoiCategory>;
+
+  /**
    * Did the rider opt into day-planning (revision 2 §A)? 'single' means
    * no day concept exists anywhere: no day column, no daily-km, no split.
    */
@@ -224,6 +236,8 @@ interface TripState {
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   selectPlannerSegment: (segmentId: string | null) => void;
+  /** Toggle a POI category in the shared map-bar/STOPS filter set. */
+  togglePoiCategory: (category: PoiCategory) => void;
 
   // Waypoint management
   addWaypoint: (dayIndex: number, waypoint: Waypoint) => void;
@@ -652,6 +666,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     focusedSegmentId: null,
     hoveredSegmentId: null,
     selectedPlannerSegmentId: null,
+    activePoiCategories: new Set<PoiCategory>(),
     planningMode: "single",
     splitStatus: "none",
     dayPlans: null,
@@ -722,6 +737,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
     selectPlannerSegment: (segmentId) =>
       set({ selectedPlannerSegmentId: segmentId }),
+
+    togglePoiCategory: (category) =>
+      set((state) => {
+        const next = new Set(state.activePoiCategories);
+        if (next.has(category)) next.delete(category);
+        else next.add(category);
+        return { activePoiCategories: next };
+      }),
 
     renameWaypoint: (waypointId, name) =>
       set((state) => {

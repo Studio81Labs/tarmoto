@@ -9,6 +9,8 @@
  *  - road preview payloads incl. street-level capture metadata (`mockRoadPreview`)
  *  - geocoding, forward + reverse (`mockGeocode` / `mockReverseGeocode` —
  *    real target: self-hosted Nominatim/Photon)
+ *  - map-toolbar category POIs, mixed-source (`mockPoisByCategories` —
+ *    real target: OSM + seasonal passes + Tarmoto curviness layer)
  *
  * Deliberately NOT mocked, despite the original brief assuming they would
  * be: route distance/time/score/surface-mix (real routing response), POIs
@@ -18,3 +20,4 @@
 export { mockJoinQuality } from "./segments";
 export { mockRoadPreview } from "./previews";
 export { mockGeocode, mockReverseGeocode } from "./geocode";
+export { mockPoisByCategories } from "./pois";

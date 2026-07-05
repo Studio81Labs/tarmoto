@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3 } from "lucide-react";
+import { Layers3, Plus } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -28,11 +28,13 @@ import {
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
+import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
 import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
 } from "@/lib/planner/quality-bands";
 import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
+import type { GeoResult, Poi, PoiCategory } from "@/lib/planner/types";
 import type { RouteSegment } from "@/lib/planner/types";
 import {
   createRegionDrawControl,
@@ -75,7 +77,7 @@ import {
   setFunZoneSelection,
   updateFunZoneLayerData,
 } from "@/components/map/FunZoneLayer";
-import type { Trip } from "@/lib/types";
+import type { Trip, Waypoint } from "@/lib/types";
 import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
 import { roundCoordinate } from "@/lib/utils";
@@ -120,6 +122,26 @@ const WAYPOINT_LABEL = "trip-planner-waypoint-label";
  * falls through to the placement menu — infuriating on a small target.
  */
 const PIN_HIT_PADDING_PX = 8;
+
+const POI_SOURCE = "trip-planner-pois";
+const POI_CLUSTER_LAYER = "trip-planner-poi-clusters";
+const POI_CLUSTER_COUNT_LAYER = "trip-planner-poi-cluster-count";
+const POI_PIN_LAYER = "trip-planner-poi-pins";
+/** Viewport/filter refetch debounce for the category POI layer (§C). */
+const POI_FETCH_DEBOUNCE_MS = 400;
+
+/**
+ * Waypoint stop-type per POI category for "Add as stop" (revision 4 §C)
+ * — only categories with a stop semantic map; the rest stay via-only.
+ */
+const STOP_TYPE_BY_CATEGORY: Partial<Record<PoiCategory, Waypoint["type"]>> = {
+  fuel: "fuel",
+  food: "rest",
+  cafe: "rest",
+  viewpoint: "photo",
+  campground: "accommodation",
+  biker_hotel: "accommodation",
+};
 
 function queryWaypointPinsAt(
   map: MapLibreMap,
@@ -456,6 +478,18 @@ const TripPlannerMapContent = forwardRef<
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
   // appending a duplicate waypoint at the same spot.
   const swallowNextClickRef = useRef(false);
+  // ── Category POI layer (revision 4 §C) ──
+  const activePoiCategories = useTripStore((s) => s.activePoiCategories);
+  const planningMode = useTripStore((s) => s.planningMode);
+  const [poiViewportToken, setPoiViewportToken] = useState(0);
+  const [poiMenu, setPoiMenu] = useState<{
+    poi: Poi;
+    x: number;
+    y: number;
+  } | null>(null);
+  const closePoiMenu = useCallback(() => setPoiMenu(null), []);
+  /** id → Poi for resolving pin clicks back to the fetched objects. */
+  const poisByIdRef = useRef(new Map<string, Poi>());
   // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
   // on every parent render (the planner page passes an inline arrow,
   // and live collab cursor/suggestion updates re-render mid-drag) does
@@ -538,6 +572,47 @@ const TripPlannerMapContent = forwardRef<
   } | null>(null);
   const closeWaypointMenu = useCallback(() => setWaypointMenu(null), []);
 
+  // Address search placement (revision 4 §D): mirror the map-click rules —
+  // no start yet -> start; start but no finish -> finish; both -> via
+  // before the finish. The geocode result already carries the name.
+  const handlePlaceGeoResult = useCallback(
+    (result: GeoResult) => {
+      const store = useTripStore.getState();
+      const action = !hasStart ? "set-start" : !hasEnd ? "set-end" : "add-via";
+      store.placeWaypoint(
+        { lat: result.lat, lng: result.lng },
+        action,
+        store.draftPlannerParameters ?? undefined,
+      );
+      // Name the placed pin from the picked result instead of waiting for
+      // reverse geocoding: find it by exact coords on the target day.
+      const next = useTripStore.getState();
+      const day =
+        next.activeTrip?.days[next.selectedDayIndex] ??
+        next.activeTrip?.days[0];
+      const placed = day?.waypoints.find(
+        (w) => w.location.lat === result.lat && w.location.lng === result.lng,
+      );
+      if (placed) next.renameWaypoint(placed.id, result.name);
+    },
+    [hasStart, hasEnd],
+  );
+  // POI pin -> waypoint (revision 4 §E): a plain ordered-list insert, so it
+  // works with only start+finish placed (no computed route required) and
+  // the result is a normal draggable/removable waypoint.
+  const handleAddPoiWaypoint = useCallback(
+    (poi: Poi, type: Waypoint["type"]) => {
+      const store = useTripStore.getState();
+      store.insertWaypointBeforeEnd(store.selectedDayIndex, {
+        id: `poi-${poi.id}-${Date.now()}`,
+        name: poi.name,
+        location: { lat: poi.lat, lng: poi.lng },
+        type,
+      });
+      setPoiMenu(null);
+    },
+    [],
+  );
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {
       if (!contextMenu) return;
@@ -670,7 +745,8 @@ const TripPlannerMapContent = forwardRef<
     }
     closeContextMenu();
     closeWaypointMenu();
-  }, [closeContextMenu, closeWaypointMenu]);
+    closePoiMenu();
+  }, [closeContextMenu, closeWaypointMenu, closePoiMenu]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -705,6 +781,51 @@ const TripPlannerMapContent = forwardRef<
         | undefined;
       if (!segmentId) return;
       useTripStore.getState().selectPlannerSegment(segmentId);
+    });
+    ensurePoiLayers(map);
+    map.on("mouseenter", POI_PIN_LAYER, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", POI_PIN_LAYER, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "";
+    });
+    map.on("click", POI_PIN_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const props = event.features?.[0]?.properties as
+        | { poiId?: string }
+        | undefined;
+      const poi = props?.poiId ? poisByIdRef.current.get(props.poiId) : null;
+      if (!poi) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu({
+        poi,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    // Cluster click zooms toward the cluster's expansion level.
+    map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const feature = event.features?.[0];
+      const clusterId = feature?.properties?.cluster_id as number | undefined;
+      const source = map.getSource(POI_SOURCE) as
+        | (GeoJSONSource & {
+            getClusterExpansionZoom?: (id: number) => Promise<number>;
+          })
+        | undefined;
+      if (clusterId === undefined || !source?.getClusterExpansionZoom) return;
+      swallowNextClickRef.current = true;
+      void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+        map.easeTo({
+          center: event.lngLat,
+          zoom,
+          duration: 600,
+        });
+      });
     });
     drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
@@ -944,6 +1065,73 @@ const TripPlannerMapContent = forwardRef<
     if (!map || !ready) return;
     setFunZoneSelection(map, selectedFunZoneId);
   }, [ready, selectedFunZoneId]);
+  // ── Category POIs (revision 4 §C): refetch on viewport + filter change ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const onMoveEnd = () => setPoiViewportToken((token) => token + 1);
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [ready, editable]);
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const categories = [...activePoiCategories];
+    const applyPois = (pois: Poi[]) => {
+      poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
+      const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
+      source?.setData({
+        type: "FeatureCollection",
+        features: pois.map((poi) => ({
+          type: "Feature" as const,
+          geometry: {
+            type: "Point" as const,
+            coordinates: [poi.lng, poi.lat],
+          },
+          properties: {
+            poiId: poi.id,
+            category: poi.category,
+            name: poi.name,
+            source: poi.source,
+          },
+        })),
+      });
+    };
+    if (categories.length === 0) {
+      applyPois([]);
+      setPoiMenu(null);
+      return;
+    }
+    // jsdom's map mock has no getBounds — the layer simply stays empty.
+    if (typeof map.getBounds !== "function") return;
+    const controller = new AbortController();
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const bounds = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+        ];
+        const pois = await plannerApi.getPoisByCategories(bbox, categories, {
+          signal: controller.signal,
+        });
+        if (!cancelled) applyPois(pois);
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return;
+        console.warn("[planner] category poi fetch failed", err);
+      }
+    }, POI_FETCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activePoiCategories, poiViewportToken, ready, editable]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -1488,7 +1676,15 @@ const TripPlannerMapContent = forwardRef<
       // viewer's scheme, matching the design.
       forceColorScheme="light"
     >
-      <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
+      {/* "What am I searching / placing" cluster (revision 4 §F): address
+          search + POI chips own the top edge; the basemap/line-color/draw
+          cluster steps down one row to keep the two groups readable. */}
+      {editable ? <MapToolbar onPlace={handlePlaceGeoResult} /> : null}
+      <div
+        className={`absolute left-3 z-20 flex flex-col gap-2 ${
+          editable ? "top-[60px]" : "top-3"
+        }`}
+      >
         {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
         <div
           role="group"
@@ -1597,6 +1793,54 @@ const TripPlannerMapContent = forwardRef<
         />
       ) : null}
       {/* ── Context menu overlay (Task 10) ── */}
+      {poiMenu
+        ? (() => {
+            const meta = poiCategoryMeta(poiMenu.poi.category);
+            const MetaIcon = meta.icon;
+            const stopType = STOP_TYPE_BY_CATEGORY[poiMenu.poi.category];
+            const showAddAsStop =
+              stopType !== undefined && planningMode === "multiday";
+            return (
+              <div
+                role="dialog"
+                aria-label={t("POI details")}
+                className="fixed z-30 w-64 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+                style={{ left: poiMenu.x, top: poiMenu.y }}
+              >
+                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
+                    <MetaIcon size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-bold text-ink">
+                      {poiMenu.poi.name}
+                    </p>
+                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                      {`${meta.label} · ${poiMenu.poi.source}`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddPoiWaypoint(poiMenu.poi, "via")}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+                >
+                  <Plus size={14} strokeWidth={3} />
+                  {t("Add as via")}
+                </button>
+                {showAddAsStop ? (
+                  <button
+                    type="button"
+                    onClick={() => handleAddPoiWaypoint(poiMenu.poi, stopType)}
+                    className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
+                  >
+                    {t("Add as stop")}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()
+        : null}
       {waypointMenu ? (
         <div
           role="dialog"
@@ -1744,6 +1988,76 @@ function installWaypointPinImages(map: MapLibreMap): void {
     ctx.fill();
     const image = ctx.getImageData(0, 0, width, height);
     map.addImage(imageId, image, { pixelRatio: 2 });
+  }
+}
+
+/**
+ * Clustered category-POI layer (revision 4 §C). Slotted under the
+ * waypoint pins so route points always stay on top of browse pins.
+ */
+function ensurePoiLayers(map: MapLibreMap): void {
+  if (!map.getSource(POI_SOURCE)) {
+    map.addSource(POI_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+      cluster: true,
+      clusterMaxZoom: 10,
+      clusterRadius: 46,
+    });
+  }
+  const beforeId = map.getLayer(WAYPOINT_PIN) ? WAYPOINT_PIN : undefined;
+  if (!map.getLayer(POI_CLUSTER_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_CLUSTER_LAYER,
+        type: "circle",
+        source: POI_SOURCE,
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": "#FF6A1A",
+          "circle-opacity": 0.9,
+          "circle-radius": ["step", ["get", "point_count"], 13, 5, 16, 15, 20],
+          "circle-stroke-color": "#F5EFE6",
+          "circle-stroke-width": 2,
+        },
+      },
+      beforeId,
+    );
+  }
+  if (!map.getLayer(POI_CLUSTER_COUNT_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_CLUSTER_COUNT_LAYER,
+        type: "symbol",
+        source: POI_SOURCE,
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-size": 11,
+          // Single hosted face — see the waypoint-label note.
+          "text-font": ["Noto Sans Regular"],
+        },
+        paint: { "text-color": "#F5EFE6" },
+      },
+      beforeId,
+    );
+  }
+  if (!map.getLayer(POI_PIN_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_PIN_LAYER,
+        type: "circle",
+        source: POI_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": "#FF6A1A",
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5, 12, 8],
+          "circle-stroke-color": "#F5EFE6",
+          "circle-stroke-width": 2,
+        },
+      },
+      beforeId,
+    );
   }
 }
 
