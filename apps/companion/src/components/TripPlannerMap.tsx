@@ -105,6 +105,27 @@ const ROUTE_LINE = "trip-planner-route-line";
 const ROUTE_HIT_LINE = "trip-planner-route-hit";
 const WAYPOINT_PIN = "trip-planner-waypoint-pin";
 const WAYPOINT_LABEL = "trip-planner-waypoint-label";
+
+/**
+ * Right-click tolerance around a waypoint pin, in screen px. Symbol-layer
+ * events only fire on rendered icon pixels, so without padding a near-miss
+ * falls through to the placement menu — infuriating on a small target.
+ */
+const PIN_HIT_PADDING_PX = 8;
+
+function queryWaypointPinsAt(
+  map: MapLibreMap,
+  point: { x: number; y: number },
+) {
+  if (!map.getLayer(WAYPOINT_PIN)) return [];
+  return map.queryRenderedFeatures(
+    [
+      [point.x - PIN_HIT_PADDING_PX, point.y - PIN_HIT_PADDING_PX],
+      [point.x + PIN_HIT_PADDING_PX, point.y + PIN_HIT_PADDING_PX],
+    ],
+    { layers: [WAYPOINT_PIN] },
+  );
+}
 const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
 const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
 const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
@@ -905,15 +926,19 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !editable) return;
-    const onPinContextMenu = (event: MapLayerMouseEvent) => {
+    const onPinContextMenu = (event: MapMouseEvent) => {
+      // Map-level handler with a padded hit test (not a layer-bound event):
+      // the pin icon is a small target and a right-click a few px off must
+      // still open the pin menu, not the placement menu.
+      const feature = queryWaypointPinsAt(map, event.point)[0];
+      if (!feature) return;
       event.preventDefault();
-      const feature = event.features?.[0];
-      const props = feature?.properties as
+      const props = feature.properties as
         | { waypointId?: string; label?: string; waypointType?: string }
         | undefined;
       if (!props?.waypointId) return;
       const [lng, lat] =
-        feature?.geometry.type === "Point"
+        feature.geometry.type === "Point"
           ? (feature.geometry.coordinates as [number, number])
           : [event.lngLat.lng, event.lngLat.lat];
       const waypointId = props.waypointId;
@@ -945,9 +970,9 @@ const TripPlannerMapContent = forwardRef<
           // Address is informational — coordinates already show.
         });
     };
-    map.on("contextmenu", WAYPOINT_PIN, onPinContextMenu);
+    map.on("contextmenu", onPinContextMenu);
     return () => {
-      map.off("contextmenu", WAYPOINT_PIN, onPinContextMenu);
+      map.off("contextmenu", onPinContextMenu);
     };
   }, [ready, editable]);
   // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
@@ -960,13 +985,10 @@ const TripPlannerMapContent = forwardRef<
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
       event.preventDefault();
-      // A right-click ON a waypoint pin belongs to the pin's own menu
-      // (info + remove) — never the placement menu.
-      if (
-        map.getLayer(WAYPOINT_PIN) &&
-        map.queryRenderedFeatures(event.point, { layers: [WAYPOINT_PIN] })
-          .length > 0
-      ) {
+      // A right-click ON (or near — same padded hit test as the pin menu)
+      // a waypoint pin belongs to the pin's own menu, never the placement
+      // menu.
+      if (queryWaypointPinsAt(map, event.point).length > 0) {
         return;
       }
       // Rider feedback: waypoints MUST be placeable inside a drawn region
@@ -1862,8 +1884,9 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           `${WAYPOINT_PIN_IMAGE_PREFIX}end`,
           `${WAYPOINT_PIN_IMAGE_PREFIX}via`,
         ],
-        // Drawn at 2× for crisp rendering; the tip sits on the location.
-        "icon-size": 0.5,
+        // The image is authored at 2× (pixelRatio 2 → 30×40 logical px);
+        // full size reads clearly and gives right-clicks a real target.
+        "icon-size": 1,
         "icon-anchor": "bottom",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
