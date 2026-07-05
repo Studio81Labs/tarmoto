@@ -316,6 +316,7 @@ type TripStoreSnapshot = {
   setPinnedBreaks: (kms: number[]) => void;
   materializeSplit: () => void;
   renameWaypoint: (waypointId: string, name: string) => void;
+  renameActiveTrip: (name: string) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
   appendPlannerWaypoint: (
     dayIndex: number,
@@ -501,6 +502,7 @@ describe("TripPlannerPage", () => {
       setPinnedBreaks: vi.fn(),
       materializeSplit: vi.fn(),
       renameWaypoint: vi.fn(),
+      renameActiveTrip: vi.fn(),
       addWaypoint: vi.fn(),
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
@@ -975,6 +977,34 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByText("Find dense clusters of great road."),
     ).toBeInTheDocument();
+  });
+
+  it("derives the header name from the endpoints and renames via the dialog", () => {
+    // Placeholder name + Bormio -> Prato endpoints = derived title.
+    storeState.activeTrip = { ...activeTrip, name: "New Trip" };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Bormio → Prato allo Stelvio/ }),
+    );
+    const input = screen.getByLabelText("Trip name") as HTMLInputElement;
+    expect(input.value).toBe("Bormio → Prato allo Stelvio");
+
+    fireEvent.change(input, { target: { value: "Stelvio raid" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    expect(storeState.renameActiveTrip).toHaveBeenCalledWith("Stelvio raid");
+    expect(screen.queryByLabelText("Trip name")).toBeNull();
+  });
+
+  it("keeps a rider-set name untouched in the header", () => {
+    storeState.activeTrip = { ...activeTrip, name: "Passo weekend" };
+    render(<TripPlannerPage />);
+    expect(
+      screen.getByRole("button", { name: /Passo weekend/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Bormio → Prato/)).toBeNull();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {

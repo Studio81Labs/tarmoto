@@ -265,6 +265,11 @@ interface TripState {
    * undo entry, no split invalidation.
    */
   renameWaypoint: (waypointId: string, name: string) => void;
+  /**
+   * Rename the working trip (planner header dialog). Undo-able and
+   * marks the draft dirty so the new name reaches the next save.
+   */
+  renameActiveTrip: (name: string) => void;
   moveWaypoint: (
     dayIndex: number,
     waypointId: string,
@@ -750,6 +755,24 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         if (next.has(category)) next.delete(category);
         else next.add(category);
         return { activePoiCategories: next };
+      }),
+
+    renameActiveTrip: (name) =>
+      set((state) => {
+        const trimmed = name.trim();
+        if (!trimmed || !state.activeTrip || state.activeTrip.name === trimmed)
+          return state;
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                name: trimmed,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
+        if (committed === state) return state;
+        return { ...committed, routeDirty: true };
       }),
 
     renameWaypoint: (waypointId, name) =>

@@ -35,6 +35,7 @@ import {
   Loader2,
   Plus,
   Star,
+  Pencil,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -988,6 +989,20 @@ export default function TripPlannerPage() {
   const [pendingConfirm, setPendingConfirm] = useState<
     "reset" | "discard" | null
   >(null);
+  // Trip rename dialog (rider feedback) — the header title opens it.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const renameActiveTrip = useTripStore((s) => s.renameActiveTrip);
+  const openRenameDialog = useCallback(() => {
+    const trip = activeTripRef.current;
+    if (!trip) return;
+    setNameDraft(tripDisplayName(trip) ?? "");
+    setRenameOpen(true);
+  }, []);
+  const confirmRename = useCallback(() => {
+    if (nameDraft.trim()) renameActiveTrip(nameDraft);
+    setRenameOpen(false);
+  }, [nameDraft, renameActiveTrip]);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
   // the canvas is blank again. Pref controls keep their values.
@@ -1915,9 +1930,24 @@ export default function TripPlannerPage() {
           </Link>
           <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
           <div className="min-w-0">
-            <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink">
-              {displayedTrip?.name ?? t("New Trip")}
-            </h1>
+            <button
+              type="button"
+              onClick={openRenameDialog}
+              disabled={!displayedTrip}
+              title={displayedTrip ? t("Rename trip") : undefined}
+              className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
+            >
+              <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
+                {tripDisplayName(displayedTrip) ?? t("New Trip")}
+              </h1>
+              {displayedTrip ? (
+                <Pencil
+                  size={11}
+                  aria-hidden
+                  className="shrink-0 text-fg-faint transition group-hover:text-accent"
+                />
+              ) : null}
+            </button>
             {totalDistanceKm !== null ? (
               <p className="truncate font-mono text-[10px] tracking-[0.3px] text-fg-mute">
                 {daysVisible && dayPlans
@@ -2861,6 +2891,26 @@ export default function TripPlannerPage() {
       />
 
       <ConfirmDialog
+        open={renameOpen}
+        title={t("Name this trip")}
+        message={t("Shown in your trips list and on exports. ")}
+        confirmLabel={t("Save name")}
+        onCancel={() => setRenameOpen(false)}
+        onConfirm={confirmRename}
+      >
+        <input
+          type="text"
+          value={nameDraft}
+          autoFocus
+          aria-label={t("Trip name")}
+          onChange={(event) => setNameDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") confirmRename();
+          }}
+          className="w-full rounded-[10px] border border-line-strong bg-paper px-3 py-2 text-[13px] font-semibold text-ink outline-none focus:border-accent"
+        />
+      </ConfirmDialog>
+      <ConfirmDialog
         open={pendingConfirm !== null}
         title={
           pendingConfirm === "discard"
@@ -2889,6 +2939,42 @@ export default function TripPlannerPage() {
     </div>
   );
 }
+/** The placeholder name a fresh planner draft carries until renamed. */
+function isDefaultTripName(name: string | undefined): boolean {
+  return !name || name === "New Trip";
+}
+
+/**
+ * Derive a name from the route's endpoints when the rider never set one
+ * — "Praha → Brno", or "Praha loop" for roundtrips. Reverse-geocoded
+ * "near X" prefixes are stripped for the title.
+ */
+function deriveDefaultTripName(trip: Trip | null): string | null {
+  const day = trip?.days[0];
+  if (!day) return null;
+  const start = day.waypoints.find((w) => w.type === "start");
+  const finish = dayFinishWaypoint(day.waypoints) ?? null;
+  const clean = (name: string | undefined) =>
+    name?.replace(/^near /i, "").trim() ?? "";
+  const startName = clean(start?.name);
+  if (!startName) return null;
+  const loop =
+    !finish || (start !== finish && sameSpot(start!.location, finish.location));
+  if (loop) return `${startName} loop`;
+  const finishName = clean(finish?.name);
+  return finishName ? `${startName} → ${finishName}` : null;
+}
+
+/**
+ * The trip name we show AND save: the rider's own name, or the derived
+ * endpoints name while the placeholder is still in place.
+ */
+function tripDisplayName(trip: Trip | null): string | null {
+  if (!trip) return null;
+  if (!isDefaultTripName(trip.name)) return trip.name;
+  return deriveDefaultTripName(trip) ?? trip.name;
+}
+
 function clampNumberInput(
   rawValue: string,
   min: number,
@@ -2920,7 +3006,7 @@ function findCallerRole(
 function buildTripMetadataPayload(trip: Trip, params: TripParameters) {
   const dailyKmTarget = normalizeBackendDailyKm(params.dailyKmTarget);
   return {
-    title: trip.name,
+    title: tripDisplayName(trip) ?? trip.name,
     num_days: params.days,
     min_quality: params.minQuality,
     road_preference: toBackendRoadPreference(params.roadPreference),
@@ -3255,7 +3341,7 @@ function buildImportedRoutePayload(trip: Trip) {
   const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
   if (coordinates.length < 2) return null;
   return {
-    title: trip.name,
+    title: tripDisplayName(trip) ?? trip.name,
     source_format: trip.importSourceFormat ?? "gpx",
     geometry: coordinates.flatMap(([lng, lat]) =>
       lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],

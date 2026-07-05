@@ -2533,3 +2533,31 @@ describe("placeWaypoint POI metadata (revision 4)", () => {
     expect(start?.location).toEqual({ lng: 14.4, lat: 50.0 });
   });
 });
+
+describe("renameActiveTrip", () => {
+  it("renames the working trip, marks it dirty and supports undo", () => {
+    useTripStore.setState({
+      activeTrip: null,
+      routeDirty: false,
+      undoStack: [],
+      redoStack: [],
+      selectedDayIndex: 0,
+    });
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.0, lng: 15.0 }, "set-start");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().renameActiveTrip("  Vysočina dash  ");
+    expect(useTripStore.getState().activeTrip?.name).toBe("Vysočina dash");
+    expect(useTripStore.getState().routeDirty).toBe(true);
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");
+  });
+
+  it("ignores empty and unchanged names", () => {
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().renameActiveTrip("   ");
+    expect(useTripStore.getState().activeTrip).toBe(before);
+  });
+});
