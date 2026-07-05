@@ -2529,7 +2529,7 @@ export default function TripPlannerPage() {
                       {t("Plan as multi-day trip")}
                     </span>
                     <span className="mt-0.5 block text-[11.5px] text-fg-dim">
-                      {t("Optional — add daily stages, stays & viewpoints")}
+                      {t("Add daily stages, stays & viewpoints")}
                     </span>
                   </span>
                   <ChevronDown
