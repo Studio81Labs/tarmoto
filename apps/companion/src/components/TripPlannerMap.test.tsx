@@ -44,6 +44,7 @@ const mockMap = {
   setFilter: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
+  flyTo: vi.fn(),
   getBounds: vi.fn(() => ({
     getWest: () => 12.0,
     getSouth: () => 48.5,
@@ -625,6 +626,36 @@ describe("TripPlannerMap", () => {
       },
       { timeout: 2000 },
     );
+  });
+
+  it("address search flies to the pick and opens the placement menu instead of placing", async () => {
+    useTripStore.setState({ activeTrip: trip(), selectedDayIndex: 0 });
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Address search"), {
+      target: { value: "Jihlava" },
+    });
+    const option = await screen.findByRole(
+      "option",
+      { name: /Jihlava/ },
+      { timeout: 2000 },
+    );
+    fireEvent.click(option);
+
+    // Nothing placed — the rider decides the role in the menu.
+    expect(useTripStore.getState().activeTrip?.days[0]?.waypoints).toEqual(
+      trip().days[0]!.waypoints,
+    );
+    expect(mockMap.flyTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [15.5912, 49.3961],
+        duration: 1200,
+      }),
+    );
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByText("Set start here")).toBeInTheDocument();
+    expect(screen.getByText("Add via here")).toBeInTheDocument();
+    expect(screen.getByText("Set end here")).toBeInTheDocument();
   });
 
   it("opens the point dialog on LEFT click of a plain waypoint", () => {

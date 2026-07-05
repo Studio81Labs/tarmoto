@@ -614,31 +614,42 @@ const TripPlannerMapContent = forwardRef<
   } | null>(null);
   const closeWaypointMenu = useCallback(() => setWaypointMenu(null), []);
 
-  // Address search placement (revision 4 §D): mirror the map-click rules —
-  // no start yet -> start; start but no finish -> finish; both -> via
-  // before the finish. The geocode result already carries the name.
-  const handlePlaceGeoResult = useCallback(
-    (result: GeoResult) => {
-      const store = useTripStore.getState();
-      const action = !hasStart ? "set-start" : !hasEnd ? "set-end" : "add-via";
-      store.placeWaypoint(
-        { lat: result.lat, lng: result.lng },
-        action,
-        store.draftPlannerParameters ?? undefined,
-      );
-      // Name the placed pin from the picked result instead of waiting for
-      // reverse geocoding: find it by exact coords on the target day.
-      const next = useTripStore.getState();
-      const day =
-        next.activeTrip?.days[next.selectedDayIndex] ??
-        next.activeTrip?.days[0];
-      const placed = day?.waypoints.find(
-        (w) => w.location.lat === result.lat && w.location.lng === result.lng,
-      );
-      if (placed) next.renameWaypoint(placed.id, result.name);
-    },
-    [hasStart, hasEnd],
-  );
+  // Address search (revision 4 §D, revised by rider feedback): picking a
+  // result never places anything — it flies the map to the address and
+  // opens the SAME placement menu as a right-click there, so the rider
+  // chooses start / via / finish deliberately. The menu is anchored to
+  // the coordinate and keeps tracking it through the flight.
+  const handleSearchResult = useCallback((result: GeoResult) => {
+    const map = handleRef.current?.map;
+    if (!map) return;
+    setPoiMenu(null);
+    setWaypointMenu(null);
+    const coords = { lng: result.lng, lat: result.lat };
+    const rect = map.getCanvas()?.getBoundingClientRect?.();
+    const projected =
+      typeof map.project === "function"
+        ? map.project([coords.lng, coords.lat])
+        : null;
+    setContextMenu({
+      x:
+        rect && projected
+          ? rect.left + projected.x + 10
+          : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+      y:
+        rect && projected
+          ? rect.top + projected.y + 10
+          : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+      coords,
+    });
+    if (typeof map.flyTo === "function") {
+      map.flyTo({
+        center: [coords.lng, coords.lat],
+        zoom: Math.max(map.getZoom?.() ?? 0, 11),
+        duration: 1200,
+        essential: true,
+      });
+    }
+  }, []);
   // POI pin -> start/finish: the placement rule engine handles the role
   // juggling; the meta names the point and carries the glyph category.
   const handlePlacePoiEndpoint = useCallback(
@@ -1859,7 +1870,7 @@ const TripPlannerMapContent = forwardRef<
       {/* "What am I searching / placing" cluster (revision 4 §F): address
           search + POI chips own the top edge; the basemap/line-color/draw
           cluster steps down one row to keep the two groups readable. */}
-      {editable ? <MapToolbar onPlace={handlePlaceGeoResult} /> : null}
+      {editable ? <MapToolbar onPlace={handleSearchResult} /> : null}
       <div
         className={`absolute left-3 z-20 flex flex-col gap-2 ${
           editable ? "top-[60px]" : "top-3"

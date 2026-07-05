@@ -48,7 +48,10 @@ export function poiCategoryMeta(category: PoiCategory) {
 }
 
 interface MapToolbarProps {
-  /** Places a picked geocode result per the current waypoint state (§D). */
+  /**
+   * Called with a picked geocode result — the map flies there and opens
+   * the placement menu (start / via / finish); nothing is placed yet.
+   */
   onPlace: (result: GeoResult) => void;
 }
 
