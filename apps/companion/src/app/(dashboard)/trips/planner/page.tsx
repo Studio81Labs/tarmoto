@@ -936,7 +936,7 @@ export default function TripPlannerPage() {
   // system dialogs are disallowed (they block the tab and ignore the
   // design system).
   const [pendingConfirm, setPendingConfirm] = useState<
-    "reset" | "discard" | "redraft" | null
+    "reset" | "discard" | null
   >(null);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
@@ -2406,8 +2406,8 @@ export default function TripPlannerPage() {
                   section is conditional on waypoint state (rider
                   feedback): the route is LIVE once start + finish exist,
                   so drafting only has a real job while the trip is a
-                  roundtrip — with both points set the action demotes to
-                  a quiet, confirmed "propose a different route". */}
+                  roundtrip — with both points set the whole section
+                  disappears and the "Route ready" chip speaks instead. */}
               <div>
                 {/* sr-only semantic input keeps `getByLabelText("Number of
                     days")` resolvable for the existing tests; drafting
@@ -2428,10 +2428,10 @@ export default function TripPlannerPage() {
                   className="sr-only"
                 />
 
-                {spineStart ? (
+                {isRoundtripMode ? (
                   <>
                     <SectionStamp n="03">{t("Draft route ")}</SectionStamp>
-                    {isRoundtripMode && !isLoopRoute ? (
+                    {!isLoopRoute ? (
                       <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
                         {t(
                           "No finish set — Tarmoto will loop you back to your start. ",
@@ -2439,23 +2439,18 @@ export default function TripPlannerPage() {
                       </p>
                     ) : null}
                     <Button
-                      variant={isRoundtripMode ? "secondary" : "ghost"}
-                      size={isRoundtripMode ? "md" : "sm"}
+                      variant="secondary"
+                      size="md"
                       block
                       loading={isGenerating}
                       disabled={isGenerating}
-                      onClick={() => {
-                        if (isRoundtripMode) void handleGenerate();
-                        else setPendingConfirm("redraft");
-                      }}
+                      onClick={() => void handleGenerate()}
                     >
                       {isGenerating
                         ? t("Drafting…")
                         : isLoopRoute
                           ? t("Recalculate roundtrip")
-                          : isRoundtripMode
-                            ? t("Draft roundtrip")
-                            : t("Propose a different route")}
+                          : t("Draft roundtrip")}
                     </Button>
                     {draftNote ? (
                       <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
@@ -2719,28 +2714,18 @@ export default function TripPlannerPage() {
         title={
           pendingConfirm === "discard"
             ? t("Discard this route?")
-            : pendingConfirm === "redraft"
-              ? t("Propose a different route?")
-              : t("Start over?")
+            : t("Start over?")
         }
         message={
           pendingConfirm === "discard"
             ? t(
                 "The route is removed and a saved trip is deleted for good. This cannot be undone. ",
               )
-            : pendingConfirm === "redraft"
-              ? t(
-                  "Tarmoto redraws the line between your start and finish — current via points are replaced, fuel and overnight stops are kept. ",
-                )
-              : t("This clears the current route from the planner. ")
+            : t("This clears the current route from the planner. ")
         }
         tone={pendingConfirm === "discard" ? "danger" : "default"}
         confirmLabel={
-          pendingConfirm === "discard"
-            ? t("Discard route")
-            : pendingConfirm === "redraft"
-              ? t("Propose route")
-              : t("Reset planner")
+          pendingConfirm === "discard" ? t("Discard route") : t("Reset planner")
         }
         onCancel={() => setPendingConfirm(null)}
         onConfirm={() => {
@@ -2748,7 +2733,6 @@ export default function TripPlannerPage() {
           setPendingConfirm(null);
           if (action === "reset") performReset();
           else if (action === "discard") void performDiscard();
-          else if (action === "redraft") void handleGenerate();
         }}
       />
     </div>

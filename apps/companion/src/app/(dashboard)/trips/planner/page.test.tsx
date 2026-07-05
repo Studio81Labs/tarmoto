@@ -905,33 +905,22 @@ describe("TripPlannerPage", () => {
     expect(screen.queryByText(/No finish set/)).not.toBeInTheDocument();
   });
 
-  it("demotes the draft action to a confirmed re-propose once start + finish exist", () => {
+  it("hides the draft section entirely once start + finish exist", () => {
     // Distinct start (Bormio) and finish (Prato) — the route is already
-    // LIVE, so there is nothing to "draft".
+    // LIVE, so there is nothing to "draft" and §03 disappears; the
+    // "Route ready" chip communicates the state instead.
     storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
 
     expect(
-      screen.queryByRole("button", { name: "Draft route" }),
+      screen.queryByRole("button", { name: /draft|propose|recalculate/i }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Draft route")).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Already placed your points/),
     ).not.toBeInTheDocument();
-
-    // The quiet secondary action asks before discarding manual vias.
-    fireEvent.click(
-      screen.getByRole("button", { name: "Propose a different route" }),
-    );
-    expect(
-      screen.getByRole("heading", { name: "Propose a different route?" }),
-    ).toBeInTheDocument();
-
-    // Cancel keeps the route untouched and closes the dialog.
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(
-      screen.queryByRole("heading", { name: "Propose a different route?" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Route ready — 240 km/)).toBeInTheDocument();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {
