@@ -35,7 +35,9 @@ export const MAP_STYLE_URL =
  */
 export const AERIAL_TILES_URL =
   process.env.NEXT_PUBLIC_AERIAL_TILES_URL ??
-  "https://ags.cuzk.gov.cz/arcgis/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}";
+  // The ORTOFOTO service moved off /arcgis/ — /arcgis1/ is the live
+  // instance (the old path 404s and left the Aerial toggle blank).
+  "https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}";
 
 /** Attribution line shown while the aerial basemap is active. */
 export const AERIAL_ATTRIBUTION = "© ČÚZK";
