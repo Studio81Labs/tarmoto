@@ -268,7 +268,7 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
                     className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${
                       tarmotoDerived
                         ? "bg-accent text-cream"
-                        : "border border-line bg-paper text-ink"
+                        : "border border-line bg-cream text-ink"
                     }`}
                   >
                     <Icon size={13} />
