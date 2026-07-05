@@ -24,6 +24,8 @@ import { hashAdminPassword } from '../../modules/admin-auth/admin-password.js';
 import { AdminUser } from '../../entities/admin-user.entity.js';
 import { Bike } from '../../entities/bike.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { MountainPass } from '../../entities/mountain-pass.entity.js';
+import { RoadClosure } from '../../entities/road-closure.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
@@ -45,15 +47,25 @@ import {
   type DemoPersona,
 } from './demo-personas.js';
 import {
+  DEMO_PASS_ROWS,
   DEMO_ROAD_LIKE,
   buildDemoRoadSpecs,
   buildLineString,
   lineLengthKm,
   mulberry32,
+  offsetLine,
   seedFromString,
+  sliceLineByFraction,
 } from './demo-data-builders.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Demo closures are keyed by a `demo:` external_id prefix so re-runs can
+ * delete exactly our rows. The NAP reconcile pass only ever touches its
+ * own `source = 'official'` rows, so operator-sourced demo rows with an
+ * external_id are safe from it.
+ */
+const DEMO_CLOSURE_LIKE = 'demo:%';
 // The most recent rides per persona are packed into the last few weeks so
 // every demo account has both current-month and previous-month activity (the
 // home "This month" KPI tiles + their "vs last month" deltas). The rest of a
@@ -78,6 +90,8 @@ export interface SeedResult {
   tripsCreated: number;
   followsCreated: number;
   badgesAwarded: number;
+  passesEnsured: number;
+  closuresCreated: number;
 }
 
 export interface CleanResult {
@@ -127,6 +141,9 @@ export class DemoSeeder {
       const roadResult = await manager.delete(RoadSegment, {
         road_number: Like(DEMO_ROAD_LIKE),
       });
+      await manager.delete(RoadClosure, {
+        external_id: Like(DEMO_CLOSURE_LIKE),
+      });
       return {
         usersDeleted: userResult.affected ?? 0,
         roadsDeleted: roadResult.affected ?? 0,
@@ -170,6 +187,8 @@ export class DemoSeeder {
       tripsCreated: 0,
       followsCreated: 0,
       badgesAwarded: 0,
+      passesEnsured: 0,
+      closuresCreated: 0,
     };
 
     for (const persona of personas) {
@@ -184,6 +203,13 @@ export class DemoSeeder {
     }
 
     result.followsCreated = await this.seedFollows(now);
+    // CONDITIONS tab data: reference passes + demo closures carved from
+    // the trips just seeded (skipped for --only refreshes, which leave
+    // the other personas' trips — and therefore the closures — intact).
+    result.passesEnsured = await this.ensurePasses();
+    if (!options.only) {
+      result.closuresCreated = await this.seedClosures(now);
+    }
 
     // Upsert the admin super_admin account (idempotent — skips if already present).
     // Never seed a predictable backdoor account in production.
@@ -713,6 +739,199 @@ export class DemoSeeder {
       }
     }
     return persona.tripCount;
+  }
+
+  /**
+   * Re-insert any canonical mountain pass that's missing. The migration
+   * seeded these once, but dev databases rebuilt from dumps often carry
+   * the migration marker without the rows — CONDITIONS then has nothing
+   * to show. Insert-if-missing keeps operator edits (override_status,
+   * notes) on existing rows untouched.
+   */
+  private async ensurePasses(): Promise<number> {
+    const repo = this.repo(MountainPass);
+    const existing = new Set(
+      (await repo.find({ select: ['name'] })).map((p) => p.name),
+    );
+    const missing = DEMO_PASS_ROWS.filter((row) => !existing.has(row.name));
+    if (missing.length === 0) return 0;
+    await repo.save(
+      missing.map((row) =>
+        repo.create({
+          name: row.name,
+          country_code: row.country_code,
+          region: row.region,
+          location: {
+            type: 'Point',
+            coordinates: [row.lng, row.lat],
+          },
+          elevation_m: row.elevation_m,
+          typical_open_month: row.typical_open_month,
+          typical_close_month: row.typical_close_month,
+          notes: row.notes,
+        }),
+      ),
+    );
+    return missing.length;
+  }
+
+  /**
+   * Fabricate closures & roadworks that provably intersect demo content:
+   * the geometry is CARVED OUT of seeded trip-day routes, so the
+   * planner's 100 m check-route corridor hits them when a demo trip is
+   * opened. Two fixed real-world rows (road 44 over Červenohorské sedlo,
+   * D1 roadworks near Velké Meziříčí) round out the map layer for
+   * ad-hoc routes.
+   */
+  private async seedClosures(now: Date): Promise<number> {
+    const repo = this.repo(RoadClosure);
+    await repo.delete({ external_id: Like(DEMO_CLOSURE_LIKE) });
+
+    // One donor day per distinct demo trip, favouring the personas'
+    // active tours (trip #1 of each) so opening any demo profile's
+    // current trip shows conditions.
+    const donorDays = await repo.manager
+      .createQueryBuilder(TripDay, 'day')
+      .innerJoin(Trip, 'trip', 'trip.id = day.trip_id')
+      .innerJoin(User, 'owner', 'owner.id = trip.owner_id')
+      .where('owner.email IN (:...emails)', {
+        emails: DEMO_PERSONAS.map((p) => p.email),
+      })
+      .andWhere('day.route_geom IS NOT NULL')
+      .andWhere('day.day_number = 1')
+      .orderBy('trip.title', 'ASC')
+      // `.limit`, not `.take`: take() wraps the query in a DISTINCT
+      // subselect that can't see the joined trip.title ordering column.
+      .limit(5)
+      .getMany();
+
+    const daysAgo = (days: number) => new Date(now.getTime() - days * DAY_MS);
+    const daysAhead = (days: number) => new Date(now.getTime() + days * DAY_MS);
+
+    const closures: Partial<RoadClosure>[] = [];
+    const templates: Array<
+      (line: GeoJSON.LineString, index: number) => Partial<RoadClosure>
+    > = [
+      (line, index) => ({
+        external_id: `demo:trip-roadworks-${index}`,
+        title: 'Resurfacing works — alternating traffic',
+        reason: 'roadworks',
+        severity: 'partial',
+        geom: sliceLineByFraction(line, 0.35, 0.55),
+        detour_geom: offsetLine(
+          sliceLineByFraction(line, 0.35, 0.55),
+          0.012,
+          -0.008,
+        ),
+        starts_at: daysAgo(10),
+        ends_at: daysAhead(45),
+        notes: 'Temporary signals; expect 10–15 min delay at peak times.',
+      }),
+      (line, index) => ({
+        external_id: `demo:trip-closure-${index}`,
+        title: 'Bridge closed after structural inspection',
+        reason: 'closure',
+        severity: 'full',
+        geom: sliceLineByFraction(line, 0.6, 0.75),
+        starts_at: daysAgo(21),
+        ends_at: null,
+        notes: 'Closed until further notice; no signed motorcycle detour.',
+      }),
+      (line, index) => ({
+        external_id: `demo:trip-seasonal-${index}`,
+        title: 'Seasonal closure — forest road section',
+        reason: 'seasonal',
+        severity: 'full',
+        geom: sliceLineByFraction(line, 0.2, 0.35),
+        starts_at: daysAgo(30),
+        ends_at: daysAhead(30),
+        notes: 'Annual closure window for logging traffic.',
+      }),
+      (line, index) => ({
+        external_id: `demo:trip-weather-${index}`,
+        title: 'Surface flooding after storms',
+        reason: 'weather',
+        severity: 'advisory',
+        geom: sliceLineByFraction(line, 0.45, 0.6),
+        starts_at: daysAgo(1),
+        ends_at: daysAhead(3),
+        notes: 'Standing water in dips; passable with care.',
+      }),
+      (line, index) => ({
+        external_id: `demo:trip-event-${index}`,
+        title: 'Road race — rolling closures',
+        reason: 'event',
+        severity: 'full',
+        geom: sliceLineByFraction(line, 0.1, 0.25),
+        starts_at: daysAgo(1),
+        ends_at: daysAhead(10),
+        notes: 'Course marshals on site; through traffic held in waves.',
+      }),
+    ];
+    donorDays.forEach((day, index) => {
+      const template = templates[index % templates.length]!;
+      closures.push(template(day.route_geom as GeoJSON.LineString, index + 1));
+    });
+
+    // Fixed real-world rows for ad-hoc planner routes + the map layer.
+    closures.push(
+      {
+        external_id: 'demo:cz-44-cervenohorske',
+        title: 'Road 44 — Červenohorské sedlo maintenance closure',
+        reason: 'seasonal',
+        severity: 'full',
+        geom: {
+          type: 'LineString',
+          coordinates: [
+            [17.1105, 50.1032],
+            [17.1242, 50.1125],
+            [17.1381, 50.1198],
+          ],
+        },
+        starts_at: daysAgo(14),
+        ends_at: daysAhead(21),
+        notes: 'Pass road closed for guardrail renewal; detour via Ramzová.',
+      },
+      {
+        external_id: 'demo:cz-d1-velke-mezirici',
+        title: 'D1 modernisation — lane restrictions near Velké Meziříčí',
+        reason: 'roadworks',
+        severity: 'partial',
+        geom: {
+          type: 'LineString',
+          coordinates: [
+            [15.9605, 49.3402],
+            [16.0122, 49.3553],
+            [16.0655, 49.3688],
+          ],
+        },
+        detour_geom: {
+          type: 'LineString',
+          coordinates: [
+            [15.9605, 49.3402],
+            [16.0135, 49.3462],
+            [16.0655, 49.3688],
+          ],
+        },
+        starts_at: daysAgo(40),
+        ends_at: daysAhead(90),
+        notes: 'Two narrowed lanes, 80 km/h; congestion on summer weekends.',
+      },
+    );
+
+    await repo.save(
+      closures.map((spec) =>
+        repo.create({
+          ...spec,
+          country_code: 'CZ',
+          region: null,
+          source: 'operator',
+          created_by: null,
+          is_active: true,
+        }),
+      ),
+    );
+    return closures.length;
   }
 
   private async awardBadges(userId: string): Promise<number> {
