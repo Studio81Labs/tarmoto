@@ -59,7 +59,9 @@ export function MapToolbar({ onPlace }: MapToolbarProps) {
   return (
     // z-30: the search dropdown must paint over the basemap/draw cluster
     // below (both control groups share the map's overlay plane).
-    <div className="absolute left-3 right-3 top-3 z-30 flex items-center gap-2">
+    // right-14 keeps the chip row clear of MapLibre's +/- zoom controls
+    // in the map's top-right corner.
+    <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
       <div className="w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
         <GeocodeSearchField
           placeholder={t("Address search ")}
