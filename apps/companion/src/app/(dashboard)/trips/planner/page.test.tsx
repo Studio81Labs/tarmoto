@@ -878,6 +878,60 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByRole("button", { name: "Draft roundtrip" }),
     ).toBeInTheDocument();
+    // The one-line roundtrip helper (rider feedback) replaces the old
+    // multi-sentence draft paragraph.
+    expect(
+      screen.getByText(
+        "No finish set — Tarmoto will loop you back to your start.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps §03 dormant while no waypoints are placed", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        { ...activeTrip.days[0]!, waypoints: [], routeGeometry: undefined },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    // No draft button in any wording, and no helper copy — the map's
+    // own "place a start point" hint carries the guidance.
+    expect(
+      screen.queryByRole("button", { name: /draft|propose|recalculate/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No finish set/)).not.toBeInTheDocument();
+  });
+
+  it("demotes the draft action to a confirmed re-propose once start + finish exist", () => {
+    // Distinct start (Bormio) and finish (Prato) — the route is already
+    // LIVE, so there is nothing to "draft".
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.queryByRole("button", { name: "Draft route" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Already placed your points/),
+    ).not.toBeInTheDocument();
+
+    // The quiet secondary action asks before discarding manual vias.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Propose a different route" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Propose a different route?" }),
+    ).toBeInTheDocument();
+
+    // Cancel keeps the route untouched and closes the dialog.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.queryByRole("heading", { name: "Propose a different route?" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {
