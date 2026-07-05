@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import { Camera, ExternalLink, X } from "lucide-react";
+import { Camera, ExternalLink, Loader2, X } from "lucide-react";
 import { Button, Heading, Mono, Pill } from "@tarmoto/ui";
 import { plannerApi } from "@/lib/planner/api";
 import {
@@ -378,7 +378,12 @@ export function RoadPreviewPopover({
               </div>
             </>
           ) : (
-            <p className="mt-3 text-[12.5px] text-fg-dim">
+            <p className="mt-3 flex items-center gap-2 text-[12.5px] text-fg-dim">
+              <Loader2
+                size={13}
+                aria-hidden
+                className="shrink-0 animate-spin"
+              />
               {t("Loading road preview… ")}
             </p>
           )}

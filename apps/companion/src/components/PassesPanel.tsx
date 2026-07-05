@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useMemo, useState } from "react";
-import { Mountain, Route } from "lucide-react";
+import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { ConditionStatusLine } from "@/components/ConditionStatusLine";
@@ -230,7 +230,12 @@ function PassesPanelBody({
               )}
             </p>
           ) : routeLoading ? (
-            <p className="text-xs text-fg-mute">
+            <p className="flex items-center gap-2 text-xs text-fg-mute">
+              <Loader2
+                size={12}
+                aria-hidden
+                className="shrink-0 animate-spin"
+              />
               {t("Checking route passes\u2026")}
             </p>
           ) : hasRouteWarnings ? (
@@ -270,7 +275,14 @@ function PassesPanelBody({
       {!showRegionalList ? null : error ? (
         <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-fg-mute">{t("Loading passes\u2026")}</p>
+        <div className="flex items-center gap-2.5 rounded-xl border border-line bg-paper p-3">
+          <Loader2
+            size={14}
+            aria-hidden
+            className="shrink-0 animate-spin text-fg-mute"
+          />
+          <p className="text-xs text-fg-dim">{t("Loading passes\u2026")}</p>
+        </div>
       ) : counts.total === 0 ? (
         // The route-warnings box already carries the no-data status when
         // visible — one status line per section (revision 6).

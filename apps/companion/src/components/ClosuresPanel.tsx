@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
-import { AlertTriangle, Route } from "lucide-react";
+import { AlertTriangle, Loader2, Route } from "lucide-react";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { ConditionStatusLine } from "@/components/ConditionStatusLine";
 import { deriveConditionStatus } from "@/lib/conditions-status";
@@ -202,7 +202,12 @@ function ClosuresPanelBody({
               {t("Import or generate a route to check crossings. ")}
             </p>
           ) : routeLoading ? (
-            <p className="text-xs text-fg-mute">
+            <p className="flex items-center gap-2 text-xs text-fg-mute">
+              <Loader2
+                size={12}
+                aria-hidden
+                className="shrink-0 animate-spin"
+              />
               {t("Checking route crossings\u2026")}
             </p>
           ) : hasRouteClosures ? (
@@ -246,7 +251,14 @@ function ClosuresPanelBody({
       {!showRegionalList ? null : error ? (
         <p className="text-xs text-quality-q1">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-fg-mute">{t("Loading closures\u2026")}</p>
+        <div className="flex items-center gap-2.5 rounded-xl border border-line bg-paper p-3">
+          <Loader2
+            size={14}
+            aria-hidden
+            className="shrink-0 animate-spin text-fg-mute"
+          />
+          <p className="text-xs text-fg-dim">{t("Loading closures\u2026")}</p>
+        </div>
       ) : counts.total === 0 ? (
         // The route-warnings box already carries the no-data status when
         // it's visible — never render two lines describing the same
