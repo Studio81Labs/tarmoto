@@ -1,4 +1,4 @@
-import type { Poi, PoiCategory } from "../types";
+import type { Poi, PoiCategory, RouteStop } from "../types";
 
 /**
  * Category-POI fixtures (revision 4 §B) — a realistic CZ spread with a
@@ -96,7 +96,7 @@ const POI_FIXTURES: Poi[] = [
     name: "Motorest Zavadilka",
     lat: 49.5024,
     lng: 18.3654,
-    meta: { bikerFriendly: true },
+    meta: { bikerFriendly: true, stars: 3 },
   },
   {
     id: "hotel-beskydy-2",
@@ -105,7 +105,7 @@ const POI_FIXTURES: Poi[] = [
     name: "Hotel Ráztoka",
     lat: 49.5199,
     lng: 18.2451,
-    meta: { bikerFriendly: true },
+    meta: { bikerFriendly: true, stars: 4 },
   },
   {
     id: "pass-beskydy-1",
@@ -211,7 +211,7 @@ const POI_FIXTURES: Poi[] = [
     name: "Penzion U Řeky",
     lat: 49.8811,
     lng: 14.9017,
-    meta: { bikerFriendly: true },
+    meta: { bikerFriendly: true, stars: 4 },
   },
 
   // ── Šumava ───────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ const POI_FIXTURES: Poi[] = [
     name: "Chata Barborka",
     lat: 50.0721,
     lng: 17.2278,
-    meta: { bikerFriendly: true },
+    meta: { bikerFriendly: true, stars: 3 },
   },
   {
     id: "food-krkonose-1",
@@ -337,6 +337,119 @@ const POI_FIXTURES: Poi[] = [
     meta: { twistyScore: 84, lengthKm: 6.2 },
   },
 ];
+
+const EARTH_RADIUS_KM = 6371;
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * Point-to-segment distance + along-segment fraction on a local
+ * equirectangular plane (accurate to well under 1% at corridor scale).
+ * Returns km from the point to the nearest point on [a, b] and the
+ * fraction (0..1) of that nearest point along the segment.
+ */
+function pointToSegmentKm(
+  point: { lng: number; lat: number },
+  a: { lng: number; lat: number },
+  b: { lng: number; lat: number },
+): { distanceKm: number; t: number } {
+  const cosLat = Math.cos(point.lat * DEG_TO_RAD);
+  const toXY = (p: { lng: number; lat: number }) => ({
+    x: p.lng * DEG_TO_RAD * cosLat * EARTH_RADIUS_KM,
+    y: p.lat * DEG_TO_RAD * EARTH_RADIUS_KM,
+  });
+  const pp = toXY(point);
+  const pa = toXY(a);
+  const pb = toXY(b);
+  const dx = pb.x - pa.x;
+  const dy = pb.y - pa.y;
+  const lengthSq = dx * dx + dy * dy;
+  const t =
+    lengthSq === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(1, ((pp.x - pa.x) * dx + (pp.y - pa.y) * dy) / lengthSq),
+        );
+  const nx = pa.x + t * dx;
+  const ny = pa.y + t * dy;
+  return { distanceKm: Math.hypot(pp.x - nx, pp.y - ny), t };
+}
+
+function segmentLengthKm(
+  a: { lng: number; lat: number },
+  b: { lng: number; lat: number },
+): number {
+  const cosLat = Math.cos(((a.lat + b.lat) / 2) * DEG_TO_RAD);
+  const dx = (b.lng - a.lng) * DEG_TO_RAD * cosLat * EARTH_RADIUS_KM;
+  const dy = (b.lat - a.lat) * DEG_TO_RAD * EARTH_RADIUS_KM;
+  return Math.hypot(dx, dy);
+}
+
+const ACCOMMODATION_CATEGORIES: ReadonlySet<PoiCategory> = new Set([
+  "biker_hotel",
+  "campground",
+]);
+
+/**
+ * Corridor query for the STOPS tab (revision 5 §C) — REAL distance math
+ * over the mock fixtures: shortest distance to the route polyline plus
+ * the along-route km of the nearest point, sorted by trip progress.
+ * The real target moves this into a PostGIS proximity query.
+ */
+export function mockRouteStops(
+  routeGeometry: GeoJSON.LineString,
+  categories: readonly PoiCategory[],
+  corridorKm: number,
+  minStayRating?: number,
+): RouteStop[] {
+  const coordinates = routeGeometry.coordinates;
+  if (categories.length === 0 || coordinates.length < 2) return [];
+  const wanted = new Set(categories);
+  const vertices = coordinates.map(([lng, lat]) => ({
+    lng: lng!,
+    lat: lat!,
+  }));
+  // Prefix km along the route per vertex, so the nearest segment's
+  // along-route position is prefix + t * segment length.
+  const prefixKm: number[] = [0];
+  for (let i = 1; i < vertices.length; i++) {
+    prefixKm.push(
+      prefixKm[i - 1]! + segmentLengthKm(vertices[i - 1]!, vertices[i]!),
+    );
+  }
+  const stops: RouteStop[] = [];
+  for (const poi of POI_FIXTURES) {
+    if (!wanted.has(poi.category)) continue;
+    if (
+      minStayRating !== undefined &&
+      ACCOMMODATION_CATEGORIES.has(poi.category) &&
+      ((poi.meta?.stars as number | undefined) ?? 0) < minStayRating
+    ) {
+      continue;
+    }
+    let bestKm = Number.POSITIVE_INFINITY;
+    let bestAlongKm = 0;
+    for (let i = 1; i < vertices.length; i++) {
+      const { distanceKm, t } = pointToSegmentKm(
+        poi,
+        vertices[i - 1]!,
+        vertices[i]!,
+      );
+      if (distanceKm < bestKm) {
+        bestKm = distanceKm;
+        bestAlongKm = prefixKm[i - 1]! + t * (prefixKm[i]! - prefixKm[i - 1]!);
+      }
+    }
+    if (bestKm <= corridorKm) {
+      stops.push({
+        ...poi,
+        distanceFromRouteKm: Math.round(bestKm * 10) / 10,
+        kmAlongRoute: Math.round(bestAlongKm),
+      });
+    }
+  }
+  return stops.sort((a, b) => a.kmAlongRoute - b.kmAlongRoute);
+}
 
 /**
  * Bbox + category filter over the fixtures — the mock shape of the real

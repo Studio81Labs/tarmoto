@@ -20,4 +20,4 @@
 export { mockJoinQuality } from "./segments";
 export { mockRoadPreview } from "./previews";
 export { mockGeocode, mockReverseGeocode } from "./geocode";
-export { mockPoisByCategories } from "./pois";
+export { mockPoisByCategories, mockRouteStops } from "./pois";

@@ -25,6 +25,7 @@ import {
   mockPoisByCategories,
   mockReverseGeocode,
   mockRoadPreview,
+  mockRouteStops,
 } from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
@@ -393,6 +394,12 @@ export function createPlannerApi(): PlannerApi {
 
     getPoisByCategories(bbox, categories) {
       return Promise.resolve(mockPoisByCategories(bbox, categories));
+    },
+
+    getRouteStops(routeGeometry, categories, corridorKm, minStayRating) {
+      return Promise.resolve(
+        mockRouteStops(routeGeometry, categories, corridorKm, minStayRating),
+      );
     },
 
     geocode(query: string) {

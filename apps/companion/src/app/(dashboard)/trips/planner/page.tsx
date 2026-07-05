@@ -2762,7 +2762,12 @@ export default function TripPlannerPage() {
               </div>
             </div>
           }
-          stops={<TripStopsPanel trip={displayedTrip} />}
+          stops={
+            <TripStopsPanel
+              trip={displayedTrip}
+              onFocusStop={(stop) => mapRef.current?.openPoiPopover(stop)}
+            />
+          }
         />
       </div>
 

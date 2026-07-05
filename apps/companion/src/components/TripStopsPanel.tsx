@@ -1,298 +1,297 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { BedDouble, Camera, Coffee, Fuel, UtensilsCrossed } from "lucide-react";
-import { Checkbox, Select } from "@tarmoto/ui";
-import { useTripStops } from "@/hooks/useTripStops";
+import { ZoomIn } from "lucide-react";
+import { Select } from "@tarmoto/ui";
 import {
-  buildSuggestionWaypoint,
-  isSuggestionWaypointAdded,
-  type PoiKind,
-} from "@/lib/trip-stops";
+  POI_CATEGORY_META,
+  poiCategoryMeta,
+} from "@/components/planner/MapToolbar";
+import { plannerApi } from "@/lib/planner/api";
+import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
-import type { PoiCategory } from "@/lib/planner/types";
-import { formatDistance } from "@/lib/utils";
-import { usePreferencesStore } from "@/stores/preferences";
 import { useTripStore } from "@/stores/trip";
-/**
- * STOPS filters are a VIEW over the shared `activePoiCategories` store
- * slice (revision 4 §A) — the map-top POI bar toggles the same set, so
- * checking a box here lights the matching chip on the map and vice
- * versa. Only the categories the along-route POI endpoint understands
- * appear as checkboxes.
- */
-const KIND_BY_CATEGORY: ReadonlyArray<[PoiCategory, PoiKind]> = [
-  ["fuel", "fuel_station"],
-  ["food", "restaurant"],
-  ["cafe", "cafe"],
-  ["viewpoint", "viewpoint"],
-];
-const POI_LABELS: Record<PoiKind, string> = {
-  fuel_station: "Fuel stations",
-  restaurant: "Restaurants",
-  cafe: "Cafes",
-  viewpoint: "Viewpoints",
-};
-const POI_BADGES: Record<PoiKind, string> = {
-  fuel_station: "Fuel",
-  restaurant: "Food",
-  cafe: "Cafe",
-  viewpoint: "Viewpoint",
-};
-const POI_ICONS: Record<PoiKind, typeof Fuel> = {
-  fuel_station: Fuel,
-  restaurant: UtensilsCrossed,
-  cafe: Coffee,
-  viewpoint: Camera,
-};
+
+const CORRIDOR_OPTIONS = [5, 10, 20] as const;
+/** Route-change re-queries are debounced; filter changes apply fast. */
+const ROUTE_REQUERY_DEBOUNCE_MS = 400;
+
 interface TripStopsPanelProps {
   trip: Trip | null;
+  /**
+   * Row click = the SAME interaction as clicking the POI's map pin:
+   * fly to it and open the Add-as-via popover (revision 5 §D).
+   */
+  onFocusStop?: (stop: RouteStop) => void;
 }
-export function TripStopsPanel({ trip }: TripStopsPanelProps) {
-  const [minAccommodationStars, setMinAccommodationStars] = useState<
-    number | undefined
-  >(undefined);
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
-  const activeTrip = useTripStore((s) => s.activeTrip);
-  const addWaypoint = useTripStore((s) => s.addWaypoint);
-  const insertWaypointBeforeEnd = useTripStore(
-    (s) => s.insertWaypointBeforeEnd,
-  );
+
+/**
+ * STOPS tab (revision 5): a route-wide corridor view over the SAME POIs
+ * and the SAME `activePoiCategories` filters as the map's category bar —
+ * different spatial lens (proximity to the route line instead of the
+ * viewport), never a second filter state. Route-gated: without a route
+ * line there is nothing to be "along".
+ */
+export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
-  const poiKinds = useMemo(
-    () =>
-      KIND_BY_CATEGORY.filter(([category]) =>
-        activePoiCategories.has(category),
-      ).map(([, kind]) => kind),
+  const [corridorKm, setCorridorKm] = useState<number>(5);
+  const [minStayRating, setMinStayRating] = useState<number | undefined>(
+    undefined,
+  );
+  const [stops, setStops] = useState<RouteStop[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // ROUTE-WIDE line: concatenate every day's geometry in order, so a
+  // split multi-day trip still reads as one corridor (§B).
+  const routeLine = useMemo(() => {
+    const coordinates =
+      trip?.days.flatMap((day) => day.routeGeometry?.coordinates ?? []) ?? [];
+    if (coordinates.length < 2) return null;
+    return { type: "LineString", coordinates } as GeoJSON.LineString;
+  }, [trip]);
+
+  const categories = useMemo(
+    () => [...activePoiCategories],
     [activePoiCategories],
   );
-  const { days, loading, error } = useTripStops(trip, {
-    poiKinds,
-    ...(minAccommodationStars !== undefined ? { minAccommodationStars } : {}),
-  });
+
   useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
-  if (!trip) {
-    return (
-      <div className="space-y-3 pt-2 border-t border-line">
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-          <BedDouble size={14} className="text-accent" />
-          {t("Trip stops & stays ")}
+    if (!routeLine || categories.length === 0) {
+      setStops([]);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await plannerApi.getRouteStops(
+          routeLine,
+          categories,
+          corridorKm,
+          minStayRating,
+          { signal: controller.signal },
+        );
+        if (!cancelled) setStops(result);
+      } catch (err) {
+        if ((err as { name?: string }).name !== "AbortError") {
+          console.warn("[planner] route stops fetch failed", err);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, ROUTE_REQUERY_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [routeLine, categories, corridorKm, minStayRating]);
+
+  const activeLabels = categories
+    .map((category) => poiCategoryMeta(category).label.toLowerCase())
+    .join(", ");
+
+  return (
+    <div className="space-y-5 pt-2">
+      {/* §01 POI CATEGORIES — the SHARED set; toggling syncs the map bar. */}
+      <div>
+        <div className="mb-1.5 flex items-center gap-2 font-mono text-[10px] font-bold">
+          <span className="tracking-[1px] text-accent">§ 01</span>
+          <span className="tracking-[1.4px] text-fg-mute">
+            {t("POI CATEGORIES")}
+          </span>
         </div>
-        <p className="text-xs text-fg-mute">
+        <p className="mb-3 text-[12px] leading-relaxed text-fg-dim">
           {t(
-            "Load or import a trip to start finding overnight stays and route-side stops. ",
+            "Same filters as the map's category bar. Here they're ranked by distance from your route line. ",
           )}
         </p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-3 pt-2 border-t border-line">
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-        <BedDouble size={14} className="text-accent" />
-        {t("Trip stops & stays ")}
-      </div>
-
-      <div className="grid gap-3">
-        <div>
-          <label
-            htmlFor="trip-stops-rating"
-            className="block text-xs text-fg-mute mb-1"
-          >
-            {t("Minimum stay rating ")}
-          </label>
-          <Select
-            id="trip-stops-rating"
-            value={minAccommodationStars ?? ""}
-            onChange={(value) =>
-              setMinAccommodationStars(value ? Number(value) : undefined)
-            }
-            tone="cream"
-          >
-            <option value="">{t("Any")}</option>
-            <option value="3">{t("3 stars or better")}</option>
-            <option value="4">{t("4 stars or better")}</option>
-            <option value="5">{t("5 stars only")}</option>
-          </Select>
+        <div className="flex flex-wrap gap-1.5">
+          {POI_CATEGORY_META.map(({ category, label, icon: Icon }) => {
+            const active = activePoiCategories.has(category);
+            const tarmotoDerived =
+              category === "mountain_pass" || category === "twisty_highlight";
+            return (
+              <button
+                key={category}
+                type="button"
+                aria-pressed={active}
+                onClick={() => togglePoiCategory(category)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[12px] font-bold transition ${
+                  active
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-line-strong bg-transparent text-fg-dim hover:border-ink hover:text-ink"
+                }`}
+              >
+                <Icon size={13} />
+                {t(label)}
+                <span
+                  aria-hidden="true"
+                  title={tarmotoDerived ? "Tarmoto data" : "OpenStreetMap"}
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    tarmotoDerived
+                      ? "bg-accent"
+                      : "border border-line-strong bg-transparent"
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
-
-        <div>
-          <p className="mb-2 text-xs text-fg-mute">{t("POI types")}</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-            {KIND_BY_CATEGORY.map(([category, kind]) => (
-              <Checkbox
-                key={kind}
-                checked={activePoiCategories.has(category)}
-                onChange={() => togglePoiCategory(category)}
-                label={POI_LABELS[kind]}
-                ariaLabel={POI_LABELS[kind]}
-                className="py-1"
-              />
-            ))}
-          </div>
+        <div className="mt-2.5 flex gap-4">
+          <span className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute">
+            <span className="h-1.5 w-1.5 rounded-full border border-line-strong" />
+            {t("OSM")}
+          </span>
+          <span className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            {t("TARMOTO-DERIVED")}
+          </span>
         </div>
       </div>
 
-      {error ? <p className="text-xs text-amber-600">{error}</p> : null}
-      {loading ? (
-        <p className="text-xs text-fg-mute">
-          {t("Loading stop suggestions\u2026")}
-        </p>
-      ) : (
-        <div className="space-y-3">
-          {days.map((day, dayIndex) => (
-            <section
-              key={day.dayNumber}
-              className="rounded-xl border border-line bg-paper p-3"
+      {/* Corridor selector (§D) — drives the proximity filter. */}
+      <div>
+        <div className="mb-2 flex items-baseline justify-between">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+            {t("Corridor from route")}
+          </span>
+          <span className="font-mono text-[10px] text-fg-mute">
+            {t("WITHIN {km} KM", { km: corridorKm })}
+          </span>
+        </div>
+        <div className="flex gap-1.5">
+          {CORRIDOR_OPTIONS.map((km) => (
+            <button
+              key={km}
+              type="button"
+              aria-pressed={corridorKm === km}
+              onClick={() => setCorridorKm(km)}
+              className={`flex-1 rounded-[9px] border py-2 text-center text-[12.5px] font-bold transition ${
+                corridorKm === km
+                  ? "border-ink bg-ink text-cream"
+                  : "border-line bg-cream text-fg-dim hover:border-line-strong"
+              }`}
             >
-              <div className="mb-3">
-                <h4 className="text-sm font-semibold text-ink">
-                  {t("Day ")}
-                  {day.dayNumber}
-                  {day.title ? ` · ${day.title}` : ""}
-                </h4>
-                <p className="text-xs text-fg-mute">
-                  {t("Overnight stays ")}
-                  {day.endLabel ? ` near ${day.endLabel}` : " near the day end"}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {day.accommodations.length === 0 ? (
-                  <p className="text-xs text-fg-mute">
-                    {t("No overnight stays matched the current filters. ")}
-                  </p>
-                ) : (
-                  day.accommodations
-                    .slice(0, 3)
-                    .map((stay) => (
-                      <StopRow
-                        key={stay.external_id}
-                        label={stay.name ?? "Suggested stay"}
-                        detail={`${formatDistance(stay.distance_km, unitSystem)} from the finish${stay.stars ? ` · ${stay.stars}★` : ""}`}
-                        hint={stay.website ?? stay.phone}
-                        added={Boolean(
-                          activeTrip?.days[dayIndex] &&
-                          isSuggestionWaypointAdded(
-                            activeTrip.days[dayIndex]!,
-                            stay,
-                          ),
-                        )}
-                        addLabel={`Add ${stay.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
-                        addedLabel={`Added ${stay.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
-                        onAdd={() =>
-                          addWaypoint(dayIndex, buildSuggestionWaypoint(stay))
-                        }
-                      />
-                    ))
-                )}
-              </div>
-
-              <div className="mt-4 border-t border-line pt-3">
-                <p className="text-xs text-fg-mute mb-2">
-                  {t("Along the route")}
-                </p>
-                {!day.routeAvailable ? (
-                  <p className="text-xs text-fg-mute">
-                    {t(
-                      "Add at least two waypoints to surface along-route stops. ",
-                    )}
-                  </p>
-                ) : day.pois.length === 0 ? (
-                  <p className="text-xs text-fg-mute">
-                    {t("No route-side stops matched the current POI filters. ")}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {day.pois.slice(0, 6).map((poi) => {
-                      const Icon = POI_ICONS[poi.kind];
-                      return (
-                        <StopRow
-                          key={poi.external_id}
-                          label={poi.name ?? POI_BADGES[poi.kind]}
-                          detail={`${formatDistance(poi.distance_along_route_km, unitSystem)} into the day · ${formatDistance(poi.distance_from_route_km, unitSystem)} off route`}
-                          hint={poi.hint}
-                          badge={
-                            <span className="inline-flex items-center gap-1 rounded-full bg-cream px-2 py-0.5 text-[11px] text-fg-dim">
-                              <Icon size={11} />
-                              {POI_BADGES[poi.kind]}
-                            </span>
-                          }
-                          added={Boolean(
-                            activeTrip?.days[dayIndex] &&
-                            isSuggestionWaypointAdded(
-                              activeTrip.days[dayIndex]!,
-                              poi,
-                            ),
-                          )}
-                          addLabel={`Add ${poi.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
-                          addedLabel={`Added ${poi.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
-                          onAdd={() =>
-                            insertWaypointBeforeEnd(
-                              dayIndex,
-                              buildSuggestionWaypoint(poi),
-                            )
-                          }
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
+              {t("{km} km", { km })}
+            </button>
           ))}
         </div>
-      )}
-    </div>
-  );
-}
-function StopRow({
-  label,
-  detail,
-  hint,
-  badge,
-  added,
-  addLabel,
-  addedLabel,
-  onAdd,
-}: {
-  label: string;
-  detail: string;
-  hint?: string | null;
-  badge?: React.ReactNode;
-  added: boolean;
-  addLabel: string;
-  addedLabel: string;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-paper p-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-ink">{label}</p>
-          {badge}
-        </div>
-        <p className="text-xs text-fg-dim">{detail}</p>
-        {hint ? <p className="text-xs text-fg-mute truncate">{hint}</p> : null}
       </div>
 
-      <button
-        type="button"
-        aria-label={added ? addedLabel : addLabel}
-        disabled={added}
-        onClick={onAdd}
-        className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-          added
-            ? "cursor-not-allowed bg-[#1f8a5b]/10 text-[#1f8a5b]"
-            : "bg-accent text-ink hover:brightness-95"
-        }`}
-      >
-        {added ? "Added" : "Add"}
-      </button>
+      {/* Minimum stay rating — accommodation categories only (§D). */}
+      <div>
+        <label
+          htmlFor="trip-stops-rating"
+          className="mb-1 block text-xs text-fg-mute"
+        >
+          {t("Minimum stay rating ")}
+          <span className="text-fg-faint">
+            {t("(biker hotels & campgrounds)")}
+          </span>
+        </label>
+        <Select
+          id="trip-stops-rating"
+          value={minStayRating ?? ""}
+          onChange={(value) =>
+            setMinStayRating(value ? Number(value) : undefined)
+          }
+          tone="cream"
+        >
+          <option value="">{t("Any")}</option>
+          <option value="3">{t("3 stars or better")}</option>
+          <option value="4">{t("4 stars or better")}</option>
+          <option value="5">{t("5 stars only")}</option>
+        </Select>
+      </div>
+
+      {/* §02 ALONG YOUR ROUTE — one flat route-wide list (§B), gated (§E). */}
+      <div>
+        <div className="mb-2.5 flex items-baseline justify-between">
+          <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
+            <span className="tracking-[1px] text-accent">§ 02</span>
+            <span className="tracking-[1.4px] text-fg-mute">
+              {t("ALONG YOUR ROUTE")}
+            </span>
+          </div>
+          {routeLine ? (
+            <span className="font-mono text-[10px] text-fg-mute">
+              {t("{count} STOPS", { count: stops.length })}
+            </span>
+          ) : null}
+        </div>
+
+        {!routeLine ? (
+          <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
+            <p className="text-[12px] leading-relaxed text-fg-dim">
+              {t(
+                "Plan a route to see stops along it — the corridor needs a route line to measure from. The map's category pins work anytime. ",
+              )}
+            </p>
+          </div>
+        ) : categories.length === 0 ? (
+          <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
+            <p className="text-[12px] leading-relaxed text-fg-dim">
+              {t("Turn on a POI category above to see stops along the route. ")}
+            </p>
+          </div>
+        ) : loading && stops.length === 0 ? (
+          <p className="text-xs text-fg-mute">
+            {t("Measuring the corridor… ")}
+          </p>
+        ) : stops.length === 0 ? (
+          <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
+            <p className="text-[12px] leading-relaxed text-fg-dim">
+              {t(
+                "No {filters} stops within {km} km of your route — try a wider corridor. ",
+                { filters: activeLabels, km: corridorKm },
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {stops.map((stop) => {
+              const meta = poiCategoryMeta(stop.category);
+              const Icon = meta.icon;
+              const tarmotoDerived = stop.source === "tarmoto";
+              return (
+                <button
+                  key={stop.id}
+                  type="button"
+                  title={t("Zoom to & add as via")}
+                  onClick={() => onFocusStop?.(stop)}
+                  className="flex w-full items-center gap-2.5 rounded-[11px] border border-line bg-cream px-3 py-2.5 text-left transition hover:border-line-strong hover:bg-paper"
+                >
+                  <span
+                    className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg ${
+                      tarmotoDerived
+                        ? "bg-accent text-cream"
+                        : "border border-line bg-paper text-ink"
+                    }`}
+                  >
+                    <Icon size={13} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-bold text-ink">
+                      {stop.name}
+                    </span>
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.4px] text-fg-mute">
+                      {`${meta.label} · ${
+                        stop.distanceFromRouteKm < 0.1
+                          ? t("on route")
+                          : t("{km} km off", { km: stop.distanceFromRouteKm })
+                      } · ${t("km {at}", { at: stop.kmAlongRoute })}`}
+                    </span>
+                  </span>
+                  <ZoomIn size={15} className="shrink-0 text-fg-mute" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

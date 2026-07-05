@@ -84,6 +84,18 @@ export interface PlannerPoi {
 }
 
 /**
+ * A category POI qualified against the current route line (revision 5
+ * §C): the corridor query computes the shortest distance to the route
+ * and where along the route the nearest point sits.
+ */
+export interface RouteStop extends Poi {
+  /** Shortest distance from the POI to the route line, in km. */
+  distanceFromRouteKm: number;
+  /** Along-route position (km from the start) of the nearest point. */
+  kmAlongRoute: number;
+}
+
+/**
  * Curated POI vocabulary for the map-top toolbar + STOPS filters
  * (revision 4 §A). Deliberately a closed set — no generic POI browser.
  */
@@ -209,6 +221,23 @@ export interface PlannerApi {
     categories: PoiCategory[],
     init?: { signal?: AbortSignal },
   ): Promise<Poi[]>;
+
+  /**
+   * Route-corridor POI query for the STOPS tab (revision 5 §C): the
+   * SAME category POIs as `getPoisByCategories`, but filtered by
+   * proximity to the route line, each with distance-from-route and
+   * km-along-route, sorted by km-along-route. Real target: PostGIS
+   * distance against the route geometry; MOCK computes real distances
+   * against the fixtures. `minStayRating` applies only to accommodation
+   * categories (biker_hotel / campground).
+   */
+  getRouteStops(
+    routeGeometry: GeoJSON.LineString,
+    categories: PoiCategory[],
+    corridorKm: number,
+    minStayRating?: number,
+    init?: { signal?: AbortSignal },
+  ): Promise<RouteStop[]>;
 
   /** Typed waypoint search in the panel (MOCK — corridor-city fixtures). */
   geocode(query: string): Promise<GeoResult[]>;

@@ -106,6 +106,12 @@ export interface TripPlannerMapHandle {
   startRegionDraw: () => void;
   /** Cancel an in-progress region draw (leaves a drawn region alone). */
   cancelRegionDraw: () => void;
+  /**
+   * Fly to a POI and open its pin popover (revision 5 §D) — the STOPS
+   * rows reuse the exact map-pin interaction instead of a list-only
+   * path.
+   */
+  openPoiPopover: (poi: Poi) => void;
 }
 
 const ROUTE_SOURCE = "trip-planner-route";
@@ -1859,6 +1865,36 @@ const TripPlannerMapContent = forwardRef<
       flyToSegment,
       startRegionDraw: () => drawRef.current?.start(),
       cancelRegionDraw: () => drawRef.current?.cancel(),
+      openPoiPopover: (poi: Poi) => {
+        const map = handleRef.current?.map;
+        if (!map) return;
+        setContextMenu(null);
+        setWaypointMenu(null);
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        const projected =
+          typeof map.project === "function"
+            ? map.project([poi.lng, poi.lat])
+            : null;
+        setPoiMenu({
+          poi,
+          x:
+            rect && projected
+              ? rect.left + projected.x + 10
+              : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+          y:
+            rect && projected
+              ? rect.top + projected.y + 10
+              : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+        });
+        if (typeof map.flyTo === "function") {
+          map.flyTo({
+            center: [poi.lng, poi.lat],
+            zoom: Math.max(map.getZoom?.() ?? 0, 11),
+            duration: 1200,
+            essential: true,
+          });
+        }
+      },
     }),
     [fitMapToTrip, flyToSegment],
   );
