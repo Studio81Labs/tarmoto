@@ -33,6 +33,8 @@ type WaypointProperties = {
   waypointId: string;
   waypointType: string;
   label: string;
+  /** POI category for POI-derived waypoints (glyph-in-circle pins). */
+  poiCategory?: string;
 };
 
 type SegmentHighlightProperties = {
@@ -237,6 +239,9 @@ export function buildTripPlannerWaypointCollection(
           waypointId: waypoint.id,
           waypointType: waypoint.type,
           label: waypoint.name ?? fallbackWaypointLabel(waypoint.type),
+          ...(waypoint.poiCategory
+            ? { poiCategory: waypoint.poiCategory }
+            : {}),
         },
         geometry: {
           type: "Point",

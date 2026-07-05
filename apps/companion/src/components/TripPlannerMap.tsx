@@ -509,6 +509,8 @@ const TripPlannerMapContent = forwardRef<
     poi: Poi;
     x: number;
     y: number;
+    /** Set when the popover was opened from an already-placed waypoint. */
+    placedWaypointId?: string;
   } | null>(null);
   const closePoiMenu = useCallback(() => setPoiMenu(null), []);
   /** id → Poi for resolving pin clicks back to the fetched objects. */
@@ -644,6 +646,7 @@ const TripPlannerMapContent = forwardRef<
         name: poi.name,
         location: { lat: poi.lat, lng: poi.lng },
         type,
+        poiCategory: poi.category,
       });
       setPoiMenu(null);
     },
@@ -841,6 +844,46 @@ const TripPlannerMapContent = forwardRef<
         poi,
         x: event.originalEvent.clientX,
         y: event.originalEvent.clientY,
+      });
+    });
+    // A POI placed as a waypoint keeps its popover: clicking the role
+    // circle reopens the POI card (info + remove) instead of doing
+    // nothing. Non-POI waypoints keep their existing behavior.
+    map.on("click", WAYPOINT_PIN, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const feature = event.features?.[0];
+      const props = feature?.properties as
+        | { waypointId?: string; poiCategory?: PoiCategory; label?: string }
+        | undefined;
+      if (!props?.poiCategory || !props.waypointId) return;
+      const [lng, lat] =
+        feature?.geometry.type === "Point"
+          ? (feature.geometry.coordinates as [number, number])
+          : [event.lngLat.lng, event.lngLat.lat];
+      // Waypoint ids from POIs are poi-<poiId>-<timestamp>; the source
+      // mapping mirrors the resolver (§B).
+      const poiId =
+        /^poi-(.*)-\d+$/.exec(props.waypointId)?.[1] ?? props.waypointId;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu({
+        poi: {
+          id: poiId,
+          category: props.poiCategory,
+          source:
+            props.poiCategory === "mountain_pass"
+              ? "passes"
+              : props.poiCategory === "twisty_highlight"
+                ? "tarmoto"
+                : "osm",
+          name: props.label ?? t("Waypoint"),
+          lat,
+          lng,
+        },
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+        placedWaypointId: props.waypointId,
       });
     });
     // Cluster click zooms toward the cluster's expansion level.
@@ -1857,23 +1900,42 @@ const TripPlannerMapContent = forwardRef<
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleAddPoiWaypoint(poiMenu.poi, "via")}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
-                >
-                  <Plus size={14} strokeWidth={3} />
-                  {t("Add as via")}
-                </button>
-                {showAddAsStop ? (
-                  <button
-                    type="button"
-                    onClick={() => handleAddPoiWaypoint(poiMenu.poi, stopType)}
-                    className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
-                  >
-                    {t("Add as stop")}
-                  </button>
-                ) : null}
+                {poiMenu.placedWaypointId ? (
+                  onRemoveWaypoint ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRemoveWaypoint(poiMenu.placedWaypointId!);
+                        closePoiMenu();
+                      }}
+                      className="w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
+                    >
+                      {t("Remove from route")}
+                    </button>
+                  ) : null
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPoiWaypoint(poiMenu.poi, "via")}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+                    >
+                      <Plus size={14} strokeWidth={3} />
+                      {t("Add as via")}
+                    </button>
+                    {showAddAsStop ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleAddPoiWaypoint(poiMenu.poi, stopType)
+                        }
+                        className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Add as stop")}
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </div>
             );
           })()
@@ -2052,11 +2114,45 @@ function installPoiPinImages(map: MapLibreMap): void {
 }
 
 /**
+ * Role-colored circles WITH the category glyph, for waypoints that were
+ * placed from a POI pin — same circle as the plain role pins, same
+ * glyph as the POI pins, so a placed viewpoint reads as "a via that is
+ * a viewpoint" with a single marker.
+ */
+function installWaypointPoiPinImages(map: MapLibreMap): void {
+  const roles: Array<[string, string, string]> = [
+    ["start", "#1F8A5B", "#FFFFFF"],
+    ["via", "#1FA6B8", "#FFFFFF"],
+    ["end", "#FF6A1A", "#0E0E10"],
+  ];
+  for (const [role, fill, ring] of roles) {
+    for (const [category, children] of Object.entries(POI_PIN_ICON_CHILDREN)) {
+      const imageId = `${WAYPOINT_PIN_IMAGE_PREFIX}${role}-${category}`;
+      if (map.hasImage?.(imageId)) continue;
+      const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">' +
+        `<circle cx="28" cy="28" r="24" fill="${fill}" stroke="${ring}" stroke-width="5"/>` +
+        '<g transform="translate(15,15) scale(1.083)" fill="none" stroke="#F5EFE6" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+        children +
+        "</g></svg>";
+      const image = new Image(56, 56);
+      image.onload = () => {
+        if (!map.hasImage?.(imageId)) {
+          map.addImage(imageId, image, { pixelRatio: 2 });
+        }
+      };
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+  }
+}
+
+/**
  * Clustered category-POI layer (revision 4 §C). Slotted under the
  * waypoint pins so route points always stay on top of browse pins.
  */
 function ensurePoiLayers(map: MapLibreMap): void {
   installPoiPinImages(map);
+  installWaypointPoiPinImages(map);
   if (!map.getSource(POI_SOURCE)) {
     map.addSource(POI_SOURCE, {
       type: "geojson",
@@ -2269,13 +2365,24 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         // start green, vias/stops teal, finish coral — panel and map
         // always agree on what "finish" looks like.
         "icon-image": [
-          "match",
-          ["get", "waypointType"],
-          "start",
-          `${WAYPOINT_PIN_IMAGE_PREFIX}start`,
-          "end",
-          `${WAYPOINT_PIN_IMAGE_PREFIX}end`,
-          `${WAYPOINT_PIN_IMAGE_PREFIX}via`,
+          "concat",
+          WAYPOINT_PIN_IMAGE_PREFIX,
+          [
+            "match",
+            ["get", "waypointType"],
+            "start",
+            "start",
+            "end",
+            "end",
+            "via",
+          ],
+          // POI-derived waypoints carry their category -> glyph variant.
+          [
+            "case",
+            ["has", "poiCategory"],
+            ["concat", "-", ["get", "poiCategory"]],
+            "",
+          ],
         ],
         // The image is authored at 2× (pixelRatio 2 → 28 px logical);
         // the circle's CENTER sits exactly on the waypoint location,

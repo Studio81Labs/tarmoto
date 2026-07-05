@@ -620,6 +620,56 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("reopens the POI popover from a placed waypoint and offers Remove from route", () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const onRemoveWaypoint = vi.fn();
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={onRemoveWaypoint}
+      />,
+    );
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "poi-view-vysocina-1-1751700000000",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [16.0369, 49.6395] },
+          },
+        ],
+        lngLat: { lng: 16.0369, lat: 49.6395 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
+    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    // Already placed -> remove action instead of Add as via.
+    expect(screen.queryByRole("button", { name: /Add as via/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove from route" }));
+    expect(onRemoveWaypoint).toHaveBeenCalledWith(
+      "poi-view-vysocina-1-1751700000000",
+    );
+  });
+
   it("drives region drawing through the handle — no in-map pills remain", () => {
     // Rider feedback: the BUILD column's Fun-Zone checkbox owns the
     // draw flow; the map exposes start/cancel imperatively and mirrors

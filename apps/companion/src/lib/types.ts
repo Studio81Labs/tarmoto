@@ -237,6 +237,13 @@ export interface Waypoint {
   name?: string | undefined;
   location: { lng: number; lat: number };
   type: "start" | "via" | "end" | "fuel" | "rest" | "photo" | "accommodation";
+  /**
+   * Set when the waypoint was placed from a map POI pin (revision 4):
+   * the map renders the category glyph inside the role circle and
+   * clicking it reopens the POI popover. Client-side display metadata —
+   * not persisted by the save contract.
+   */
+  poiCategory?: import("@/lib/planner/types").PoiCategory;
 }
 
 export interface TripParameters {
