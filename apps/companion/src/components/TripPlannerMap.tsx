@@ -129,6 +129,28 @@ const POI_CLUSTER_COUNT_LAYER = "trip-planner-poi-cluster-count";
 const POI_PIN_LAYER = "trip-planner-poi-pins";
 /** Viewport/filter refetch debounce for the category POI layer (§C). */
 const POI_FETCH_DEBOUNCE_MS = 400;
+const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
+
+/**
+ * Lucide 24x24 icon geometry per category (same glyphs as the toolbar
+ * chips) — rasterized into accent-circle pin images so riders can tell
+ * WHAT a pin is before clicking it.
+ */
+const POI_PIN_ICON_CHILDREN: Record<PoiCategory, string> = {
+  fuel: '<path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0v-6.998a2 2 0 0 0-.59-1.42L18 5"/><path d="M14 21V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16"/><path d="M2 21h13"/><path d="M3 9h11"/>',
+  food: '<path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/>',
+  cafe: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
+  viewpoint:
+    '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  campground:
+    '<path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/>',
+  biker_hotel:
+    '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+  mountain_pass:
+    '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  twisty_highlight:
+    '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+};
 
 /**
  * Waypoint stop-type per POI category for "Add as stop" (revision 4 §C)
@@ -1992,10 +2014,37 @@ function installWaypointPinImages(map: MapLibreMap): void {
 }
 
 /**
+ * Rasterize the category glyphs into accent-circle pin images (2x for
+ * crisp rendering). SVG -> Image is async; MapLibre repaints the symbol
+ * layer as each image lands. jsdom never fires Image onload — tests
+ * simply render no icons.
+ */
+function installPoiPinImages(map: MapLibreMap): void {
+  for (const [category, children] of Object.entries(POI_PIN_ICON_CHILDREN)) {
+    const imageId = `${POI_PIN_IMAGE_PREFIX}${category}`;
+    if (map.hasImage?.(imageId)) continue;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">' +
+      '<circle cx="28" cy="28" r="25" fill="#FF6A1A" stroke="#F5EFE6" stroke-width="4"/>' +
+      '<g transform="translate(15.5,15.5) scale(1.042)" fill="none" stroke="#F5EFE6" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+      children +
+      "</g></svg>";
+    const image = new Image(56, 56);
+    image.onload = () => {
+      if (!map.hasImage?.(imageId)) {
+        map.addImage(imageId, image, { pixelRatio: 2 });
+      }
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+}
+
+/**
  * Clustered category-POI layer (revision 4 §C). Slotted under the
  * waypoint pins so route points always stay on top of browse pins.
  */
 function ensurePoiLayers(map: MapLibreMap): void {
+  installPoiPinImages(map);
   if (!map.getSource(POI_SOURCE)) {
     map.addSource(POI_SOURCE, {
       type: "geojson",
@@ -2046,14 +2095,16 @@ function ensurePoiLayers(map: MapLibreMap): void {
     map.addLayer(
       {
         id: POI_PIN_LAYER,
-        type: "circle",
+        type: "symbol",
         source: POI_SOURCE,
         filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-color": "#FF6A1A",
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5, 12, 8],
-          "circle-stroke-color": "#F5EFE6",
-          "circle-stroke-width": 2,
+        layout: {
+          // Category glyph pins (rider feedback) — the icon says what
+          // the POI is before any click.
+          "icon-image": ["concat", POI_PIN_IMAGE_PREFIX, ["get", "category"]],
+          "icon-size": 1,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
         },
       },
       beforeId,

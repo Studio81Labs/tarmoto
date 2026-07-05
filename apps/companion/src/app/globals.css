@@ -278,6 +278,14 @@
 }
 
 @layer utilities {
+  /* Scrollable rows that hide their scrollbar (map POI chip bar). */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* ─── Slate background remap ───────────────────────────────────────────
      Legacy slate-* surfaces were dark in the original theme; in cream/ink
      they become cream paper. We override the .bg-slate-X utilities here
