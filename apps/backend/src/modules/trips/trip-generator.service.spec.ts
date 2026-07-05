@@ -464,7 +464,7 @@ describe('TripGeneratorService', () => {
         }
         if (sql.includes('AVG(rs.quality_score)')) {
           // The return leg has no quality-scored segments at all.
-          const wkt = String(params?.[0] ?? '');
+          const wkt = typeof params?.[0] === 'string' ? params[0] : '';
           if (wkt.includes(String(BACK_LNG))) return Promise.resolve([]);
           return Promise.resolve([
             {
