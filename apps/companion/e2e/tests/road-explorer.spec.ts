@@ -130,10 +130,10 @@ test.describe("road quality explorer", () => {
       await expect(page.getByText("Closures & roadworks")).toBeVisible();
       await expect(page.getByText("Seasonal passes")).toBeVisible();
       await expect(
-        page.getByText("No active closures for this month yet."),
+        page.getByText("Closure data not available for this region yet."),
       ).toBeVisible();
       await expect(
-        page.getByText("No mountain passes seeded yet."),
+        page.getByText("Pass data not available for this region yet."),
       ).toBeVisible();
     } finally {
       await context.close();

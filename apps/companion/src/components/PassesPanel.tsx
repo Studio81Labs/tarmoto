@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
+import { ConditionStatusLine } from "@/components/ConditionStatusLine";
+import { deriveConditionStatus } from "@/lib/conditions-status";
 import {
   MONTH_NAMES,
   STATUS_DISPLAY_ORDER,
@@ -142,6 +144,13 @@ function PassesPanelBody({
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
   const hasRouteWarnings = routeClosedCount > 0 || routeUnknownCount > 0;
   const routeSummary = buildRouteSummary(routeClosedCount, routeUnknownCount);
+  // ONE data-state-aware status (revision 6): no pass data = UNKNOWN
+  // (grey, like the legend), never a green all-clear.
+  const status = deriveConditionStatus({
+    sourceCount: counts.total,
+    routeHitCount: routeClosedCount + routeUnknownCount,
+  });
+  const routeBoxVisible = showRouteWarnings && routes.length > 0;
   return (
     <div className="space-y-3 pt-2 border-t border-line">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
@@ -207,10 +216,14 @@ function PassesPanelBody({
             </>
           ) : routeError ? (
             <p className="text-xs text-quality-q1">{routeError}</p>
+          ) : status === "no_data" ? (
+            <ConditionStatusLine tone="no_data">
+              {t("Pass data not available for this region yet. ")}
+            </ConditionStatusLine>
           ) : (
-            <p className="text-xs text-[#1f8a5b]">
-              {t("No closed or unknown passes intersect the current trip. ")}
-            </p>
+            <ConditionStatusLine tone="clear">
+              {t("No closed or unknown passes on your route. ")}
+            </ConditionStatusLine>
           )}
         </div>
       )}
@@ -220,9 +233,13 @@ function PassesPanelBody({
       ) : loading ? (
         <p className="text-xs text-fg-mute">{t("Loading passes\u2026")}</p>
       ) : counts.total === 0 ? (
-        <p className="text-xs text-fg-mute">
-          {t("No mountain passes seeded yet.")}
-        </p>
+        // The route-warnings box already carries the no-data status when
+        // visible — one status line per section (revision 6).
+        routeBoxVisible ? null : (
+          <ConditionStatusLine tone="no_data">
+            {t("Pass data not available for this region yet. ")}
+          </ConditionStatusLine>
+        )
       ) : (
         <>
           <p className="text-xs text-fg-dim">
@@ -307,7 +324,7 @@ function buildRouteSummary(closedCount: number, unknownCount: number): string {
     );
   }
   if (parts.length === 0) {
-    return "No closed or unknown passes intersect the current trip.";
+    return "No closed or unknown passes on your route.";
   }
   if (parts.length === 1) {
     return `Current trip crosses ${parts[0]}.`;

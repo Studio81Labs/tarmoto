@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Route } from "lucide-react";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
+import { ConditionStatusLine } from "@/components/ConditionStatusLine";
+import { deriveConditionStatus } from "@/lib/conditions-status";
 import {
   detourLengthKm,
   formatClosureWindow,
@@ -135,6 +137,14 @@ function ClosuresPanelBody({
   }).format(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);
+  // ONE data-state-aware status (revision 6): an empty source is
+  // UNKNOWN, never a green all-clear — the clear state is earned only
+  // when closure data exists and none of it crosses the route.
+  const status = deriveConditionStatus({
+    sourceCount: counts.total,
+    routeHitCount: routeCounts.total,
+  });
+  const routeBoxVisible = showRouteWarnings && routes.length > 0;
   return (
     <div className="space-y-3 pt-2 border-t border-line">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
@@ -189,11 +199,15 @@ function ClosuresPanelBody({
             </>
           ) : hasRouteFailure ? (
             <p className="text-xs text-quality-q1">{routeError}</p>
-          ) : routeCounts.total === 0 ? (
-            <p className="text-xs text-[#1f8a5b]">
-              {t("No active closures intersect the current trip. ")}
-            </p>
-          ) : null}
+          ) : status === "no_data" ? (
+            <ConditionStatusLine tone="no_data">
+              {t("Closure data not available for this region yet. ")}
+            </ConditionStatusLine>
+          ) : (
+            <ConditionStatusLine tone="clear">
+              {t("No active closures on your route. ")}
+            </ConditionStatusLine>
+          )}
         </div>
       )}
 
@@ -202,9 +216,14 @@ function ClosuresPanelBody({
       ) : loading ? (
         <p className="text-xs text-fg-mute">{t("Loading closures\u2026")}</p>
       ) : counts.total === 0 ? (
-        <p className="text-xs text-fg-mute">
-          {t("No active closures for this month yet. ")}
-        </p>
+        // The route-warnings box already carries the no-data status when
+        // it's visible — never render two lines describing the same
+        // empty state (revision 6).
+        routeBoxVisible ? null : (
+          <ConditionStatusLine tone="no_data">
+            {t("Closure data not available for this region yet. ")}
+          </ConditionStatusLine>
+        )
       ) : (
         <>
           <p className="text-xs text-fg-dim">

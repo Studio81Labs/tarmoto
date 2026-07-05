@@ -440,10 +440,9 @@ export const en = {
   "No GPS track recorded ": "No GPS track recorded ",
   "No GPS track was recorded for this ride. ":
     "No GPS track was recorded for this ride. ",
-  "No active closures for this month yet. ":
-    "No active closures for this month yet. ",
-  "No active closures intersect the current trip. ":
-    "No active closures intersect the current trip. ",
+  "No active closures on your route. ": "No active closures on your route. ",
+  "Closure data not available for this region yet. ":
+    "Closure data not available for this region yet. ",
   "No active hazards on this segment. ": "No active hazards on this segment. ",
   "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ":
     "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
@@ -453,8 +452,8 @@ export const en = {
   "No badges yet": "No badges yet",
   "No bikes in your garage yet ": "No bikes in your garage yet ",
   "No challenges to join yet": "No challenges to join yet",
-  "No closed or unknown passes intersect the current trip. ":
-    "No closed or unknown passes intersect the current trip. ",
+  "No closed or unknown passes on your route. ":
+    "No closed or unknown passes on your route. ",
   "No collections match your filters": "No collections match your filters",
   "No collections yet": "No collections yet",
   "No contributing roads available yet. ":
@@ -464,7 +463,8 @@ export const en = {
     "No folders yet. Create one from the sidebar. ",
   "No matches": "No matches",
   "No members yet.": "No members yet.",
-  "No mountain passes seeded yet.": "No mountain passes seeded yet.",
+  "Pass data not available for this region yet. ":
+    "Pass data not available for this region yet. ",
   "No new notifications ": "No new notifications ",
   "No overnight stays matched the current filters. ":
     "No overnight stays matched the current filters. ",

@@ -135,9 +135,13 @@ describe("PassesPanel", () => {
     render(<PassesPanel month={7} data={data} />);
 
     expect(usePassesMock).not.toHaveBeenCalled();
+    // Single grey no-data status (revision 6) — never a green all-clear.
     expect(
-      screen.getByText("No mountain passes seeded yet."),
+      screen.getByText("Pass data not available for this region yet."),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No closed or unknown passes on your route."),
+    ).toBeNull();
   });
 
   it("can hide route warnings when used as a regional discovery panel", () => {
