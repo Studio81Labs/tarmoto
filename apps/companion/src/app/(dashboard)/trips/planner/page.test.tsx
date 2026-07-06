@@ -1004,6 +1004,79 @@ describe("TripPlannerPage", () => {
     draftSpy.mockRestore();
   });
 
+  it("a confirmed roundtrip preference never writes the saved defaults, even after a real touch", async () => {
+    // The programmatic setRoadPreference from the dialog must clear the
+    // touched flag: an earlier rider edit in the same session would
+    // otherwise smuggle the per-loop choice into users route_prefs.
+    useAuthStore.setState({
+      user: { id: "u-1", email: "r@example.com", displayName: "R" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    const loadSpy = vi
+      .spyOn(plannerApi, "getUserRoutePrefs")
+      .mockResolvedValue(null);
+    const savePrefsSpy = vi
+      .spyOn(plannerApi, "saveUserRoutePrefs")
+      .mockResolvedValue(undefined);
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+    await waitFor(() => expect(loadSpy).toHaveBeenCalled());
+
+    // A REAL rider edit → one defaults write.
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    await waitFor(() => expect(savePrefsSpy).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+
+    // Confirm a roundtrip with a DIFFERENT preference…
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
+      target: { value: "maximum_twisty" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+
+    // …and the debounce window passes without a second defaults write.
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 1100)));
+    expect(savePrefsSpy).toHaveBeenCalledTimes(1);
+    loadSpy.mockRestore();
+    savePrefsSpy.mockRestore();
+    draftSpy.mockRestore();
+  });
+
   it("keeps a day's custom LEG overrides when the rider switches days", () => {
     // Leg overrides are stored per day: reconciliation may only run a
     // day's legs against that day's own spine, so viewing day 2 must
@@ -1552,11 +1625,11 @@ describe("TripPlannerPage", () => {
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
   });
 
-  it("PATCHes the trip metadata before saving the route of an existing trip", async () => {
-    // PUT /route replaces days but never the metadata — without the
-    // PATCH the response hydration reverts the title AND the planner
-    // parameters (road preference, daily km, min quality) to their
-    // stale server values.
+  it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
+    // PUT /route replaces days but never the metadata — the PATCH keeps
+    // title and planner parameters from reverting, and it runs after the
+    // route commit so a failed re-route can't persist new parameters
+    // against old geometry.
     // ?tripId keeps the persisted trip mounted (the bare planner URL
     // drops lingering UUID trips as the new-trip entry point).
     window.history.replaceState(
@@ -1570,12 +1643,16 @@ describe("TripPlannerPage", () => {
       name: "Renamed ride",
     };
     storeState.routeDirty = true;
-    tripsApiUpdateMock.mockResolvedValue({ data: {} } as never);
+    tripsApiUpdateMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
 
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
-    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    await waitFor(() => expect(tripsApiUpdateMock).toHaveBeenCalled());
     expect(tripsApiUpdateMock).toHaveBeenCalledWith(
       "11111111-2222-4333-8444-666666666666",
       expect.objectContaining({
@@ -1585,7 +1662,44 @@ describe("TripPlannerPage", () => {
         min_quality: expect.any(Number),
       }),
     );
+    // Route first, metadata second.
+    expect(tripsApiSaveRouteMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      tripsApiUpdateMock.mock.invocationCallOrder[0]!,
+    );
+    // The PATCH response (fresh metadata + days) is what hydrates.
+    expect(setActiveTrip).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Renamed ride" }),
+    );
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not touch metadata when the route save fails", async () => {
+    // A Valhalla failure on one edited day must not leave the new
+    // parameters persisted against the old geometry.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-666666666666",
+    };
+    storeState.routeDirty = true;
+    tripsApiSaveRouteMock.mockRejectedValue(new Error("502"));
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    expect(
+      await screen.findByText(/Could not save the route/),
+    ).toBeInTheDocument();
+    expect(tripsApiUpdateMock).not.toHaveBeenCalled();
   });
 
   it("skips the metadata PATCH when the caller is a plain member", async () => {

@@ -1284,23 +1284,6 @@ export default function TripPlannerPage() {
           ).id ?? null;
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
-      } else if (
-        currentTrip &&
-        (serverTripCallerRole === null ||
-          serverTripCallerRole === "owner" ||
-          serverTripCallerRole === "admin")
-      ) {
-        // PUT /route replaces days but never the trip metadata: without
-        // this PATCH the response hydration below reverts the title AND
-        // the planner parameters (road preference, min quality, daily
-        // km) to their stale server values right after saving a route
-        // that was built with the new ones. Members can't PATCH
-        // metadata (owner/admin only) — their route save persists
-        // geometry under the trip's existing parameters.
-        await tripsApi.update(tripId, {
-          ...buildTripMetadataPayload(currentTrip, plannerParams),
-          num_days: days.length,
-        });
       }
       // Per-leg road overrides ride along with their day (§C): the save
       // re-routes server-side, and without them a custom leg would
@@ -1334,8 +1317,30 @@ export default function TripPlannerPage() {
         days: daysWithLegs,
         options: routeOptions,
       });
+      let detail = data;
+      if (
+        existingTripId &&
+        currentTrip &&
+        (serverTripCallerRole === null ||
+          serverTripCallerRole === "owner" ||
+          serverTripCallerRole === "admin")
+      ) {
+        // PUT /route replaces days but never the trip metadata, and the
+        // hydration below would otherwise revert the title AND planner
+        // parameters (road preference, min quality, daily km) to stale
+        // server values. The PATCH runs AFTER the route commit so a
+        // failed re-route can't persist new parameters against old
+        // geometry; its response carries both for hydration. Skipped for
+        // plain members (metadata is owner/admin-only while route saves
+        // are any-member).
+        const { data: updated } = await tripsApi.update(tripId, {
+          ...buildTripMetadataPayload(currentTrip, plannerParams),
+          num_days: days.length,
+        });
+        detail = updated as typeof data;
+      }
       const hydrated = tripFromDetail(
-        data as unknown as Parameters<typeof tripFromDetail>[0],
+        detail as unknown as Parameters<typeof tripFromDetail>[0],
       );
       setActiveTrip(hydrated);
       if (!existingTripId) {
@@ -1806,8 +1811,11 @@ export default function TripPlannerPage() {
         // The confirmed dialog preference IS the loop's road character:
         // apply it to the live route inputs too, or the recompute through
         // the drafted vias would fall back to the old trip-wide value.
-        // Deliberately not marked as touched — a per-loop choice, not an
-        // edit of the rider's saved defaults (§F).
+        // A per-loop choice, not an edit of the rider's saved defaults
+        // (§F) — and an EARLIER touch this session must not smuggle it
+        // into the write-back either, so the flag is cleared, not just
+        // left unset.
+        prefsTouchedRef.current = false;
         setRoadPreference(opts.preference);
         const store = useTripStore.getState();
         // The loop replaces plain vias; stops (fuel/stays) are kept.
