@@ -271,9 +271,48 @@ export function rerouteViaWaypoint(
 function segmentMidpoint(
   segment: RerouteTarget,
 ): { lng: number; lat: number } | null {
+  // Interpolate the midpoint BY LENGTH, not by vertex index: a sparse
+  // two-point closure's "middle vertex" is its endpoint, which would
+  // drive the offset via and the insertion anchor toward the wrong end
+  // of a long roadwork line.
   const coordinates = segment.geometry.coordinates;
-  const middle = coordinates[Math.floor(coordinates.length / 2)];
-  const [lng, lat] = middle ?? [];
+  let totalKm = 0;
+  const stepKms: number[] = [];
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const [lng1, lat1] = coordinates[i - 1] ?? [];
+    const [lng2, lat2] = coordinates[i] ?? [];
+    const km =
+      typeof lng1 === "number" &&
+      typeof lat1 === "number" &&
+      typeof lng2 === "number" &&
+      typeof lat2 === "number"
+        ? haversineKm(lat1, lng1, lat2, lng2)
+        : 0;
+    stepKms.push(km);
+    totalKm += km;
+  }
+  let remaining = totalKm / 2;
+  for (let i = 0; i < stepKms.length; i += 1) {
+    const step = stepKms[i]!;
+    if (step < remaining) {
+      remaining -= step;
+      continue;
+    }
+    const [lng1, lat1] = coordinates[i] ?? [];
+    const [lng2, lat2] = coordinates[i + 1] ?? [];
+    if (
+      typeof lng1 !== "number" ||
+      typeof lat1 !== "number" ||
+      typeof lng2 !== "number" ||
+      typeof lat2 !== "number"
+    ) {
+      break;
+    }
+    const t = step > 0 ? remaining / step : 0;
+    return { lng: lng1 + (lng2 - lng1) * t, lat: lat1 + (lat2 - lat1) * t };
+  }
+  // Degenerate line (zero length / bad vertices): first usable vertex.
+  const [lng, lat] = coordinates[0] ?? [];
   if (typeof lng !== "number" || typeof lat !== "number") return null;
   return { lng, lat };
 }

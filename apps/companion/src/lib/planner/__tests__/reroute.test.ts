@@ -64,8 +64,9 @@ describe("planRerouteAroundSegment", () => {
 
     expect(plan).not.toBeNull();
     // Perpendicular to a west→east segment is due north/south: longitude
-    // stays at the midpoint, latitude moves by the offset.
-    expect(plan!.location.lng).toBeCloseTo(14.2, 5);
+    // stays at the LENGTH midpoint of the two-vertex segment (14.15 —
+    // not the second vertex), latitude moves by the offset.
+    expect(plan!.location.lng).toBeCloseTo(14.15, 5);
     expect(Math.abs(plan!.location.lat - 50)).toBeGreaterThan(0.005);
     expect(Math.abs(plan!.location.lat - 50)).toBeLessThan(0.05);
   });
@@ -331,9 +332,13 @@ describe("rerouteAroundConditionInTrip (revision 7)", () => {
       insert,
     );
     expect(done).toBe(true);
-    const [dayIndex, beforeId] = insert.mock.calls[0]!;
+    const [dayIndex, beforeId, via] = insert.mock.calls[0]!;
     expect(dayIndex).toBe(1);
     expect(beforeId).toBe("e2");
+    // The via anchors on the line's LENGTH midpoint (~16.2°E), not its
+    // second vertex (17.25°E) — offsetting from an endpoint would leave
+    // the actual blocked crossing untouched.
+    expect(Math.abs(via.location.lng - 16.2)).toBeLessThan(0.2);
   });
 
   it("handles point conditions (passes) by borrowing the route direction", () => {

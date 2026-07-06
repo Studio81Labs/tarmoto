@@ -427,6 +427,45 @@ describe('TripsService', () => {
       );
     });
 
+    it('duplicate copies each day-level leg_preferences onto the new trip', async () => {
+      // Without the copy, a duplicated trip reloads with every leg
+      // inherited and the next save reroutes the rider-approved custom
+      // legs with the trip-wide preference.
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({
+          days: [
+            {
+              id: 'src-day-1',
+              day_number: 1,
+              title: null,
+              distance_km: 120,
+              route_geom: null,
+              avg_quality: null,
+              elevation_gain: null,
+              elevation_loss: null,
+              curviness_score: null,
+              scenic_score: null,
+              estimated_time: null,
+              start_linked: false,
+              leg_preferences: ['direct', 'maximum_twisty'],
+              waypoints: [],
+            },
+          ],
+          members: [{ user_id: OWNER_ID, role: 'owner' }],
+        } as unknown as Partial<Trip>),
+      );
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.duplicate(OWNER_ID, TRIP_ID);
+
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'day_number' in b);
+      expect(dayBodies[0]).toMatchObject({
+        leg_preferences: ['direct', 'maximum_twisty'],
+      });
+    });
+
     it('US-37: 404s when the supplied folder_id belongs to a different rider', async () => {
       folderRepo.findOne.mockResolvedValueOnce(null);
 

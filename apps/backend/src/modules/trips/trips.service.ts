@@ -211,6 +211,10 @@ export class TripsService {
               scenic_score: day.scenic_score,
               estimated_time: day.estimated_time,
               start_linked: day.start_linked,
+              // Custom per-leg road characters travel with the copy —
+              // dropping them would let the next edit/save reroute the
+              // duplicate with the trip-wide preference.
+              leg_preferences: day.leg_preferences,
             }),
           );
 
