@@ -1,23 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import type { FeatureFlagMap } from '@tarmoto/shared';
-import { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import type { GlobalFeatureStates } from '@tarmoto/shared';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 @Injectable()
 export class ClientConfigService {
-  constructor(
-    @InjectRepository(FeatureFlag)
-    private readonly flagsRepo: Repository<FeatureFlag>,
-  ) {}
+  constructor(private readonly featureResolver: FeatureResolver) {}
 
-  async flags(): Promise<FeatureFlagMap> {
-    const rows = await this.flagsRepo.find({
-      select: { key: true, enabled: true },
-    });
-    return rows.reduce<FeatureFlagMap>((acc, r) => {
-      acc[r.key] = r.enabled;
-      return acc;
-    }, {});
+  /**
+   * Global feature overrides currently in force. Only overrides are
+   * exposed publicly — per-user entitlements resolve on `/users/me`.
+   * Clients use this for the kill-switch fast path (`force_off` wins over
+   * a cached snapshot) and must not apply `force_on` from here alone.
+   */
+  featureStates(): Promise<GlobalFeatureStates> {
+    return this.featureResolver.getGlobalStates();
   }
 }

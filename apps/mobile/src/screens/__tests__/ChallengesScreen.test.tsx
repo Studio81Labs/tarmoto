@@ -1,6 +1,7 @@
 /**
  * ChallengesScreen — US-29 list + expand + join flow.
  */
+import { buildFeatureSnapshot } from "@tarmoto/shared";
 import React from "react";
 import {
   act,
@@ -52,6 +53,8 @@ beforeAll(() => {
         record_gps: true,
         crash_detection: true,
       },
+      subscription_tier: "free",
+      features: buildFeatureSnapshot("free", {}, {}),
       created_at: "2026-01-01T00:00:00Z",
     },
     isAuthenticated: true,

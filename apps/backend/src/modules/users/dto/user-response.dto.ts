@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SUBSCRIPTION_TIERS, type SubscriptionTier } from '@tarmoto/shared';
+import { FeatureSnapshotDto } from '../../features/dto/feature-snapshot.dto.js';
 
 class LatLngResponse {
   @ApiProperty()
@@ -105,6 +107,20 @@ export class UserResponseDto {
 
   @ApiProperty({ type: UserPreferencesResponse })
   preferences!: UserPreferencesResponse;
+
+  @ApiProperty({
+    enum: SUBSCRIPTION_TIERS,
+    description: "The rider's subscription tier (drives feature grants).",
+  })
+  subscription_tier!: SubscriptionTier;
+
+  @ApiProperty({
+    type: FeatureSnapshotDto,
+    description:
+      'Resolved feature entitlements (tier + overrides). UI gating only — ' +
+      'gated endpoints re-check server-side.',
+  })
+  features!: FeatureSnapshotDto;
 
   @ApiProperty()
   created_at!: string;

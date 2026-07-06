@@ -5,49 +5,90 @@ import { AdminFlagsService } from './admin-flags.service.js';
 
 describe('AdminFlagsController', () => {
   const service = {
-    list: jest.fn().mockResolvedValue([]),
-    create: jest.fn().mockResolvedValue({ id: 'f1' }),
-    update: jest.fn().mockResolvedValue({ id: 'f1' }),
-    remove: jest.fn().mockResolvedValue(undefined),
+    listFlags: jest.fn().mockResolvedValue({ flags: [] }),
+    setGlobalState: jest.fn().mockResolvedValue({ feature: 'gpx_export' }),
+    clearGlobalState: jest.fn().mockResolvedValue(undefined),
+    listOverriddenUsers: jest
+      .fn()
+      .mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 25 }),
+    getUserFlags: jest.fn().mockResolvedValue({ user_id: 'u1', flags: [] }),
+    setOverride: jest.fn().mockResolvedValue({ user_id: 'u1', flags: [] }),
+    removeOverride: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<AdminFlagsService>;
   const controller = new AdminFlagsController(service);
+  const adminReq = () =>
+    ({ adminUser: { id: 'admin-1' } }) as unknown as AdminRequest;
 
-  it('GET /admin/flags lists', async () => {
+  it('GET /admin/feature-flags lists the registry', async () => {
     await controller.list();
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(service.list).toHaveBeenCalled();
+    expect(service.listFlags).toHaveBeenCalled();
   });
 
-  it('POST /admin/flags creates + sets audit target', async () => {
-    const req = {} as unknown as AdminRequest;
-    await controller.create(req, { key: 'beta_ui' });
+  it('PUT /admin/feature-flags/:feature/global sets state + audit target', async () => {
+    const req = adminReq();
+    await controller.setGlobal(req, 'gpx_export', {
+      state: 'force_off',
+      reason: 'x',
+    });
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(service.create).toHaveBeenCalledWith({ key: 'beta_ui' });
+    expect(service.setGlobalState).toHaveBeenCalledWith(
+      'gpx_export',
+      { state: 'force_off', reason: 'x' },
+      'admin-1',
+    );
     expect(getAdminAuditTarget(req)).toEqual({
       target_type: 'feature_flag',
-      target_id: 'f1',
+      target_id: 'gpx_export',
     });
   });
 
-  it('PATCH /admin/flags/:id updates', async () => {
-    const req = {} as unknown as AdminRequest;
-    await controller.update(req, 'f1', { enabled: true });
+  it('DELETE /admin/feature-flags/:feature/global clears + audit target', async () => {
+    const req = adminReq();
+    await controller.clearGlobal(req, 'gpx_export');
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(service.update).toHaveBeenCalledWith('f1', { enabled: true });
+    expect(service.clearGlobalState).toHaveBeenCalledWith('gpx_export');
     expect(getAdminAuditTarget(req)).toEqual({
       target_type: 'feature_flag',
-      target_id: 'f1',
+      target_id: 'gpx_export',
     });
   });
 
-  it('DELETE /admin/flags/:id removes', async () => {
-    const req = {} as unknown as AdminRequest;
-    await controller.remove(req, 'f1');
+  it('GET /admin/feature-flags/:feature/users lists overrides', async () => {
+    await controller.listOverriddenUsers('gpx_export', { page: 2 });
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(service.remove).toHaveBeenCalledWith('f1');
+    expect(service.listOverriddenUsers).toHaveBeenCalledWith('gpx_export', {
+      page: 2,
+    });
+  });
+
+  it('GET /admin/users/:id/feature-flags resolves user flags', async () => {
+    await controller.getUserFlags('u1');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.getUserFlags).toHaveBeenCalledWith('u1');
+  });
+
+  it('PUT /admin/users/:id/feature-flags/:feature sets override + audit target', async () => {
+    const req = adminReq();
+    await controller.setOverride(req, 'u1', 'gpx_export', { enabled: true });
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.setOverride).toHaveBeenCalledWith('u1', 'gpx_export', {
+      enabled: true,
+    });
     expect(getAdminAuditTarget(req)).toEqual({
-      target_type: 'feature_flag',
-      target_id: 'f1',
+      target_type: 'user',
+      target_id: 'u1',
+    });
+  });
+
+  it('DELETE /admin/users/:id/feature-flags/:feature removes override', async () => {
+    const req = adminReq();
+    await controller.removeOverride(req, 'u1', 'gpx_export');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(service.removeOverride).toHaveBeenCalledWith('u1', 'gpx_export');
+    expect(getAdminAuditTarget(req)).toEqual({
+      target_type: 'user',
+      target_id: 'u1',
     });
   });
 });

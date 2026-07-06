@@ -19,18 +19,29 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { GroupRidesService } from './group-rides.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import { GroupRideDetailDto } from './dto/group-ride-response.dto.js';
 
+// Group rides are a premium entitlement (product spec §Monetization).
+// FeatureGuard runs after AuthGuard and enforces the group_rides flag
+// (tier grant + per-user override + global override) — but per-route,
+// not on the whole controller: `leave` and `end` are CLEANUP paths that
+// must stay reachable after an entitlement loss, or a revoked rider
+// could neither delete their membership + last-known positions nor end
+// the ride, leaving stale state visible to the remaining members. Both
+// enforce their own membership/owner checks in the service.
 @ApiTags('group-rides')
 @Controller('group-rides')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
 @ApiBearerAuth()
 export class GroupRidesController {
   constructor(private readonly service: GroupRidesService) {}
 
   @Post()
+  @RequireFeature('group_rides')
   @ApiOperation({
     summary: 'Create a group ride and become its owner',
     description:
@@ -46,6 +57,7 @@ export class GroupRidesController {
   }
 
   @Post(':code/join')
+  @RequireFeature('group_rides')
   @ApiOperation({
     summary: 'Join an active group ride by its 6-char code',
     description:
@@ -102,6 +114,7 @@ export class GroupRidesController {
   }
 
   @Get(':id')
+  @RequireFeature('group_rides')
   @ApiOperation({
     summary: 'Get group ride detail (members + last-known positions)',
     description:

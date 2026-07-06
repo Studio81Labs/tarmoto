@@ -1,0 +1,71 @@
+import {
+  ForbiddenException,
+  UnauthorizedException,
+  type ExecutionContext,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { FeatureGuard } from './feature.guard.js';
+import { RequireFeature } from './require-feature.decorator.js';
+
+function makeContext(user?: { userId: string }, handler: object = {}) {
+  return {
+    getHandler: () => handler,
+    getClass: () => class {},
+    switchToHttp: () => ({
+      getRequest: () => ({ user }),
+    }),
+  } as unknown as ExecutionContext;
+}
+
+function makeGuard(snapshot: Record<string, boolean>) {
+  const resolver = {
+    resolveForUser: jest.fn().mockResolvedValue(snapshot),
+  };
+  return {
+    guard: new FeatureGuard(new Reflector(), resolver as never),
+    resolver,
+  };
+}
+
+describe('FeatureGuard', () => {
+  const gated = (() => {
+    class Dummy {
+      @RequireFeature('gpx_export')
+      handler() {}
+    }
+    // The reflected metadata is what the guard reads; the unbound
+    // reference never runs, so `this` scoping is irrelevant here.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    return Dummy.prototype.handler;
+  })();
+
+  it('passes routes without a @RequireFeature declaration', async () => {
+    const { guard, resolver } = makeGuard({});
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' })),
+    ).resolves.toBe(true);
+    expect(resolver.resolveForUser).not.toHaveBeenCalled();
+  });
+
+  it('passes when the user resolves the feature to true', async () => {
+    const { guard, resolver } = makeGuard({ gpx_export: true });
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' }, gated)),
+    ).resolves.toBe(true);
+    expect(resolver.resolveForUser).toHaveBeenCalledWith('u1');
+  });
+
+  it('throws 403 when the feature resolves to false', async () => {
+    const { guard } = makeGuard({ gpx_export: false });
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' }, gated)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('throws 401 when placed without AuthGuard (no request user)', async () => {
+    const { guard } = makeGuard({ gpx_export: true });
+    await expect(
+      guard.canActivate(makeContext(undefined, gated)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});

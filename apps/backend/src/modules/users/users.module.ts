@@ -9,6 +9,7 @@ import { UserFollow } from '../../entities/user-follow.entity.js';
 import { StorageModule } from '../storage/index.js';
 import { AccountModule } from '../account/index.js';
 import { BadgesModule } from '../badges/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { SharingModule } from '../sharing/index.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
@@ -26,6 +27,7 @@ import { UsersService } from './users.service.js';
     StorageModule,
     AccountModule,
     BadgesModule,
+    FeaturesModule,
     SharingModule,
   ],
   controllers: [UsersController],

@@ -18,6 +18,7 @@ import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { BadgesService } from '../badges/badges.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -59,6 +60,7 @@ export class UsersService {
     private readonly storage: ObjectStorage,
     private readonly privacy: PrivacyPreferencesService,
     private readonly badges: BadgesService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async getProfile(userId: string): Promise<UserResponseDto> {
@@ -66,7 +68,10 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return toUserResponse(user);
+    return toUserResponse(
+      user,
+      await this.featureResolver.resolveForLoadedUser(user),
+    );
   }
 
   /**
@@ -496,7 +501,10 @@ export class UsersService {
     ) {
       await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     }
-    return toUserResponse(saved);
+    return toUserResponse(
+      saved,
+      await this.featureResolver.resolveForLoadedUser(saved),
+    );
   }
 
   async uploadAvatar(
@@ -551,7 +559,10 @@ export class UsersService {
     }
 
     await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
-    return toUserResponse(saved);
+    return toUserResponse(
+      saved,
+      await this.featureResolver.resolveForLoadedUser(saved),
+    );
   }
 
   async listContacts(userId: string): Promise<ContactResponseDto[]> {

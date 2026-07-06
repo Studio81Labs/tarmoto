@@ -16,6 +16,23 @@ vi.mock("../data/useAdminUsers.js", () => ({
   useRestoreUser: () => ({ mutate: mockRestoreMutate, isPending: false }),
 }));
 
+const mockSetOverrideMutate = vi.fn();
+const mockRemoveOverrideMutate = vi.fn();
+const mockUseAdminUserFeatureFlags = vi.fn();
+
+vi.mock("../data/useAdminFlags.js", () => ({
+  useAdminUserFeatureFlags: (userId: unknown) =>
+    mockUseAdminUserFeatureFlags(userId),
+  useSetFeatureOverride: () => ({
+    mutate: mockSetOverrideMutate,
+    isPending: false,
+  }),
+  useRemoveFeatureOverride: () => ({
+    mutate: mockRemoveOverrideMutate,
+    isPending: false,
+  }),
+}));
+
 const BASE_ROWS = [
   {
     id: "u1",
@@ -59,12 +76,21 @@ describe("UsersScreen", () => {
     mockRefetch.mockClear();
     mockUseAdminUsersList.mockClear();
     mockUseAdminUserDetail.mockClear();
+    mockSetOverrideMutate.mockClear();
+    mockRemoveOverrideMutate.mockClear();
+    mockUseAdminUserFeatureFlags.mockClear();
 
     mockUseAdminUsersList.mockReturnValue(defaultListReturn());
     mockUseAdminUserDetail.mockReturnValue({
       data: null,
       isPending: false,
       error: null,
+    });
+    mockUseAdminUserFeatureFlags.mockReturnValue({
+      data: null,
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
     });
   });
 
@@ -258,6 +284,7 @@ describe("UsersScreen", () => {
         created_at: "2026-01-01T00:00:00Z",
         deleted_at: null,
         home_region: null,
+        plan_source: "founder",
         email_verified_at: null,
         subscription_current_period_end: null,
         subscription_cancel_at_period_end: false,
@@ -291,6 +318,89 @@ describe("UsersScreen", () => {
     expect(screen.getByText("Rides: 42")).toBeInTheDocument();
     expect(screen.getByText("Hazard reports: 3")).toBeInTheDocument();
     expect(screen.getByText("Road reviews: 7")).toBeInTheDocument();
+
+    // Plan source renders after the subscription tier; founder grants get a pill.
+    expect(screen.getByText("Plan source")).toBeInTheDocument();
+    expect(screen.getByText("founder")).toBeInTheDocument();
+  });
+
+  // ── Feature flags card ────────────────────────────────────────────────────
+
+  it("renders the selected user's feature flags with grant/revoke/reset controls", async () => {
+    mockUseAdminUserFeatureFlags.mockReturnValue({
+      data: {
+        user_id: "u1",
+        flags: [
+          {
+            feature: "gpx_export",
+            description: "Export rides as GPX",
+            default_value: false,
+            resolved: true,
+            override_state: "force_on",
+          },
+          {
+            feature: "commuter_mode",
+            description: "Commuter mode tools",
+            default_value: true,
+            resolved: true,
+            override_state: "default",
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    expect(mockUseAdminUserFeatureFlags).toHaveBeenLastCalledWith("u1");
+    expect(screen.getByText("gpx_export")).toBeInTheDocument();
+    expect(screen.getByText("force_on")).toBeInTheDocument();
+
+    // Reset is only offered for the flag with an active override.
+    expect(
+      screen.getAllByRole("button", { name: "Reset to default" }),
+    ).toHaveLength(1);
+
+    // Grant force-enables the flag for this user.
+    await user.click(screen.getAllByRole("button", { name: "Grant" })[1]!);
+    expect(mockSetOverrideMutate).toHaveBeenCalledWith(
+      {
+        params: { path: { userId: "u1", feature: "commuter_mode" } },
+        body: { enabled: true },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    // Revoke force-disables it.
+    await user.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    expect(mockSetOverrideMutate).toHaveBeenCalledWith(
+      {
+        params: { path: { userId: "u1", feature: "gpx_export" } },
+        body: { enabled: false },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    // Settle the in-flight revoke so the row's buttons leave loading state.
+    const [, revokeOptions] = mockSetOverrideMutate.mock.calls[1] as [
+      unknown,
+      { onSettled: () => void },
+    ];
+    act(() => {
+      revokeOptions.onSettled();
+    });
+
+    // Reset removes the per-user override.
+    await user.click(screen.getByRole("button", { name: "Reset to default" }));
+    expect(mockRemoveOverrideMutate).toHaveBeenCalledWith(
+      { params: { path: { userId: "u1", feature: "gpx_export" } } },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
   });
 
   // ── Fix 4: Subscription filter ────────────────────────────────────────────

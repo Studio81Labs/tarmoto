@@ -2,6 +2,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
 import { RidesController } from './rides.controller.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
@@ -43,6 +44,7 @@ describe('RidesController', () => {
         { provide: RidesService, useValue: mockService },
         { provide: GpxService, useValue: { importGpx: jest.fn() } },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 

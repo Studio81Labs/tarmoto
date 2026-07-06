@@ -167,7 +167,8 @@ describe('AccountService', () => {
       expect(snapshot.current_plan).toMatchObject({
         tier: 'premium',
         status: 'active',
-        price_label: '€29.99/yr',
+        // premium is the €49.99 top tier (2026-07 tier-name swap)
+        price_label: '€49.99/yr',
       });
       expect(snapshot.payment_method).toMatchObject({
         brand: 'visa',
@@ -405,6 +406,7 @@ describe('AccountService', () => {
           stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
           subscription_tier: 'pro',
+          plan_source: 'subscription',
           subscription_cancel_at_period_end: true,
           billing_trial_used_at: expect.any(Date),
         }),
@@ -415,6 +417,78 @@ describe('AccountService', () => {
       );
       // Conditional activation claim is what writes the status.
       expect(activationClaimExecute).toHaveBeenCalled();
+    });
+
+    it('lets the configured price ID beat a stale pre-swap lookup key', async () => {
+      // 2026-07 tier-name swap: a Stripe price whose lookup_key still
+      // says "premium" but whose ID is the configured PRO price must
+      // resolve to pro — otherwise the checkout would flip the paid
+      // entitlement onto the wrong tier.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: {
+              data: [{ price: { id: 'price_pro', lookup_key: 'premium' } }],
+            },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          subscription_tier: 'pro',
+          plan_source: 'subscription',
+        }),
+      );
+    });
+
+    it('clears the tier and plan provenance when the subscription is deleted', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_123',
+          subscription_tier: 'pro',
+          plan_source: 'founder',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'canceled',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          subscription_tier: 'free',
+          plan_source: null,
+          subscription_status: 'canceled',
+          stripe_subscription_id: null,
+        }),
+      );
     });
 
     it('skips the confirmation email when a concurrent webhook already claimed the activation transition', async () => {

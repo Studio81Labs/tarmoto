@@ -1,6 +1,7 @@
 /**
  * BadgesScreen — US-28 grid render + tier separation.
  */
+import { buildFeatureSnapshot } from "@tarmoto/shared";
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react-native";
 import BadgesScreen from "../BadgesScreen";
@@ -46,6 +47,8 @@ beforeAll(() => {
         record_gps: true,
         crash_detection: true,
       },
+      subscription_tier: "free",
+      features: buildFeatureSnapshot("free", {}, {}),
       created_at: "2026-01-01T00:00:00Z",
     },
     isAuthenticated: true,

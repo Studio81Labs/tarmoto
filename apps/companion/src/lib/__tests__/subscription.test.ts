@@ -43,7 +43,8 @@ describe("normalizeSubscriptionSnapshot", () => {
     });
 
     expect(snapshot.preview).toBe(true);
-    expect(snapshot.currentPlan.tier).toBe("premium");
+    // The synthesized fallback plan is Pro — the €29.99 mid tier.
+    expect(snapshot.currentPlan.tier).toBe("pro");
     expect(snapshot.currentPlan.status).toBe("active");
     expect(snapshot.currentPlan.priceLabel).toBe("€29.99/yr");
     expect(snapshot.billingHistory[0]?.invoiceUrl).toBe(

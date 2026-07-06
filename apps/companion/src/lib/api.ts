@@ -3,10 +3,12 @@ import { createTarmotoClient } from "@tarmoto/openapi-client";
 import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
 import type {
+  FeatureSnapshot,
   InAppNotification,
   InAppNotificationListResponse,
   NotificationPreferences,
   PrivacyPreferences,
+  SubscriptionTier,
 } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST, API_BASE } from "@/lib/config";
@@ -1414,6 +1416,15 @@ export interface UserProfileResponse {
   home_location: { lat: number; lng: number } | null;
   work_location: { lat: number; lng: number } | null;
   preferences: Record<string, unknown>;
+  /** The rider's subscription tier — drives feature grants server-side. */
+  subscription_tier: SubscriptionTier;
+  /**
+   * Resolved feature entitlements (tier + overrides). UI gating only —
+   * gated endpoints re-check server-side and answer 403 when off. Read
+   * via `isFeatureEnabled(user.features, key)` from `@tarmoto/shared`
+   * so a missing key fails closed.
+   */
+  features: FeatureSnapshot;
   created_at: string;
 }
 

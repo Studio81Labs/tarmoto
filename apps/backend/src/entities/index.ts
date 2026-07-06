@@ -64,4 +64,6 @@ export type { AdminRole, AdminUserStatus } from './admin-user.entity.js';
 export { AdminSession } from './admin-session.entity.js';
 export { AdminRefreshToken } from './admin-refresh-token.entity.js';
 export { AdminAuditLog } from './admin-audit-log.entity.js';
-export { FeatureFlag } from './feature-flag.entity.js';
+export { UserFeature } from './user-feature.entity.js';
+export { FeatureState } from './feature-state.entity.js';
+export { AppSetting } from './app-setting.entity.js';

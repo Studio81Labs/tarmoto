@@ -6,6 +6,7 @@ import { Ride } from '../../entities/ride.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { WeatherModule } from '../weather/weather.module.js';
 import { ClosuresModule } from '../closures/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { CommuteController } from './commute.controller.js';
 import { CommuteService } from './commute.service.js';
 import {
@@ -70,6 +71,7 @@ export function routingProviderFactory(
     HazardsModule,
     WeatherModule,
     ClosuresModule,
+    FeaturesModule,
   ],
   controllers: [CommuteController],
   providers: [

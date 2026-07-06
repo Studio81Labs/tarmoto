@@ -4,7 +4,10 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
-import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
+import {
+  DEFAULT_PRIVACY_PREFERENCES,
+  buildFeatureSnapshot,
+} from '@tarmoto/shared';
 import { UsersService } from './users.service.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
@@ -16,6 +19,7 @@ import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { BadgesService } from '../badges/badges.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -52,9 +56,12 @@ describe('UsersService', () => {
       home_location: null,
       work_location: null,
       preferences: { units: 'metric' },
+      subscription_tier: 'free',
       created_at: new Date('2026-04-13T10:00:00Z'),
       updated_at: new Date('2026-04-13T10:00:00Z'),
     }) as unknown as User;
+
+  const mockFeatureSnapshot = buildFeatureSnapshot('free', {}, {});
 
   const mockContact = {
     id: 'contact-1',
@@ -151,6 +158,14 @@ describe('UsersService', () => {
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: BadgesService, useValue: badgesService },
+        {
+          provide: FeatureResolver,
+          useValue: {
+            resolveForLoadedUser: jest
+              .fn()
+              .mockResolvedValue(mockFeatureSnapshot),
+          },
+        },
       ],
     }).compile();
 
