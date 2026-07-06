@@ -4237,6 +4237,8 @@ export interface components {
             scenic_score: number;
             estimated_time_min: number;
             start_linked: boolean;
+            /** @description Per-leg road-character overrides as saved (revision 3 §C): one routing preference per consecutive routing-waypoint pair, travel order. Null when every leg inherits the trip-wide preference. */
+            leg_preferences?: ("direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop")[] | null;
             /** @description Polyline points (lat/lng) of the day route. */
             route_geometry: components["schemas"]["LatLngResponseDto"][];
             waypoints: components["schemas"]["TripWaypointDto"][];

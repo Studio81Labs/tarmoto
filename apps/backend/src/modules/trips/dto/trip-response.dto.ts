@@ -1,5 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
+import {
+  ROUTE_PREFERENCES,
+  type RoutePreferenceOption,
+} from '../../routing/dto/route.dto.js';
 
 export const TRIP_STATUSES = [
   'draft',
@@ -182,6 +186,18 @@ export class TripDayDto {
 
   @ApiProperty()
   start_linked!: boolean;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    enum: ROUTE_PREFERENCES,
+    isArray: true,
+    description:
+      'Per-leg road-character overrides as saved (revision 3 §C): one ' +
+      'routing preference per consecutive routing-waypoint pair, travel ' +
+      'order. Null when every leg inherits the trip-wide preference.',
+  })
+  leg_preferences?: RoutePreferenceOption[] | null;
 
   @ApiProperty({
     type: [LatLngResponseDto],

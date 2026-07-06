@@ -195,6 +195,12 @@ export interface TripDay {
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
   startLinked?: boolean;
   /**
+   * Per-leg road-character overrides as saved (revision 3 §C): one
+   * preference per consecutive routing-waypoint pair, travel order. The
+   * planner re-seeds its leg-override state from this on load.
+   */
+  legPreferences?: import("./planner/prefs").RoadPreference[] | null;
+  /**
    * Client-only (never saved): where each routing leg starts in
    * `routeGeometry` when the day was routed per leg (revision 3 §C).
    * Lets quality segments be tagged with their legId on derivation.

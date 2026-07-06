@@ -1606,6 +1606,34 @@ export default function TripPlannerPage() {
     // any earlier touch so the saved-defaults write-back (§F) can't
     // persist a loaded/remote trip's parameters as the rider's defaults.
     prefsTouchedRef.current = false;
+    // Re-seed the leg overrides from the persisted days (§C): saved
+    // leg_preferences map positionally onto each day's routing pairs.
+    // Values equal to the trip-wide preference collapse back to inherit
+    // so the UI shows CUSTOM only where the rider actually diverged.
+    const tripWide = fromTripRoadPreference(params.roadPreference);
+    const seeded: Record<number, LegPref[]> = {};
+    activeTrip.days.forEach((day, index) => {
+      const stored = day.legPreferences;
+      if (!stored || stored.length === 0) return;
+      const ids = filterRoutingWaypoints(normalizeDayFinish(day.waypoints)).map(
+        (w) => w.id,
+      );
+      if (stored.length !== ids.length - 1) return;
+      const legs = ids.slice(0, -1).map((fromWaypointId, i) => ({
+        fromWaypointId,
+        toWaypointId: ids[i + 1]!,
+        preference: (stored[i] === tripWide
+          ? "inherit"
+          : stored[i]!) as LegPref["preference"],
+      }));
+      if (legs.some((leg) => leg.preference !== "inherit")) {
+        seeded[index] = legs;
+      }
+    });
+    // Only replace state when the trip actually carries overrides: the
+    // reconcile effect owns the empty shape, and stale entries from a
+    // previous trip re-inherit there on their own (broken pairs, §C).
+    if (Object.keys(seeded).length > 0) setLegPrefsByDay(seeded);
   }, [activeTrip]);
   // Hydrate the planner controls from `?days=…&road=…` etc. **after** mount
   // so that the SSR/static prerender and the client's first render both

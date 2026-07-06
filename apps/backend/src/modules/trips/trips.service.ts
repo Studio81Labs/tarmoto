@@ -37,6 +37,7 @@ import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
+import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   PublicTripDetailDto,
@@ -1232,6 +1233,11 @@ export class TripsService {
             elevation_gain: b.elevation_gain,
             elevation_loss: b.elevation_loss,
             route_geom: b.route_geom,
+            // Persist the leg overrides WITH their day so the planner can
+            // re-seed them on reload — otherwise the next edit + save
+            // re-routes the approved custom legs with the trip-wide
+            // preference.
+            leg_preferences: d.leg_preferences ?? null,
           }),
         );
         // Persist ALL submitted waypoints (including non-routing stops such as
@@ -1523,6 +1529,9 @@ export class TripsService {
       scenic_score: d.scenic_score ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
       start_linked: d.start_linked ?? false,
+      leg_preferences: (d.leg_preferences ?? null) as
+        | RoutePreferenceOption[]
+        | null,
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
         // `location` is NOT NULL in the schema, but the shared helper

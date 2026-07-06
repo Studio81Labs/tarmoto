@@ -119,6 +119,61 @@ export function nearestDayIndexToPoint(
   return nearestDayToPoint(trip, location).index;
 }
 
+/**
+ * Index of the day whose route passes nearest to any SEGMENT of `line`
+ * (distance from each day vertex to each line segment), or -1 when no
+ * day carries a routed line.
+ */
+function nearestDayIndexToLine(
+  trip: Trip,
+  line: ReadonlyArray<{ lat: number; lng: number }>,
+): number {
+  let bestDayIndex = -1;
+  let bestKm = Number.POSITIVE_INFINITY;
+  trip.days.forEach((day, index) => {
+    const polyline = day.routeGeometry?.coordinates;
+    if (!polyline || polyline.length < 2) return;
+    for (const [lng, lat] of polyline) {
+      if (typeof lng !== "number" || typeof lat !== "number") continue;
+      for (let i = 0; i < line.length - 1; i += 1) {
+        const km = pointToSegmentKm({ lat, lng }, line[i]!, line[i + 1]!);
+        if (km < bestKm) {
+          bestKm = km;
+          bestDayIndex = index;
+        }
+      }
+    }
+  });
+  return bestDayIndex;
+}
+
+/**
+ * Distance from a point to a segment, km — equirectangular projection
+ * around the point (exact enough at closure scales).
+ */
+function pointToSegmentKm(
+  point: { lat: number; lng: number },
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const kmPerDegLng =
+    KM_PER_DEGREE_LAT * Math.cos((point.lat * Math.PI) / 180) || 1e-6;
+  const ax = (a.lng - point.lng) * kmPerDegLng;
+  const ay = (a.lat - point.lat) * KM_PER_DEGREE_LAT;
+  const bx = (b.lng - point.lng) * kmPerDegLng;
+  const by = (b.lat - point.lat) * KM_PER_DEGREE_LAT;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t =
+    lengthSq > 0
+      ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq))
+      : 0;
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(cx, cy);
+}
+
 function nearestDayToPoint(
   trip: Trip | null,
   location: { lat: number; lng: number },
@@ -150,23 +205,14 @@ export function rerouteAroundConditionInTrip(
   ) => void,
 ): boolean {
   if (!trip) return false;
-  // Owning day from the WHOLE closure line, not just condition.location
-  // (callers pass the line's first vertex): a long closure's first
-  // vertex can sit nearer a different leg than where the closure
-  // actually meets the ridden route.
-  const anchorPoints =
+  // Owning day from the WHOLE closure line — measured against its
+  // SEGMENTS, not just its vertices: a sparse two-point roadwork line
+  // can cross the ridden route near its middle while both endpoints sit
+  // closer to a different leg. Point conditions use the location alone.
+  const bestDayIndex =
     condition.line && condition.line.length >= 2
-      ? condition.line
-      : [condition.location];
-  let bestDayIndex = -1;
-  let bestAnchorKm = Number.POSITIVE_INFINITY;
-  for (const point of anchorPoints) {
-    const nearest = nearestDayToPoint(trip, point);
-    if (nearest.index >= 0 && nearest.km < bestAnchorKm) {
-      bestAnchorKm = nearest.km;
-      bestDayIndex = nearest.index;
-    }
-  }
+      ? nearestDayIndexToLine(trip, condition.line)
+      : nearestDayIndexToPoint(trip, condition.location);
   if (bestDayIndex < 0) return false;
   const day = trip.days[bestDayIndex]!;
 

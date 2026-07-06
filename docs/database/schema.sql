@@ -296,6 +296,11 @@ CREATE TABLE trip_days (
     -- Multi-day planner: true when this day's start mirrors the previous
     -- day's end (the overnight link). Day 1 is always false.
     start_linked    BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Per-leg road-character overrides (planner revision 3 §C): a JSON
+    -- array with one routing preference per consecutive routing-waypoint
+    -- pair, in travel order. NULL = every leg inherits the trip-wide
+    -- preference.
+    leg_preferences JSONB,
     UNIQUE(trip_id, day_number)
 );
 

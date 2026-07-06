@@ -1960,6 +1960,44 @@ describe("TripPlannerPage", () => {
     expect(body.days[1]!.leg_preferences).toBeUndefined();
   });
 
+  it("re-seeds leg overrides from a loaded trip's persisted leg_preferences", () => {
+    // Saved leg_preferences map positionally onto the day's routing
+    // pairs; values equal to the trip-wide preference collapse back to
+    // inherit so only genuine overrides read CUSTOM.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("s", "start", 10),
+            mkWp("v", "via", 11),
+            mkWp("e", "end", 12),
+          ],
+          // Trip-wide maps to Balanced (fixture "mixed"): leg 1 is a
+          // real override, leg 2 collapses to inherit.
+          legPreferences: ["scenic_balance", "balanced"],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    const legButtons = screen.getAllByRole("button", {
+      name: "Road type for this leg",
+    });
+    expect(legButtons[0]).toHaveTextContent("Scenic balance");
+    expect(legButtons[0]).toHaveTextContent("CUSTOM");
+    expect(legButtons[1]).toHaveTextContent("Trip default");
+    expect(legButtons[1]).not.toHaveTextContent("CUSTOM");
+  });
+
   it("saves a multi-day payload with days[] and num_days from day count", async () => {
     // Two non-empty days — saveDays() returns 2 entries.
     storeState.activeTrip = {

@@ -2575,7 +2575,11 @@ describe('TripsService', () => {
       const dayBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
         .filter((b) => 'distance_km' in b);
-      expect(dayBodies[0]).toMatchObject({ distance_km: 100 });
+      expect(dayBodies[0]).toMatchObject({
+        distance_km: 100,
+        // Persisted WITH the day so the planner re-seeds them on reload.
+        leg_preferences: ['direct', 'maximum_twisty'],
+      });
     });
 
     it('400s when leg_preferences length does not match the routing legs', async () => {

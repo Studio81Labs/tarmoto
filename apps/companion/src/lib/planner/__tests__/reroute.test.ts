@@ -278,6 +278,64 @@ describe("rerouteAroundConditionInTrip (revision 7)", () => {
     expect(beforeId).toBe("e2");
   });
 
+  it("measures sparse closure lines as segments — a mid-segment crossing wins", () => {
+    // Two parallel legs: day 1 along 15°E, day 2 along 16.2°E. A
+    // two-point roadwork line at 50.1°N runs from 15.15°E to 17.25°E:
+    // BOTH endpoints sit nearer day 1, but the segment crosses day 2's
+    // route dead-on — the via must land on day 2.
+    const northSouth = (lng: number, ids: [string, string]) => ({
+      ...trip.days[0]!,
+      routeGeometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [lng, 49.9],
+          [lng, 50.0],
+          [lng, 50.1],
+          [lng, 50.2],
+          [lng, 50.3],
+        ],
+      },
+      waypoints: [
+        {
+          id: ids[0],
+          name: ids[0],
+          type: "start" as const,
+          location: { lng, lat: 49.9 },
+        },
+        {
+          id: ids[1],
+          name: ids[1],
+          type: "end" as const,
+          location: { lng, lat: 50.3 },
+        },
+      ],
+    });
+    const twoDayTrip = {
+      ...trip,
+      days: [
+        northSouth(15.0, ["s1", "e1"]),
+        { ...northSouth(16.2, ["s2", "e2"]), dayNumber: 2 },
+      ],
+    };
+    const insert = vi.fn();
+    const done = rerouteAroundConditionInTrip(
+      twoDayTrip as never,
+      {
+        id: "closure-sparse",
+        location: { lng: 15.15, lat: 50.1 },
+        line: [
+          { lng: 15.15, lat: 50.1 },
+          { lng: 17.25, lat: 50.1 },
+        ],
+      },
+      insert,
+    );
+    expect(done).toBe(true);
+    const [dayIndex, beforeId] = insert.mock.calls[0]!;
+    expect(dayIndex).toBe(1);
+    expect(beforeId).toBe("e2");
+  });
+
   it("handles point conditions (passes) by borrowing the route direction", () => {
     const insert = vi.fn();
     const done = rerouteAroundConditionInTrip(
