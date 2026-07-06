@@ -1,17 +1,22 @@
 import {
+  ArrayMinSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsNumber,
   IsOptional,
   IsString,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { toOptionalNumber } from '../../../common/dto-transforms.js';
+import { DEFAULT_BUFFER_KM, MAX_BUFFER_KM } from './point-of-interest.dto.js';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
@@ -179,6 +184,79 @@ export class StoredPoiDto {
 export class StoredPoiListDto {
   @ApiProperty({ type: [StoredPoiDto] })
   pois!: StoredPoiDto[];
+
+  @ApiProperty({ description: 'Number of rows returned.' })
+  count!: number;
+}
+
+class CorridorRoutePointDto {
+  @ApiProperty()
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
+  @IsLatitude()
+  lat!: number;
+
+  @ApiProperty()
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
+  @IsLongitude()
+  lng!: number;
+}
+
+/**
+ * Body for `POST /poi/in-corridor` — stored POIs within `buffer_km` of a route
+ * polyline. POST (not GET) so a long polyline can't overflow the URL, matching
+ * `/poi/along-route` and `/passes/check-route`.
+ */
+export class CorridorBodyDto {
+  @ApiProperty({ type: [CorridorRoutePointDto], minItems: 2 })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => CorridorRoutePointDto)
+  route!: CorridorRoutePointDto[];
+
+  @ApiPropertyOptional({
+    default: DEFAULT_BUFFER_KM,
+    maximum: MAX_BUFFER_KM,
+    description: `Corridor half-width in km (default ${DEFAULT_BUFFER_KM}, capped at ${MAX_BUFFER_KM}).`,
+  })
+  @IsOptional()
+  @Transform(toOptionalNumber)
+  @IsNumber()
+  @Max(MAX_BUFFER_KM)
+  buffer_km?: number;
+
+  @ApiPropertyOptional({
+    isArray: true,
+    description:
+      'Store kinds to include (free-form OSM import superset). Omit for all.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => parseKindStrings(value))
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsString({ each: true })
+  kinds?: string[];
+}
+
+/** A stored POI matched against a route corridor — adds the route-relative
+ * distances the STOPS tab renders (how far along, how far off). */
+export class StoredCorridorPoiDto extends StoredPoiDto {
+  @ApiProperty({ description: 'Distance from the route start to the POI, km.' })
+  distance_along_route_km!: number;
+
+  @ApiProperty({
+    description: 'Shortest distance from the POI to the route line, km.',
+  })
+  distance_from_route_km!: number;
+}
+
+export class StoredCorridorListDto {
+  @ApiProperty({ type: [StoredCorridorPoiDto] })
+  pois!: StoredCorridorPoiDto[];
+
+  @ApiProperty({ description: 'Buffer actually used for the lookup, km.' })
+  buffer_km!: number;
 
   @ApiProperty({ description: 'Number of rows returned.' })
   count!: number;

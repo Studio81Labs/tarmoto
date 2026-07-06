@@ -22,8 +22,10 @@ import {
   PoiQueryDto,
 } from './dto/point-of-interest.dto.js';
 import {
+  CorridorBodyDto,
   DEFAULT_LIMIT,
   InBboxQueryDto,
+  StoredCorridorListDto,
   StoredPoiDto,
   StoredPoiListDto,
 } from './dto/stored-poi.dto.js';
@@ -100,6 +102,27 @@ export class PoiController {
       query.limit ?? DEFAULT_LIMIT,
     );
     return { pois, count: pois.length };
+  }
+
+  @Post('in-corridor')
+  @ApiOperation({
+    summary: 'Stored POIs within a buffer of a route polyline (#849)',
+    description:
+      'The offline-store corridor query behind the companion STOPS tab — the ' +
+      'store counterpart to POST /poi/along-route. Each POI carries its ' +
+      'distance along the route and its shortest distance to the route line. ' +
+      'Returns an empty list for a region that has not been imported yet.',
+  })
+  @ApiResponse({ status: 200, type: StoredCorridorListDto })
+  async findInCorridor(
+    @Body() body: CorridorBodyDto,
+  ): Promise<StoredCorridorListDto> {
+    const { pois, buffer_km } = await this.poiStore.findAlongRoute(
+      body.route,
+      body.kinds,
+      body.buffer_km,
+    );
+    return { pois, buffer_km, count: pois.length };
   }
 
   @Post('along-route')

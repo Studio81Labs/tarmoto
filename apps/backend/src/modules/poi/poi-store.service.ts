@@ -3,9 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { osmDetailUrl } from './providers/overpass.provider.js';
+import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
+import {
+  DEFAULT_BUFFER_KM,
+  MAX_BUFFER_KM,
+} from './dto/point-of-interest.dto.js';
 import {
   DEFAULT_LIMIT,
   MAX_LIMIT,
+  StoredCorridorPoiDto,
   StoredPoiDto,
 } from './dto/stored-poi.dto.js';
 
@@ -14,6 +20,11 @@ interface Bbox {
   minLat: number;
   maxLng: number;
   maxLat: number;
+}
+
+interface RoutePoint {
+  lat: number;
+  lng: number;
 }
 
 /**
@@ -78,6 +89,90 @@ export class PoiStoreService {
     const poi = await this.repo.findOne({ where: { id } });
     return poi ? toStoredPoiDto(poi) : null;
   }
+
+  /**
+   * Stored POIs within `bufferKm` of a route polyline (the STOPS tab, #849) —
+   * the offline-store counterpart to the live `/poi/along-route`. Filters with
+   * a PostGIS geography `ST_DWithin` corridor, then projects each hit onto the
+   * route (reusing the live projection) for its along/off-route distances, and
+   * sorts start→end. Returns the clamped buffer so the client can echo it.
+   */
+  async findAlongRoute(
+    route: ReadonlyArray<RoutePoint>,
+    kinds: string[] | undefined,
+    bufferKm: number | undefined,
+  ): Promise<{ pois: StoredCorridorPoiDto[]; buffer_km: number }> {
+    if (route.length < 2) {
+      throw new BadRequestException('Route must have at least 2 points');
+    }
+    const buffer = Math.min(
+      Math.max(0.5, bufferKm || DEFAULT_BUFFER_KM),
+      MAX_BUFFER_KM,
+    );
+    const bufferM = Math.round(buffer * 1000);
+
+    // Build the LineString via named params so user coordinates are never
+    // string-interpolated into SQL — same pattern as passes.checkRoute. Going
+    // through the query builder also hydrates `geom` back into a GeoJSON Point.
+    const params: Record<string, number> = { buffer: bufferM };
+    const pointsSql = route
+      .map((p, i) => {
+        params[`lng${i}`] = p.lng;
+        params[`lat${i}`] = p.lat;
+        return `ST_MakePoint(:lng${i}, :lat${i})`;
+      })
+      .join(',');
+
+    const qb = this.repo.createQueryBuilder('poi').where(
+      `ST_DWithin(
+          poi.geom::geography,
+          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          :buffer
+        )`,
+      params,
+    );
+    if (kinds && kinds.length > 0) {
+      qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+    }
+    const rows = await qb.getMany();
+
+    // Project each hit onto the nearest route segment for its along/off-route
+    // distances; drop anything the precise perpendicular puts beyond the buffer
+    // (the geography corridor is slightly looser), sort start→end, cap.
+    const cumKm = cumulativeLengthKm(route);
+    const annotated = rows
+      .map((poi) => {
+        const [lng, lat] = poi.geom.coordinates;
+        if (lng === undefined || lat === undefined) return null;
+        return { poi, projected: projectOntoRoute({ lat, lng }, route, cumKm) };
+      })
+      .filter(
+        (x): x is { poi: Poi; projected: ProjectedDistances } => x !== null,
+      )
+      .filter((x) => x.projected.distance_from_route_km <= buffer)
+      .sort(
+        (a, b) =>
+          a.projected.distance_along_route_km -
+          b.projected.distance_along_route_km,
+      )
+      .slice(0, MAX_LIMIT);
+
+    return {
+      buffer_km: buffer,
+      pois: annotated.map(({ poi, projected }) => ({
+        ...toStoredPoiDto(poi),
+        distance_along_route_km:
+          Math.round(projected.distance_along_route_km * 10) / 10,
+        distance_from_route_km:
+          Math.round(projected.distance_from_route_km * 10) / 10,
+      })),
+    };
+  }
+}
+
+interface ProjectedDistances {
+  distance_from_route_km: number;
+  distance_along_route_km: number;
 }
 
 /**
