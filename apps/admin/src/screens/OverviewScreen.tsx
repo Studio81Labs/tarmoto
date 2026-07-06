@@ -24,7 +24,7 @@ export function OverviewScreen() {
           value={isPending ? "—" : (data?.activeRides ?? 0)}
         />
         <MetricTile
-          label="Feature flags"
+          label="Global flag overrides"
           value={isPending ? "—" : (data?.featureFlags ?? 0)}
         />
         <MetricTile

@@ -136,7 +136,9 @@ describe("SubscriptionPage", () => {
         "Preview data shown while live billing management is still being wired up.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Premium")).toHaveLength(2);
+    // Fallback preview's current plan is Pro (the €29.99 mid tier) —
+    // shown once in the current-plan card and once in the plan grid.
+    expect(screen.getAllByText("Pro")).toHaveLength(2);
     expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
   });
 
@@ -272,6 +274,147 @@ describe("SubscriptionPage", () => {
     expect(assignMock).toHaveBeenCalledWith(
       "https://checkout.stripe.com/session/test",
     );
+  });
+
+  it("lets a launch-granted paid user convert or switch plans through Checkout", async () => {
+    // Founder grant: paid tier, no Stripe customer (portal_available
+    // false), status canceled. The portal has nothing to manage, but
+    // Checkout must stay open so the grant can convert to a paid plan.
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          name: "Pro",
+          status: "canceled",
+          price_label: "€29.99/yr",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          {
+            tier: "free",
+            name: "Free",
+            price_label: "€0",
+            features: ["Basic navigation"],
+          },
+          {
+            tier: "pro",
+            name: "Pro",
+            price_label: "€29.99/yr",
+            highlighted: true,
+            features: ["Unlimited trip planning"],
+          },
+          {
+            tier: "premium",
+            name: "Premium",
+            price_label: "€49.99/yr",
+            features: ["Advanced analytics"],
+          },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+      },
+    });
+    createCheckoutSessionMock.mockResolvedValueOnce({
+      data: { url: "https://checkout.stripe.com/session/test" },
+    });
+
+    render(<SubscriptionPage />);
+
+    // The granted (current) plan converts via Checkout, labelled Subscribe.
+    const proCard = (await screen.findAllByText("Pro"))
+      .map((el) => el.closest("article"))
+      .find((el) => el !== null);
+    expect(proCard).not.toBeNull();
+    const subscribeButton = within(proCard!).getByRole("button", {
+      name: "Subscribe",
+    });
+    expect(subscribeButton).toBeEnabled();
+
+    // The other paid tier is also reachable via Checkout.
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
+    const upgradeButton = within(premiumCard!).getByRole("button", {
+      name: "Upgrade",
+    });
+    expect(upgradeButton).toBeEnabled();
+
+    // The free card stays inert — a grant is not a subscription to cancel.
+    const freeCard = (await screen.findByText("Free")).closest("article");
+    expect(
+      within(freeCard!).getByRole("button", { name: "Downgrade" }),
+    ).toBeDisabled();
+
+    fireEvent.click(upgradeButton);
+    await waitFor(() =>
+      expect(createCheckoutSessionMock).toHaveBeenCalledWith({
+        tier: "premium",
+      }),
+    );
+    expect(assignMock).toHaveBeenCalledWith(
+      "https://checkout.stripe.com/session/test",
+    );
+  });
+
+  it("keeps routing a granted user through Checkout after an abandoned Checkout created a Stripe customer", async () => {
+    // Starting Checkout persists a Stripe customer, so portal_available
+    // flips true — but there is still no subscription (status stays
+    // canceled). Plan changes must keep going through Checkout; the
+    // portal's subscription flows would be rejected without a
+    // subscription id.
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          name: "Pro",
+          status: "canceled",
+          price_label: "€29.99/yr",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          {
+            tier: "free",
+            name: "Free",
+            price_label: "€0",
+            features: ["Basic navigation"],
+          },
+          {
+            tier: "pro",
+            name: "Pro",
+            price_label: "€29.99/yr",
+            highlighted: true,
+            features: ["Unlimited trip planning"],
+          },
+          {
+            tier: "premium",
+            name: "Premium",
+            price_label: "€49.99/yr",
+            features: ["Advanced analytics"],
+          },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+      },
+    });
+    createCheckoutSessionMock.mockResolvedValueOnce({
+      data: { url: "https://checkout.stripe.com/session/test" },
+    });
+
+    render(<SubscriptionPage />);
+
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
+    fireEvent.click(
+      within(premiumCard!).getByRole("button", { name: "Upgrade" }),
+    );
+
+    await waitFor(() =>
+      expect(createCheckoutSessionMock).toHaveBeenCalledWith({
+        tier: "premium",
+      }),
+    );
+    expect(createPortalSessionMock).not.toHaveBeenCalled();
   });
 
   it("opens the payment-method update portal flow", async () => {

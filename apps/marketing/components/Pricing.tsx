@@ -17,7 +17,7 @@ const tiers = [
     highlight: false,
   },
   {
-    name: "Premium",
+    name: "Pro",
     price: "€29.99",
     cadence: "per year · planned",
     pitch: "Unlimited planning, offline maps, GPX export.",
@@ -30,12 +30,12 @@ const tiers = [
     highlight: true,
   },
   {
-    name: "Pro",
+    name: "Premium",
     price: "€49.99",
     cadence: "per year · planned",
     pitch: "For group organisers and power users.",
     feats: [
-      "Everything in Premium",
+      "Everything in Pro",
       "Unlimited group rides",
       "Priority hazard alerts",
       "Advanced analytics",

@@ -491,15 +491,14 @@ function priceToTier(
   proPriceId: string | null,
 ): BillingTier {
   if (!price || ('deleted' in price && price.deleted)) return 'free';
-  if (price.lookup_key === 'pro' || (proPriceId && price.id === proPriceId)) {
-    return 'pro';
-  }
-  if (
-    price.lookup_key === 'premium' ||
-    (premiumPriceId && price.id === premiumPriceId)
-  ) {
-    return 'premium';
-  }
+  // Configured price IDs win over lookup keys — same precedence (and
+  // rationale) as `AccountService.tierFromPrice`: env vars are
+  // per-environment and re-pointed with the 2026-07 tier-name swap,
+  // while Stripe lookup keys may still carry the pre-swap pairing.
+  if (proPriceId && price.id === proPriceId) return 'pro';
+  if (premiumPriceId && price.id === premiumPriceId) return 'premium';
+  if (price.lookup_key === 'pro') return 'pro';
+  if (price.lookup_key === 'premium') return 'premium';
   return 'free';
 }
 

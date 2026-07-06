@@ -28,6 +28,8 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
@@ -123,8 +125,12 @@ export class RidesController {
   }
 
   @Get('export.gpx')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_export')
   @ApiOperation({
-    summary: "Export all of the caller's rides as a multi-track GPX",
+    summary:
+      "Export all of the caller's rides as a multi-track GPX " +
+      '(requires the gpx_export feature entitlement)',
   })
   @ApiProduces('application/gpx+xml')
   @ApiResponse({ status: 200, description: 'GPX file' })
@@ -214,7 +220,14 @@ export class RidesController {
   }
 
   @Get(':rideId/gpx')
-  @ApiOperation({ summary: 'Export ride as GPX' })
+  // Same entitlement as the bulk export.gpx above — without it, a
+  // force_off / free-tier user could reconstruct the bulk export one
+  // ride at a time.
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_export')
+  @ApiOperation({
+    summary: 'Export ride as GPX (requires the gpx_export entitlement)',
+  })
   @ApiProduces('application/gpx+xml')
   @ApiResponse({ status: 200, description: 'GPX file' })
   @ApiResponse({ status: 404, description: 'Ride not found' })

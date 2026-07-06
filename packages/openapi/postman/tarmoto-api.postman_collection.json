@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "b6efd2eb-f73c-4639-a3b8-a645eca5295b",
+    "_postman_id": "6fb0e141-02b5-42bb-bdf6-940a393d5ad5",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -270,7 +270,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tier\": \"premium\"\n}",
+              "raw": "{\n  \"tier\": \"pro\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1329,6 +1329,129 @@
       ]
     },
     {
+      "name": "poi",
+      "item": [
+        {
+          "name": "Find accommodations near a point (US-10, US-36)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/accommodations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "accommodations"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_stars",
+                  "value": "",
+                  "description": "Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes \"no rating\" in with ratings the rider explicitly asked for.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Find along-route POIs near a point (US-10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/nearby",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "nearby"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Find POIs within a buffer of a route polyline (US-36)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/along-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "along-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "users",
       "item": [
         {
@@ -1365,7 +1488,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false\n  }\n}",
+              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false,\n    \"route_prefs\": {\n      \"road_preference\": \"direct\",\n      \"avoid_highways\": false,\n      \"avoid_tolls\": false,\n      \"avoid_unpaved\": false,\n      \"surfaces\": [\n        \"\"\n      ],\n      \"min_quality\": \"any\"\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1983,7 +2106,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"days\": [\n    {\n      \"dayNumber\": 0,\n      \"title\": \"\",\n      \"startLinked\": false,\n      \"waypoints\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0,\n          \"name\": \"\",\n          \"type\": \"start\"\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1,\n          \"name\": \"\",\n          \"type\": \"start\"\n        }\n      ]\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ]\n  }\n}",
+              "raw": "{\n  \"days\": [\n    {\n      \"dayNumber\": 0,\n      \"title\": \"\",\n      \"startLinked\": false,\n      \"waypoints\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0,\n          \"name\": \"\",\n          \"type\": \"start\"\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1,\n          \"name\": \"\",\n          \"type\": \"start\"\n        }\n      ],\n      \"leg_preferences\": [\n        \"direct\"\n      ]\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"prefer_quality\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ],\n    \"preference\": \"direct\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2892,6 +3015,190 @@
       ]
     },
     {
+      "name": "closures",
+      "item": [
+        {
+          "name": "List road closures",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures"],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "",
+                  "description": "Bounding box filter \"minLng,minLat,maxLng,maxLat\". Omit to list all.",
+                  "disabled": true
+                },
+                {
+                  "key": "active_on",
+                  "value": "",
+                  "description": "ISO 8601 instant. Only closures active on this instant are returned. Defaults to now.",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "",
+                  "description": "Filter by severity.",
+                  "disabled": true
+                },
+                {
+                  "key": "reason",
+                  "value": "",
+                  "description": "Filter by reason.",
+                  "disabled": true
+                },
+                {
+                  "key": "include_past",
+                  "value": "",
+                  "description": "When true, ignore `active_on` and return all closures regardless of window.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a road closure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Check which road closures a planned route crosses",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/check-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", "check-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 100,\n  \"active_on\": \"2026-07-15T00:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get a single road closure by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update a road closure",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a road closure",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "routing",
       "item": [
         {
@@ -2911,7 +3218,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ]\n  }\n}",
+              "raw": "{\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"prefer_quality\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ],\n    \"preference\": \"direct\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3619,7 +3926,7 @@
           }
         },
         {
-          "name": "Export all of the caller's rides as a multi-track GPX",
+          "name": "Export all of the caller's rides as a multi-track GPX (requires the gpx_export feature entitlement)",
           "request": {
             "method": "GET",
             "header": [
@@ -5038,129 +5345,6 @@
       ]
     },
     {
-      "name": "poi",
-      "item": [
-        {
-          "name": "Find accommodations near a point (US-10, US-36)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/accommodations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "accommodations"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius_km",
-                  "value": "",
-                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
-                  "disabled": true
-                },
-                {
-                  "key": "kinds",
-                  "value": "",
-                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`).",
-                  "disabled": true
-                },
-                {
-                  "key": "min_stars",
-                  "value": "",
-                  "description": "Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes \"no rating\" in with ratings the rider explicitly asked for.",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Find along-route POIs near a point (US-10)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/nearby",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "nearby"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius_km",
-                  "value": "",
-                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
-                  "disabled": true
-                },
-                {
-                  "key": "kinds",
-                  "value": "",
-                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Find POIs within a buffer of a route polyline (US-36)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/along-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "along-route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "geocode",
       "item": [
         {
@@ -5197,190 +5381,6 @@
       ]
     },
     {
-      "name": "closures",
-      "item": [
-        {
-          "name": "List road closures",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures"],
-              "query": [
-                {
-                  "key": "bbox",
-                  "value": "",
-                  "description": "Bounding box filter \"minLng,minLat,maxLng,maxLat\". Omit to list all.",
-                  "disabled": true
-                },
-                {
-                  "key": "active_on",
-                  "value": "",
-                  "description": "ISO 8601 instant. Only closures active on this instant are returned. Defaults to now.",
-                  "disabled": true
-                },
-                {
-                  "key": "severity",
-                  "value": "",
-                  "description": "Filter by severity.",
-                  "disabled": true
-                },
-                {
-                  "key": "reason",
-                  "value": "",
-                  "description": "Filter by reason.",
-                  "disabled": true
-                },
-                {
-                  "key": "include_past",
-                  "value": "",
-                  "description": "When true, ignore `active_on` and return all closures regardless of window.",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Create a road closure",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Check which road closures a planned route crosses",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures/check-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", "check-route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 100,\n  \"active_on\": \"2026-07-15T00:00:00Z\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Get a single road closure by id",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Update a road closure",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Delete a road closure",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "admin-auth",
       "item": [
         {
@@ -5394,9 +5394,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/config",
+              "raw": "{{baseUrl}}/admin/auth/config",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "config"]
+              "path": ["admin", "auth", "config"]
             }
           }
         },
@@ -5411,9 +5411,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/login",
+              "raw": "{{baseUrl}}/admin/auth/login",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "login"]
+              "path": ["admin", "auth", "login"]
             },
             "body": {
               "mode": "raw",
@@ -5437,9 +5437,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/refresh",
+              "raw": "{{baseUrl}}/admin/auth/refresh",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "refresh"]
+              "path": ["admin", "auth", "refresh"]
             }
           }
         },
@@ -5454,9 +5454,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/me",
+              "raw": "{{baseUrl}}/admin/auth/me",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "me"]
+              "path": ["admin", "auth", "me"]
             }
           }
         },
@@ -5471,9 +5471,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/logout",
+              "raw": "{{baseUrl}}/admin/auth/logout",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "logout"]
+              "path": ["admin", "auth", "logout"]
             }
           }
         },
@@ -5488,9 +5488,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/sso/github/start",
+              "raw": "{{baseUrl}}/admin/auth/sso/github/start",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "auth", "sso", "github", "start"]
+              "path": ["admin", "auth", "sso", "github", "start"]
             }
           }
         },
@@ -5505,17 +5505,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/auth/sso/github/callback",
+              "raw": "{{baseUrl}}/admin/auth/sso/github/callback",
               "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "admin",
-                "auth",
-                "sso",
-                "github",
-                "callback"
-              ],
+              "path": ["admin", "auth", "sso", "github", "callback"],
               "query": [
                 {
                   "key": "state",
@@ -5549,9 +5541,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/metrics",
+              "raw": "{{baseUrl}}/admin/metrics",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "metrics"]
+              "path": ["admin", "metrics"]
             }
           }
         },
@@ -5566,9 +5558,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/users",
+              "raw": "{{baseUrl}}/admin/users",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "users"],
+              "path": ["admin", "users"],
               "query": [
                 {
                   "key": "q",
@@ -5615,9 +5607,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/users/:id",
+              "raw": "{{baseUrl}}/admin/users/:id",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "users", ":id"],
+              "path": ["admin", "users", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -5638,9 +5630,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/users/:id",
+              "raw": "{{baseUrl}}/admin/users/:id",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "users", ":id"],
+              "path": ["admin", "users", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -5661,9 +5653,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/users/:id/restore",
+              "raw": "{{baseUrl}}/admin/users/:id/restore",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "users", ":id", "restore"],
+              "path": ["admin", "users", ":id", "restore"],
               "variable": [
                 {
                   "key": "id",
@@ -5684,9 +5676,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/admins",
+              "raw": "{{baseUrl}}/admin/admins",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "admins"]
+              "path": ["admin", "admins"]
             }
           }
         },
@@ -5701,9 +5693,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/admins",
+              "raw": "{{baseUrl}}/admin/admins",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "admins"]
+              "path": ["admin", "admins"]
             },
             "body": {
               "mode": "raw",
@@ -5727,9 +5719,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/admins/:id",
+              "raw": "{{baseUrl}}/admin/admins/:id",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "admins", ":id"],
+              "path": ["admin", "admins", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -5749,7 +5741,7 @@
           }
         },
         {
-          "name": "List feature flags",
+          "name": "List the feature-flag registry with overrides",
           "request": {
             "method": "GET",
             "header": [
@@ -5759,16 +5751,16 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/flags",
+              "raw": "{{baseUrl}}/admin/feature-flags",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "flags"]
+              "path": ["admin", "feature-flags"]
             }
           }
         },
         {
-          "name": "Create a feature flag",
+          "name": "Set a global override (force_off kill switch / force_on)",
           "request": {
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
@@ -5776,45 +5768,19 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/flags",
+              "raw": "{{baseUrl}}/admin/feature-flags/:feature/global",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "flags"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"key\": \"group_rides\",\n  \"enabled\": false,\n  \"description\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Update a feature flag (enabled / description)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/flags/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "flags", ":id"],
+              "path": ["admin", "feature-flags", ":feature", "global"],
               "variable": [
                 {
-                  "key": "id",
+                  "key": "feature",
                   "value": ""
                 }
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"enabled\": false,\n  \"description\": \"\"\n}",
+              "raw": "{\n  \"state\": \"force_off\",\n  \"reason\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5824,7 +5790,7 @@
           }
         },
         {
-          "name": "Delete a feature flag",
+          "name": "Clear a global override (back to normal)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -5834,12 +5800,159 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/flags/:id",
+              "raw": "{{baseUrl}}/admin/feature-flags/:feature/global",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "flags", ":id"],
+              "path": ["admin", "feature-flags", ":feature", "global"],
               "variable": [
                 {
-                  "key": "id",
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List users with a per-user override for a flag",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-flags/:feature/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-flags", ":feature", "users"],
+              "variable": [
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Substring match on email or display_name.",
+                  "disabled": true
+                },
+                {
+                  "key": "override",
+                  "value": "",
+                  "description": "Only overrides of this direction.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "A user's resolved flags + override states",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", ":userId", "feature-flags"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set a per-user override (grant or revoke)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-flags/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-flags",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove a per-user override",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-flags/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-flags",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
                   "value": ""
                 }
               ]
@@ -5857,9 +5970,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/content",
+              "raw": "{{baseUrl}}/admin/content",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "content"],
+              "path": ["admin", "content"],
               "query": [
                 {
                   "key": "type",
@@ -5906,9 +6019,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id/hide",
+              "raw": "{{baseUrl}}/admin/content/:type/:id/hide",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "content", ":type", ":id", "hide"],
+              "path": ["admin", "content", ":type", ":id", "hide"],
               "variable": [
                 {
                   "key": "type",
@@ -5942,17 +6055,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id/restore",
+              "raw": "{{baseUrl}}/admin/content/:type/:id/restore",
               "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "admin",
-                "content",
-                ":type",
-                ":id",
-                "restore"
-              ],
+              "path": ["admin", "content", ":type", ":id", "restore"],
               "variable": [
                 {
                   "key": "type",
@@ -5977,9 +6082,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/admin/content/:type/:id",
+              "raw": "{{baseUrl}}/admin/content/:type/:id",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "admin", "content", ":type", ":id"],
+              "path": ["admin", "content", ":type", ":id"],
               "variable": [
                 {
                   "key": "type",
@@ -5992,6 +6097,49 @@
               ]
             }
           }
+        },
+        {
+          "name": "Current launch-mode auto-grant tier",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/system-settings/launch-tier",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "system-settings", "launch-tier"]
+            }
+          }
+        },
+        {
+          "name": "Set the launch-mode auto-grant tier (null = off)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/system-settings/launch-tier",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "system-settings", "launch-tier"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"pro\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -5999,7 +6147,7 @@
       "name": "config",
       "item": [
         {
-          "name": "Public feature-flag map (key → enabled)",
+          "name": "Global feature-override map (feature → force_off | force_on)",
           "request": {
             "method": "GET",
             "header": [

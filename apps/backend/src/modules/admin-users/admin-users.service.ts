@@ -79,6 +79,7 @@ export class AdminUsersService {
     return {
       ...this.toRow(u),
       home_region: u.home_region,
+      plan_source: u.plan_source,
       email_verified_at: u.email_verified_at?.toISOString() ?? null,
       subscription_current_period_end:
         u.subscription_current_period_end?.toISOString() ?? null,

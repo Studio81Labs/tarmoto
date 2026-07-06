@@ -4,7 +4,7 @@ import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
-import { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import { FeatureState } from '../../entities/feature-state.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
@@ -19,8 +19,8 @@ export class AdminMetricsService {
     private readonly closures: Repository<RoadClosure>,
     @InjectRepository(Ride)
     private readonly rides: Repository<Ride>,
-    @InjectRepository(FeatureFlag)
-    private readonly flags: Repository<FeatureFlag>,
+    @InjectRepository(FeatureState)
+    private readonly featureStates: Repository<FeatureState>,
     @InjectRepository(HazardReport)
     private readonly hazards: Repository<HazardReport>,
     @InjectRepository(RoadReview)
@@ -42,7 +42,9 @@ export class AdminMetricsService {
       this.users.count({ where: { deleted_at: IsNull() } }),
       this.closures.count(),
       this.rides.count({ where: { status: 'active' } }),
-      this.flags.count(),
+      // Flag definitions are code-defined; the operationally interesting
+      // count is how many carry an active global override.
+      this.featureStates.count(),
       this.hazards.count({ where: { moderation_status: 'hidden' } }),
       this.reviews.count({ where: { moderation_status: 'hidden' } }),
       this.messages.count({ where: { moderation_status: 'hidden' } }),

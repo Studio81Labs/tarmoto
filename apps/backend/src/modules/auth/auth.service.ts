@@ -10,6 +10,8 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
 import { toUserResponse } from '../users/user-response.mapper.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { AppSettingsService } from '../app-settings/app-settings.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { EmailVerificationService } from './email-verification.service.js';
@@ -31,15 +33,26 @@ export class AuthService {
     private readonly userRepo: Repository<User>,
     private readonly jwt: JwtService,
     private readonly emailVerification: EmailVerificationService,
+    private readonly featureResolver: FeatureResolver,
+    private readonly appSettings: AppSettingsService,
   ) {}
 
   async register(dto: RegisterDto) {
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
+    // Launch mode (sibling `launch_all_pro` pattern): while an operator
+    // has a launch tier set, every new registration starts on that tier,
+    // marked `founder` so the grant stays distinguishable from a paid
+    // subscription. Existing accounts are never touched.
+    const { tier: launchTier } = await this.appSettings.getLaunchTier();
+
     const user = this.userRepo.create({
       email: dto.email,
       password_hash,
       display_name: dto.display_name,
+      ...(launchTier
+        ? { subscription_tier: launchTier, plan_source: 'founder' as const }
+        : {}),
     });
 
     let saved: User;
@@ -153,7 +166,10 @@ export class AuthService {
     return this.buildAuthResponse(user, sessionStart);
   }
 
-  private buildAuthResponse(user: User, origIat?: number): AuthResponseDto {
+  private async buildAuthResponse(
+    user: User,
+    origIat?: number,
+  ): Promise<AuthResponseDto> {
     const now = Math.floor(Date.now() / 1000);
 
     const accessToken = this.jwt.sign(
@@ -175,7 +191,10 @@ export class AuthService {
       access_token: accessToken,
       refresh_token: refreshToken,
       expires_in: ACCESS_TOKEN_EXPIRY,
-      user: toUserResponse(user),
+      user: toUserResponse(
+        user,
+        await this.featureResolver.resolveForLoadedUser(user),
+      ),
     };
   }
 }

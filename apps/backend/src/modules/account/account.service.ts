@@ -52,9 +52,11 @@ const PLAN_CATALOG: Record<
       '1 active trip',
     ],
   },
-  premium: {
-    name: 'Premium',
-    priceLabel: formatSubscriptionPriceLabel('premium'),
+  // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
+  // decided 2026-07 — the marketing page originally had them swapped).
+  pro: {
+    name: 'Pro',
+    priceLabel: formatSubscriptionPriceLabel('pro'),
     highlighted: true,
     features: [
       'Unlimited trip planning',
@@ -63,12 +65,12 @@ const PLAN_CATALOG: Record<
       'GPX export',
     ],
   },
-  pro: {
-    name: 'Pro',
-    priceLabel: formatSubscriptionPriceLabel('pro'),
+  premium: {
+    name: 'Premium',
+    priceLabel: formatSubscriptionPriceLabel('premium'),
     description: 'For group organisers and power users.',
     features: [
-      'Everything in Premium',
+      'Everything in Pro',
       'Unlimited group rides',
       'Priority hazard alerts',
       'Advanced analytics',
@@ -262,6 +264,10 @@ export class AccountService {
       const previousTier = user.subscription_tier;
       update.stripe_subscription_id = null;
       update.subscription_tier = 'free';
+      // Back on the free tier there is no plan to have a provenance for —
+      // clearing it also stops a stale 'founder'/'subscription' marker
+      // from outliving the plan it described.
+      update.plan_source = null;
       update.subscription_status = 'canceled';
       update.subscription_cancel_at_period_end = false;
       update.subscription_current_period_end = periodEnd;
@@ -292,6 +298,11 @@ export class AccountService {
     const newStatus = this.statusFromSubscription(subscription.status);
     update.stripe_subscription_id = subscription.id;
     update.subscription_tier = newTier;
+    // The tier now comes from Stripe, so record 'subscription' provenance
+    // (a launch-granted 'founder' who converts to paid becomes a paying
+    // customer in the admin view). An unmapped price resolves to 'free',
+    // which has no plan to attribute — clear the marker.
+    update.plan_source = newTier === 'free' ? null : 'subscription';
     update.subscription_cancel_at_period_end =
       subscription.cancel_at_period_end;
     update.subscription_current_period_end = periodEnd;
@@ -565,17 +576,22 @@ export class AccountService {
     price: StripeSubscription['items']['data'][number]['price'] | undefined,
   ): BillingTier {
     if (!price || ('deleted' in price && price.deleted)) return 'free';
-    if (price.lookup_key === 'pro') return 'pro';
-    if (price.lookup_key === 'premium') return 'premium';
 
+    // Configured price IDs are checked BEFORE lookup keys: the env vars
+    // are per-environment and under our control, while Stripe lookup
+    // keys may still carry the pre-swap (2026-07) name↔price pairing.
+    // With correctly re-pointed env vars, a stale lookup key can no
+    // longer flip a paid user onto the wrong tier.
     const premiumPriceId =
       this.config.get<string>('TARMOTO_STRIPE_PREMIUM_PRICE_ID')?.trim() ??
       null;
     const proPriceId =
       this.config.get<string>('TARMOTO_STRIPE_PRO_PRICE_ID')?.trim() ?? null;
-
     if (proPriceId && price.id === proPriceId) return 'pro';
     if (premiumPriceId && price.id === premiumPriceId) return 'premium';
+
+    if (price.lookup_key === 'pro') return 'pro';
+    if (price.lookup_key === 'premium') return 'premium';
     return 'free';
   }
 

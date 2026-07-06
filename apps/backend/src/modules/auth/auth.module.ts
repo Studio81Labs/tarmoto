@@ -6,6 +6,8 @@ import { User } from '../../entities/user.entity.js';
 import { EmailVerificationToken } from '../../entities/email-verification-token.entity.js';
 import { PasswordResetToken } from '../../entities/password-reset-token.entity.js';
 import { EmailModule } from '../email/index.js';
+import { FeaturesModule } from '../features/features.module.js';
+import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
@@ -21,6 +23,8 @@ import { PasswordResetService } from './password-reset.service.js';
       PasswordResetToken,
     ]),
     EmailModule,
+    FeaturesModule,
+    AppSettingsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

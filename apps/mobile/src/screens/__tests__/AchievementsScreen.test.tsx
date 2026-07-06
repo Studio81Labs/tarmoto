@@ -1,6 +1,7 @@
 /**
  * AchievementsScreen — hub navigation + summary line.
  */
+import { buildFeatureSnapshot } from "@tarmoto/shared";
 import React from "react";
 import {
   fireEvent,
@@ -56,6 +57,8 @@ beforeAll(() => {
         record_gps: true,
         crash_detection: true,
       },
+      subscription_tier: "free",
+      features: buildFeatureSnapshot("free", {}, {}),
       created_at: "2026-01-01T00:00:00Z",
     },
     isAuthenticated: true,

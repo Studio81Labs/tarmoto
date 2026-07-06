@@ -7,7 +7,9 @@ import { EventsGateway } from './events.gateway.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { Server, Socket } from 'socket.io';
+import { buildFeatureSnapshot } from '@tarmoto/shared';
 
 describe('EventsGateway', () => {
   let gateway: EventsGateway;
@@ -18,6 +20,7 @@ describe('EventsGateway', () => {
     findOne: jest.Mock;
     update: jest.Mock;
   };
+  let featureResolver: { resolveForUser: jest.Mock };
 
   const mockServer = {
     adapter: jest.fn(),
@@ -64,6 +67,17 @@ describe('EventsGateway', () => {
             update: jest.fn().mockResolvedValue({ affected: 1 }),
           },
         },
+        {
+          provide: FeatureResolver,
+          useValue: {
+            // Default: entitled — the launch-mode force_on posture.
+            resolveForUser: jest
+              .fn()
+              .mockResolvedValue(
+                buildFeatureSnapshot('free', {}, { group_rides: 'force_on' }),
+              ),
+          },
+        },
       ],
     }).compile();
 
@@ -72,6 +86,7 @@ describe('EventsGateway', () => {
     rideRepo = module.get(getRepositoryToken(Ride));
     tripMemberRepo = module.get(getRepositoryToken(TripMember));
     groupRideMemberRepo = module.get(getRepositoryToken(GroupRideMember));
+    featureResolver = module.get(FeatureResolver);
     gateway.server = mockServer;
   });
 
@@ -302,16 +317,17 @@ describe('EventsGateway', () => {
   });
 
   describe('handleLocationUpdate', () => {
-    it('should broadcast to ride room excluding sender', () => {
+    it('should broadcast to ride room excluding sender', async () => {
       const mockTo = jest.fn().mockReturnValue({ emit: jest.fn() });
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
         rooms: new Set(['client-1', 'ride:ride-1']),
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
@@ -332,16 +348,17 @@ describe('EventsGateway', () => {
       );
     });
 
-    it('should reject authenticated client not in ride room', () => {
+    it('should reject authenticated client not in ride room', async () => {
       const mockTo = jest.fn();
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
         rooms: new Set(['client-1']), // not in ride:ride-1
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
@@ -350,22 +367,141 @@ describe('EventsGateway', () => {
       expect(mockTo).not.toHaveBeenCalled();
     });
 
-    it('should ignore unauthenticated clients', () => {
+    it('should ignore unauthenticated clients', async () => {
       const mockTo = jest.fn();
       const client = {
         id: 'client-2',
         data: {},
         rooms: new Set(['client-2']),
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
       });
 
       expect(mockTo).not.toHaveBeenCalled();
+    });
+
+    it('drops the update and detaches the client when the entitlement is revoked', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce(
+        buildFeatureSnapshot('free', {}, { group_rides: 'force_off' }),
+      );
+      const mockTo = jest.fn();
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['client-1', 'ride:ride-1']),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleLocationUpdate(client, {
+        ride_id: 'ride-1',
+        lat: 49.1,
+        lng: 16.75,
+      });
+
+      expect(mockTo).not.toHaveBeenCalled();
+      expect(client.leave).toHaveBeenCalledWith('ride:ride-1');
+    });
+  });
+
+  describe('evictFromGroupRideRooms', () => {
+    function makeRemoteSocket(rooms: string[]) {
+      return { rooms: new Set(rooms), leave: jest.fn() };
+    }
+
+    it('kicks a specific user out of group + legacy ride rooms only', async () => {
+      const socket = makeRemoteSocket([
+        'c-1',
+        'user:user-1',
+        'group-ride:gr-1',
+        'ride:ride-1',
+        'trip:trip-1',
+      ]);
+      const fetchSockets = jest.fn().mockResolvedValue([socket]);
+      (gateway.server as unknown as { in: jest.Mock }).in = jest
+        .fn()
+        .mockReturnValue({ fetchSockets });
+
+      await gateway.evictFromGroupRideRooms('user-1');
+
+      expect(
+        (gateway.server as unknown as { in: jest.Mock }).in,
+      ).toHaveBeenCalledWith('user:user-1');
+      expect(socket.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(socket.leave).toHaveBeenCalledWith('ride:ride-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('trip:trip-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('user:user-1');
+    });
+
+    it('kicks every socket out of group rooms when called without a user (kill switch)', async () => {
+      const member = makeRemoteSocket(['c-1', 'group-ride:gr-1']);
+      const bystander = makeRemoteSocket(['c-2', 'hazards:491:167']);
+      const fetchSockets = jest.fn().mockResolvedValue([member, bystander]);
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        fetchSockets;
+
+      await gateway.evictFromGroupRideRooms();
+
+      expect(member.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(bystander.leave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('evictNonEntitledFromGroupRideRooms', () => {
+    function makeRemoteSocket(rooms: string[], userId?: string) {
+      return {
+        rooms: new Set(rooms),
+        data: userId ? { userId } : {},
+        leave: jest.fn(),
+      };
+    }
+
+    it('evicts only members who no longer resolve group_rides', async () => {
+      // free-1 lost the entitlement when force_on was cleared; prem-1
+      // holds it via tier and must stay connected.
+      featureResolver.resolveForUser.mockImplementation((userId: string) =>
+        Promise.resolve(
+          buildFeatureSnapshot(
+            userId === 'prem-1' ? 'premium' : 'free',
+            {},
+            {},
+          ),
+        ),
+      );
+      const revoked = makeRemoteSocket(['c-1', 'group-ride:gr-1'], 'free-1');
+      const entitled = makeRemoteSocket(['c-2', 'group-ride:gr-1'], 'prem-1');
+      const anonymous = makeRemoteSocket(['c-3', 'group-ride:gr-1']);
+      const bystander = makeRemoteSocket(['c-4', 'trip:t-1'], 'free-2');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([revoked, entitled, anonymous, bystander]);
+
+      await gateway.evictNonEntitledFromGroupRideRooms();
+
+      expect(revoked.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(entitled.leave).not.toHaveBeenCalled();
+      // no authenticated user on the socket → fail closed
+      expect(anonymous.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      // sockets outside group rooms are never touched (and never resolved)
+      expect(bystander.leave).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when a member cannot be resolved', async () => {
+      featureResolver.resolveForUser.mockRejectedValueOnce(
+        new Error('user vanished'),
+      );
+      const socket = makeRemoteSocket(['c-1', 'ride:r-1'], 'ghost');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([socket]);
+
+      await gateway.evictNonEntitledFromGroupRideRooms();
+
+      expect(socket.leave).toHaveBeenCalledWith('ride:r-1');
     });
   });
 
@@ -765,6 +901,59 @@ describe('EventsGateway', () => {
       expect(client.join).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
     });
 
+    it('rejects members whose group_rides entitlement is off (kill switch parity with REST)', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce(
+        buildFeatureSnapshot('free', {}, { group_rides: 'force_off' }),
+      );
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: null },
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith(
+        'error',
+        expect.objectContaining({
+          message: 'Feature unavailable: group_rides',
+        }),
+      );
+    });
+
+    it('fails closed when the entitlement lookup throws', async () => {
+      featureResolver.resolveForUser.mockRejectedValueOnce(
+        new Error('user vanished'),
+      );
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: null },
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', expect.any(Object));
+    });
+
     it('refuses to join when the ride has already ended', async () => {
       // Reconnecting member of a ride that ended while they were
       // offline: membership row survives but the room is dead. We
@@ -841,6 +1030,32 @@ describe('EventsGateway', () => {
 
       expect(groupRideMemberRepo.findOne).not.toHaveBeenCalled();
       expect(mockTo).not.toHaveBeenCalled();
+    });
+
+    it('drops the update and detaches the client when the entitlement is revoked mid-ride', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce(
+        buildFeatureSnapshot('free', {}, { group_rides: 'force_off' }),
+      );
+      groupRideMemberRepo.findOne.mockResolvedValueOnce(makeMembership());
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleGroupPosition(client, {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      });
+
+      expect(groupRideMemberRepo.update).not.toHaveBeenCalled();
+      expect(mockTo).not.toHaveBeenCalled();
+      expect(client.leave).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
     });
 
     it('persists the position and broadcasts to the room (excluding sender)', async () => {

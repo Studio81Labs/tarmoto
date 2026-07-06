@@ -75,6 +75,13 @@ export class AdminUserActivityDto {
 
 export class AdminUserDetailDto extends AdminUserRowDto {
   @ApiProperty({ nullable: true }) home_region!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Tier provenance: subscription | founder (launch-mode grant) | ' +
+      'promo | admin. Null on rows predating provenance tracking.',
+  })
+  plan_source!: string | null;
   @ApiProperty({ nullable: true }) email_verified_at!: string | null;
   @ApiProperty({ nullable: true }) subscription_current_period_end!:
     | string

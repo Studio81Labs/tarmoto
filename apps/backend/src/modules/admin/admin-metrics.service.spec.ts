@@ -3,7 +3,7 @@ import type { Repository } from 'typeorm';
 import type { User } from '../../entities/user.entity.js';
 import type { RoadClosure } from '../../entities/road-closure.entity.js';
 import type { Ride } from '../../entities/ride.entity.js';
-import type { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import type { FeatureState } from '../../entities/feature-state.entity.js';
 import type { HazardReport } from '../../entities/hazard-report.entity.js';
 import type { RoadReview } from '../../entities/road-review.entity.js';
 import type { TripMessage } from '../../entities/trip-message.entity.js';
@@ -24,7 +24,7 @@ describe('AdminMetricsService.snapshot', () => {
       count: jest.fn().mockResolvedValue(5),
     });
     const rides = repoMock<Ride>({ count: jest.fn().mockResolvedValue(7) });
-    const flags = repoMock<FeatureFlag>({
+    const flags = repoMock<FeatureState>({
       count: jest.fn().mockResolvedValue(3),
     });
     const hazards = repoMock<HazardReport>({
@@ -63,7 +63,7 @@ describe('AdminMetricsService.snapshot', () => {
       count: jest.fn().mockResolvedValue(2),
     });
     const rides = repoMock<Ride>({ count: jest.fn().mockResolvedValue(0) });
-    const flags = repoMock<FeatureFlag>({
+    const flags = repoMock<FeatureState>({
       count: jest.fn().mockResolvedValue(0),
     });
     const hazards = repoMock<HazardReport>({
@@ -97,7 +97,7 @@ describe('AdminMetricsService.snapshot', () => {
       count: jest.fn().mockResolvedValue(0),
     });
     const rides = repoMock<Ride>({ count: jest.fn().mockResolvedValue(0) });
-    const flags = repoMock<FeatureFlag>({
+    const flags = repoMock<FeatureState>({
       count: jest.fn().mockResolvedValue(0),
     });
     const hazards = repoMock<HazardReport>({
