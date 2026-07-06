@@ -1608,10 +1608,15 @@ export class TripsService {
     if (target.role !== role) {
       await this.memberRepo.update({ id: target.id }, { role });
       if (role === 'viewer') {
-        // A demoted editor's group links would otherwise stay live —
-        // owned by them and invisible to the trip owner — while their
-        // new role can't create links at all. Mirror removeMember.
+        // A demoted editor's group links and pending email invites
+        // would otherwise stay live — owned by them and invisible to
+        // the trip owner — while their new role can't create either.
+        // Mirrors removeMember.
         await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
+        await this.inviteRepo.delete({
+          trip_id: tripId,
+          invited_by: memberUserId,
+        });
       }
       await this.activity.recordSafe(tripId, userId, 'member_role_changed', {
         member_user_id: memberUserId,
@@ -1649,6 +1654,10 @@ export class TripsService {
     // owned by that user, so the trip owner can't see or revoke them,
     // and they'd otherwise keep admitting new riders after removal.
     await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
+    // Same for pending email invites they sent: join() authorizes by
+    // the invite row alone, so those codes would keep admitting riders
+    // (at the role the ex-member picked) after their authority ended.
+    await this.inviteRepo.delete({ trip_id: tripId, invited_by: memberUserId });
     // Their past contributions (suggestions, votes, messages, activity)
     // stay — removal only revokes access from now on.
     await this.activity.recordSafe(tripId, userId, 'member_removed', {
