@@ -741,6 +741,14 @@ export default function TripPlannerPage() {
     !serverTripId ||
     serverTripCallerRole === "owner" ||
     serverTripCallerRole === "admin";
+  // Metadata (title, planner parameters) is owner/admin-only on the
+  // backend; null = the rider's own/unfetched trip. Plain members build
+  // and save route geometry but must not be offered metadata edits that
+  // would silently revert.
+  const canEditTripMetadata =
+    serverTripCallerRole === null ||
+    serverTripCallerRole === "owner" ||
+    serverTripCallerRole === "admin";
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast
@@ -1238,10 +1246,10 @@ export default function TripPlannerPage() {
     // in place rather than duplicated.
     // Persist the computed split: rewrite trip.days from the DayPlans so
     // the existing per-day save contract carries them (addendum decision).
-    if (
+    const wasSplitMaterialized =
       useTripStore.getState().splitStatus === "split" &&
-      useTripStore.getState().activeTrip?.days.length === 1
-    ) {
+      useTripStore.getState().activeTrip?.days.length === 1;
+    if (wasSplitMaterialized) {
       useTripStore.getState().materializeSplit();
     }
     const currentTrip =
@@ -1298,8 +1306,16 @@ export default function TripPlannerPage() {
         const tripDay =
           dayIndex === undefined ? undefined : currentTrip?.days[dayIndex];
         if (!tripDay || dayIndex === undefined) return day;
+        // A just-materialized split rewrote the single working day into
+        // day indexes 0..N-1, but every override still lives under the
+        // ORIGINAL day 0 — reconcile that list against each new day's
+        // spine (surviving via pairs keep their override; pairs broken
+        // by a split boundary re-inherit, §C).
+        const sourceLegs = wasSplitMaterialized
+          ? (legPrefsByDay[0] ?? [])
+          : (legPrefsByDay[dayIndex] ?? []);
         const legs = reconcileLegPrefs(
-          legPrefsByDay[dayIndex] ?? [],
+          sourceLegs,
           filterRoutingWaypoints(normalizeDayFinish(tripDay.waypoints)).map(
             (w) => w.id,
           ),
@@ -1318,13 +1334,7 @@ export default function TripPlannerPage() {
         options: routeOptions,
       });
       let detail = data;
-      if (
-        existingTripId &&
-        currentTrip &&
-        (serverTripCallerRole === null ||
-          serverTripCallerRole === "owner" ||
-          serverTripCallerRole === "admin")
-      ) {
+      if (existingTripId && currentTrip && canEditTripMetadata) {
         // PUT /route replaces days but never the trip metadata, and the
         // hydration below would otherwise revert the title AND planner
         // parameters (road preference, min quality, daily km) to stale
@@ -1363,7 +1373,7 @@ export default function TripPlannerPage() {
     savingRoute,
     routing,
     serverTripId,
-    serverTripCallerRole,
+    canEditTripMetadata,
     plannerParams,
     legPrefsByDay,
     roadPreference,
@@ -2028,14 +2038,18 @@ export default function TripPlannerPage() {
             <button
               type="button"
               onClick={openRenameDialog}
-              disabled={!displayedTrip}
-              title={displayedTrip ? t("Rename trip") : undefined}
+              disabled={!displayedTrip || !canEditTripMetadata}
+              title={
+                displayedTrip && canEditTripMetadata
+                  ? t("Rename trip")
+                  : undefined
+              }
               className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
             >
               <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
                 {tripDisplayName(displayedTrip) ?? t("New Trip")}
               </h1>
-              {displayedTrip ? (
+              {displayedTrip && canEditTripMetadata ? (
                 <Pencil
                   size={11}
                   aria-hidden

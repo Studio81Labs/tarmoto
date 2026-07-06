@@ -1748,6 +1748,9 @@ describe("TripPlannerPage", () => {
 
     await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
     expect(tripsApiUpdateMock).not.toHaveBeenCalled();
+    // And the rename affordance is not offered — a member's rename
+    // could never persist, so the header title is read-only.
+    expect(screen.getByRole("button", { name: /Saved route/ })).toBeDisabled();
   });
 
   it("sends per-leg preferences with the save when a LEG override exists", async () => {
@@ -1803,6 +1806,108 @@ describe("TripPlannerPage", () => {
       "scenic_balance",
       "balanced",
     ]);
+  });
+
+  it("remaps day-0 leg overrides onto just-materialized split days", async () => {
+    // materializeSplit rewrites the single working day into N days right
+    // before the payload is built — the overrides still live under day 0
+    // and must be reconciled against each NEW day's spine, or Day 1+
+    // legs silently fall back to the trip-wide preference on save.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    const workingDay = {
+      ...activeTrip.days[0]!,
+      waypoints: [
+        mkWp("s", "start", 10),
+        mkWp("v", "via", 11),
+        mkWp("e", "end", 12),
+      ],
+    };
+    storeState.activeTrip = { ...activeTrip, days: [workingDay] };
+    storeState.routeDirty = true;
+    storeState.splitStatus = "split";
+    // The split boundary lands between the via and the finish: day 1
+    // keeps s→v (override survives), day 2 is the new SS→e leg.
+    (
+      storeState.materializeSplit as ReturnType<typeof vi.fn>
+    ).mockImplementation(() => {
+      storeState.activeTrip = {
+        ...activeTrip,
+        days: [
+          {
+            ...workingDay,
+            waypoints: [
+              mkWp("s", "start", 10),
+              mkWp("v", "via", 11),
+              mkWp("split-end-1", "end", 11.5),
+            ],
+          },
+          {
+            ...workingDay,
+            dayNumber: 2,
+            waypoints: [
+              mkWp("split-start-2", "start", 11.5),
+              mkWp("e", "end", 12),
+            ],
+          },
+        ],
+      };
+    });
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        title: null,
+        startLinked: false,
+        waypoints: [
+          { lat: 46, lng: 10, name: "s", type: "start" as BackendWaypointType },
+          { lat: 46, lng: 11, name: "v", type: "via" as BackendWaypointType },
+          {
+            lat: 46,
+            lng: 11.5,
+            name: "split-end-1",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+      {
+        dayNumber: 2,
+        title: null,
+        startLinked: true,
+        waypoints: [
+          {
+            lat: 46,
+            lng: 11.5,
+            name: "split-start-2",
+            type: "start" as BackendWaypointType,
+          },
+          { lat: 46, lng: 12, name: "e", type: "end" as BackendWaypointType },
+        ],
+      },
+    ]);
+
+    render(<TripPlannerPage />);
+    // Override the first leg (s→v) of the working day.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scenic balance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    const body = tripsApiSaveRouteMock.mock.calls[0]![1] as {
+      days: Array<{ leg_preferences?: string[] }>;
+    };
+    // Day 1 keeps the surviving s→v override; the boundary pair (v→SE)
+    // re-inherits. Day 2's spine has no surviving override at all.
+    expect(body.days[0]!.leg_preferences).toEqual([
+      "scenic_balance",
+      "balanced",
+    ]);
+    expect(body.days[1]!.leg_preferences).toBeUndefined();
   });
 
   it("saves a multi-day payload with days[] and num_days from day count", async () => {

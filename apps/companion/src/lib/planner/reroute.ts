@@ -249,6 +249,29 @@ function offsetPerpendicular(
   };
 }
 
+/**
+ * The waypoint to insert a point-anchored stop BEFORE so it lands at its
+ * along-route position: the first non-start waypoint whose nearest route
+ * vertex is at/after the point's. Null (= insert before the finish) when
+ * the day has no usable geometry — appending is the only honest option
+ * pre-route.
+ */
+export function insertionAnchorForPoint(
+  day: Pick<TripDay, "routeGeometry" | "waypoints">,
+  location: { lat: number; lng: number },
+): string | null {
+  const polyline = day.routeGeometry?.coordinates;
+  if (!polyline || polyline.length < 2) return null;
+  const pointVertex = nearestVertexIndex(polyline, location);
+  for (const waypoint of day.waypoints) {
+    if (waypoint.type === "start") continue;
+    if (nearestVertexIndex(polyline, waypoint.location) >= pointVertex) {
+      return waypoint.id;
+    }
+  }
+  return null;
+}
+
 function nearestVertexIndex(
   polyline: ReadonlyArray<ReadonlyArray<number>>,
   point: { lng: number; lat: number },

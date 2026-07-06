@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TripDay, Waypoint } from "@/lib/types";
-import { planRerouteAroundSegment, rerouteViaWaypoint } from "../reroute";
+import {
+  insertionAnchorForPoint,
+  planRerouteAroundSegment,
+  rerouteViaWaypoint,
+} from "../reroute";
 import { rerouteAroundConditionInTrip } from "../reroute";
 import type { RouteSegment } from "../types";
 
@@ -239,5 +243,28 @@ describe("rerouteAroundConditionInTrip (revision 7)", () => {
       ),
     ).toBe(false);
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("insertionAnchorForPoint", () => {
+  it("anchors an early-route point before the first later waypoint", () => {
+    // Point at ~14.2°E sits before the km-mid via (14.5°E) — inserting
+    // before the finish would make the reroute backtrack through it.
+    expect(insertionAnchorForPoint(day(), { lat: 50, lng: 14.2 })).toBe(
+      "mid-via",
+    );
+  });
+
+  it("anchors a late-route point before the finish", () => {
+    expect(insertionAnchorForPoint(day(), { lat: 50, lng: 14.8 })).toBe("end");
+  });
+
+  it("returns null without usable geometry (append is the only option)", () => {
+    expect(
+      insertionAnchorForPoint(
+        { ...day(), routeGeometry: undefined },
+        { lat: 50, lng: 14.2 },
+      ),
+    ).toBeNull();
   });
 });

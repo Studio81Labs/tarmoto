@@ -808,6 +808,48 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("inserts an early-route stop BEFORE later vias, not before the finish", () => {
+    // Day 1 already has a late via — an early stop appended before the
+    // finish would make the next reroute backtrack through that via.
+    const base = trip();
+    const dayWithLateVia = {
+      ...base.days[0]!,
+      waypoints: [
+        base.days[0]!.waypoints[0]!,
+        {
+          id: "late-via",
+          name: "Late via",
+          location: { lng: 14.49, lat: 50.12 },
+          type: "via" as const,
+        },
+        base.days[0]!.waypoints[base.days[0]!.waypoints.length - 1]!,
+      ],
+    };
+    const viaTrip = { ...base, days: [dayWithLateVia] };
+    useTripStore.setState({ activeTrip: viaTrip, selectedDayIndex: 0 });
+
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={viaTrip} month={7} />);
+
+    // A stop near the FIRST leg of the route (before the late via).
+    act(() =>
+      ref.current?.openPoiPopover({
+        id: "early-fuel",
+        name: "Early fuel",
+        category: "fuel",
+        source: "osm",
+        lat: 50.09,
+        lng: 14.43,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const names = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.name);
+    expect(names).toEqual(["Start", "Early fuel", "Late via", "End"]);
+  });
+
   it("drives region drawing through the handle — no in-map pills remain", () => {
     // Rider feedback: the BUILD column's Fun-Zone checkbox owns the
     // draw flow; the map exposes start/cancel imperatively and mirrors
