@@ -864,7 +864,7 @@ describe('TripCollabService', () => {
         {
           id: SUGGESTION_ID,
           trip_id: TRIP_ID,
-          status: expect.objectContaining({}),
+          status: In(['accepted', 'rejected']),
         },
         { status: 'open' },
       );
