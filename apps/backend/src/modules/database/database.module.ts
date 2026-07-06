@@ -281,7 +281,6 @@ const entities = [
             AddRoadSegmentWayKeyIndex1790000000000,
             AddRoadSegmentDeactivatedAt1791000000000,
             AddTripDayLegPreferences1792000000000,
-            AddTripDayLegPreferences1792000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

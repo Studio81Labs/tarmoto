@@ -2587,6 +2587,63 @@ describe("useTripStore split lifecycle (addendum)", () => {
   });
 });
 
+describe("stop inserts never stale unchanged geometry", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seedRoutableDay() {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+  }
+
+  it("a non-routing stop arms Save but does not stale the day", () => {
+    seedRoutableDay();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      name: "Fuel",
+      location: { lat: 2, lng: 2 },
+      type: "fuel",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
+  it("a via stales the day it changes", () => {
+    seedRoutableDay();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "via-1",
+      name: "Via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+    expect(useTripStore.getState().stalePreviewDays).toEqual([1]);
+  });
+
+  it("insertWaypointBefore follows the same rule", () => {
+    seedRoutableDay();
+    const end = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!;
+    useTripStore.getState().insertWaypointBefore(0, end.id, {
+      id: "photo-1",
+      name: "Photo",
+      location: { lat: 2, lng: 2 },
+      type: "photo",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+
+    useTripStore.getState().insertWaypointBefore(0, end.id, {
+      id: "via-2",
+      name: "Via",
+      location: { lat: 2.5, lng: 2.5 },
+      type: "via",
+    });
+    expect(useTripStore.getState().stalePreviewDays).toEqual([1]);
+  });
+});
+
 describe("useTripStore renameWaypoint", () => {
   beforeEach(() => useTripStore.getState().resetForTest?.());
 

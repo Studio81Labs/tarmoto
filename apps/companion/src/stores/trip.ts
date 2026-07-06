@@ -4,7 +4,7 @@ import { create } from "zustand";
 export const MAX_TRIP_DAYS = 14;
 import type { Position as GeoJSONPosition } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
-import { filterRoutingWaypoints } from "@/lib/trip-routing";
+import { filterRoutingWaypoints, isRoutingWaypoint } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
 import type {
   DayPlan,
@@ -1048,11 +1048,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         }),
         // A reroute via is a route edit — arm Save and the live-routing hook.
+        // Non-routing stops (fuel/rest/photo/mid-day accommodation) never
+        // change the spine: they arm Save (they must persist) but must not
+        // stale a day the live hook won't revisit, or Save wedges until the
+        // rider manually reroutes an unchanged day.
         routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
+        stalePreviewDays: !isRoutingWaypoint(waypoint)
+          ? get().stalePreviewDays
+          : markDayStale(
+              get().stalePreviewDays,
+              get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+            ),
       })),
 
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
@@ -1081,11 +1087,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         }),
         // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
         // edit — mark dirty so they enable Save route (gated on routeDirty).
+        // But only ROUTING waypoints (vias) stale the preview: a stop never
+        // changes the spine, and staling a day the live hook won't revisit
+        // wedges Save until the rider manually reroutes an unchanged day.
         routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
+        stalePreviewDays: !isRoutingWaypoint(waypoint)
+          ? get().stalePreviewDays
+          : markDayStale(
+              get().stalePreviewDays,
+              get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+            ),
       })),
 
     removeWaypoint: (dayIndex, waypointId) =>
