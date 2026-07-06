@@ -68,7 +68,7 @@ test.describe("trip collaboration", () => {
       );
 
       // Owner posts a suggestion via the Collaborate modal.
-      await ownerPage.getByRole("button", { name: /^Collaborate$/ }).click();
+      await ownerPage.getByRole("button", { name: /^Collaborate$/i }).click();
       await expect(
         ownerPage.getByRole("dialog", { name: /collaborate on this trip/i }),
       ).toBeVisible();
@@ -111,7 +111,7 @@ test.describe("trip collaboration", () => {
         u.pathname.includes("/trips/planner"),
       );
       await collaboratorPage
-        .getByRole("button", { name: /^Collaborate$/ })
+        .getByRole("button", { name: /^Collaborate$/i })
         .click();
       await collaboratorPage.getByRole("tab", { name: /suggestions/i }).click();
       await expect(
@@ -140,7 +140,7 @@ test.describe("trip collaboration", () => {
         .first()
         .click();
       await ownerPage.waitForURL((u) => u.pathname.includes("/trips/planner"));
-      await ownerPage.getByRole("button", { name: /^Collaborate$/ }).click();
+      await ownerPage.getByRole("button", { name: /^Collaborate$/i }).click();
       await ownerPage.getByRole("tab", { name: /suggestions/i }).click();
       const ownerUpVote = ownerPage.getByRole("button", { name: /vote up/i });
       await expect(ownerUpVote).toContainText("1", { timeout: 10_000 });
@@ -278,7 +278,7 @@ test.describe("trip collaboration", () => {
       );
 
       await recipientPage
-        .getByRole("button", { name: /^Collaborate$/ })
+        .getByRole("button", { name: /^Collaborate$/i })
         .click();
       await recipientPage.getByRole("tab", { name: /suggestions/i }).click();
       await recipientPage
@@ -310,7 +310,7 @@ test.describe("trip collaboration", () => {
       await ownerPage.waitForURL((url) =>
         url.pathname.includes("/trips/planner"),
       );
-      await ownerPage.getByRole("button", { name: /^Collaborate$/ }).click();
+      await ownerPage.getByRole("button", { name: /^Collaborate$/i }).click();
       await ownerPage.getByRole("tab", { name: /suggestions/i }).click();
       await expect(
         ownerPage.getByRole("heading", { name: /add the lake viewpoint/i }),

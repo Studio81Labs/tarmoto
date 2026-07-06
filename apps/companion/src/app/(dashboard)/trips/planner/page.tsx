@@ -21,6 +21,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  Clock,
+  MapPin,
   MoveRight,
   X,
   Save,
@@ -31,7 +33,9 @@ import {
   Users,
   Upload,
   FileUp,
+  Layers,
   Maximize2,
+  Trash2,
   Loader2,
   Plus,
   Star,
@@ -2080,18 +2084,32 @@ export default function TripPlannerPage() {
           Collaborate / Demo affordances. Generate moves to the right-
           column primary CTA per spec; Parameters / Segments toggles
           drop since both panels are always visible in the 3-col grid. */}
-      <div className="flex items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
+      {/* relative z-40 lifts the whole bar above the grid panels and the
+          map's z-30 search/POI row so the Export dropdown isn't painted
+          under them. Modals (z-40/z-50) render later in the tree and still
+          cover it. */}
+      <div className="relative z-40 flex items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
         {/* Trip identity lives up here (design v2 top bar): the left day
             column only exists after a split, so it can't own the title.
             Header shows a day count ONLY post-split (revision 2 §C). */}
         <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/trips"
-            className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-bold text-fg-dim transition hover:text-ink"
+          <Button
+            iconOnly
+            size="sm"
+            variant="secondary"
+            renderLink={({ className, children }) => (
+              <Link
+                href="/trips"
+                aria-label={t("Back to trips")}
+                title={t("Back to trips")}
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
-            <ArrowLeft size={14} />
-            {t("Trips")}
-          </Link>
+            <ArrowLeft size={15} />
+          </Button>
           <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
           <div className="min-w-0">
             <button
@@ -2105,7 +2123,7 @@ export default function TripPlannerPage() {
               }
               className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
             >
-              <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
+              <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
                 {tripDisplayName(displayedTrip) ?? t("New Trip")}
               </h1>
               {displayedTrip && canEditTripMetadata ? (
@@ -2117,52 +2135,80 @@ export default function TripPlannerPage() {
               ) : null}
             </button>
             {totalDistanceKm !== null ? (
-              <p className="truncate font-mono text-[10px] tracking-[0.3px] text-fg-mute">
-                {daysVisible && dayPlans
-                  ? t("{days} day{s} · {km} km", {
+              <div className="mt-0.5 flex items-center gap-3 whitespace-nowrap text-[11px] text-fg-dim">
+                {daysVisible && dayPlans ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Layers size={11} aria-hidden className="text-fg-faint" />
+                    {t("{days} day{s}", {
                       days: dayPlans.length,
                       s: dayPlans.length === 1 ? "" : "s",
-                      km: totalDistanceKm,
-                    })
-                  : t("{km} km", { km: totalDistanceKm })}
-                {totalTimeMin !== null
-                  ? ` · ~${formatDuration(totalTimeMin)}`
-                  : null}
-              </p>
+                    })}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1">
+                  <MapPin size={11} aria-hidden className="text-fg-faint" />
+                  {t("{km} km", { km: totalDistanceKm })}
+                </span>
+                {totalTimeMin !== null ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Clock size={11} aria-hidden className="text-fg-faint" />
+                    {`~${formatDuration(totalTimeMin)}`}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
+            iconOnly
             variant="secondary"
             size="sm"
-            leftIcon={<RotateCcw size={14} />}
+            aria-label={t("Undo")}
+            title={t("Undo")}
             disabled={!canUndo}
             onClick={undo}
           >
-            {t("Undo")}
+            <RotateCcw size={15} />
           </Button>
           <Button
+            iconOnly
             variant="secondary"
             size="sm"
-            leftIcon={<RotateCw size={14} />}
+            aria-label={t("Redo")}
+            title={t("Redo")}
             disabled={!canRedo}
             onClick={redo}
           >
-            {t("Redo")}
+            <RotateCw size={15} />
           </Button>
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
           <Button
+            iconOnly
             variant="secondary"
             size="sm"
-            leftIcon={<Upload size={14} />}
+            aria-label={t("Import GPX")}
+            title={t("Import GPX")}
             onClick={() => openImport()}
           >
-            {t("Import GPX")}
+            <Upload size={15} />
           </Button>
-          <TripExportMenu trip={displayedTrip} />
+          <TripExportMenu trip={displayedTrip} iconOnly />
+          <Button
+            iconOnly
+            variant="secondary"
+            size="sm"
+            aria-label={t("Fit route")}
+            title={t("Fit route")}
+            onClick={handleFitRoute}
+            disabled={!activeTrip}
+          >
+            <Maximize2 size={15} />
+          </Button>
           <Button
             variant="secondary"
             size="sm"
+            uppercase
             leftIcon={<Users size={14} />}
             onClick={() => setCollaborateOpen(true)}
           >
@@ -2174,20 +2220,10 @@ export default function TripPlannerPage() {
               {t("Routing…")}
             </span>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Maximize2 size={14} />}
-            onClick={handleFitRoute}
-            disabled={!activeTrip}
-            title={t("Fit route")}
-          >
-            {t("Fit route")}
-          </Button>
           {/* Save route — live routing path (Task 11). Enabled when the
               active draft has a routed geometry. */}
           <Button
-            variant="accent"
+            variant="primary"
             size="sm"
             uppercase
             loading={savingRoute}
@@ -2197,27 +2233,32 @@ export default function TripPlannerPage() {
           >
             {savingRoute ? t("Saving…") : t("Save route")}
           </Button>
-          {/* Reset starts over in place; Discard deletes any persisted
-              trip and leaves the planner (rider feedback — routes save
-              server-side, so backing out needs an explicit discard). */}
-          {displayedTrip ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPendingConfirm("reset")}
-              >
-                {t("Reset")}
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setPendingConfirm("discard")}
-              >
-                {t("Discard")}
-              </Button>
-            </>
+          {/* Reset starts over in place — only offered while the route
+              is not yet saved (starting a saved trip from blank makes no
+              sense); Discard deletes any persisted trip and leaves the
+              planner (rider feedback — routes save server-side, so
+              backing out needs an explicit discard). Both show from the
+              moment the planner opens so the exits are always visible. */}
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
+          {!resolveExistingTripId(serverTripId, displayedTrip) ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPendingConfirm("reset")}
+            >
+              {t("Reset")}
+            </Button>
           ) : null}
+          <Button
+            iconOnly
+            variant="danger"
+            size="sm"
+            aria-label={t("Discard")}
+            title={t("Discard")}
+            onClick={() => setPendingConfirm("discard")}
+          >
+            <Trash2 size={15} />
+          </Button>
         </div>
       </div>
 
