@@ -71,6 +71,8 @@ import { AddRoadSegmentWayKeyIndex1790000000000 } from '../../migrations/1790000
 import { AddRoadSegmentDeactivatedAt1791000000000 } from '../../migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from '../../migrations/1792000000000-AddTripDayLegPreferences.js';
 import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations/1793000000000-AddPoiDecisionSupportFields.js';
+import { AddTierFeatureEntitlements1795000000000 } from '../../migrations/1795000000000-AddTierFeatureEntitlements.js';
+import { SwapTierNamesAddLaunchMode1796000000000 } from '../../migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
 import {
   User,
   UserContact,
@@ -126,7 +128,9 @@ import {
   AdminSession,
   AdminRefreshToken,
   AdminAuditLog,
-  FeatureFlag,
+  UserFeature,
+  FeatureState,
+  AppSetting,
 } from '../../entities/index.js';
 
 const entities = [
@@ -184,7 +188,9 @@ const entities = [
   AdminSession,
   AdminRefreshToken,
   AdminAuditLog,
-  FeatureFlag,
+  UserFeature,
+  FeatureState,
+  AppSetting,
 ];
 
 @Module({
@@ -283,6 +289,8 @@ const entities = [
             AddRoadSegmentDeactivatedAt1791000000000,
             AddTripDayLegPreferences1792000000000,
             AddPoiDecisionSupportFields1793000000000,
+            AddTierFeatureEntitlements1795000000000,
+            SwapTierNamesAddLaunchMode1796000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

@@ -52,9 +52,32 @@ export const WAYPOINT_TYPES = [
 
 export type WaypointType = (typeof WAYPOINT_TYPES)[number];
 
-export const SUBSCRIPTION_TIERS = ["free", "premium", "pro"] as const;
+// Ascending order: free → pro (mid, €29.99) → premium (top, €49.99).
+// Naming decided 2026-07: "Pro" is the mid tier, "Premium" the top tier
+// (the marketing page originally shipped them the other way around).
+export const SUBSCRIPTION_TIERS = ["free", "pro", "premium"] as const;
 
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
+
+/** Paid tiers eligible for the launch-mode auto-grant on registration. */
+export const LAUNCH_GRANT_TIERS = ["pro", "premium"] as const;
+
+export type LaunchGrantTier = (typeof LAUNCH_GRANT_TIERS)[number];
+
+/**
+ * How a user got their tier: `subscription` = paid via Stripe,
+ * `founder` = launch-mode auto-grant at registration, `promo` = a promo
+ * code / campaign, `admin` = manual operator grant. Null on rows
+ * predating the column (indistinguishable from `subscription`).
+ */
+export const PLAN_SOURCES = [
+  "subscription",
+  "founder",
+  "promo",
+  "admin",
+] as const;
+
+export type PlanSource = (typeof PLAN_SOURCES)[number];
 
 // Canonical EUR-denominated PRD pricing. Display code MUST go through
 // `formatSubscriptionPriceLabel` / `formatSubscriptionAmountLabel`
@@ -67,8 +90,8 @@ export const SUBSCRIPTION_PRICING: Record<
   { price_eur: number; interval: "month" | "year" }
 > = {
   free: { price_eur: 0, interval: "year" },
-  premium: { price_eur: 29.99, interval: "year" },
-  pro: { price_eur: 49.99, interval: "year" },
+  pro: { price_eur: 29.99, interval: "year" },
+  premium: { price_eur: 49.99, interval: "year" },
 };
 
 // Plan-card price (e.g. "€29.99/yr"). Free is rendered without an

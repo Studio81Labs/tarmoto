@@ -13,9 +13,13 @@ import { RoadReview } from '../../entities/road-review.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
-import { FeatureFlag } from '../../entities/feature-flag.entity.js';
+import { UserFeature } from '../../entities/user-feature.entity.js';
+import { FeatureState } from '../../entities/feature-state.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { ReviewsModule } from '../reviews/reviews.module.js';
+import { FeaturesModule } from '../features/features.module.js';
+import { AppSettingsModule } from '../app-settings/app-settings.module.js';
+import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -47,10 +51,13 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
       Trip,
       TripMessage,
       CommuteRoute,
-      FeatureFlag,
+      UserFeature,
+      FeatureState,
     ]),
     HazardsModule,
     ReviewsModule,
+    FeaturesModule,
+    AppSettingsModule,
   ],
   controllers: [
     AdminMetricsController,
@@ -58,6 +65,7 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
     AdminAdminsController,
     AdminFlagsController,
     AdminContentController,
+    AdminAppSettingsController,
   ],
   providers: [
     AdminAuditService,

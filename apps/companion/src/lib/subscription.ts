@@ -56,25 +56,27 @@ export interface SubscriptionSnapshot {
   preview: boolean;
 }
 
+// Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
+// decided 2026-07 — earlier copy had the two names swapped).
 const DEFAULT_PLAN_FEATURES: Record<SubscriptionTier, string[]> = {
   free: ["Basic navigation", "Hazard alerts", "1 active trip"],
-  premium: ["Unlimited trip planning", "Offline maps", "GPX export"],
-  pro: ["Unlimited group rides", "Priority hazard alerts", "API access"],
+  pro: ["Unlimited trip planning", "Offline maps", "GPX export"],
+  premium: ["Unlimited group rides", "Priority hazard alerts", "API access"],
 };
 
 const TIER_ORDER: Record<SubscriptionTier, number> = {
   free: 0,
-  premium: 1,
-  pro: 2,
+  pro: 1,
+  premium: 2,
 };
 
 export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
   return {
     currentPlan: {
-      tier: "premium",
-      name: "Premium",
+      tier: "pro",
+      name: "Pro",
       status: "active",
-      priceLabel: formatSubscriptionPriceLabel("premium"),
+      priceLabel: formatSubscriptionPriceLabel("pro"),
       renewsAt: "2026-11-15T00:00:00.000Z",
       cancelAtPeriodEnd: false,
       manageUrl: null,
@@ -92,9 +94,9 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
         ],
       },
       {
-        tier: "premium",
-        name: "Premium",
-        priceLabel: formatSubscriptionPriceLabel("premium"),
+        tier: "pro",
+        name: "Pro",
+        priceLabel: formatSubscriptionPriceLabel("pro"),
         highlighted: true,
         features: [
           "Unlimited trip planning",
@@ -104,11 +106,11 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
         ],
       },
       {
-        tier: "pro",
-        name: "Pro",
-        priceLabel: formatSubscriptionPriceLabel("pro"),
+        tier: "premium",
+        name: "Premium",
+        priceLabel: formatSubscriptionPriceLabel("premium"),
         features: [
-          "Everything in Premium",
+          "Everything in Pro",
           "Unlimited group rides",
           "Priority hazard alerts",
           "Advanced analytics",
@@ -125,14 +127,14 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
       {
         id: "preview-invoice-2026-03",
         date: "2026-03-15T00:00:00.000Z",
-        amountLabel: formatSubscriptionAmountLabel("premium"),
+        amountLabel: formatSubscriptionAmountLabel("pro"),
         status: "paid",
         invoiceUrl: null,
       },
       {
         id: "preview-invoice-2026-02",
         date: "2026-02-15T00:00:00.000Z",
-        amountLabel: formatSubscriptionAmountLabel("premium"),
+        amountLabel: formatSubscriptionAmountLabel("pro"),
         status: "paid",
         invoiceUrl: null,
       },

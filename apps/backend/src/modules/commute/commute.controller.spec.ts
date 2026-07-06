@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
 import { CommuteController } from './commute.controller.js';
 import { CommuteService } from './commute.service.js';
 
@@ -84,6 +85,7 @@ describe('CommuteController', () => {
       providers: [
         { provide: CommuteService, useValue: mockService },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 

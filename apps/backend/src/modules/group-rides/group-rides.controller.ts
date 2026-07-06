@@ -19,13 +19,19 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { GroupRidesService } from './group-rides.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import { GroupRideDetailDto } from './dto/group-ride-response.dto.js';
 
+// Group rides are a pro entitlement (product spec §Monetization).
+// FeatureGuard runs after AuthGuard and enforces the group_rides flag
+// (tier grant + per-user override + global override) on every route here.
 @ApiTags('group-rides')
 @Controller('group-rides')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
+@RequireFeature('group_rides')
 @ApiBearerAuth()
 export class GroupRidesController {
   constructor(private readonly service: GroupRidesService) {}

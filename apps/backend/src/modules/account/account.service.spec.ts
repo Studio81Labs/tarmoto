@@ -167,7 +167,8 @@ describe('AccountService', () => {
       expect(snapshot.current_plan).toMatchObject({
         tier: 'premium',
         status: 'active',
-        price_label: '€29.99/yr',
+        // premium is the €49.99 top tier (2026-07 tier-name swap)
+        price_label: '€49.99/yr',
       });
       expect(snapshot.payment_method).toMatchObject({
         brand: 'visa',

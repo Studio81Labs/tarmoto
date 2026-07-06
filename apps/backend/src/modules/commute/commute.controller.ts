@@ -21,6 +21,8 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { CommuteService } from './commute.service.js';
 import {
   CreateCommuteRouteDto,
@@ -31,9 +33,13 @@ import {
   CommuteAlternativesResponseDto,
 } from './dto/commute.dto.js';
 
+// Commuter mode is a premium/pro entitlement (product spec §Monetization).
+// FeatureGuard runs after AuthGuard and enforces the commuter_mode flag
+// (tier grant + per-user override + global override) on every route here.
 @ApiTags('commute')
 @Controller('commute')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureGuard)
+@RequireFeature('commuter_mode')
 @ApiBearerAuth()
 export class CommuteController {
   constructor(private readonly commuteService: CommuteService) {}

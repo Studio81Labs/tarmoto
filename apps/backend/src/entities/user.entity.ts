@@ -7,7 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
-import type { SubscriptionTier } from '@tarmoto/shared';
+import type { PlanSource, SubscriptionTier } from '@tarmoto/shared';
 import { UserContact } from './user-contact.entity.js';
 import { Ride } from './ride.entity.js';
 import { HazardReport } from './hazard-report.entity.js';
@@ -68,6 +68,14 @@ export class User {
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
   subscription_tier!: SubscriptionTier;
+
+  /**
+   * How the tier was obtained (`founder` = launch-mode auto-grant at
+   * registration). Null on rows predating the column or set by Stripe
+   * before provenance tracking existed.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  plan_source!: PlanSource | null;
 
   @Column({ type: 'varchar', length: 20, default: 'canceled' })
   subscription_status!: 'active' | 'trialing' | 'past_due' | 'canceled';

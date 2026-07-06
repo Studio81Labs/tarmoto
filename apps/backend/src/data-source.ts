@@ -47,7 +47,9 @@ import { AdminUser } from './entities/admin-user.entity.js';
 import { AdminSession } from './entities/admin-session.entity.js';
 import { AdminRefreshToken } from './entities/admin-refresh-token.entity.js';
 import { AdminAuditLog } from './entities/admin-audit-log.entity.js';
-import { FeatureFlag } from './entities/feature-flag.entity.js';
+import { UserFeature } from './entities/user-feature.entity.js';
+import { FeatureState } from './entities/feature-state.entity.js';
+import { AppSetting } from './entities/app-setting.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -117,6 +119,8 @@ import { AddRoadSegmentWayKeyIndex1790000000000 } from './migrations/17900000000
 import { AddRoadSegmentDeactivatedAt1791000000000 } from './migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from './migrations/1792000000000-AddTripDayLegPreferences.js';
 import { AddPoiDecisionSupportFields1793000000000 } from './migrations/1793000000000-AddPoiDecisionSupportFields.js';
+import { AddTierFeatureEntitlements1795000000000 } from './migrations/1795000000000-AddTierFeatureEntitlements.js';
+import { SwapTierNamesAddLaunchMode1796000000000 } from './migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -173,7 +177,9 @@ export const AppDataSource = new DataSource({
     AdminSession,
     AdminRefreshToken,
     AdminAuditLog,
-    FeatureFlag,
+    UserFeature,
+    FeatureState,
+    AppSetting,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -252,6 +258,8 @@ export const AppDataSource = new DataSource({
     AddRoadSegmentDeactivatedAt1791000000000,
     AddTripDayLegPreferences1792000000000,
     AddPoiDecisionSupportFields1793000000000,
+    AddTierFeatureEntitlements1795000000000,
+    SwapTierNamesAddLaunchMode1796000000000,
   ],
   synchronize: false,
 });

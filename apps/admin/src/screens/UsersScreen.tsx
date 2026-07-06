@@ -16,6 +16,11 @@ import {
   useSoftDeleteUser,
   useRestoreUser,
 } from "../data/useAdminUsers.js";
+import {
+  useAdminUserFeatureFlags,
+  useRemoveFeatureOverride,
+  useSetFeatureOverride,
+} from "../data/useAdminFlags.js";
 
 type DeletedFilter = "active" | "deleted" | "all";
 type UserRow = components["schemas"]["AdminUserRowDto"];
@@ -255,14 +260,17 @@ export function UsersScreen() {
         </div>
       </div>
       {selectedUserId ? (
-        <div className="mt-6 rounded-xl border border-line bg-paper p-5">
-          <h3 className="mb-4 text-sm font-semibold text-ink">User Detail</h3>
-          {detailPending ? (
-            <p className="text-sm text-fg-dim">Loading…</p>
-          ) : detail ? (
-            <UserDetailPanel detail={detail} />
-          ) : null}
-        </div>
+        <>
+          <div className="mt-6 rounded-xl border border-line bg-paper p-5">
+            <h3 className="mb-4 text-sm font-semibold text-ink">User Detail</h3>
+            {detailPending ? (
+              <p className="text-sm text-fg-dim">Loading…</p>
+            ) : detail ? (
+              <UserDetailPanel detail={detail} />
+            ) : null}
+          </div>
+          <UserFeatureFlagsCard userId={selectedUserId} />
+        </>
       ) : null}
     </section>
   );
@@ -286,6 +294,16 @@ function UserDetailPanel({ detail }: { detail: UserDetail }) {
       <div>
         <dt className="text-fg-dim">Subscription tier</dt>
         <dd className="text-ink">{detail.subscription_tier}</dd>
+      </div>
+      <div>
+        <dt className="text-fg-dim">Plan source</dt>
+        <dd className="text-ink">
+          {detail.plan_source === "founder" ? (
+            <Pill variant="ghost">founder</Pill>
+          ) : (
+            (detail.plan_source ?? "—")
+          )}
+        </dd>
       </div>
       <div>
         <dt className="text-fg-dim">Subscription status</dt>
@@ -335,5 +353,116 @@ function UserDetailPanel({ detail }: { detail: UserDetail }) {
         </dd>
       </div>
     </dl>
+  );
+}
+
+function UserFeatureFlagsCard({ userId }: { userId: string }) {
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [flagError, setFlagError] = useState<string | null>(null);
+
+  const { data, isPending, error, refetch } = useAdminUserFeatureFlags(userId);
+  const setOverrideMutation = useSetFeatureOverride();
+  const removeOverrideMutation = useRemoveFeatureOverride();
+
+  function setOverride(feature: string, enabled: boolean) {
+    setPendingKey(feature);
+    setOverrideMutation.mutate(
+      { params: { path: { userId, feature } }, body: { enabled } },
+      {
+        onSuccess: () => {
+          setFlagError(null);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          const serverMsg = (err as { message?: string } | undefined)?.message;
+          setFlagError(serverMsg ?? "Failed to set the feature override.");
+        },
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  function removeOverride(feature: string) {
+    setPendingKey(feature);
+    removeOverrideMutation.mutate(
+      { params: { path: { userId, feature } } },
+      {
+        onSuccess: () => {
+          setFlagError(null);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          const serverMsg = (err as { message?: string } | undefined)?.message;
+          setFlagError(serverMsg ?? "Failed to remove the feature override.");
+        },
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-paper p-5">
+      <h3 className="mb-4 text-sm font-semibold text-ink">Feature flags</h3>
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load the user's feature flags."
+          className="mb-4"
+          compact
+        />
+      ) : null}
+      {flagError ? (
+        <Alert intent="danger" title={flagError} className="mb-4" compact />
+      ) : null}
+      {isPending ? (
+        <p className="text-sm text-fg-dim">Loading…</p>
+      ) : (
+        <dl className="flex flex-col gap-3 text-sm">
+          {(data?.flags ?? []).map((flag) => (
+            <div
+              key={flag.feature}
+              className="flex flex-wrap items-center gap-3"
+            >
+              <div className="min-w-48">
+                <dt className="text-ink">{flag.feature}</dt>
+                <dd className="text-fg-dim">{flag.description}</dd>
+              </div>
+              <Pill variant={flag.resolved ? "accent" : "ghost"}>
+                {flag.resolved ? "on" : "off"}
+              </Pill>
+              <span className="text-fg-dim">{flag.override_state}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={pendingKey === flag.feature}
+                  onClick={() => setOverride(flag.feature, true)}
+                >
+                  Grant
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={pendingKey === flag.feature}
+                  onClick={() => setOverride(flag.feature, false)}
+                >
+                  Revoke
+                </Button>
+                {flag.override_state !== "default" ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={pendingKey === flag.feature}
+                    onClick={() => removeOverride(flag.feature)}
+                  >
+                    Reset to default
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
   );
 }

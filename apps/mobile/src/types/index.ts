@@ -27,6 +27,12 @@ export type { RiderProgression } from "@tarmoto/shared";
 // `@tarmoto/shared` so backend, mobile, and companion share one definition.
 export type { MeProfile } from "@tarmoto/shared";
 
+// Tier-aware feature entitlements. The registry and resolution live in
+// `@tarmoto/shared` (`FEATURE_DEFINITIONS` / `resolveFeature`); the resolved
+// snapshot rides on `/users/me` and the auth responses as `user.features`.
+export type { FeatureKey, FeatureSnapshot } from "@tarmoto/shared";
+import type { FeatureSnapshot, SubscriptionTier } from "@tarmoto/shared";
+
 // Generated OpenAPI component schemas — re-exported so screens, services,
 // and stores can refer to spec-derived shapes through `@/types` instead
 // of importing from `@tarmoto/openapi-client` directly. `Schemas["FooDto"]`
@@ -74,6 +80,14 @@ export interface User {
    * are populated.
    */
   preferences: Partial<UserPreferences>;
+  /** The rider's subscription tier — drives feature grants server-side. */
+  subscription_tier: SubscriptionTier;
+  /**
+   * Resolved feature entitlements (tier + overrides), served on
+   * `/users/me` and the auth responses. UI gating only — gated endpoints
+   * re-check server-side and answer 403 when the feature is off.
+   */
+  features: FeatureSnapshot;
   created_at: string;
 }
 

@@ -1,20 +1,17 @@
 import { ClientConfigService } from './client-config.service.js';
 
 describe('ClientConfigService', () => {
-  it('flags() returns a flat key→enabled map', async () => {
-    const repo = {
-      find: jest.fn().mockResolvedValue([
-        { key: 'group_rides', enabled: true },
-        { key: 'beta_ui', enabled: false },
-      ]),
+  it('featureStates() passes through the resolver global-states map', async () => {
+    const resolver = {
+      getGlobalStates: jest.fn().mockResolvedValue({
+        group_rides: 'force_on',
+        gpx_export: 'force_off',
+      }),
     };
-    const svc = new ClientConfigService(repo as never);
-    await expect(svc.flags()).resolves.toEqual({
-      group_rides: true,
-      beta_ui: false,
-    });
-    expect(repo.find).toHaveBeenCalledWith({
-      select: { key: true, enabled: true },
+    const svc = new ClientConfigService(resolver as never);
+    await expect(svc.featureStates()).resolves.toEqual({
+      group_rides: 'force_on',
+      gpx_export: 'force_off',
     });
   });
 });

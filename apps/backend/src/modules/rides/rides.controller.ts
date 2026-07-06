@@ -28,6 +28,8 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
@@ -123,8 +125,12 @@ export class RidesController {
   }
 
   @Get('export.gpx')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_export')
   @ApiOperation({
-    summary: "Export all of the caller's rides as a multi-track GPX",
+    summary:
+      "Export all of the caller's rides as a multi-track GPX " +
+      '(requires the gpx_export feature entitlement)',
   })
   @ApiProduces('application/gpx+xml')
   @ApiResponse({ status: 200, description: 'GPX file' })

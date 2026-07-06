@@ -136,7 +136,9 @@ describe("SubscriptionPage", () => {
         "Preview data shown while live billing management is still being wired up.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Premium")).toHaveLength(2);
+    // Fallback preview's current plan is Pro (the €29.99 mid tier) —
+    // shown once in the current-plan card and once in the plan grid.
+    expect(screen.getAllByText("Pro")).toHaveLength(2);
     expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
   });
 

@@ -2140,7 +2140,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Export all of the caller's rides as a multi-track GPX */
+        /** Export all of the caller's rides as a multi-track GPX (requires the gpx_export feature entitlement) */
         get: operations["RidesController_exportAllGpx"];
         put?: never;
         post?: never;
@@ -3026,25 +3026,24 @@ export interface paths {
         patch: operations["AdminAdminsController_patch"];
         trace?: never;
     };
-    "/admin/flags": {
+    "/admin/feature-flags": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List feature flags */
+        /** List the feature-flag registry with overrides */
         get: operations["AdminFlagsController_list"];
         put?: never;
-        /** Create a feature flag */
-        post: operations["AdminFlagsController_create"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/flags/{id}": {
+    "/admin/feature-flags/{feature}/global": {
         parameters: {
             query?: never;
             header?: never;
@@ -3052,14 +3051,66 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** Set a global override (force_off kill switch / force_on) */
+        put: operations["AdminFlagsController_setGlobal"];
         post?: never;
-        /** Delete a feature flag */
-        delete: operations["AdminFlagsController_remove"];
+        /** Clear a global override (back to normal) */
+        delete: operations["AdminFlagsController_clearGlobal"];
         options?: never;
         head?: never;
-        /** Update a feature flag (enabled / description) */
-        patch: operations["AdminFlagsController_update"];
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feature-flags/{feature}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List users with a per-user override for a flag */
+        get: operations["AdminFlagsController_listOverriddenUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/feature-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A user's resolved flags + override states */
+        get: operations["AdminFlagsController_getUserFlags"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/feature-flags/{feature}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a per-user override (grant or revoke) */
+        put: operations["AdminFlagsController_setOverride"];
+        post?: never;
+        /** Remove a per-user override */
+        delete: operations["AdminFlagsController_removeOverride"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/admin/content": {
@@ -3130,6 +3181,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/system-settings/launch-tier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current launch-mode auto-grant tier */
+        get: operations["AdminAppSettingsController_getLaunchTier"];
+        /** Set the launch-mode auto-grant tier (null = off) */
+        put: operations["AdminAppSettingsController_setLaunchTier"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/flags": {
         parameters: {
             query?: never;
@@ -3137,7 +3206,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Public feature-flag map (key → enabled) */
+        /**
+         * Global feature-override map (feature → force_off | force_on)
+         * @description Only operator overrides appear here; a missing key means the feature resolves normally (registry default + tier + per-user override, served on /users/me). Clients apply force_off as an immediate kill switch but must not apply force_on from this map.
+         */
         get: operations["ClientConfigController_flags"];
         put?: never;
         post?: never;
@@ -3183,6 +3255,30 @@ export interface components {
             crash_detection?: boolean;
             route_prefs?: components["schemas"]["UserRoutePrefsResponse"];
         };
+        FeatureSnapshotDto: {
+            /** @description Basic turn-by-turn navigation. */
+            basic_navigation: boolean;
+            /** @description Road quality overlay (limited zoom on the free tier). */
+            road_quality_overlay: boolean;
+            /** @description Community hazard alerts. */
+            hazard_alerts: boolean;
+            /** @description Unlimited trip planning (the free tier is capped at 1 active trip). */
+            unlimited_trip_planning: boolean;
+            /** @description Full-depth road quality zoom. */
+            full_road_quality_zoom: boolean;
+            /** @description Offline map downloads. */
+            offline_maps: boolean;
+            /** @description GPX export of recorded rides. */
+            gpx_export: boolean;
+            /** @description Commuter mode — saved commute routes, status, alternatives. */
+            commuter_mode: boolean;
+            /** @description Real-time group rides (unlimited). */
+            group_rides: boolean;
+            /** @description Priority hazard alert delivery. */
+            priority_hazard_alerts: boolean;
+            /** @description Advanced riding analytics dashboard. */
+            advanced_analytics: boolean;
+        };
         UserResponseDto: {
             id: string;
             email: string;
@@ -3194,6 +3290,13 @@ export interface components {
             home_location: components["schemas"]["LatLngResponse"] | null;
             work_location: components["schemas"]["LatLngResponse"] | null;
             preferences: components["schemas"]["UserPreferencesResponse"];
+            /**
+             * @description The rider's subscription tier (drives feature grants).
+             * @enum {string}
+             */
+            subscription_tier: "free" | "pro" | "premium";
+            /** @description Resolved feature entitlements (tier + overrides). UI gating only — gated endpoints re-check server-side. */
+            features: components["schemas"]["FeatureSnapshotDto"];
             created_at: string;
         };
         AuthResponseDto: {
@@ -3226,7 +3329,7 @@ export interface components {
         };
         CurrentSubscriptionPlanDto: {
             /** @enum {string} */
-            tier: "free" | "premium" | "pro";
+            tier: "free" | "pro" | "premium";
             name: string;
             /** @enum {string} */
             status: "active" | "trialing" | "past_due" | "canceled";
@@ -3237,7 +3340,7 @@ export interface components {
         };
         SubscriptionPlanDto: {
             /** @enum {string} */
-            tier: "free" | "premium" | "pro";
+            tier: "free" | "pro" | "premium";
             name: string;
             /** @example €29.99/yr */
             price_label: string;
@@ -3268,7 +3371,7 @@ export interface components {
         };
         CreateCheckoutSessionDto: {
             /** @enum {string} */
-            tier: "premium" | "pro";
+            tier: "pro" | "premium";
         };
         RedirectUrlResponseDto: {
             url: string;
@@ -5484,6 +5587,8 @@ export interface components {
             created_at: string;
             deleted_at: string | null;
             home_region: string | null;
+            /** @description Tier provenance: subscription | founder (launch-mode grant) | promo | admin. Null on rows predating provenance tracking. */
+            plan_source: string | null;
             email_verified_at: string | null;
             subscription_current_period_end: string | null;
             subscription_cancel_at_period_end: boolean;
@@ -5515,27 +5620,69 @@ export interface components {
             /** @description true = active, false = disabled */
             active?: boolean;
         };
-        FeatureFlagDto: {
-            id: string;
-            key: string;
+        AdminFeatureFlagDto: {
+            /** @description Registry feature key. */
+            feature: string;
+            description: string;
+            /** @description Registry baseline before tier grants and overrides. */
+            default_value: boolean;
+            /** @description Subscription tiers granted the feature. */
+            tiers: string[];
+            /**
+             * @description Active global override, or null when resolving normally.
+             * @enum {string|null}
+             */
+            global_state: "force_off" | "force_on" | null;
+            global_reason: string | null;
+            /** @description Admin user id that last set the global override. */
+            global_updated_by: string | null;
+            global_updated_at: string | null;
+            /** @description Users with a per-user override. */
+            overridden_user_count: number;
+        };
+        AdminFeatureFlagsResponseDto: {
+            flags: components["schemas"]["AdminFeatureFlagDto"][];
+        };
+        SetFeatureGlobalStateDto: {
+            /** @enum {string} */
+            state: "force_off" | "force_on";
+            /** @description Why the override is set. Required for force_off (a kill switch must carry incident context). Stored on the row, never audited. */
+            reason?: string;
+        };
+        AdminFeatureFlagUserRowDto: {
+            user_id: string;
+            email: string;
+            display_name: string;
+            subscription_tier: string;
+            /** @description true = per-user force-on, false = per-user force-off. */
             enabled: boolean;
-            description: string | null;
-            created_at: string;
             updated_at: string;
         };
-        CreateFeatureFlagDto: {
-            /**
-             * @description Unique flag key (lowercase snake_case).
-             * @example group_rides
-             */
-            key: string;
-            enabled?: boolean;
-            description?: string | null;
+        AdminFeatureFlagUsersResponseDto: {
+            rows: components["schemas"]["AdminFeatureFlagUserRowDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
         };
-        UpdateFeatureFlagDto: {
-            /** @description Toggle the flag. */
-            enabled?: boolean;
-            description?: string | null;
+        AdminUserFeatureFlagDto: {
+            feature: string;
+            description: string;
+            default_value: boolean;
+            /** @description The value the user actually resolves to right now. */
+            resolved: boolean;
+            /**
+             * @description Per-user override state ("default" = no override row).
+             * @enum {string}
+             */
+            override_state: "force_on" | "force_off" | "default";
+        };
+        AdminUserFeatureFlagsResponseDto: {
+            user_id: string;
+            flags: components["schemas"]["AdminUserFeatureFlagDto"][];
+        };
+        SetFeatureOverrideDto: {
+            /** @description true force-grants the feature, false force-revokes it. */
+            enabled: boolean;
         };
         ContentLocationDto: {
             lat: number;
@@ -5565,6 +5712,20 @@ export interface components {
         HideContentDto: {
             reason?: string | null;
         };
+        LaunchTierResponseDto: {
+            /** @enum {string|null} */
+            tier: "pro" | "premium" | null;
+            /** @description Admin who last set it. */
+            updated_by: string | null;
+            updated_at: string | null;
+        };
+        SetLaunchTierDto: {
+            /**
+             * @description Tier auto-granted to new registrations (plan_source "founder"); null turns launch mode off. Existing users are never modified.
+             * @enum {string|null}
+             */
+            tier: "pro" | "premium" | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -5576,6 +5737,7 @@ export type SchemaRegisterDto = components['schemas']['RegisterDto'];
 export type SchemaLatLngResponse = components['schemas']['LatLngResponse'];
 export type SchemaUserRoutePrefsResponse = components['schemas']['UserRoutePrefsResponse'];
 export type SchemaUserPreferencesResponse = components['schemas']['UserPreferencesResponse'];
+export type SchemaFeatureSnapshotDto = components['schemas']['FeatureSnapshotDto'];
 export type SchemaUserResponseDto = components['schemas']['UserResponseDto'];
 export type SchemaAuthResponseDto = components['schemas']['AuthResponseDto'];
 export type SchemaLoginDto = components['schemas']['LoginDto'];
@@ -5807,13 +5969,20 @@ export type SchemaAdminUserDetailDto = components['schemas']['AdminUserDetailDto
 export type SchemaAdminRowDto = components['schemas']['AdminRowDto'];
 export type SchemaCreateAdminDto = components['schemas']['CreateAdminDto'];
 export type SchemaPatchAdminDto = components['schemas']['PatchAdminDto'];
-export type SchemaFeatureFlagDto = components['schemas']['FeatureFlagDto'];
-export type SchemaCreateFeatureFlagDto = components['schemas']['CreateFeatureFlagDto'];
-export type SchemaUpdateFeatureFlagDto = components['schemas']['UpdateFeatureFlagDto'];
+export type SchemaAdminFeatureFlagDto = components['schemas']['AdminFeatureFlagDto'];
+export type SchemaAdminFeatureFlagsResponseDto = components['schemas']['AdminFeatureFlagsResponseDto'];
+export type SchemaSetFeatureGlobalStateDto = components['schemas']['SetFeatureGlobalStateDto'];
+export type SchemaAdminFeatureFlagUserRowDto = components['schemas']['AdminFeatureFlagUserRowDto'];
+export type SchemaAdminFeatureFlagUsersResponseDto = components['schemas']['AdminFeatureFlagUsersResponseDto'];
+export type SchemaAdminUserFeatureFlagDto = components['schemas']['AdminUserFeatureFlagDto'];
+export type SchemaAdminUserFeatureFlagsResponseDto = components['schemas']['AdminUserFeatureFlagsResponseDto'];
+export type SchemaSetFeatureOverrideDto = components['schemas']['SetFeatureOverrideDto'];
 export type SchemaContentLocationDto = components['schemas']['ContentLocationDto'];
 export type SchemaContentItemDto = components['schemas']['ContentItemDto'];
 export type SchemaContentListResponseDto = components['schemas']['ContentListResponseDto'];
 export type SchemaHideContentDto = components['schemas']['HideContentDto'];
+export type SchemaLaunchTierResponseDto = components['schemas']['LaunchTierResponseDto'];
+export type SchemaSetLaunchTierDto = components['schemas']['SetLaunchTierDto'];
 export type $defs = Record<string, never>;
 export interface operations {
     AppController_getHello: {
@@ -11197,40 +11366,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureFlagDto"][];
+                    "application/json": components["schemas"]["AdminFeatureFlagsResponseDto"];
                 };
             };
         };
     };
-    AdminFlagsController_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateFeatureFlagDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeatureFlagDto"];
-                };
-            };
-        };
-    };
-    AdminFlagsController_remove: {
+    AdminFlagsController_setGlobal: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                id: string;
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetFeatureGlobalStateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureFlagDto"];
+                };
+            };
+        };
+    };
+    AdminFlagsController_clearGlobal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature: string;
             };
             cookie?: never;
         };
@@ -11244,18 +11415,68 @@ export interface operations {
             };
         };
     };
-    AdminFlagsController_update: {
+    AdminFlagsController_listOverriddenUsers: {
+        parameters: {
+            query?: {
+                /** @description Substring match on email or display_name. */
+                q?: string;
+                /** @description Only overrides of this direction. */
+                override?: "force_on" | "force_off";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureFlagUsersResponseDto"];
+                };
+            };
+        };
+    };
+    AdminFlagsController_getUserFlags: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserFeatureFlagsResponseDto"];
+                };
+            };
+        };
+    };
+    AdminFlagsController_setOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+                feature: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateFeatureFlagDto"];
+                "application/json": components["schemas"]["SetFeatureOverrideDto"];
             };
         };
         responses: {
@@ -11264,8 +11485,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureFlagDto"];
+                    "application/json": components["schemas"]["AdminUserFeatureFlagsResponseDto"];
                 };
+            };
+        };
+    };
+    AdminFlagsController_removeOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11365,6 +11606,48 @@ export interface operations {
             };
         };
     };
+    AdminAppSettingsController_getLaunchTier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaunchTierResponseDto"];
+                };
+            };
+        };
+    };
+    AdminAppSettingsController_setLaunchTier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLaunchTierDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaunchTierResponseDto"];
+                };
+            };
+        };
+    };
     ClientConfigController_flags: {
         parameters: {
             query?: never;
@@ -11380,7 +11663,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: boolean;
+                        [key: string]: "force_off" | "force_on";
                     };
                 };
             };

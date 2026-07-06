@@ -52,9 +52,11 @@ const PLAN_CATALOG: Record<
       '1 active trip',
     ],
   },
-  premium: {
-    name: 'Premium',
-    priceLabel: formatSubscriptionPriceLabel('premium'),
+  // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
+  // decided 2026-07 — the marketing page originally had them swapped).
+  pro: {
+    name: 'Pro',
+    priceLabel: formatSubscriptionPriceLabel('pro'),
     highlighted: true,
     features: [
       'Unlimited trip planning',
@@ -63,12 +65,12 @@ const PLAN_CATALOG: Record<
       'GPX export',
     ],
   },
-  pro: {
-    name: 'Pro',
-    priceLabel: formatSubscriptionPriceLabel('pro'),
+  premium: {
+    name: 'Premium',
+    priceLabel: formatSubscriptionPriceLabel('premium'),
     description: 'For group organisers and power users.',
     features: [
-      'Everything in Premium',
+      'Everything in Pro',
       'Unlimited group rides',
       'Priority hazard alerts',
       'Advanced analytics',
