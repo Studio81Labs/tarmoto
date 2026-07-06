@@ -1159,11 +1159,17 @@ export class TripsService {
     dto: SaveRouteDto,
   ): Promise<TripDetailDto> {
     // 1. Membership gate: fold "no such trip" and "not a member" into
-    //    the same 404 so the endpoint can't enumerate trip ids.
+    //    the same 404 so the endpoint can't enumerate trip ids. Viewers
+    //    are read-and-comment only — route writes need editor access.
     const member = await this.memberRepo.findOne({
       where: { trip_id: tripId, user_id: userId },
     });
     if (!member) throw new NotFoundException('Trip not found');
+    if (member.role === 'viewer') {
+      throw new ForbiddenException(
+        'Viewers can view and comment only — ask the trip owner for editor access',
+      );
+    }
 
     // Renumber contiguously (defensive — client already drops empties).
     const days = dto.days.map((d, i) => ({ ...d, dayNumber: i + 1 }));
@@ -1434,50 +1440,62 @@ export class TripsService {
   ): Promise<TripDetailDto> {
     const normalized = inviteCode.trim().toUpperCase();
     const trip = await this.tripRepo.findOne({ where: { id: tripId } });
-
-    // Only PERSONAL invite codes admit — there is no trip-wide code.
-    // Every code is minted per invite by `invite()`, so revoking an
-    // invite kills exactly that recipient's link.
-    const invite = trip
-      ? await this.inviteRepo.findOne({
-          where: { trip_id: tripId, invite_code: normalized },
-        })
-      : null;
-    if (!trip || !invite) {
+    if (!trip) {
       // Fold "wrong trip id" and "wrong code" into one response so the
       // endpoint can't be used to enumerate which trip ids exist.
       throw new ForbiddenException('Invalid trip or invite code');
     }
 
-    const existing = await this.memberRepo.findOne({
-      where: { trip_id: tripId, user_id: userId },
-    });
+    // Only PERSONAL invite codes admit — there is no trip-wide code.
+    // Every code is minted per invite by `invite()`, so revoking an
+    // invite kills exactly that recipient's link.
+    //
+    // Claim + consume atomically: the invite row is locked, the
+    // membership written, and the row deleted in ONE transaction, so
+    // two accounts racing the same personal link can't both pass the
+    // lookup — the loser blocks on the lock and re-reads nothing after
+    // the winner's delete commits.
+    const { role, inserted } = await this.tripRepo.manager.transaction(
+      async (manager) => {
+        const invite = await manager.findOne(TripInvite, {
+          where: { trip_id: tripId, invite_code: normalized },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!invite) {
+          throw new ForbiddenException('Invalid trip or invite code');
+        }
 
-    let inserted = false;
-    if (!existing) {
-      try {
-        await this.memberRepo.save(
-          this.memberRepo.create({
-            trip_id: tripId,
-            user_id: userId,
-            // The invite carries the role the owner picked.
-            role: invite.role,
-          }),
-        );
-        inserted = true;
-      } catch (err: unknown) {
-        // Concurrent join race — the unique (trip_id, user_id) index
-        // rejected the duplicate. Desired post-state still holds, but
-        // the first winner will have already written the activity row
-        // for this membership so we leave that branch alone.
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
+        const existing = await manager.findOne(TripMember, {
+          where: { trip_id: tripId, user_id: userId },
+        });
 
-    // Consume the invite whether or not a new row was inserted — an
-    // already-member clicking their invite link shouldn't stay listed
-    // as pending forever.
-    await this.inviteRepo.delete({ id: invite.id });
+        let didInsert = false;
+        if (!existing) {
+          try {
+            await manager.save(
+              manager.create(TripMember, {
+                trip_id: tripId,
+                user_id: userId,
+                // The invite carries the role the owner picked.
+                role: invite.role,
+              }),
+            );
+            didInsert = true;
+          } catch (err: unknown) {
+            // Concurrent join race — the unique (trip_id, user_id)
+            // index rejected the duplicate. Desired post-state still
+            // holds; the winner already wrote the activity row.
+            if (!isUniqueViolation(err)) throw err;
+          }
+        }
+
+        // Consume the invite whether or not a new row was inserted —
+        // an already-member clicking their invite link shouldn't stay
+        // listed as pending forever.
+        await manager.delete(TripInvite, { id: invite.id });
+        return { role: invite.role, inserted: didInsert };
+      },
+    );
 
     // Keep the activity entry OUTSIDE the unique-violation catch so a
     // non-23505 error from the activity path isn't misattributed to a
@@ -1487,7 +1505,7 @@ export class TripsService {
     // `existing` and skip the save.
     if (inserted) {
       await this.activity.recordSafe(tripId, userId, 'member_joined', {
-        role: invite.role,
+        role,
       });
     }
 
@@ -1611,6 +1629,10 @@ export class TripsService {
     }
 
     await this.memberRepo.delete({ id: target.id });
+    // Revoke LIVE access too: the socket room is only membership-checked
+    // at subscribe time, so without eviction an open planner would keep
+    // receiving trip broadcasts until the next reconnect.
+    await this.events.evictFromTrip(tripId, memberUserId);
     // Their past contributions (suggestions, votes, messages, activity)
     // stay — removal only revokes access from now on.
     await this.activity.recordSafe(tripId, userId, 'member_removed', {

@@ -682,6 +682,31 @@ export class EventsGateway
   }
 
   /**
+   * Kick a user's live sockets out of a trip room. Membership is only
+   * checked when `subscribe:trip` is handled, so without this a member
+   * removed by the owner would keep receiving `trip:*` broadcasts until
+   * they disconnected. Each evicted socket also gets a `trip:evicted`
+   * event so an open planner can react instead of silently going stale.
+   */
+  async evictFromTrip(tripId: string, userId: string): Promise<void> {
+    const room = `trip:${tripId}`;
+    const sockets = await this.server.in(room).fetchSockets();
+    for (const socket of sockets) {
+      if ((socket.data as Record<string, unknown>).userId !== userId) {
+        continue;
+      }
+      socket.leave(room);
+      socket.emit('trip:evicted', { trip_id: tripId });
+      // Keep the per-socket bookkeeping honest so the disconnect
+      // handler doesn't broadcast a presence-left event for a trip the
+      // socket was already evicted from. Local adapter only — with a
+      // remote adapter the data mutation is best-effort.
+      const joined = (socket.data as Record<string, unknown>).joinedTrips;
+      if (joined instanceof Set) joined.delete(tripId);
+    }
+  }
+
+  /**
    * Emit an event to every member currently subscribed to a trip room.
    * Generic over the event name so collab features (suggestions, votes,
    * chat, metadata updates) can reuse the same transport without having

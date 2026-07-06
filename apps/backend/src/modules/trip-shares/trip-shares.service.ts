@@ -21,7 +21,7 @@ import {
   TripShareResponseDto,
 } from './dto/trip-share.dto.js';
 
-const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
 
 @Injectable()
 export class TripSharesService {

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -148,6 +149,13 @@ export class TripGeneratorService {
       where: { trip_id: tripId, user_id: userId },
     });
     if (!membership) throw new NotFoundException('Trip not found');
+    // Viewers are read-and-comment only — regenerating the itinerary is
+    // a route write.
+    if (membership.role === 'viewer') {
+      throw new ForbiddenException(
+        'Viewers can view and comment only — ask the trip owner for editor access',
+      );
+    }
 
     const trip = await this.tripRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Trip not found');

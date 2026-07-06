@@ -167,7 +167,7 @@ describe('TripsService', () => {
   let inviteRepo: jest.Mocked<Repository<TripInvite>>;
   let folderRepo: jest.Mocked<Repository<TripFolder>>;
   let collectionItemRepo: jest.Mocked<Repository<RouteCollectionItem>>;
-  let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
+  let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip' | 'evictFromTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
   let email: jest.Mocked<Pick<EmailService, 'sendTripInvite'>>;
@@ -277,7 +277,10 @@ describe('TripsService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
     } as unknown as jest.Mocked<Repository<RouteCollectionItem>>;
 
-    events = { emitToTrip: jest.fn() };
+    events = {
+      emitToTrip: jest.fn(),
+      evictFromTrip: jest.fn().mockResolvedValue(undefined),
+    };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
     tripShares = { findActiveByToken: jest.fn() };
     // Default: nobody is private, so owner identity is unmasked unless a test
@@ -1853,6 +1856,8 @@ describe('TripsService', () => {
       await service.removeMember(OWNER_ID, TRIP_ID, OTHER_ID);
 
       expect(memberRepo.delete).toHaveBeenCalledWith({ id: 'm-x' });
+      // Live sockets are kicked from the trip room, not just future REST.
+      expect(events.evictFromTrip).toHaveBeenCalledWith(TRIP_ID, OTHER_ID);
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         OWNER_ID,
@@ -1881,44 +1886,46 @@ describe('TripsService', () => {
     });
 
     it('join with a personal invite code adopts its role and consumes the row', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(
-        makeOwnedTrip({ invite_code: 'ABCDEFGH' }),
-      );
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'editor',
-        invite_code: 'ZZZZYYYY',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce(null);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'editor',
+          invite_code: 'ZZZZYYYY',
+        })
+        .mockResolvedValueOnce(null);
       mockGetDetailReturns(makeJoinedTrip());
 
       await service.join(OTHER_ID, TRIP_ID, 'zzzzyyyy');
 
-      expect(memberRepo.save).toHaveBeenCalledWith(
+      expect(manager.save).toHaveBeenCalledWith(
         expect.objectContaining({ role: 'editor' }),
       );
-      expect(inviteRepo.delete).toHaveBeenCalledWith({ id: 'inv-1' });
+      expect(manager.delete).toHaveBeenCalledWith(TripInvite, { id: 'inv-1' });
     });
   });
 
   describe('join', () => {
     it('adds a member when a personal invite code matches', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // join lookup
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'viewer',
-        invite_code: 'ABCDEFGH',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce(null);
+      // Inside the claim transaction: locked invite lookup, then the
+      // existing-membership check.
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
       mockGetDetailReturns(makeJoinedTrip()); // post-join detail
 
       const result = await service.join(OTHER_ID, TRIP_ID, 'abcdefgh');
 
-      expect(memberRepo.save).toHaveBeenCalledWith(
+      expect(manager.save).toHaveBeenCalledWith(
         expect.objectContaining({
           trip_id: TRIP_ID,
           user_id: OTHER_ID,
@@ -1926,59 +1933,60 @@ describe('TripsService', () => {
         }),
       );
       // The invite is consumed so the roster's pending row disappears.
-      expect(inviteRepo.delete).toHaveBeenCalledWith({ id: 'inv-1' });
+      expect(manager.delete).toHaveBeenCalledWith(TripInvite, { id: 'inv-1' });
       expect(result.members).toHaveLength(2);
     });
 
     it('normalizes the invite code (case + whitespace)', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'viewer',
-        invite_code: 'ABCDEFGH',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce(null);
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
       mockGetDetailReturns(makeJoinedTrip());
 
       await expect(
         service.join(OTHER_ID, TRIP_ID, '  abcdefgh  '),
       ).resolves.toBeDefined();
-      // Lookup used the normalized code.
-      expect(inviteRepo.findOne).toHaveBeenCalledWith({
+      // Lookup used the normalized code, under a claim lock.
+      expect(manager.findOne).toHaveBeenCalledWith(TripInvite, {
         where: { trip_id: TRIP_ID, invite_code: 'ABCDEFGH' },
+        lock: { mode: 'pessimistic_write' },
       });
     });
 
     it('is idempotent for an existing member (still consumes the invite)', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'viewer',
-        invite_code: 'ABCDEFGH',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce({
-        user_id: OWNER_ID,
-      } as TripMember);
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce({ user_id: OWNER_ID });
       mockGetDetailReturns(makeOwnedTrip());
 
       await service.join(OWNER_ID, TRIP_ID, 'ABCDEFGH');
 
-      expect(memberRepo.save).not.toHaveBeenCalled();
-      expect(inviteRepo.delete).toHaveBeenCalledWith({ id: 'inv-1' });
+      expect(manager.save).not.toHaveBeenCalled();
+      expect(manager.delete).toHaveBeenCalledWith(TripInvite, { id: 'inv-1' });
     });
 
     it('forbids joins with a wrong code', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      inviteRepo.findOne.mockResolvedValueOnce(null);
+      manager.findOne.mockResolvedValueOnce(null); // no invite claims it
 
       await expect(
         service.join(OTHER_ID, TRIP_ID, 'WRONG123'),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(manager.save).not.toHaveBeenCalled();
     });
 
     it('forbids joins for a missing trip without leaking existence', async () => {
@@ -1991,15 +1999,16 @@ describe('TripsService', () => {
 
     it('swallows a unique-violation race on duplicate insert', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'viewer',
-        invite_code: 'ABCDEFGH',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce(null);
-      memberRepo.save.mockRejectedValueOnce(
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
+      manager.save.mockRejectedValueOnce(
         Object.assign(new Error('duplicate key'), { code: '23505' }),
       );
       mockGetDetailReturns(makeJoinedTrip());
@@ -2011,15 +2020,16 @@ describe('TripsService', () => {
 
     it('rethrows non-unique-violation errors', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      inviteRepo.findOne.mockResolvedValueOnce({
-        id: 'inv-1',
-        trip_id: TRIP_ID,
-        email: 'eve@example.com',
-        role: 'viewer',
-        invite_code: 'ABCDEFGH',
-      } as TripInvite);
-      memberRepo.findOne.mockResolvedValueOnce(null);
-      memberRepo.save.mockRejectedValueOnce(
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
+      manager.save.mockRejectedValueOnce(
         Object.assign(new Error('boom'), { code: '99999' }),
       );
 
@@ -2533,6 +2543,19 @@ describe('TripsService', () => {
         surfaceMixMetres: {},
       });
     }
+
+    it('403s viewers — route writes need editor access', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OTHER_ID,
+        role: 'viewer',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OTHER_ID, TRIP_ID, { days: [] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
 
     it('re-routes from routing waypoints, persists day 1 + waypoints, broadcasts + returns detail', async () => {
       // membership gate passes (caller is a member)
