@@ -3,6 +3,7 @@ import {
   classifyPoiTags,
   extractPoiHint,
   extractStoredPoiFields,
+  osmDetailUrl,
   OverpassPoiProvider,
   parseStarsTag,
 } from './overpass.provider.js';
@@ -259,6 +260,27 @@ describe('extractStoredPoiFields', () => {
     // 'huge' sorts before the 'k***' keys, so it survives the cap and is
     // truncated to the max value length.
     expect(bag.huge.length).toBe(512);
+  });
+});
+
+describe('osmDetailUrl', () => {
+  it('builds node/way/relation OSM URLs from the external id', () => {
+    expect(osmDetailUrl('osm:node:123')).toBe(
+      'https://www.openstreetmap.org/node/123',
+    );
+    expect(osmDetailUrl('osm:way:456')).toBe(
+      'https://www.openstreetmap.org/way/456',
+    );
+    expect(osmDetailUrl('osm:relation:789')).toBe(
+      'https://www.openstreetmap.org/relation/789',
+    );
+  });
+
+  it('returns null for a non-OSM or malformed external id', () => {
+    expect(osmDetailUrl('overture:place:abc')).toBeNull();
+    expect(osmDetailUrl('osm:node:')).toBeNull();
+    expect(osmDetailUrl('osm:building:1')).toBeNull();
+    expect(osmDetailUrl('node/1')).toBeNull();
   });
 });
 

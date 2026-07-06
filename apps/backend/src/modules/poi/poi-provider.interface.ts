@@ -3,9 +3,12 @@ import type { PoiKind } from './dto/point-of-interest.dto.js';
 
 /**
  * Normalized accommodation POI returned by any provider.
- * All providers must map their external response to this shape.
+ * All providers must map their external response to this shape. Carries the
+ * shared `StoredPoiFields` decision-support columns (#849) so the live
+ * `/accommodations` response can surface opening hours + address, not just
+ * name / distance.
  */
-export interface AccommodationPoi {
+export interface AccommodationPoi extends StoredPoiFields {
   external_id: string;
   name: string | null;
   kind: AccommodationKind;
@@ -19,9 +22,10 @@ export interface AccommodationPoi {
 /**
  * Normalized along-route POI (restaurant / viewpoint / café). Shared
  * across all providers so the service layer can rank and cap results
- * without knowing about the upstream source.
+ * without knowing about the upstream source. Carries the shared
+ * `StoredPoiFields` decision-support columns (#849).
  */
-export interface PointOfInterest {
+export interface PointOfInterest extends StoredPoiFields {
   external_id: string;
   name: string | null;
   kind: PoiKind;

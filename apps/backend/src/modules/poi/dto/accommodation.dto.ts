@@ -151,6 +151,38 @@ export class AccommodationDto {
     description: 'Hotel star rating 1..5 when the provider reports one.',
   })
   stars!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Raw OSM `opening_hours` (reception hours) when tagged.',
+  })
+  opening_hours!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Street line (street + number).',
+  })
+  address_street!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_city!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_postcode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'ISO 3166-1 alpha-2 country code.',
+  })
+  address_country!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Canonical OpenStreetMap detail URL — the "view source" link and ' +
+      'ODbL attribution target.',
+  })
+  osm_url!: string | null;
 }
 
 export class AccommodationListDto {

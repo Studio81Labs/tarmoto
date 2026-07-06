@@ -732,6 +732,12 @@ export interface Accommodation {
   website: string | null;
   phone: string | null;
   stars: number | null;
+  opening_hours: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
+  osm_url: string | null;
 }
 
 export interface AccommodationList {
@@ -755,6 +761,14 @@ export interface Poi {
   website: string | null;
   phone: string | null;
   hint: string | null;
+  opening_hours: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
+  cuisine: string | null;
+  brand: string | null;
+  osm_url: string | null;
 }
 
 export interface PoiList {
@@ -779,6 +793,14 @@ export interface AlongRoutePoi {
   website: string | null;
   phone: string | null;
   hint: string | null;
+  opening_hours: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
+  cuisine: string | null;
+  brand: string | null;
+  osm_url: string | null;
 }
 
 export interface AlongRoutePoiList {
