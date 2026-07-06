@@ -490,7 +490,10 @@ export class DemoSeeder {
         max_speed: round1(Math.min(160, avgSpeed * 1.5 + 10 + rng() * 15)),
         route_geom: lineGeom(r.points),
         avg_road_quality: round1(3 + rng() * 1.5),
-        avg_curviness: round2(0.35 + rng() * 0.4),
+        // Real geometry-derived curviness on the canonical 0–5 scale (matching
+        // road_segments.curviness_score, which RidesService averages and the
+        // community min_curviness filter compares against).
+        avg_curviness: r.curviness,
         ride_type: r.rideType,
         name: r.name,
         status: 'completed',
@@ -1078,7 +1081,7 @@ export class DemoSeeder {
             distance_km: round1(srcDay.distanceKm),
             route_geom: lineGeom(srcDay.points),
             avg_quality: round1(3 + rng() * 2),
-            curviness_score: round2(0.4 + rng() * 0.4),
+            curviness_score: srcDay.curviness, // real 0–5, from geometry
             scenic_score: round2(0.4 + rng() * 0.4),
           }),
         );

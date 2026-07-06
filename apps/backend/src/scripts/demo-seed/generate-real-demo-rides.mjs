@@ -97,6 +97,50 @@ function totalKm(pts) {
   return km;
 }
 
+function bearingDeg(a, b) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const p1 = toRad(a.lat);
+  const p2 = toRad(b.lat);
+  const dl = toRad(b.lng - a.lng);
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x =
+    Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+/**
+ * Curviness on the app's canonical **0–5** scale (matching
+ * `road_segments.curviness_score`, which `RidesService.avg_curviness` averages
+ * and the community `min_curviness` filter compares against). Derived from the
+ * route's turning-per-km, first resampling to ~50 m legs so 1 s GPS heading
+ * jitter doesn't inflate it. ~55°/km maps to ~1; capped at 5.
+ */
+function curvinessScore(pts) {
+  if (pts.length < 3) return 0;
+  const resampled = [pts[0]];
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    acc += haversineKm(pts[i - 1], pts[i]);
+    if (acc >= 0.05) {
+      resampled.push(pts[i]);
+      acc = 0;
+    }
+  }
+  if (resampled.length < 3) return 0;
+  let turn = 0;
+  for (let i = 2; i < resampled.length; i++) {
+    let d = Math.abs(
+      bearingDeg(resampled[i - 1], resampled[i]) -
+        bearingDeg(resampled[i - 2], resampled[i - 1]),
+    );
+    if (d > 180) d = 360 - d;
+    turn += d;
+  }
+  const km = totalKm(resampled);
+  if (km < 0.1) return 0;
+  return round(Math.min(5, turn / km / 55), 2);
+}
+
 /** Downsample to <= max points, always keeping first + last. */
 function downsample(pts, max) {
   if (pts.length <= max) return pts;
@@ -163,6 +207,7 @@ function buildRides() {
       durationSec,
       elevationGain: gain,
       elevationLoss: loss,
+      curviness: curvinessScore(pts),
       rideType: rideTypeFor(distanceKm),
       points: coords(downsample(pts, MAX_RIDE_POINTS)),
     });
@@ -196,6 +241,7 @@ function buildTripDay(xml, file) {
   return {
     title,
     distanceKm: round(totalKm(route), 2),
+    curviness: curvinessScore(route),
     points: coords(downsample(route, MAX_TRIP_POINTS)),
     waypoints: coords(capVias(stops, MAX_TRIP_VIAS)).map(([lng, lat]) => ({
       lng,
@@ -269,6 +315,7 @@ export interface RealDemoRide {
   durationSec: number;
   elevationGain: number;
   elevationLoss: number;
+  curviness: number; // 0–5, matching road_segments.curviness_score
   rideType: "free" | "commute" | "trip" | "tracked";
   points: [number, number][]; // [lng, lat]
 }
@@ -277,6 +324,7 @@ export interface RealDemoTripDay {
   dayNumber: number;
   title: string;
   distanceKm: number;
+  curviness: number; // 0–5
   points: [number, number][]; // [lng, lat] route geometry
   waypoints: { lng: number; lat: number }[];
 }
