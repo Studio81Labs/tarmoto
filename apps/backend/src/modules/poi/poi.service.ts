@@ -11,6 +11,7 @@ import {
   type AccommodationPoi,
   type PointOfInterest,
 } from './poi-provider.interface.js';
+import { osmDetailUrl } from './providers/overpass.provider.js';
 import {
   ACCOMMODATION_KINDS,
   AccommodationDto,
@@ -158,6 +159,12 @@ export class PoiService {
       website: poi.website,
       phone: poi.phone,
       stars: poi.stars,
+      opening_hours: poi.opening_hours,
+      address_street: poi.address_street,
+      address_city: poi.address_city,
+      address_postcode: poi.address_postcode,
+      address_country: poi.address_country,
+      osm_url: osmDetailUrl(poi.external_id),
     }));
   }
 
@@ -254,6 +261,14 @@ export class PoiService {
       website: poi.website,
       phone: poi.phone,
       hint: poi.hint,
+      opening_hours: poi.opening_hours,
+      address_street: poi.address_street,
+      address_city: poi.address_city,
+      address_postcode: poi.address_postcode,
+      address_country: poi.address_country,
+      cuisine: poi.cuisine,
+      brand: poi.brand,
+      osm_url: osmDetailUrl(poi.external_id),
     }));
   }
 
@@ -402,6 +417,14 @@ export class PoiService {
         website: poi.website,
         phone: poi.phone,
         hint: poi.hint,
+        opening_hours: poi.opening_hours,
+        address_street: poi.address_street,
+        address_city: poi.address_city,
+        address_postcode: poi.address_postcode,
+        address_country: poi.address_country,
+        cuisine: poi.cuisine,
+        brand: poi.brand,
+        osm_url: osmDetailUrl(poi.external_id),
       }),
     );
   }

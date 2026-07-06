@@ -331,6 +331,12 @@ function makeAccommodation(
     website: null,
     phone: null,
     stars: 3,
+    opening_hours: null,
+    address_street: null,
+    address_city: null,
+    address_postcode: null,
+    address_country: null,
+    osm_url: null,
     ...overrides,
   };
 }

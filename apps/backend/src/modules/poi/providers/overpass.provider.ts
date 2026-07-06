@@ -369,6 +369,7 @@ export class OverpassPoiProvider implements PoiProvider {
       website: tags.website ?? tags['contact:website'] ?? null,
       phone: tags.phone ?? tags['contact:phone'] ?? null,
       stars: this.parseStars(tags.stars),
+      ...extractStoredPoiFields(tags),
     };
   }
 
@@ -393,6 +394,7 @@ export class OverpassPoiProvider implements PoiProvider {
       website: tags.website ?? tags['contact:website'] ?? null,
       phone: tags.phone ?? tags['contact:phone'] ?? null,
       hint: extractPoiHint(kind, tags),
+      ...extractStoredPoiFields(tags),
     };
   }
 
@@ -569,4 +571,16 @@ export function extractStoredPoiFields(
     brand: normalizeTagText(tags.brand ?? tags.operator),
     tags: boundedTagBag(tags),
   };
+}
+
+/**
+ * Build the canonical OpenStreetMap detail URL for a POI from its
+ * `osm:<type>:<id>` external id — the rider-facing "view source" link and
+ * the ODbL attribution target. Returns null for an id that isn't an OSM
+ * node/way/relation reference.
+ */
+export function osmDetailUrl(externalId: string): string | null {
+  const match = /^osm:(node|way|relation):(\d+)$/.exec(externalId);
+  if (!match) return null;
+  return `https://www.openstreetmap.org/${match[1]}/${match[2]}`;
 }
