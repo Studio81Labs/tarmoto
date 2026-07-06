@@ -354,7 +354,6 @@ function tripWithDays(days: TripDay[]): Trip {
     daily_km_max: 300,
     min_quality: 3,
     road_preference: "curvy",
-    invite_code: "INVITE",
     days,
     members: [],
   };

@@ -24,8 +24,8 @@ import { SharingService } from './sharing.service.js';
       TripMember,
     ]),
     AccountModule,
-    // Reuse TripsService.withInviteCodeAllocation for collision-safe invite
-    // codes when cloning a community ride into a trip.
+    // Reuse TripsService.withTripTransaction for the atomic trip+membership
+    // +day commit when cloning a community ride into a trip.
     TripsModule,
   ],
   controllers: [SharingController],

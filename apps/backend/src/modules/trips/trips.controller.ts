@@ -29,6 +29,10 @@ import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
+import {
+  TripCollaboratorsDto,
+  UpdateTripMemberRoleDto,
+} from './dto/collaborators.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -293,5 +297,88 @@ export class TripsController {
   ): Promise<InviteTripResponseDto> {
     await this.tripsService.invite(req.user!.userId, tripId, dto);
     return { status: 'queued' };
+  }
+
+  @Get(':tripId/members')
+  @ApiOperation({
+    summary: 'Collaborator roster: joined members + pending invites',
+    description:
+      'Any member can list the roster. Emails and the pending-invite ' +
+      'list are only included when the caller is the owner or an ' +
+      'editor — viewers get names and roles only.',
+  })
+  @ApiResponse({ status: 200, type: TripCollaboratorsDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not a member' })
+  async listCollaborators(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+  ): Promise<TripCollaboratorsDto> {
+    return this.tripsService.listCollaborators(req.user!.userId, tripId);
+  }
+
+  @Patch(':tripId/members/:memberUserId')
+  @ApiOperation({
+    summary: "Change a member's role (owner only)",
+    description:
+      'Switch a collaborator between `editor` and `viewer`. The owner ' +
+      'role is fixed — it cannot be assigned or removed.',
+  })
+  @ApiResponse({ status: 200, type: TripCollaboratorsDto })
+  @ApiResponse({ status: 403, description: 'Caller is not the owner' })
+  @ApiResponse({ status: 404, description: 'Trip or member not found' })
+  async updateMemberRole(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('memberUserId', ParseUUIDPipe) memberUserId: string,
+    @Body() dto: UpdateTripMemberRoleDto,
+  ): Promise<TripCollaboratorsDto> {
+    return this.tripsService.updateMemberRole(
+      req.user!.userId,
+      tripId,
+      memberUserId,
+      dto.role,
+    );
+  }
+
+  @Delete(':tripId/members/:memberUserId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Remove a member from the trip (owner only)',
+    description:
+      'Revokes access from now on; the removed rider\u2019s past ' +
+      'suggestions, votes, and messages stay in the history.',
+  })
+  @ApiResponse({ status: 204, description: 'Member removed' })
+  @ApiResponse({ status: 403, description: 'Caller is not the owner' })
+  @ApiResponse({ status: 404, description: 'Trip or member not found' })
+  async removeMember(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('memberUserId', ParseUUIDPipe) memberUserId: string,
+  ): Promise<void> {
+    await this.tripsService.removeMember(
+      req.user!.userId,
+      tripId,
+      memberUserId,
+    );
+  }
+
+  @Delete(':tripId/invites/:inviteId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Withdraw a pending email invite (owner only)',
+    description:
+      'Deletes the pending invite; the personal invite code in the ' +
+      'already-sent mail stops working immediately.',
+  })
+  @ApiResponse({ status: 204, description: 'Invite revoked' })
+  @ApiResponse({ status: 403, description: 'Caller is not the owner' })
+  @ApiResponse({ status: 404, description: 'Trip or invite not found' })
+  async revokeInvite(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('inviteId', ParseUUIDPipe) inviteId: string,
+  ): Promise<void> {
+    await this.tripsService.revokeInvite(req.user!.userId, tripId, inviteId);
   }
 }

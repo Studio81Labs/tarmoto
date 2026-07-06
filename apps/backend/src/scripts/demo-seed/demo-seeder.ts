@@ -786,7 +786,6 @@ export class DemoSeeder {
           min_quality: 3,
           road_preference: 'curvy',
           status: t === 0 ? 'active' : 'planned',
-          invite_code: token(`${userId}-trip-${t}`, rng).slice(0, 12),
         }),
       );
       await memberRepo.save(
@@ -1066,7 +1065,6 @@ export class DemoSeeder {
           min_quality: 3,
           road_preference: 'curvy',
           status: t === 0 ? 'active' : 'planned',
-          invite_code: token(`${userId}-trip-${t}`, rng).slice(0, 12),
         }),
       );
       await memberRepo.save(

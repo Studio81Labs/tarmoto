@@ -260,10 +260,13 @@ export interface TripSuggestionVotedEvent {
   down_votes: number;
 }
 
-/** Wire shape of `trip:suggestion:resolved` — status flip on accept/reject. */
+/**
+ * Wire shape of `trip:suggestion:resolved` — status flip on
+ * accept/reject, or back to `open` when the owner reopens.
+ */
 export interface TripSuggestionResolvedEvent {
   suggestion_id: string;
-  status: "accepted" | "rejected";
+  status: "accepted" | "rejected" | "open";
 }
 
 /**

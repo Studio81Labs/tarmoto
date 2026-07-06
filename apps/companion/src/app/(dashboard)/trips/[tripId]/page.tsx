@@ -79,7 +79,7 @@ export default function TripDetailPage() {
       ? (loaded.members.find((m) => m.user_id === currentUserId)?.role ?? null)
       : null;
   const isOwner = callerRole === "owner";
-  const canManageInvites = callerRole === "owner" || callerRole === "admin";
+  const canManageInvites = callerRole === "owner" || callerRole === "editor";
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
@@ -402,7 +402,6 @@ export default function TripDetailPage() {
             {activeTab === "members" && (
               <MembersList
                 members={loaded.members}
-                inviteCode={loaded.detail.invite_code}
                 canInvite={canManageInvites}
                 onShareLinkClick={() => {
                   setCollaborateOpen(true);
@@ -593,25 +592,13 @@ function SegmentSidebarSection() {
 }
 function MembersList({
   members,
-  inviteCode,
   canInvite,
   onShareLinkClick,
 }: {
   members: TripDetailMember[];
-  inviteCode: string;
   canInvite: boolean;
   onShareLinkClick: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(inviteCode);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard write may fail silently in unsupported browsers */
-    }
-  };
   return (
     <div className="space-y-4 p-4">
       <section>
@@ -632,28 +619,16 @@ function MembersList({
           </h3>
           <p className="mt-1 text-[11px] text-fg-dim">
             {t(
-              "Share the invite code for mobile riders, or copy a web link that lets signed-in riders join the group planner. ",
+              "Send personal email invites or share a revocable group link from the collaborate dialog. ",
             )}
           </p>
-          <div className="mt-3 flex items-center gap-2">
-            <code className="flex-1 truncate rounded-md border border-line-strong bg-paper px-2 py-1.5 text-xs font-mono text-accent">
-              {inviteCode}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              className="inline-flex items-center gap-1 rounded-md bg-paper px-2.5 py-1.5 text-[11px] text-ink hover:bg-paper-2 transition"
-            >
-              {copied ? <Check size={12} /> : null} {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
           <button
             type="button"
             onClick={onShareLinkClick}
             className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-accent hover:underline"
           >
             <Share2 size={11} />
-            {t("Or share a group link ")}
+            {t("Open collaborate & invite ")}
           </button>
         </section>
       )}
@@ -664,11 +639,11 @@ function MemberRow({ member }: { member: TripDetailMember }) {
   const roleStyle =
     member.role === "owner"
       ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
-      : member.role === "admin"
+      : member.role === "editor"
         ? "bg-blue-500/10 text-blue-300 border-blue-500/30"
         : "bg-paper text-ink border-line-strong";
   const RoleIcon =
-    member.role === "owner" ? Crown : member.role === "admin" ? Shield : User;
+    member.role === "owner" ? Crown : member.role === "editor" ? Shield : User;
   return (
     <li className="flex items-center gap-3 rounded-lg border border-line bg-cream/60 p-2.5">
       <UserAvatar name={member.display_name} size={32} fontSize={12} />

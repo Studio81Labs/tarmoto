@@ -24,7 +24,11 @@ const minimalTrip: Trip = {
   updatedAt: "2026-04-20T10:00:00.000Z",
 };
 
-const hoisted = vi.hoisted(() => ({ create: vi.fn() }));
+const hoisted = vi.hoisted(() => ({
+  create: vi.fn(),
+  revoke: vi.fn(),
+  listMine: vi.fn(),
+}));
 
 vi.mock("@/lib/api", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/api")>();
@@ -33,6 +37,8 @@ vi.mock("@/lib/api", async (importActual) => {
     tripSharesApi: {
       ...actual.tripSharesApi,
       create: hoisted.create,
+      revoke: hoisted.revoke,
+      listMine: hoisted.listMine,
     },
   };
 });
@@ -43,6 +49,10 @@ describe("TripCollaborateModal", () => {
 
   beforeEach(() => {
     hoisted.create.mockReset();
+    hoisted.revoke.mockReset();
+    hoisted.listMine
+      .mockReset()
+      .mockResolvedValue({ data: { items: [], total: 0 } });
     clipboardWrite.mockReset().mockResolvedValue(undefined);
     Object.assign(navigator, {
       clipboard: { writeText: clipboardWrite },
@@ -59,7 +69,7 @@ describe("TripCollaborateModal", () => {
       screen.getByText(/generate or load a trip first/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /create invite link/i }),
+      screen.queryByRole("switch", { name: /group link/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -77,7 +87,7 @@ describe("TripCollaborateModal", () => {
       screen.getByText(/only trip owners and admins can create invite links/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /create invite link/i }),
+      screen.queryByRole("switch", { name: /group link/i }),
     ).not.toBeInTheDocument();
     expect(hoisted.create).not.toHaveBeenCalled();
   });
@@ -98,9 +108,7 @@ describe("TripCollaborateModal", () => {
 
     render(<TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
     await waitFor(() => {
       expect(hoisted.create).toHaveBeenCalledWith({
@@ -114,6 +122,7 @@ describe("TripCollaborateModal", () => {
       /shareable invite url/i,
     )) as HTMLInputElement;
     expect(input.value).toContain(`/trips/shared/${"a".repeat(32)}`);
+    expect(screen.getByRole("switch", { name: /group link/i })).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: /^copy$/i }));
 
@@ -123,14 +132,86 @@ describe("TripCollaborateModal", () => {
     expect(await screen.findByText(/copied/i)).toBeInTheDocument();
   });
 
+  it("rehydrates the group-link toggle from an existing share for a saved trip", async () => {
+    hoisted.listMine.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            id: "share-existing",
+            share_token: "c".repeat(32),
+            share_url: `/trips/shared/${"c".repeat(32)}`,
+            trip_id: "server-trip-1",
+            title: "Pyrenees Loop",
+            view_count: 3,
+            created_at: "2026-04-19T10:00:00.000Z",
+            updated_at: "2026-04-19T10:00:00.000Z",
+          },
+        ],
+        total: 1,
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    // The toggle reflects the pre-existing share instead of rendering
+    // OFF next to a live link (which would mint duplicates on toggle).
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: /group link/i })).toBeChecked();
+    });
+    expect(
+      (screen.getByLabelText(/shareable invite url/i) as HTMLInputElement)
+        .value,
+    ).toContain(`/trips/shared/${"c".repeat(32)}`);
+    expect(hoisted.create).not.toHaveBeenCalled();
+  });
+
+  it("revokes the share when the group link is toggled off", async () => {
+    hoisted.create.mockResolvedValueOnce({
+      data: {
+        id: "share-1",
+        share_token: "a".repeat(32),
+        share_url: `/trips/shared/${"a".repeat(32)}`,
+        trip_id: null,
+        title: "Pyrenees Loop",
+        view_count: 0,
+        created_at: "2026-04-20T10:00:00.000Z",
+        updated_at: "2026-04-20T10:00:00.000Z",
+      },
+    });
+    hoisted.revoke.mockResolvedValueOnce({ data: undefined });
+
+    render(<TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
+    await screen.findByLabelText(/shareable invite url/i);
+
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
+
+    await waitFor(() => {
+      expect(hoisted.revoke).toHaveBeenCalledWith("share-1");
+    });
+    expect(
+      screen.queryByLabelText(/shareable invite url/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: /group link/i }),
+    ).not.toBeChecked();
+  });
+
   it("surfaces an error message when the API call fails", async () => {
     hoisted.create.mockRejectedValueOnce(new Error("Network unavailable"));
 
     render(<TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
     expect(await screen.findByText(/network unavailable/i)).toBeInTheDocument();
   });
@@ -153,9 +234,7 @@ describe("TripCollaborateModal", () => {
       <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
     expect(await screen.findByText(/network unavailable/i)).toBeInTheDocument();
 
@@ -173,7 +252,7 @@ describe("TripCollaborateModal", () => {
 
     expect(screen.queryByText(/network unavailable/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /create invite link/i }),
+      screen.getByRole("switch", { name: /group link/i }),
     ).toBeInTheDocument();
   });
 
@@ -198,9 +277,7 @@ describe("TripCollaborateModal", () => {
       <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
     const input = (await screen.findByLabelText(
       /shareable invite url/i,
@@ -235,9 +312,7 @@ describe("TripCollaborateModal", () => {
       <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
     // Close the modal while the create call is still pending.
     rerender(
@@ -270,8 +345,8 @@ describe("TripCollaborateModal", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /create invite link/i }),
-      ).toBeInTheDocument();
+        screen.getByRole("switch", { name: /group link/i }),
+      ).not.toBeChecked();
     });
     expect(
       screen.queryByLabelText(/shareable invite url/i),

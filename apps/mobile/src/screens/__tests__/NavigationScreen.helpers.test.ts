@@ -32,7 +32,6 @@ function makeTrip(over: Partial<Trip> = {}): Trip {
     min_quality: 3,
     road_preference: "mixed",
     members: [],
-    invite_code: "ABC123",
     days: [
       {
         id: "day-1",

@@ -15,6 +15,7 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
@@ -35,6 +36,7 @@ import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { generateInviteCode } from './invite-code.js';
+import type { TripCollaboratorsDto } from './dto/collaborators.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
 import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
@@ -52,13 +54,6 @@ import {
   type TripWaypointType,
 } from './dto/trip-response.dto.js';
 
-const MAX_INVITE_ALLOCATION_ATTEMPTS = 5;
-// Must match the unique index name in
-// `1714800000000-AddTripInviteCode.ts`. We disambiguate `23505` errors
-// by constraint name so a unique-violation on, say, `trip_members
-// (trip_id, user_id)` doesn't get silently retried as if it were an
-// invite-code collision.
-const INVITE_CODE_INDEX = 'idx_trips_invite_code';
 const DEFAULT_DAILY_KM_MIN = 150;
 const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
@@ -66,7 +61,10 @@ const DEFAULT_ROAD_PREFERENCE = 'curvy';
 
 // Roles allowed to mutate trip-wide metadata. Keeping this in one place
 // so role checks stay consistent if we ever grow the role vocabulary.
-const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+// `editor` replaced the old `admin`/`member` pair (migration 1793):
+// editors co-plan the route; `viewer` is the read-and-comment tier that
+// anonymous link-joiners start in.
+const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
 
 @Injectable()
 export class TripsService {
@@ -83,6 +81,8 @@ export class TripsService {
     private readonly folderRepo: Repository<TripFolder>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(TripInvite)
+    private readonly inviteRepo: Repository<TripInvite>,
     @InjectRepository(RouteCollectionItem)
     private readonly collectionItemRepo: Repository<RouteCollectionItem>,
     private readonly events: EventsGateway,
@@ -168,76 +168,73 @@ export class TripsService {
         ? source.folder_id
         : null;
 
-    const dupId = await this.withInviteCodeAllocation(
-      async (em, inviteCode) => {
-        const dup = await em.save(
-          em.create(Trip, {
-            owner_id: userId,
-            title: nextCopyName(source.title),
-            region: source.region,
-            num_days: source.num_days,
-            daily_km_min: source.daily_km_min,
-            daily_km_max: source.daily_km_max,
-            min_quality: source.min_quality,
-            road_preference: source.road_preference,
-            invite_code: inviteCode,
-            status: 'draft',
-            folder_id: carryFolderId,
-          }),
-        );
+    const dupId = await this.withTripTransaction(async (em) => {
+      const dup = await em.save(
+        em.create(Trip, {
+          owner_id: userId,
+          title: nextCopyName(source.title),
+          region: source.region,
+          num_days: source.num_days,
+          daily_km_min: source.daily_km_min,
+          daily_km_max: source.daily_km_max,
+          min_quality: source.min_quality,
+          road_preference: source.road_preference,
+          status: 'draft',
+          folder_id: carryFolderId,
+        }),
+      );
 
-        // Owner membership — required for visibility (every other creation
-        // path adds it, and getDetail gates on it).
-        await em.save(
-          em.create(TripMember, {
+      // Owner membership — required for visibility (every other creation
+      // path adds it, and getDetail gates on it).
+      await em.save(
+        em.create(TripMember, {
+          trip_id: dup.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      for (const day of source.days) {
+        const savedDay = await em.save(
+          em.create(TripDay, {
             trip_id: dup.id,
-            user_id: userId,
-            role: 'owner',
+            day_number: day.day_number,
+            title: day.title,
+            distance_km: day.distance_km,
+            route_geom: day.route_geom,
+            avg_quality: day.avg_quality,
+            elevation_gain: day.elevation_gain,
+            elevation_loss: day.elevation_loss,
+            curviness_score: day.curviness_score,
+            scenic_score: day.scenic_score,
+            estimated_time: day.estimated_time,
+            start_linked: day.start_linked,
+            // Custom per-leg road characters travel with the copy —
+            // dropping them would let the next edit/save reroute the
+            // duplicate with the trip-wide preference.
+            leg_preferences: day.leg_preferences,
           }),
         );
 
-        for (const day of source.days) {
-          const savedDay = await em.save(
-            em.create(TripDay, {
-              trip_id: dup.id,
-              day_number: day.day_number,
-              title: day.title,
-              distance_km: day.distance_km,
-              route_geom: day.route_geom,
-              avg_quality: day.avg_quality,
-              elevation_gain: day.elevation_gain,
-              elevation_loss: day.elevation_loss,
-              curviness_score: day.curviness_score,
-              scenic_score: day.scenic_score,
-              estimated_time: day.estimated_time,
-              start_linked: day.start_linked,
-              // Custom per-leg road characters travel with the copy —
-              // dropping them would let the next edit/save reroute the
-              // duplicate with the trip-wide preference.
-              leg_preferences: day.leg_preferences,
+        if (day.waypoints?.length) {
+          const waypoints = day.waypoints.map((wp) =>
+            em.create(TripWaypoint, {
+              trip_day_id: savedDay.id,
+              location: wp.location,
+              sequence: wp.sequence,
+              name: wp.name,
+              waypoint_type: wp.waypoint_type,
+              road_segment_id: wp.road_segment_id,
+              notes: wp.notes,
+              duration_min: wp.duration_min,
             }),
           );
-
-          if (day.waypoints?.length) {
-            const waypoints = day.waypoints.map((wp) =>
-              em.create(TripWaypoint, {
-                trip_day_id: savedDay.id,
-                location: wp.location,
-                sequence: wp.sequence,
-                name: wp.name,
-                waypoint_type: wp.waypoint_type,
-                road_segment_id: wp.road_segment_id,
-                notes: wp.notes,
-                duration_min: wp.duration_min,
-              }),
-            );
-            await em.save(waypoints);
-          }
+          await em.save(waypoints);
         }
+      }
 
-        return dup.id;
-      },
-    );
+      return dup.id;
+    });
 
     return this.getDetail(userId, dupId);
   }
@@ -247,7 +244,7 @@ export class TripsService {
     dto: CreateTripDto,
     bounds: { dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
-    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+    return this.withTripTransaction(async (manager) => {
       const trip = manager.create(Trip, {
         owner_id: userId,
         title: dto.title,
@@ -258,7 +255,6 @@ export class TripsService {
         min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
         road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
         status: 'draft',
-        invite_code: inviteCode,
         folder_id: dto.folder_id ?? null,
       });
       const saved = await manager.save(trip);
@@ -276,41 +272,17 @@ export class TripsService {
   }
 
   /**
-   * Run a transactional persist callback under the invite-code retry
-   * loop. The callback runs inside a single transaction with a freshly
-   * generated `inviteCode`; if the unique index on `trips.invite_code`
-   * trips (PG `23505` against `idx_trips_invite_code`), we roll back,
-   * regenerate, and try again up to `MAX_INVITE_ALLOCATION_ATTEMPTS`.
-   *
-   * Any other error — including a 23505 from a different constraint —
-   * propagates so a real bug isn't papered over as a code collision.
-   * Centralised here so the retry budget, the collision check, and the
-   * "gave up" error message stay in lockstep across every persist path
-   * (`POST /trips`, `POST /trips/import`, ride cloning in SharingService).
-   * Public so sibling services reuse the same retry/collision semantics
-   * rather than writing `generateInviteCode()` directly and 500-ing on
-   * the rare collision; the callback owns all writes so they commit
-   * atomically with the allocated code.
+   * Transactional wrapper shared by every trip-persist path
+   * (`POST /trips`, `POST /trips/import`, duplication, ride cloning in
+   * SharingService): the trip row, its owner membership, and any seeded
+   * days/waypoints commit atomically so a mid-sequence failure leaves no
+   * orphan or half-built trip. Public so sibling services reuse the same
+   * transaction boundary.
    */
-  async withInviteCodeAllocation<T>(
-    persist: (manager: EntityManager, inviteCode: string) => Promise<T>,
+  async withTripTransaction<T>(
+    persist: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
-      const inviteCode = generateInviteCode();
-      try {
-        return await this.tripRepo.manager.transaction((manager) =>
-          persist(manager, inviteCode),
-        );
-      } catch (err: unknown) {
-        if (!isInviteCodeViolation(err)) throw err;
-        lastError = err;
-      }
-    }
-    throw new Error(
-      `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
-        (lastError instanceof Error ? `: ${lastError.message}` : ''),
-    );
+    return this.tripRepo.manager.transaction((manager) => persist(manager));
   }
 
   /**
@@ -397,7 +369,7 @@ export class TripsService {
     dto: ImportTripDto,
     bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
-    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+    return this.withTripTransaction(async (manager) => {
       const trip = manager.create(Trip, {
         owner_id: userId,
         title: dto.title,
@@ -411,7 +383,6 @@ export class TripsService {
         // them as `planned` so they appear alongside generated trips
         // rather than in the "draft" bucket that needs another step.
         status: 'planned',
-        invite_code: inviteCode,
       });
       const savedTrip = await manager.save(trip);
 
@@ -541,7 +512,7 @@ export class TripsService {
     days: ParsedSnapshotDay[],
     bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
-    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+    return this.withTripTransaction(async (manager) => {
       const trip = manager.create(Trip, {
         owner_id: userId,
         title,
@@ -555,7 +526,6 @@ export class TripsService {
         // them as `planned` (matching the GPX/KML import path), not
         // `draft`, so they appear in the trip list ready to ride.
         status: 'planned',
-        invite_code: inviteCode,
       });
       const savedTrip = await manager.save(trip);
 
@@ -874,19 +844,61 @@ export class TripsService {
       }
     }
 
-    const joinUrl = this.buildInviteUrl(tripId, trip.invite_code);
+    // Record (or refresh) the pending-invite row: it puts the invitee on
+    // the roster as `invited`, carries the role they'll receive on
+    // acceptance, and mints a PERSONAL invite code for the mail's join
+    // link — so revoking this invite invalidates exactly this link.
+    // Re-inviting the same address updates role + rotates the code.
+    //
+    // Two unique constraints can fire here: (trip, email) from a
+    // concurrent invite to the same address, and the table-wide
+    // invite_code from an (astronomically rare) generated-code
+    // collision. Both converge on the same recovery — refetch the row
+    // and retry with a fresh code — so the loop doesn't need to
+    // disambiguate the constraint. What matters is that the code in
+    // the email is ALWAYS the code that actually got persisted.
+    const role = dto.role ?? 'editor';
+    let personalCode: string;
+    for (let attempt = 0; ; attempt++) {
+      personalCode = generateInviteCode();
+      const existingInvite = await this.inviteRepo.findOne({
+        where: { trip_id: tripId, email: dto.email },
+      });
+      try {
+        if (existingInvite) {
+          await this.inviteRepo.update(
+            { id: existingInvite.id },
+            { role, invite_code: personalCode, invited_by: userId },
+          );
+        } else {
+          await this.inviteRepo.insert({
+            trip_id: tripId,
+            email: dto.email,
+            role,
+            invite_code: personalCode,
+            invited_by: userId,
+          });
+        }
+        break;
+      } catch (err: unknown) {
+        if (!isUniqueViolation(err) || attempt >= 4) throw err;
+      }
+    }
+
+    const joinUrl = this.buildInviteUrl(tripId, personalCode);
 
     await this.email.sendTripInvite(dto.email, {
       inviterDisplayName: inviterName,
       tripTitle: trip.title,
       joinUrl,
-      inviteCode: trip.invite_code,
+      inviteCode: personalCode,
       message: dto.message?.trim() ? dto.message.trim() : null,
     });
 
     await this.activity.recordSafe(tripId, userId, 'member_invited', {
       recipient_email_domain: emailDomain(dto.email),
       message_provided: Boolean(dto.message?.trim()),
+      role,
     });
   }
 
@@ -1153,11 +1165,17 @@ export class TripsService {
     dto: SaveRouteDto,
   ): Promise<TripDetailDto> {
     // 1. Membership gate: fold "no such trip" and "not a member" into
-    //    the same 404 so the endpoint can't enumerate trip ids.
+    //    the same 404 so the endpoint can't enumerate trip ids. Viewers
+    //    are read-and-comment only — route writes need editor access.
     const member = await this.memberRepo.findOne({
       where: { trip_id: tripId, user_id: userId },
     });
     if (!member) throw new NotFoundException('Trip not found');
+    if (member.role === 'viewer') {
+      throw new ForbiddenException(
+        'Viewers can view and comment only — ask the trip owner for editor access',
+      );
+    }
 
     // Renumber contiguously (defensive — client already drops empties).
     const days = dto.days.map((d, i) => ({ ...d, dayNumber: i + 1 }));
@@ -1428,36 +1446,62 @@ export class TripsService {
   ): Promise<TripDetailDto> {
     const normalized = inviteCode.trim().toUpperCase();
     const trip = await this.tripRepo.findOne({ where: { id: tripId } });
-
-    if (!trip || trip.invite_code !== normalized) {
+    if (!trip) {
       // Fold "wrong trip id" and "wrong code" into one response so the
       // endpoint can't be used to enumerate which trip ids exist.
       throw new ForbiddenException('Invalid trip or invite code');
     }
 
-    const existing = await this.memberRepo.findOne({
-      where: { trip_id: tripId, user_id: userId },
-    });
+    // Only PERSONAL invite codes admit — there is no trip-wide code.
+    // Every code is minted per invite by `invite()`, so revoking an
+    // invite kills exactly that recipient's link.
+    //
+    // Claim + consume atomically: the invite row is locked, the
+    // membership written, and the row deleted in ONE transaction, so
+    // two accounts racing the same personal link can't both pass the
+    // lookup — the loser blocks on the lock and re-reads nothing after
+    // the winner's delete commits.
+    const { role, inserted } = await this.tripRepo.manager.transaction(
+      async (manager) => {
+        const invite = await manager.findOne(TripInvite, {
+          where: { trip_id: tripId, invite_code: normalized },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!invite) {
+          throw new ForbiddenException('Invalid trip or invite code');
+        }
 
-    let inserted = false;
-    if (!existing) {
-      try {
-        await this.memberRepo.save(
-          this.memberRepo.create({
-            trip_id: tripId,
-            user_id: userId,
-            role: 'member',
-          }),
-        );
-        inserted = true;
-      } catch (err: unknown) {
-        // Concurrent join race — the unique (trip_id, user_id) index
-        // rejected the duplicate. Desired post-state still holds, but
-        // the first winner will have already written the activity row
-        // for this membership so we leave that branch alone.
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
+        const existing = await manager.findOne(TripMember, {
+          where: { trip_id: tripId, user_id: userId },
+        });
+
+        let didInsert = false;
+        if (!existing) {
+          try {
+            await manager.save(
+              manager.create(TripMember, {
+                trip_id: tripId,
+                user_id: userId,
+                // The invite carries the role the owner picked.
+                role: invite.role,
+              }),
+            );
+            didInsert = true;
+          } catch (err: unknown) {
+            // Concurrent join race — the unique (trip_id, user_id)
+            // index rejected the duplicate. Desired post-state still
+            // holds; the winner already wrote the activity row.
+            if (!isUniqueViolation(err)) throw err;
+          }
+        }
+
+        // Consume the invite whether or not a new row was inserted —
+        // an already-member clicking their invite link shouldn't stay
+        // listed as pending forever.
+        await manager.delete(TripInvite, { id: invite.id });
+        return { role: invite.role, inserted: didInsert };
+      },
+    );
 
     // Keep the activity entry OUTSIDE the unique-violation catch so a
     // non-23505 error from the activity path isn't misattributed to a
@@ -1467,11 +1511,183 @@ export class TripsService {
     // `existing` and skip the save.
     if (inserted) {
       await this.activity.recordSafe(tripId, userId, 'member_joined', {
-        role: 'member',
+        role,
       });
     }
 
     return this.getDetail(userId, tripId);
+  }
+
+  // ── Collaborator management (People tab) ─────────────────────────
+
+  /**
+   * Roster for the People tab: joined members plus (for owner/editors)
+   * pending email invites. Emails are withheld from viewers so the
+   * roster can't be scraped by anyone who got hold of the group link.
+   */
+  async listCollaborators(
+    userId: string,
+    tripId: string,
+  ): Promise<TripCollaboratorsDto> {
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership) throw new NotFoundException('Trip not found');
+    const privileged = PRIVILEGED_ROLES.has(membership.role);
+
+    const members = await this.memberRepo.find({
+      where: { trip_id: tripId },
+      relations: { user: true },
+      order: { joined_at: 'ASC' },
+    });
+    const invites = privileged
+      ? await this.inviteRepo.find({
+          where: { trip_id: tripId },
+          order: { created_at: 'ASC' },
+        })
+      : [];
+
+    return {
+      members: members.map((m) => ({
+        user_id: m.user_id,
+        display_name: m.user?.display_name ?? 'Rider',
+        email: privileged ? (m.user?.email ?? null) : null,
+        avatar_url: m.user?.avatar_url ?? null,
+        role: m.role,
+        joined_at: m.joined_at.toISOString(),
+        state: 'joined' as const,
+      })),
+      invites: invites.map((i) => ({
+        id: i.id,
+        email: i.email,
+        role: i.role,
+        created_at: i.created_at.toISOString(),
+        state: 'invited' as const,
+      })),
+    };
+  }
+
+  /** Owner-only guard shared by the collaborator-management writes. */
+  private async requireOwner(
+    userId: string,
+    tripId: string,
+  ): Promise<TripMember> {
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    // Non-members 404 (don't leak trip existence); members that aren't
+    // the owner get an explicit 403 — they can see the roster, so
+    // hiding the endpoint from them buys nothing.
+    if (!membership) throw new NotFoundException('Trip not found');
+    if (membership.role !== 'owner') {
+      throw new ForbiddenException(
+        'Only the trip owner can manage collaborators',
+      );
+    }
+    return membership;
+  }
+
+  async updateMemberRole(
+    userId: string,
+    tripId: string,
+    memberUserId: string,
+    role: 'editor' | 'viewer',
+  ): Promise<TripCollaboratorsDto> {
+    await this.requireOwner(userId, tripId);
+    if (memberUserId === userId) {
+      throw new BadRequestException('You cannot change your own role');
+    }
+    const target = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: memberUserId },
+    });
+    if (!target) throw new NotFoundException('Member not found');
+    if (target.role === 'owner') {
+      throw new BadRequestException('The owner role cannot be changed');
+    }
+
+    if (target.role !== role) {
+      await this.memberRepo.update({ id: target.id }, { role });
+      if (role === 'viewer') {
+        // A demoted editor's group links and pending email invites
+        // would otherwise stay live — owned by them and invisible to
+        // the trip owner — while their new role can't create either.
+        // Mirrors removeMember.
+        await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
+        await this.inviteRepo.delete({
+          trip_id: tripId,
+          invited_by: memberUserId,
+        });
+      }
+      await this.activity.recordSafe(tripId, userId, 'member_role_changed', {
+        member_user_id: memberUserId,
+        role,
+      });
+      // Live planners derive their write gates from the fetched trip
+      // detail and refresh them on `trip:updated` — broadcast one so a
+      // demoted editor's open planner locks (and a promoted viewer's
+      // unlocks) without a reload.
+      const detail = await this.getDetail(userId, tripId);
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
+    }
+    return this.listCollaborators(userId, tripId);
+  }
+
+  async removeMember(
+    userId: string,
+    tripId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    await this.requireOwner(userId, tripId);
+    if (memberUserId === userId) {
+      throw new BadRequestException(
+        'The owner cannot be removed from their own trip',
+      );
+    }
+    const target = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: memberUserId },
+    });
+    if (!target) throw new NotFoundException('Member not found');
+    if (target.role === 'owner') {
+      throw new BadRequestException('The owner cannot be removed');
+    }
+
+    await this.memberRepo.delete({ id: target.id });
+    // Revoke LIVE access too: the socket room is only membership-checked
+    // at subscribe time, so without eviction an open planner would keep
+    // receiving trip broadcasts until the next reconnect.
+    await this.events.evictFromTrip(tripId, memberUserId);
+    // And revoke any group links the removed member created — they're
+    // owned by that user, so the trip owner can't see or revoke them,
+    // and they'd otherwise keep admitting new riders after removal.
+    await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
+    // Same for pending email invites they sent: join() authorizes by
+    // the invite row alone, so those codes would keep admitting riders
+    // (at the role the ex-member picked) after their authority ended.
+    await this.inviteRepo.delete({ trip_id: tripId, invited_by: memberUserId });
+    // Their past contributions (suggestions, votes, messages, activity)
+    // stay — removal only revokes access from now on.
+    await this.activity.recordSafe(tripId, userId, 'member_removed', {
+      member_user_id: memberUserId,
+    });
+  }
+
+  /**
+   * Withdraw a pending email invite. The personal code in the sent mail
+   * stops working immediately (the join lookup misses).
+   */
+  async revokeInvite(
+    userId: string,
+    tripId: string,
+    inviteId: string,
+  ): Promise<void> {
+    await this.requireOwner(userId, tripId);
+    const result = await this.inviteRepo.delete({
+      id: inviteId,
+      trip_id: tripId,
+    });
+    if ((result.affected ?? 0) === 0) {
+      throw new NotFoundException('Invite not found');
+    }
   }
 
   private toSummary(
@@ -1564,7 +1780,6 @@ export class TripsService {
       daily_km_max: trip.daily_km_max,
       min_quality: trip.min_quality,
       road_preference: trip.road_preference as TripRoadPreference,
-      invite_code: trip.invite_code,
       members,
       days,
     };
@@ -1672,12 +1887,6 @@ function isUniqueViolation(err: unknown): boolean {
     'code' in err &&
     (err as { code?: unknown }).code === '23505'
   );
-}
-
-function isInviteCodeViolation(err: unknown): boolean {
-  if (!isUniqueViolation(err)) return false;
-  const constraint = (err as { constraint?: unknown }).constraint;
-  return constraint === INVITE_CODE_INDEX;
 }
 
 function emailDomain(email: string): string {

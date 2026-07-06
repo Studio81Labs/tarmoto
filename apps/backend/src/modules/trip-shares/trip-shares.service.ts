@@ -10,6 +10,8 @@ import { Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import {
   CreateTripShareDto,
@@ -19,7 +21,7 @@ import {
   TripShareResponseDto,
 } from './dto/trip-share.dto.js';
 
-const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
 
 @Injectable()
 export class TripSharesService {
@@ -30,6 +32,10 @@ export class TripSharesService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    @InjectRepository(TripInvite)
+    private readonly inviteRepo: Repository<TripInvite>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly activity: TripActivityService,
   ) {}
 
@@ -79,6 +85,21 @@ export class TripSharesService {
       where: { trip_id: share.trip_id, user_id: userId },
     });
 
+    // A pending email invite for this user's address carries the role
+    // the owner picked — honour it even when they arrive through the
+    // group link instead of their personal invite link. Anonymous
+    // link-joiners start as read-and-comment `viewer`s.
+    let invite: TripInvite | null = null;
+    const joiner = await this.userRepo.findOne({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (joiner?.email) {
+      invite = await this.inviteRepo.findOne({
+        where: { trip_id: share.trip_id, email: joiner.email.toLowerCase() },
+      });
+    }
+
     let inserted = false;
     if (!existing) {
       try {
@@ -86,7 +107,7 @@ export class TripSharesService {
           this.memberRepo.create({
             trip_id: share.trip_id,
             user_id: userId,
-            role: 'member',
+            role: invite?.role ?? 'viewer',
           }),
         );
         inserted = true;
@@ -95,9 +116,14 @@ export class TripSharesService {
       }
     }
 
+    if (invite) {
+      await this.inviteRepo.delete({ id: invite.id });
+    }
+
     if (inserted) {
       await this.activity.recordSafe(share.trip_id, userId, 'member_joined', {
         source: 'trip_share',
+        role: invite?.role ?? 'viewer',
       });
     }
 
@@ -150,6 +176,23 @@ export class TripSharesService {
       items: rows.map((row) => this.toOwnerResponse(row)),
       total,
     };
+  }
+
+  /**
+   * Revoke every share of a trip created by one user. Called when the
+   * owner removes that member: their `trip_shares` rows would otherwise
+   * stay live — and invisible to the owner, who can only list/revoke
+   * shares by `owner_id` — so a removed editor's group link would keep
+   * admitting new riders after removal.
+   */
+  async revokeAllForTripMember(
+    tripId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    await this.tripShareRepo.delete({
+      trip_id: tripId,
+      owner_id: memberUserId,
+    });
   }
 
   async revoke(userId: string, id: string): Promise<void> {

@@ -22,7 +22,7 @@ export class TripMember {
   @Column({ type: 'uuid' })
   user_id!: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'member' })
+  @Column({ type: 'varchar', length: 20, default: 'viewer' })
   role!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
