@@ -24,13 +24,17 @@ export type { RouteCollectionDetail, RouteCollectionPreviewResponse };
  */
 export const fetchSharedCollection = cache(
   async (slug: string): Promise<RouteCollectionDetail | null> => {
-    const { data, error, response } = await apiServer.GET(
+    const { data, response } = await apiServer.GET(
       "/api/v1/collections/by-slug/{slug}",
       { params: { path: { slug } }, cache: "no-store" },
     );
 
     if (response.status === 404) return null;
-    if (error) {
+    // Branch on the HTTP status, not `error`: openapi-fetch only populates
+    // `error` when the error response has a parseable body, so a 5xx with an
+    // empty body would otherwise fall through to `null` and render notFound()
+    // instead of surfacing the outage.
+    if (!response.ok) {
       throw new Error(
         `GET /collections/by-slug/${slug} failed (${response.status})`,
       );

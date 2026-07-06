@@ -11,7 +11,7 @@ export type { TripSharePublic };
 export async function fetchSharedTrip(
   token: string,
 ): Promise<TripSharePublic | null> {
-  const { data, error, response } = await apiServer.GET(
+  const { data, response } = await apiServer.GET(
     "/api/v1/trip-shares/{token}",
     {
       params: { path: { token } },
@@ -20,7 +20,9 @@ export async function fetchSharedTrip(
   );
 
   if (response.status === 404) return null;
-  if (error) {
+  // Branch on HTTP status, not `error`: openapi-fetch leaves `error` unset for
+  // an empty-body 5xx, which would otherwise collapse an outage into a 404.
+  if (!response.ok) {
     throw new Error(`GET /trip-shares/${token} failed (${response.status})`);
   }
 

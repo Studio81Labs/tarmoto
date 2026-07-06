@@ -13,13 +13,15 @@ export type { MapSharePublic };
 export async function fetchSharedMap(
   token: string,
 ): Promise<MapSharePublic | null> {
-  const { data, error, response } = await apiServer.GET(
-    "/api/v1/map-shares/{token}",
-    { params: { path: { token } }, cache: "no-store" },
-  );
+  const { data, response } = await apiServer.GET("/api/v1/map-shares/{token}", {
+    params: { path: { token } },
+    cache: "no-store",
+  });
 
   if (response.status === 404) return null;
-  if (error) {
+  // Branch on HTTP status, not `error`: openapi-fetch leaves `error` unset for
+  // an empty-body 5xx, which would otherwise collapse an outage into a 404.
+  if (!response.ok) {
     throw new Error(`GET /map-shares/${token} failed (${response.status})`);
   }
 
