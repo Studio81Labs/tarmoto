@@ -135,10 +135,17 @@ export async function openApiData<T>(
   resultPromise: Promise<OpenApiClientResult<T>>,
 ): Promise<{ data: T }> {
   const result = await resultPromise;
-  if (result.error) {
+  // Throw on ANY non-2xx, not only when `error` is populated. openapi-fetch
+  // leaves `error` unset for an empty-body error response (e.g. a proxy/backend
+  // 5xx with `Content-Length: 0`), which would otherwise resolve here as a
+  // phantom success — letting callers mutate local cache (delete a collection,
+  // etc.) as if a write that never landed had succeeded. Matches the old
+  // `apiFetch` path, which checked `res.ok`.
+  if (result.error || (result.response && !result.response.ok)) {
+    const status = result.response?.status ?? 0;
     throw new ApiError(
-      apiErrorMessage(result.error, result.response?.status ?? 0),
-      result.response?.status ?? 0,
+      apiErrorMessage(result.error, status),
+      status,
       result.error,
     );
   }

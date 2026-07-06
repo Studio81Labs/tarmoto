@@ -3,26 +3,19 @@
  * collections (search + popularity ranked) and per-collection mosaic
  * thumbnails sourced from the existing preview endpoint.
  */
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "./api";
 import { routeCollectionsApi } from "./api";
 
-export interface DiscoverCollection {
-  id: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  owner_id: string | null;
-  owner_name: string | null;
-  item_count: number;
-  follower_count: number;
-  viewer_is_following: boolean;
-  updated_at: string;
-}
+export type DiscoverCollection =
+  components["schemas"]["RouteCollectionCardDto"];
 
-export interface DiscoverCollectionPage {
-  items: DiscoverCollection[];
-  total: number;
-}
+/** The discovery grid consumes only the items + total; the endpoint also
+ * returns `limit`/`offset` for pagination, which this projection drops. */
+export type DiscoverCollectionPage = Pick<
+  components["schemas"]["RouteCollectionDiscoverResponseDto"],
+  "items" | "total"
+>;
 
 /** Browse public collections, optionally filtered by a title search. */
 export async function fetchDiscoverCollections(

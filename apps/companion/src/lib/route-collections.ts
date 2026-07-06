@@ -371,7 +371,7 @@ export async function migrateLegacyCollections(
       const created = (
         await client.create({
           title: truncate(row.name.trim(), MAX_COLLECTION_NAME_LENGTH),
-          description: row.description?.trim() || undefined,
+          description: row.description?.trim() || null,
           visibility: row.isPublic ? "unlisted" : "private",
         })
       ).data;

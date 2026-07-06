@@ -144,6 +144,7 @@ describe("TripCollaborateModal — collab tabs", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -775,6 +776,11 @@ describe("TripCollaborateModal — collab tabs", () => {
   });
 
   it("groups the activity feed under Today / Yesterday / Earlier headers", async () => {
+    // Pin the clock to midday so the `hoursAgo` offsets land on deterministic
+    // calendar days. Without this, a run in the ~2h after local midnight sorts
+    // the "2h ago" row onto the previous day and the "Today" header vanishes.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-06T12:00:00.000Z"));
     const hoursAgo = (h: number) =>
       new Date(Date.now() - h * 3_600_000).toISOString();
     hoisted.listActivity.mockReset().mockResolvedValue({
