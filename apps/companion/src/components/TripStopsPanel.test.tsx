@@ -1,8 +1,59 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TripStopsPanel } from "./TripStopsPanel";
 import { plannerApi } from "@/lib/planner/api";
+import { poiApi, type StoredCorridorPoiSuggestion } from "@/lib/api";
 import { useTripStore } from "@/stores/trip";
 import type { Trip } from "@/lib/types";
+
+// The OSM corridor stops now come from the store (`/poi/in-corridor`, #859).
+// mountain_pass / twisty_highlight still resolve from their mock source, so
+// those tests are unaffected. Return the Vysočina fixtures by requested kind.
+vi.mock("@/lib/api", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    poiApi: { ...actual.poiApi, getInCorridor: vi.fn() },
+  };
+});
+
+const getInCorridorMock = vi.mocked(poiApi.getInCorridor);
+const HOTEL_KINDS = [
+  "hotel",
+  "motel",
+  "guest_house",
+  "hostel",
+  "chalet",
+  "apartment",
+];
+
+function corridorPoi(
+  over: Partial<StoredCorridorPoiSuggestion>,
+): StoredCorridorPoiSuggestion {
+  return {
+    id: "x",
+    source: "osm",
+    external_id: "osm:node:1",
+    name: "X",
+    kind: "fuel_station",
+    lat: 49.5,
+    lng: 15.9,
+    website: null,
+    phone: null,
+    opening_hours: null,
+    address_street: null,
+    address_city: null,
+    address_postcode: null,
+    address_country: null,
+    cuisine: null,
+    brand: null,
+    stars: null,
+    osm_url: null,
+    last_imported_at: "2026-07-06T00:00:00.000Z",
+    distance_along_route_km: 0,
+    distance_from_route_km: 0,
+    ...over,
+  };
+}
 
 // Roughly the Jihlava -> Devet skal road - passes the Vysocina fixtures
 // (Devet skal vista, MOL Zdar, Kavarna Nove Mesto, Svratka esses).
@@ -66,6 +117,43 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
   beforeEach(() => {
     useTripStore.setState({
       activePoiCategories: new Set(["fuel", "viewpoint", "cafe"]),
+    });
+    getInCorridorMock.mockReset();
+    getInCorridorMock.mockImplementation(async ({ kinds }) => {
+      const pois: StoredCorridorPoiSuggestion[] = [];
+      const has = (k: string) => kinds?.includes(k) ?? false;
+      if (has("fuel_station"))
+        pois.push(
+          corridorPoi({
+            id: "fuel-vysocina-1",
+            kind: "fuel_station",
+            name: "MOL Žďár nad Sázavou",
+            distance_along_route_km: 20,
+            distance_from_route_km: 0.5,
+          }),
+        );
+      if (has("viewpoint"))
+        pois.push(
+          corridorPoi({
+            id: "view-vysocina-1",
+            kind: "viewpoint",
+            name: "Devět skal vista",
+            distance_along_route_km: 55,
+            distance_from_route_km: 0.3,
+          }),
+        );
+      if (kinds?.some((k) => HOTEL_KINDS.includes(k)))
+        pois.push(
+          corridorPoi({
+            id: "hotel-1",
+            kind: "hotel",
+            name: "Hotel Vysočina",
+            stars: 3,
+            distance_along_route_km: 30,
+            distance_from_route_km: 0.5,
+          }),
+        );
+      return { data: { buffer_km: 20, count: pois.length, pois } };
     });
   });
 

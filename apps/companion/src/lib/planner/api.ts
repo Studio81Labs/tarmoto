@@ -9,6 +9,7 @@ import {
   type RouteResponse,
   type RoutePoiSuggestion,
   type StoredPoiSuggestion,
+  type StoredCorridorPoiSuggestion,
   type UserRoutePrefsWire,
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
@@ -41,6 +42,7 @@ import type {
   Poi,
   PoiCategory,
   RoadPreview,
+  RouteStop,
   RoundtripOptions,
   RouteQualitySummary,
   RouteSegment,
@@ -253,6 +255,92 @@ async function fetchCategoryPois(
   ]);
 
   return [...stored, ...others];
+}
+
+// ── Route-corridor stops (STOPS tab, revision 5 §C) ──
+// Same category vocabulary as the map bar, filtered by proximity to the route
+// line. OSM categories read the store via `/poi/in-corridor` (#859);
+// mountain_pass / twisty_highlight stay on their mock source.
+
+/** Accommodation categories — `minStayRating` only filters these. */
+const ACCOMMODATION_CATEGORIES: ReadonlySet<PoiCategory> = new Set<PoiCategory>(
+  ["biker_hotel", "campground"],
+);
+
+function storedCorridorPoiToRouteStop(
+  poi: StoredCorridorPoiSuggestion,
+): RouteStop | null {
+  const base = storedPoiToCategoryPoi(poi);
+  if (!base) return null;
+  return {
+    ...base,
+    distanceFromRouteKm: poi.distance_from_route_km,
+    kmAlongRoute: poi.distance_along_route_km,
+  };
+}
+
+async function fetchCorridorStops(
+  routeGeometry: GeoJSON.LineString,
+  categories: PoiCategory[],
+  corridorKm: number,
+  minStayRating?: number,
+  init?: { signal?: AbortSignal },
+): Promise<RouteStop[]> {
+  const route = routeGeometry.coordinates
+    .map((pos) => ({ lng: pos[0], lat: pos[1] }))
+    .filter(
+      (p): p is { lat: number; lng: number } =>
+        p.lat !== undefined && p.lng !== undefined,
+    );
+  const storeCategories = categories.filter(
+    (c) => !NON_STORE_CATEGORIES.has(c),
+  );
+  const nonStoreCategories = categories.filter((c) =>
+    NON_STORE_CATEGORIES.has(c),
+  );
+  const kinds = [
+    ...new Set(
+      storeCategories.flatMap((c) => STORE_KINDS_BY_CATEGORY[c] ?? []),
+    ),
+  ];
+
+  const [stored, others] = await Promise.all([
+    kinds.length > 0 && route.length >= 2
+      ? poiApi
+          .getInCorridor({ route, buffer_km: corridorKm, kinds }, init)
+          .then((res) =>
+            res.data.pois
+              .map(storedCorridorPoiToRouteStop)
+              .filter((s): s is RouteStop => s !== null),
+          )
+      : Promise.resolve<RouteStop[]>([]),
+    // mountain_pass / twisty_highlight aren't in the store — mock source.
+    nonStoreCategories.length > 0
+      ? Promise.resolve(
+          mockRouteStops(
+            routeGeometry,
+            nonStoreCategories,
+            corridorKm,
+            minStayRating,
+          ),
+        )
+      : Promise.resolve<RouteStop[]>([]),
+  ]);
+
+  // minStayRating applies only to accommodation categories; drop those with a
+  // missing or too-low star rating (matches the mock's semantics).
+  const filteredStore =
+    minStayRating == null
+      ? stored
+      : stored.filter((s) => {
+          if (!ACCOMMODATION_CATEGORIES.has(s.category)) return true;
+          const stars = s.meta?.stars;
+          return typeof stars === "number" && stars >= minStayRating;
+        });
+
+  return [...filteredStore, ...others].sort(
+    (a, b) => a.kmAlongRoute - b.kmAlongRoute,
+  );
 }
 
 async function fetchPois(
@@ -498,9 +586,13 @@ export function createPlannerApi(): PlannerApi {
       return fetchCategoryPois(bbox, categories, init);
     },
 
-    getRouteStops(routeGeometry, categories, corridorKm, minStayRating) {
-      return Promise.resolve(
-        mockRouteStops(routeGeometry, categories, corridorKm, minStayRating),
+    getRouteStops(routeGeometry, categories, corridorKm, minStayRating, init) {
+      return fetchCorridorStops(
+        routeGeometry,
+        categories,
+        corridorKm,
+        minStayRating,
+        init,
       );
     },
 

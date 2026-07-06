@@ -1136,6 +1136,18 @@ export interface StoredPoisResponse {
   count: number;
 }
 
+/** A stored POI matched against a route corridor (`POST /poi/in-corridor`, #859). */
+export interface StoredCorridorPoiSuggestion extends StoredPoiSuggestion {
+  distance_along_route_km: number;
+  distance_from_route_km: number;
+}
+
+export interface StoredCorridorResponse {
+  pois: StoredCorridorPoiSuggestion[];
+  buffer_km: number;
+  count: number;
+}
+
 export const poiApi = {
   getAccommodations: (
     params: {
@@ -1202,6 +1214,19 @@ export const poiApi = {
       init,
     );
   },
+  getInCorridor: (
+    data: {
+      route: Array<{ lat: number; lng: number }>;
+      buffer_km?: number;
+      kinds?: string[];
+    },
+    init?: RequestInit,
+  ) =>
+    apiFetch<StoredCorridorResponse>("/poi/in-corridor", {
+      ...init,
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // ── Community feed endpoints (US-53 companion feed) ──

@@ -7,12 +7,14 @@ vi.mock("@/lib/api", async (importActual) => ({
   ...(await importActual<typeof import("@/lib/api")>()),
   poiApi: {
     getInBbox: vi.fn(),
+    getInCorridor: vi.fn(),
     getAlongRoute: vi.fn(),
     getAccommodations: vi.fn(),
   },
 }));
 
 const getInBboxMock = vi.mocked(poiApi.getInBbox);
+const getInCorridorMock = vi.mocked(poiApi.getInCorridor);
 
 // Czech Republic-ish bbox: [west, south, east, north]
 const CZ_BBOX: [number, number, number, number] = [12.0, 48.5, 19.0, 51.1];
@@ -156,5 +158,70 @@ describe("mockPoisByCategories (revision 4 §B)", () => {
     expect(pois.map((p) => p.category).sort()).toEqual(["food", "fuel"]);
     expect(pois.every((p) => p.source === "osm")).toBe(true);
     expect(pois.find((p) => p.category === "fuel")?.meta?.brand).toBe("Shell");
+  });
+
+  it("reads STOPS-tab corridor stops from the store via /poi/in-corridor", async () => {
+    getInCorridorMock.mockResolvedValue({
+      data: {
+        buffer_km: 10,
+        count: 1,
+        pois: [
+          {
+            id: "s1",
+            source: "osm",
+            external_id: "osm:node:5",
+            name: "Shell",
+            kind: "fuel_station",
+            lat: 49.5,
+            lng: 18.4,
+            website: null,
+            phone: null,
+            opening_hours: null,
+            address_street: null,
+            address_city: null,
+            address_postcode: null,
+            address_country: null,
+            cuisine: null,
+            brand: "Shell",
+            stars: null,
+            osm_url: "https://www.openstreetmap.org/node/5",
+            last_imported_at: "2026-07-06T00:00:00.000Z",
+            distance_along_route_km: 12.3,
+            distance_from_route_km: 0.4,
+          },
+        ],
+      },
+    });
+    const line: GeoJSON.LineString = {
+      type: "LineString",
+      coordinates: [
+        [18.4, 49.5],
+        [18.6, 49.6],
+      ],
+    };
+
+    const stops = await plannerApi.getRouteStops(line, ["fuel"], 10);
+
+    // LineString [lng,lat] → route [{lat,lng}]; category maps to store kinds.
+    expect(getInCorridorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: [
+          { lat: 49.5, lng: 18.4 },
+          { lat: 49.6, lng: 18.6 },
+        ],
+        buffer_km: 10,
+        kinds: ["fuel_station"],
+      }),
+      undefined,
+    );
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toEqual(
+      expect.objectContaining({
+        category: "fuel",
+        source: "osm",
+        distanceFromRouteKm: 0.4,
+        kmAlongRoute: 12.3,
+      }),
+    );
   });
 });
