@@ -1822,6 +1822,12 @@ describe('TripsService', () => {
         TRIP_ID,
         OTHER_ID,
       );
+      // …and the pending email invites they sent, which would otherwise
+      // keep admitting riders at the role the ex-editor picked.
+      expect(inviteRepo.delete).toHaveBeenCalledWith({
+        trip_id: TRIP_ID,
+        invited_by: OTHER_ID,
+      });
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         OWNER_ID,
@@ -1869,11 +1875,16 @@ describe('TripsService', () => {
       expect(memberRepo.delete).toHaveBeenCalledWith({ id: 'm-x' });
       // Live sockets are kicked from the trip room, not just future REST.
       expect(events.evictFromTrip).toHaveBeenCalledWith(TRIP_ID, OTHER_ID);
-      // Any group links the removed member created stop admitting riders.
+      // Any group links the removed member created stop admitting riders,
+      // and so do the pending email invites they sent.
       expect(tripShares.revokeAllForTripMember).toHaveBeenCalledWith(
         TRIP_ID,
         OTHER_ID,
       );
+      expect(inviteRepo.delete).toHaveBeenCalledWith({
+        trip_id: TRIP_ID,
+        invited_by: OTHER_ID,
+      });
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         OWNER_ID,
