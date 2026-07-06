@@ -155,6 +155,51 @@ export class PoiDto {
       '`operator` tag).',
   })
   hint!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`.',
+  })
+  opening_hours!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Street line (street + number).',
+  })
+  address_street!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_city!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_postcode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'ISO 3166-1 alpha-2 country code.',
+  })
+  address_country!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Normalized cuisine for restaurants / cafés.',
+  })
+  cuisine!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Brand, falling back to operator (fuel chains, franchises).',
+  })
+  brand!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Canonical OpenStreetMap detail URL — the "view source" link and ' +
+      'ODbL attribution target.',
+  })
+  osm_url!: string | null;
 }
 
 export class PoiListDto {
@@ -286,6 +331,51 @@ export class AlongRoutePoiDto {
       '`operator` tag).',
   })
   hint!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`.',
+  })
+  opening_hours!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Street line (street + number).',
+  })
+  address_street!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_city!: string | null;
+
+  @ApiProperty({ nullable: true })
+  address_postcode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'ISO 3166-1 alpha-2 country code.',
+  })
+  address_country!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Normalized cuisine for restaurants / cafés.',
+  })
+  cuisine!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Brand, falling back to operator (fuel chains, franchises).',
+  })
+  brand!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Canonical OpenStreetMap detail URL — the "view source" link and ' +
+      'ODbL attribution target.',
+  })
+  osm_url!: string | null;
 }
 
 export class AlongRoutePoiListDto {
