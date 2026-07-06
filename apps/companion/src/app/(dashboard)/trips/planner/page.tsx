@@ -757,6 +757,12 @@ export default function TripPlannerPage() {
     !serverTripId ||
     serverTripCallerRole === "owner" ||
     serverTripCallerRole === "editor";
+  // Route writes (PUT /trips/:id/route) are editor+ on the backend too;
+  // don't let a viewer build a route locally only to 403 on Save.
+  const canWriteRoute =
+    !serverTripId ||
+    serverTripCallerRole === "owner" ||
+    serverTripCallerRole === "editor";
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast
@@ -1258,6 +1264,7 @@ export default function TripPlannerPage() {
   // - no day preview is stale (geometry is current for all days)
   // - the route has been edited (routeDirty guards no-op saves on loaded trips)
   const canSaveRoute =
+    canWriteRoute &&
     dayStates.some((s) => s === "complete") &&
     !dayStates.some((s) => s === "incomplete") &&
     stalePreviewDays.length === 0 &&

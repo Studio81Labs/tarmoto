@@ -359,6 +359,7 @@ export function TripCollaborateModal({
               serverTripId={serverTripId}
               currentUserId={currentUserId}
               isOwner={isOwner}
+              callerRole={callerRole}
               collaborators={collaborators}
               onChanged={refreshCollaborators}
               onPromoted={onPromoted}
@@ -529,6 +530,7 @@ function PeopleTab({
   serverTripId,
   currentUserId,
   isOwner,
+  callerRole,
   collaborators,
   onChanged,
   onPromoted,
@@ -537,6 +539,7 @@ function PeopleTab({
   serverTripId: string | null;
   currentUserId: string | null;
   isOwner: boolean;
+  callerRole: TripMemberRole | null;
   collaborators: TripCollaborators | null;
   onChanged: () => Promise<void> | void;
   onPromoted?: ((id: string) => void) | undefined;
@@ -610,9 +613,12 @@ function PeopleTab({
   const total = collaborators
     ? collaborators.members.length + collaborators.invites.length
     : 0;
+  // Editors can send email invites too (the backend treats them as
+  // privileged senders); role management and removal stay owner-only.
+  const canInvite = isOwner || callerRole === "editor";
   return (
     <div>
-      {isOwner && (
+      {canInvite && (
         <div className="mb-4 rounded-xl border border-line bg-paper p-3.5">
           <div className="mb-2 text-[13px] font-extrabold text-ink">
             {t("Invite people")}

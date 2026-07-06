@@ -854,6 +854,46 @@ describe("TripCollaborateModal — collab tabs", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the invite form to editors (not just the owner)", async () => {
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: "eve@example.com",
+            avatar_url: null,
+            role: "editor",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    // Editors are privileged invite senders on the backend — the form
+    // must not be owner-only. Role menus stay hidden for non-owners.
+    expect(
+      await screen.findByLabelText(/invite email address/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /change role for eve/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("surfaces an email invite failure inline instead of swallowing it", async () => {
     hoisted.invite.mockRejectedValueOnce(new Error("Invite mail API down"));
 
