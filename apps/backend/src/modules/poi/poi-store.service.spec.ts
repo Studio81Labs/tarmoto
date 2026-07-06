@@ -129,4 +129,65 @@ describe('PoiStoreService', () => {
     const missing = await service.findById('missing');
     expect(missing).toBeNull();
   });
+
+  describe('findAlongRoute', () => {
+    const route = [
+      { lat: 49.5, lng: 18.4 },
+      { lat: 49.6, lng: 18.6 },
+    ];
+
+    it('rejects a route shorter than two points', async () => {
+      await expect(
+        service.findAlongRoute([{ lat: 49.5, lng: 18.4 }], undefined, 2),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('queries ST_DWithin over the route line and annotates route distances', async () => {
+      // A POI sitting on the first route vertex → ~0 along, ~0 off route.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({ geom: { type: 'Point', coordinates: [18.4, 49.5] } }),
+      ]);
+      const { pois, buffer_km } = await service.findAlongRoute(
+        route,
+        undefined,
+        2,
+      );
+      const [sql, params] = qb.where.mock.calls[0] as [
+        string,
+        Record<string, number>,
+      ];
+      expect(sql).toContain('ST_DWithin');
+      expect(sql).toContain('ST_MakeLine');
+      expect(params).toMatchObject({
+        buffer: 2000,
+        lat0: 49.5,
+        lng0: 18.4,
+        lat1: 49.6,
+        lng1: 18.6,
+      });
+      expect(buffer_km).toBe(2);
+      expect(pois[0]?.distance_along_route_km).toBe(0);
+      expect(pois[0]?.distance_from_route_km).toBeLessThanOrEqual(0.1);
+      expect(pois[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
+    });
+
+    it('clamps the buffer to the max and adds a kind filter', async () => {
+      const { buffer_km } = await service.findAlongRoute(
+        route,
+        ['fuel_station'],
+        999,
+      );
+      expect(buffer_km).toBe(10); // MAX_BUFFER_KM
+      const params = (
+        qb.where.mock.calls[0] as [string, Record<string, number>]
+      )[1];
+      expect(params.buffer).toBe(10_000);
+      const [kindSql, kindParams] = qb.andWhere.mock.calls[0] as [
+        string,
+        unknown,
+      ];
+      expect(kindSql).toContain('poi.kind IN (:...kinds)');
+      expect(kindParams).toEqual({ kinds: ['fuel_station'] });
+    });
+  });
 });
