@@ -802,7 +802,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             : activeTrip,
         );
         if (committed === state) return state;
-        return { ...committed, routeDirty: true };
+        // A rename is a METADATA edit: never routeDirty. Arming the
+        // route save for it would re-route the whole trip (unpreviewed,
+        // with whatever options sit in the sidebar) just to carry a
+        // title — persisted trips PATCH the title directly instead.
+        return committed;
       }),
 
     renameWaypoint: (waypointId, name) =>

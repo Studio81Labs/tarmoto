@@ -2662,7 +2662,7 @@ describe("placeWaypoint POI metadata (revision 4)", () => {
 });
 
 describe("renameActiveTrip", () => {
-  it("renames the working trip, marks it dirty and supports undo", () => {
+  it("renames the working trip WITHOUT dirtying the route, and supports undo", () => {
     useTripStore.setState({
       activeTrip: null,
       routeDirty: false,
@@ -2676,7 +2676,9 @@ describe("renameActiveTrip", () => {
 
     useTripStore.getState().renameActiveTrip("  Vysočina dash  ");
     expect(useTripStore.getState().activeTrip?.name).toBe("Vysočina dash");
-    expect(useTripStore.getState().routeDirty).toBe(true);
+    // A rename is a metadata edit — arming Save route for it would
+    // re-route the whole trip unpreviewed just to carry a title.
+    expect(useTripStore.getState().routeDirty).toBe(false);
 
     useTripStore.getState().undo();
     expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");

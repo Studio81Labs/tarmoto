@@ -1702,6 +1702,46 @@ describe("TripPlannerPage", () => {
     expect(tripsApiUpdateMock).not.toHaveBeenCalled();
   });
 
+  it("a rename saves the title immediately and never arms a route save", async () => {
+    // A rename is a metadata edit: routing the whole trip again (with
+    // whatever sits in the sidebar) just to carry a title would change
+    // saved geometry unpreviewed — or block the title when routing is
+    // down.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-888888888888",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-888888888888",
+    };
+    tripsApiUpdateMock.mockResolvedValue({ data: {} } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Best fit/ }));
+    fireEvent.change(screen.getByLabelText("Trip name"), {
+      target: { value: "Renamed only" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        "11111111-2222-4333-8444-888888888888",
+        { title: "Renamed only" },
+      ),
+    );
+    expect(await screen.findByText("Trip renamed")).toBeInTheDocument();
+    // The rename armed no route save and dirtied nothing.
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(storeState.renameActiveTrip).toHaveBeenCalledWith("Renamed only");
+  });
+
   it("skips the metadata PATCH when the caller is a plain member", async () => {
     // PATCH /trips/:id is owner/admin-only while route saves are
     // any-member — a member's Save route must not fail on a 403.
@@ -1751,6 +1791,14 @@ describe("TripPlannerPage", () => {
     // And the rename affordance is not offered — a member's rename
     // could never persist, so the header title is read-only.
     expect(screen.getByRole("button", { name: /Saved route/ })).toBeDisabled();
+
+    // The trip-wide road character is owner metadata: locked for
+    // members (their per-leg overrides still persist via the save).
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    expect(screen.getByRole("button", { name: /^Direct/ })).toBeDisabled();
+    expect(
+      screen.getByText(/road character is set by the trip owner/),
+    ).toBeInTheDocument();
   });
 
   it("sends per-leg preferences with the save when a LEG override exists", async () => {

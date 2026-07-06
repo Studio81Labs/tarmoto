@@ -1035,9 +1035,25 @@ export default function TripPlannerPage() {
     setRenameOpen(true);
   }, []);
   const confirmRename = useCallback(() => {
-    if (nameDraft.trim()) renameActiveTrip(nameDraft);
+    const trimmed = nameDraft.trim();
+    if (trimmed) {
+      renameActiveTrip(trimmed);
+      // Persisted trips save the rename IMMEDIATELY: a rename is a
+      // metadata edit, not a route edit, so it must not arm Save route
+      // (which would re-route the whole trip unpreviewed just to carry
+      // a title, or leave the title unsaved when routing is down).
+      const tripId = resolveExistingTripId(serverTripId, activeTripRef.current);
+      if (tripId && canEditTripMetadata) {
+        void tripsApi
+          .update(tripId, { title: trimmed })
+          .then(() => toast.success(t("Trip renamed")))
+          .catch(() =>
+            toast.error(t("Could not rename the trip. Please try again.")),
+          );
+      }
+    }
     setRenameOpen(false);
-  }, [nameDraft, renameActiveTrip]);
+  }, [nameDraft, renameActiveTrip, serverTripId, canEditTripMetadata]);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
   // the canvas is blank again. Pref controls keep their values.
@@ -2509,7 +2525,8 @@ export default function TripPlannerPage() {
                               handleRoadPreferenceChange(opt.value)
                             }
                             aria-pressed={selected}
-                            className={`rounded-[10px] border px-3 py-2.5 text-left transition ${
+                            disabled={!canEditTripMetadata}
+                            className={`rounded-[10px] border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                               selected
                                 ? "border-ink bg-ink text-cream"
                                 : "border-line bg-cream hover:border-line-strong"
@@ -2529,11 +2546,19 @@ export default function TripPlannerPage() {
                         );
                       })}
                     </div>
+                    {!canEditTripMetadata ? (
+                      <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
+                        {t(
+                          "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits. ",
+                        )}
+                      </p>
+                    ) : null}
                     {/* sr-only select keeps `getByLabelText("Road preference")`
                       + `fireEvent.change` resolvable. */}
                     <select
                       id="trip-planner-road-preference"
                       value={toTripRoadPreference(roadPreference)}
+                      disabled={!canEditTripMetadata}
                       tabIndex={-1}
                       onChange={(event) =>
                         handleRoadPreferenceChange(
