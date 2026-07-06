@@ -1108,6 +1108,34 @@ export interface AlongRoutePoisResponse {
   route_length_km: number;
 }
 
+/** A POI served from the offline `pois` store (`GET /poi/in-bbox`, #856). */
+export interface StoredPoiSuggestion {
+  id: string;
+  source: string;
+  external_id: string;
+  name: string | null;
+  kind: string;
+  lat: number;
+  lng: number;
+  website: string | null;
+  phone: string | null;
+  opening_hours: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
+  address_country: string | null;
+  cuisine: string | null;
+  brand: string | null;
+  stars: number | null;
+  osm_url: string | null;
+  last_imported_at: string;
+}
+
+export interface StoredPoisResponse {
+  pois: StoredPoiSuggestion[];
+  count: number;
+}
+
 export const poiApi = {
   getAccommodations: (
     params: {
@@ -1148,6 +1176,32 @@ export const poiApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  getInBbox: (
+    params: {
+      minLng: number;
+      minLat: number;
+      maxLng: number;
+      maxLat: number;
+      kinds?: string[];
+      limit?: number;
+    },
+    init?: RequestInit,
+  ) => {
+    const query = new URLSearchParams({
+      min_lng: String(params.minLng),
+      min_lat: String(params.minLat),
+      max_lng: String(params.maxLng),
+      max_lat: String(params.maxLat),
+    });
+    if (params.kinds && params.kinds.length > 0) {
+      query.set("kinds", params.kinds.join(","));
+    }
+    if (params.limit != null) query.set("limit", String(params.limit));
+    return apiFetch<StoredPoisResponse>(
+      `/poi/in-bbox?${query.toString()}`,
+      init,
+    );
+  },
 };
 
 // ── Community feed endpoints (US-53 companion feed) ──

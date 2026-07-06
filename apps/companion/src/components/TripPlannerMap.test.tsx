@@ -143,6 +143,50 @@ vi.mock("@/lib/discover", () => ({
   fetchFunZoneDetail: vi.fn(),
 }));
 
+// Category POIs now come from the offline store (`/poi/in-bbox`, #856) instead
+// of the mock fixtures. Return one viewpoint when it's requested so the
+// viewport-fetch scenario still has a pin to click; empty otherwise so other
+// tests don't get unexpected pins.
+vi.mock("@/lib/api", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    poiApi: {
+      ...actual.poiApi,
+      getInBbox: vi.fn(async (params: { kinds?: string[] }) => ({
+        data: {
+          count: params.kinds?.includes("viewpoint") ? 1 : 0,
+          pois: params.kinds?.includes("viewpoint")
+            ? [
+                {
+                  id: "view-vysocina-1",
+                  source: "osm",
+                  external_id: "osm:node:100",
+                  name: "Devět skal vista",
+                  kind: "viewpoint",
+                  lat: 49.66,
+                  lng: 15.93,
+                  website: null,
+                  phone: null,
+                  opening_hours: null,
+                  address_street: null,
+                  address_city: null,
+                  address_postcode: null,
+                  address_country: null,
+                  cuisine: null,
+                  brand: null,
+                  stars: null,
+                  osm_url: "https://www.openstreetmap.org/node/100",
+                  last_imported_at: "2026-07-06T00:00:00.000Z",
+                },
+              ]
+            : [],
+        },
+      })),
+    },
+  };
+});
+
 function trip(): Trip {
   return {
     id: "trip-1",
