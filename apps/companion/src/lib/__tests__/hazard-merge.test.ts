@@ -37,7 +37,7 @@ describe("applyHazardWsEvent", () => {
   });
 
   it("removes a dismissed hazard that is present in the list", () => {
-    const dismissed = { ...hazard("a"), severity: "dismissed" };
+    const dismissed = { ...hazard("a"), severity: "dismissed" as const };
     const result = applyHazardWsEvent([hazard("a"), hazard("b")], dismissed);
     expect(result.action).toBe("remove");
     if (result.action === "remove") {
@@ -47,7 +47,7 @@ describe("applyHazardWsEvent", () => {
   });
 
   it("tombstones a dismissed event for a hazard NOT in the list", () => {
-    const dismissed = { ...hazard("x"), severity: "dismissed" };
+    const dismissed = { ...hazard("x"), severity: "dismissed" as const };
     const result = applyHazardWsEvent([hazard("a"), hazard("b")], dismissed);
     expect(result.action).toBe("tombstone");
     if (result.action === "tombstone") {
@@ -56,7 +56,7 @@ describe("applyHazardWsEvent", () => {
   });
 
   it("tombstones a dismissed event when the list is empty", () => {
-    const dismissed = { ...hazard("a"), severity: "dismissed" };
+    const dismissed = { ...hazard("a"), severity: "dismissed" as const };
     const result = applyHazardWsEvent([], dismissed);
     expect(result.action).toBe("tombstone");
     if (result.action === "tombstone") {

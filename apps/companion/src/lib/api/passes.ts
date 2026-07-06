@@ -1,26 +1,28 @@
-import type { MountainPass } from "@/lib/passes-summary";
-import { apiFetch } from "./client";
+import type { components } from "@tarmoto/openapi-client";
+import { api, openApiData, reqSignal } from "./client";
+import type { JsonRequest } from "./client";
 
 // ── Mountain passes endpoints (US-40 seasonal closures & pass status) ──
 
-export interface CheckRoutePassesResponse {
-  passes: MountainPass[];
-  closed_count: number;
-  unknown_count: number;
-}
+export type CheckRoutePassesResponse =
+  components["schemas"]["CheckRouteResponseDto"];
+
+// `buffer_m` is `@ApiPropertyOptional` (server default) in the backend, but
+// openapi-typescript emits defaulted fields as required. Keep it optional at
+// the boundary so callers can rely on the server default.
+type CheckRoutePassesInput = Omit<
+  JsonRequest<"/api/v1/passes/check-route", "post">,
+  "buffer_m"
+> & { buffer_m?: number };
 
 export const passesApi = {
-  checkRoute: (
-    data: {
-      route: Array<{ lat: number; lng: number }>;
-      buffer_m?: number;
-      for_month?: number;
-    },
-    init?: RequestInit,
-  ) =>
-    apiFetch<CheckRoutePassesResponse>("/passes/check-route", {
-      ...init,
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+  checkRoute: (data: CheckRoutePassesInput, init?: RequestInit) =>
+    openApiData<CheckRoutePassesResponse>(
+      api.POST("/api/v1/passes/check-route", {
+        // Cast bridges the spec's spurious `buffer_m: required` (see the input
+        // type note) — omitting it at runtime lets the server apply its default.
+        body: data as JsonRequest<"/api/v1/passes/check-route", "post">,
+        ...reqSignal(init),
+      }),
+    ),
 };

@@ -1,4 +1,5 @@
 import type { HazardResponse } from "@/lib/api";
+import type { HazardNewEvent } from "@/lib/socket";
 
 /**
  * Apply a single WebSocket `hazard:new` event to the current local list.
@@ -23,7 +24,7 @@ export type HazardWsAction =
 
 export function applyHazardWsEvent(
   existing: HazardResponse[],
-  hazard: HazardResponse,
+  hazard: HazardNewEvent,
 ): HazardWsAction {
   if (hazard.severity === "dismissed") {
     if (!existing.some((h) => h.id === hazard.id)) {

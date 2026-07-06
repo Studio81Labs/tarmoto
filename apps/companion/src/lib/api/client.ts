@@ -104,6 +104,18 @@ export async function apiFetch<T>(
   return { data };
 }
 
+/**
+ * Extract just the abort `signal` from a caller's `RequestInit`. Spreading a
+ * whole `RequestInit` into the openapi-fetch per-request options clashes with
+ * the client's typed `body`/`headers`, so read helpers that accept an `init`
+ * for cancellation forward only the signal.
+ */
+export function reqSignal(init?: { signal?: AbortSignal | null }): {
+  signal?: AbortSignal;
+} {
+  return init?.signal != null ? { signal: init.signal } : {};
+}
+
 export type JsonResponse<
   Path extends keyof paths,
   Method extends keyof paths[Path],
