@@ -82,6 +82,7 @@ function makeService({
   };
   const eventsGateway = {
     evictFromGroupRideRooms: jest.fn().mockResolvedValue(undefined),
+    evictNonEntitledFromGroupRideRooms: jest.fn().mockResolvedValue(undefined),
   };
   return {
     svc: new AdminFlagsService(
@@ -246,6 +247,22 @@ describe('AdminFlagsService', () => {
     const { svc, eventsGateway } = makeService();
     await svc.setGlobalState('group_rides', { state: 'force_on' }, 'admin-1');
     expect(eventsGateway.evictFromGroupRideRooms).not.toHaveBeenCalled();
+  });
+
+  it('clearGlobalState(group_rides) evicts the members who lost the entitlement', async () => {
+    // Clearing the launch-mode force_on = enforcement goes live; only
+    // non-entitled members are kicked from the live rooms.
+    const { svc, eventsGateway } = makeService();
+    await svc.clearGlobalState('group_rides');
+    expect(eventsGateway.evictNonEntitledFromGroupRideRooms).toHaveBeenCalled();
+  });
+
+  it('clearGlobalState() on other features does not touch the rooms', async () => {
+    const { svc, eventsGateway } = makeService();
+    await svc.clearGlobalState('gpx_export');
+    expect(
+      eventsGateway.evictNonEntitledFromGroupRideRooms,
+    ).not.toHaveBeenCalled();
   });
 
   it('setOverride(group_rides, false) evicts the user when no longer entitled', async () => {

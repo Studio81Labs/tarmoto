@@ -118,6 +118,21 @@ export class AdminFlagsService {
   async clearGlobalState(feature: string): Promise<void> {
     const key = this.assertKnownFeature(feature);
     await this.featureStates.delete({ feature: key });
+    // Clearing a group_rides force_on is the "tier enforcement goes
+    // live" switch: free/pro members lose the entitlement instantly, so
+    // their passive listeners must leave the live location rooms too.
+    // Selective — still-entitled premium riders stay connected.
+    if (key === 'group_rides') {
+      try {
+        await this.eventsGateway.evictNonEntitledFromGroupRideRooms();
+      } catch (err) {
+        this.logger.warn(
+          `Failed to evict non-entitled sockets from group-ride rooms: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   async listOverriddenUsers(

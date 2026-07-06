@@ -453,6 +453,58 @@ describe('EventsGateway', () => {
     });
   });
 
+  describe('evictNonEntitledFromGroupRideRooms', () => {
+    function makeRemoteSocket(rooms: string[], userId?: string) {
+      return {
+        rooms: new Set(rooms),
+        data: userId ? { userId } : {},
+        leave: jest.fn(),
+      };
+    }
+
+    it('evicts only members who no longer resolve group_rides', async () => {
+      // free-1 lost the entitlement when force_on was cleared; prem-1
+      // holds it via tier and must stay connected.
+      featureResolver.resolveForUser.mockImplementation((userId: string) =>
+        Promise.resolve(
+          buildFeatureSnapshot(
+            userId === 'prem-1' ? 'premium' : 'free',
+            {},
+            {},
+          ),
+        ),
+      );
+      const revoked = makeRemoteSocket(['c-1', 'group-ride:gr-1'], 'free-1');
+      const entitled = makeRemoteSocket(['c-2', 'group-ride:gr-1'], 'prem-1');
+      const anonymous = makeRemoteSocket(['c-3', 'group-ride:gr-1']);
+      const bystander = makeRemoteSocket(['c-4', 'trip:t-1'], 'free-2');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([revoked, entitled, anonymous, bystander]);
+
+      await gateway.evictNonEntitledFromGroupRideRooms();
+
+      expect(revoked.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(entitled.leave).not.toHaveBeenCalled();
+      // no authenticated user on the socket → fail closed
+      expect(anonymous.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      // sockets outside group rooms are never touched (and never resolved)
+      expect(bystander.leave).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when a member cannot be resolved', async () => {
+      featureResolver.resolveForUser.mockRejectedValueOnce(
+        new Error('user vanished'),
+      );
+      const socket = makeRemoteSocket(['c-1', 'ride:r-1'], 'ghost');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([socket]);
+
+      await gateway.evictNonEntitledFromGroupRideRooms();
+
+      expect(socket.leave).toHaveBeenCalledWith('ride:r-1');
+    });
+  });
+
   describe('server-side emit methods', () => {
     it('emitHazardAlert should broadcast to correct grid cell', () => {
       gateway.emitHazardAlert(49.1, 16.75, {

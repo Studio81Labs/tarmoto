@@ -749,6 +749,47 @@ export class EventsGateway
   }
 
   /**
+   * Selective variant for entitlement-policy changes that revoke SOME
+   * users (e.g. clearing the launch-mode `force_on` so tier enforcement
+   * goes live): re-resolves each connected room member and evicts only
+   * those who no longer hold `group_rides` — kicking still-entitled
+   * premium riders too would silently break their live screens (clients
+   * don't re-subscribe on an unexpected room eviction). Sockets without
+   * an authenticated user id fail closed.
+   */
+  async evictNonEntitledFromGroupRideRooms(): Promise<void> {
+    const sockets = await this.server.fetchSockets();
+    // One resolution per distinct user, not per socket.
+    const entitledByUser = new Map<string, boolean>();
+    for (const socket of sockets) {
+      const rooms = [...socket.rooms].filter(
+        (room) => room.startsWith('group-ride:') || room.startsWith('ride:'),
+      );
+      if (rooms.length === 0) continue;
+
+      const userId = (socket.data as Record<string, unknown> | undefined)
+        ?.userId as string | undefined;
+      let entitled = false;
+      if (userId) {
+        if (!entitledByUser.has(userId)) {
+          let value = false;
+          try {
+            value = (await this.featureResolver.resolveForUser(userId))
+              .group_rides;
+          } catch {
+            // Fail closed — an unresolvable user keeps no live stream.
+          }
+          entitledByUser.set(userId, value);
+        }
+        entitled = entitledByUser.get(userId)!;
+      }
+      if (!entitled) {
+        for (const room of rooms) socket.leave(room);
+      }
+    }
+  }
+
+  /**
    * Broadcast to all connected clients.
    */
   broadcast(event: string, data: unknown): void {
