@@ -105,6 +105,35 @@ export interface PlannerConditionTarget {
   line?: ReadonlyArray<{ lng: number; lat: number }>;
 }
 
+/**
+ * Index of the day whose route geometry passes nearest to `location`, or
+ * -1 when no day carries a routed line. Point-anchored actions on
+ * multi-day trips (condition reroutes, POI adds from the route-wide
+ * STOPS list) must target the point's OWNING day — the selected day can
+ * be a different leg entirely.
+ */
+export function nearestDayIndexToPoint(
+  trip: Trip | null,
+  location: { lat: number; lng: number },
+): number {
+  if (!trip) return -1;
+  let bestDayIndex = -1;
+  let bestKm = Number.POSITIVE_INFINITY;
+  trip.days.forEach((day, index) => {
+    const polyline = day.routeGeometry?.coordinates;
+    if (!polyline || polyline.length < 2) return;
+    for (const [lng, lat] of polyline) {
+      if (typeof lng !== "number" || typeof lat !== "number") continue;
+      const km = haversineKm(lat, lng, location.lat, location.lng);
+      if (km < bestKm) {
+        bestKm = km;
+        bestDayIndex = index;
+      }
+    }
+  });
+  return bestDayIndex;
+}
+
 export function rerouteAroundConditionInTrip(
   trip: Trip | null,
   condition: PlannerConditionTarget,
@@ -115,25 +144,7 @@ export function rerouteAroundConditionInTrip(
   ) => void,
 ): boolean {
   if (!trip) return false;
-  let bestDayIndex = -1;
-  let bestKm = Number.POSITIVE_INFINITY;
-  trip.days.forEach((day, index) => {
-    const polyline = day.routeGeometry?.coordinates;
-    if (!polyline || polyline.length < 2) return;
-    for (const [lng, lat] of polyline) {
-      if (typeof lng !== "number" || typeof lat !== "number") continue;
-      const km = haversineKm(
-        lat,
-        lng,
-        condition.location.lat,
-        condition.location.lng,
-      );
-      if (km < bestKm) {
-        bestKm = km;
-        bestDayIndex = index;
-      }
-    }
-  });
+  const bestDayIndex = nearestDayIndexToPoint(trip, condition.location);
   if (bestDayIndex < 0) return false;
   const day = trip.days[bestDayIndex]!;
 

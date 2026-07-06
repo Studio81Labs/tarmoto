@@ -296,7 +296,6 @@ type TripStoreSnapshot = {
   relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
   markDayRouteDirty: (dayIndex: number) => void;
-  nameDirty: boolean;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
@@ -490,7 +489,6 @@ describe("TripPlannerPage", () => {
       relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
       markDayRouteDirty: vi.fn(),
-      nameDirty: false,
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
@@ -1554,9 +1552,11 @@ describe("TripPlannerPage", () => {
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
   });
 
-  it("PATCHes a renamed title before saving the route of an existing trip", async () => {
-    // PUT /route replaces days but never the title — without the PATCH
-    // the response hydration reverts the header and the rename is lost.
+  it("PATCHes the trip metadata before saving the route of an existing trip", async () => {
+    // PUT /route replaces days but never the metadata — without the
+    // PATCH the response hydration reverts the title AND the planner
+    // parameters (road preference, daily km, min quality) to their
+    // stale server values.
     // ?tripId keeps the persisted trip mounted (the bare planner URL
     // drops lingering UUID trips as the new-trip entry point).
     window.history.replaceState(
@@ -1570,7 +1570,6 @@ describe("TripPlannerPage", () => {
       name: "Renamed ride",
     };
     storeState.routeDirty = true;
-    storeState.nameDirty = true;
     tripsApiUpdateMock.mockResolvedValue({ data: {} } as never);
 
     render(<TripPlannerPage />);
@@ -1579,9 +1578,62 @@ describe("TripPlannerPage", () => {
     await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
     expect(tripsApiUpdateMock).toHaveBeenCalledWith(
       "11111111-2222-4333-8444-666666666666",
-      expect.objectContaining({ title: "Renamed ride" }),
+      expect.objectContaining({
+        title: "Renamed ride",
+        num_days: 1,
+        road_preference: expect.any(String),
+        min_quality: expect.any(Number),
+      }),
     );
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the metadata PATCH when the caller is a plain member", async () => {
+    // PATCH /trips/:id is owner/admin-only while route saves are
+    // any-member — a member's Save route must not fail on a 403.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-777777777777",
+    );
+    useAuthStore.setState({
+      user: { id: "u-member", email: "m@example.com", displayName: "M" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Member trip", {
+        id: "11111111-2222-4333-8444-777777777777",
+        members: [
+          {
+            user_id: "u-owner",
+            display_name: "Owner",
+            role: "owner",
+            joined_at: "2026-04-23T09:00:00Z",
+          },
+          {
+            user_id: "u-member",
+            display_name: "M",
+            role: "member",
+            joined_at: "2026-04-23T09:15:00Z",
+          },
+        ],
+      }),
+    } as never);
+
+    // Pre-set dirty: the mocked store isn't reactive, so the flag must
+    // be in place before the post-fetch re-render reads it.
+    storeState.routeDirty = true;
+    render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(storeState.activeTrip?.id).toBe(
+        "11111111-2222-4333-8444-777777777777",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    expect(tripsApiUpdateMock).not.toHaveBeenCalled();
   });
 
   it("sends per-leg preferences with the save when a LEG override exists", async () => {

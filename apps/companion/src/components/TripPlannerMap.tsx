@@ -33,7 +33,10 @@ import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
 } from "@/lib/planner/quality-bands";
-import { rerouteAroundSegmentInTrip } from "@/lib/planner/reroute";
+import {
+  nearestDayIndexToPoint,
+  rerouteAroundSegmentInTrip,
+} from "@/lib/planner/reroute";
 import type { GeoResult, Poi, PoiCategory } from "@/lib/planner/types";
 import type { RouteSegment } from "@/lib/planner/types";
 import {
@@ -807,16 +810,27 @@ const TripPlannerMapContent = forwardRef<
   const handleAddPoiWaypoint = useCallback(
     (poi: Poi, type: Waypoint["type"]) => {
       const store = useTripStore.getState();
-      store.insertWaypointBeforeEnd(store.selectedDayIndex, {
-        id: `poi-${poi.id}-${Date.now()}`,
-        name: poi.name,
-        location: { lat: poi.lat, lng: poi.lng },
-        type,
-        poiCategory: poi.category,
+      // The popover also opens from the route-wide STOPS list, whose
+      // stops can sit on ANY day of a multi-day trip — insert into the
+      // day whose route passes the POI, not whichever day is selected.
+      // Pre-route (no geometry anywhere) falls back to the selected day.
+      const owningDay = nearestDayIndexToPoint(trip, {
+        lat: poi.lat,
+        lng: poi.lng,
       });
+      store.insertWaypointBeforeEnd(
+        owningDay >= 0 ? owningDay : store.selectedDayIndex,
+        {
+          id: `poi-${poi.id}-${Date.now()}`,
+          name: poi.name,
+          location: { lat: poi.lat, lng: poi.lng },
+          type,
+          poiCategory: poi.category,
+        },
+      );
       setPoiMenu(null);
     },
-    [],
+    [trip],
   );
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {

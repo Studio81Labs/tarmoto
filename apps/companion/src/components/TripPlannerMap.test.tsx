@@ -745,6 +745,69 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("adds a route-wide stop to its OWNING day, not the selected one", () => {
+    // The STOPS tab opens this popover for stops anywhere along a
+    // multi-day trip: adding one must target the day whose route passes
+    // the POI — Day 1 being selected must not force its leg through a
+    // Day 2 stop.
+    const base = trip();
+    const twoDayTrip = {
+      ...base,
+      days: [
+        base.days[0]!,
+        {
+          ...base.days[0]!,
+          dayNumber: 2,
+          waypoints: [
+            {
+              id: "d2-start",
+              name: "Brno",
+              location: { lng: 16.6, lat: 49.19 },
+              type: "start" as const,
+            },
+            {
+              id: "d2-end",
+              name: "Olomouc",
+              location: { lng: 17.25, lat: 49.59 },
+              type: "end" as const,
+            },
+          ],
+          routeGeometry: {
+            type: "LineString" as const,
+            coordinates: [
+              [16.6, 49.19],
+              [16.9, 49.35],
+              [17.25, 49.59],
+            ],
+          },
+        },
+      ],
+    };
+    useTripStore.setState({ activeTrip: twoDayTrip, selectedDayIndex: 0 });
+
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={twoDayTrip} month={7} />);
+
+    // A stop sitting on Day 2's leg (near its middle vertex).
+    act(() =>
+      ref.current?.openPoiPopover({
+        id: "d2-cafe",
+        name: "Kavárna u trasy",
+        category: "cafe",
+        source: "osm",
+        lat: 49.36,
+        lng: 16.91,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const days = useTripStore.getState().activeTrip!.days;
+    expect(days[1]!.waypoints.map((w) => w.name)).toContain("Kavárna u trasy");
+    expect(days[0]!.waypoints.map((w) => w.name)).not.toContain(
+      "Kavárna u trasy",
+    );
+  });
+
   it("drives region drawing through the handle — no in-map pills remain", () => {
     // Rider feedback: the BUILD column's Fun-Zone checkbox owns the
     // draw flow; the map exposes start/cancel imperatively and mirrors

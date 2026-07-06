@@ -2677,21 +2677,9 @@ describe("renameActiveTrip", () => {
     useTripStore.getState().renameActiveTrip("  Vysočina dash  ");
     expect(useTripStore.getState().activeTrip?.name).toBe("Vysočina dash");
     expect(useTripStore.getState().routeDirty).toBe(true);
-    // Route saves must know to PATCH the title too.
-    expect(useTripStore.getState().nameDirty).toBe(true);
 
     useTripStore.getState().undo();
     expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");
-  });
-
-  it("server hydration clears the name-dirty flag", () => {
-    const s = useTripStore.getState();
-    s.placeWaypoint({ lat: 49.0, lng: 15.0 }, "set-start");
-    useTripStore.getState().renameActiveTrip("Renamed");
-    expect(useTripStore.getState().nameDirty).toBe(true);
-
-    useTripStore.getState().setActiveTrip(useTripStore.getState().activeTrip);
-    expect(useTripStore.getState().nameDirty).toBe(false);
   });
 
   it("ignores empty and unchanged names", () => {

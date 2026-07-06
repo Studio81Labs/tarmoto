@@ -1284,12 +1284,22 @@ export default function TripPlannerPage() {
           ).id ?? null;
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
-      } else if (useTripStore.getState().nameDirty && currentTrip) {
-        // A local rename hasn't reached the server: PUT /route replaces
-        // days but never the title, so without this the response
-        // hydration below would revert the header and lose the name.
+      } else if (
+        currentTrip &&
+        (serverTripCallerRole === null ||
+          serverTripCallerRole === "owner" ||
+          serverTripCallerRole === "admin")
+      ) {
+        // PUT /route replaces days but never the trip metadata: without
+        // this PATCH the response hydration below reverts the title AND
+        // the planner parameters (road preference, min quality, daily
+        // km) to their stale server values right after saving a route
+        // that was built with the new ones. Members can't PATCH
+        // metadata (owner/admin only) — their route save persists
+        // geometry under the trip's existing parameters.
         await tripsApi.update(tripId, {
-          title: tripDisplayName(currentTrip) ?? currentTrip.name,
+          ...buildTripMetadataPayload(currentTrip, plannerParams),
+          num_days: days.length,
         });
       }
       // Per-leg road overrides ride along with their day (§C): the save
@@ -1348,6 +1358,7 @@ export default function TripPlannerPage() {
     savingRoute,
     routing,
     serverTripId,
+    serverTripCallerRole,
     plannerParams,
     legPrefsByDay,
     roadPreference,
