@@ -5,6 +5,7 @@ import type {
   AccommodationPoi,
   ImportedPoi,
   PointOfInterest,
+  StoredPoiFields,
 } from '../poi-provider.interface.js';
 import {
   ACCOMMODATION_KINDS,
@@ -275,13 +276,14 @@ export class OverpassPoiProvider implements PoiProvider {
       lng,
       website: tags.website ?? tags['contact:website'] ?? null,
       phone: tags.phone ?? tags['contact:phone'] ?? null,
+      ...extractStoredPoiFields(tags),
     };
   }
 
   async findAccommodationsInBbox(
     bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
     kinds: AccommodationKind[],
-  ): Promise<AccommodationPoi[]> {
+  ): Promise<(AccommodationPoi & StoredPoiFields)[]> {
     if (kinds.length === 0) return [];
     // Overpass bbox filter is (south, west, north, east).
     const box = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
@@ -297,11 +299,17 @@ export class OverpassPoiProvider implements PoiProvider {
       `out center tags;`;
 
     const data = await this.runQuery(query, OVERPASS_IMPORT_TIMEOUT_MS);
-    const pois: AccommodationPoi[] = [];
+    const pois: (AccommodationPoi & StoredPoiFields)[] = [];
     const requested = new Set<AccommodationKind>(kinds);
     for (const element of data.elements ?? []) {
       const poi = this.normalizeAccommodation(element);
-      if (poi && requested.has(poi.kind)) pois.push(poi);
+      if (poi && requested.has(poi.kind)) {
+        // Attach the shared decision-support columns so the offline store
+        // carries the same fields for hotels as for POIs (#848). The live
+        // `/accommodations` response is unchanged — it maps `AccommodationDto`
+        // explicitly and ignores these extra fields.
+        pois.push({ ...poi, ...extractStoredPoiFields(element.tags ?? {}) });
+      }
     }
     return pois;
   }
@@ -484,4 +492,81 @@ export function parseStarsTag(raw: string | undefined | null): number | null {
   const floored = Math.floor(max);
   if (floored < 1 || floored > 5) return null;
   return floored;
+}
+
+/** Keys kept in the stored raw-tag bag, and the max length of any value —
+ * a guard so a pathological element can't bloat the JSONB row. */
+const MAX_TAG_BAG_KEYS = 60;
+const MAX_TAG_VALUE_LEN = 512;
+
+/**
+ * Collapse `_`/`;` separators and runs of whitespace; null when empty.
+ * Mirrors the `extractPoiHint` normalization so the stored `cuisine`/`brand`
+ * columns match what the mobile card renders.
+ */
+function normalizeTagText(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/[_;]/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned || null;
+}
+
+/**
+ * Copy an OSM tag map into a stored JSONB bag, bounded so a pathological
+ * element can't bloat the row: keys are sorted (deterministic) and capped,
+ * and any oversized value is truncated. Null when the element has no tags.
+ */
+function boundedTagBag(
+  tags: Record<string, string>,
+): Record<string, string> | null {
+  const keys = Object.keys(tags).sort();
+  if (keys.length === 0) return null;
+  const out: Record<string, string> = {};
+  for (const key of keys.slice(0, MAX_TAG_BAG_KEYS)) {
+    const value = tags[key];
+    if (typeof value !== 'string') continue;
+    out[key] =
+      value.length > MAX_TAG_VALUE_LEN
+        ? value.slice(0, MAX_TAG_VALUE_LEN)
+        : value;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Extract the decision-support columns (#848) from an OSM element's tags:
+ * opening hours, a split address, cuisine/brand, and a bounded raw tag bag.
+ * Pure and provider-agnostic so both the POI and accommodation import paths
+ * store identical columns. Every field is null when its tag is absent.
+ */
+export function extractStoredPoiFields(
+  tags: Record<string, string>,
+): StoredPoiFields {
+  const street = tags['addr:street']?.trim() || null;
+  const housenumber = tags['addr:housenumber']?.trim() || null;
+  // A bare house number with no street is useless on a card, so only build
+  // the line when a street is present; append the number when we have both.
+  const address_street = street
+    ? housenumber
+      ? `${street} ${housenumber}`
+      : street
+    : null;
+  const country = tags['addr:country']?.trim();
+  return {
+    opening_hours: tags.opening_hours?.trim() || null,
+    address_street,
+    address_city:
+      tags['addr:city']?.trim() ||
+      tags['addr:town']?.trim() ||
+      tags['addr:village']?.trim() ||
+      null,
+    address_postcode: tags['addr:postcode']?.trim() || null,
+    // `addr:country` is usually an ISO 3166-1 alpha-2 code; store only a
+    // clean 2-letter value (upper-cased) so the varchar(2) column never
+    // holds a full country name.
+    address_country:
+      country && /^[A-Za-z]{2}$/.test(country) ? country.toUpperCase() : null,
+    cuisine: normalizeTagText(tags.cuisine),
+    brand: normalizeTagText(tags.brand ?? tags.operator),
+    tags: boundedTagBag(tags),
+  };
 }

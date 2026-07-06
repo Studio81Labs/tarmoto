@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   classifyPoiTags,
   extractPoiHint,
+  extractStoredPoiFields,
   OverpassPoiProvider,
   parseStarsTag,
 } from './overpass.provider.js';
@@ -164,6 +165,100 @@ describe('extractPoiHint', () => {
     expect(
       extractPoiHint('fuel_station', { name: 'Unnamed station' }),
     ).toBeNull();
+  });
+});
+
+describe('extractStoredPoiFields', () => {
+  it('captures opening hours, cuisine and address from a fully tagged element', () => {
+    const fields = extractStoredPoiFields({
+      amenity: 'restaurant',
+      name: 'U Fleku',
+      opening_hours: 'Mo-Su 11:00-23:00',
+      cuisine: 'czech;beer',
+      'addr:street': 'Křemencova',
+      'addr:housenumber': '11',
+      'addr:city': 'Praha',
+      'addr:postcode': '110 00',
+      'addr:country': 'cz',
+    });
+    expect(fields.opening_hours).toBe('Mo-Su 11:00-23:00');
+    // Cuisine reuses the hint normalization (`;`/`_` → space) so the stored
+    // column matches what the card renders.
+    expect(fields.cuisine).toBe('czech beer');
+    // Street + house number are combined into one human-readable line.
+    expect(fields.address_street).toBe('Křemencova 11');
+    expect(fields.address_city).toBe('Praha');
+    expect(fields.address_postcode).toBe('110 00');
+    // `addr:country` is normalized to an upper-case ISO-2 code for the
+    // varchar(2) column.
+    expect(fields.address_country).toBe('CZ');
+  });
+
+  it('prefers brand over operator for the fuel/chain identity', () => {
+    expect(
+      extractStoredPoiFields({ brand: 'Shell', operator: 'Shell CZ' }).brand,
+    ).toBe('Shell');
+    expect(extractStoredPoiFields({ operator: 'Local Co-op' }).brand).toBe(
+      'Local Co-op',
+    );
+  });
+
+  it('falls back city → town → village for the address city', () => {
+    // Motorcyclists ride rural: an OSM POI often only has addr:town or
+    // addr:village, so we fall through rather than dropping the location.
+    expect(extractStoredPoiFields({ 'addr:town': 'Rožnov' }).address_city).toBe(
+      'Rožnov',
+    );
+    expect(
+      extractStoredPoiFields({ 'addr:village': 'Prostřední Bečva' })
+        .address_city,
+    ).toBe('Prostřední Bečva');
+  });
+
+  it('drops a non-two-letter country code rather than storing garbage', () => {
+    expect(
+      extractStoredPoiFields({ 'addr:country': 'Czechia' }).address_country,
+    ).toBeNull();
+    expect(
+      extractStoredPoiFields({ 'addr:country': 'C' }).address_country,
+    ).toBeNull();
+  });
+
+  it('leaves address_street null when only a house number is tagged', () => {
+    // A bare house number with no street is useless on a card.
+    expect(
+      extractStoredPoiFields({ 'addr:housenumber': '11' }).address_street,
+    ).toBeNull();
+  });
+
+  it('returns nulls and a null tag bag when there are no tags', () => {
+    expect(extractStoredPoiFields({})).toEqual({
+      opening_hours: null,
+      address_street: null,
+      address_city: null,
+      address_postcode: null,
+      address_country: null,
+      cuisine: null,
+      brand: null,
+      tags: null,
+    });
+  });
+
+  it('keeps a raw tag bag for future enrichment', () => {
+    expect(
+      extractStoredPoiFields({ amenity: 'restaurant', wheelchair: 'yes' }).tags,
+    ).toEqual({ amenity: 'restaurant', wheelchair: 'yes' });
+  });
+
+  it('bounds the tag bag: caps the key count and truncates huge values', () => {
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 100; i++) many[`k${String(i).padStart(3, '0')}`] = 'v';
+    many.huge = 'x'.repeat(1000);
+    const bag = extractStoredPoiFields(many).tags!;
+    expect(Object.keys(bag).length).toBeLessThanOrEqual(60);
+    // 'huge' sorts before the 'k***' keys, so it survives the cap and is
+    // truncated to the max value length.
+    expect(bag.huge.length).toBe(512);
   });
 });
 
@@ -393,6 +488,41 @@ describe('OverpassPoiProvider.findImportPoisInBbox', () => {
       'ice_cream',
     ]);
     expect(result[0].external_id).toBe('osm:node:1');
+  });
+
+  it('captures decision-support fields (hours/address/cuisine/tags) on imported POIs', async () => {
+    const elements = [
+      {
+        type: 'node',
+        id: 7,
+        lat: 49.5,
+        lon: 18.4,
+        tags: {
+          amenity: 'restaurant',
+          name: 'Koliba',
+          opening_hours: 'Mo-Su 11:00-22:00',
+          cuisine: 'regional',
+          'addr:city': 'Rožnov',
+          'addr:country': 'cz',
+        },
+      },
+    ];
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ elements }),
+    });
+    const provider = new OverpassPoiProvider(config);
+    const [p] = await provider.findImportPoisInBbox({
+      minLng: 18,
+      minLat: 49.3,
+      maxLng: 18.9,
+      maxLat: 49.75,
+    });
+    expect(p.opening_hours).toBe('Mo-Su 11:00-22:00');
+    expect(p.address_city).toBe('Rožnov');
+    expect(p.address_country).toBe('CZ');
+    expect(p.cuisine).toBe('regional');
+    expect(p.tags).toMatchObject({ amenity: 'restaurant' });
   });
 
   it('queries tourism accommodations in a bbox (node/way/relation)', async () => {

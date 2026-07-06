@@ -4,7 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
-import { POI_PROVIDER, type PoiProvider } from './poi-provider.interface.js';
+import {
+  POI_PROVIDER,
+  type PoiProvider,
+  type StoredPoiFields,
+} from './poi-provider.interface.js';
 import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
 import { poiImportConfig } from './poi-import.config.js';
 
@@ -20,12 +24,39 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 /** `pois` text-column widths — truncate to these so an over-long OSM tag
  * (e.g. a semicolon-separated phone list) can never fail the upsert. */
-const COLUMN_LIMITS = { name: 255, website: 512, phone: 255 } as const;
+const COLUMN_LIMITS = {
+  name: 255,
+  website: 512,
+  phone: 255,
+  opening_hours: 512,
+  address_street: 255,
+  address_city: 128,
+  address_postcode: 32,
+  cuisine: 128,
+  brand: 128,
+} as const;
 
 function clamp(value: string | null, max: number): string | null {
   if (value === null) return null;
   return value.length > max ? value.slice(0, max) : value;
 }
+
+/**
+ * The shape `add()` accepts — the common denominator of `ImportedPoi` and
+ * `AccommodationPoi & StoredPoiFields`. `stars` is optional (only
+ * accommodations carry it); the `StoredPoiFields` columns are optional so a
+ * future provider that can't fill them still type-checks.
+ */
+type StorableImportRow = {
+  external_id: string;
+  kind: string;
+  name: string | null;
+  website: string | null;
+  phone: string | null;
+  lat: number;
+  lng: number;
+  stars?: number | null;
+} & Partial<StoredPoiFields>;
 
 export interface PoiImportResult {
   fetched: number;
@@ -77,15 +108,7 @@ export class PoiImportService {
     // Dedupe by external id (a duplicate id in one snapshot would make a
     // single upsert touch the same row twice and abort the batch).
     const byExternalId = new Map<string, QueryDeepPartialEntity<Poi>>();
-    const add = (p: {
-      external_id: string;
-      kind: string;
-      name: string | null;
-      website: string | null;
-      phone: string | null;
-      lat: number;
-      lng: number;
-    }): void => {
+    const add = (p: StorableImportRow): void => {
       byExternalId.set(p.external_id, {
         source: 'osm',
         external_id: p.external_id,
@@ -93,6 +116,25 @@ export class PoiImportService {
         name: clamp(p.name, COLUMN_LIMITS.name),
         website: clamp(p.website, COLUMN_LIMITS.website),
         phone: clamp(p.phone, COLUMN_LIMITS.phone),
+        opening_hours: clamp(
+          p.opening_hours ?? null,
+          COLUMN_LIMITS.opening_hours,
+        ),
+        address_street: clamp(
+          p.address_street ?? null,
+          COLUMN_LIMITS.address_street,
+        ),
+        address_city: clamp(p.address_city ?? null, COLUMN_LIMITS.address_city),
+        address_postcode: clamp(
+          p.address_postcode ?? null,
+          COLUMN_LIMITS.address_postcode,
+        ),
+        // Already normalized to a 2-char ISO code upstream — no clamp needed.
+        address_country: p.address_country ?? null,
+        cuisine: clamp(p.cuisine ?? null, COLUMN_LIMITS.cuisine),
+        brand: clamp(p.brand ?? null, COLUMN_LIMITS.brand),
+        stars: p.stars ?? null,
+        tags: p.tags ?? null,
         geom: { type: 'Point', coordinates: [p.lng, p.lat] },
         last_imported_at: batchTime,
       });

@@ -70,6 +70,7 @@ import { AggregateClusterFunZonesByWay1789000000000 } from '../../migrations/178
 import { AddRoadSegmentWayKeyIndex1790000000000 } from '../../migrations/1790000000000-AddRoadSegmentWayKeyIndex.js';
 import { AddRoadSegmentDeactivatedAt1791000000000 } from '../../migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from '../../migrations/1792000000000-AddTripDayLegPreferences.js';
+import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations/1793000000000-AddPoiDecisionSupportFields.js';
 import {
   User,
   UserContact,
@@ -281,6 +282,7 @@ const entities = [
             AddRoadSegmentWayKeyIndex1790000000000,
             AddRoadSegmentDeactivatedAt1791000000000,
             AddTripDayLegPreferences1792000000000,
+            AddPoiDecisionSupportFields1793000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
