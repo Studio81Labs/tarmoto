@@ -1799,6 +1799,8 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByText(/road character is set by the trip owner/),
     ).toBeInTheDocument();
+    // Min quality is owner metadata too.
+    expect(screen.getByLabelText("Minimum road quality")).toBeDisabled();
   });
 
   it("sends per-leg preferences with the save when a LEG override exists", async () => {

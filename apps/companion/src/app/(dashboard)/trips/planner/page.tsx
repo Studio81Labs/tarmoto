@@ -2584,6 +2584,9 @@ export default function TripPlannerPage() {
                     >
                       {t("Minimum road quality")}
                     </label>
+                    {/* Owner metadata like the road character above: a member's
+                        edit could never persist, only desync the control
+                        from the saved value on reload. */}
                     <Select
                       id="trip-planner-min-quality"
                       value={minQuality}
@@ -2591,6 +2594,7 @@ export default function TripPlannerPage() {
                         handleMinQualityChange(Number(value))
                       }
                       tone="cream"
+                      disabled={!canEditTripMetadata}
                     >
                       <option value="1">{t("Any condition")}</option>
                       <option value="2">{t("Fair or better")}</option>
