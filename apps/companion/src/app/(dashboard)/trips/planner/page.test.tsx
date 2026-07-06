@@ -1637,6 +1637,16 @@ describe("TripPlannerPage", () => {
       "",
       "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
     );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
     storeState.activeTrip = {
       ...activeTrip,
       id: "11111111-2222-4333-8444-666666666666",
@@ -1650,6 +1660,12 @@ describe("TripPlannerPage", () => {
     } as never);
 
     render(<TripPlannerPage />);
+    // Metadata stays locked until the owner role lands (rename enabled).
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Renamed ride/ }),
+      ).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
     await waitFor(() => expect(tripsApiUpdateMock).toHaveBeenCalled());
@@ -1712,6 +1728,16 @@ describe("TripPlannerPage", () => {
       "",
       "/trips/planner?tripId=11111111-2222-4333-8444-888888888888",
     );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Best fit", {
+        id: "11111111-2222-4333-8444-888888888888",
+      }),
+    } as never);
     storeState.activeTrip = {
       ...activeTrip,
       id: "11111111-2222-4333-8444-888888888888",
@@ -1723,6 +1749,10 @@ describe("TripPlannerPage", () => {
         <TripPlannerPage />
         <ToastHost />
       </>,
+    );
+    // Rename stays locked until the owner role lands.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best fit/ })).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: /Best fit/ }));
     fireEvent.change(screen.getByLabelText("Trip name"), {
@@ -1740,6 +1770,24 @@ describe("TripPlannerPage", () => {
     // The rename armed no route save and dirtied nothing.
     expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
     expect(storeState.renameActiveTrip).toHaveBeenCalledWith("Renamed only");
+  });
+
+  it("keeps metadata locked while a persisted trip's role is still loading", () => {
+    // Treating the role-fetch window as editable would let a member
+    // queue a metadata PATCH that fails after the route already
+    // committed — locked until the role lands.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-999999999999",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-999999999999",
+    };
+    // No auth: the role fetch never resolves in this render.
+    render(<TripPlannerPage />);
+    expect(screen.getByRole("button", { name: /Best fit/ })).toBeDisabled();
   });
 
   it("skips the metadata PATCH when the caller is a plain member", async () => {
