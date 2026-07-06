@@ -867,6 +867,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/poi/in-corridor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stored POIs within a buffer of a route polyline (#849)
+         * @description The offline-store corridor query behind the companion STOPS tab — the store counterpart to POST /poi/along-route. Each POI carries its distance along the route and its shortest distance to the route line. Returns an empty list for a region that has not been imported yet.
+         */
+        post: operations["PoiController_findInCorridor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/poi/along-route": {
         parameters: {
             query?: never;
@@ -4173,6 +4193,55 @@ export interface components {
             /** @description Number of rows returned. */
             count: number;
         };
+        CorridorRoutePointDto: {
+            lat: number;
+            lng: number;
+        };
+        CorridorBodyDto: {
+            route: components["schemas"]["CorridorRoutePointDto"][];
+            /**
+             * @description Corridor half-width in km (default 2, capped at 10).
+             * @default 2
+             */
+            buffer_km: number;
+            kinds: string[][];
+        };
+        StoredCorridorPoiDto: {
+            id: string;
+            /** @description Provider layer, e.g. `osm`. */
+            source: string;
+            external_id: string;
+            name: string | null;
+            /** @description OSM import kind (superset of the live enum). */
+            kind: string;
+            lat: number;
+            lng: number;
+            website: string | null;
+            phone: string | null;
+            opening_hours: string | null;
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            address_country: string | null;
+            cuisine: string | null;
+            brand: string | null;
+            stars: number | null;
+            /** @description OSM detail / attribution URL. */
+            osm_url: string | null;
+            /** @description When the import last wrote this row (ISO 8601). */
+            last_imported_at: string;
+            /** @description Distance from the route start to the POI, km. */
+            distance_along_route_km: number;
+            /** @description Shortest distance from the POI to the route line, km. */
+            distance_from_route_km: number;
+        };
+        StoredCorridorListDto: {
+            pois: components["schemas"]["StoredCorridorPoiDto"][];
+            /** @description Buffer actually used for the lookup, km. */
+            buffer_km: number;
+            /** @description Number of rows returned. */
+            count: number;
+        };
         RoutePointDto: {
             lat: number;
             lng: number;
@@ -6042,6 +6111,10 @@ export type SchemaPoiDto = components['schemas']['PoiDto'];
 export type SchemaPoiListDto = components['schemas']['PoiListDto'];
 export type SchemaStoredPoiDto = components['schemas']['StoredPoiDto'];
 export type SchemaStoredPoiListDto = components['schemas']['StoredPoiListDto'];
+export type SchemaCorridorRoutePointDto = components['schemas']['CorridorRoutePointDto'];
+export type SchemaCorridorBodyDto = components['schemas']['CorridorBodyDto'];
+export type SchemaStoredCorridorPoiDto = components['schemas']['StoredCorridorPoiDto'];
+export type SchemaStoredCorridorListDto = components['schemas']['StoredCorridorListDto'];
 export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
 export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
@@ -7547,6 +7620,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoredPoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findInCorridor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorridorBodyDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredCorridorListDto"];
                 };
             };
         };
