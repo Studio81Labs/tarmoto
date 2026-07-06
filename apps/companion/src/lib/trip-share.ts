@@ -1,5 +1,5 @@
-import { API_BASE_SERVER } from "@/lib/config";
 import type { TripSharePublic } from "@/lib/api";
+import { apiServer } from "@/lib/api/server";
 import type { RoutePoint } from "@/lib/ride-detail";
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
 
@@ -11,17 +11,20 @@ export type { TripSharePublic };
 export async function fetchSharedTrip(
   token: string,
 ): Promise<TripSharePublic | null> {
-  const res = await fetch(
-    `${API_BASE_SERVER}/trip-shares/${encodeURIComponent(token)}`,
-    { cache: "no-store" },
+  const { data, error, response } = await apiServer.GET(
+    "/api/v1/trip-shares/{token}",
+    {
+      params: { path: { token } },
+      cache: "no-store",
+    },
   );
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`GET /trip-shares/${token} failed (${res.status})`);
+  if (response.status === 404) return null;
+  if (error) {
+    throw new Error(`GET /trip-shares/${token} failed (${response.status})`);
   }
 
-  return (await res.json()) as TripSharePublic;
+  return data ?? null;
 }
 
 /**

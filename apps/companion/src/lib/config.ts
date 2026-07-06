@@ -13,10 +13,18 @@ export const API_HOST = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(
 export const API_BASE = `${API_HOST}/api/v1`;
 
 /**
+ * Absolute host for server-side use (SSR reads, JWT callbacks, etc.).
+ * Server-side fetch needs a full URL — relative paths don't resolve. This is
+ * the host only (no `/api/v1`), matching the `baseUrl` the generated client
+ * expects since the spec paths already carry the `/api/v1` prefix.
+ */
+export const API_HOST_SERVER = API_HOST || "http://localhost:3000";
+
+/**
  * Absolute base URL for server-side use (JWT callbacks, etc.).
  * Server-side fetch needs a full URL — relative paths don't resolve.
  */
-export const API_BASE_SERVER = `${API_HOST || "http://localhost:3000"}/api/v1`;
+export const API_BASE_SERVER = `${API_HOST_SERVER}/api/v1`;
 
 /**
  * Base MapLibre style URL. Companion maps apply Tarmoto restyling and a
