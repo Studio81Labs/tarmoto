@@ -220,7 +220,14 @@ export class RidesController {
   }
 
   @Get(':rideId/gpx')
-  @ApiOperation({ summary: 'Export ride as GPX' })
+  // Same entitlement as the bulk export.gpx above — without it, a
+  // force_off / free-tier user could reconstruct the bulk export one
+  // ride at a time.
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_export')
+  @ApiOperation({
+    summary: 'Export ride as GPX (requires the gpx_export entitlement)',
+  })
   @ApiProduces('application/gpx+xml')
   @ApiResponse({ status: 200, description: 'GPX file' })
   @ApiResponse({ status: 404, description: 'Ride not found' })

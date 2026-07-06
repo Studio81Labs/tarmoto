@@ -32,7 +32,7 @@ Tier naming (decided 2026-07, swapping the original marketing copy):
 | `unlimited_trip_planning` | pro, premium       | — (limit enforcement is a follow-up)                                                                                |
 | `full_road_quality_zoom`  | pro, premium       | — (client gating only, for now)                                                                                     |
 | `offline_maps`            | pro, premium       | — (feature not built yet)                                                                                           |
-| `gpx_export`              | pro, premium       | `GET /rides/export.gpx`                                                                                             |
+| `gpx_export`              | pro, premium       | `GET /rides/export.gpx` + `GET /rides/:rideId/gpx`                                                                  |
 | `commuter_mode`           | pro, premium       | the whole `/commute/*` controller                                                                                   |
 | `group_rides`             | premium            | `/group-rides` create/join/detail + the socket rooms; `leave`/`end` stay open so a revoked rider can still clean up |
 | `priority_hazard_alerts`  | premium            | — (feature not built yet)                                                                                           |
