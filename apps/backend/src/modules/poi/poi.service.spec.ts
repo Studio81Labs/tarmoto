@@ -12,9 +12,21 @@ import {
   type PoiProvider,
   type AccommodationPoi,
   type PointOfInterest,
+  type StoredPoiFields,
 } from './poi-provider.interface.js';
 import type { PoiKind } from './dto/point-of-interest.dto.js';
 import type { AccommodationKind } from './dto/accommodation.dto.js';
+
+const NO_STORED_FIELDS: StoredPoiFields = {
+  opening_hours: null,
+  address_street: null,
+  address_city: null,
+  address_postcode: null,
+  address_country: null,
+  cuisine: null,
+  brand: null,
+  tags: null,
+};
 
 describe('PoiService', () => {
   let service: PoiService;
@@ -33,6 +45,7 @@ describe('PoiService', () => {
     website: null,
     phone: null,
     stars: null,
+    ...NO_STORED_FIELDS,
     ...over,
   });
 
@@ -47,6 +60,7 @@ describe('PoiService', () => {
     website: null,
     phone: null,
     hint: null,
+    ...NO_STORED_FIELDS,
     ...over,
   });
 
@@ -62,6 +76,77 @@ describe('PoiService', () => {
     }).compile();
 
     service = module.get<PoiService>(PoiService);
+  });
+
+  describe('decision-support field mapping (#849)', () => {
+    it('surfaces hours/address/cuisine + osm_url on nearby POIs', async () => {
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({
+          external_id: 'osm:node:42',
+          name: 'Koliba',
+          opening_hours: 'Mo-Su 11:00-22:00',
+          address_city: 'Brno',
+          cuisine: 'regional',
+        }),
+      ]);
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+      );
+      expect(res.pois[0]).toEqual(
+        expect.objectContaining({
+          opening_hours: 'Mo-Su 11:00-22:00',
+          address_city: 'Brno',
+          cuisine: 'regional',
+          osm_url: 'https://www.openstreetmap.org/node/42',
+        }),
+      );
+    });
+
+    it('surfaces hours/address + osm_url on accommodations', async () => {
+      provider.findAccommodations.mockResolvedValue([
+        buildPoi({
+          external_id: 'osm:way:99',
+          name: 'Hotel Beskyd',
+          opening_hours: '24/7',
+          address_city: 'Ostrava',
+        }),
+      ]);
+      const res = await service.findAccommodationsNear(anchor.lat, anchor.lng);
+      expect(res.accommodations[0]).toEqual(
+        expect.objectContaining({
+          opening_hours: '24/7',
+          address_city: 'Ostrava',
+          osm_url: 'https://www.openstreetmap.org/way/99',
+        }),
+      );
+    });
+
+    it('surfaces brand/address + osm_url on along-route POIs', async () => {
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        buildNearbyPoi({
+          external_id: 'osm:node:7',
+          name: 'Shell',
+          kind: 'fuel_station',
+          brand: 'Shell',
+          address_city: 'Zlín',
+        }),
+      ]);
+      const res = await service.findPointsOfInterestAlongRoute({
+        route: [
+          { lat: anchor.lat, lng: anchor.lng },
+          { lat: anchor.lat + 0.02, lng: anchor.lng + 0.02 },
+        ],
+        buffer_km: 5,
+      });
+      expect(res.pois[0]).toEqual(
+        expect.objectContaining({
+          brand: 'Shell',
+          address_city: 'Zlín',
+          osm_url: 'https://www.openstreetmap.org/node/7',
+        }),
+      );
+    });
   });
 
   describe('findAccommodationsNear', () => {

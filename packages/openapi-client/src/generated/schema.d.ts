@@ -3966,6 +3966,16 @@ export interface components {
             phone: string | null;
             /** @description Hotel star rating 1..5 when the provider reports one. */
             stars: number | null;
+            /** @description Raw OSM `opening_hours` (reception hours) when tagged. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
         };
         AccommodationListDto: {
             accommodations: components["schemas"]["AccommodationDto"][];
@@ -3987,6 +3997,20 @@ export interface components {
             phone: string | null;
             /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
             hint: string | null;
+            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Normalized cuisine for restaurants / cafés. */
+            cuisine: string | null;
+            /** @description Brand, falling back to operator (fuel chains, franchises). */
+            brand: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
         };
         PoiListDto: {
             pois: components["schemas"]["PoiDto"][];
@@ -4024,6 +4048,20 @@ export interface components {
             phone: string | null;
             /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
             hint: string | null;
+            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Normalized cuisine for restaurants / cafés. */
+            cuisine: string | null;
+            /** @description Brand, falling back to operator (fuel chains, franchises). */
+            brand: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
         };
         AlongRoutePoiListDto: {
             pois: components["schemas"]["AlongRoutePoiDto"][];
