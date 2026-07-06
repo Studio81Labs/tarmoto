@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { API_BASE_SERVER } from "@/lib/config";
+import { apiServer } from "@/lib/api/server";
 import type {
   RouteCollectionDetail,
   RouteCollectionPreviewResponse,
@@ -24,19 +24,19 @@ export type { RouteCollectionDetail, RouteCollectionPreviewResponse };
  */
 export const fetchSharedCollection = cache(
   async (slug: string): Promise<RouteCollectionDetail | null> => {
-    const res = await fetch(
-      `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}`,
-      { cache: "no-store" },
+    const { data, error, response } = await apiServer.GET(
+      "/api/v1/collections/by-slug/{slug}",
+      { params: { path: { slug } }, cache: "no-store" },
     );
 
-    if (res.status === 404) return null;
-    if (!res.ok) {
+    if (response.status === 404) return null;
+    if (error) {
       throw new Error(
-        `GET /collections/by-slug/${slug} failed (${res.status})`,
+        `GET /collections/by-slug/${slug} failed (${response.status})`,
       );
     }
 
-    return (await res.json()) as RouteCollectionDetail;
+    return data ?? null;
   },
 );
 
@@ -55,11 +55,11 @@ export const fetchSharedCollection = cache(
  */
 export const fetchSharedCollectionPreview = cache(
   async (slug: string): Promise<RouteCollectionPreviewResponse | null> => {
-    const res = await fetch(
-      `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}/preview`,
-      { cache: "no-store" },
+    const { data, error } = await apiServer.GET(
+      "/api/v1/collections/by-slug/{slug}/preview",
+      { params: { path: { slug } }, cache: "no-store" },
     );
-    if (!res.ok) return null;
-    return (await res.json()) as RouteCollectionPreviewResponse;
+    if (error || !data) return null;
+    return data;
   },
 );

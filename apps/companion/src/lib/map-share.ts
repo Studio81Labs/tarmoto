@@ -1,4 +1,4 @@
-import { API_BASE_SERVER } from "@/lib/config";
+import { apiServer } from "@/lib/api/server";
 import type { MapSharePublic } from "@/lib/api";
 
 // Re-exported so server-side callers keep importing `MapSharePublic`
@@ -13,15 +13,15 @@ export type { MapSharePublic };
 export async function fetchSharedMap(
   token: string,
 ): Promise<MapSharePublic | null> {
-  const res = await fetch(
-    `${API_BASE_SERVER}/map-shares/${encodeURIComponent(token)}`,
-    { cache: "no-store" },
+  const { data, error, response } = await apiServer.GET(
+    "/api/v1/map-shares/{token}",
+    { params: { path: { token } }, cache: "no-store" },
   );
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`GET /map-shares/${token} failed (${res.status})`);
+  if (response.status === 404) return null;
+  if (error) {
+    throw new Error(`GET /map-shares/${token} failed (${response.status})`);
   }
 
-  return (await res.json()) as MapSharePublic;
+  return data ?? null;
 }
