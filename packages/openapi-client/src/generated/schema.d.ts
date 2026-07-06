@@ -2243,7 +2243,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Export ride as GPX */
+        /** Export ride as GPX (requires the gpx_export entitlement) */
         get: operations["RidesController_exportGpx"];
         put?: never;
         post?: never;
