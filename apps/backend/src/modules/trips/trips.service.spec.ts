@@ -2564,10 +2564,9 @@ describe('TripsService', () => {
 
       // Merged geometry drops the duplicated boundary vertex and the day
       // row carries the summed distance.
-      const geometry = enrichment.aggregate.mock.calls[0]![0] as Array<{
-        lat: number;
-        lng: number;
-      }>;
+      const [geometry] = enrichment.aggregate.mock.calls[0]! as [
+        Array<{ lat: number; lng: number }>,
+      ];
       expect(geometry).toEqual([
         { lat: 50.0, lng: 14.0 },
         { lat: 50.1, lng: 14.1 },
