@@ -7,21 +7,40 @@ central-Europe test routes (e.g. Prague → Split) work out of the box.
 
 ## Build + run (first start builds tiles — slow, one-time)
 
+The image builds its tiles from ONE pre-merged extract at
+`infra/valhalla/custom_files/corridor.osm.pbf` (git-ignored, ~2.4 GB).
+There is deliberately no `tile_urls` download: feeding Valhalla the raw
+per-country Geofabrik extracts crashes its 3.5.x tile build on
+border-overlap tiles (each extract ships buffered, duplicated border
+data; symptom: `vector::_M_range_check`, valhalla/valhalla#4904) —
+osmium-merging them first dedupes the overlaps.
+
+One-time, before the first start — download the corridor extracts and
+merge them:
+
+    cd infra/valhalla/custom_files
+    for c in czech-republic austria slovenia croatia hungary; do
+      curl -LO "https://download.geofabrik.de/europe/$c-latest.osm.pbf"
+    done
+    docker run --rm -v "$PWD:/data" stefda/osmium-tool osmium merge       /data/czech-republic-latest.osm.pbf /data/austria-latest.osm.pbf       /data/slovenia-latest.osm.pbf /data/croatia-latest.osm.pbf       /data/hungary-latest.osm.pbf       -o /data/corridor.osm.pbf --overwrite
+    rm ./*-latest.osm.pbf   # the merged corridor.osm.pbf is all Valhalla needs
+
 The service is gated behind the `routing` compose profile, so a plain
 `docker compose up -d` / `pnpm db:up` does NOT start it (a DB boot won't
 trigger the heavy first-run tile build). Start it explicitly:
 
     docker compose -f infra/docker/docker-compose.yml --profile routing up valhalla
-    # first run downloads the extract + builds tiles into infra/valhalla/custom_files
-    # (git-ignored); subsequent runs reuse them.
+    # first run builds tiles from corridor.osm.pbf into
+    # infra/valhalla/custom_files (git-ignored); subsequent runs reuse them.
 
-For a different region, change `tile_urls` in the compose service (it takes
-a space-separated list of Geofabrik extracts) and delete
-`infra/valhalla/custom_files` to force a rebuild. Routing outside the built
-extracts fails or snaps to the nearest covered road — coverage is exactly
-the union of the listed extracts. Full `europe-latest.osm.pbf` works in
-principle but means a ~30 GB download, a 6h+ tile build, and >32 GB RAM —
-prefer listing the countries you actually ride.
+For a different region, merge the Geofabrik extracts you want into
+`corridor.osm.pbf` the same way, then delete
+`infra/valhalla/custom_files/valhalla_tiles` and `file_hashes.txt` to force
+a rebuild. Routing outside the built extract fails or snaps to the nearest
+covered road — coverage is exactly what you merged. Full
+`europe-latest.osm.pbf` works in principle but means a ~30 GB download, a
+6h+ tile build, and >32 GB RAM — prefer merging the countries you actually
+ride.
 
 ## Point the backend at it
 
@@ -44,5 +63,7 @@ Set this only once the Valhalla service above is running:
 ## Coolify (production)
 
 Run the same image as a service with a persistent volume mounted at
-`/custom_files` and the same `tile_urls` env. First boot builds tiles into the
-volume; set `TARMOTO_VALHALLA_BASE_URL` on the backend to the service URL.
+`/custom_files`, and place the same pre-merged `corridor.osm.pbf` into that
+volume before first boot (no `tile_urls` — see above). First boot builds
+tiles into the volume; set `TARMOTO_VALHALLA_BASE_URL` on the backend to
+the service URL.

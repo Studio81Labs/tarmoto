@@ -2199,4 +2199,58 @@ describe("TripPlannerPage", () => {
     fireEvent(details, new Event("toggle", { bubbles: false }));
     expect(storeState.setPlanningMode).toHaveBeenLastCalledWith("single");
   });
+
+  it("gates re-splitting off for loaded multi-day trips", async () => {
+    // A saved multi-day trip already carries materialized days; splitting
+    // only day 1 would show a wrong itinerary that materializeSplit()
+    // refuses to persist — every re-split entry point must be gated.
+    const mkPlan = (dayNumber: number, endKm: number) => ({
+      dayNumber,
+      segmentIds: [],
+      distanceKm: 200,
+      timeMin: 240,
+      quality: {
+        distanceKm: 200,
+        timeMin: 240,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "A",
+      endTown: "B",
+      suggestedStays: [],
+      endKm,
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        { ...activeTrip.days[0]!, dayNumber: 2, startLinked: true },
+      ],
+    };
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = [mkPlan(1, 200), mkPlan(2, 400)];
+
+    const { container, rerender } = render(<TripPlannerPage />);
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+
+    // The BUILD split button is disabled and explains why.
+    expect(screen.getByRole("button", { name: /Re-split/ })).toBeDisabled();
+    expect(screen.getByText(/This trip's days are saved/)).toBeInTheDocument();
+
+    // Changing the day controls must not recompute a bogus split.
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "300" },
+    });
+    await act(async () => {});
+    expect(storeState.applySplit).not.toHaveBeenCalled();
+
+    // A stale split on a multi-day trip offers no day-column shortcut.
+    storeState.splitStatus = "stale";
+    rerender(<TripPlannerPage />);
+    expect(screen.queryByRole("button", { name: "RE-SPLIT" })).toBeNull();
+  });
 });

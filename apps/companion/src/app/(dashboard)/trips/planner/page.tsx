@@ -548,6 +548,12 @@ export default function TripPlannerPage() {
   const [splitting, setSplitting] = useState(false);
   const handleSplit = useCallback(async () => {
     const trip = activeTripRef.current;
+    // Splitting operates on the SINGLE working route only. A loaded
+    // multi-day trip already carries materialized days: splitting just
+    // day 1 would replace the day column with a wrong itinerary that
+    // materializeSplit() refuses to persist. (The auto-resplit effect
+    // and re-split buttons are gated too — this is the backstop.)
+    if (trip && trip.days.length > 1) return;
     const routeDay = trip?.days[0];
     const coordinates = routeDay?.routeGeometry?.coordinates;
     if (!routeDay || !coordinates || coordinates.length < 2) {
@@ -2147,7 +2153,8 @@ export default function TripPlannerPage() {
             </div>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
               <>
-                {splitStatus === "stale" ? (
+                {splitStatus === "stale" &&
+                (displayedTrip?.days.length ?? 0) <= 1 ? (
                   <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
                     <span className="text-[11.5px] font-semibold text-ink">
                       {t("Route changed ")}
@@ -2845,7 +2852,9 @@ export default function TripPlannerPage() {
                     className="mt-3"
                     loading={splitting}
                     disabled={
-                      splitting || !displayedTrip?.days[0]?.routeGeometry
+                      splitting ||
+                      !displayedTrip?.days[0]?.routeGeometry ||
+                      (displayedTrip?.days.length ?? 0) > 1
                     }
                     onClick={() => void handleSplit()}
                   >
@@ -2853,7 +2862,13 @@ export default function TripPlannerPage() {
                       ? t("Split into days")
                       : t("Re-split")}
                   </Button>
-                  {splitStatus === "stale" ? (
+                  {(displayedTrip?.days.length ?? 0) > 1 ? (
+                    <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
+                      {t(
+                        "This trip's days are saved — edit them directly; re-splitting applies to a single working route. ",
+                      )}
+                    </p>
+                  ) : splitStatus === "stale" ? (
                     <p className="mt-2 text-[11.5px] leading-snug text-accent">
                       {t("Route changed — re-split to refresh the days. ")}
                     </p>

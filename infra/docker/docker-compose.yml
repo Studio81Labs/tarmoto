@@ -103,7 +103,8 @@ services:
       #     -o /data/corridor.osm.pbf --overwrite
       # then delete valhalla_tiles/ + file_hashes.txt and restart. Croatia
       # was last taken from the 2026-01-01 snapshot. No tile_urls: the
-      # image builds from the local file.
+      # image builds from the local file — first-time setup (download +
+      # merge the extracts) is in infra/valhalla/README.md.
       # Must be False so the FIRST run actually builds tiles from the pbf.
       # (True = "ignore the pbf, load existing tiles" — which crash-loops on an
       # empty volume because there are no tiles yet.)

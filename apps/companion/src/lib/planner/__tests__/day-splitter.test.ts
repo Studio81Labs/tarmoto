@@ -260,6 +260,46 @@ describe("splitIntoDays", () => {
   });
 });
 
+describe("splitIntoDays pinned-region snapping", () => {
+  it("never lets a town across a pin steal the snap from an in-region town", () => {
+    // 300 km route, pin at 210. Region 1 targets: 100, 200 (daily 100,
+    // window 20). Two towns near target 200: km 212 sits ACROSS the pin
+    // (delta 12) and km 185 inside the region (delta 15). Snapping to
+    // 212 would be discarded as out-of-region and the break silently
+    // lost — the in-region town must win instead.
+    const plans = splitIntoDays(
+      makeSegments(300),
+      { dailyKmTarget: 100, forcedDays: null, totalTimeMin: 360 },
+      [town("out", "Across the pin", 212), town("in", "Mikulov", 185)],
+      [210],
+    );
+
+    const breakKms = plans.slice(0, -1).map((plan) => plan.endKm);
+    expect(breakKms).toContain(185);
+    expect(breakKms).not.toContain(212);
+    // Every break stays inside its pinned region (the pin itself is one).
+    expect(breakKms).toContain(210);
+    const mikulovDay = plans.find((plan) => plan.endKm === 185)!;
+    expect(mikulovDay.endTown).toBe("Mikulov");
+  });
+
+  it("falls back to the raw target when the only nearby town is across the pin", () => {
+    // Same shape but WITHOUT the in-region town: the region must keep a
+    // break at the raw km-200 target instead of losing it entirely (an
+    // overlong 110 km day despite the 100 km daily target).
+    const plans = splitIntoDays(
+      makeSegments(300),
+      { dailyKmTarget: 100, forcedDays: null, totalTimeMin: 360 },
+      [town("out", "Across the pin", 212)],
+      [210],
+    );
+
+    const breakKms = plans.slice(0, -1).map((plan) => plan.endKm);
+    expect(breakKms).toContain(200);
+    expect(breakKms).not.toContain(212);
+  });
+});
+
 describe("routePointsWithKm / snapWindowKm", () => {
   it("accumulates km across segment boundaries without double-counting", () => {
     const points = routePointsWithKm(makeSegments(100));

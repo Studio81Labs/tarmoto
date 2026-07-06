@@ -122,13 +122,19 @@ function snapBreak(
   targetKm: number,
   windowKm: number,
   towns: TownOnRoute[],
-  totalKm: number,
+  regionStartKm: number,
+  regionEndKm: number,
 ): BreakPoint {
   let best: TownOnRoute | null = null;
   let bestDelta = Number.POSITIVE_INFINITY;
   for (const town of towns) {
-    // A break at (or past) an end of the route is no break at all.
-    if (town.alongKm <= 0 || town.alongKm >= totalKm) continue;
+    // Only towns strictly inside the CURRENT region count (region bounds
+    // are pins or the route ends — a break there is no break at all). A
+    // nearer town just across a pin must not win the snap: the caller
+    // discards out-of-region candidates outright, so it would silently
+    // cost the region its break — the raw target (or a farther in-region
+    // town) has to win instead.
+    if (town.alongKm <= regionStartKm || town.alongKm >= regionEndKm) continue;
     const delta = Math.abs(town.alongKm - targetKm);
     if (delta <= windowKm && delta < bestDelta) {
       bestDelta = delta;
@@ -265,7 +271,13 @@ export function splitIntoDays(
       dailyKmTarget,
       forcedDays,
     )) {
-      const candidate = snapBreak(target, windowKm, towns, totalKm);
+      const candidate = snapBreak(
+        target,
+        windowKm,
+        towns,
+        regionStart,
+        regionEnd,
+      );
       // Snapping can pull two neighbouring targets onto the same town, or
       // onto a pin — drop duplicates instead of emitting a 0 km day.
       const clashes = breaks.some((b) => Math.abs(b.km - candidate.km) < 1);
