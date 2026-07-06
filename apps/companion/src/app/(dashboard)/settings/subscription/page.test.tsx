@@ -276,6 +276,86 @@ describe("SubscriptionPage", () => {
     );
   });
 
+  it("lets a launch-granted paid user convert or switch plans through Checkout", async () => {
+    // Founder grant: paid tier, no Stripe customer (portal_available
+    // false), status canceled. The portal has nothing to manage, but
+    // Checkout must stay open so the grant can convert to a paid plan.
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          name: "Pro",
+          status: "canceled",
+          price_label: "€29.99/yr",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          {
+            tier: "free",
+            name: "Free",
+            price_label: "€0",
+            features: ["Basic navigation"],
+          },
+          {
+            tier: "pro",
+            name: "Pro",
+            price_label: "€29.99/yr",
+            highlighted: true,
+            features: ["Unlimited trip planning"],
+          },
+          {
+            tier: "premium",
+            name: "Premium",
+            price_label: "€49.99/yr",
+            features: ["Advanced analytics"],
+          },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+      },
+    });
+    createCheckoutSessionMock.mockResolvedValueOnce({
+      data: { url: "https://checkout.stripe.com/session/test" },
+    });
+
+    render(<SubscriptionPage />);
+
+    // The granted (current) plan converts via Checkout, labelled Subscribe.
+    const proCard = (await screen.findAllByText("Pro"))
+      .map((el) => el.closest("article"))
+      .find((el) => el !== null);
+    expect(proCard).not.toBeNull();
+    const subscribeButton = within(proCard!).getByRole("button", {
+      name: "Subscribe",
+    });
+    expect(subscribeButton).toBeEnabled();
+
+    // The other paid tier is also reachable via Checkout.
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
+    const upgradeButton = within(premiumCard!).getByRole("button", {
+      name: "Upgrade",
+    });
+    expect(upgradeButton).toBeEnabled();
+
+    // The free card stays inert — a grant is not a subscription to cancel.
+    const freeCard = (await screen.findByText("Free")).closest("article");
+    expect(
+      within(freeCard!).getByRole("button", { name: "Downgrade" }),
+    ).toBeDisabled();
+
+    fireEvent.click(upgradeButton);
+    await waitFor(() =>
+      expect(createCheckoutSessionMock).toHaveBeenCalledWith({
+        tier: "premium",
+      }),
+    );
+    expect(assignMock).toHaveBeenCalledWith(
+      "https://checkout.stripe.com/session/test",
+    );
+  });
+
   it("opens the payment-method update portal flow", async () => {
     getSubscriptionMock.mockResolvedValueOnce({
       data: {

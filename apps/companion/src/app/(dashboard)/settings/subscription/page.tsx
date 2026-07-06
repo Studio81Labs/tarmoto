@@ -154,8 +154,26 @@ export default function SubscriptionPage() {
       });
     }
   }
+  // A paid tier without a Stripe customer is an operator grant (launch-mode
+  // `founder`, promo, or admin) — there is no subscription to manage in the
+  // portal, but Checkout is open: the backend only blocks checkout for
+  // ACTIVE paid subscriptions, and grants keep `status: canceled`. Route
+  // these users through Checkout so they can convert the grant to a paid
+  // plan (same tier) or pick the other paid tier. Preview snapshots stay
+  // inert — their synthesized paid plan isn't a real grant.
+  const grantWithoutBilling =
+    snapshot !== null &&
+    !snapshot.preview &&
+    snapshot.currentPlan.tier !== "free" &&
+    !snapshot.portalAvailable;
   function handlePlanAction(planTier: SubscriptionTier) {
     if (!snapshot) return;
+    if (grantWithoutBilling) {
+      // No portal flows exist for a grant; every action is a Checkout.
+      if (planTier === "free") return;
+      void openCheckout(planTier as "premium" | "pro");
+      return;
+    }
     if (planTier === snapshot.currentPlan.tier) {
       if (!snapshot.portalAvailable) return;
       void openPortal("manage");
@@ -256,6 +274,7 @@ export default function SubscriptionPage() {
                     actionState.kind === "portal-update"
                   }
                   portalAvailable={snapshot.portalAvailable}
+                  grantWithoutBilling={grantWithoutBilling}
                   onSelect={() => handlePlanAction(plan.tier)}
                 />
               ))}
@@ -428,6 +447,7 @@ function PlanCard({
   busy,
   actionBusy,
   portalAvailable,
+  grantWithoutBilling,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
@@ -435,13 +455,23 @@ function PlanCard({
   busy: boolean;
   actionBusy: boolean;
   portalAvailable: boolean;
+  grantWithoutBilling: boolean;
 }) {
-  const actionLabel = planActionLabel(plan.tier, currentTier);
   const isCurrent = plan.tier === currentTier;
+  // Granted paid tier (no Stripe customer): every paid card routes to
+  // Checkout — the current one reads "Subscribe" (convert the grant to a
+  // paid subscription); only the free card is inert (no portal to cancel
+  // a grant, and the grant itself is not a subscription).
+  const actionLabel =
+    grantWithoutBilling && isCurrent
+      ? "Subscribe"
+      : planActionLabel(plan.tier, currentTier);
   const disabled =
     busy ||
-    (!isCurrent && currentTier !== "free" && !portalAvailable) ||
-    (isCurrent && !portalAvailable);
+    (grantWithoutBilling
+      ? plan.tier === "free"
+      : (!isCurrent && currentTier !== "free" && !portalAvailable) ||
+        (isCurrent && !portalAvailable));
   return (
     <article
       className={
