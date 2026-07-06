@@ -341,6 +341,7 @@ export function TripCollaborateModal({
           {tab === "invite" && (
             <InviteTab
               trip={trip}
+              serverTripId={serverTripId}
               share={share}
               loading={loading}
               copied={copied}
@@ -396,6 +397,7 @@ export function TripCollaborateModal({
 }
 function InviteTab({
   trip,
+  serverTripId,
   share,
   loading,
   copied,
@@ -407,6 +409,7 @@ function InviteTab({
   onCopy,
 }: {
   trip: Trip | null;
+  serverTripId: string | null;
   share: TripShareResponse | null;
   loading: boolean;
   copied: boolean;
@@ -479,9 +482,13 @@ function InviteTab({
             </Button>
           </div>
           <p className="mt-2.5 text-[11.5px] leading-normal text-fg-mute">
-            {t(
-              "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
-            )}
+            {serverTripId
+              ? t(
+                  "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
+                )
+              : t(
+                  "Anyone with the link can view a read-only preview of this trip. Save the trip to the server to let riders join and collaborate.",
+                )}
           </p>
 
           <div className="my-[18px] h-px bg-line" />
@@ -512,9 +519,13 @@ function InviteTab({
         </>
       ) : (
         <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] leading-normal text-fg-mute">
-          {t(
-            "Turn link sharing on to generate a group invite link. Existing collaborators keep their access.",
-          )}
+          {serverTripId
+            ? t(
+                "Turn link sharing on to generate a group invite link. Existing collaborators keep their access.",
+              )
+            : t(
+                "Turn link sharing on to generate a read-only preview link. Riders can join and collaborate once the trip is saved to the server.",
+              )}
         </div>
       )}
     </div>

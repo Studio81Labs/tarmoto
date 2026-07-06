@@ -1622,6 +1622,12 @@ export class TripsService {
         member_user_id: memberUserId,
         role,
       });
+      // Live planners derive their write gates from the fetched trip
+      // detail and refresh them on `trip:updated` — broadcast one so a
+      // demoted editor's open planner locks (and a promoted viewer's
+      // unlocks) without a reload.
+      const detail = await this.getDetail(userId, tripId);
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
     }
     return this.listCollaborators(userId, tripId);
   }

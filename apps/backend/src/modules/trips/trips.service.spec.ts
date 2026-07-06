@@ -1809,6 +1809,9 @@ describe('TripsService', () => {
         .mockResolvedValueOnce(memberRow({})) // target
         .mockResolvedValueOnce({ role: 'owner' } as TripMember); // roster re-read
       memberRepo.find.mockResolvedValueOnce([]);
+      // Role changes broadcast a fresh detail so open planners re-derive
+      // their write gates without a reload.
+      mockGetDetailReturns(makeOwnedTrip());
 
       await service.updateMemberRole(OWNER_ID, TRIP_ID, OTHER_ID, 'viewer');
 
@@ -1833,6 +1836,12 @@ describe('TripsService', () => {
         OWNER_ID,
         'member_role_changed',
         { member_user_id: OTHER_ID, role: 'viewer' },
+      );
+      // Open planners hear about the change immediately.
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        expect.objectContaining({ id: TRIP_ID }),
       );
     });
 
