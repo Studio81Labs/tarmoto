@@ -145,8 +145,13 @@ test.describe("trip collaboration", () => {
       const ownerUpVote = ownerPage.getByRole("button", { name: /vote up/i });
       await expect(ownerUpVote).toContainText("1", { timeout: 10_000 });
 
-      // Owner accepts the suggestion. Status badge flips to "accepted".
+      // Owner accepts the suggestion. The card moves into the resolved
+      // group, which starts collapsed behind the "N resolved" summary —
+      // expand it to see the ACCEPTED status.
       await ownerPage.getByRole("button", { name: /^Accept$/ }).click();
+      await ownerPage
+        .getByRole("button", { name: /\d+ resolved/i })
+        .click({ timeout: 8_000 });
       await expect(ownerPage.getByText(/^accepted$/i).first()).toBeVisible({
         timeout: 8_000,
       });

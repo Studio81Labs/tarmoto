@@ -745,9 +745,9 @@ export default function TripPlannerPage() {
   const canCreateInviteLink =
     !serverTripId ||
     serverTripCallerRole === "owner" ||
-    serverTripCallerRole === "admin";
-  // Metadata (title, planner parameters) is owner/admin-only on the
-  // backend. Plain members build and save route geometry but must not be
+    serverTripCallerRole === "editor";
+  // Metadata (title, planner parameters) is owner/editor-only on the
+  // backend. Viewers must not be
   // offered metadata edits that would silently revert — and while a
   // PERSISTED trip's role is still loading, stay locked too: treating
   // that window as editable would let a member queue a metadata PATCH
@@ -756,7 +756,7 @@ export default function TripPlannerPage() {
   const canEditTripMetadata =
     !serverTripId ||
     serverTripCallerRole === "owner" ||
-    serverTripCallerRole === "admin";
+    serverTripCallerRole === "editor";
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast

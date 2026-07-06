@@ -1607,6 +1607,12 @@ export class TripsService {
 
     if (target.role !== role) {
       await this.memberRepo.update({ id: target.id }, { role });
+      if (role === 'viewer') {
+        // A demoted editor's group links would otherwise stay live —
+        // owned by them and invisible to the trip owner — while their
+        // new role can't create links at all. Mirror removeMember.
+        await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
+      }
       await this.activity.recordSafe(tripId, userId, 'member_role_changed', {
         member_user_id: memberUserId,
         role,

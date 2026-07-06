@@ -1481,7 +1481,7 @@ describe("TripPlannerPage", () => {
           {
             user_id: "u-admin",
             display_name: "Admin",
-            role: "admin",
+            role: "editor",
             joined_at: "2026-04-23T09:15:00Z",
           },
         ],

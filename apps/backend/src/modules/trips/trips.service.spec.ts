@@ -1816,6 +1816,12 @@ describe('TripsService', () => {
         { id: 'm-x' },
         { role: 'viewer' },
       );
+      // Demotion revokes the group links the (ex-)editor created — a
+      // viewer can't create links, so theirs must not stay live either.
+      expect(tripShares.revokeAllForTripMember).toHaveBeenCalledWith(
+        TRIP_ID,
+        OTHER_ID,
+      );
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         OWNER_ID,
