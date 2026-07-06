@@ -218,6 +218,66 @@ describe("rerouteAroundConditionInTrip (revision 7)", () => {
     ).toBeGreaterThan(0.005);
   });
 
+  it("picks the owning day from the WHOLE closure line, not its first vertex", () => {
+    // Two-day trip: day 1 runs along 49°N near 15°E, day 2 along 50°N
+    // near 16°E. The closure's FIRST vertex sits near day 1, but the
+    // rest of the line crosses day 2's route much closer — the via must
+    // land on day 2.
+    const twoDayTrip = {
+      ...trip,
+      days: [
+        trip.days[0]!,
+        {
+          ...trip.days[0]!,
+          dayNumber: 2,
+          routeGeometry: {
+            type: "LineString" as const,
+            coordinates: [
+              [16.0, 50.0],
+              [16.1, 50.05],
+              [16.2, 50.1],
+              [16.3, 50.15],
+              [16.4, 50.2],
+            ],
+          },
+          waypoints: [
+            {
+              id: "s2",
+              name: "Start 2",
+              type: "start" as const,
+              location: { lng: 16.0, lat: 50.0 },
+            },
+            {
+              id: "e2",
+              name: "End 2",
+              type: "end" as const,
+              location: { lng: 16.4, lat: 50.2 },
+            },
+          ],
+        },
+      ],
+    };
+    const insert = vi.fn();
+    const done = rerouteAroundConditionInTrip(
+      twoDayTrip as never,
+      {
+        id: "closure-long",
+        // Callers pass the FIRST line vertex as the location.
+        location: { lng: 15.35, lat: 49.4 },
+        line: [
+          { lng: 15.35, lat: 49.4 },
+          { lng: 15.8, lat: 49.8 },
+          { lng: 16.19, lat: 50.095 },
+        ],
+      },
+      insert,
+    );
+    expect(done).toBe(true);
+    const [dayIndex, beforeId] = insert.mock.calls[0]!;
+    expect(dayIndex).toBe(1);
+    expect(beforeId).toBe("e2");
+  });
+
   it("handles point conditions (passes) by borrowing the route direction", () => {
     const insert = vi.fn();
     const done = rerouteAroundConditionInTrip(

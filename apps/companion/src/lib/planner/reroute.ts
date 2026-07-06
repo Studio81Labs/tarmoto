@@ -116,10 +116,16 @@ export function nearestDayIndexToPoint(
   trip: Trip | null,
   location: { lat: number; lng: number },
 ): number {
-  if (!trip) return -1;
+  return nearestDayToPoint(trip, location).index;
+}
+
+function nearestDayToPoint(
+  trip: Trip | null,
+  location: { lat: number; lng: number },
+): { index: number; km: number } {
   let bestDayIndex = -1;
   let bestKm = Number.POSITIVE_INFINITY;
-  trip.days.forEach((day, index) => {
+  trip?.days.forEach((day, index) => {
     const polyline = day.routeGeometry?.coordinates;
     if (!polyline || polyline.length < 2) return;
     for (const [lng, lat] of polyline) {
@@ -131,7 +137,7 @@ export function nearestDayIndexToPoint(
       }
     }
   });
-  return bestDayIndex;
+  return { index: bestDayIndex, km: bestKm };
 }
 
 export function rerouteAroundConditionInTrip(
@@ -144,7 +150,23 @@ export function rerouteAroundConditionInTrip(
   ) => void,
 ): boolean {
   if (!trip) return false;
-  const bestDayIndex = nearestDayIndexToPoint(trip, condition.location);
+  // Owning day from the WHOLE closure line, not just condition.location
+  // (callers pass the line's first vertex): a long closure's first
+  // vertex can sit nearer a different leg than where the closure
+  // actually meets the ridden route.
+  const anchorPoints =
+    condition.line && condition.line.length >= 2
+      ? condition.line
+      : [condition.location];
+  let bestDayIndex = -1;
+  let bestAnchorKm = Number.POSITIVE_INFINITY;
+  for (const point of anchorPoints) {
+    const nearest = nearestDayToPoint(trip, point);
+    if (nearest.index >= 0 && nearest.km < bestAnchorKm) {
+      bestAnchorKm = nearest.km;
+      bestDayIndex = nearest.index;
+    }
+  }
   if (bestDayIndex < 0) return false;
   const day = trip.days[bestDayIndex]!;
 
