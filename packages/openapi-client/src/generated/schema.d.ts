@@ -847,6 +847,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/poi/in-bbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List stored POIs within a bounding box (#849)
+         * @description Reads the offline `pois` store (populated by the weekly import) rather than hitting Overpass live — this is the read path a pannable POI map layer and the companion category bar use. Returns an empty list for a region that has not been imported yet.
+         */
+        get: operations["PoiController_findInBbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/poi/along-route": {
         parameters: {
             query?: never;
@@ -861,6 +881,26 @@ export interface paths {
          * @description Given a route polyline, returns POIs (fuel stations, restaurants, viewpoints, cafés) within `buffer_km` of any route vertex. Each POI is annotated with its distance along the route (in km from start) and its shortest distance to the route, so clients can order them on a day timeline and judge reachability. Used by the mobile fuel-range warning to surface live fuel stations inside legs that exceed the rider’s declared range.
          */
         post: operations["PoiController_findPointsOfInterestAlongRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch a single stored POI by id (#849)
+         * @description Returns one row from the offline `pois` store — the map popup / detail view fetch. 404 when the id is unknown.
+         */
+        get: operations["PoiController_findById"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3916,6 +3956,36 @@ export interface components {
             /** @description Kinds that were actually queried for this response. */
             kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
         };
+        StoredPoiDto: {
+            id: string;
+            /** @description Provider layer, e.g. `osm`. */
+            source: string;
+            external_id: string;
+            name: string | null;
+            /** @description OSM import kind (superset of the live enum). */
+            kind: string;
+            lat: number;
+            lng: number;
+            website: string | null;
+            phone: string | null;
+            opening_hours: string | null;
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            address_country: string | null;
+            cuisine: string | null;
+            brand: string | null;
+            stars: number | null;
+            /** @description OSM detail / attribution URL. */
+            osm_url: string | null;
+            /** @description When the import last wrote this row (ISO 8601). */
+            last_imported_at: string;
+        };
+        StoredPoiListDto: {
+            pois: components["schemas"]["StoredPoiDto"][];
+            /** @description Number of rows returned. */
+            count: number;
+        };
         RoutePointDto: {
             lat: number;
             lng: number;
@@ -5684,6 +5754,8 @@ export type SchemaAccommodationDto = components['schemas']['AccommodationDto'];
 export type SchemaAccommodationListDto = components['schemas']['AccommodationListDto'];
 export type SchemaPoiDto = components['schemas']['PoiDto'];
 export type SchemaPoiListDto = components['schemas']['PoiListDto'];
+export type SchemaStoredPoiDto = components['schemas']['StoredPoiDto'];
+export type SchemaStoredPoiListDto = components['schemas']['StoredPoiListDto'];
 export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
 export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
@@ -7154,6 +7226,34 @@ export interface operations {
             };
         };
     };
+    PoiController_findInBbox: {
+        parameters: {
+            query: {
+                min_lng: number;
+                min_lat: number;
+                max_lng: number;
+                max_lat: number;
+                /** @description Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box. */
+                kinds?: string[];
+                /** @description Max rows to return (default 200, capped at 500). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredPoiListDto"];
+                };
+            };
+        };
+    };
     PoiController_findPointsOfInterestAlongRoute: {
         parameters: {
             query?: never;
@@ -7173,6 +7273,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlongRoutePoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredPoiDto"];
                 };
             };
         };
