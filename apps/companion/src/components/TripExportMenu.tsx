@@ -21,6 +21,8 @@ import {
 import { Button } from "@tarmoto/ui";
 interface TripExportMenuProps {
   trip: Trip | null;
+  /** Compact square trigger (toolbar style) — icon only, label via tooltip. */
+  iconOnly?: boolean;
 }
 /**
  * Export menu for a planned trip (US-39): GPX download, shareable link, and a
@@ -30,7 +32,10 @@ interface TripExportMenuProps {
  * menu doubles as a visual cue that "Load demo trip" or a generated trip is
  * the next step.
  */
-export function TripExportMenu({ trip }: TripExportMenuProps) {
+export function TripExportMenu({
+  trip,
+  iconOnly = false,
+}: TripExportMenuProps) {
   const [open, setOpen] = useState(false);
   const [pushPending, setPushPending] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -117,18 +122,34 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
   }
   return (
     <div className="relative" ref={menuRef}>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => !disabled && setOpen((o) => !o)}
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        leftIcon={<Download size={14} />}
-        rightIcon={<ChevronDown size={12} className="opacity-70" />}
-      >
-        {t("Export ")}
-      </Button>
+      {iconOnly ? (
+        <Button
+          iconOnly
+          variant="secondary"
+          size="sm"
+          onClick={() => !disabled && setOpen((o) => !o)}
+          disabled={disabled}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t("Export")}
+          title={t("Export")}
+        >
+          <Download size={15} />
+        </Button>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => !disabled && setOpen((o) => !o)}
+          disabled={disabled}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          leftIcon={<Download size={14} />}
+          rightIcon={<ChevronDown size={12} className="opacity-70" />}
+        >
+          {t("Export ")}
+        </Button>
+      )}
 
       {open && !disabled && (
         <div
