@@ -5,12 +5,24 @@ import type {
   AccommodationPoi,
   ImportedPoi,
   PoiProvider,
+  StoredPoiFields,
 } from './poi-provider.interface.js';
 import type { PoiImportConfig } from './poi-import.config.js';
 
 const CONFIG: PoiImportConfig = {
   enabled: true,
   bbox: { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 },
+};
+
+const NO_STORED_FIELDS: StoredPoiFields = {
+  opening_hours: null,
+  address_street: null,
+  address_city: null,
+  address_postcode: null,
+  address_country: null,
+  cuisine: null,
+  brand: null,
+  tags: null,
 };
 
 function poi(over: Partial<ImportedPoi> = {}): ImportedPoi {
@@ -22,11 +34,14 @@ function poi(over: Partial<ImportedPoi> = {}): ImportedPoi {
     lng: 18.4,
     website: null,
     phone: null,
+    ...NO_STORED_FIELDS,
     ...over,
   };
 }
 
-function accommodation(over: Partial<AccommodationPoi> = {}): AccommodationPoi {
+function accommodation(
+  over: Partial<AccommodationPoi & StoredPoiFields> = {},
+): AccommodationPoi & StoredPoiFields {
   return {
     external_id: 'way/10',
     name: 'Hotel Beskyd',
@@ -36,6 +51,7 @@ function accommodation(over: Partial<AccommodationPoi> = {}): AccommodationPoi {
     website: null,
     phone: null,
     stars: 3,
+    ...NO_STORED_FIELDS,
     ...over,
   };
 }
@@ -151,6 +167,62 @@ describe('PoiImportService', () => {
     const phone = upsertedRows()[0].phone as string;
     expect(phone.length).toBe(255);
     expect(longPhone.startsWith(phone)).toBe(true);
+  });
+
+  it('persists decision-support fields (hours/address/cuisine/tags)', async () => {
+    provider.findImportPoisInBbox.mockResolvedValueOnce([
+      poi({
+        external_id: 'node/1',
+        opening_hours: 'Mo-Su 08:00-20:00',
+        address_street: 'Náměstí 1',
+        address_city: 'Brno',
+        address_postcode: '60200',
+        address_country: 'CZ',
+        cuisine: 'czech',
+        tags: { amenity: 'restaurant', cuisine: 'czech' },
+      }),
+    ]);
+    await service.import();
+    expect(upsertedRows()[0]).toEqual(
+      expect.objectContaining({
+        opening_hours: 'Mo-Su 08:00-20:00',
+        address_street: 'Náměstí 1',
+        address_city: 'Brno',
+        address_postcode: '60200',
+        address_country: 'CZ',
+        cuisine: 'czech',
+        tags: { amenity: 'restaurant', cuisine: 'czech' },
+      }),
+    );
+  });
+
+  it('persists accommodation stars and address into the store', async () => {
+    provider.findAccommodationsInBbox.mockResolvedValueOnce([
+      accommodation({
+        external_id: 'way/10',
+        stars: 4,
+        address_city: 'Ostrava',
+      }),
+    ]);
+    await service.import();
+    expect(upsertedRows()[0]).toEqual(
+      expect.objectContaining({
+        external_id: 'way/10',
+        stars: 4,
+        address_city: 'Ostrava',
+      }),
+    );
+  });
+
+  it('clamps an over-long opening_hours to the column width', async () => {
+    const longHours = 'Mo-Su 00:00-24:00; '.repeat(50); // > 512
+    provider.findImportPoisInBbox.mockResolvedValueOnce([
+      poi({ external_id: 'node/1', opening_hours: longHours }),
+    ]);
+    await service.import();
+    const oh = upsertedRows()[0].opening_hours as string;
+    expect(oh.length).toBe(512);
+    expect(longHours.startsWith(oh)).toBe(true);
   });
 
   it('dedupes by external_id so a re-import is idempotent', async () => {

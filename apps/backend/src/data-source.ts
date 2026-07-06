@@ -116,6 +116,7 @@ import { AggregateClusterFunZonesByWay1789000000000 } from './migrations/1789000
 import { AddRoadSegmentWayKeyIndex1790000000000 } from './migrations/1790000000000-AddRoadSegmentWayKeyIndex.js';
 import { AddRoadSegmentDeactivatedAt1791000000000 } from './migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from './migrations/1792000000000-AddTripDayLegPreferences.js';
+import { AddPoiDecisionSupportFields1793000000000 } from './migrations/1793000000000-AddPoiDecisionSupportFields.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -250,6 +251,7 @@ export const AppDataSource = new DataSource({
     AddRoadSegmentWayKeyIndex1790000000000,
     AddRoadSegmentDeactivatedAt1791000000000,
     AddTripDayLegPreferences1792000000000,
+    AddPoiDecisionSupportFields1793000000000,
   ],
   synchronize: false,
 });
