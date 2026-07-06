@@ -6,6 +6,7 @@ import { POI_PROVIDER } from './poi-provider.interface.js';
 import { OverpassPoiProvider } from './providers/overpass.provider.js';
 import { PoiController } from './poi.controller.js';
 import { PoiService } from './poi.service.js';
+import { PoiStoreService } from './poi-store.service.js';
 import { PoiImportService } from './poi-import.service.js';
 import { poiImportConfig } from './poi-import.config.js';
 
@@ -26,6 +27,7 @@ import { poiImportConfig } from './poi-import.config.js';
   providers: [
     { provide: POI_PROVIDER, useClass: OverpassPoiProvider },
     PoiService,
+    PoiStoreService,
     PoiImportService,
   ],
   exports: [PoiService, PoiImportService],
