@@ -483,7 +483,10 @@ export type TripActivityAction =
   | "suggestion_voted"
   | "suggestion_vote_removed"
   | "suggestion_accepted"
-  | "suggestion_rejected";
+  | "suggestion_rejected"
+  | "suggestion_reopened"
+  | "member_removed"
+  | "member_role_changed";
 
 export interface TripActivityEntry {
   id: string;
@@ -548,13 +551,85 @@ export const tripCollabApi = {
       `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/reject`,
       { method: "POST" },
     ),
+  /** Flip a resolved suggestion back to `open` (owner/admin only). */
+  reopenSuggestion: (tripId: string, suggestionId: string) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/reopen`,
+      { method: "POST" },
+    ),
   listActivity: (tripId: string, limit?: number) => {
     const query = limit != null ? `?limit=${limit}` : "";
     return apiFetch<TripActivityListResponse>(
       `/trips/${encodeURIComponent(tripId)}/activity${query}`,
     );
   },
+  /**
+   * Email a trip invite to a recipient (they don't need an account yet).
+   * The backend queues the mail best-effort and always answers `queued`,
+   * records a pending-invite row, and mints a personal invite code for
+   * the mail's join link. Re-inviting the same address updates the role
+   * and rotates the code.
+   */
+  invite: (
+    tripId: string,
+    payload: { email: string; message?: string; role?: AssignableTripRole },
+  ) =>
+    apiFetch<{ status: "queued" }>(
+      `/trips/${encodeURIComponent(tripId)}/invite`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  /** Roster: joined members + (owner/editor only) pending invites. */
+  listMembers: (tripId: string) =>
+    apiFetch<TripCollaborators>(`/trips/${encodeURIComponent(tripId)}/members`),
+  updateMemberRole: (
+    tripId: string,
+    memberUserId: string,
+    role: AssignableTripRole,
+  ) =>
+    apiFetch<TripCollaborators>(
+      `/trips/${encodeURIComponent(tripId)}/members/${encodeURIComponent(memberUserId)}`,
+      { method: "PATCH", body: JSON.stringify({ role }) },
+    ),
+  removeMember: (tripId: string, memberUserId: string) =>
+    apiFetch<void>(
+      `/trips/${encodeURIComponent(tripId)}/members/${encodeURIComponent(memberUserId)}`,
+      { method: "DELETE" },
+    ),
+  revokeInvite: (tripId: string, inviteId: string) =>
+    apiFetch<void>(
+      `/trips/${encodeURIComponent(tripId)}/invites/${encodeURIComponent(inviteId)}`,
+      { method: "DELETE" },
+    ),
 };
+
+// ── Collaborator roster (People tab) ──
+
+export type TripMemberRole = "owner" | "editor" | "viewer";
+export type AssignableTripRole = "editor" | "viewer";
+
+export interface TripCollaboratorMember {
+  user_id: string;
+  display_name: string;
+  /** Only present for owner/editor callers — null for viewers. */
+  email: string | null;
+  avatar_url: string | null;
+  role: TripMemberRole;
+  joined_at: string;
+  state: "joined";
+}
+
+export interface TripPendingInvite {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+  state: "invited";
+}
+
+export interface TripCollaborators {
+  members: TripCollaboratorMember[];
+  invites: TripPendingInvite[];
+}
 
 // ── Exploration endpoints (generated OpenAPI contract) ──
 export type ExplorationStats = JsonResponse<

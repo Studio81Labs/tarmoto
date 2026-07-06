@@ -23,7 +23,6 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
     road_preference: "curvy",
     status: "planned",
     member_count: 1,
-    invite_code: "ABCDEFGH",
     members: [],
     created_at: "2026-04-29T10:00:00Z",
     days: [

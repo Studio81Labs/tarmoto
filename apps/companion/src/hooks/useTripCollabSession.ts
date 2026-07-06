@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tripCollabApi, type TripSuggestion } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import {
   emitTripCursor as emitTripCursorSocket,
   onTripCursor,
@@ -237,8 +238,17 @@ export function useTripCollabSession(
     };
   }, [serverTripId]);
 
+  // Gate the fetch on the auth token being hydrated. On a cold deep-link
+  // load (`/trips/planner?tripId=…` — exactly how invited riders arrive)
+  // this effect used to race `AuthSync`'s session hydration: it fired
+  // without a bearer, got a 401, and the modal's Suggestions tab rendered
+  // a permanent "Unauthorized" alert. `apiFetch` has no 401-retry (unlike
+  // the typed client), so key on token *presence* — the fetch starts (or
+  // re-runs) the moment the session lands, and token rotations don't
+  // refetch because the boolean doesn't change.
+  const hasAuthToken = useAuthStore((s) => s.accessToken !== null);
   useEffect(() => {
-    if (!serverTripId) return;
+    if (!serverTripId || !hasAuthToken) return;
     let cancelled = false;
     (async () => {
       try {
@@ -256,7 +266,7 @@ export function useTripCollabSession(
     return () => {
       cancelled = true;
     };
-  }, [serverTripId]);
+  }, [serverTripId, hasAuthToken]);
 
   useEffect(() => {
     if (!serverTripId) return;

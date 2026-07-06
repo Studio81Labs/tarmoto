@@ -31,7 +31,7 @@ describe('SharingService', () => {
   let tripDayRepo: Partial<jest.Mocked<Repository<TripDay>>>;
   let tripMemberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
   let txManager: { save: jest.Mock; increment: jest.Mock; findOne: jest.Mock };
-  let tripsService: { withInviteCodeAllocation: jest.Mock };
+  let tripsService: { withTripTransaction: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
 
   const mockOwner = {
@@ -160,14 +160,12 @@ describe('SharingService', () => {
       findOne: jest.fn().mockResolvedValue({ id: 'shared-1', clone_count: 8 }),
     };
     tripsService = {
-      // Run the persist callback against the mock entity manager with a fixed
-      // (uppercase, 8-char) invite code — stands in for the real allocator's
-      // collision-retry loop without a live DB.
-      withInviteCodeAllocation: jest
+      // Runs the persist callback against the tx-manager stub — stands in
+      // for the real transaction boundary without a live DB.
+      withTripTransaction: jest
         .fn()
-        .mockImplementation(
-          (cb: (m: typeof txManager, code: string) => unknown) =>
-            cb(txManager, 'ABCD2345'),
+        .mockImplementation((cb: (m: typeof txManager) => unknown) =>
+          cb(txManager),
         ),
     };
     privacy = {
@@ -993,18 +991,12 @@ describe('SharingService', () => {
     it('creates a draft trip + day + owner membership and bumps clone_count', async () => {
       const result = await service.cloneRide('viewer-2', 'ride-1');
 
-      // The clone runs through the centralised invite-code allocator (one
-      // collision-safe attempt here) — all writes commit atomically with the
-      // allocated code, so a code clash retries instead of 500-ing.
-      expect(tripsService.withInviteCodeAllocation).toHaveBeenCalledTimes(1);
+      // The clone runs through the shared trip-transaction wrapper — all
+      // writes commit atomically inside one transaction.
+      expect(tripsService.withTripTransaction).toHaveBeenCalledTimes(1);
       expect(tripRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ owner_id: 'viewer-2', status: 'draft' }),
       );
-      // The allocator hands the persist callback the invite code; the cloned
-      // trip must be created with exactly that code (uppercase, so
-      // `TripsService.join` — which upper-cases submitted codes — can find it).
-      const createArg = tripRepo.create!.mock.calls[0]?.[0];
-      expect(createArg?.invite_code).toBe('ABCD2345');
       expect(tripDayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ route_geom: mockRide.route_geom }),
       );

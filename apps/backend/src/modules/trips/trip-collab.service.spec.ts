@@ -795,6 +795,163 @@ describe('TripCollabService', () => {
     });
   });
 
+  describe('moderation is owner-only', () => {
+    it('forbids editors from resolving suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('forbids editors from reopening suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      await expect(
+        service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("forbids editors from deleting other riders' suggestions", async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ suggested_by: OTHER_ID }),
+      );
+      await expect(
+        service.deleteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('viewer role gating', () => {
+    it('blocks viewers from proposing suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      await expect(
+        service.createSuggestion(USER_ID, TRIP_ID, { title: 'Nope' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('blocks viewers from voting and unvoting', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      await expect(
+        service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      await expect(
+        service.unvoteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(txManager.findOne).not.toHaveBeenCalled();
+    });
+
+    it('still lets viewers post messages (comment)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      const message = {
+        id: 'msg-1',
+        trip_id: TRIP_ID,
+        user_id: USER_ID,
+        body: 'hello',
+        moderation_status: 'visible',
+        created_at: NOW,
+        author: { id: USER_ID, display_name: 'Eve' },
+      } as unknown as TripMessage;
+      messageRepo.create.mockImplementation((d) => d as TripMessage);
+      messageRepo.save.mockResolvedValueOnce(message);
+      // createMessage re-reads with the author relation after saving.
+      messageRepo.findOne.mockResolvedValueOnce(message);
+
+      await expect(
+        service.createMessage(USER_ID, TRIP_ID, { body: 'hello' }),
+      ).resolves.toMatchObject({ body: 'hello' });
+    });
+  });
+
+  describe('reopenSuggestion', () => {
+    it('flips a resolved row back to open, records activity, and broadcasts', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'open' }),
+      );
+      voteRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.reopenSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+      );
+
+      // Conditional on the row being resolved, so a double-click can't
+      // fan out duplicate broadcasts for an already-open suggestion.
+      expect(suggestionRepo.update).toHaveBeenCalledWith(
+        {
+          id: SUGGESTION_ID,
+          trip_id: TRIP_ID,
+          status: In(['accepted', 'rejected']),
+        },
+        { status: 'open' },
+      );
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        USER_ID,
+        'suggestion_reopened',
+        expect.objectContaining({ suggestion_id: SUGGESTION_ID }),
+      );
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:suggestion:resolved',
+        { suggestion_id: SUGGESTION_ID, status: 'open' },
+      );
+      expect(result.status).toBe('open');
+    });
+
+    it('400s when the suggestion is already open (affected = 0)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'open' }),
+      );
+
+      await expect(
+        service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('404s a suggestion that does not exist', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('forbids non-owner/admin members from reopening', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+
+      await expect(
+        service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listMessages', () => {
     type MessagesQbMock = {
       leftJoinAndSelect: jest.Mock;

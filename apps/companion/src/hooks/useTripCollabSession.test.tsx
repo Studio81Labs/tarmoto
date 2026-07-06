@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTripCollabSession } from "./useTripCollabSession";
+import { useAuthStore } from "@/stores/auth";
 import type { TripSuggestion } from "@/lib/api";
 import type { TripCursorEvent, TripPresenceEvent } from "@/lib/socket";
 
@@ -82,6 +83,14 @@ describe("useTripCollabSession", () => {
   let deletedCb: ((evt: { trip_id: string }) => void) | undefined;
 
   beforeEach(() => {
+    // The suggestions fetch is gated on a hydrated auth token; seed the
+    // store so the hook behaves as it does for a signed-in rider.
+    useAuthStore
+      .getState()
+      .setSession(
+        { id: "u-test", email: "test@tarmoto.app", displayName: "Test" },
+        "test-access-token",
+      );
     hoisted.listSuggestions.mockReset();
     hoisted.subscribeTrip.mockReset();
     hoisted.unsubscribeTrip.mockReset();
@@ -127,7 +136,36 @@ describe("useTripCollabSession", () => {
   });
 
   afterEach(() => {
+    useAuthStore.getState().clearSession();
     vi.clearAllMocks();
+  });
+
+  it("defers the suggestions fetch until the auth token is hydrated", async () => {
+    // Cold deep-link load (`?tripId=…`): the hook mounts before AuthSync
+    // lands the session. Fetching immediately would 401 and leave a
+    // permanent "Unauthorized" alert in the collaborate modal.
+    useAuthStore.getState().clearSession();
+    hoisted.listSuggestions.mockResolvedValue({
+      data: [makeSuggestion("s-1", "trip-a")],
+    });
+
+    const { result } = renderHook(() => useTripCollabSession("trip-a"));
+
+    expect(hoisted.listSuggestions).not.toHaveBeenCalled();
+
+    // Session lands → the fetch fires with the bearer available.
+    act(() => {
+      useAuthStore
+        .getState()
+        .setSession(
+          { id: "u-test", email: "test@tarmoto.app", displayName: "Test" },
+          "test-access-token",
+        );
+    });
+
+    await waitFor(() => expect(result.current.suggestions).toHaveLength(1));
+    expect(hoisted.listSuggestions).toHaveBeenCalledWith("trip-a");
+    expect(result.current.suggestionsError).toBeNull();
   });
 
   it("clears cursors, presence, and suggestions when serverTripId switches to a new trip", async () => {

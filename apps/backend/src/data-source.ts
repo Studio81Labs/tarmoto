@@ -28,6 +28,7 @@ import { MapShare } from './entities/map-share.entity.js';
 import { TripSuggestion } from './entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from './entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from './entities/trip-message.entity.js';
+import { TripInvite } from './entities/trip-invite.entity.js';
 import { TripActivity } from './entities/trip-activity.entity.js';
 import { DataExportRequest } from './entities/data-export-request.entity.js';
 import { GroupRide } from './entities/group-ride.entity.js';
@@ -117,6 +118,8 @@ import { AddRoadSegmentWayKeyIndex1790000000000 } from './migrations/17900000000
 import { AddRoadSegmentDeactivatedAt1791000000000 } from './migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from './migrations/1792000000000-AddTripDayLegPreferences.js';
 import { AddPoiDecisionSupportFields1793000000000 } from './migrations/1793000000000-AddPoiDecisionSupportFields.js';
+import { AddTripCollaboratorRoles1793000000000 } from './migrations/1793000000000-AddTripCollaboratorRoles.js';
+import { DropTripWideInviteCode1794000000000 } from './migrations/1794000000000-DropTripWideInviteCode.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -154,6 +157,7 @@ export const AppDataSource = new DataSource({
     TripSuggestion,
     TripSuggestionVote,
     TripMessage,
+    TripInvite,
     TripActivity,
     DataExportRequest,
     GroupRide,
@@ -252,6 +256,8 @@ export const AppDataSource = new DataSource({
     AddRoadSegmentDeactivatedAt1791000000000,
     AddTripDayLegPreferences1792000000000,
     AddPoiDecisionSupportFields1793000000000,
+    AddTripCollaboratorRoles1793000000000,
+    DropTripWideInviteCode1794000000000,
   ],
   synchronize: false,
 });

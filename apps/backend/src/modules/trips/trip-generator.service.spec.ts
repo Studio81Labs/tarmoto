@@ -2,7 +2,11 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { TripsService } from './trips.service.js';
@@ -204,6 +208,19 @@ describe('TripGeneratorService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(tripRepo.findOne).not.toHaveBeenCalled();
+      expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
+    });
+
+    it('403s viewers — regenerating the itinerary is a route write', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'viewer',
+      } as TripMember);
+
+      await expect(
+        service.generate(USER_ID, TRIP_ID, {
+          start_location: { lat: 47.0, lng: 11.5 },
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
     });
 

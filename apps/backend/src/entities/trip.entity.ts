@@ -61,9 +61,6 @@ export class Trip {
   @Column({ type: 'varchar', length: 20, default: 'draft' })
   status!: string;
 
-  @Column({ type: 'varchar', length: 12, unique: true })
-  invite_code!: string;
-
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

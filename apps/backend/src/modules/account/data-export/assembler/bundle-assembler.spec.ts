@@ -48,6 +48,7 @@ function emptyRepos() {
     trips: { find: jest.fn().mockResolvedValue([]) },
     tripDays: { find: jest.fn().mockResolvedValue([]) },
     tripMembers: { find: jest.fn().mockResolvedValue([]) },
+    tripInvites: { find: jest.fn().mockResolvedValue([]) },
     reviews: { find: jest.fn().mockResolvedValue([]) },
     hazards: { find: jest.fn().mockResolvedValue([]) },
     badges: { find: jest.fn().mockResolvedValue([]) },
@@ -189,6 +190,44 @@ describe('BundleAssembler', () => {
       JSON.parse(JSON.stringify(tagRows)),
     );
     expect(entries.get('README.txt')).toContain('ride_tag_events.json');
+  });
+
+  it('includes pending trip invites addressed to the rider, without the live join code', async () => {
+    // trip_invites is keyed by EMAIL (no user FK), so it must be pulled
+    // into the Article 15 bundle explicitly. The invite_code stays out —
+    // it's a live join credential, not personal data.
+    const user = makeUser();
+    const repos = emptyRepos();
+    repos.tripInvites.find.mockResolvedValue([
+      {
+        id: 'inv-1',
+        trip_id: 'trip-9',
+        email: user.email,
+        role: 'editor',
+        invite_code: 'SECRETC0',
+        invited_by: 'u2',
+        created_at: new Date('2026-06-01T08:00:00Z'),
+      },
+    ]);
+
+    const assembler = new BundleAssembler(repos);
+    const buf = await streamToBuffer(await assembler.assemble(user));
+    const entries = await listEntries(buf);
+
+    expect(repos.tripInvites.find).toHaveBeenCalledWith({
+      where: { email: user.email.toLowerCase() },
+      order: { created_at: 'ASC' },
+    });
+    const trips = JSON.parse(entries.get('trips.json')!) as {
+      pending_invites: Array<Record<string, unknown>>;
+    };
+    expect(trips.pending_invites).toHaveLength(1);
+    expect(trips.pending_invites[0]).toMatchObject({
+      id: 'inv-1',
+      trip_id: 'trip-9',
+      role: 'editor',
+    });
+    expect(trips.pending_invites[0]).not.toHaveProperty('invite_code');
   });
 
   it('writes bike rows (with rider-entered notes) to bikes.json — US-64', async () => {

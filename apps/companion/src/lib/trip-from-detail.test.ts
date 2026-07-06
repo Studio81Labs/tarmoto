@@ -22,7 +22,6 @@ function makeDetail(
     daily_km_max: 300,
     min_quality: 4,
     road_preference: "scenic",
-    invite_code: "ABCDEFGH",
     members: [
       {
         user_id: "owner-1",

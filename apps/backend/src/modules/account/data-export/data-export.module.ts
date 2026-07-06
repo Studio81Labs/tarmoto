@@ -11,6 +11,7 @@ import { RideStats } from '../../../entities/ride-stats.entity.js';
 import { Trip } from '../../../entities/trip.entity.js';
 import { TripDay } from '../../../entities/trip-day.entity.js';
 import { TripMember } from '../../../entities/trip-member.entity.js';
+import { TripInvite } from '../../../entities/trip-invite.entity.js';
 import { RoadReview } from '../../../entities/road-review.entity.js';
 import { HazardReport } from '../../../entities/hazard-report.entity.js';
 import { UserBadge } from '../../../entities/user-badge.entity.js';
@@ -53,6 +54,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
       Trip,
       TripDay,
       TripMember,
+      TripInvite,
       RoadReview,
       HazardReport,
       UserBadge,
@@ -78,6 +80,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         getRepositoryToken(Trip),
         getRepositoryToken(TripDay),
         getRepositoryToken(TripMember),
+        getRepositoryToken(TripInvite),
         getRepositoryToken(RoadReview),
         getRepositoryToken(HazardReport),
         getRepositoryToken(UserBadge),
@@ -96,6 +99,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         trips: Repository<Trip>,
         tripDays: Repository<TripDay>,
         tripMembers: Repository<TripMember>,
+        tripInvites: Repository<TripInvite>,
         reviews: Repository<RoadReview>,
         hazards: Repository<HazardReport>,
         badges: Repository<UserBadge>,
@@ -114,6 +118,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
           trips,
           tripDays,
           tripMembers,
+          tripInvites,
           reviews,
           hazards,
           badges,
