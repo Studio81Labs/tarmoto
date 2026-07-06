@@ -2443,7 +2443,10 @@ const TripPlannerMapContent = forwardRef<
                     </p>
                   )}
                 </div>
-                {conditionMenu.affectsRoute ? (
+                {conditionMenu.affectsRoute && editable ? (
+                  // Editable maps only: on a read-only detail map the
+                  // store mutation would never reach the immutable trip
+                  // prop — a silent no-op with a desynced store.
                   <button
                     type="button"
                     onClick={() => handleConditionReroute(conditionMenu)}

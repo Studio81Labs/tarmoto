@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  rawBreakTargetKms,
   routePointsWithKm,
   snapWindowKm,
   splitIntoDays,
@@ -297,6 +298,25 @@ describe("splitIntoDays pinned-region snapping", () => {
     const breakKms = plans.slice(0, -1).map((plan) => plan.endKm);
     expect(breakKms).toContain(200);
     expect(breakKms).not.toContain(212);
+  });
+});
+
+describe("rawBreakTargetKms", () => {
+  it("without pins, targets sit at daily-km multiples", () => {
+    expect(rawBreakTargetKms(600, 200, null)).toEqual([200, 400]);
+  });
+
+  it("with pins, targets come from each pinned region — matching the splitter", () => {
+    // Pin at 250 on a 600 km route with a 200 km target: the second
+    // region's break sits at 450 km. Prefetching towns at the
+    // whole-route targets (200/400) would never load a stay near 450.
+    expect(rawBreakTargetKms(600, 200, null, [250])).toEqual([200, 450]);
+  });
+
+  it("forcedDays applies only when there are no pins", () => {
+    expect(rawBreakTargetKms(600, 200, 3)).toEqual([200, 400]);
+    // With a pin, forcedDays is ambiguous across regions → daily target.
+    expect(rawBreakTargetKms(600, 200, 3, [250])).toEqual([200, 450]);
   });
 });
 

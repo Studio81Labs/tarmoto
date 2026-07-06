@@ -564,7 +564,12 @@ export default function TripPlannerPage() {
     try {
       const segments = deriveDayQualitySegments(routeDay);
       const totalKm = routeDay.distanceKm;
-      const targets = rawBreakTargetKms(totalKm, dailyKmTarget, forcedDays);
+      const targets = rawBreakTargetKms(
+        totalKm,
+        dailyKmTarget,
+        forcedDays,
+        useTripStore.getState().pinnedBreakKms,
+      );
       // Overnight-town candidates near each raw break (real POI endpoint);
       // a failed fetch just means breaks land at raw distances.
       const towns = await fetchOvernightTowns(coordinates, targets).catch(

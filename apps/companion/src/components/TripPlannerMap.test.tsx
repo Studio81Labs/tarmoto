@@ -2419,6 +2419,99 @@ describe("TripPlannerMap", () => {
     expect(buildTripClosureRoutesMock).not.toHaveBeenCalled();
   });
 
+  it("hides the condition reroute on read-only maps", () => {
+    // The trip-detail page renders this map without edit callbacks: a
+    // reroute there would mutate only the store while the immutable
+    // trip prop keeps rendering — a silent no-op with a desynced view.
+    const demoClosure = {
+      id: "cl-1",
+      title: "Bridge resurfacing",
+      reason: "roadworks" as const,
+      severity: "partial" as const,
+      geometry: [
+        { lat: 50.1, lng: 14.49 },
+        { lat: 50.12, lng: 14.52 },
+      ],
+      detour: null,
+      country_code: "CZ",
+      region: null,
+      starts_at: "2026-07-01T00:00:00Z",
+      ends_at: "2026-07-18T00:00:00Z",
+      notes: null,
+      source: "operator" as const,
+      created_by: null,
+      created_at: "2026-06-20T00:00:00Z",
+      updated_at: "2026-06-20T00:00:00Z",
+    };
+    const conditionsProps = {
+      closuresData: {
+        closures: [demoClosure],
+        routeClosures: [demoClosure],
+        counts: { full: 0, partial: 1, advisory: 0, total: 1 },
+        routeCounts: { full: 0, partial: 1, advisory: 0, total: 1 },
+        loading: false,
+        routeLoading: false,
+        error: null,
+        routeError: null,
+        previewDate: new Date("2026-07-15T12:00:00Z"),
+      },
+      passesData: {
+        passes: [],
+        routePasses: [],
+        routeClosedCount: 0,
+        routeUnknownCount: 0,
+        loading: false,
+        routeLoading: false,
+        error: null,
+        routeError: null,
+      },
+    };
+
+    // Read-only (no waypoint-edit callbacks): popover opens, no reroute.
+    const readOnlyRef = createRef<TripPlannerMapHandle>();
+    const readOnly = render(
+      <TripPlannerMap
+        ref={readOnlyRef}
+        trip={trip()}
+        month={7}
+        {...conditionsProps}
+      />,
+    );
+    act(() =>
+      readOnlyRef.current?.openConditionPopover({
+        kind: "closure",
+        id: "cl-1",
+      }),
+    );
+    expect(screen.getByText("Bridge resurfacing")).toBeInTheDocument();
+    expect(screen.getByText("Affects your route")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reroute around it" }),
+    ).toBeNull();
+    readOnly.unmount();
+
+    // Editable planner map: the reroute action is offered.
+    const editableRef = createRef<TripPlannerMapHandle>();
+    render(
+      <TripPlannerMap
+        ref={editableRef}
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        {...conditionsProps}
+      />,
+    );
+    act(() =>
+      editableRef.current?.openConditionPopover({
+        kind: "closure",
+        id: "cl-1",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Reroute around it" }),
+    ).toBeInTheDocument();
+  });
+
   it("passes per-segment quality features covering every day to the route source", async () => {
     const multiDayTrip: Trip = {
       ...trip(),

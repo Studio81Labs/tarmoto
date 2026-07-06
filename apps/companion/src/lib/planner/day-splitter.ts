@@ -215,19 +215,33 @@ export function coordinateAtKm(
 
 /**
  * Raw (unsnapped) break targets for a route — used to pre-fetch overnight
- * town candidates near each target before running the split.
+ * town candidates near each target before running the split. Mirrors the
+ * splitter's pinned-region logic: with pins, each region between them
+ * yields its own targets (and forcedDays is ambiguous across regions, so
+ * regions fall back to the daily-km target) — prefetching at whole-route
+ * targets would never load the stays near a shifted in-region target.
  */
 export function rawBreakTargetKms(
   totalKm: number,
   dailyKmTarget: number,
   forcedDays: number | null,
+  pinnedBreakKms: number[] = [],
 ): number[] {
-  return targetBreaksForRegion(
-    0,
-    totalKm,
-    Math.max(1, dailyKmTarget),
-    forcedDays,
-  );
+  const daily = Math.max(1, dailyKmTarget);
+  const pins = [...new Set(pinnedBreakKms)]
+    .filter((km) => km > 0 && km < totalKm)
+    .sort((a, b) => a - b);
+  if (pins.length === 0) {
+    return targetBreaksForRegion(0, totalKm, daily, forcedDays);
+  }
+  const bounds = [0, ...pins, totalKm];
+  const targets: number[] = [];
+  for (let r = 0; r < bounds.length - 1; r += 1) {
+    targets.push(
+      ...targetBreaksForRegion(bounds[r]!, bounds[r + 1]!, daily, null),
+    );
+  }
+  return targets;
 }
 
 export function splitIntoDays(
