@@ -6,7 +6,13 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    ignores: [
+      'eslint.config.mjs',
+      // Generated demo-ride data module (emitted verbatim by
+      // generate-real-demo-rides.mjs) + its one-off generator script.
+      'src/scripts/demo-seed/real-demo-rides.data.ts',
+      'src/scripts/demo-seed/generate-real-demo-rides.mjs',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

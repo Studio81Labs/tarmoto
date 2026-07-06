@@ -49,6 +49,7 @@ import {
 import {
   DEMO_PASS_ROWS,
   DEMO_ROAD_LIKE,
+  type LineString,
   buildDemoRoadSpecs,
   buildLineString,
   lineLengthKm,
@@ -57,6 +58,7 @@ import {
   seedFromString,
   sliceLineByFraction,
 } from './demo-data-builders.js';
+import { REAL_DEMO_RIDES, REAL_DEMO_TRIPS } from './real-demo-rides.data.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /**
@@ -340,7 +342,7 @@ export class DemoSeeder {
     const rides = await this.seedRides(persona, user.id, bikes, rng, now);
     await this.seedRideSegments(persona, roads, rides, rng);
     await this.seedSurfaceReadings(persona, roads, rides, user.id, rng);
-    await this.seedRideStats(rides, rng);
+    await this.seedRideStats(persona, rides, rng);
     const hazards = await this.seedHazards(persona, user.id, roads, rng, now);
     const reviews = await this.seedReviews(persona, user.id, roads, rng, now);
     const sharedRides = await this.seedSharedRides(
@@ -369,6 +371,9 @@ export class DemoSeeder {
     now: Date,
   ): Promise<Ride[]> {
     if (persona.rideCount === 0) return [];
+    if (persona.useRealGpx) {
+      return this.seedRealRides(persona, userId, bikes, rng, now);
+    }
     const repo = this.repo(Ride);
     const rows: Ride[] = [];
     const startOfMonth = new Date(
@@ -428,6 +433,55 @@ export class DemoSeeder {
         }),
       );
     }
+    return repo.save(rows, { chunk: SAVE_CHUNK });
+  }
+
+  /**
+   * Seed a persona's rides from real recorded Calimoto GPX
+   * (`REAL_DEMO_RIDES`) so the companion shows real routes instead of the
+   * synthetic random walk. The recorded timestamps span ~2 years; they are
+   * **rebased** so the newest ride ends ~yesterday relative to the seed run,
+   * preserving each ride's real duration and the gaps between rides — so the
+   * history always looks current (and the home "This month" KPI tiles have
+   * data) no matter when the seed runs. Distance/duration/name/elevation are
+   * the real values from the export; per-ride order matches `REAL_DEMO_RIDES`
+   * so `seedRideStats` can line up the real elevation by index.
+   */
+  private async seedRealRides(
+    persona: DemoPersona,
+    userId: string,
+    bikes: Bike[],
+    rng: () => number,
+    now: Date,
+  ): Promise<Ride[]> {
+    const repo = this.repo(Ride);
+    // Shift the whole history so the most recent ride ends ~1 day ago.
+    const maxEndedMs = Math.max(
+      ...REAL_DEMO_RIDES.map((r) => Date.parse(r.endedAt)),
+    );
+    const rebaseMs = now.getTime() - DAY_MS - maxEndedMs;
+    const rows = REAL_DEMO_RIDES.map((r, i) => {
+      const startedAt = new Date(Date.parse(r.startedAt) + rebaseMs);
+      const endedAt = new Date(startedAt.getTime() + r.durationSec * 1000);
+      const hours = r.durationSec / 3600;
+      const avgSpeed = hours > 0 ? r.distanceKm / hours : 45;
+      const bike = bikes.length > 0 ? bikes[i % bikes.length] : undefined;
+      return repo.create({
+        user_id: userId,
+        started_at: startedAt,
+        ended_at: endedAt,
+        distance_km: round1(r.distanceKm),
+        avg_speed: round1(avgSpeed),
+        max_speed: round1(Math.min(160, avgSpeed * 1.5 + 10 + rng() * 15)),
+        route_geom: lineGeom(r.points),
+        avg_road_quality: round1(3 + rng() * 1.5),
+        avg_curviness: round2(0.35 + rng() * 0.4),
+        ride_type: r.rideType,
+        name: r.name,
+        status: 'completed',
+        bike_id: bike ? bike.id : null,
+      });
+    });
     return repo.save(rows, { chunk: SAVE_CHUNK });
   }
 
@@ -519,10 +573,17 @@ export class DemoSeeder {
    * ride-detail screen read `ride_stats.max_lean_angle`; without these rows
    * the tile renders "—" even when the rider has current-month rides.
    */
-  private async seedRideStats(rides: Ride[], rng: () => number): Promise<void> {
+  private async seedRideStats(
+    persona: DemoPersona,
+    rides: Ride[],
+    rng: () => number,
+  ): Promise<void> {
     if (rides.length === 0) return;
     const repo = this.repo(RideStats);
-    const rows = rides.map((ride) => {
+    const rows = rides.map((ride, i) => {
+      // Real-GPX personas carry real elevation from the export (rides are in
+      // `REAL_DEMO_RIDES` order); everyone else gets a plausible random value.
+      const realElev = persona.useRealGpx ? REAL_DEMO_RIDES[i] : undefined;
       const maxLean = round1(28 + rng() * 22); // 28–50°
       const endedAt = ride.ended_at ?? ride.started_at;
       const durationSec = Math.max(
@@ -545,8 +606,12 @@ export class DemoSeeder {
         max_lean_angle: maxLean,
         avg_lean_angle: round1(maxLean * (0.45 + rng() * 0.2)),
         duration: `${durationSec} seconds`,
-        elevation_gain: round1(200 + rng() * 1200),
-        elevation_loss: round1(200 + rng() * 1200),
+        elevation_gain: realElev
+          ? realElev.elevationGain
+          : round1(200 + rng() * 1200),
+        elevation_loss: realElev
+          ? realElev.elevationLoss
+          : round1(200 + rng() * 1200),
         curve_count: Math.round(20 + rng() * 120),
         lean_distribution_json: {
           '0_10': Math.round((leaning * w0) / wSum),
@@ -658,6 +723,9 @@ export class DemoSeeder {
     rng: () => number,
   ): Promise<number> {
     if (persona.tripCount === 0) return 0;
+    if (persona.useRealGpx) {
+      return this.seedRealTrips(userId, rng);
+    }
     const tripRepo = this.repo(Trip);
     const dayRepo = this.repo(TripDay);
     const wpRepo = this.repo(TripWaypoint);
@@ -934,6 +1002,88 @@ export class DemoSeeder {
     return closures.length;
   }
 
+  /**
+   * Seed a persona's trips from real planned Calimoto routes
+   * (`REAL_DEMO_TRIPS`): the multi-day "Den 1→2→3" trip becomes one
+   * `num_days`=3 trip and the single-day plans become 1-day trips, each with
+   * real route geometry and waypoints. Mirrors {@link seedTrips} (folders,
+   * owner membership, per-day + waypoint rows) but takes geometry from the
+   * export instead of a random walk.
+   */
+  private async seedRealTrips(
+    userId: string,
+    rng: () => number,
+  ): Promise<number> {
+    const tripRepo = this.repo(Trip);
+    const dayRepo = this.repo(TripDay);
+    const wpRepo = this.repo(TripWaypoint);
+    const memberRepo = this.repo(TripMember);
+    const folderRepo = this.repo(TripFolder);
+
+    const folders = await folderRepo.save(
+      (
+        [
+          { name: 'Favourites', color: '#2563eb' },
+          { name: 'Bucket list', color: '#16a34a' },
+        ] as const
+      ).map(({ name, color }, i) =>
+        folderRepo.create({ user_id: userId, name, color, position: i }),
+      ),
+    );
+
+    for (let t = 0; t < REAL_DEMO_TRIPS.length; t++) {
+      const src = REAL_DEMO_TRIPS[t];
+      if (!src) continue;
+      const folder =
+        t % 2 === 0 ? folders[Math.floor(t / 2) % folders.length] : undefined;
+      const trip = await tripRepo.save(
+        tripRepo.create({
+          owner_id: userId,
+          folder_id: folder ? folder.id : null,
+          title: src.title,
+          region: src.region,
+          num_days: src.days.length,
+          daily_km_min: 150,
+          daily_km_max: 350,
+          min_quality: 3,
+          road_preference: 'curvy',
+          status: t === 0 ? 'active' : 'planned',
+          invite_code: token(`${userId}-trip-${t}`, rng).slice(0, 12),
+        }),
+      );
+      await memberRepo.save(
+        memberRepo.create({ trip_id: trip.id, user_id: userId, role: 'owner' }),
+      );
+      for (const srcDay of src.days) {
+        const day = await dayRepo.save(
+          dayRepo.create({
+            trip_id: trip.id,
+            day_number: srcDay.dayNumber,
+            title: srcDay.title,
+            distance_km: round1(srcDay.distanceKm),
+            route_geom: lineGeom(srcDay.points),
+            avg_quality: round1(3 + rng() * 2),
+            curviness_score: round2(0.4 + rng() * 0.4),
+            scenic_score: round2(0.4 + rng() * 0.4),
+          }),
+        );
+        const stops = srcDay.waypoints;
+        await wpRepo.save(
+          stops.map((wp, w) =>
+            wpRepo.create({
+              trip_day_id: day.id,
+              sequence: w,
+              location: coordPoint([wp.lng, wp.lat]),
+              name: waypointName(w, stops.length),
+              waypoint_type: waypointType(w, stops.length),
+            }),
+          ),
+        );
+      }
+    }
+    return REAL_DEMO_TRIPS.length;
+  }
+
   private async awardBadges(userId: string): Promise<number> {
     const { newly_earned } = await this.badges.checkAndAward(userId);
     return newly_earned.length;
@@ -996,6 +1146,11 @@ function pointGeom(p: { lat: number; lng: number }): PointGeom {
 
 function coordPoint(coord: [number, number]): PointGeom {
   return { type: 'Point', coordinates: coord };
+}
+
+/** GeoJSON LineString from concrete `[lng, lat]` pairs (real GPX geometry). */
+function lineGeom(coordinates: [number, number][]): LineString {
+  return { type: 'LineString', coordinates };
 }
 
 function jitter(

@@ -4,6 +4,7 @@ import {
   computeTier,
 } from '../../modules/badges/badge-definitions.js';
 import { DEMO_PERSONAS, demoPasswordFor } from './demo-personas.js';
+import { REAL_DEMO_RIDES, REAL_DEMO_TRIPS } from './real-demo-rides.data.js';
 
 /**
  * Map a persona's declared activity volumes onto the same stat keys the
@@ -101,6 +102,17 @@ describe('demo-personas', () => {
     const stats = personaStats(newbie);
     for (const def of BADGE_DEFINITIONS) {
       expect(computeTier(stats[def.key], def.tiers)).toBeNull();
+    }
+  });
+
+  it('keeps a real-GPX persona in sync with the data module', () => {
+    const real = DEMO_PERSONAS.filter((p) => p.useRealGpx);
+    // The Brno rider is seeded from real Calimoto GPX; its ride/trip counts
+    // must equal the generated data lengths or the seeder would over/under-run.
+    expect(real.length).toBeGreaterThanOrEqual(1);
+    for (const p of real) {
+      expect(p.rideCount).toBe(REAL_DEMO_RIDES.length);
+      expect(p.tripCount).toBe(REAL_DEMO_TRIPS.length);
     }
   });
 

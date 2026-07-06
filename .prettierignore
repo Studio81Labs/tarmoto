@@ -14,3 +14,7 @@ apps/marketing/worker/
 # Prettier must not rewrite it, or the committed file diverges from raw
 # generator output and breaks the openapi-check freshness gate.
 packages/openapi-client/src/generated/
+
+# Generated demo-ride data — emitted verbatim by generate-real-demo-rides.mjs
+# (downsampled real Calimoto GPX). Prettier must not reflow the coordinate data.
+apps/backend/src/scripts/demo-seed/real-demo-rides.data.ts
