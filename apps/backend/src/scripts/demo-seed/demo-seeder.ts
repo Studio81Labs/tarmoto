@@ -455,11 +455,26 @@ export class DemoSeeder {
     now: Date,
   ): Promise<Ride[]> {
     const repo = this.repo(Ride);
-    // Shift the whole history so the most recent ride ends ~1 day ago.
-    const maxEndedMs = Math.max(
-      ...REAL_DEMO_RIDES.map((r) => Date.parse(r.endedAt)),
+    // Shift the whole history so the most recent ride ends ~1 hour ago.
+    const nowMs = now.getTime();
+    const startOfMonthMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    const newest = REAL_DEMO_RIDES.reduce((a, b) =>
+      Date.parse(b.endedAt) > Date.parse(a.endedAt) ? b : a,
     );
-    const rebaseMs = now.getTime() - DAY_MS - maxEndedMs;
+    const newestStartMs = Date.parse(newest.startedAt);
+    let rebaseMs = nowMs - 60 * 60 * 1000 - Date.parse(newest.endedAt);
+    // If the newest ride still lands in the *previous* calendar month (the seed
+    // ran early on the 1st), pull it into the current month so the home "This
+    // month" KPI tiles are populated — mirroring the synthetic path — while
+    // keeping ended_at <= now whenever the ride fits in the month so far.
+    if (newestStartMs + rebaseMs < startOfMonthMs) {
+      const latestStartMs = nowMs - newest.durationSec * 1000;
+      const targetStartMs =
+        latestStartMs > startOfMonthMs
+          ? startOfMonthMs + rng() * (latestStartMs - startOfMonthMs)
+          : startOfMonthMs;
+      rebaseMs += targetStartMs - (newestStartMs + rebaseMs);
+    }
     const rows = REAL_DEMO_RIDES.map((r, i) => {
       const startedAt = new Date(Date.parse(r.startedAt) + rebaseMs);
       const endedAt = new Date(startedAt.getTime() + r.durationSec * 1000);
