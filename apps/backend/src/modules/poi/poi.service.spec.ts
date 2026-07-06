@@ -357,26 +357,15 @@ describe('PoiService', () => {
   });
 
   describe('rank', () => {
-    it('drops unnamed POIs with no website or phone', () => {
+    it('keeps unnamed POIs — maps_url makes them navigable — ranked after named ones', () => {
       const result = service.rank(
         [
-          buildPoi({ external_id: 'osm:node:nameless', name: null }),
-          buildPoi({ external_id: 'osm:node:named', name: 'Named Hotel' }),
-        ],
-        anchor.lat,
-        anchor.lng,
-      );
-
-      expect(result.map((r) => r.external_id)).toEqual(['osm:node:named']);
-    });
-
-    it('keeps unnamed POIs if they have a contact channel, ranked after named ones', () => {
-      const result = service.rank(
-        [
+          // Nameless AND no contact, but closer than the named one: it is
+          // still kept (a maps_url deep link makes it navigable) and the
+          // named-first sort ranks it last regardless of proximity.
           buildPoi({
-            external_id: 'osm:node:phone',
+            external_id: 'osm:node:nameless',
             name: null,
-            phone: '+420 555 000 111',
             lat: anchor.lat + 0.0005, // very close
           }),
           buildPoi({
@@ -391,8 +380,18 @@ describe('PoiService', () => {
 
       expect(result.map((r) => r.external_id)).toEqual([
         'osm:node:named-far',
-        'osm:node:phone',
+        'osm:node:nameless',
       ]);
+    });
+
+    it('keeps a lone nameless POI with no website or phone', () => {
+      const result = service.rank(
+        [buildPoi({ external_id: 'osm:node:nameless', name: null })],
+        anchor.lat,
+        anchor.lng,
+      );
+
+      expect(result.map((r) => r.external_id)).toEqual(['osm:node:nameless']);
     });
 
     it('caps results at the configured maximum', () => {
@@ -543,7 +542,7 @@ describe('PoiService', () => {
       'fuel_station',
     ];
 
-    it('drops unnamed POIs with no website or phone', () => {
+    it('keeps unnamed POIs alongside named ones — maps_url makes them navigable', () => {
       const result = service.rankPois(
         [
           buildNearbyPoi({ external_id: 'osm:node:nameless', name: null }),
@@ -557,24 +556,23 @@ describe('PoiService', () => {
         allKinds,
       );
 
-      expect(result.map((r) => r.external_id)).toEqual(['osm:node:named']);
+      // Both survive (the nameless row now carries a maps_url deep link). The
+      // final list is distance-sorted, so assert membership, not order.
+      expect(result.map((r) => r.external_id).sort()).toEqual([
+        'osm:node:named',
+        'osm:node:nameless',
+      ]);
     });
 
-    it('keeps unnamed POIs if they have a contact channel', () => {
+    it('keeps a lone nameless POI with no website or phone', () => {
       const result = service.rankPois(
-        [
-          buildNearbyPoi({
-            external_id: 'osm:node:phone',
-            name: null,
-            phone: '+420 555 000 111',
-          }),
-        ],
+        [buildNearbyPoi({ external_id: 'osm:node:nameless', name: null })],
         anchor.lat,
         anchor.lng,
         allKinds,
       );
 
-      expect(result.map((r) => r.external_id)).toEqual(['osm:node:phone']);
+      expect(result.map((r) => r.external_id)).toEqual(['osm:node:nameless']);
     });
 
     it('caps results per-kind so one kind cannot squeeze out others', () => {
@@ -795,6 +793,37 @@ describe('PoiService', () => {
 
       expect(result.pois).toHaveLength(1);
       expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
+    });
+
+    it('keeps a nameless on-route fuel stop so the fuel-range warning can see it', async () => {
+      // Unmanned / automated fuel stops on sparse routes often carry no
+      // name, website, or phone — yet they are exactly what the fuel-range
+      // warning must surface. The maps_url deep link makes them navigable,
+      // so the ranker no longer drops them.
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:unmanned',
+          name: null,
+          kind: 'fuel_station',
+          lat: 50.0,
+          lng: 16.75, // right on the route
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      });
+
+      expect(result.pois.map((p) => p.external_id)).toEqual([
+        'osm:node:unmanned',
+      ]);
+      expect(result.pois[0].maps_url).toContain(
+        'www.google.com/maps/search/?api=1&query=',
+      );
     });
 
     it('samples anchors at roughly `bufferKm` spacing along the polyline', async () => {
