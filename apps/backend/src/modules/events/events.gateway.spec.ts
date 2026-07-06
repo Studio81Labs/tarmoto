@@ -317,16 +317,17 @@ describe('EventsGateway', () => {
   });
 
   describe('handleLocationUpdate', () => {
-    it('should broadcast to ride room excluding sender', () => {
+    it('should broadcast to ride room excluding sender', async () => {
       const mockTo = jest.fn().mockReturnValue({ emit: jest.fn() });
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
         rooms: new Set(['client-1', 'ride:ride-1']),
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
@@ -347,16 +348,17 @@ describe('EventsGateway', () => {
       );
     });
 
-    it('should reject authenticated client not in ride room', () => {
+    it('should reject authenticated client not in ride room', async () => {
       const mockTo = jest.fn();
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
         rooms: new Set(['client-1']), // not in ride:ride-1
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
@@ -365,22 +367,46 @@ describe('EventsGateway', () => {
       expect(mockTo).not.toHaveBeenCalled();
     });
 
-    it('should ignore unauthenticated clients', () => {
+    it('should ignore unauthenticated clients', async () => {
       const mockTo = jest.fn();
       const client = {
         id: 'client-2',
         data: {},
         rooms: new Set(['client-2']),
         to: mockTo,
+        leave: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleLocationUpdate(client, {
+      await gateway.handleLocationUpdate(client, {
         ride_id: 'ride-1',
         lat: 49.1,
         lng: 16.75,
       });
 
       expect(mockTo).not.toHaveBeenCalled();
+    });
+
+    it('drops the update and detaches the client when the entitlement is revoked', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce(
+        buildFeatureSnapshot('free', {}, { group_rides: 'force_off' }),
+      );
+      const mockTo = jest.fn();
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['client-1', 'ride:ride-1']),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleLocationUpdate(client, {
+        ride_id: 'ride-1',
+        lat: 49.1,
+        lng: 16.75,
+      });
+
+      expect(mockTo).not.toHaveBeenCalled();
+      expect(client.leave).toHaveBeenCalledWith('ride:ride-1');
     });
   });
 

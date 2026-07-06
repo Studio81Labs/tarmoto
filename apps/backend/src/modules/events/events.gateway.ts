@@ -301,7 +301,7 @@ export class EventsGateway
    * Client sends: { ride_id, lat, lng, speed, heading }
    */
   @SubscribeMessage('location:update')
-  handleLocationUpdate(
+  async handleLocationUpdate(
     @ConnectedSocket() client: Socket,
     @MessageBody()
     data: {
@@ -311,7 +311,7 @@ export class EventsGateway
       speed?: number;
       heading?: number;
     },
-  ): void {
+  ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
       | string
       | undefined;
@@ -320,6 +320,17 @@ export class EventsGateway
     // Verify client is a member of this ride room
     const rideRoom = `ride:${data.ride_id}`;
     if (!client.rooms.has(rideRoom)) return;
+
+    // Re-check the group_rides entitlement on every update, same as the
+    // group:position path: room membership was granted at subscribe
+    // time, and without this re-check a client already in the room
+    // would keep broadcasting after a force_off / tier revoke. Detach
+    // on failure so subsequent sends short-circuit on the room check
+    // instead of re-resolving.
+    if (!(await this.hasGroupRidesFeature(userId))) {
+      client.leave(rideRoom);
+      return;
+    }
 
     // client.to() excludes the sender, unlike server.to()
     client.to(rideRoom).emit('rider:location', {

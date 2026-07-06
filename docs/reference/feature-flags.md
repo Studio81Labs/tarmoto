@@ -24,19 +24,19 @@ The registry mirrors the marketing pricing card one flag per line item.
 Tier naming (decided 2026-07, swapping the original marketing copy):
 **Pro is the €29.99 mid tier, Premium the €49.99 top tier.**
 
-| Key                       | Tiers              | Gated surface                         |
-| ------------------------- | ------------------ | ------------------------------------- |
-| `basic_navigation`        | free, pro, premium | — (client gating only, for now)       |
-| `road_quality_overlay`    | free, pro, premium | — (client gating only, for now)       |
-| `hazard_alerts`           | free, pro, premium | — (client gating only, for now)       |
-| `unlimited_trip_planning` | pro, premium       | — (limit enforcement is a follow-up)  |
-| `full_road_quality_zoom`  | pro, premium       | — (client gating only, for now)       |
-| `offline_maps`            | pro, premium       | — (feature not built yet)             |
-| `gpx_export`              | pro, premium       | `GET /rides/export.gpx`               |
-| `commuter_mode`           | pro, premium       | the whole `/commute/*` controller     |
-| `group_rides`             | premium            | the whole `/group-rides/*` controller |
-| `priority_hazard_alerts`  | premium            | — (feature not built yet)             |
-| `advanced_analytics`      | premium            | — (feature not built yet)             |
+| Key                       | Tiers              | Gated surface                                                                                                       |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `basic_navigation`        | free, pro, premium | — (client gating only, for now)                                                                                     |
+| `road_quality_overlay`    | free, pro, premium | — (client gating only, for now)                                                                                     |
+| `hazard_alerts`           | free, pro, premium | — (client gating only, for now)                                                                                     |
+| `unlimited_trip_planning` | pro, premium       | — (limit enforcement is a follow-up)                                                                                |
+| `full_road_quality_zoom`  | pro, premium       | — (client gating only, for now)                                                                                     |
+| `offline_maps`            | pro, premium       | — (feature not built yet)                                                                                           |
+| `gpx_export`              | pro, premium       | `GET /rides/export.gpx`                                                                                             |
+| `commuter_mode`           | pro, premium       | the whole `/commute/*` controller                                                                                   |
+| `group_rides`             | premium            | `/group-rides` create/join/detail + the socket rooms; `leave`/`end` stay open so a revoked rider can still clean up |
+| `priority_hazard_alerts`  | premium            | — (feature not built yet)                                                                                           |
+| `advanced_analytics`      | premium            | — (feature not built yet)                                                                                           |
 
 (`commuter_mode` is not on the pricing card but is a Pro-tier feature per
 the product spec §Monetization.)
