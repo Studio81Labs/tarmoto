@@ -455,25 +455,25 @@ export class DemoSeeder {
     now: Date,
   ): Promise<Ride[]> {
     const repo = this.repo(Ride);
-    // Shift the whole history so the most recent ride ends ~1 hour ago.
     const nowMs = now.getTime();
     const startOfMonthMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
     const newest = REAL_DEMO_RIDES.reduce((a, b) =>
       Date.parse(b.endedAt) > Date.parse(a.endedAt) ? b : a,
     );
     const newestStartMs = Date.parse(newest.startedAt);
-    let rebaseMs = nowMs - 60 * 60 * 1000 - Date.parse(newest.endedAt);
-    // If the newest ride still lands in the *previous* calendar month (the seed
-    // ran early on the 1st), pull it into the current month so the home "This
-    // month" KPI tiles are populated — mirroring the synthetic path — while
-    // keeping ended_at <= now whenever the ride fits in the month so far.
+    const newestEndMs = Date.parse(newest.endedAt);
+    // Shift the whole history so the most recent ride ends ~1 hour ago.
+    let rebaseMs = nowMs - 60 * 60 * 1000 - newestEndMs;
+    // If a 1 h buffer would push the newest ride into the *previous* calendar
+    // month (the seed ran in the first hour of the 1st), tighten the buffer so
+    // it ends as close to `now` as possible — maximising the chance its start
+    // lands in the current month for the home "This month" KPI tiles. We never
+    // future-date `ended_at` (`getMonthlyStats` excludes rides ending after
+    // now), so if the newest ride is simply longer than the month elapsed so
+    // far, that brief window's tiles stay empty rather than showing a
+    // fabricated future ride.
     if (newestStartMs + rebaseMs < startOfMonthMs) {
-      const latestStartMs = nowMs - newest.durationSec * 1000;
-      const targetStartMs =
-        latestStartMs > startOfMonthMs
-          ? startOfMonthMs + rng() * (latestStartMs - startOfMonthMs)
-          : startOfMonthMs;
-      rebaseMs += targetStartMs - (newestStartMs + rebaseMs);
+      rebaseMs = nowMs - 60 * 1000 - newestEndMs; // end ~1 minute ago
     }
     const rows = REAL_DEMO_RIDES.map((r, i) => {
       const startedAt = new Date(Date.parse(r.startedAt) + rebaseMs);
