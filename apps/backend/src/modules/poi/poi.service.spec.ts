@@ -101,6 +101,9 @@ describe('PoiService', () => {
           osm_url: 'https://www.openstreetmap.org/node/42',
         }),
       );
+      expect(res.pois[0]?.maps_url).toContain(
+        'www.google.com/maps/search/?api=1&query=Koliba',
+      );
     });
 
     it('surfaces hours/address + osm_url on accommodations', async () => {

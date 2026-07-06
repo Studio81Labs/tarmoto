@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
-import { osmDetailUrl } from './providers/overpass.provider.js';
+import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
 import {
   DEFAULT_BUFFER_KM,
@@ -204,6 +204,7 @@ export function toStoredPoiDto(poi: Poi): StoredPoiDto {
     brand: poi.brand,
     stars: poi.stars,
     osm_url: osmDetailUrl(poi.external_id),
+    maps_url: googleMapsUrl(poi.name, lat, lng),
     last_imported_at: poi.last_imported_at.toISOString(),
   };
 }

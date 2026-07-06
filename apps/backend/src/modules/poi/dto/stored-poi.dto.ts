@@ -176,6 +176,12 @@ export class StoredPoiDto {
   osm_url!: string | null;
 
   @ApiProperty({
+    description:
+      'Google Maps deep link (photos / reviews); no API key or call.',
+  })
+  maps_url!: string;
+
+  @ApiProperty({
     description: 'When the import last wrote this row (ISO 8601).',
   })
   last_imported_at!: string;

@@ -752,6 +752,7 @@ export interface Accommodation {
   address_postcode: string | null;
   address_country: string | null;
   osm_url: string | null;
+  maps_url: string;
 }
 
 export interface AccommodationList {
@@ -783,6 +784,7 @@ export interface Poi {
   cuisine: string | null;
   brand: string | null;
   osm_url: string | null;
+  maps_url: string;
 }
 
 export interface PoiList {
@@ -815,6 +817,7 @@ export interface AlongRoutePoi {
   cuisine: string | null;
   brand: string | null;
   osm_url: string | null;
+  maps_url: string;
 }
 
 export interface AlongRoutePoiList {

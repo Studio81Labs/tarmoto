@@ -27,6 +27,7 @@ export interface AccommodationSuggestion {
   address_postcode: string | null;
   address_country: string | null;
   osm_url: string | null;
+  maps_url: string;
 }
 
 export interface AccommodationsResponse {
@@ -56,6 +57,7 @@ export interface RoutePoiSuggestion {
   cuisine: string | null;
   brand: string | null;
   osm_url: string | null;
+  maps_url: string;
 }
 
 export interface AlongRoutePoisResponse {
@@ -85,6 +87,7 @@ export interface StoredPoiSuggestion {
   brand: string | null;
   stars: number | null;
   osm_url: string | null;
+  maps_url: string;
   last_imported_at: string;
 }
 

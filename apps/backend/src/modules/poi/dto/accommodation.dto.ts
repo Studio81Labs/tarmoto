@@ -183,6 +183,13 @@ export class AccommodationDto {
       'ODbL attribution target.',
   })
   osm_url!: string | null;
+
+  @ApiProperty({
+    description:
+      'Google Maps deep link (photos / reviews), built from name + coords ' +
+      '— no API key or call.',
+  })
+  maps_url!: string;
 }
 
 export class AccommodationListDto {

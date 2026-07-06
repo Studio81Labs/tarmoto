@@ -11,7 +11,7 @@ import {
   type AccommodationPoi,
   type PointOfInterest,
 } from './poi-provider.interface.js';
-import { osmDetailUrl } from './providers/overpass.provider.js';
+import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import {
   ACCOMMODATION_KINDS,
   AccommodationDto,
@@ -165,6 +165,7 @@ export class PoiService {
       address_postcode: poi.address_postcode,
       address_country: poi.address_country,
       osm_url: osmDetailUrl(poi.external_id),
+      maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
     }));
   }
 
@@ -269,6 +270,7 @@ export class PoiService {
       cuisine: poi.cuisine,
       brand: poi.brand,
       osm_url: osmDetailUrl(poi.external_id),
+      maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
     }));
   }
 
@@ -425,6 +427,7 @@ export class PoiService {
         cuisine: poi.cuisine,
         brand: poi.brand,
         osm_url: osmDetailUrl(poi.external_id),
+        maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
       }),
     );
   }

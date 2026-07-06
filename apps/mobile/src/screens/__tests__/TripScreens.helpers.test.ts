@@ -337,6 +337,7 @@ function makeAccommodation(
     address_postcode: null,
     address_country: null,
     osm_url: null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=x",
     ...overrides,
   };
 }

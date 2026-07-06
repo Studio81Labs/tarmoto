@@ -4120,6 +4120,8 @@ export interface components {
             address_country: string | null;
             /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
             osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
         };
         AccommodationListDto: {
             accommodations: components["schemas"]["AccommodationDto"][];
@@ -4155,6 +4157,8 @@ export interface components {
             brand: string | null;
             /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
             osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
         };
         PoiListDto: {
             pois: components["schemas"]["PoiDto"][];
@@ -4185,6 +4189,8 @@ export interface components {
             stars: number | null;
             /** @description OSM detail / attribution URL. */
             osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews); no API key or call. */
+            maps_url: string;
             /** @description When the import last wrote this row (ISO 8601). */
             last_imported_at: string;
         };
@@ -4228,6 +4234,8 @@ export interface components {
             stars: number | null;
             /** @description OSM detail / attribution URL. */
             osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews); no API key or call. */
+            maps_url: string;
             /** @description When the import last wrote this row (ISO 8601). */
             last_imported_at: string;
             /** @description Distance from the route start to the POI, km. */
@@ -4285,6 +4293,8 @@ export interface components {
             brand: string | null;
             /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
             osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
         };
         AlongRoutePoiListDto: {
             pois: components["schemas"]["AlongRoutePoiDto"][];
