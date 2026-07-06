@@ -2497,6 +2497,114 @@ describe('TripsService', () => {
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
     });
 
+    it('routes leg by leg when leg_preferences is present and merges the result', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
+      manager.find.mockResolvedValueOnce([{ id: 'd-1' }]);
+
+      routingProvider.route
+        .mockResolvedValueOnce({
+          distance_km: 40,
+          duration_min: 30,
+          geometry: [
+            { lat: 50.0, lng: 14.0 },
+            { lat: 50.1, lng: 14.1 },
+          ],
+        })
+        .mockResolvedValueOnce({
+          distance_km: 60,
+          duration_min: 55,
+          geometry: [
+            { lat: 50.1, lng: 14.1 },
+            { lat: 50.2, lng: 14.2 },
+          ],
+        });
+      mockEnrichment();
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 50.0, lng: 14.0, type: 'start' },
+              { lat: 50.1, lng: 14.1, type: 'via' },
+              { lat: 50.2, lng: 14.2, type: 'end' },
+            ],
+            leg_preferences: ['direct', 'maximum_twisty'],
+          },
+        ],
+        options: { preference: 'direct' },
+      });
+
+      // One router call PER LEG, each with its own preference — the same
+      // requests the live preview used.
+      expect(routingProvider.route).toHaveBeenCalledTimes(2);
+      expect(routingProvider.route).toHaveBeenNthCalledWith(
+        1,
+        [
+          { lat: 50.0, lng: 14.0 },
+          { lat: 50.1, lng: 14.1 },
+        ],
+        expect.objectContaining({ preference: 'direct' }),
+      );
+      expect(routingProvider.route).toHaveBeenNthCalledWith(
+        2,
+        [
+          { lat: 50.1, lng: 14.1 },
+          { lat: 50.2, lng: 14.2 },
+        ],
+        expect.objectContaining({ preference: 'maximum_twisty' }),
+      );
+
+      // Merged geometry drops the duplicated boundary vertex and the day
+      // row carries the summed distance.
+      const geometry = enrichment.aggregate.mock.calls[0]![0] as Array<{
+        lat: number;
+        lng: number;
+      }>;
+      expect(geometry).toEqual([
+        { lat: 50.0, lng: 14.0 },
+        { lat: 50.1, lng: 14.1 },
+        { lat: 50.2, lng: 14.2 },
+      ]);
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'distance_km' in b);
+      expect(dayBodies[0]).toMatchObject({ distance_km: 100 });
+    });
+
+    it('400s when leg_preferences length does not match the routing legs', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 50.0, lng: 14.0, type: 'start' },
+                { lat: 50.2, lng: 14.2, type: 'end' },
+              ],
+              // 2 routing waypoints = 1 leg, but 2 preferences supplied.
+              leg_preferences: ['direct', 'maximum_twisty'],
+            },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(routingProvider.route).not.toHaveBeenCalled();
+    });
+
     it('decouples all existing-day suggestions via In() before replacing all days', async () => {
       // On a multi-day trip, saving all days must decouple suggestions for
       // every existing day before deleting them so in-flight collaboration

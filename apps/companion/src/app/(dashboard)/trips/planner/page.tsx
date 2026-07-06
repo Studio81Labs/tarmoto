@@ -1278,9 +1278,44 @@ export default function TripPlannerPage() {
           ).id ?? null;
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
+      } else if (useTripStore.getState().nameDirty && currentTrip) {
+        // A local rename hasn't reached the server: PUT /route replaces
+        // days but never the title, so without this the response
+        // hydration below would revert the header and lose the name.
+        await tripsApi.update(tripId, {
+          title: tripDisplayName(currentTrip) ?? currentTrip.name,
+        });
       }
+      // Per-leg road overrides ride along with their day (§C): the save
+      // re-routes server-side, and without them a custom leg would
+      // persist a different line than the approved preview. Payload days
+      // are the surviving (non-empty) trip days in order — mirror
+      // saveDays' filter to align indexes.
+      const survivingDayIndexes = (currentTrip?.days ?? [])
+        .map((day, index) => (day.waypoints.length > 0 ? index : -1))
+        .filter((index) => index >= 0);
+      const daysWithLegs = days.map((day, k) => {
+        const dayIndex = survivingDayIndexes[k];
+        const tripDay =
+          dayIndex === undefined ? undefined : currentTrip?.days[dayIndex];
+        if (!tripDay || dayIndex === undefined) return day;
+        const legs = reconcileLegPrefs(
+          legPrefsByDay[dayIndex] ?? [],
+          filterRoutingWaypoints(normalizeDayFinish(tripDay.waypoints)).map(
+            (w) => w.id,
+          ),
+        );
+        if (!legs.some((leg) => leg.preference !== "inherit")) return day;
+        return {
+          ...day,
+          leg_preferences: legs.map((leg) => {
+            const effective = effectiveLegPreference(leg, roadPreference);
+            return effective === "efficient_loop" ? "direct" : effective;
+          }),
+        };
+      });
       const { data } = await tripsApi.saveRoute(tripId, {
-        days,
+        days: daysWithLegs,
         options: routeOptions,
       });
       const hydrated = tripFromDetail(
@@ -1308,6 +1343,8 @@ export default function TripPlannerPage() {
     routing,
     serverTripId,
     plannerParams,
+    legPrefsByDay,
+    roadPreference,
     routeOptions,
     setActiveTrip,
     handlePromotedToServer,

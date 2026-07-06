@@ -44,3 +44,26 @@ it('rejects a day with <2 waypoints', async () => {
     ).length,
   ).toBeGreaterThan(0);
 });
+
+it('accepts per-leg preferences from the routing vocabulary', async () => {
+  expect(
+    await errorsFor({
+      days: [{ ...day(1), leg_preferences: ['direct', 'maximum_twisty'] }],
+    }),
+  ).toHaveLength(0);
+});
+it('rejects leg preferences outside the routing vocabulary', async () => {
+  expect(
+    (
+      await errorsFor({
+        days: [{ ...day(1), leg_preferences: ['autobahn_only'] }],
+      })
+    ).length,
+  ).toBeGreaterThan(0);
+});
+it('rejects a bare string for leg_preferences', async () => {
+  expect(
+    (await errorsFor({ days: [{ ...day(1), leg_preferences: 'direct' }] }))
+      .length,
+  ).toBeGreaterThan(0);
+});

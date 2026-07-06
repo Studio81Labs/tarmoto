@@ -229,6 +229,12 @@ interface TripState {
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
   /** Set routeDirty to true. Called by user-facing controls that change routing inputs. */
+  /**
+   * True while the trip's NAME has a local rename the server hasn't
+   * seen — the route save path must PATCH the title too, or the
+   * save-route response hydration reverts the header.
+   */
+  nameDirty: boolean;
   markRouteDirty: () => void;
   /**
    * Day-scoped dirty: stales ONLY the given day's preview (by index).
@@ -679,6 +685,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
+    nameDirty: false,
     stalePreviewDays: [],
     selectedDayIndex: 0,
     draftPlannerParameters: null,
@@ -701,6 +708,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set({
         activeTrip,
         routeDirty: false,
+        nameDirty: false,
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -802,7 +810,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             : activeTrip,
         );
         if (committed === state) return state;
-        return { ...committed, routeDirty: true };
+        return { ...committed, routeDirty: true, nameDirty: true };
       }),
 
     renameWaypoint: (waypointId, name) =>
@@ -1747,6 +1755,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
         routeDirty: false,
+        nameDirty: false,
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,

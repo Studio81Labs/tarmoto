@@ -296,6 +296,7 @@ type TripStoreSnapshot = {
   relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
   markDayRouteDirty: (dayIndex: number) => void;
+  nameDirty: boolean;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
@@ -489,6 +490,7 @@ describe("TripPlannerPage", () => {
       relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
       markDayRouteDirty: vi.fn(),
+      nameDirty: false,
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
@@ -1550,6 +1552,91 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("PATCHes a renamed title before saving the route of an existing trip", async () => {
+    // PUT /route replaces days but never the title — without the PATCH
+    // the response hydration reverts the header and the rename is lost.
+    // ?tripId keeps the persisted trip mounted (the bare planner URL
+    // drops lingering UUID trips as the new-trip entry point).
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-666666666666",
+      name: "Renamed ride",
+    };
+    storeState.routeDirty = true;
+    storeState.nameDirty = true;
+    tripsApiUpdateMock.mockResolvedValue({ data: {} } as never);
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+      "11111111-2222-4333-8444-666666666666",
+      expect.objectContaining({ title: "Renamed ride" }),
+    );
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("sends per-leg preferences with the save when a LEG override exists", async () => {
+    // The save re-routes server-side: without the leg breakdown a custom
+    // leg would persist a different line than the approved preview.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("s", "start", 10),
+            mkWp("v", "via", 11),
+            mkWp("e", "end", 12),
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        title: null,
+        startLinked: false,
+        waypoints: [
+          { lat: 46, lng: 10, name: "s", type: "start" as BackendWaypointType },
+          { lat: 46, lng: 11, name: "v", type: "via" as BackendWaypointType },
+          { lat: 46, lng: 12, name: "e", type: "end" as BackendWaypointType },
+        ],
+      },
+    ]);
+
+    render(<TripPlannerPage />);
+    // Override the FIRST leg (trip-wide is Maximum twisty via "curvy").
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scenic balance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    const body = tripsApiSaveRouteMock.mock.calls[0]![1] as {
+      days: Array<{ leg_preferences?: string[] }>;
+    };
+    // Leg 1 carries the override; leg 2 inherits the trip-wide character.
+    expect(body.days[0]!.leg_preferences).toEqual([
+      "scenic_balance",
+      "balanced",
+    ]);
   });
 
   it("saves a multi-day payload with days[] and num_days from day count", async () => {

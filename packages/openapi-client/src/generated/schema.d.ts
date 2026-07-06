@@ -4300,6 +4300,8 @@ export interface components {
             title?: string | null;
             startLinked: boolean;
             waypoints: components["schemas"]["SaveRouteWaypointDto"][];
+            /** @description Per-leg road character overrides (revision 3 §C): one entry per consecutive pair of ROUTING waypoints (start/via/end order), so length must equal routing-waypoint count minus one. When present, the day is re-routed leg by leg with these preferences — the same requests the live preview used — instead of one day-wide call. */
+            leg_preferences?: ("direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop")[];
         };
         RouteOptionsDto: {
             avoid_highways?: boolean;
