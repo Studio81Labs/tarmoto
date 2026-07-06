@@ -1456,7 +1456,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a suggestion
-         * @description Authors can always delete their own; trip owners/admins can delete any suggestion.
+         * @description Authors can always delete their own; the trip owner can delete any suggestion.
          */
         delete: operations["TripCollabController_deleteSuggestion"];
         options?: never;
@@ -1474,8 +1474,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept a suggestion (owner/admin only)
-         * @description Marks the suggestion as `accepted`. Only privileged roles may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
+         * Accept a suggestion (owner only)
+         * @description Marks the suggestion as `accepted`. Only the trip owner may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
          */
         post: operations["TripCollabController_acceptSuggestion"];
         delete?: never;
@@ -1493,7 +1493,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reject a suggestion (owner/admin only) */
+        /** Reject a suggestion (owner only) */
         post: operations["TripCollabController_rejectSuggestion"];
         delete?: never;
         options?: never;
@@ -1511,7 +1511,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reopen a resolved suggestion (owner/admin only)
+         * Reopen a resolved suggestion (owner only)
          * @description Flips an `accepted`/`rejected` suggestion back to `open` so the group can keep voting and the owner can re-decide. Reopening an already-open row returns 400.
          */
         post: operations["TripCollabController_reopenSuggestion"];
@@ -8478,7 +8478,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not owner or admin */
+            /** @description Not the trip owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8514,7 +8514,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not owner or admin */
+            /** @description Not the trip owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8550,7 +8550,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not owner or admin */
+            /** @description Not the trip owner */
             403: {
                 headers: {
                     [name: string]: unknown;
