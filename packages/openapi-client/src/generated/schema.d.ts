@@ -896,7 +896,7 @@ export interface paths {
         };
         /**
          * Fetch a single stored POI by id (#849)
-         * @description Returns one row from the offline `pois` store — the map popup / detail view fetch. 404 when the id is unknown.
+         * @description Returns one row from the offline `pois` store — the map popup / detail view fetch. 400 when `id` is not a valid UUID; 404 when it is unknown.
          */
         get: operations["PoiController_findById"];
         put?: never;

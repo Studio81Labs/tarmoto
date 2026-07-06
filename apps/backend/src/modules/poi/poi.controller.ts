@@ -4,6 +4,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -128,10 +129,14 @@ export class PoiController {
     summary: 'Fetch a single stored POI by id (#849)',
     description:
       'Returns one row from the offline `pois` store — the map popup / detail ' +
-      'view fetch. 404 when the id is unknown.',
+      'view fetch. 400 when `id` is not a valid UUID; 404 when it is unknown.',
   })
   @ApiResponse({ status: 200, type: StoredPoiDto })
-  async findById(@Param('id') id: string): Promise<StoredPoiDto> {
+  async findById(
+    // `id` is a UUID column — validate before the query so a non-UUID path
+    // (`/poi/garbage`) is a 400, not a Postgres `invalid input syntax` 500.
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StoredPoiDto> {
     const poi = await this.poiStore.findById(id);
     if (!poi) {
       throw new NotFoundException('POI not found');
