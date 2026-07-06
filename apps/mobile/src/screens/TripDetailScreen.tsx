@@ -26,7 +26,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -256,7 +255,6 @@ export default function TripDetailScreen() {
 
       <ExportGpxAction trip={trip} />
 
-      <InviteCard tripId={trip.id} inviteCode={trip.invite_code} />
       <MembersCard members={trip.members} />
 
       <View style={styles.sectionHeaderRow}>
@@ -471,67 +469,6 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
   );
 }
 
-function InviteCard({
-  tripId,
-  inviteCode,
-}: {
-  tripId: string;
-  inviteCode: string;
-}) {
-  // US-8: the invite code is the only token a rider needs to join, so we
-  // make it the visual centrepiece. Share.share lets riders forward the
-  // details through whatever channel they use — SMS, WhatsApp, etc. — so
-  // we don't need a custom share-sheet component.
-  const [shareError, setShareError] = useState<string | null>(null);
-
-  const handleShare = useCallback(async () => {
-    setShareError(null);
-    try {
-      const message =
-        `Join my Tarmoto trip\n\n` +
-        `Trip ID: ${tripId}\n` +
-        `Invite code: ${inviteCode}\n\n` +
-        `Open Tarmoto → Trips → Join a trip and paste both to ride along.`;
-      await Share.share({ message, title: "Tarmoto trip invite" });
-    } catch (err) {
-      setShareError(err instanceof Error ? err.message : "Unable to share");
-    }
-  }, [tripId, inviteCode]);
-
-  if (!inviteCode) return null;
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.inviteHeader}>
-        <Icon name="account-multiple-plus" size={20} color={t.fg} />
-        <Text style={styles.inviteHeaderLabel}>Invite riders</Text>
-      </View>
-      <Text style={styles.inviteBody}>
-        Share this code so your group can join and plan together.
-      </Text>
-      <View style={styles.inviteCodeRow}>
-        <Text
-          style={styles.inviteCode}
-          selectable
-          accessibilityLabel={`Invite code ${inviteCode}`}
-        >
-          {inviteCode}
-        </Text>
-        <TouchableOpacity
-          style={styles.inviteShareBtn}
-          onPress={() => void handleShare()}
-          accessibilityRole="button"
-          accessibilityLabel="Share invite"
-        >
-          <Icon name="share-variant" size={16} color={t.invFg} />
-          <Text style={styles.inviteShareLabel}>Share</Text>
-        </TouchableOpacity>
-      </View>
-      {shareError ? <Text style={styles.inviteError}>{shareError}</Text> : null}
-    </View>
-  );
-}
-
 function MembersCard({ members }: { members: TripMember[] }) {
   if (members.length === 0) return null;
   // Owner leads, then admins, then members — inside each bucket keep the
@@ -593,23 +530,23 @@ function rolePriority(role: TripMember["role"]): number {
   switch (role) {
     case "owner":
       return 0;
-    case "admin":
+    case "editor":
       return 1;
-    case "member":
+    case "viewer":
       return 2;
   }
 }
 
 // Role badge border + text. All clear AA / 3:1 on the white card:
 // `ACCENT_DARK` is the burnt-orange owner mark (the raw accent fails AA as
-// text), ink marks the admin, and `dim` is the neutral member fallback.
+// text), ink marks the editor, and `dim` is the neutral viewer fallback.
 function roleBadgeColor(role: TripMember["role"]): string {
   switch (role) {
     case "owner":
       return ACCENT_DARK;
-    case "admin":
+    case "editor":
       return t.fg;
-    case "member":
+    case "viewer":
       return t.dim;
   }
 }
@@ -955,62 +892,6 @@ const styles = StyleSheet.create({
     fontFamily: brandFonts.sans,
     fontSize: 12,
     lineHeight: 20,
-  },
-  inviteHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: brandSpacing.s2,
-  },
-  inviteHeaderLabel: {
-    color: t.fg,
-    fontFamily: brandFonts.sans,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  inviteBody: {
-    color: t.dim,
-    fontFamily: brandFonts.sans,
-    fontSize: 12,
-    lineHeight: 20,
-  },
-  inviteCodeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: brandSpacing.s3,
-  },
-  inviteCode: {
-    flex: 1,
-    color: t.fg,
-    fontFamily: brandFonts.mono,
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 1,
-    padding: brandSpacing.s3,
-    backgroundColor: t.sunken,
-    borderRadius: brandRadii.sm,
-    borderWidth: 1,
-    borderColor: t.line,
-  },
-  inviteShareBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: brandSpacing.s1,
-    paddingHorizontal: brandSpacing.s4,
-    minHeight: 44,
-    paddingVertical: brandSpacing.s3,
-    borderRadius: brandRadii.pill,
-    backgroundColor: t.invBg,
-  },
-  inviteShareLabel: {
-    color: t.invFg,
-    fontFamily: brandFonts.sans,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  inviteError: {
-    color: statusFg.danger,
-    fontFamily: brandFonts.sans,
-    fontSize: 11,
   },
   exportBtn: {
     flexDirection: "row",

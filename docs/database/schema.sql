@@ -278,10 +278,28 @@ CREATE TABLE trip_members (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     trip_id         UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role            VARCHAR(20) DEFAULT 'member', -- owner, admin, member
+    role            VARCHAR(20) DEFAULT 'viewer', -- owner, editor, viewer (1793)
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(trip_id, user_id)
 );
+
+-- Pending email invites (the `invited` collaborator state; `joined` lives in
+-- trip_members). One row per (trip, email) carrying the role granted on
+-- acceptance and a PERSONAL invite code used by the emailed join link, so a
+-- single invite can be revoked in isolation. Personal codes are the ONLY
+-- join codes — the static trip-wide code was dropped in migration 1794.
+-- The row is deleted when the invitee joins. (Migrations 1793/1794)
+CREATE TABLE trip_invites (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id         UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    email           VARCHAR(255) NOT NULL,
+    role            VARCHAR(20) NOT NULL DEFAULT 'viewer', -- editor, viewer
+    invite_code     VARCHAR(20) NOT NULL UNIQUE,
+    invited_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(trip_id, email)
+);
+CREATE INDEX idx_trip_invites_email ON trip_invites(email);
 
 CREATE TABLE trip_days (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

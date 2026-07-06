@@ -28,7 +28,7 @@ const MAX_MESSAGE_PAGE_SIZE = 100;
 // suggestions/messages. Regular members can only remove their own
 // authored rows. Keeping the set tight here so role changes don't need
 // to ripple through per-endpoint checks.
-const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
 
 /**
  * Orchestrates the collaborative-trip surface: suggestions, votes,
@@ -112,7 +112,7 @@ export class TripCollabService {
     tripId: string,
     dto: CreateSuggestionDto,
   ): Promise<SuggestionDto> {
-    await this.requireMembership(userId, tripId);
+    await this.requireContributor(userId, tripId);
 
     if (dto.trip_day_id) {
       // A day-scoped suggestion must reference a day that belongs to the
@@ -282,13 +282,73 @@ export class TripCollabService {
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, false);
   }
 
+  /**
+   * Flip an accepted/rejected suggestion back to `open` so the group can
+   * keep voting and the owner can re-decide. Mirrors `resolveSuggestion`
+   * (privileged only, atomic status-guarded UPDATE) with the inverse
+   * transition: resolved → open.
+   */
+  async reopenSuggestion(
+    userId: string,
+    tripId: string,
+    suggestionId: string,
+  ): Promise<SuggestionDto> {
+    const membership = await this.requireMembership(userId, tripId);
+    if (!PRIVILEGED_ROLES.has(membership.role)) {
+      throw new ForbiddenException(
+        'Only the trip owner or an admin can reopen a suggestion',
+      );
+    }
+
+    // Atomic transition: only rows currently resolved may flip back, so
+    // a double-click (or a reopen racing another owner's reopen) can't
+    // fan out duplicate `resolved` broadcasts for an already-open row.
+    const result = await this.suggestionRepo.update(
+      {
+        id: suggestionId,
+        trip_id: tripId,
+        status: In(['accepted', 'rejected']),
+      },
+      { status: 'open' },
+    );
+    if ((result.affected ?? 0) === 0) {
+      const existing = await this.suggestionRepo.findOne({
+        where: { id: suggestionId, trip_id: tripId },
+        select: { id: true, status: true },
+      });
+      if (!existing) throw new NotFoundException('Suggestion not found');
+      throw new BadRequestException('Suggestion is already open');
+    }
+
+    const suggestion = await this.suggestionRepo.findOne({
+      where: { id: suggestionId },
+      relations: { suggester: true },
+    });
+    if (!suggestion) {
+      throw new NotFoundException('Suggestion not found');
+    }
+
+    await this.activity.recordSafe(tripId, userId, 'suggestion_reopened', {
+      suggestion_id: suggestionId,
+      title: suggestion.title,
+    });
+
+    // Same event clients already handle for accept/reject — `open`
+    // simply re-enables the vote controls and clears the badge.
+    this.events.emitToTrip(tripId, 'trip:suggestion:resolved', {
+      suggestion_id: suggestionId,
+      status: 'open',
+    });
+    return this.emitAndReturnSuggestion(userId, tripId, suggestion, false);
+  }
+
   async voteSuggestion(
     userId: string,
     tripId: string,
     suggestionId: string,
     vote: 'up' | 'down',
   ): Promise<SuggestionDto> {
-    await this.requireMembership(userId, tripId);
+    await this.requireContributor(userId, tripId);
 
     // Serialize against `resolveSuggestion` via a pessimistic_write
     // lock on the suggestion row. A naive read-then-write check would
@@ -299,9 +359,13 @@ export class TripCollabService {
     // at which point our status check reflects the final value.
     const { suggestion, hasChange } =
       await this.suggestionRepo.manager.transaction(async (manager) => {
+        // No `relations` here: Postgres rejects `FOR UPDATE` on the
+        // nullable side of the suggester LEFT JOIN (error 0A000). The
+        // suggester is hydrated by the post-tx re-read below; the
+        // locked row only feeds the status check and the DTO fallback
+        // (which tolerates a missing suggester).
         const locked = await manager.findOne(TripSuggestion, {
           where: { id: suggestionId, trip_id: tripId },
-          relations: { suggester: true },
           lock: { mode: 'pessimistic_write' },
         });
         if (!locked) throw new NotFoundException('Suggestion not found');
@@ -329,6 +393,8 @@ export class TripCollabService {
       await this.activity.recordSafe(tripId, userId, 'suggestion_voted', {
         suggestion_id: suggestionId,
         vote,
+        // Title lets the timeline say `voted on "…"` without a join.
+        title: suggestion.title,
       });
     }
 
@@ -400,7 +466,7 @@ export class TripCollabService {
     tripId: string,
     suggestionId: string,
   ): Promise<SuggestionDto> {
-    await this.requireMembership(userId, tripId);
+    await this.requireContributor(userId, tripId);
 
     // Mirrors `voteSuggestion`: pessimistic_write lock serializes
     // against a concurrent resolve so a late retry can't delete a vote
@@ -408,9 +474,10 @@ export class TripCollabService {
     // suggestion.
     const { suggestion, hasChange } =
       await this.suggestionRepo.manager.transaction(async (manager) => {
+        // No `relations` — same FOR UPDATE + LEFT JOIN restriction as
+        // `voteSuggestion` above.
         const locked = await manager.findOne(TripSuggestion, {
           where: { id: suggestionId, trip_id: tripId },
-          relations: { suggester: true },
           lock: { mode: 'pessimistic_write' },
         });
         if (!locked) throw new NotFoundException('Suggestion not found');
@@ -438,7 +505,7 @@ export class TripCollabService {
         tripId,
         userId,
         'suggestion_vote_removed',
-        { suggestion_id: suggestionId },
+        { suggestion_id: suggestionId, title: suggestion.title },
       );
     }
 
@@ -543,6 +610,24 @@ export class TripCollabService {
       where: { trip_id: tripId, user_id: userId },
     });
     if (!membership) throw new NotFoundException('Trip not found');
+    return membership;
+  }
+
+  /**
+   * Membership guard for the write surface viewers don't get:
+   * proposing suggestions and voting. Viewers can still read
+   * everything and post messages (`comment`).
+   */
+  private async requireContributor(
+    userId: string,
+    tripId: string,
+  ): Promise<TripMember> {
+    const membership = await this.requireMembership(userId, tripId);
+    if (membership.role === 'viewer') {
+      throw new ForbiddenException(
+        'Viewers can view and comment only — ask the trip owner for editor access',
+      );
+    }
     return membership;
   }
 

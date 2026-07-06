@@ -440,7 +440,6 @@ export interface Trip extends TripSummary {
   road_preference: RoadPreference;
   days: TripDay[];
   members: TripMember[];
-  invite_code: string;
 }
 
 export interface TripDay {
@@ -506,7 +505,7 @@ export interface Waypoint {
 export interface TripMember {
   user_id: string;
   display_name: string;
-  role: "owner" | "admin" | "member";
+  role: "owner" | "editor" | "viewer";
   joined_at: string;
 }
 

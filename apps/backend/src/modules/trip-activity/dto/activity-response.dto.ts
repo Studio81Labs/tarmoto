@@ -12,6 +12,9 @@ export const TRIP_ACTIVITY_ACTIONS = [
   'suggestion_vote_removed',
   'suggestion_accepted',
   'suggestion_rejected',
+  'suggestion_reopened',
+  'member_removed',
+  'member_role_changed',
 ] as const;
 
 export class TripActivityEntryDto {

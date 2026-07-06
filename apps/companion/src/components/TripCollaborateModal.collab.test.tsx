@@ -33,8 +33,15 @@ const hoisted = vi.hoisted(() => ({
   unvoteSuggestion: vi.fn(),
   acceptSuggestion: vi.fn(),
   rejectSuggestion: vi.fn(),
+  reopenSuggestion: vi.fn(),
   deleteSuggestion: vi.fn(),
   listActivity: vi.fn(),
+  invite: vi.fn(),
+  listMembers: vi.fn(),
+  updateMemberRole: vi.fn(),
+  removeMember: vi.fn(),
+  revokeInvite: vi.fn(),
+  listMine: vi.fn(),
   subscribeTrip: vi.fn(),
   unsubscribeTrip: vi.fn(),
   onTripActivity: vi.fn(),
@@ -51,8 +58,18 @@ vi.mock("@/lib/api", async (importActual) => {
       unvoteSuggestion: hoisted.unvoteSuggestion,
       acceptSuggestion: hoisted.acceptSuggestion,
       rejectSuggestion: hoisted.rejectSuggestion,
+      reopenSuggestion: hoisted.reopenSuggestion,
       deleteSuggestion: hoisted.deleteSuggestion,
       listActivity: hoisted.listActivity,
+      invite: hoisted.invite,
+      listMembers: hoisted.listMembers,
+      updateMemberRole: hoisted.updateMemberRole,
+      removeMember: hoisted.removeMember,
+      revokeInvite: hoisted.revokeInvite,
+    },
+    tripSharesApi: {
+      ...actual.tripSharesApi,
+      listMine: hoisted.listMine,
     },
   };
 });
@@ -106,10 +123,21 @@ describe("TripCollaborateModal — collab tabs", () => {
     hoisted.unvoteSuggestion.mockReset();
     hoisted.acceptSuggestion.mockReset();
     hoisted.rejectSuggestion.mockReset();
+    hoisted.reopenSuggestion.mockReset();
     hoisted.deleteSuggestion.mockReset();
     hoisted.listActivity.mockReset().mockResolvedValue({
       data: { activity: [baseActivity] },
     });
+    hoisted.invite.mockReset();
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: { members: [], invites: [] },
+    });
+    hoisted.updateMemberRole.mockReset();
+    hoisted.removeMember.mockReset();
+    hoisted.revokeInvite.mockReset();
+    hoisted.listMine
+      .mockReset()
+      .mockResolvedValue({ data: { items: [], total: 0 } });
     hoisted.subscribeTrip.mockReset();
     hoisted.unsubscribeTrip.mockReset();
     hoisted.onTripActivity.mockReset().mockReturnValue(() => {});
@@ -411,9 +439,7 @@ describe("TripCollaborateModal — collab tabs", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /create invite link/i }),
-    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
     expect(await screen.findByText(/invite api down/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
@@ -492,7 +518,9 @@ describe("TripCollaborateModal — collab tabs", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
 
-    expect(await screen.findByText(/eve joined the trip/i)).toBeInTheDocument();
+    // The row renders the actor bold and the action clause next to it.
+    expect(await screen.findByText(/joined the trip/i)).toBeInTheDocument();
+    expect(screen.getByText("Eve")).toBeInTheDocument();
   });
 
   it("keeps a live trip:activity entry that arrived before listActivity resolved", async () => {
@@ -546,8 +574,10 @@ describe("TripCollaborateModal — collab tabs", () => {
 
     // Both entries must be visible — the live vote stays on top, the
     // fetched historical entry renders below it.
-    expect(await screen.findByText(/bob voted up/i)).toBeInTheDocument();
-    expect(screen.getByText(/eve joined the trip/i)).toBeInTheDocument();
+    expect(await screen.findByText(/voted up/i)).toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText(/joined the trip/i)).toBeInTheDocument();
+    expect(screen.getByText("Eve")).toBeInTheDocument();
   });
 
   it("renders a readable fallback for an activity action the frontend does not know yet", async () => {
@@ -579,8 +609,456 @@ describe("TripCollaborateModal — collab tabs", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
 
+    expect(await screen.findByText(/suggestion archived/i)).toBeInTheDocument();
+    expect(screen.getByText("Eve")).toBeInTheDocument();
+  });
+
+  it("pages long suggestion lists behind a Show more button", async () => {
+    hoisted.listSuggestions.mockResolvedValueOnce({
+      data: Array.from({ length: 7 }, (_, i) => ({
+        ...baseSuggestion,
+        id: `sug-${i + 1}`,
+        title: `Alternative ${i + 1}`,
+      })),
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+
+    // First page only (5 cards), with the cut-off called out.
+    expect(await screen.findByText("Alternative 1")).toBeInTheDocument();
+    expect(screen.getByText("Alternative 5")).toBeInTheDocument();
+    expect(screen.queryByText("Alternative 6")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /show more/i }));
+
+    expect(screen.getByText("Alternative 7")).toBeInTheDocument();
     expect(
-      await screen.findByText(/eve suggestion archived/i),
+      screen.queryByRole("button", { name: /show more/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("pages long activity feeds behind a Show more button", async () => {
+    hoisted.listActivity.mockReset().mockResolvedValue({
+      data: {
+        activity: Array.from({ length: 12 }, (_, i) => ({
+          ...baseActivity,
+          id: `a-${i + 1}`,
+          actor_name: `Rider ${i + 1}`,
+        })),
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
+
+    expect(await screen.findByText("Rider 1")).toBeInTheDocument();
+    expect(screen.getByText("Rider 10")).toBeInTheDocument();
+    expect(screen.queryByText("Rider 11")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /show earlier activity/i }),
+    );
+
+    expect(screen.getByText("Rider 12")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /show earlier activity/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("collapses resolved suggestions behind a summary row and reopens from it", async () => {
+    hoisted.listSuggestions.mockResolvedValueOnce({
+      data: [
+        { ...baseSuggestion, id: "sug-open", title: "Open idea" },
+        {
+          ...baseSuggestion,
+          id: "sug-acc",
+          title: "Accepted idea",
+          status: "accepted",
+        },
+        {
+          ...baseSuggestion,
+          id: "sug-rej",
+          title: "Rejected idea",
+          status: "rejected",
+        },
+      ],
+    });
+    hoisted.reopenSuggestion.mockResolvedValueOnce({
+      data: { ...baseSuggestion, id: "sug-acc", title: "Accepted idea" },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+
+    // Open proposals lead; resolved history starts collapsed.
+    expect(await screen.findByText("Open idea")).toBeInTheDocument();
+    expect(screen.queryByText("Accepted idea")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rejected idea")).not.toBeInTheDocument();
+
+    const summary = screen.getByRole("button", {
+      name: /2 resolved · 1 accepted/i,
+    });
+    fireEvent.click(summary);
+
+    expect(screen.getByText("Accepted idea")).toBeInTheDocument();
+    expect(screen.getByText("Rejected idea")).toBeInTheDocument();
+
+    // The owner can flip a resolved suggestion back to open.
+    fireEvent.click(screen.getAllByRole("button", { name: /^reopen$/i })[0]!);
+    await waitFor(() => {
+      expect(hoisted.reopenSuggestion).toHaveBeenCalledWith(
+        "server-trip-1",
+        "sug-acc",
+      );
+    });
+  });
+
+  it("hides Reopen from non-owners on resolved suggestions", async () => {
+    hoisted.listSuggestions.mockResolvedValueOnce({
+      data: [
+        {
+          ...baseSuggestion,
+          id: "sug-acc",
+          title: "Accepted idea",
+          status: "accepted",
+        },
+      ],
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /1 resolved · 1 accepted/i }),
+    );
+    expect(screen.getByText("Accepted idea")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^reopen$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("groups the activity feed under Today / Yesterday / Earlier headers", async () => {
+    const hoursAgo = (h: number) =>
+      new Date(Date.now() - h * 3_600_000).toISOString();
+    hoisted.listActivity.mockReset().mockResolvedValue({
+      data: {
+        activity: [
+          { ...baseActivity, id: "a-today", created_at: hoursAgo(2) },
+          {
+            ...baseActivity,
+            id: "a-yesterday",
+            actor_name: "Bob",
+            created_at: hoursAgo(26),
+          },
+          {
+            ...baseActivity,
+            id: "a-earlier",
+            actor_name: "Cid",
+            created_at: hoursAgo(80),
+          },
+        ],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
+
+    expect(await screen.findByText("Today")).toBeInTheDocument();
+    // 26h ago can fall on yesterday or the day before depending on the
+    // wall clock; assert the header set loosely — Yesterday OR Earlier
+    // must carry the middle row, and Earlier always exists for 80h ago.
+    expect(screen.getByText("Earlier")).toBeInTheDocument();
+    expect(screen.getByText("Eve")).toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText("Cid")).toBeInTheDocument();
+  });
+
+  it("invites people by email with a role from the People tab", async () => {
+    hoisted.invite.mockResolvedValueOnce({ data: { status: "queued" } });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/invite role/i), {
+      target: { value: "viewer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    await waitFor(() => {
+      expect(hoisted.invite).toHaveBeenCalledWith("server-trip-1", {
+        email: "rider@example.com",
+        role: "viewer",
+      });
+    });
+    expect(
+      await screen.findByText(/invite sent to rider@example\.com/i),
     ).toBeInTheDocument();
+  });
+
+  it("surfaces an email invite failure inline instead of swallowing it", async () => {
+    hoisted.invite.mockRejectedValueOnce(new Error("Invite mail API down"));
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(
+      await screen.findByText(/invite mail api down/i),
+    ).toBeInTheDocument();
+    expect(hoisted.invite).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the save-trip CTA on the People tab when the trip is not saved", () => {
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId={null}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    expect(
+      screen.getByText(/inviting people needs a saved trip/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/invite email address/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the roster with owner label, role menus, and pending invites", async () => {
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Owner Olga",
+            email: "olga@example.com",
+            avatar_url: null,
+            role: "owner",
+            joined_at: "2026-07-01T10:00:00Z",
+            state: "joined",
+          },
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: "eve@example.com",
+            avatar_url: null,
+            role: "editor",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [
+          {
+            id: "inv-1",
+            email: "petr@example.com",
+            role: "viewer",
+            created_at: "2026-07-03T10:00:00Z",
+            state: "invited",
+          },
+        ],
+      },
+    });
+    hoisted.updateMemberRole.mockResolvedValueOnce({
+      data: { members: [], invites: [] },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    expect(await screen.findByText("Eve")).toBeInTheDocument();
+    // Caller's own row says "You" with the OWNER mark, no role menu.
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText(/^owner$/i)).toBeInTheDocument();
+    // Pending invite renders with the PENDING chip.
+    expect(screen.getByText("petr@example.com")).toBeInTheDocument();
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    // The people count badge on the tab reflects members + invites.
+    expect(screen.getByRole("tab", { name: /people/i }).textContent).toContain(
+      "3",
+    );
+
+    // Owner demotes Eve via the role menu.
+    fireEvent.click(
+      screen.getByRole("button", { name: /change role for eve/i }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /viewer/i }));
+    await waitFor(() => {
+      expect(hoisted.updateMemberRole).toHaveBeenCalledWith(
+        "server-trip-1",
+        "member-1",
+        "viewer",
+      );
+    });
+  });
+
+  it("lets the owner remove a member from the role menu", async () => {
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: null,
+            avatar_url: null,
+            role: "editor",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+    hoisted.removeMember.mockResolvedValueOnce({ data: undefined });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /change role for eve/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /remove from trip/i }),
+    );
+
+    await waitFor(() => {
+      expect(hoisted.removeMember).toHaveBeenCalledWith(
+        "server-trip-1",
+        "member-1",
+      );
+    });
+  });
+
+  it("gates suggestions for viewers: no propose form, votes disabled", async () => {
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: null,
+            avatar_url: null,
+            role: "viewer",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+
+    expect(
+      await screen.findByText(/you're a viewer on this trip/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/suggestion title/i),
+    ).not.toBeInTheDocument();
+    await screen.findByText("Scenic pass alt");
+    expect(screen.getByRole("button", { name: /vote up/i })).toBeDisabled();
   });
 });

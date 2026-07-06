@@ -131,6 +131,26 @@ export class TripCollabController {
     );
   }
 
+  @Post('suggestions/:suggestionId/reopen')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reopen a resolved suggestion (owner/admin only)',
+    description:
+      'Flips an `accepted`/`rejected` suggestion back to `open` so the ' +
+      'group can keep voting and the owner can re-decide. Reopening an ' +
+      'already-open row returns 400.',
+  })
+  @ApiResponse({ status: 200, type: SuggestionDto })
+  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async reopenSuggestion(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('suggestionId', ParseUUIDPipe) suggestionId: string,
+  ): Promise<SuggestionDto> {
+    return this.collab.reopenSuggestion(req.user!.userId, tripId, suggestionId);
+  }
+
   @Post('suggestions/:suggestionId/vote')
   @ApiOperation({
     summary: 'Cast or change a vote on a suggestion',

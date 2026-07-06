@@ -7,7 +7,8 @@ export class JoinTripDto {
     minLength: 4,
     maxLength: 12,
     description:
-      'Short uppercase invite code shown to the trip owner. ' +
+      'Personal invite code from the invite email (each recipient gets ' +
+      'their own; revoking an invite invalidates its code). ' +
       'Case-insensitive on input — server normalizes to uppercase.',
   })
   @Transform(({ value }: { value: unknown }) =>

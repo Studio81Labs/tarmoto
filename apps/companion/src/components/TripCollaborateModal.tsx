@@ -3,28 +3,40 @@ import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
+  ChevronDown,
   Copy,
   Link as LinkIcon,
-  Loader2,
-  MessageSquarePlus,
+  Power,
+  Star,
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import {
   ApiError,
   tripCollabApi,
   tripSharesApi,
+  type AssignableTripRole,
   type TripActivityEntry,
+  type TripCollaborators,
+  type TripMemberRole,
   type TripShareResponse,
   type TripSuggestion,
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
-import { Input, Textarea } from "@tarmoto/ui";
+import { Button, Input, Select, Textarea, Toggle } from "@tarmoto/ui";
 import { UserAvatar } from "@/components/UserAvatar";
-type Tab = "invite" | "suggestions" | "activity";
+type Tab = "invite" | "people" | "suggestions" | "activity";
+// Progressive disclosure page sizes: both lists render newest-first and
+// grow unbounded within a session (suggestions are fetched whole because
+// the map overlay needs every marker; activity merges live socket
+// entries on top of the fetched page). Cards are tall, so suggestions
+// page smaller than the compact activity rows.
+const SUGGESTIONS_PAGE_SIZE = 5;
+const ACTIVITY_PAGE_SIZE = 10;
 interface TripCollaborateModalProps {
   open: boolean;
   trip: Trip | null;
@@ -56,7 +68,8 @@ interface TripCollaborateModalProps {
  * broadcast + activity log + accept/reject from `#251`.
  *
  * Tabs:
- *   • Invite       — read-only shareable link (from `#249`).
+ *   • Invite       — group-link toggle (create/revoke, from `#249`)
+ *                    plus email invites for saved trips.
  *   • Suggestions  — propose / vote / owner accept/reject / delete.
  *   • Activity     — reverse-chronological who-did-what timeline.
  */
@@ -78,6 +91,9 @@ export function TripCollaborateModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [collaborators, setCollaborators] = useState<TripCollaborators | null>(
+    null,
+  );
   const sessionRef = useRef(0);
   const onCloseRef = useRef(onClose);
   const canCreateInviteLink =
@@ -91,6 +107,7 @@ export function TripCollaborateModal({
     setError(null);
     setCopied(false);
     setLoading(false);
+    setCollaborators(null);
     setTab("invite");
   }, [open]);
   useEffect(() => {
@@ -106,6 +123,29 @@ export function TripCollaborateModal({
     const id = window.setTimeout(() => setCopied(false), 2500);
     return () => window.clearTimeout(id);
   }, [copied]);
+  // Rehydrate the group-link toggle from the server. Share state is
+  // reset on every open, but a share created in an earlier session
+  // still exists — without this the toggle would render OFF next to a
+  // live link, and switching it on would mint a duplicate share row.
+  // Only possible for saved trips: local-draft shares carry
+  // `trip_id: null`, so there is nothing reliable to match them on.
+  useEffect(() => {
+    if (!open || !trip || !canCreateInviteLink || !serverTripId) return;
+    const session = sessionRef.current;
+    (async () => {
+      try {
+        const { data } = await tripSharesApi.listMine();
+        if (session !== sessionRef.current) return;
+        const existing = data.items.find((s) => s.trip_id === serverTripId);
+        // Functional update: if the user toggled the link on while this
+        // fetch was in flight, keep the share they just created.
+        if (existing) setShare((prev) => prev ?? existing);
+      } catch (err) {
+        if (session !== sessionRef.current) return;
+        setError(describeError(err));
+      }
+    })();
+  }, [open, trip, canCreateInviteLink, serverTripId]);
   const handleGenerate = useCallback(async () => {
     if (!trip || !canCreateInviteLink) return;
     const session = sessionRef.current;
@@ -126,6 +166,23 @@ export function TripCollaborateModal({
       if (session === sessionRef.current) setLoading(false);
     }
   }, [canCreateInviteLink, serverTripId, trip]);
+  const handleRevoke = useCallback(async () => {
+    if (!share) return;
+    const session = sessionRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      await tripSharesApi.revoke(share.id);
+      if (session !== sessionRef.current) return;
+      setShare(null);
+      setCopied(false);
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      setError(describeError(err));
+    } finally {
+      if (session === sessionRef.current) setLoading(false);
+    }
+  }, [share]);
   const handleCopy = useCallback(async () => {
     if (!share) return;
     const url = buildInviteUrl(share.share_token);
@@ -136,11 +193,61 @@ export function TripCollaborateModal({
       setError("Copy failed — select the URL manually.");
     }
   }, [share]);
+  // "Revoke & regenerate": invalidate the current group link and mint a
+  // fresh one in a single action. The old token stops resolving the
+  // moment the revoke lands; only then is the new share created so a
+  // failure can't leave two live links.
+  const handleRegenerate = useCallback(async () => {
+    if (!trip || !share) return;
+    const session = sessionRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      await tripSharesApi.revoke(share.id);
+      const { data } = await tripSharesApi.create({
+        title: trip.name || "Untitled trip",
+        snapshot: trip as unknown as Record<string, unknown>,
+        trip_id: serverTripId,
+      });
+      if (session !== sessionRef.current) return;
+      setShare(data);
+      setCopied(false);
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      setError(describeError(err));
+    } finally {
+      if (session === sessionRef.current) setLoading(false);
+    }
+  }, [serverTripId, share, trip]);
+  // Roster (People tab + the count badge). Fetched once per open for
+  // saved trips; PeopleTab mutations refresh it via this callback.
+  const refreshCollaborators = useCallback(async () => {
+    if (!serverTripId) return;
+    const session = sessionRef.current;
+    try {
+      const { data } = await tripCollabApi.listMembers(serverTripId);
+      if (session !== sessionRef.current) return;
+      setCollaborators(data);
+    } catch (err) {
+      if (session !== sessionRef.current) return;
+      setError(describeError(err));
+    }
+  }, [serverTripId]);
+  useEffect(() => {
+    if (!open || !serverTripId) return;
+    void refreshCollaborators();
+  }, [open, serverTripId, refreshCollaborators]);
   if (!open) return null;
   const inviteUrl = share ? buildInviteUrl(share.share_token) : null;
   const isOwner = Boolean(
     currentUserId && ownerId && currentUserId === ownerId,
   );
+  const callerRole: TripMemberRole | null =
+    collaborators?.members.find((m) => m.user_id === currentUserId)?.role ??
+    (isOwner ? "owner" : null);
+  const peopleCount = collaborators
+    ? collaborators.members.length + collaborators.invites.length
+    : null;
   return (
     <div
       role="dialog"
@@ -151,71 +258,86 @@ export function TripCollaborateModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl border border-line bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.25)] flex flex-col">
-        <div className="flex items-start justify-between gap-4 border-b border-line p-6">
-          <div>
-            <h2
-              id="trip-collaborate-title"
-              className="text-lg font-semibold text-ink"
+      <div className="flex max-h-[86vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-cream shadow-[0_24px_60px_rgba(20,17,14,0.32)]">
+        <div className="shrink-0 border-b border-line px-5 pb-3.5 pt-[18px]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users size={15} className="shrink-0 text-accent" />
+                <h2
+                  id="trip-collaborate-title"
+                  className="font-sans text-[19px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink"
+                >
+                  {t("Collaborate on this trip ")}
+                </h2>
+              </div>
+              <p className="mt-1.5 max-w-[380px] text-[12.5px] leading-normal text-fg-dim">
+                {t(
+                  "Share a group link, gather route suggestions from your riders, and track the activity log. ",
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("Close dialog")}
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-line-strong text-fg-dim transition hover:text-ink"
             >
-              {t("Collaborate on this trip ")}
-            </h2>
-            <p className="mt-1 text-sm text-fg-dim">
-              {t(
-                "Share a group link, gather route suggestions from your riders, and track the activity log. ",
-              )}
-            </p>
+              <X size={14} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("Close dialog")}
-            className="rounded-lg p-1.5 text-fg-dim hover:bg-paper hover:text-ink transition"
+          <nav
+            role="tablist"
+            aria-label={t("Collaboration tabs")}
+            className="mt-4 flex gap-[22px]"
           >
-            <X size={16} />
-          </button>
+            {(
+              [
+                { id: "invite", label: "Invite link" },
+                { id: "people", label: "People", badge: peopleCount },
+                { id: "suggestions", label: "Suggestions" },
+                { id: "activity", label: "Activity" },
+              ] as {
+                id: Tab;
+                label: string;
+                badge?: number | null;
+              }[]
+            ).map(({ id, label, badge }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => {
+                  // Clear any parent-level error on tab change so an
+                  // invite-tab failure doesn't bleed into Suggestions /
+                  // Activity where the message is out of context.
+                  setError(null);
+                  setTab(id);
+                }}
+                className={
+                  "relative flex items-center gap-1.5 pb-2.5 text-[13.5px] font-bold transition " +
+                  (tab === id ? "text-ink" : "text-fg-mute hover:text-ink")
+                }
+              >
+                {label}
+                {badge != null && badge > 0 && (
+                  <span className="rounded-full bg-accent px-1.5 py-px font-mono text-[9px] font-bold text-cream">
+                    {badge}
+                  </span>
+                )}
+                {tab === id && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent"
+                  />
+                )}
+              </button>
+            ))}
+          </nav>
         </div>
 
-        <nav
-          role="tablist"
-          aria-label={t("Collaboration tabs")}
-          className="flex border-b border-line bg-paper/60"
-        >
-          {(
-            [
-              { id: "invite", label: "Invite link" },
-              { id: "suggestions", label: "Suggestions" },
-              { id: "activity", label: "Activity" },
-            ] as {
-              id: Tab;
-              label: string;
-            }[]
-          ).map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => {
-                // Clear any parent-level error on tab change so an
-                // invite-tab failure doesn't bleed into Suggestions /
-                // Activity where the message is out of context.
-                setError(null);
-                setTab(id);
-              }}
-              className={
-                "px-4 py-2.5 text-sm font-medium border-b-2 transition " +
-                (tab === id
-                  ? "border-accent text-ink"
-                  : "border-transparent text-fg-dim hover:text-ink")
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {tab === "invite" && (
             <InviteTab
               trip={trip}
@@ -225,7 +347,21 @@ export function TripCollaborateModal({
               inviteUrl={inviteUrl}
               canCreateInviteLink={canCreateInviteLink}
               onGenerate={handleGenerate}
+              onRevoke={handleRevoke}
+              onRegenerate={handleRegenerate}
               onCopy={handleCopy}
+            />
+          )}
+
+          {tab === "people" && (
+            <PeopleTab
+              trip={trip}
+              serverTripId={serverTripId}
+              currentUserId={currentUserId}
+              isOwner={isOwner}
+              collaborators={collaborators}
+              onChanged={refreshCollaborators}
+              onPromoted={onPromoted}
             />
           )}
 
@@ -235,6 +371,7 @@ export function TripCollaborateModal({
               serverTripId={serverTripId}
               currentUserId={currentUserId}
               isOwner={isOwner}
+              callerRole={callerRole}
               externalSuggestions={externalSuggestions}
               onExternalChange={onSuggestionsChange}
               externalError={externalSuggestionsError}
@@ -250,14 +387,7 @@ export function TripCollaborateModal({
             />
           )}
 
-          {error && (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
-            >
-              {error}
-            </p>
-          )}
+          {error && <ErrorAlert className="mt-4">{error}</ErrorAlert>}
         </div>
       </div>
     </div>
@@ -271,6 +401,8 @@ function InviteTab({
   inviteUrl,
   canCreateInviteLink,
   onGenerate,
+  onRevoke,
+  onRegenerate,
   onCopy,
 }: {
   trip: Trip | null;
@@ -280,80 +412,447 @@ function InviteTab({
   inviteUrl: string | null;
   canCreateInviteLink: boolean;
   onGenerate: () => void;
+  onRevoke: () => void;
+  onRegenerate: () => void;
   onCopy: () => void;
 }) {
   if (!trip) {
     return (
-      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
+      <HintBox>
         {t("Generate or load a trip first to create an invite link. ")}
-      </p>
+      </HintBox>
     );
   }
   if (!canCreateInviteLink) {
     return (
-      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
+      <HintBox>
         {t("Only trip owners and admins can create invite links. ")}
-      </p>
-    );
-  }
-  if (!share) {
-    return (
-      <button
-        type="button"
-        onClick={onGenerate}
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent hover:bg-accent/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? (
-          <>
-            <Loader2 size={14} className="animate-spin" />
-            {t("Generating\u2026 ")}
-          </>
-        ) : (
-          <>
-            <LinkIcon size={14} />
-            {t("Create invite link ")}
-          </>
-        )}
-      </button>
+      </HintBox>
     );
   }
   return (
-    <div className="space-y-3">
-      <label className="block text-xs font-medium uppercase tracking-wide text-fg-mute">
-        {t("Invite link ")}
-      </label>
-      <div className="flex items-stretch overflow-hidden rounded-lg border border-line bg-paper">
-        <input
-          readOnly
-          value={inviteUrl ?? ""}
-          aria-label={t("Shareable invite URL")}
-          className="flex-1 bg-transparent px-3 py-2 text-sm text-ink outline-none"
-          onFocus={(event) => event.currentTarget.select()}
+    <div>
+      <div className="mb-3.5 flex items-center justify-between gap-3 rounded-[11px] border border-line bg-cream px-3.5 py-[13px]">
+        <div>
+          <div className="text-[13.5px] font-bold text-ink">
+            {t("Group link")}
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-fg-dim">
+            {share
+              ? t("Anyone with the link can preview")
+              : t("Link sharing is off")}
+          </div>
+        </div>
+        <Toggle
+          checked={share !== null}
+          disabled={loading}
+          ariaLabel={t("Group link")}
+          onChange={(next) => (next ? onGenerate() : onRevoke())}
         />
-        <button
-          type="button"
-          onClick={onCopy}
-          className="flex items-center gap-1.5 border-l border-line px-3 text-sm text-fg-dim hover:bg-paper transition"
-        >
-          {copied ? (
-            <>
-              <Check size={14} className="text-accent" />
-              {t("Copied ")}
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              {t("Copy ")}
-            </>
-          )}
-        </button>
       </div>
-      <p className="text-xs text-fg-mute">
-        {t(
-          "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
-        )}
-      </p>
+
+      {share ? (
+        <>
+          <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+            {t("Invite link ")}
+          </span>
+          <div className="flex gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-line-strong bg-paper px-[13px]">
+              <LinkIcon size={14} className="shrink-0 text-fg-mute" />
+              <input
+                readOnly
+                value={inviteUrl ?? ""}
+                aria-label={t("Shareable invite URL")}
+                className="w-full min-w-0 bg-transparent py-[11px] font-mono text-xs text-fg-dim outline-none"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </div>
+            <Button
+              variant="accent"
+              size="md"
+              uppercase
+              onClick={onCopy}
+              leftIcon={copied ? <Check size={14} /> : <Copy size={14} />}
+            >
+              {copied ? t("Copied ") : t("Copy ")}
+            </Button>
+          </div>
+          <p className="mt-2.5 text-[11.5px] leading-normal text-fg-mute">
+            {t(
+              "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
+            )}
+          </p>
+
+          <div className="my-[18px] h-px bg-line" />
+
+          <div className="flex items-center justify-between gap-3 rounded-[11px] border border-quality-q1/30 bg-quality-q1/5 px-3.5 py-[13px]">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <Power size={14} className="mt-0.5 shrink-0 text-quality-q1" />
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold text-ink">
+                  {t("Revoke & regenerate link")}
+                </div>
+                <div className="mt-0.5 text-[11.5px] leading-normal text-fg-dim">
+                  {t(
+                    "Generates a new link and invalidates the current one. Pending link-invitees will need the new link.",
+                  )}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onRegenerate}
+              className="shrink-0 rounded-lg border border-quality-q1/40 px-3 py-1.5 font-sans text-xs font-bold text-quality-q1 transition hover:bg-quality-q1/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("Revoke")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] leading-normal text-fg-mute">
+          {t(
+            "Turn link sharing on to generate a group invite link. Existing collaborators keep their access.",
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+/**
+ * People tab — the collaborator roster. Merges joined members and
+ * (owner/editor view) pending email invites into one list; the owner
+ * manages roles / removals through the per-row menu.
+ */
+function PeopleTab({
+  trip,
+  serverTripId,
+  currentUserId,
+  isOwner,
+  collaborators,
+  onChanged,
+  onPromoted,
+}: {
+  trip: Trip | null;
+  serverTripId: string | null;
+  currentUserId: string | null;
+  isOwner: boolean;
+  collaborators: TripCollaborators | null;
+  onChanged: () => Promise<void> | void;
+  onPromoted?: ((id: string) => void) | undefined;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<AssignableTripRole>("editor");
+  const [inviting, setInviting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!serverTripId) {
+    return (
+      <PromoteTripCTA
+        trip={trip}
+        onPromoted={onPromoted}
+        headline="Inviting people needs a saved trip"
+        body="Save this trip to the server to invite riders by email and manage who can edit or view."
+      />
+    );
+  }
+  const handleInvite = async () => {
+    const recipient = email.trim();
+    if (!recipient) return;
+    setInviting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await tripCollabApi.invite(serverTripId, { email: recipient, role });
+      setEmail("");
+      setNotice(t("Invite sent to {email}.", { email: recipient }));
+      await onChanged();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setInviting(false);
+    }
+  };
+  const handleRoleChange = async (
+    memberUserId: string,
+    nextRole: AssignableTripRole,
+  ) => {
+    setError(null);
+    try {
+      await tripCollabApi.updateMemberRole(
+        serverTripId,
+        memberUserId,
+        nextRole,
+      );
+      await onChanged();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  };
+  const handleRemoveMember = async (memberUserId: string) => {
+    setError(null);
+    try {
+      await tripCollabApi.removeMember(serverTripId, memberUserId);
+      await onChanged();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  };
+  const handleRevokeInvite = async (inviteId: string) => {
+    setError(null);
+    try {
+      await tripCollabApi.revokeInvite(serverTripId, inviteId);
+      await onChanged();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  };
+  const total = collaborators
+    ? collaborators.members.length + collaborators.invites.length
+    : 0;
+  return (
+    <div>
+      {isOwner && (
+        <div className="mb-4 rounded-xl border border-line bg-paper p-3.5">
+          <div className="mb-2 text-[13px] font-extrabold text-ink">
+            {t("Invite people")}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              tone="cream"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              placeholder={t("rider@email.com")}
+              ariaLabel={t("Invite email address")}
+              maxLength={255}
+              className="min-w-0 flex-1"
+            />
+            <Select
+              tone="cream"
+              value={role}
+              onChange={(value) => setRole(value as AssignableTripRole)}
+              ariaLabel={t("Invite role")}
+              className="w-auto shrink-0"
+            >
+              <option value="editor">{t("Editor")}</option>
+              <option value="viewer">{t("Viewer")}</option>
+            </Select>
+            <Button
+              variant="accent"
+              size="md"
+              uppercase
+              loading={inviting}
+              disabled={inviting || !email.trim()}
+              onClick={handleInvite}
+            >
+              {t("Invite")}
+            </Button>
+          </div>
+          {notice && (
+            <p className="mt-2 text-[11.5px] text-[#1f8a5b]">{notice}</p>
+          )}
+        </div>
+      )}
+
+      {collaborators && (
+        <>
+          <div className="mb-2.5 flex items-center justify-between">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.6px] text-fg-mute">
+              {t("On this trip")}
+            </span>
+            <span className="font-mono text-[9.5px] uppercase text-fg-mute">
+              {t("{count} people", { count: total })}
+            </span>
+          </div>
+          <ul className="flex flex-col gap-1">
+            {collaborators.members.map((member) => {
+              const isSelf = member.user_id === currentUserId;
+              return (
+                <li
+                  key={member.user_id}
+                  className="flex items-center gap-3 px-1.5 py-2.5"
+                >
+                  <UserAvatar
+                    name={isSelf ? "You" : member.display_name}
+                    avatarUrl={member.avatar_url}
+                    size={34}
+                    fontSize={11}
+                    accent={isSelf}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13.5px] font-bold text-ink">
+                      {isSelf ? t("You") : member.display_name}
+                    </div>
+                    {member.email && !isSelf && (
+                      <div className="mt-px truncate font-mono text-[9.5px] text-fg-mute">
+                        {member.email}
+                      </div>
+                    )}
+                  </div>
+                  {member.role === "owner" ? (
+                    <span className="shrink-0 px-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.4px] text-accent">
+                      {t("Owner")}
+                    </span>
+                  ) : isOwner ? (
+                    <RoleMenu
+                      role={member.role as AssignableTripRole}
+                      label={isSelf ? t("You") : member.display_name}
+                      onRoleChange={(next) =>
+                        handleRoleChange(member.user_id, next)
+                      }
+                      onRemove={() => handleRemoveMember(member.user_id)}
+                    />
+                  ) : (
+                    <span className="shrink-0 px-1.5 text-xs font-bold capitalize text-fg-dim">
+                      {member.role === "editor" ? t("Editor") : t("Viewer")}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+            {collaborators.invites.map((invite) => (
+              <li
+                key={invite.id}
+                className="flex items-center gap-3 px-1.5 py-2.5"
+              >
+                <span className="relative shrink-0">
+                  <UserAvatar name={invite.email} size={34} fontSize={11} />
+                  <span
+                    aria-hidden="true"
+                    className="absolute -bottom-px -right-px size-[11px] rounded-full border-2 border-cream bg-[#d19a2e]"
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13.5px] font-bold text-ink">
+                      {invite.email}
+                    </span>
+                    <span className="shrink-0 rounded px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-[0.3px] text-[#b07d1e] bg-[#d19a2e]/15">
+                      {t("Pending")}
+                    </span>
+                  </div>
+                  <div className="mt-px truncate font-mono text-[9.5px] text-fg-mute">
+                    {invite.role === "editor" ? t("Editor") : t("Viewer")}
+                    {" · "}
+                    {t("invited")}
+                  </div>
+                </div>
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeInvite(invite.id)}
+                    aria-label={t("Revoke invite for {email}", {
+                      email: invite.email,
+                    })}
+                    className="flex h-7 w-[30px] shrink-0 items-center justify-center rounded-[7px] border border-line-strong text-fg-mute transition hover:text-quality-q1"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {error && <ErrorAlert className="mt-3">{error}</ErrorAlert>}
+    </div>
+  );
+}
+/**
+ * Owner-only role dropdown per roster row: Editor / Viewer with the
+ * design's capability blurbs, plus the destructive "Remove from trip".
+ */
+function RoleMenu({
+  role,
+  label,
+  onRoleChange,
+  onRemove,
+}: {
+  role: AssignableTripRole;
+  label: string;
+  onRoleChange: (role: AssignableTripRole) => void;
+  onRemove: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        aria-label={t("Change role for {name}", { name: label })}
+        onClick={() => setMenuOpen((current) => !current)}
+        className="flex items-center gap-1.5 rounded-lg border border-line-strong bg-cream px-2.5 py-1.5 text-xs font-bold text-fg-dim transition hover:text-ink"
+      >
+        {role === "editor" ? t("Editor") : t("Viewer")}
+        <ChevronDown size={13} className="text-fg-mute" />
+      </button>
+      {menuOpen && (
+        <>
+          <button
+            type="button"
+            aria-label={t("Close menu")}
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => setMenuOpen(false)}
+          />
+          <div
+            role="menu"
+            className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_12px_32px_rgba(20,17,14,0.18)]"
+          >
+            {[
+              {
+                value: "editor" as const,
+                label: t("Editor"),
+                hint: t("Can edit the route & vote"),
+              },
+              {
+                value: "viewer" as const,
+                label: t("Viewer"),
+                hint: t("Can view & comment only"),
+              },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (option.value !== role) onRoleChange(option.value);
+                }}
+                className={
+                  "block w-full px-3.5 py-2.5 text-left transition hover:bg-paper " +
+                  (option.value === role ? "bg-paper" : "")
+                }
+              >
+                <span
+                  className={
+                    "block text-[12.5px] font-bold " +
+                    (option.value === role ? "text-accent" : "text-ink")
+                  }
+                >
+                  {option.label}
+                </span>
+                <span className="block text-[11px] text-fg-dim">
+                  {option.hint}
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                onRemove();
+              }}
+              className="block w-full border-t border-line px-3.5 py-2.5 text-left text-[12.5px] font-bold text-quality-q1 transition hover:bg-quality-q1/10"
+            >
+              {t("Remove from trip")}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -362,6 +861,7 @@ function SuggestionsTab({
   serverTripId,
   currentUserId,
   isOwner,
+  callerRole,
   externalSuggestions,
   onExternalChange,
   externalError,
@@ -371,6 +871,7 @@ function SuggestionsTab({
   serverTripId: string | null;
   currentUserId: string | null;
   isOwner: boolean;
+  callerRole: TripMemberRole | null;
   externalSuggestions?: TripSuggestion[] | undefined;
   onExternalChange?:
     | React.Dispatch<React.SetStateAction<TripSuggestion[]>>
@@ -393,6 +894,18 @@ function SuggestionsTab({
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // Render-side paging only — the full list stays in state so the map
+  // overlay and live-update merges keep working on every row. Resets
+  // per tab visit (the tab unmounts when switched away from). Open and
+  // resolved page independently; resolved additionally starts collapsed
+  // so the tab leads with what still needs a decision.
+  const [visibleOpenCount, setVisibleOpenCount] = useState(
+    SUGGESTIONS_PAGE_SIZE,
+  );
+  const [visibleResolvedCount, setVisibleResolvedCount] = useState(
+    SUGGESTIONS_PAGE_SIZE,
+  );
+  const [resolvedExpanded, setResolvedExpanded] = useState(false);
   useEffect(() => {
     if (!serverTripId || usingExternal) return;
     let cancelled = false;
@@ -489,6 +1002,14 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
+  const handleReopen = async (id: string) => {
+    try {
+      const { data } = await tripCollabApi.reopenSuggestion(serverTripId, id);
+      setSuggestions((prev) => prev.map((s) => (s.id === id ? data : s)));
+    } catch (err) {
+      setError(describeError(err));
+    }
+  };
   const handleDelete = async (id: string) => {
     try {
       await tripCollabApi.deleteSuggestion(serverTripId, id);
@@ -497,21 +1018,57 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
+  // Viewers are read-and-comment only: the backend 403s their propose /
+  // vote calls, so don't render dead-end controls in the first place.
+  const isViewer = callerRole === "viewer";
+  // Open proposals lead (they need votes / a decision); resolved ones
+  // collapse behind a summary row so history doesn't bury the queue.
+  const openSuggestions = suggestions.filter((s) => s.status === "open");
+  const resolvedSuggestions = suggestions.filter((s) => s.status !== "open");
+  const acceptedCount = resolvedSuggestions.filter(
+    (s) => s.status === "accepted",
+  ).length;
+  const renderCard = (s: TripSuggestion) => (
+    <SuggestionCard
+      key={s.id}
+      suggestion={s}
+      isOwner={isOwner}
+      canVote={!isViewer}
+      isAuthor={currentUserId === s.suggested_by}
+      onVote={(vote) =>
+        s.caller_vote === vote ? handleUnvote(s.id) : handleVote(s.id, vote)
+      }
+      onResolve={(action) => handleResolve(s.id, action)}
+      onReopen={() => handleReopen(s.id)}
+      onDelete={() => handleDelete(s.id)}
+    />
+  );
   return (
-    <div className="space-y-5">
-      {trip ? (
+    <div className="space-y-4">
+      {isViewer ? (
+        <HintBox>
+          {t(
+            "You're a viewer on this trip — you can follow the plan and comment, but proposing and voting need editor access from the owner.",
+          )}
+        </HintBox>
+      ) : trip ? (
         // Propose form is gated on a locally-loaded trip because we
         // anchor the new suggestion at the first waypoint so it has a
         // map marker. Callers who opened a shared `?tripId=` URL cold
         // land here with `trip === null` and see the hint below — they
         // can still view + vote on existing suggestions via the list
         // further down.
-        <section className="space-y-2 rounded-lg border border-line bg-paper p-4">
-          <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
-            <MessageSquarePlus size={14} className="text-accent" />
+        <section className="rounded-xl border border-line bg-paper p-3.5">
+          <h3 className="flex items-center gap-2 text-[13.5px] font-extrabold text-ink">
+            <Star
+              size={15}
+              strokeWidth={0}
+              fill="currentColor"
+              className="shrink-0 text-accent"
+            />
             {t("Propose an alternative ")}
           </h3>
-          <p className="text-xs text-fg-dim">
+          <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
             {t(
               "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
             )}
@@ -523,212 +1080,290 @@ function SuggestionsTab({
             onChange={setTitle}
             ariaLabel={t("Suggestion title")}
             maxLength={200}
+            className="mb-2"
           />
           <Textarea
             tone="cream"
-            placeholder={t("Optional context \u2014 why this route?")}
+            placeholder={t("Optional context — why this route?")}
             value={description}
             onChange={setDescription}
             ariaLabel={t("Suggestion description")}
             rows={2}
             maxLength={2000}
           />
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={creating || !title.trim()}
-            className="flex items-center gap-2 rounded-md bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {creating ? (
-              <>
-                <Loader2 size={12} className="animate-spin" />
-                {t("Submitting\u2026 ")}
-              </>
-            ) : (
-              "Submit suggestion"
-            )}
-          </button>
+          <div className="mt-2.5">
+            <Button
+              variant="accent"
+              size="md"
+              uppercase
+              loading={creating}
+              disabled={creating || !title.trim()}
+              onClick={handleCreate}
+            >
+              {t("Submit suggestion")}
+            </Button>
+          </div>
         </section>
       ) : (
-        <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
+        <HintBox>
           {t(
             "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ",
           )}
-        </p>
+        </HintBox>
       )}
 
       {loading && (
-        <p className="text-sm text-fg-mute">{t("Loading suggestions\u2026")}</p>
+        <p className="text-sm text-fg-mute">{t("Loading suggestions…")}</p>
       )}
 
       {externalError && (
         // Surface a load failure coming from the hook so a silently-
         // swallowed `listSuggestions` error doesn't get rendered as
         // an ambiguous "No suggestions yet" message.
-        <p
-          role="alert"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
-        >
-          {externalError}
-        </p>
+        <ErrorAlert>{externalError}</ErrorAlert>
       )}
 
       {suggestions.length === 0 && !loading && !externalError && (
-        <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
-          {t(
-            "No suggestions yet \u2014 be the first to propose a route change. ",
+        <HintBox>
+          {t("No suggestions yet — be the first to propose a route change. ")}
+        </HintBox>
+      )}
+
+      {openSuggestions.length > 0 && (
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.6px] text-fg-mute">
+              {isOwner ? t("Open · needs your call") : t("Open")}
+            </span>
+            <span className="font-mono text-[9.5px] text-fg-mute">
+              {openSuggestions.length}
+            </span>
+          </div>
+          <ul className="space-y-2.5">
+            {openSuggestions.slice(0, visibleOpenCount).map(renderCard)}
+          </ul>
+          {openSuggestions.length > visibleOpenCount && (
+            <ShowMoreButton
+              label={t("Show more · {count} hidden", {
+                count: openSuggestions.length - visibleOpenCount,
+              })}
+              onClick={() =>
+                setVisibleOpenCount((count) => count + SUGGESTIONS_PAGE_SIZE)
+              }
+            />
           )}
-        </p>
+        </section>
       )}
 
-      <ul className="space-y-3">
-        {suggestions.map((s) => (
-          <SuggestionCard
-            key={s.id}
-            suggestion={s}
-            isOwner={isOwner}
-            isAuthor={currentUserId === s.suggested_by}
-            onVote={(vote) =>
-              s.caller_vote === vote
-                ? handleUnvote(s.id)
-                : handleVote(s.id, vote)
-            }
-            onResolve={(action) => handleResolve(s.id, action)}
-            onDelete={() => handleDelete(s.id)}
-          />
-        ))}
-      </ul>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
-        >
-          {error}
-        </p>
+      {resolvedSuggestions.length > 0 && (
+        <section>
+          <button
+            type="button"
+            aria-expanded={resolvedExpanded}
+            onClick={() => setResolvedExpanded((expanded) => !expanded)}
+            className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-paper px-[13px] py-[11px] text-left transition hover:border-line-strong"
+          >
+            <span className="flex-1 text-[12.5px] font-bold text-fg-dim">
+              {t("{resolved} resolved · {accepted} accepted", {
+                resolved: resolvedSuggestions.length,
+                accepted: acceptedCount,
+              })}
+            </span>
+            <ChevronDown
+              size={13}
+              className={
+                "shrink-0 text-fg-mute transition-transform " +
+                (resolvedExpanded ? "rotate-180" : "")
+              }
+            />
+          </button>
+          {resolvedExpanded && (
+            <>
+              <ul className="mt-2.5 space-y-2.5">
+                {resolvedSuggestions
+                  .slice(0, visibleResolvedCount)
+                  .map(renderCard)}
+              </ul>
+              {resolvedSuggestions.length > visibleResolvedCount && (
+                <ShowMoreButton
+                  label={t("Show more · {count} hidden", {
+                    count: resolvedSuggestions.length - visibleResolvedCount,
+                  })}
+                  onClick={() =>
+                    setVisibleResolvedCount(
+                      (count) => count + SUGGESTIONS_PAGE_SIZE,
+                    )
+                  }
+                />
+              )}
+            </>
+          )}
+        </section>
       )}
+
+      {error && <ErrorAlert>{error}</ErrorAlert>}
     </div>
   );
 }
 function SuggestionCard({
   suggestion,
   isOwner,
+  canVote,
   isAuthor,
   onVote,
   onResolve,
+  onReopen,
   onDelete,
 }: {
   suggestion: TripSuggestion;
   isOwner: boolean;
+  canVote: boolean;
   isAuthor: boolean;
   onVote: (vote: "up" | "down") => void;
   onResolve: (action: "accept" | "reject") => void;
+  onReopen: () => void;
   onDelete: () => void;
 }) {
   const isOpen = suggestion.status === "open";
-  const statusBadge = (
-    <span
+  return (
+    <li
       className={
-        "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
-        (suggestion.status === "accepted"
-          ? "bg-emerald-500/15 text-emerald-700"
-          : suggestion.status === "rejected"
-            ? "bg-red-500/15 text-red-700"
-            : "bg-paper text-fg-dim")
+        "rounded-xl border border-line bg-cream p-3.5" +
+        // Rejected proposals fade back; accepted ones stay full-strength
+        // (they're part of the plan now) — per the v2 design.
+        (suggestion.status === "rejected" ? " opacity-[0.72]" : "")
       }
     >
-      {suggestion.status}
-    </span>
-  );
-  return (
-    <li className="rounded-lg border border-line bg-paper p-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2.5">
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-ink truncate">
+          <h4 className="truncate text-sm font-extrabold text-ink">
             {suggestion.title}
           </h4>
-          <p className="flex items-center gap-1.5 text-xs text-fg-mute">
+          <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-fg-dim">
             <UserAvatar
               name={suggestion.suggester_display_name}
-              size={16}
+              size={18}
               fontSize={8}
             />
             {t("by ")}
             {suggestion.suggester_display_name}
           </p>
         </div>
-        {statusBadge}
+        <span
+          className={
+            "shrink-0 font-mono text-[9px] font-bold uppercase tracking-[0.5px] " +
+            (suggestion.status === "accepted"
+              ? "text-[#1f8a5b]"
+              : suggestion.status === "rejected"
+                ? "text-quality-q1"
+                : "text-fg-mute")
+          }
+        >
+          {suggestion.status}
+        </span>
       </div>
       {suggestion.description && (
-        <p className="mt-2 text-sm text-fg-dim whitespace-pre-wrap">
+        <p className="mt-2.5 whitespace-pre-wrap text-[12.5px] leading-normal text-fg-dim">
           {suggestion.description}
         </p>
       )}
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={!isOpen}
+      <div className="mt-3 flex items-center justify-between gap-2.5">
+        <div className="flex gap-[7px]">
+          <VoteButton
+            active={suggestion.caller_vote === "up"}
+            disabled={!isOpen || !canVote}
+            count={suggestion.up_votes}
+            icon={<ThumbsUp size={13} />}
+            ariaLabel={t("Vote up")}
             onClick={() => onVote("up")}
-            aria-pressed={suggestion.caller_vote === "up"}
-            aria-label={t("Vote up")}
-            className={
-              "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
-              (suggestion.caller_vote === "up"
-                ? "border-accent/50 bg-accent/10 text-accent"
-                : "border-line bg-cream text-fg-dim hover:border-line-strong")
-            }
-          >
-            <ThumbsUp size={12} /> {suggestion.up_votes}
-          </button>
-          <button
-            type="button"
-            disabled={!isOpen}
+          />
+          <VoteButton
+            active={suggestion.caller_vote === "down"}
+            disabled={!isOpen || !canVote}
+            count={suggestion.down_votes}
+            icon={<ThumbsDown size={13} />}
+            ariaLabel={t("Vote down")}
             onClick={() => onVote("down")}
-            aria-pressed={suggestion.caller_vote === "down"}
-            aria-label={t("Vote down")}
-            className={
-              "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
-              (suggestion.caller_vote === "down"
-                ? "border-red-500/50 bg-red-500/10 text-red-700"
-                : "border-line bg-cream text-fg-dim hover:border-line-strong")
-            }
-          >
-            <ThumbsDown size={12} /> {suggestion.down_votes}
-          </button>
+          />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-[7px]">
           {isOwner && isOpen && (
             <>
               <button
                 type="button"
                 onClick={() => onResolve("accept")}
-                className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-500/15"
+                className="rounded-lg border border-[#1f8a5b]/40 bg-[#1f8a5b]/10 px-3 py-1.5 font-sans text-xs font-bold text-[#1f8a5b] transition hover:bg-[#1f8a5b]/20"
               >
                 {t("Accept ")}
               </button>
               <button
                 type="button"
                 onClick={() => onResolve("reject")}
-                className="rounded-md bg-red-500/10 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-500/15"
+                className="rounded-lg border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 font-sans text-xs font-bold text-quality-q1 transition hover:bg-quality-q1/20"
               >
                 {t("Reject ")}
               </button>
             </>
+          )}
+          {isOwner && !isOpen && (
+            <button
+              type="button"
+              onClick={onReopen}
+              className="rounded-lg border border-line-strong px-3 py-1.5 font-sans text-xs font-bold text-fg-dim transition hover:border-ink hover:text-ink"
+            >
+              {t("Reopen")}
+            </button>
           )}
           {(isAuthor || isOwner) && (
             <button
               type="button"
               onClick={onDelete}
               aria-label={t("Delete suggestion")}
-              className="rounded-md bg-paper px-2 py-1 text-xs text-fg-dim hover:bg-paper hover:text-ink"
+              className="flex h-7 w-[30px] items-center justify-center rounded-[7px] border border-line-strong text-fg-mute transition hover:text-ink"
             >
-              <Trash2 size={12} />
+              <Trash2 size={13} />
             </button>
           )}
         </div>
       </div>
     </li>
+  );
+}
+function VoteButton({
+  active,
+  disabled,
+  count,
+  icon,
+  ariaLabel,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  count: number;
+  icon: React.ReactNode;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={ariaLabel}
+      className={
+        // No opacity fade when disabled — on resolved cards the tallies
+        // stay full-strength as a record of the vote (per design); only
+        // the cursor signals they're frozen.
+        "inline-flex items-center gap-1.5 rounded-lg border px-[11px] py-1.5 font-mono text-xs font-bold transition disabled:cursor-not-allowed " +
+        (active
+          ? "border-accent bg-accent/10 text-accent"
+          : "border-line-strong bg-transparent text-fg-dim hover:text-ink")
+      }
+    >
+      {icon}
+      {count}
+    </button>
   );
 }
 function ActivityTab({
@@ -743,6 +1378,7 @@ function ActivityTab({
   const [entries, setEntries] = useState<TripActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(ACTIVITY_PAGE_SIZE);
   useEffect(() => {
     if (!serverTripId) return;
     let cancelled = false;
@@ -803,67 +1439,65 @@ function ActivityTab({
       />
     );
   }
-  if (loading)
-    return <p className="text-sm text-fg-mute">{t("Loading\u2026")}</p>;
+  if (loading) return <p className="text-sm text-fg-mute">{t("Loading…")}</p>;
   // Render the API error BEFORE the empty-state check so a failed fetch
   // surfaces as an actionable alert rather than a misleading "No
   // activity yet" message when auth/network/server issues prevent the
   // list from loading at all.
   if (error) {
-    return (
-      <p
-        role="alert"
-        className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
-      >
-        {error}
-      </p>
-    );
+    return <ErrorAlert>{error}</ErrorAlert>;
   }
   if (entries.length === 0) {
     return (
-      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
+      <HintBox>
         {t(
           "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
         )}
-      </p>
+      </HintBox>
     );
   }
   return (
     <>
-      <ol className="space-y-2">
-        {entries.map((entry) => (
-          <li
-            key={entry.id}
-            className="rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-1.5 font-medium">
-                {entry.actor_name ? (
-                  <>
-                    <UserAvatar
-                      name={entry.actor_name}
-                      size={16}
-                      fontSize={8}
-                    />
-                    {entry.actor_name}
-                  </>
-                ) : (
-                  "System"
-                )}
-              </span>
-              <time
-                dateTime={entry.created_at}
-                className="text-xs text-fg-mute"
-              >
-                {formatRelativeTime(entry.created_at)}
-              </time>
+      {groupActivityByDay(entries.slice(0, visibleCount)).map(
+        ({ bucket, rows }) => (
+          <section key={bucket} className="mt-3.5 first:mt-0">
+            <div className="mb-1 font-mono text-[9.5px] uppercase tracking-[0.8px] text-fg-mute">
+              {DAY_BUCKET_LABELS[bucket]}
             </div>
-            <p className="mt-0.5 text-xs text-fg-dim">
-              {describeActivity(entry)}
-            </p>
-          </li>
-        ))}
-      </ol>
+            <ol>
+              {rows.map((entry) => {
+                const actor = entry.actor_name ?? "System";
+                return (
+                  <li
+                    key={entry.id}
+                    className="flex items-center gap-3 border-b border-line px-1 py-[11px] last:border-b-0"
+                  >
+                    <UserAvatar name={actor} size={30} fontSize={10} />
+                    <div className="min-w-0 flex-1 text-[13px] text-ink">
+                      <b className="font-bold">{actor}</b>{" "}
+                      {describeActivityAction(entry)}
+                    </div>
+                    <time
+                      dateTime={entry.created_at}
+                      className="shrink-0 font-mono text-[9.5px] text-fg-mute"
+                    >
+                      {formatActivityTime(entry.created_at)}
+                    </time>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        ),
+      )}
+      {entries.length > visibleCount && (
+        <ShowMoreButton
+          label={t("Show earlier activity · {count} more", {
+            count: entries.length - visibleCount,
+          })}
+          onClick={() => setVisibleCount((count) => count + ACTIVITY_PAGE_SIZE)}
+        />
+      )}
     </>
   );
 }
@@ -882,9 +1516,9 @@ function PromoteTripCTA({
   const [error, setError] = useState<string | null>(null);
   if (!trip) {
     return (
-      <p className="rounded-lg border border-line bg-paper px-3 py-2 text-sm text-fg-dim">
+      <HintBox>
         {t("Generate or load a trip first to enable collaboration. ")}
-      </p>
+      </HintBox>
     );
   }
   const handleSave = async () => {
@@ -909,35 +1543,71 @@ function PromoteTripCTA({
     }
   };
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-paper p-4">
-      <div>
-        <h3 className="text-sm font-semibold text-ink">{headline}</h3>
-        <p className="mt-1 text-xs text-fg-dim">{body}</p>
-      </div>
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={loading}
-        className="flex items-center gap-2 rounded-md bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? (
-          <>
-            <Loader2 size={12} className="animate-spin" />
-            {t("Saving\u2026 ")}
-          </>
-        ) : (
-          "Save trip and enable collaboration"
-        )}
-      </button>
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700"
+    <div className="rounded-xl border border-line bg-paper p-3.5">
+      <h3 className="text-[13.5px] font-extrabold text-ink">{headline}</h3>
+      <p className="mt-1 text-xs leading-snug text-fg-dim">{body}</p>
+      <div className="mt-3">
+        <Button
+          variant="accent"
+          size="md"
+          uppercase
+          loading={loading}
+          disabled={loading}
+          onClick={handleSave}
         >
-          {error}
-        </p>
-      )}
+          {t("Save trip and enable collaboration")}
+        </Button>
+      </div>
+      {error && <ErrorAlert className="mt-3">{error}</ErrorAlert>}
     </div>
+  );
+}
+/**
+ * Reveal-next-page button shared by the suggestions and activity lists.
+ * Callers put the remaining count in the label — the cut-off must stay
+ * honest, or a capped list is indistinguishable from a complete one.
+ */
+function ShowMoreButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="mt-2.5">
+      <Button variant="secondary" size="sm" block onClick={onClick}>
+        {label}
+      </Button>
+    </div>
+  );
+}
+/** Muted informational box shared by the tabs' empty/hint states. */
+function HintBox({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-[10px] border border-line bg-paper px-3.5 py-2.5 text-[12.5px] leading-normal text-fg-dim">
+      {children}
+    </p>
+  );
+}
+/** Inline error alert in the v2 quality-ramp palette. */
+function ErrorAlert({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      role="alert"
+      className={
+        "rounded-[10px] border border-quality-q1/40 bg-quality-q1/10 px-3.5 py-2.5 text-[12.5px] leading-normal text-quality-q1 " +
+        className
+      }
+    >
+      {children}
+    </p>
   );
 }
 /**
@@ -959,15 +1629,22 @@ function pickSuggestionAnchor(trip: Trip | null): {
   }
   return null;
 }
-function describeActivity(entry: TripActivityEntry): string {
-  const actor = entry.actor_name ?? "Someone";
+/**
+ * Action clause WITHOUT the actor — the timeline row renders the actor
+ * name separately (bold, per the v2 design) in front of this text.
+ */
+function describeActivityAction(entry: TripActivityEntry): string {
   switch (entry.action) {
     case "member_joined":
-      return `${actor} joined the trip`;
+      return "joined the trip";
     case "member_left":
-      return `${actor} left the trip`;
+      return "left the trip";
+    case "member_invited":
+      return entry.payload.already_member
+        ? "invited a rider who is already a member"
+        : "invited a rider by email";
     case "trip_updated":
-      return `${actor} updated trip details`;
+      return "updated trip details";
     case "trip_generated": {
       const option = entry.payload.option;
       const label =
@@ -976,26 +1653,38 @@ function describeActivity(entry: TripActivityEntry): string {
           : option === "fastest"
             ? "Fastest line"
             : "Best fit";
-      return `${actor} generated a ${label} itinerary`;
+      return `generated a ${label} itinerary`;
     }
     case "suggestion_created":
-      return `${actor} proposed "${String(entry.payload.title ?? "a suggestion")}"`;
+      return `proposed "${String(entry.payload.title ?? "a suggestion")}"`;
     case "suggestion_deleted":
-      return `${actor} removed "${String(entry.payload.title ?? "a suggestion")}"`;
+      return `removed "${String(entry.payload.title ?? "a suggestion")}"`;
     case "suggestion_voted":
-      return `${actor} voted ${entry.payload.vote === "up" ? "up" : "down"}`;
+      // Older rows predate the title in the vote payload — fall back to
+      // the bare direction for those.
+      return entry.payload.title
+        ? `voted on "${String(entry.payload.title)}"`
+        : `voted ${entry.payload.vote === "up" ? "up" : "down"}`;
     case "suggestion_vote_removed":
-      return `${actor} removed their vote`;
+      return entry.payload.title
+        ? `removed their vote on "${String(entry.payload.title)}"`
+        : "removed their vote";
     case "suggestion_accepted":
-      return `${actor} accepted "${String(entry.payload.title ?? "a suggestion")}"`;
+      return `accepted "${String(entry.payload.title ?? "a suggestion")}"`;
     case "suggestion_rejected":
-      return `${actor} rejected "${String(entry.payload.title ?? "a suggestion")}"`;
+      return `rejected "${String(entry.payload.title ?? "a suggestion")}"`;
+    case "suggestion_reopened":
+      return `reopened "${String(entry.payload.title ?? "a suggestion")}"`;
+    case "member_removed":
+      return "removed a rider from the trip";
+    case "member_role_changed":
+      return `changed a rider's role to ${String(entry.payload.role ?? "viewer")}`;
     default:
       // A backend release can introduce a new action before the
       // companion rolls out; fall back to a readable transliteration
       // of the action key instead of letting the timeline render
       // undefined/empty for the row.
-      return `${actor} ${String(entry.action).replace(/_/g, " ")}`;
+      return String(entry.action).replace(/_/g, " ");
   }
 }
 function formatRelativeTime(iso: string): string {
@@ -1005,6 +1694,57 @@ function formatRelativeTime(iso: string): string {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return d.toLocaleDateString();
+}
+type DayBucket = "today" | "yesterday" | "earlier";
+const DAY_BUCKET_LABELS: Record<DayBucket, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  earlier: "Earlier",
+};
+function dayBucket(iso: string): DayBucket {
+  const startOfDay = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round(
+    (startOfDay(new Date()) - startOfDay(new Date(iso))) / 86_400_000,
+  );
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return "earlier";
+}
+/**
+ * Timeline timestamps per the v2 design: relative within today
+ * ("2h ago"), clock time for yesterday ("Yesterday, 18:40"), and a
+ * short date beyond that ("2 Jul").
+ */
+function formatActivityTime(iso: string): string {
+  const bucket = dayBucket(iso);
+  if (bucket === "today") return formatRelativeTime(iso);
+  const d = new Date(iso);
+  if (bucket === "yesterday") {
+    const time = d.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return `Yesterday, ${time}`;
+  }
+  return d.toLocaleDateString([], { day: "numeric", month: "short" });
+}
+/**
+ * Split a reverse-chronological entry list into contiguous day-bucket
+ * groups (Today / Yesterday / Earlier) for the section headers.
+ */
+function groupActivityByDay(
+  entries: TripActivityEntry[],
+): Array<{ bucket: DayBucket; rows: TripActivityEntry[] }> {
+  const groups: Array<{ bucket: DayBucket; rows: TripActivityEntry[] }> = [];
+  for (const entry of entries) {
+    const bucket = dayBucket(entry.created_at);
+    const last = groups[groups.length - 1];
+    if (last && last.bucket === bucket) last.rows.push(entry);
+    else groups.push({ bucket, rows: [entry] });
+  }
+  return groups;
 }
 function describeError(err: unknown): string {
   if (err instanceof ApiError) return err.message ?? `Failed (${err.status})`;
