@@ -18,6 +18,7 @@ import { FeatureState } from '../../entities/feature-state.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { ReviewsModule } from '../reviews/reviews.module.js';
 import { FeaturesModule } from '../features/features.module.js';
+import { EventsModule } from '../events/events.module.js';
 import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
 import { InternalGuard } from './internal.guard.js';
@@ -57,6 +58,9 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
     HazardsModule,
     ReviewsModule,
     FeaturesModule,
+    // The flags service kicks revoked users out of live group-ride
+    // socket rooms via the gateway.
+    EventsModule,
     AppSettingsModule,
   ],
   controllers: [

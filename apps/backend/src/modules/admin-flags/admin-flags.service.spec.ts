@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { FEATURE_KEYS } from '@tarmoto/shared';
+import { FEATURE_KEYS, buildFeatureSnapshot } from '@tarmoto/shared';
 import { AdminFlagsService } from './admin-flags.service.js';
 
 const NOW = new Date('2026-01-01T00:00:00Z');
@@ -37,6 +37,7 @@ function makeService({
   userOverrides = [] as unknown[],
   user = USER,
   overriddenRows = [[], 0] as unknown,
+  resolvedSnapshot = buildFeatureSnapshot('free', {}, {}),
 } = {}) {
   // One shared stub covers both query-builder call sites: listFlags()
   // consumes getRawMany (override counts) and listOverriddenUsers()
@@ -76,15 +77,25 @@ function makeService({
     createQueryBuilder: jest.fn().mockReturnValue(qb),
   };
   const users = { findOne: jest.fn().mockResolvedValue(user) };
+  const featureResolver = {
+    resolveForUser: jest.fn().mockResolvedValue(resolvedSnapshot),
+  };
+  const eventsGateway = {
+    evictFromGroupRideRooms: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     svc: new AdminFlagsService(
       featureStates as never,
       userFeatures as never,
       users as never,
+      featureResolver as never,
+      eventsGateway as never,
     ),
     featureStates,
     userFeatures,
     users,
+    featureResolver,
+    eventsGateway,
   };
 }
 
@@ -219,6 +230,54 @@ describe('AdminFlagsService', () => {
       user_id: 'u1',
       feature: 'gpx_export',
     });
+  });
+
+  it('setGlobalState(group_rides, force_off) evicts every socket from group rooms', async () => {
+    const { svc, eventsGateway } = makeService();
+    await svc.setGlobalState(
+      'group_rides',
+      { state: 'force_off', reason: 'incident' },
+      'admin-1',
+    );
+    expect(eventsGateway.evictFromGroupRideRooms).toHaveBeenCalledWith();
+  });
+
+  it('setGlobalState(group_rides, force_on) does not evict', async () => {
+    const { svc, eventsGateway } = makeService();
+    await svc.setGlobalState('group_rides', { state: 'force_on' }, 'admin-1');
+    expect(eventsGateway.evictFromGroupRideRooms).not.toHaveBeenCalled();
+  });
+
+  it('setOverride(group_rides, false) evicts the user when no longer entitled', async () => {
+    const { svc, eventsGateway } = makeService({
+      resolvedSnapshot: buildFeatureSnapshot('free', {}, {}),
+    });
+    await svc.setOverride('u1', 'group_rides', { enabled: false });
+    expect(eventsGateway.evictFromGroupRideRooms).toHaveBeenCalledWith('u1');
+  });
+
+  it('removeOverride(group_rides) leaves entitled users connected', async () => {
+    // e.g. a premium user whose redundant force_on override is removed —
+    // the tier still grants the feature, so no eviction.
+    const { svc, eventsGateway } = makeService({
+      resolvedSnapshot: buildFeatureSnapshot('premium', {}, {}),
+    });
+    await svc.removeOverride('u1', 'group_rides');
+    expect(eventsGateway.evictFromGroupRideRooms).not.toHaveBeenCalled();
+  });
+
+  it('eviction failures are logged, not surfaced — the DB revoke already landed', async () => {
+    const { svc, eventsGateway } = makeService();
+    eventsGateway.evictFromGroupRideRooms.mockRejectedValueOnce(
+      new Error('adapter down'),
+    );
+    await expect(
+      svc.setGlobalState(
+        'group_rides',
+        { state: 'force_off', reason: 'incident' },
+        'admin-1',
+      ),
+    ).resolves.toMatchObject({ feature: 'group_rides' });
   });
 
   it('listOverriddenUsers() maps joined rows and pagination', async () => {

@@ -410,6 +410,49 @@ describe('EventsGateway', () => {
     });
   });
 
+  describe('evictFromGroupRideRooms', () => {
+    function makeRemoteSocket(rooms: string[]) {
+      return { rooms: new Set(rooms), leave: jest.fn() };
+    }
+
+    it('kicks a specific user out of group + legacy ride rooms only', async () => {
+      const socket = makeRemoteSocket([
+        'c-1',
+        'user:user-1',
+        'group-ride:gr-1',
+        'ride:ride-1',
+        'trip:trip-1',
+      ]);
+      const fetchSockets = jest.fn().mockResolvedValue([socket]);
+      (gateway.server as unknown as { in: jest.Mock }).in = jest
+        .fn()
+        .mockReturnValue({ fetchSockets });
+
+      await gateway.evictFromGroupRideRooms('user-1');
+
+      expect(
+        (gateway.server as unknown as { in: jest.Mock }).in,
+      ).toHaveBeenCalledWith('user:user-1');
+      expect(socket.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(socket.leave).toHaveBeenCalledWith('ride:ride-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('trip:trip-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('user:user-1');
+    });
+
+    it('kicks every socket out of group rooms when called without a user (kill switch)', async () => {
+      const member = makeRemoteSocket(['c-1', 'group-ride:gr-1']);
+      const bystander = makeRemoteSocket(['c-2', 'hazards:491:167']);
+      const fetchSockets = jest.fn().mockResolvedValue([member, bystander]);
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        fetchSockets;
+
+      await gateway.evictFromGroupRideRooms();
+
+      expect(member.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      expect(bystander.leave).not.toHaveBeenCalled();
+    });
+  });
+
   describe('server-side emit methods', () => {
     it('emitHazardAlert should broadcast to correct grid cell', () => {
       gateway.emitHazardAlert(49.1, 16.75, {

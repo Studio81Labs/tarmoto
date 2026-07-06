@@ -726,6 +726,29 @@ export class EventsGateway
   }
 
   /**
+   * Evict a user's sockets (or, with no argument, every socket) from
+   * group-ride rooms after a `group_rides` entitlement revoke. The
+   * publisher-side re-checks stop revoked members from SENDING, but a
+   * passive listener would otherwise keep RECEIVING the room's position
+   * fanout until they publish or disconnect — a revoke must cut off the
+   * sensitive location stream live. Covers both the US-26
+   * (`group-ride:<id>`) and legacy (`ride:<id>`) rooms; works across
+   * cluster nodes because the Redis adapter's `fetchSockets`/`leave`
+   * operate on remote sockets too.
+   */
+  async evictFromGroupRideRooms(userId?: string): Promise<void> {
+    const scope = userId ? this.server.in(`user:${userId}`) : this.server;
+    const sockets = await scope.fetchSockets();
+    for (const socket of sockets) {
+      for (const room of socket.rooms) {
+        if (room.startsWith('group-ride:') || room.startsWith('ride:')) {
+          socket.leave(room);
+        }
+      }
+    }
+  }
+
+  /**
    * Broadcast to all connected clients.
    */
   broadcast(event: string, data: unknown): void {

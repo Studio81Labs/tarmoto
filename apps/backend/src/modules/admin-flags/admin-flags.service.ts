@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,6 +17,8 @@ import {
 import { FeatureState } from '../../entities/feature-state.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { EventsGateway } from '../events/events.gateway.js';
 import {
   AdminFeatureFlagDto,
   AdminFeatureFlagUsersResponseDto,
@@ -36,6 +39,8 @@ import {
  */
 @Injectable()
 export class AdminFlagsService {
+  private readonly logger = new Logger(AdminFlagsService.name);
+
   constructor(
     @InjectRepository(FeatureState)
     private readonly featureStates: Repository<FeatureState>,
@@ -43,6 +48,8 @@ export class AdminFlagsService {
     private readonly userFeatures: Repository<UserFeature>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    private readonly featureResolver: FeatureResolver,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async listFlags(): Promise<AdminFeatureFlagsResponseDto> {
@@ -98,6 +105,12 @@ export class AdminFlagsService {
     row.reason = dto.reason ?? null;
     row.updated_by = adminUserId;
     await this.featureStates.save(row);
+    // A group_rides kill switch must also cut passive listeners off the
+    // live location fanout — the gateway's publisher-side re-checks
+    // don't reach sockets that only receive.
+    if (key === 'group_rides' && dto.state === 'force_off') {
+      await this.evictFromGroupRideRooms();
+    }
     return this.flagDto(key);
   }
 
@@ -207,6 +220,9 @@ export class AdminFlagsService {
       existing ?? this.userFeatures.create({ user_id: user.id, feature: key });
     row.enabled = dto.enabled;
     await this.userFeatures.save(row);
+    if (key === 'group_rides') {
+      await this.evictIfGroupRidesRevoked(user.id);
+    }
     return this.getUserFlags(user.id);
   }
 
@@ -215,6 +231,46 @@ export class AdminFlagsService {
     const key = this.assertKnownFeature(feature);
     const user = await this.findUser(userId);
     await this.userFeatures.delete({ user_id: user.id, feature: key });
+    // Removing a force_on override can revoke effective access (e.g. a
+    // free-tier user who only had the feature via the override).
+    if (key === 'group_rides') {
+      await this.evictIfGroupRidesRevoked(user.id);
+    }
+  }
+
+  /**
+   * Kick the user's sockets out of the live group-ride rooms when the
+   * mutation left them without the entitlement. Best-effort: the DB
+   * state above is authoritative (publish attempts re-resolve against
+   * it), so a socket-adapter hiccup logs rather than failing the admin
+   * mutation that already persisted.
+   */
+  private async evictIfGroupRidesRevoked(userId: string): Promise<void> {
+    try {
+      const snapshot = await this.featureResolver.resolveForUser(userId);
+      if (!snapshot.group_rides) {
+        await this.eventsGateway.evictFromGroupRideRooms(userId);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to evict user ${userId} from group-ride rooms: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /** Global variant of the eviction backstop — same best-effort rules. */
+  private async evictFromGroupRideRooms(): Promise<void> {
+    try {
+      await this.eventsGateway.evictFromGroupRideRooms();
+    } catch (err) {
+      this.logger.warn(
+        `Failed to evict sockets from group-ride rooms: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async flagDto(feature: FeatureKey): Promise<AdminFeatureFlagDto> {
