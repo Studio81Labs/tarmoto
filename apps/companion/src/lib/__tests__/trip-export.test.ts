@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { Trip } from "@/lib/types";
-import { DEMO_TRIP } from "@/lib/demo-trip";
 import {
   buildMobileDeepLink,
   buildTripShareUrl,
@@ -171,9 +170,57 @@ describe("tripToGpx", () => {
     expect(gpx).toContain('<name>Bar &amp; "Cafe"</name>');
   });
 
-  it("serializes the demo trip without throwing", () => {
-    const gpx = tripToGpx(DEMO_TRIP);
-    expect(gpx).toContain("<name>Alps loop — demo</name>");
+  it("serializes a multi-day trip without throwing", () => {
+    const trip = minimalTrip({
+      name: "Alps loop",
+      num_days: 2,
+      days: [
+        {
+          dayNumber: 1,
+          distanceKm: 100,
+          durationMinutes: 120,
+          elevationGain: 500,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "d1-w1",
+              name: "Day 1 start",
+              location: { lng: 10.5, lat: 46.4 },
+              type: "start",
+            },
+            {
+              id: "d1-w2",
+              name: "Day 1 end",
+              location: { lng: 10.7, lat: 46.6 },
+              type: "end",
+            },
+          ],
+        },
+        {
+          dayNumber: 2,
+          distanceKm: 120,
+          durationMinutes: 140,
+          elevationGain: 600,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "d2-w1",
+              name: "Day 2 start",
+              location: { lng: 10.7, lat: 46.6 },
+              type: "start",
+            },
+            {
+              id: "d2-w2",
+              name: "Day 2 end",
+              location: { lng: 11.0, lat: 46.9 },
+              type: "end",
+            },
+          ],
+        },
+      ],
+    });
+    const gpx = tripToGpx(trip);
+    expect(gpx).toContain("<name>Alps loop</name>");
     // Two days, both with at least two waypoints.
     expect(gpx.match(/<rte>/g)?.length).toBe(2);
   });
