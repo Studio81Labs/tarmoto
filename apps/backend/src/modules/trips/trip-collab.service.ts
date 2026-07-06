@@ -24,11 +24,12 @@ import { ListMessagesDto } from './dto/list-messages.dto.js';
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
 const MAX_MESSAGE_PAGE_SIZE = 100;
 
-// Roles that may mutate trip metadata or remove any member's
-// suggestions/messages. Regular members can only remove their own
-// authored rows. Keeping the set tight here so role changes don't need
-// to ripple through per-endpoint checks.
-const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
+// Roles that may moderate suggestions: resolve/reopen decisions and
+// deleting other riders' rows. Editors edit the route, propose, and
+// vote — but the accept/reject/reopen call is the owner's alone (and
+// authors can always delete their own rows). Keeping the set tight
+// here so role changes don't ripple through per-endpoint checks.
+const MODERATOR_ROLES = new Set(['owner']);
 
 /**
  * Orchestrates the collaborative-trip surface: suggestions, votes,
@@ -191,10 +192,10 @@ export class TripCollabService {
     if (!suggestion) throw new NotFoundException('Suggestion not found');
 
     // Authors can always remove their own. Beyond that only privileged
-    // roles (owner/admin) can delete others' — keeps a plain member
+    // the owner can delete others' — keeps a collaborator
     // from nuking peer proposals.
     const isAuthor = suggestion.suggested_by === userId;
-    const isPrivileged = PRIVILEGED_ROLES.has(membership.role);
+    const isPrivileged = MODERATOR_ROLES.has(membership.role);
     if (!isAuthor && !isPrivileged) {
       throw new ForbiddenException('Cannot delete this suggestion');
     }
@@ -223,14 +224,14 @@ export class TripCollabService {
     status: 'accepted' | 'rejected',
   ): Promise<SuggestionDto> {
     const membership = await this.requireMembership(userId, tripId);
-    if (!PRIVILEGED_ROLES.has(membership.role)) {
+    if (!MODERATOR_ROLES.has(membership.role)) {
       throw new ForbiddenException(
-        'Only the trip owner or an admin can resolve a suggestion',
+        'Only the trip owner can resolve a suggestion',
       );
     }
 
     // Atomic transition: UPDATE ... WHERE status = 'open' so two
-    // concurrent owner/admin resolves can't both observe 'open' and
+    // concurrent owner resolves can't both observe 'open' and
     // race to overwrite each other. Whoever flips first wins; the
     // loser sees affected = 0 and returns 400 with the now-current
     // status instead of silently clobbering the decision and fanning
@@ -294,9 +295,9 @@ export class TripCollabService {
     suggestionId: string,
   ): Promise<SuggestionDto> {
     const membership = await this.requireMembership(userId, tripId);
-    if (!PRIVILEGED_ROLES.has(membership.role)) {
+    if (!MODERATOR_ROLES.has(membership.role)) {
       throw new ForbiddenException(
-        'Only the trip owner or an admin can reopen a suggestion',
+        'Only the trip owner can reopen a suggestion',
       );
     }
 

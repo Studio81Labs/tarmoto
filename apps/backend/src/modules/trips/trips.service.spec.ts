@@ -2435,6 +2435,40 @@ describe('TripsService', () => {
       );
     });
 
+    it('retries with a fresh personal code on a unique violation and emails the persisted one', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+      // First insert hits a unique constraint (personal-code collision
+      // or a concurrent invite to the same email); the retry succeeds.
+      inviteRepo.insert
+        .mockRejectedValueOnce(
+          Object.assign(new Error('duplicate key'), { code: '23505' }),
+        )
+        .mockResolvedValueOnce({ identifiers: [{ id: 'inv-1' }] } as never);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      expect(inviteRepo.insert).toHaveBeenCalledTimes(2);
+      const persistedCode = (
+        inviteRepo.insert.mock.calls[1]?.[0] as { invite_code?: string }
+      ).invite_code;
+      const mailCtx = email.sendTripInvite.mock.calls[0]?.[1] as {
+        inviteCode: string;
+      };
+      // The emailed code must be the one that actually landed in the DB.
+      expect(mailCtx.inviteCode).toBe(persistedCode);
+    });
+
     it('404s viewers and non-members without sending mail', async () => {
       // Viewer — non-privileged role.
       memberRepo.findOne.mockResolvedValueOnce({

@@ -71,7 +71,7 @@ export class TripCollabController {
   @ApiOperation({
     summary: 'Delete a suggestion',
     description:
-      'Authors can always delete their own; trip owners/admins can ' +
+      'Authors can always delete their own; the trip owner can ' +
       'delete any suggestion.',
   })
   @ApiResponse({ status: 204 })
@@ -88,14 +88,14 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Accept a suggestion (owner/admin only)',
+    summary: 'Accept a suggestion (owner only)',
     description:
-      'Marks the suggestion as `accepted`. Only privileged roles may ' +
+      'Marks the suggestion as `accepted`. Only the trip owner may ' +
       'resolve — authors can only delete their own. Re-accepting an ' +
       'already-resolved row returns 400.',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 403, description: 'Not the trip owner' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async acceptSuggestion(
     @Req() req: express.Request,
@@ -113,10 +113,10 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/reject')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reject a suggestion (owner/admin only)',
+    summary: 'Reject a suggestion (owner only)',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 403, description: 'Not the trip owner' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async rejectSuggestion(
     @Req() req: express.Request,
@@ -134,14 +134,14 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/reopen')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reopen a resolved suggestion (owner/admin only)',
+    summary: 'Reopen a resolved suggestion (owner only)',
     description:
       'Flips an `accepted`/`rejected` suggestion back to `open` so the ' +
       'group can keep voting and the owner can re-decide. Reopening an ' +
       'already-open row returns 400.',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 403, description: 'Not the trip owner' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async reopenSuggestion(
     @Req() req: express.Request,

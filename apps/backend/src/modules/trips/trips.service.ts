@@ -849,33 +849,39 @@ export class TripsService {
     // acceptance, and mints a PERSONAL invite code for the mail's join
     // link — so revoking this invite invalidates exactly this link.
     // Re-inviting the same address updates role + rotates the code.
+    //
+    // Two unique constraints can fire here: (trip, email) from a
+    // concurrent invite to the same address, and the table-wide
+    // invite_code from an (astronomically rare) generated-code
+    // collision. Both converge on the same recovery — refetch the row
+    // and retry with a fresh code — so the loop doesn't need to
+    // disambiguate the constraint. What matters is that the code in
+    // the email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
-    const personalCode = generateInviteCode();
-    const existingInvite = await this.inviteRepo.findOne({
-      where: { trip_id: tripId, email: dto.email },
-    });
-    if (existingInvite) {
-      existingInvite.role = role;
-      existingInvite.invite_code = personalCode;
-      existingInvite.invited_by = userId;
-      await this.inviteRepo.save(existingInvite);
-    } else {
+    let personalCode: string;
+    for (let attempt = 0; ; attempt++) {
+      personalCode = generateInviteCode();
+      const existingInvite = await this.inviteRepo.findOne({
+        where: { trip_id: tripId, email: dto.email },
+      });
       try {
-        await this.inviteRepo.insert({
-          trip_id: tripId,
-          email: dto.email,
-          role,
-          invite_code: personalCode,
-          invited_by: userId,
-        });
+        if (existingInvite) {
+          await this.inviteRepo.update(
+            { id: existingInvite.id },
+            { role, invite_code: personalCode, invited_by: userId },
+          );
+        } else {
+          await this.inviteRepo.insert({
+            trip_id: tripId,
+            email: dto.email,
+            role,
+            invite_code: personalCode,
+            invited_by: userId,
+          });
+        }
+        break;
       } catch (err: unknown) {
-        // Two concurrent invites to the same address — the winner's row
-        // stands; update it with our (newer) role + code.
-        if (!isUniqueViolation(err)) throw err;
-        await this.inviteRepo.update(
-          { trip_id: tripId, email: dto.email },
-          { role, invite_code: personalCode, invited_by: userId },
-        );
+        if (!isUniqueViolation(err) || attempt >= 4) throw err;
       }
     }
 

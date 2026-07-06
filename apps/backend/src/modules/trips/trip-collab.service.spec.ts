@@ -795,6 +795,35 @@ describe('TripCollabService', () => {
     });
   });
 
+  describe('moderation is owner-only', () => {
+    it('forbids editors from resolving suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('forbids editors from reopening suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      await expect(
+        service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("forbids editors from deleting other riders' suggestions", async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ suggested_by: OTHER_ID }),
+      );
+      await expect(
+        service.deleteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(suggestionRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('viewer role gating', () => {
     it('blocks viewers from proposing suggestions', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
