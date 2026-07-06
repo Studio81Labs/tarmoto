@@ -33,7 +33,10 @@ export function Checkbox({
   return (
     <label
       className={cn(
-        "inline-flex items-center gap-2.5 font-sans text-[13px] font-semibold text-ink",
+        // `relative` anchors the sr-only (absolute) input INSIDE the label —
+        // without it the 1px input resolves against a distant positioned
+        // ancestor, and focusing it on click scroll-jumps the panel/page.
+        "relative inline-flex items-center gap-2.5 font-sans text-[13px] font-semibold text-ink",
         disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
         className,
       )}

@@ -427,6 +427,45 @@ describe('TripsService', () => {
       );
     });
 
+    it('duplicate copies each day-level leg_preferences onto the new trip', async () => {
+      // Without the copy, a duplicated trip reloads with every leg
+      // inherited and the next save reroutes the rider-approved custom
+      // legs with the trip-wide preference.
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({
+          days: [
+            {
+              id: 'src-day-1',
+              day_number: 1,
+              title: null,
+              distance_km: 120,
+              route_geom: null,
+              avg_quality: null,
+              elevation_gain: null,
+              elevation_loss: null,
+              curviness_score: null,
+              scenic_score: null,
+              estimated_time: null,
+              start_linked: false,
+              leg_preferences: ['direct', 'maximum_twisty'],
+              waypoints: [],
+            },
+          ],
+          members: [{ user_id: OWNER_ID, role: 'owner' }],
+        } as unknown as Partial<Trip>),
+      );
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.duplicate(OWNER_ID, TRIP_ID);
+
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'day_number' in b);
+      expect(dayBodies[0]).toMatchObject({
+        leg_preferences: ['direct', 'maximum_twisty'],
+      });
+    });
+
     it('US-37: 404s when the supplied folder_id belongs to a different rider', async () => {
       folderRepo.findOne.mockResolvedValueOnce(null);
 
@@ -2356,9 +2395,12 @@ describe('TripsService', () => {
             ],
           },
         ],
+        options: { preference: 'maximum_twisty' },
       });
 
-      // Only start/via/end waypoints are passed to the router.
+      // Only start/via/end waypoints are passed to the router — WITH the
+      // rider's road preference, so Save re-routes with the same costing
+      // the approved live preview used.
       expect(routingProvider.route).toHaveBeenCalledWith(
         [
           { lat: 50.08, lng: 14.42 },
@@ -2367,6 +2409,7 @@ describe('TripsService', () => {
         expect.objectContaining({
           avoidHighways: undefined,
           avoidTolls: undefined,
+          preference: 'maximum_twisty',
         }),
       );
       expect(enrichment.aggregate).toHaveBeenCalled();
@@ -2491,6 +2534,117 @@ describe('TripsService', () => {
       });
       expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'fuel' });
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
+    });
+
+    it('routes leg by leg when leg_preferences is present and merges the result', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce({ id: TRIP_ID });
+      manager.find.mockResolvedValueOnce([{ id: 'd-1' }]);
+
+      routingProvider.route
+        .mockResolvedValueOnce({
+          distance_km: 40,
+          duration_min: 30,
+          geometry: [
+            { lat: 50.0, lng: 14.0 },
+            { lat: 50.1, lng: 14.1 },
+          ],
+        })
+        .mockResolvedValueOnce({
+          distance_km: 60,
+          duration_min: 55,
+          geometry: [
+            { lat: 50.1, lng: 14.1 },
+            { lat: 50.2, lng: 14.2 },
+          ],
+        });
+      mockEnrichment();
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.saveManualRoute(OWNER_ID, TRIP_ID, {
+        days: [
+          {
+            dayNumber: 1,
+            startLinked: false,
+            waypoints: [
+              { lat: 50.0, lng: 14.0, type: 'start' },
+              { lat: 50.1, lng: 14.1, type: 'via' },
+              { lat: 50.2, lng: 14.2, type: 'end' },
+            ],
+            leg_preferences: ['direct', 'maximum_twisty'],
+          },
+        ],
+        options: { preference: 'direct' },
+      });
+
+      // One router call PER LEG, each with its own preference — the same
+      // requests the live preview used.
+      expect(routingProvider.route).toHaveBeenCalledTimes(2);
+      expect(routingProvider.route).toHaveBeenNthCalledWith(
+        1,
+        [
+          { lat: 50.0, lng: 14.0 },
+          { lat: 50.1, lng: 14.1 },
+        ],
+        expect.objectContaining({ preference: 'direct' }),
+      );
+      expect(routingProvider.route).toHaveBeenNthCalledWith(
+        2,
+        [
+          { lat: 50.1, lng: 14.1 },
+          { lat: 50.2, lng: 14.2 },
+        ],
+        expect.objectContaining({ preference: 'maximum_twisty' }),
+      );
+
+      // Merged geometry drops the duplicated boundary vertex and the day
+      // row carries the summed distance.
+      const [geometry] = enrichment.aggregate.mock.calls[0]! as [
+        Array<{ lat: number; lng: number }>,
+      ];
+      expect(geometry).toEqual([
+        { lat: 50.0, lng: 14.0 },
+        { lat: 50.1, lng: 14.1 },
+        { lat: 50.2, lng: 14.2 },
+      ]);
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'distance_km' in b);
+      expect(dayBodies[0]).toMatchObject({
+        distance_km: 100,
+        // Persisted WITH the day so the planner re-seeds them on reload.
+        leg_preferences: ['direct', 'maximum_twisty'],
+      });
+    });
+
+    it('400s when leg_preferences length does not match the routing legs', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+
+      await expect(
+        service.saveManualRoute(OWNER_ID, TRIP_ID, {
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 50.0, lng: 14.0, type: 'start' },
+                { lat: 50.2, lng: 14.2, type: 'end' },
+              ],
+              // 2 routing waypoints = 1 leg, but 2 preferences supplied.
+              leg_preferences: ['direct', 'maximum_twisty'],
+            },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(routingProvider.route).not.toHaveBeenCalled();
     });
 
     it('decouples all existing-day suggestions via In() before replacing all days', async () => {

@@ -17,9 +17,14 @@ const mockedTripPlannerMap = vi.fn((_props?: unknown) => (
 const mockedTripCollabModal = vi.fn((_props?: unknown) => null);
 let useParamsTripId: string | null = "trip-1";
 
+// The router object must be REFERENTIALLY STABLE like the real
+// next/navigation hook — the page's load effect lists `router` in its
+// deps, and a fresh object per render would re-fire the fetch (and flip
+// the page back to loading) on every unrelated state update.
+const mockRouter = { replace: mockReplace, push: vi.fn(), back: vi.fn() };
 vi.mock("next/navigation", () => ({
   useParams: () => ({ tripId: useParamsTripId }),
-  useRouter: () => ({ replace: mockReplace, push: vi.fn(), back: vi.fn() }),
+  useRouter: () => mockRouter,
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -406,18 +411,21 @@ describe("TripDetailPage — member-role gating", () => {
 });
 
 describe("TripDetailPage — delete confirmation", () => {
-  it("calls confirm() before issuing DELETE", async () => {
+  // Deleting confirms through the app-styled ConfirmDialog — the app
+  // never opens system dialogs.
+  it("opens the app confirm dialog and does nothing on cancel", async () => {
     tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
     tripsApiDeleteMock.mockResolvedValue({ data: undefined } as never);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<TripDetailPage />);
 
     fireEvent.click(
       await screen.findByRole("button", { name: /delete trip/i }),
     );
-    expect(confirmSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Delete "Italian Loop"?'),
-    );
+    expect(
+      screen.getByRole("dialog", { name: "Delete this trip?" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
     expect(tripsApiDeleteMock).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
   });
@@ -430,6 +438,7 @@ describe("TripDetailPage — delete confirmation", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /delete trip/i }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
 
     await waitFor(() => {
       expect(tripsApiDeleteMock).toHaveBeenCalledWith("trip-1");
@@ -450,6 +459,7 @@ describe("TripDetailPage — delete confirmation", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /delete trip/i }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
 
     expect(
       await screen.findByText(/couldn't delete the trip/i),
@@ -467,6 +477,7 @@ describe("TripDetailPage — delete confirmation", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /delete trip/i }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
 
     expect(
       await screen.findByText(/this trip no longer exists/i),

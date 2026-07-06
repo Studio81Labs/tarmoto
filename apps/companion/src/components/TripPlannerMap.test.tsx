@@ -5,9 +5,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { createRef, forwardRef, useEffect, useImperativeHandle } from "react";
 import { expression } from "@maplibre/maplibre-gl-style-spec";
-import { TripPlannerMap } from "./TripPlannerMap";
+import { TripPlannerMap, type TripPlannerMapHandle } from "./TripPlannerMap";
 import type { Trip } from "@/lib/types";
 import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
@@ -40,9 +40,17 @@ const mockMap = {
   queryRenderedFeatures: vi.fn(),
   querySourceFeatures: vi.fn(),
   setPaintProperty: vi.fn(),
+  setLayoutProperty: vi.fn(),
   setFilter: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
+  flyTo: vi.fn(),
+  getBounds: vi.fn(() => ({
+    getWest: () => 12.0,
+    getSouth: () => 48.5,
+    getEast: () => 19.0,
+    getNorth: () => 51.1,
+  })),
   unproject: vi.fn((point: [number, number]) => ({
     lng: point[0] / 100,
     lat: point[1] / 100,
@@ -66,6 +74,15 @@ let lastDrawOptions: {
 } | null = null;
 
 vi.mock("@/components/map/MapCanvas", () => ({
+  TARMOTO_QUALITY_LAYER: "tarmoto-quality",
+  SURFACE_COLORS: {
+    asphalt: "#3B82F6",
+    concrete: "#6B7280",
+    cobblestone: "#A78BFA",
+    gravel: "#D97706",
+    dirt: "#92400E",
+    unknown: "#64748B",
+  },
   MapCanvas: forwardRef(function MockMapCanvas(
     props: {
       showQuality: boolean;
@@ -214,6 +231,7 @@ describe("TripPlannerMap", () => {
     mockMap.queryRenderedFeatures.mockReset();
     mockMap.querySourceFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
+    mockMap.setLayoutProperty.mockReset();
     mockMap.setFilter.mockReset();
     mockMap.fitBounds.mockReset();
     mockMap.unproject.mockReset();
@@ -254,22 +272,67 @@ describe("TripPlannerMap", () => {
     vi.useRealTimers();
   });
 
-  it("toggles the shared MapCanvas quality and surface overlays", () => {
+  it("switches the line-coloring mode between road quality and surface", () => {
+    // The recolor effect no-ops unless the route layer exists on the map.
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "trip-planner-route-line" ? { id: layerId } : undefined,
+    );
     render(<TripPlannerMap trip={trip()} month={7} />);
 
+    // Quality is the default mode; the tile overlay follows the mode.
     const canvas = screen.getByTestId("planner-map-canvas");
     expect(canvas).toHaveAttribute("data-show-quality", "true");
     expect(canvas).toHaveAttribute("data-show-surface", "false");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Surface overlay off" }),
-    );
-    expect(canvas).toHaveAttribute("data-show-surface", "true");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Road quality overlay on" }),
+      screen.getByRole("button", { name: "Color the route line by surface" }),
     );
     expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "true");
+    // The route line itself recolors via a surface match expression.
+    const lineColorCalls = mockMap.setPaintProperty.mock.calls.filter(
+      ([layerId, prop]) =>
+        layerId === "trip-planner-route-line" && prop === "line-color",
+    );
+    expect(lineColorCalls.at(-1)?.[2]?.[1]).toEqual(["get", "surface"]);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Color the route line by road quality",
+      }),
+    );
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+  });
+
+  it("swaps to the aerial basemap independently of the coloring mode", () => {
+    // setAerialBasemapVisible no-ops unless the aerial layer exists.
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "planner-aerial" ? { id: layerId } : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const canvas = screen.getByTestId("planner-map-canvas");
+    fireEvent.click(screen.getByRole("button", { name: "Aerial" }));
+
+    // Aerial raster becomes visible…
+    expect(mockMap.setLayoutProperty).toHaveBeenCalledWith(
+      "planner-aerial",
+      "visibility",
+      "visible",
+    );
+    // …and the all-roads tile overlays are hidden over imagery, while the
+    // coloring mode itself is untouched (still quality).
+    expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    expect(mockMap.setLayoutProperty).toHaveBeenLastCalledWith(
+      "planner-aerial",
+      "visibility",
+      "none",
+    );
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
   });
 
   it("snaps right-click contextmenu onto nearby road geometry before showing the placement menu", () => {
@@ -436,46 +499,474 @@ describe("TripPlannerMap", () => {
     expect(eventHandlers.has("contextmenu")).toBe(false);
   });
 
-  it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
+  it("shows the map toolbar (search + POI chips) only on editable maps", () => {
+    const { unmount } = render(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Address search")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Twisty highlights/ }),
+    ).toBeInTheDocument();
+    unmount();
 
-    fireEvent.click(screen.getByRole("button", { name: "Draw region" }));
+    render(<TripPlannerMap trip={trip()} month={7} />);
+    expect(screen.queryByLabelText("Address search")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Twisty highlights/ }),
+    ).toBeNull();
+  });
+
+  it("POI chips are multi-select and drive the SHARED store slice", () => {
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Fuel/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Mountain passes/ }));
+
+    const active = useTripStore.getState().activePoiCategories;
+    expect(active.has("fuel")).toBe(true);
+    expect(active.has("mountain_pass")).toBe(true);
+    expect(screen.getByRole("button", { name: /^Fuel/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("fetches category POIs for the viewport, opens the pin popover and adds a via BEFORE any route exists", async () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    // Only start + finish, NO route geometry — the §E critical scenario.
+    const bareTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, routeGeometry: undefined, segments: [] }],
+    };
+    useTripStore.setState({
+      activeTrip: bareTrip,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    const { rerender } = render(
+      <TripPlannerMap trip={bareTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+
+    // Debounced viewport fetch lands in the clustered source.
+    await waitFor(
+      () =>
+        expect(setData).toHaveBeenCalledWith(
+          expect.objectContaining({
+            features: expect.arrayContaining([
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  category: "viewpoint",
+                  poiId: "view-vysocina-1",
+                }),
+              }),
+            ]),
+          }),
+        ),
+      { timeout: 2000 },
+    );
+
+    // Pin click -> popover with name, provenance and Add as via.
+    act(() => {
+      layerHandlers.get("click:trip-planner-poi-pins")?.({
+        features: [{ properties: { poiId: "view-vysocina-1" } }],
+        originalEvent: { clientX: 320, clientY: 240 },
+      });
+    });
+    expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
+    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    // The popover offers all three roles (rider feedback), not just via.
+    expect(
+      screen.getByRole("button", { name: "Set as start" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Set as finish" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    expect(waypoints.map((w) => w.type)).toEqual(["start", "via", "end"]);
+    expect(waypoints[1]?.name).toBe("Devět skal vista");
+
+    // A placed POI renders ONLY as its waypoint circle — the refetch
+    // drops its POI pin so two pins never stack (rider feedback). The
+    // page re-renders the map with the updated trip; mirror that here.
+    setData.mockClear();
+    rerender(
+      <TripPlannerMap
+        trip={useTripStore.getState().activeTrip}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+      />,
+    );
+    await waitFor(
+      () => {
+        expect(setData).toHaveBeenCalled();
+        const lastCall = setData.mock.calls.at(-1)?.[0] as {
+          features: Array<{ properties: { poiId: string } }>;
+        };
+        expect(
+          lastCall.features.some(
+            (f) => f.properties.poiId === "view-vysocina-1",
+          ),
+        ).toBe(false);
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it("address search flies to the pick and opens the placement menu instead of placing", async () => {
+    useTripStore.setState({ activeTrip: trip(), selectedDayIndex: 0 });
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Address search"), {
+      target: { value: "Jihlava" },
+    });
+    const option = await screen.findByRole(
+      "option",
+      { name: /Jihlava/ },
+      { timeout: 2000 },
+    );
+    fireEvent.click(option);
+
+    // Nothing placed — the rider decides the role in the menu.
+    expect(useTripStore.getState().activeTrip?.days[0]?.waypoints).toEqual(
+      trip().days[0]!.waypoints,
+    );
+    expect(mockMap.flyTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [15.5912, 49.3961],
+        duration: 1200,
+      }),
+    );
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByText("Set start here")).toBeInTheDocument();
+    expect(screen.getByText("Add via here")).toBeInTheDocument();
+    expect(screen.getByText("Set end here")).toBeInTheDocument();
+  });
+
+  it("opens the point dialog on LEFT click of a plain waypoint", () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "wp-1",
+              waypointType: "start",
+              label: "Bormio",
+            },
+            geometry: { type: "Point", coordinates: [10.37, 46.47] },
+          },
+        ],
+        lngLat: { lng: 10.37, lat: 46.47 },
+        originalEvent: { clientX: 200, clientY: 200 },
+      });
+    });
+
+    expect(
+      screen.getByRole("dialog", { name: "Waypoint details" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Bormio")).toBeInTheDocument();
+  });
+
+  it("reopens the POI popover from a placed waypoint and offers Remove from route", () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const onRemoveWaypoint = vi.fn();
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={onRemoveWaypoint}
+      />,
+    );
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "poi-view-vysocina-1-1751700000000",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [16.0369, 49.6395] },
+          },
+        ],
+        lngLat: { lng: 16.0369, lat: 49.6395 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
+    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    // Already placed -> remove action instead of Add as via.
+    expect(screen.queryByRole("button", { name: /Add as via/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove from route" }));
+    expect(onRemoveWaypoint).toHaveBeenCalledWith(
+      "poi-view-vysocina-1-1751700000000",
+    );
+  });
+
+  it("adds a route-wide stop to its OWNING day, not the selected one", () => {
+    // The STOPS tab opens this popover for stops anywhere along a
+    // multi-day trip: adding one must target the day whose route passes
+    // the POI — Day 1 being selected must not force its leg through a
+    // Day 2 stop.
+    const base = trip();
+    const twoDayTrip = {
+      ...base,
+      days: [
+        base.days[0]!,
+        {
+          ...base.days[0]!,
+          dayNumber: 2,
+          waypoints: [
+            {
+              id: "d2-start",
+              name: "Brno",
+              location: { lng: 16.6, lat: 49.19 },
+              type: "start" as const,
+            },
+            {
+              id: "d2-end",
+              name: "Olomouc",
+              location: { lng: 17.25, lat: 49.59 },
+              type: "end" as const,
+            },
+          ],
+          routeGeometry: {
+            type: "LineString" as const,
+            coordinates: [
+              [16.6, 49.19],
+              [16.9, 49.35],
+              [17.25, 49.59],
+            ],
+          },
+        },
+      ],
+    };
+    useTripStore.setState({ activeTrip: twoDayTrip, selectedDayIndex: 0 });
+
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={twoDayTrip} month={7} />);
+
+    // A stop sitting on Day 2's leg (near its middle vertex).
+    act(() =>
+      ref.current?.openPoiPopover({
+        id: "d2-cafe",
+        name: "Kavárna u trasy",
+        category: "cafe",
+        source: "osm",
+        lat: 49.36,
+        lng: 16.91,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const days = useTripStore.getState().activeTrip!.days;
+    expect(days[1]!.waypoints.map((w) => w.name)).toContain("Kavárna u trasy");
+    expect(days[0]!.waypoints.map((w) => w.name)).not.toContain(
+      "Kavárna u trasy",
+    );
+  });
+
+  it("inserts an early-route stop BEFORE later vias, not before the finish", () => {
+    // Day 1 already has a late via — an early stop appended before the
+    // finish would make the next reroute backtrack through that via.
+    const base = trip();
+    const dayWithLateVia = {
+      ...base.days[0]!,
+      waypoints: [
+        base.days[0]!.waypoints[0]!,
+        {
+          id: "late-via",
+          name: "Late via",
+          location: { lng: 14.49, lat: 50.12 },
+          type: "via" as const,
+        },
+        base.days[0]!.waypoints[base.days[0]!.waypoints.length - 1]!,
+      ],
+    };
+    const viaTrip = { ...base, days: [dayWithLateVia] };
+    useTripStore.setState({ activeTrip: viaTrip, selectedDayIndex: 0 });
+
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={viaTrip} month={7} />);
+
+    // A stop near the FIRST leg of the route (before the late via).
+    act(() =>
+      ref.current?.openPoiPopover({
+        id: "early-fuel",
+        name: "Early fuel",
+        category: "fuel",
+        source: "osm",
+        lat: 50.09,
+        lng: 14.43,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+    const names = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.name);
+    expect(names).toEqual(["Start", "Early fuel", "Late via", "End"]);
+  });
+
+  it("drives region drawing through the handle — no in-map pills remain", () => {
+    // Rider feedback: the BUILD column's Fun-Zone checkbox owns the
+    // draw flow; the map exposes start/cancel imperatively and mirrors
+    // the mode back through onDrawModeChange.
+    const ref = createRef<TripPlannerMapHandle>();
+    const onDrawModeChange = vi.fn();
+    const onDrawnRegionChange = vi.fn();
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={trip()}
+        month={7}
+        onDrawnRegionChange={onDrawnRegionChange}
+        onDrawModeChange={onDrawModeChange}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", {
+        name: /draw region|cancel drawing|clear region|redraw region/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    act(() => ref.current?.startRegionDraw());
     expect(drawControl.start).toHaveBeenCalledTimes(1);
 
     act(() => {
       lastDrawOptions?.onModeChange?.("drawing");
     });
+    expect(onDrawModeChange).toHaveBeenCalledWith("drawing");
     expect(
-      screen.getByRole("button", { name: "Cancel drawing" }),
+      screen.getByText(/Click and drag on the map to outline a region\./),
     ).toBeInTheDocument();
 
     act(() => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
       lastDrawOptions?.onModeChange?.("idle");
     });
+    expect(onDrawnRegionChange).toHaveBeenCalledWith([14.4, 50.08, 14.7, 50.3]);
+    expect(onDrawModeChange).toHaveBeenCalledWith("idle");
+    // No persistent instruction box lingers after the region exists.
     expect(
-      screen.getByRole("button", { name: "Clear region" }),
-    ).toBeInTheDocument();
+      screen.queryByText(/Drag the region to move it/),
+    ).not.toBeInTheDocument();
+
+    act(() => ref.current?.cancelRegionDraw());
+    expect(drawControl.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismisses the outline hint the moment the drag begins", () => {
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler !== "string") {
+        eventHandlers.set(event, layerOrHandler as (event: unknown) => void);
+      } else if (maybeHandler) {
+        eventHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onModeChange?.("drawing");
+    });
     expect(
-      screen.getByRole("button", { name: "Redraw region" }),
+      screen.getByText(/Click and drag on the map to outline a region\./),
     ).toBeInTheDocument();
+
+    act(() => {
+      eventHandlers.get("mousedown")?.({});
+    });
+    expect(
+      screen.queryByText(/Click and drag on the map to outline a region\./),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the placement hint only until the trip has its first point", () => {
+    const emptyTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, waypoints: [] }],
+    };
+    const { rerender } = render(
+      <TripPlannerMap trip={emptyTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
     expect(
       screen.getByText(
-        /Drag the region to move it, drag a handle to resize, or press Delete to remove\./,
+        /Click the map to add points\. We snap to nearby roads when visible\./,
       ),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
-    expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole("button", { name: "Clear region" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Draw region" }),
-    ).toBeInTheDocument();
+    // First point placed → hint gone…
+    rerender(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
+
+    // …and it stays gone for this trip even if every point is removed.
+    rerender(
+      <TripPlannerMap trip={emptyTrip} month={7} onMoveWaypoint={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
   });
 
-  it("fetches Fun Zones for the drawn region and exposes selected top roads", async () => {
+  it("never shows the placement hint on read-only maps", () => {
+    const emptyTrip = {
+      ...trip(),
+      days: [{ ...trip().days[0]!, waypoints: [] }],
+    };
+    render(<TripPlannerMap trip={emptyTrip} month={7} />);
+    expect(screen.queryByText(/Click the map to add points/)).toBeNull();
+  });
+
+  it("fetches Fun Zones for the drawn region and feeds the map layer", async () => {
     const zones = [
       {
         id: "zone-1",
@@ -495,26 +986,8 @@ describe("TripPlannerMap", () => {
       },
     ];
     vi.mocked(fetchFunZonesInBbox).mockResolvedValueOnce(zones as never);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: zones[0],
-      top_roads: [
-        {
-          id: "road-1",
-          road_name: "SS38",
-          road_number: "SS38",
-          quality_score: 4.7,
-          curviness_score: 4.5,
-          surface_type: "asphalt",
-          length_m: 12340,
-          confidence: 90,
-          elevation_min: 900,
-          elevation_max: 2700,
-          elevation_profile: null,
-          geometry: [],
-          contribution_score: 9.2,
-        },
-      ],
-    } as never);
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -523,34 +996,27 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onModeChange?.("idle");
     });
 
-    expect(screen.getByText("Loading Fun Zones…")).toBeInTheDocument();
-
     await waitFor(() =>
       expect(fetchFunZonesInBbox).toHaveBeenCalledWith(
         [10.3, 46.45, 10.6, 46.7],
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
-    expect(screen.getByRole("button", { name: /Stelvio sweepers/i }));
-    expect(screen.getByText("4.6 score")).toBeInTheDocument();
-    expect(screen.getByText(/summer/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Stelvio sweepers/i }));
-
+    // Zones land on the map layer; the in-map info card was removed, so
+    // no list UI renders.
     await waitFor(() =>
-      expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-        "zone-1",
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [
+            expect.objectContaining({
+              properties: expect.objectContaining({ id: "zone-1" }),
+            }),
+          ],
+        }),
       ),
     );
-    expect(screen.getByText("Top roads")).toBeInTheDocument();
-    expect(screen.getByText("SS38")).toBeInTheDocument();
-    expect(screen.getByText("12.3 km")).toBeInTheDocument();
-    expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
-      "==",
-      ["get", "id"],
-      "zone-1",
-    ]);
+    expect(screen.queryByText(/Stelvio sweepers/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Planner map/)).not.toBeInTheDocument();
   });
 
   it("selects a Fun Zone map feature inside the drawn region", async () => {
@@ -562,25 +1028,6 @@ describe("TripPlannerMap", () => {
       return mockMap;
     });
     drawControl.hitTest.mockReturnValue(true);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: {
-        id: "zone-1",
-        name: "Stelvio sweepers",
-        composite_score: 4.6,
-        road_count: 12,
-        total_curve_km: 48,
-        avg_quality: 4.2,
-        best_season: "summer",
-        boundary: [
-          { lng: 10.3, lat: 46.45 },
-          { lng: 10.6, lat: 46.45 },
-          { lng: 10.6, lat: 46.7 },
-          { lng: 10.3, lat: 46.7 },
-          { lng: 10.3, lat: 46.45 },
-        ],
-      },
-      top_roads: [],
-    } as never);
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -599,10 +1046,6 @@ describe("TripPlannerMap", () => {
       ]),
     );
     expect(drawControl.hitTest).not.toHaveBeenCalled();
-    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-      "zone-1",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
   });
 
   it("does not add a waypoint when selecting a Fun Zone outside the drawn region", async () => {
@@ -619,25 +1062,6 @@ describe("TripPlannerMap", () => {
     });
     drawControl.hitTest.mockReturnValue(false);
     mockMap.queryRenderedFeatures.mockReturnValue([]);
-    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
-      zone: {
-        id: "zone-1",
-        name: "Stelvio sweepers",
-        composite_score: 4.6,
-        road_count: 12,
-        total_curve_km: 48,
-        avg_quality: 4.2,
-        best_season: "summer",
-        boundary: [
-          { lng: 10.3, lat: 46.45 },
-          { lng: 10.6, lat: 46.45 },
-          { lng: 10.6, lat: 46.7 },
-          { lng: 10.3, lat: 46.7 },
-          { lng: 10.3, lat: 46.45 },
-        ],
-      },
-      top_roads: [],
-    } as never);
 
     render(
       <TripPlannerMap
@@ -665,10 +1089,6 @@ describe("TripPlannerMap", () => {
       ]),
     );
     expect(handleAddWaypoint).not.toHaveBeenCalled();
-    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
-      "zone-1",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
   });
 
   it("clears Fun Zone results when the drawn region is cleared", async () => {
@@ -691,6 +1111,9 @@ describe("TripPlannerMap", () => {
       },
     ] as never);
 
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+
     render(<TripPlannerMap trip={trip()} month={7} />);
 
     act(() => {
@@ -698,14 +1121,22 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onModeChange?.("idle");
     });
     await waitFor(() => expect(fetchFunZonesInBbox).toHaveBeenCalled());
-    await screen.findByText(/Stelvio sweepers/);
+    await waitFor(() =>
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [expect.objectContaining({ type: "Feature" })],
+        }),
+      ),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
+    setData.mockClear();
+    fireEvent.keyDown(window, { key: "Delete" });
 
-    expect(screen.queryByText(/Stelvio sweepers/)).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Draw a region to discover Fun Zones."),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(setData).toHaveBeenCalledWith(
+        expect.objectContaining({ features: [] }),
+      ),
+    );
   });
 
   it("clears the drawn region when the rider presses Delete or Backspace", () => {
@@ -715,15 +1146,9 @@ describe("TripPlannerMap", () => {
       lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
       lastDrawOptions?.onModeChange?.("idle");
     });
-    expect(
-      screen.getByRole("button", { name: "Clear region" }),
-    ).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Delete" });
     expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByRole("button", { name: "Clear region" }),
-    ).not.toBeInTheDocument();
 
     // After clearing, Backspace must not trigger another clearDrawn call.
     fireEvent.keyDown(window, { key: "Backspace" });
@@ -749,30 +1174,10 @@ describe("TripPlannerMap", () => {
     expect(drawControl.clearDrawn).not.toHaveBeenCalled();
   });
 
-  it("hides the Cancel drawing button while editing the drawn region", () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
-
-    act(() => {
-      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
-      lastDrawOptions?.onModeChange?.("idle");
-    });
-    act(() => {
-      lastDrawOptions?.onModeChange?.("editing");
-    });
-
-    expect(
-      screen.queryByRole("button", { name: "Cancel drawing" }),
-    ).not.toBeInTheDocument();
-    // The "Redraw region" entry-point should still be reachable so the
-    // rider can outline a fresh rectangle even while a drag is active.
-    expect(
-      screen.getByRole("button", { name: "Redraw region" }),
-    ).toBeInTheDocument();
-  });
-
-  it("does not open the context menu when right-click lands on the drawn region", () => {
-    // hitTest is checked in the contextmenu handler; clicks over drawn regions
-    // are swallowed by the region tool (no placement menu shown).
+  it("opens the context menu inside a drawn region (waypoints are placeable there)", () => {
+    // Rider feedback: a drafted route lives INSIDE the drawn region, so
+    // right-click placement must work there. Region move/resize are
+    // left-drag gestures and never conflict with right-click.
     const eventHandlers = new Map<string, (event: unknown) => void>();
     mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
       if (typeof layerOrHandler === "string") return mockMap;
@@ -787,6 +1192,8 @@ describe("TripPlannerMap", () => {
       return mockMap;
     });
     drawControl.hitTest.mockReturnValue(true);
+    // Placement road-snap queries rendered features on right-click.
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
 
     render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
@@ -800,11 +1207,11 @@ describe("TripPlannerMap", () => {
         preventDefault: vi.fn(),
         point: { x: 200, y: 200 },
         lngLat: { lng: 14.55, lat: 50.2 },
+        originalEvent: { clientX: 200, clientY: 200 },
       });
     });
 
-    expect(drawControl.hitTest).toHaveBeenCalledWith({ x: 200, y: 200 });
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 
   it("does NOT auto-refit when waypoint changes mutate bounds on the same trip (#559)", () => {
@@ -905,23 +1312,28 @@ describe("TripPlannerMap", () => {
     });
   });
 
-  it("refits when the user clicks Fit to route", async () => {
-    render(<TripPlannerMap trip={trip()} month={7} />);
+  it("refits via the imperative fitRoute handle (toolbar Fit route)", async () => {
+    // The in-map Fit-to-route pill was dropped — the toolbar button is
+    // the single fit control, wired through the ref handle.
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={trip()} month={7} />);
 
     await waitFor(() => {
       expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
     });
     mockMap.fitBounds.mockClear();
+    expect(
+      screen.queryByRole("button", { name: /fit map to the whole route/i }),
+    ).not.toBeInTheDocument();
 
-    const fitBtn = screen.getByRole("button", {
-      name: /fit map to the whole route/i,
+    act(() => {
+      ref.current?.fitRoute();
     });
-    fitBtn.click();
 
     expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
     expect(mockMap.fitBounds).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ padding: 72, duration: 0, maxZoom: 11 }),
+      expect.objectContaining({ padding: 72, duration: 1200, maxZoom: 11 }),
     );
   });
 
@@ -967,7 +1379,7 @@ describe("TripPlannerMap", () => {
     ]);
   });
 
-  it("shows in-map seasonal condition details and registers closure/pass overlay sources", () => {
+  it("registers closure/pass overlay sources for the map layers", () => {
     useClosuresMock.mockReturnValue({
       closures: [
         {
@@ -1032,12 +1444,9 @@ describe("TripPlannerMap", () => {
 
     render(<TripPlannerMap trip={trip()} month={7} />);
 
-    expect(screen.getByText("Conditions for July")).toBeInTheDocument();
-    expect(screen.getByText("Stelvio summit roadworks")).toBeInTheDocument();
-    expect(screen.getByText("Roadworks")).toBeInTheDocument();
-    expect(screen.getByText("Jul 1 - Jul 21")).toBeInTheDocument();
-    expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
-    expect(screen.getByText("Open · 2,757 m")).toBeInTheDocument();
+    // The in-map info card was removed — conditions surface on the map
+    // (overlay sources below) and in the CONDITIONS panel tab.
+    expect(screen.queryByText("Conditions for July")).not.toBeInTheDocument();
 
     expect(mockMap.addSource).toHaveBeenCalledWith(
       "trip-planner-closure-lines",
@@ -1047,39 +1456,6 @@ describe("TripPlannerMap", () => {
       "trip-planner-pass-markers",
       expect.objectContaining({ type: "geojson" }),
     );
-  });
-
-  it("shows route-check failures instead of a false safe-route message", () => {
-    useClosuresMock.mockReturnValue({
-      closures: [],
-      routeClosures: [],
-      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
-      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
-      loading: false,
-      routeLoading: false,
-      error: null,
-      routeError: "Failed to check route closures",
-      previewDate: new Date("2026-07-15T12:00:00Z"),
-    });
-    usePassesMock.mockReturnValue({
-      passes: [],
-      routePasses: [],
-      routeClosedCount: 0,
-      routeUnknownCount: 0,
-      loading: false,
-      routeLoading: false,
-      error: null,
-      routeError: "Failed to check route passes",
-    });
-
-    render(<TripPlannerMap trip={trip()} month={7} />);
-
-    expect(
-      screen.getByText("Failed to check route closures"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("No route closures or pass warnings for this month."),
-    ).not.toBeInTheDocument();
   });
 
   it("registers the segment-highlight source and renders nothing when no segment is focused", () => {
@@ -1265,7 +1641,7 @@ describe("TripPlannerMap", () => {
 
     const preventDefault = vi.fn();
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault,
         features: [
           {
@@ -1329,7 +1705,7 @@ describe("TripPlannerMap", () => {
     // Begin a real drag (past click tolerance) with the first callback
     // installed.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1404,7 +1780,7 @@ describe("TripPlannerMap", () => {
 
     const preventDefault = vi.fn();
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault,
         features: [],
         point: { x: 100, y: 100 },
@@ -1461,7 +1837,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1531,7 +1907,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1607,7 +1983,7 @@ describe("TripPlannerMap", () => {
     // emit a synthetic click. Our threshold must match exactly,
     // otherwise the gap (3 < dist <= 4) keeps the swallow flag armed.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1684,7 +2060,7 @@ describe("TripPlannerMap", () => {
     // exercises the no-op-store-update path so we can verify the
     // listeners stay attached even when React does not re-render.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1719,7 +2095,7 @@ describe("TripPlannerMap", () => {
     expect(preventDefault).not.toHaveBeenCalled();
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1773,7 +2149,7 @@ describe("TripPlannerMap", () => {
     // Touch a waypoint, never move past tolerance, then cancel —
     // common when an OS gesture (e.g. system back swipe) interrupts.
     act(() => {
-      layerHandlers.get("touchstart:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("touchstart:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1835,7 +2211,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1922,7 +2298,7 @@ describe("TripPlannerMap", () => {
     // mouseup `lngLat` differs from the marker's stored location, so
     // committing it would silently nudge the waypoint by a few pixels.
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -1990,7 +2366,7 @@ describe("TripPlannerMap", () => {
     );
 
     act(() => {
-      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+      layerHandlers.get("mousedown:trip-planner-waypoint-pin")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
@@ -2041,12 +2417,102 @@ describe("TripPlannerMap", () => {
     expect(useClosuresMock).not.toHaveBeenCalled();
     expect(usePassesMock).not.toHaveBeenCalled();
     expect(buildTripClosureRoutesMock).not.toHaveBeenCalled();
+  });
+
+  it("hides the condition reroute on read-only maps", () => {
+    // The trip-detail page renders this map without edit callbacks: a
+    // reroute there would mutate only the store while the immutable
+    // trip prop keeps rendering — a silent no-op with a desynced view.
+    const demoClosure = {
+      id: "cl-1",
+      title: "Bridge resurfacing",
+      reason: "roadworks" as const,
+      severity: "partial" as const,
+      geometry: [
+        { lat: 50.1, lng: 14.49 },
+        { lat: 50.12, lng: 14.52 },
+      ],
+      detour: null,
+      country_code: "CZ",
+      region: null,
+      starts_at: "2026-07-01T00:00:00Z",
+      ends_at: "2026-07-18T00:00:00Z",
+      notes: null,
+      source: "operator" as const,
+      created_by: null,
+      created_at: "2026-06-20T00:00:00Z",
+      updated_at: "2026-06-20T00:00:00Z",
+    };
+    const conditionsProps = {
+      closuresData: {
+        closures: [demoClosure],
+        routeClosures: [demoClosure],
+        counts: { full: 0, partial: 1, advisory: 0, total: 1 },
+        routeCounts: { full: 0, partial: 1, advisory: 0, total: 1 },
+        loading: false,
+        routeLoading: false,
+        error: null,
+        routeError: null,
+        previewDate: new Date("2026-07-15T12:00:00Z"),
+      },
+      passesData: {
+        passes: [],
+        routePasses: [],
+        routeClosedCount: 0,
+        routeUnknownCount: 0,
+        loading: false,
+        routeLoading: false,
+        error: null,
+        routeError: null,
+      },
+    };
+
+    // Read-only (no waypoint-edit callbacks): popover opens, no reroute.
+    const readOnlyRef = createRef<TripPlannerMapHandle>();
+    const readOnly = render(
+      <TripPlannerMap
+        ref={readOnlyRef}
+        trip={trip()}
+        month={7}
+        {...conditionsProps}
+      />,
+    );
+    act(() =>
+      readOnlyRef.current?.openConditionPopover({
+        kind: "closure",
+        id: "cl-1",
+      }),
+    );
+    expect(screen.getByText("Bridge resurfacing")).toBeInTheDocument();
+    expect(screen.getByText("Affects your route")).toBeInTheDocument();
     expect(
-      screen.getByText("No route closures or pass warnings for this month."),
+      screen.queryByRole("button", { name: "Reroute around it" }),
+    ).toBeNull();
+    readOnly.unmount();
+
+    // Editable planner map: the reroute action is offered.
+    const editableRef = createRef<TripPlannerMapHandle>();
+    render(
+      <TripPlannerMap
+        ref={editableRef}
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        {...conditionsProps}
+      />,
+    );
+    act(() =>
+      editableRef.current?.openConditionPopover({
+        kind: "closure",
+        id: "cl-1",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Reroute around it" }),
     ).toBeInTheDocument();
   });
 
-  it("passes N day features to the route source for a multi-day trip", async () => {
+  it("passes per-segment quality features covering every day to the route source", async () => {
     const multiDayTrip: Trip = {
       ...trip(),
       num_days: 2,
@@ -2105,8 +2571,17 @@ describe("TripPlannerMap", () => {
           (call) =>
             (call[1] as { data: { features: unknown[] } }).data.features,
         )
-        .find((f) => f.length > 0);
-      expect(features).toHaveLength(2);
+        .find((f) => f.length > 0) as
+        | Array<{ properties: { dayNumber: number; segmentId: string } }>
+        | undefined;
+      // Per-segment features now — both days must be represented and every
+      // feature must carry a clickable segment id.
+      expect(features).toBeDefined();
+      const dayNumbers = new Set(features!.map((f) => f.properties.dayNumber));
+      expect(dayNumbers).toEqual(new Set([1, 2]));
+      expect(
+        features!.every((f) => /^d\d+-s\d+$/.test(f.properties.segmentId)),
+      ).toBe(true);
     });
   });
 });

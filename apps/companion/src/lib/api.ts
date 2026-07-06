@@ -1328,12 +1328,28 @@ export interface UserProfileResponse {
   created_at: string;
 }
 
+/** Wire shape of the rider's saved planner defaults (revision 3 §F). */
+export type UserRoutePrefsWire = {
+  road_preference:
+    | "direct"
+    | "balanced"
+    | "scenic_balance"
+    | "maximum_twisty"
+    | "efficient_loop";
+  avoid_highways: boolean;
+  avoid_tolls: boolean;
+  avoid_unpaved: boolean;
+  surfaces: string[];
+  min_quality: "any" | "fair_or_better" | "good_or_better" | "excellent_only";
+};
+
 export interface UpdateProfileInput {
   display_name?: string;
   phone?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
   home_region?: string | null;
+  preferences?: { route_prefs?: UserRoutePrefsWire };
 }
 
 export const usersApi = {

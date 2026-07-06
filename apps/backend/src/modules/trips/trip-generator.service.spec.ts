@@ -416,8 +416,80 @@ describe('TripGeneratorService', () => {
         start_location: { lat: 47.0, lng: 11.5 },
       });
 
-      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      // 1-day trips are roundtrips: outbound leg + return leg.
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(2);
       expect(result.options[0].days).toHaveLength(1);
+      // The day is the MERGED loop: out + back distances summed. (The
+      // mock returns one canned geometry per leg, so literal geometric
+      // closure can't be asserted here — the merge itself is the
+      // contract: both legs' 220 km land in one day.)
+      const day = result.options[0].days[0];
+      expect(day.distance_km).toBe(440);
+      // The turnaround is persisted as a via so a waypoint-based
+      // re-route keeps the loop instead of collapsing start→end.
+      expect(day.waypoints.map((w) => w.waypoint_type)).toContain('via');
+      expect(day.waypoints[day.waypoints.length - 1].waypoint_type).toBe('end');
+    });
+
+    it('averages loop metrics only over the legs that have data', async () => {
+      // Regression: a null metric on one half of the roundtrip used to
+      // count as ZERO over the full loop distance, halving the merged
+      // score whenever one leg crossed an under-mapped area.
+      tripRepo.findOne.mockResolvedValue(makeTrip({ num_days: 1 }));
+      // Distinct geometries per leg so the enrichment queries (keyed on
+      // the WKT parameter) can tell the legs apart.
+      const BACK_LNG = 11.987654;
+      routingProvider.getAlternatives
+        .mockResolvedValueOnce([
+          makeAlt({
+            geometry: [
+              { lat: 47.0, lng: 11.5 },
+              { lat: 47.2, lng: 11.4 },
+            ],
+          }),
+        ])
+        .mockResolvedValueOnce([
+          makeAlt({
+            geometry: [
+              { lat: 47.2, lng: 11.4 },
+              { lat: 47.0, lng: BACK_LNG },
+            ],
+          }),
+        ]);
+      dataSource.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('ST_Centroid')) {
+          return Promise.resolve([
+            { lat: 47.2, lng: 11.4, composite_score: 8 },
+          ]);
+        }
+        if (sql.includes('AVG(rs.quality_score)')) {
+          // The return leg has no quality-scored segments at all.
+          const wkt = typeof params?.[0] === 'string' ? params[0] : '';
+          if (wkt.includes(String(BACK_LNG))) return Promise.resolve([]);
+          return Promise.resolve([
+            {
+              avg_quality: 4,
+              avg_curviness: 60,
+              elevation_span: 500,
+              total_length_m: 30000,
+            },
+          ]);
+        }
+        if (sql.includes('FROM road_segments')) {
+          return Promise.resolve([]);
+        }
+        if (sql.includes('FROM hazard_reports')) {
+          return Promise.resolve([{ count: 0 }]);
+        }
+        return Promise.resolve([{ avg_scenic: 5, zone_count: 1 }]);
+      });
+
+      const result = await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+      });
+
+      // Equal-length legs: zero-dilution would have halved this to 2.
+      expect(result.options[0].days[0].avg_quality).toBe(4);
     });
 
     it('does NOT generate a degenerate start→start leg for a 1-day trip when fun zones exist', async () => {
@@ -430,7 +502,8 @@ describe('TripGeneratorService', () => {
         start_location: { lat: 47.0, lng: 11.5 },
       });
 
-      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      // Roundtrip: outbound + return legs.
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(2);
       const [originLat, originLng, destLat, destLng] = routingProvider
         .getAlternatives.mock.calls[0] as [
         number,
@@ -445,6 +518,19 @@ describe('TripGeneratorService', () => {
       expect(originLng).toBe(11.5);
       const isDegenerate = originLat === destLat && originLng === destLng;
       expect(isDegenerate).toBe(false);
+      // The return leg routes anchor → start.
+      const [backOriginLat, backOriginLng, backDestLat, backDestLng] =
+        routingProvider.getAlternatives.mock.calls[1] as [
+          number,
+          number,
+          number,
+          number,
+          number,
+        ];
+      expect(backOriginLat).toBe(destLat);
+      expect(backOriginLng).toBe(destLng);
+      expect(backDestLat).toBe(47.0);
+      expect(backDestLng).toBe(11.5);
     });
 
     it('defaults selected_option from trip.road_preference when caller omits option', async () => {

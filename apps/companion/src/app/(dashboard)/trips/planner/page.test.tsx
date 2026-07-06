@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import TripPlannerPage from "./page";
 import { ToastHost } from "@/components/ToastHost";
@@ -13,6 +14,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
+import { plannerApi } from "@/lib/planner/api";
 import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 
@@ -293,10 +295,31 @@ type TripStoreSnapshot = {
   removeDay: (index: number) => void;
   relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
+  markDayRouteDirty: (dayIndex: number) => void;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
+  selectedPlannerSegmentId: string | null;
+  activePoiCategories: ReadonlySet<import("@/lib/planner/types").PoiCategory>;
+  togglePoiCategory: (
+    category: import("@/lib/planner/types").PoiCategory,
+  ) => void;
+  selectPlannerSegment: (segmentId: string | null) => void;
+  planningMode: "single" | "multiday";
+  setPlanningMode: (mode: "single" | "multiday") => void;
+  splitStatus: "none" | "split" | "stale";
+  dayPlans: import("@/lib/planner/types").DayPlan[] | null;
+  pinnedBreakKms: number[];
+  applySplit: (
+    dayPlans: import("@/lib/planner/types").DayPlan[],
+    pinnedBreakKms?: number[],
+  ) => void;
+  clearSplit: () => void;
+  setPinnedBreaks: (kms: number[]) => void;
+  materializeSplit: () => void;
+  renameWaypoint: (waypointId: string, name: string) => void;
+  renameActiveTrip: (name: string) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
   appendPlannerWaypoint: (
     dayIndex: number,
@@ -304,6 +327,11 @@ type TripStoreSnapshot = {
     parameters?: Trip["parameters"],
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: unknown,
+  ) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   moveWaypoint: (
     dayIndex: number,
@@ -460,12 +488,29 @@ describe("TripPlannerPage", () => {
       removeDay: vi.fn(),
       relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
+      markDayRouteDirty: vi.fn(),
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
+      selectedPlannerSegmentId: null,
+      activePoiCategories: new Set<import("@/lib/planner/types").PoiCategory>(),
+      togglePoiCategory: vi.fn(),
+      selectPlannerSegment: vi.fn(),
+      planningMode: "single" as const,
+      setPlanningMode: vi.fn(),
+      splitStatus: "none" as const,
+      dayPlans: null,
+      pinnedBreakKms: [],
+      applySplit: vi.fn(),
+      clearSplit: vi.fn(),
+      setPinnedBreaks: vi.fn(),
+      materializeSplit: vi.fn(),
+      renameWaypoint: vi.fn(),
+      renameActiveTrip: vi.fn(),
       addWaypoint: vi.fn(),
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
+      insertWaypointBefore: vi.fn(),
       removeWaypoint: vi.fn(),
       moveWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
@@ -549,12 +594,15 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
   });
 
-  it("keeps placeholder timeline tabs non-interactive until a trip exists", () => {
+  it("renders no day column (not even placeholders) before a split", () => {
     render(<TripPlannerPage />);
 
-    expect(screen.getByRole("button", { name: /Day 1/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Day 2/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Day 3/i })).toBeDisabled();
+    // Revision 2 §B: the day column is ABSENT pre-split — no empty
+    // state, no placeholder chips, no day concept anywhere.
+    expect(
+      screen.queryByRole("button", { name: /Day 1/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
         selectedDayNumber: 1,
@@ -691,272 +739,557 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
   });
 
-  it("sends a valid daily-km band when saving a short daily target", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        dailyKmTarget: 100,
-      },
-    };
+  // "Push to phone" was pulled from the toolbar (rider feedback); its
+  // metadata/imported-route save flow stays dormant in _handleSave. The
+  // toolbar now offers Reset (start over in place) and Discard (delete
+  // the persisted trip and go back to the trips list).
+  it("offers Reset and Discard instead of Push to phone when a trip exists", () => {
+    storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          daily_km_min: 100,
-          daily_km_max: 100,
-        }),
-      ),
-    );
-  });
-
-  it("normalizes zero daily-km targets to the backend minimum instead of dropping them", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        dailyKmTarget: 0,
-      },
-    };
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          daily_km_min: 1,
-          daily_km_max: 1,
-        }),
-      ),
-    );
-  });
-
-  it("blocks contradictory unpaved surface filters before creating a trip", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      parameters: {
-        ...activeTrip.parameters,
-        surfacePreference: ["gravel"],
-        avoidUnpaved: true,
-      },
-    };
-
-    render(
-      <>
-        <TripPlannerPage />
-        <ToastHost />
-      </>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
 
     expect(
-      await screen.findByText(
-        "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
-      ),
-    ).toBeInTheDocument();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+      screen.queryByRole("button", { name: "Push to phone \u2192" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
-  it("does not save or redirect when the trip has no start waypoint", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          waypoints: [],
-        },
-      ],
-    };
+  // Reset/Discard confirm through the app-styled ConfirmDialog — the
+  // planner never opens system dialogs (they block the whole tab).
+  it("Reset clears the working trip after in-app confirmation", () => {
+    storeState.activeTrip = activeTrip;
 
-    render(
-      <>
-        <TripPlannerPage />
-        <ToastHost />
-      </>,
-    );
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset planner" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
+    expect(setActiveTrip).toHaveBeenCalledWith(null);
+  });
 
+  it("Reset does nothing when the confirmation is cancelled", () => {
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(setActiveTrip).not.toHaveBeenCalledWith(null);
     expect(
-      await screen.findByText("Add a start waypoint before saving this trip."),
-    ).toBeInTheDocument();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).not.toHaveBeenCalled();
+      screen.queryByRole("button", { name: "Reset planner" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("preserves imported route geometry when saving an imported draft", async () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      id: "imported-123",
-      name: "Passo loop import",
-      importSourceFormat: "kml",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          routeGeometry: {
-            type: "LineString",
-            coordinates: [
-              [10.37, 46.47],
-              [10.45, 46.55],
-              [10.57, 46.61],
-            ],
-          },
-          waypoints: [
-            {
-              id: "wp-start",
-              name: "Bormio",
-              type: "start",
-              location: { lng: 10.37, lat: 46.47 },
-            },
-            {
-              id: "wp-via",
-              name: "Umbrail",
-              type: "photo",
-              location: { lng: 10.45, lat: 46.55 },
-            },
-            {
-              id: "wp-end",
-              name: "Prato allo Stelvio",
-              type: "end",
-              location: { lng: 10.57, lat: 46.61 },
-            },
-          ],
-        },
-      ],
-    };
-
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiImportRouteMock).toHaveBeenCalledWith({
-        title: "Passo loop import",
-        source_format: "kml",
-        geometry: [
-          { lng: 10.37, lat: 46.47 },
-          { lng: 10.45, lat: 46.55 },
-          { lng: 10.57, lat: 46.61 },
-        ],
-        waypoints: [
-          { lng: 10.37, lat: 46.47, name: "Bormio" },
-          { lng: 10.45, lat: 46.55, name: "Umbrail", type: "photo" },
-          { lng: 10.57, lat: 46.61, name: "Prato allo Stelvio" },
-        ],
-      }),
-    );
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith("/trips/imported-server-trip-1");
-  });
-
-  it("writes an imported draft into the promoted server trip instead of creating a duplicate", async () => {
-    const promotedTripId = "11111111-2222-4333-8444-555555555555";
-    storeState.activeTrip = {
-      ...activeTrip,
-      id: "imported-456",
-      name: "Promoted import",
-      importSourceFormat: "gpx",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          routeGeometry: {
-            type: "LineString",
-            coordinates: [
-              [10.37, 46.47],
-              [10.57, 46.61],
-            ],
-          },
-        },
-      ],
-    };
-
-    render(<TripPlannerPage />);
-
-    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
-      -1,
-    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
-
-    await act(async () => {
-      latestModalProps?.onPromoted?.(promotedTripId);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiReplaceImportedRouteMock).toHaveBeenCalledWith(
-        promotedTripId,
-        expect.objectContaining({
-          title: "Promoted import",
-          source_format: "gpx",
-          geometry: [
-            { lng: 10.37, lat: 46.47 },
-            { lng: 10.57, lat: 46.61 },
-          ],
-        }),
-      ),
-    );
-    expect(tripsApiImportRouteMock).not.toHaveBeenCalled();
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
-  });
-
-  it("updates server-loaded trips from the current controls without regenerating existing route geometry", async () => {
+  it("Discard deletes the bound server trip and navigates back to trips", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
-    // A server-loaded trip in the planner is reached via `?tripId=` (the edit
-    // flow); without it the mount-time reset would treat this as create-new.
     window.history.replaceState(
       {},
       "",
       `/trips/planner?tripId=${serverTripId}`,
     );
-    tripsApiUpdateMock.mockResolvedValueOnce({
-      data: { id: serverTripId },
-    } as never);
+    // Hydration failing is fine — the id stays bound for deletion.
+    tripsApiGetMock.mockRejectedValue(new Error("offline"));
+    tripsApiDeleteMock.mockResolvedValue({ data: {} } as never);
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
+
+    await waitFor(() =>
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith(serverTripId),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/trips");
+  });
+
+  it("Discard without a persisted trip just leaves the planner", async () => {
+    storeState.activeTrip = activeTrip; // in-memory draft id
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/trips"));
+    expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("dropped the demo-trip shortcut from the toolbar", () => {
+    render(<TripPlannerPage />);
+    expect(
+      screen.queryByRole("button", { name: "Load demo trip" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a drafted loop in roundtrip mode: Recalculate reopens the dialog", () => {
+    // Finish placed back on the start coordinates = loop route.
     storeState.activeTrip = {
       ...activeTrip,
-      id: serverTripId,
-      name: "Server loaded route",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+            {
+              id: "turn",
+              name: "Turnaround",
+              type: "via",
+              location: { lng: 11, lat: 46.5 },
+            },
+            {
+              id: "e",
+              name: "Start",
+              type: "end",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
     };
 
     render(<TripPlannerPage />);
 
-    fireEvent.change(screen.getByLabelText("Number of days"), {
-      target: { value: "5" },
-    });
-    fireEvent.change(screen.getByLabelText("Daily km target"), {
-      target: { value: "180" },
-    });
-    fireEvent.change(screen.getByLabelText("Road preference"), {
-      target: { value: "direct" },
-    });
-    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
-      target: { value: "4" },
-    });
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
-        serverTripId,
-        expect.objectContaining({
-          title: "Server loaded route",
-          num_days: 5,
-          daily_km_min: 180,
-          daily_km_max: 180,
-          min_quality: 4,
-          road_preference: "fast",
-        }),
-      ),
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recalculate roundtrip" }),
     );
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${serverTripId}`);
+
+    // The options dialog opens (in recalculate wording) instead of the
+    // A\u2192B draft path, whose direct route would be 0 km.
+    expect(
+      screen.getByRole("dialog", { name: "Roundtrip options" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Recalculate roundtrip" }),
+    ).toBeInTheDocument();
+  });
+
+  it("labels the draft action Draft roundtrip when only a start exists", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Draft roundtrip" }),
+    ).toBeInTheDocument();
+    // The one-line roundtrip helper (rider feedback) replaces the old
+    // multi-sentence draft paragraph.
+    expect(
+      screen.getByText(
+        "No finish set — Tarmoto will loop you back to your start.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("drafts a roundtrip from the SELECTED day's start, not day 1's", async () => {
+    // Two days with day 2 selected and start-only (roundtrip mode). The
+    // draft must read the SELECTED day's start — its via inserts target
+    // that day, so day 1's endpoints belong to a different leg.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [
+            {
+              id: "s2",
+              name: "Brno",
+              type: "start",
+              location: { lng: 16.6, lat: 49.2 },
+            },
+          ],
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 1;
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+    expect(draftSpy.mock.calls[0]![0]).toEqual({ lat: 49.2, lng: 16.6 });
+    draftSpy.mockRestore();
+  });
+
+  it("applies the confirmed roundtrip preference to the live route inputs", async () => {
+    // The dialog's road preference is the loop's character — after the
+    // draft, live routing recomputes through the vias, so the page must
+    // adopt it or the loop silently falls back to the old trip-wide value.
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+
+    render(<TripPlannerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
+      target: { value: "maximum_twisty" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+    expect(draftSpy.mock.calls[0]![1]).toEqual(
+      expect.objectContaining({ preference: "maximum_twisty" }),
+    );
+    // Dialog closed; the §02 summary now reads the confirmed character.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Roundtrip options" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(/^Maximum twisty · /)).toBeInTheDocument();
+    draftSpy.mockRestore();
+  });
+
+  it("a confirmed roundtrip preference never writes the saved defaults, even after a real touch", async () => {
+    // The programmatic setRoadPreference from the dialog must clear the
+    // touched flag: an earlier rider edit in the same session would
+    // otherwise smuggle the per-loop choice into users route_prefs.
+    useAuthStore.setState({
+      user: { id: "u-1", email: "r@example.com", displayName: "R" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    const loadSpy = vi
+      .spyOn(plannerApi, "getUserRoutePrefs")
+      .mockResolvedValue(null);
+    const savePrefsSpy = vi
+      .spyOn(plannerApi, "saveUserRoutePrefs")
+      .mockResolvedValue(undefined);
+    const draftSpy = vi.spyOn(plannerApi, "draftRoundtrip").mockResolvedValue({
+      segments: [],
+      summary: {
+        distanceKm: 240,
+        timeMin: 300,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      reachedTargetKm: true,
+      vias: [],
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              id: "s",
+              name: "Start",
+              type: "start",
+              location: { lng: 10, lat: 46 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+    await waitFor(() => expect(loadSpy).toHaveBeenCalled());
+
+    // A REAL rider edit → one defaults write.
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    await waitFor(() => expect(savePrefsSpy).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+
+    // Confirm a roundtrip with a DIFFERENT preference…
+    fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+    const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
+      target: { value: "maximum_twisty" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+    );
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+
+    // …and the debounce window passes without a second defaults write.
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 1100)));
+    expect(savePrefsSpy).toHaveBeenCalledTimes(1);
+    loadSpy.mockRestore();
+    savePrefsSpy.mockRestore();
+    draftSpy.mockRestore();
+  });
+
+  it("keeps a day's custom LEG overrides when the rider switches days", () => {
+    // Leg overrides are stored per day: reconciliation may only run a
+    // day's legs against that day's own spine, so viewing day 2 must
+    // not discard day 1's CUSTOM road-type choices.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("d1-s", "start", 10),
+            mkWp("d1-v", "via", 11),
+            mkWp("d1-e", "end", 12),
+          ],
+        },
+        {
+          ...activeTrip.days[0]!,
+          dayNumber: 2,
+          waypoints: [mkWp("d2-s", "start", 12), mkWp("d2-e", "end", 13)],
+        },
+      ],
+    };
+    storeState.selectedDayIndex = 0;
+
+    const { rerender } = render(<TripPlannerPage />);
+
+    // Override the first day-1 leg to Maximum twisty.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Maximum twisty" }));
+    // A leg edit stales its OWN day only — the global dirty would wedge
+    // the Save gate on days live routing never revisits.
+    expect(storeState.markDayRouteDirty).toHaveBeenCalledWith(0);
+    expect(storeState.markRouteDirty).not.toHaveBeenCalled();
+    const firstLegButton = () =>
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!;
+    expect(firstLegButton()).toHaveTextContent("Maximum twisty");
+    expect(firstLegButton()).toHaveTextContent("CUSTOM");
+
+    // Day 2's single leg has no override…
+    storeState.selectedDayIndex = 1;
+    rerender(<TripPlannerPage />);
+    expect(
+      screen.getAllByRole("button", { name: "Road type for this leg" }),
+    ).toHaveLength(1);
+    expect(firstLegButton()).toHaveTextContent("Trip default");
+    expect(firstLegButton()).not.toHaveTextContent("CUSTOM");
+
+    // …and returning to day 1 still shows the override.
+    storeState.selectedDayIndex = 0;
+    rerender(<TripPlannerPage />);
+    expect(firstLegButton()).toHaveTextContent("Maximum twisty");
+    expect(firstLegButton()).toHaveTextContent("CUSTOM");
+  });
+
+  it("does not persist a loaded trip's parameters as saved defaults", async () => {
+    // A rider-made pref edit writes back as the new saved defaults (§F),
+    // but a later trip hydration applies the TRIP's parameters — those
+    // must never ride the still-set touched flag into a second save.
+    useAuthStore.setState({
+      user: { id: "u-1", email: "r@example.com", displayName: "R" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    const loadSpy = vi
+      .spyOn(plannerApi, "getUserRoutePrefs")
+      .mockResolvedValue(null);
+    const saveSpy = vi
+      .spyOn(plannerApi, "saveUserRoutePrefs")
+      .mockResolvedValue(undefined);
+
+    const { rerender } = render(<TripPlannerPage />);
+    await waitFor(() => expect(loadSpy).toHaveBeenCalled());
+
+    // Rider edit → debounced write-back fires once.
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+
+    // A different trip hydrates the controls programmatically…
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "another-trip",
+      parameters: { ...activeTrip.parameters, avoidUnpaved: true },
+    };
+    rerender(<TripPlannerPage />);
+
+    // …and the debounce window passes without a second save.
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 1100)));
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    loadSpy.mockRestore();
+    saveSpy.mockRestore();
+  });
+
+  it("keeps §03 dormant while no waypoints are placed", () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        { ...activeTrip.days[0]!, waypoints: [], routeGeometry: undefined },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    // No draft button in any wording, and no helper copy — the map's
+    // own "place a start point" hint carries the guidance.
+    expect(
+      screen.queryByRole("button", { name: /draft|propose|recalculate/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No finish set/)).not.toBeInTheDocument();
+  });
+
+  it("hides the draft section entirely once start + finish exist", () => {
+    // Distinct start (Bormio) and finish (Prato) — the route is already
+    // LIVE, so there is nothing to "draft" and §03 disappears; the
+    // "Route ready" chip communicates the state instead.
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.queryByRole("button", { name: /draft|propose|recalculate/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Draft route")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Already placed your points/),
+    ).not.toBeInTheDocument();
+    // Approximate ride time rides along with the distance (310 min).
+    expect(
+      screen.getByText("Route ready — 240 km · ~5h 10m"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/240 km · ~5h 10m/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Fun-Zone card as a checkbox that reflects the drawn region", () => {
+    render(<TripPlannerPage />);
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Draw region · Fun Zones/,
+    });
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText("Find dense clusters of great road."),
+    ).toBeInTheDocument();
+
+    // Checking with no region starts the map draw via the handle — the
+    // map is mocked here, so just assert the click doesn't blow up and
+    // the box stays unchecked until the map reports a mode change.
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("checks the Fun-Zone card and unchecks-to-remove when a region exists", () => {
+    // Region hydrated from the URL — same path a shared planner link uses.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?bbox=14.4,50.08,14.7,50.3",
+    );
+
+    render(<TripPlannerPage />);
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Draw region · Fun Zones/,
+    });
+    expect(checkbox).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByText(/Region set — drafting keeps the route inside it\./),
+    ).toBeInTheDocument();
+
+    // Unchecking with a drawn region removes it.
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText("Find dense clusters of great road."),
+    ).toBeInTheDocument();
+  });
+
+  it("derives the header name from the endpoints and renames via the dialog", () => {
+    // Placeholder name + Bormio -> Prato endpoints = derived title.
+    storeState.activeTrip = { ...activeTrip, name: "New Trip" };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Bormio → Prato allo Stelvio/ }),
+    );
+    const input = screen.getByLabelText("Trip name") as HTMLInputElement;
+    expect(input.value).toBe("Bormio → Prato allo Stelvio");
+
+    fireEvent.change(input, { target: { value: "Stelvio raid" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    expect(storeState.renameActiveTrip).toHaveBeenCalledWith("Stelvio raid");
+    expect(screen.queryByLabelText("Trip name")).toBeNull();
+  });
+
+  it("keeps a rider-set name untouched in the header", () => {
+    storeState.activeTrip = { ...activeTrip, name: "Passo weekend" };
+    render(<TripPlannerPage />);
+    expect(
+      screen.getByRole("button", { name: /Passo weekend/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Bormio → Prato/)).toBeNull();
   });
 
   it("renders the parameters panel always-visible in the spec 3-col layout", () => {
@@ -1002,7 +1335,8 @@ describe("TripPlannerPage", () => {
 
     expect(screen.getByLabelText("Number of days")).toHaveValue(14);
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
-    expect(screen.getByLabelText("Road preference")).toHaveValue("mixed");
+    // Invalid road value falls back to the revision 3 default: direct.
+    expect(screen.getByLabelText("Road preference")).toHaveValue("direct");
     expect(screen.getByLabelText("Minimum road quality")).toHaveValue("1");
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).not.toBeChecked();
@@ -1045,7 +1379,8 @@ describe("TripPlannerPage", () => {
     expect(window.location.search).toContain("road=scenic");
 
     fireEvent.change(screen.getByLabelText("Road preference"), {
-      target: { value: "mixed" },
+      // 'direct' is the default road preference (revision 3 §A).
+      target: { value: "direct" },
     });
     expect(window.location.search).not.toMatch(/[?&]road=/);
   });
@@ -1165,35 +1500,6 @@ describe("TripPlannerPage", () => {
         expect.objectContaining({ canCreateInviteLink: true }),
       );
     });
-  });
-
-  it("updates the promoted server trip instead of creating a duplicate draft", async () => {
-    const promotedTripId = "11111111-2222-4333-8444-555555555555";
-    tripsApiUpdateMock.mockResolvedValueOnce({
-      data: { id: promotedTripId },
-    } as never);
-    storeState.activeTrip = activeTrip;
-
-    render(<TripPlannerPage />);
-
-    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
-      -1,
-    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
-
-    await act(async () => {
-      latestModalProps?.onPromoted?.(promotedTripId);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Push to phone →" }));
-
-    await waitFor(() =>
-      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
-        promotedTripId,
-        expect.any(Object),
-      ),
-    );
-    expect(tripsApiCreateMock).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
   });
 
   // ── Save route (Task 11) ─────────────────────────────────────────────
@@ -1317,6 +1623,427 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
+    // PUT /route replaces days but never the metadata — the PATCH keeps
+    // title and planner parameters from reverting, and it runs after the
+    // route commit so a failed re-route can't persist new parameters
+    // against old geometry.
+    // ?tripId keeps the persisted trip mounted (the bare planner URL
+    // drops lingering UUID trips as the new-trip entry point).
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-666666666666",
+      name: "Renamed ride",
+    };
+    storeState.routeDirty = true;
+    tripsApiUpdateMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
+
+    render(<TripPlannerPage />);
+    // Metadata stays locked until the owner role lands (rename enabled).
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Renamed ride/ }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiUpdateMock).toHaveBeenCalled());
+    expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+      "11111111-2222-4333-8444-666666666666",
+      expect.objectContaining({
+        title: "Renamed ride",
+        num_days: 1,
+        road_preference: expect.any(String),
+        min_quality: expect.any(Number),
+      }),
+    );
+    // Route first, metadata second.
+    expect(tripsApiSaveRouteMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      tripsApiUpdateMock.mock.invocationCallOrder[0]!,
+    );
+    // The PATCH response (fresh metadata + days) is what hydrates.
+    expect(setActiveTrip).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Renamed ride" }),
+    );
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not touch metadata when the route save fails", async () => {
+    // A Valhalla failure on one edited day must not leave the new
+    // parameters persisted against the old geometry.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-666666666666",
+    };
+    storeState.routeDirty = true;
+    tripsApiSaveRouteMock.mockRejectedValue(new Error("502"));
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    expect(
+      await screen.findByText(/Could not save the route/),
+    ).toBeInTheDocument();
+    expect(tripsApiUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("a rename saves the title immediately and never arms a route save", async () => {
+    // A rename is a metadata edit: routing the whole trip again (with
+    // whatever sits in the sidebar) just to carry a title would change
+    // saved geometry unpreviewed — or block the title when routing is
+    // down.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-888888888888",
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Best fit", {
+        id: "11111111-2222-4333-8444-888888888888",
+      }),
+    } as never);
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-888888888888",
+    };
+    tripsApiUpdateMock.mockResolvedValue({ data: {} } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+    // Rename stays locked until the owner role lands.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best fit/ })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Best fit/ }));
+    fireEvent.change(screen.getByLabelText("Trip name"), {
+      target: { value: "Renamed only" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        "11111111-2222-4333-8444-888888888888",
+        { title: "Renamed only" },
+      ),
+    );
+    expect(await screen.findByText("Trip renamed")).toBeInTheDocument();
+    // The rename armed no route save and dirtied nothing.
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(storeState.renameActiveTrip).toHaveBeenCalledWith("Renamed only");
+  });
+
+  it("keeps metadata locked while a persisted trip's role is still loading", () => {
+    // Treating the role-fetch window as editable would let a member
+    // queue a metadata PATCH that fails after the route already
+    // committed — locked until the role lands.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-999999999999",
+    );
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-999999999999",
+    };
+    // No auth: the role fetch never resolves in this render.
+    render(<TripPlannerPage />);
+    expect(screen.getByRole("button", { name: /Best fit/ })).toBeDisabled();
+  });
+
+  it("skips the metadata PATCH when the caller is a plain member", async () => {
+    // PATCH /trips/:id is owner/admin-only while route saves are
+    // any-member — a member's Save route must not fail on a 403.
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-777777777777",
+    );
+    useAuthStore.setState({
+      user: { id: "u-member", email: "m@example.com", displayName: "M" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Member trip", {
+        id: "11111111-2222-4333-8444-777777777777",
+        members: [
+          {
+            user_id: "u-owner",
+            display_name: "Owner",
+            role: "owner",
+            joined_at: "2026-04-23T09:00:00Z",
+          },
+          {
+            user_id: "u-member",
+            display_name: "M",
+            role: "member",
+            joined_at: "2026-04-23T09:15:00Z",
+          },
+        ],
+      }),
+    } as never);
+
+    // Pre-set dirty: the mocked store isn't reactive, so the flag must
+    // be in place before the post-fetch re-render reads it.
+    storeState.routeDirty = true;
+    render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(storeState.activeTrip?.id).toBe(
+        "11111111-2222-4333-8444-777777777777",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    expect(tripsApiUpdateMock).not.toHaveBeenCalled();
+    // And the rename affordance is not offered — a member's rename
+    // could never persist, so the header title is read-only.
+    expect(screen.getByRole("button", { name: /Saved route/ })).toBeDisabled();
+
+    // The trip-wide road character is owner metadata: locked for
+    // members (their per-leg overrides still persist via the save).
+    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
+    expect(screen.getByRole("button", { name: /^Direct/ })).toBeDisabled();
+    expect(
+      screen.getByText(/road character is set by the trip owner/),
+    ).toBeInTheDocument();
+    // Min quality is owner metadata too.
+    expect(screen.getByLabelText("Minimum road quality")).toBeDisabled();
+  });
+
+  it("sends per-leg preferences with the save when a LEG override exists", async () => {
+    // The save re-routes server-side: without the leg breakdown a custom
+    // leg would persist a different line than the approved preview.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("s", "start", 10),
+            mkWp("v", "via", 11),
+            mkWp("e", "end", 12),
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = true;
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        title: null,
+        startLinked: false,
+        waypoints: [
+          { lat: 46, lng: 10, name: "s", type: "start" as BackendWaypointType },
+          { lat: 46, lng: 11, name: "v", type: "via" as BackendWaypointType },
+          { lat: 46, lng: 12, name: "e", type: "end" as BackendWaypointType },
+        ],
+      },
+    ]);
+
+    render(<TripPlannerPage />);
+    // Override the FIRST leg (trip-wide is Maximum twisty via "curvy").
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scenic balance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    const body = tripsApiSaveRouteMock.mock.calls[0]![1] as {
+      days: Array<{ leg_preferences?: string[] }>;
+    };
+    // Leg 1 carries the override; leg 2 inherits the trip-wide character.
+    expect(body.days[0]!.leg_preferences).toEqual([
+      "scenic_balance",
+      "balanced",
+    ]);
+  });
+
+  it("remaps day-0 leg overrides onto just-materialized split days", async () => {
+    // materializeSplit rewrites the single working day into N days right
+    // before the payload is built — the overrides still live under day 0
+    // and must be reconciled against each NEW day's spine, or Day 1+
+    // legs silently fall back to the trip-wide preference on save.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    const workingDay = {
+      ...activeTrip.days[0]!,
+      waypoints: [
+        mkWp("s", "start", 10),
+        mkWp("v", "via", 11),
+        mkWp("e", "end", 12),
+      ],
+    };
+    storeState.activeTrip = { ...activeTrip, days: [workingDay] };
+    storeState.routeDirty = true;
+    storeState.splitStatus = "split";
+    // The split boundary lands between the via and the finish: day 1
+    // keeps s→v (override survives), day 2 is the new SS→e leg.
+    (
+      storeState.materializeSplit as ReturnType<typeof vi.fn>
+    ).mockImplementation(() => {
+      storeState.activeTrip = {
+        ...activeTrip,
+        days: [
+          {
+            ...workingDay,
+            waypoints: [
+              mkWp("s", "start", 10),
+              mkWp("v", "via", 11),
+              mkWp("split-end-1", "end", 11.5),
+            ],
+          },
+          {
+            ...workingDay,
+            dayNumber: 2,
+            waypoints: [
+              mkWp("split-start-2", "start", 11.5),
+              mkWp("e", "end", 12),
+            ],
+          },
+        ],
+      };
+    });
+    (storeState.saveDays as ReturnType<typeof vi.fn>).mockReturnValue([
+      {
+        dayNumber: 1,
+        title: null,
+        startLinked: false,
+        waypoints: [
+          { lat: 46, lng: 10, name: "s", type: "start" as BackendWaypointType },
+          { lat: 46, lng: 11, name: "v", type: "via" as BackendWaypointType },
+          {
+            lat: 46,
+            lng: 11.5,
+            name: "split-end-1",
+            type: "end" as BackendWaypointType,
+          },
+        ],
+      },
+      {
+        dayNumber: 2,
+        title: null,
+        startLinked: true,
+        waypoints: [
+          {
+            lat: 46,
+            lng: 11.5,
+            name: "split-start-2",
+            type: "start" as BackendWaypointType,
+          },
+          { lat: 46, lng: 12, name: "e", type: "end" as BackendWaypointType },
+        ],
+      },
+    ]);
+
+    render(<TripPlannerPage />);
+    // Override the first leg (s→v) of the working day.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scenic balance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    const body = tripsApiSaveRouteMock.mock.calls[0]![1] as {
+      days: Array<{ leg_preferences?: string[] }>;
+    };
+    // Day 1 keeps the surviving s→v override; the boundary pair (v→SE)
+    // re-inherits. Day 2's spine has no surviving override at all.
+    expect(body.days[0]!.leg_preferences).toEqual([
+      "scenic_balance",
+      "balanced",
+    ]);
+    expect(body.days[1]!.leg_preferences).toBeUndefined();
+  });
+
+  it("re-seeds leg overrides from a loaded trip's persisted leg_preferences", () => {
+    // Saved leg_preferences map positionally onto the day's routing
+    // pairs; values equal to the trip-wide preference collapse back to
+    // inherit so only genuine overrides read CUSTOM.
+    const mkWp = (id: string, type: Waypoint["type"], lng: number) => ({
+      id,
+      name: id,
+      type,
+      location: { lng, lat: 46 },
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            mkWp("s", "start", 10),
+            mkWp("v", "via", 11),
+            mkWp("e", "end", 12),
+          ],
+          // Trip-wide maps to Balanced (fixture "mixed"): leg 1 is a
+          // real override, leg 2 collapses to inherit.
+          legPreferences: ["scenic_balance", "balanced"],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    const legButtons = screen.getAllByRole("button", {
+      name: "Road type for this leg",
+    });
+    expect(legButtons[0]).toHaveTextContent("Scenic balance");
+    expect(legButtons[0]).toHaveTextContent("CUSTOM");
+    expect(legButtons[1]).toHaveTextContent("Trip default");
+    expect(legButtons[1]).not.toHaveTextContent("CUSTOM");
   });
 
   it("saves a multi-day payload with days[] and num_days from day count", async () => {
@@ -1472,7 +2199,7 @@ describe("TripPlannerPage", () => {
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // The 5th argument is `enabled`
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("does NOT call usePlannerRouting with enabled=true when the day is not stale", () => {
@@ -1485,7 +2212,7 @@ describe("TripPlannerPage", () => {
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("calls usePlannerRouting with enabled=true when routeDirty and selected day is stale", () => {
@@ -1497,7 +2224,7 @@ describe("TripPlannerPage", () => {
 
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    expect(lastCall?.[4]).toBe(true);
+    expect(lastCall?.[3]).toBe(true);
   });
 
   it("routes start→overnight for an accommodation-terminated day (live inputs match Save)", () => {
@@ -1529,12 +2256,17 @@ describe("TripPlannerPage", () => {
     render(<TripPlannerPage />);
 
     // The terminal accommodation is normalized to the day's finish, so the
-    // live-routing inputs (arg 0) carry BOTH points — the preview routes to the
+    // live-routing legs (arg 0) span BOTH points — the preview routes to the
     // overnight, matching the route saveDays/the backend will persist.
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall?.[0]).toEqual([
-      { lat: 46, lng: 10 },
-      { lat: 46.5, lng: 11 },
+      expect.objectContaining({
+        legId: "s->h",
+        from: { lat: 46, lng: 10 },
+        to: { lat: 46.5, lng: 11 },
+        // The loaded trip's own "mixed" parameter maps to 'balanced'.
+        options: expect.objectContaining({ preference: "balanced" }),
+      }),
     ]);
   });
 
@@ -1561,7 +2293,7 @@ describe("TripPlannerPage", () => {
     const lastCall = usePlannerRoutingMock.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     // day 1 is not in stalePreviewDays so enabled=false
-    expect(lastCall?.[4]).toBe(false);
+    expect(lastCall?.[3]).toBe(false);
   });
 
   it("calls markRouteDirty when the user clicks an avoid-options checkbox", () => {
@@ -1591,17 +2323,36 @@ describe("TripPlannerPage", () => {
       ],
     };
     storeState.selectedDayIndex = 0;
+    // A loaded multi-day trip presents as an existing split (the day
+    // column renders DayPlans; the floating footer is gone).
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = [1, 2].map((n) => ({
+      dayNumber: n,
+      segmentIds: [],
+      distanceKm: 80,
+      timeMin: 90,
+      quality: {
+        distanceKm: 80,
+        timeMin: 90,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Start",
+      endTown: "Finish",
+      suggestedStays: [],
+      endKm: 80 * n,
+    }));
 
     render(<TripPlannerPage />);
 
-    // Both day tabs are rendered (sidebar + floating footer each render tabs,
-    // so we check count ≥ 2 for each day label)
     const day1Buttons = screen.getAllByRole("button", { name: /Day 1/i });
     const day2Buttons = screen.getAllByRole("button", { name: /Day 2/i });
     expect(day1Buttons.length).toBeGreaterThanOrEqual(1);
     expect(day2Buttons.length).toBeGreaterThanOrEqual(1);
 
-    // Click the first Day 2 tab (sidebar) — should call store setSelectedDay(1)
+    // Clicking the Day 2 card selects the real day for per-day routing.
     fireEvent.click(day2Buttons[0]!);
     expect(storeState.setSelectedDay).toHaveBeenCalledWith(1);
   });
@@ -1735,84 +2486,178 @@ describe("TripPlannerPage", () => {
     ).not.toBeDisabled();
   });
 
-  it("offers relink when the predecessor finishes at a terminal accommodation", () => {
-    storeState.activeTrip = {
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          dayNumber: 1,
-          waypoints: [
-            {
-              id: "s1",
-              name: "Start",
-              type: "start",
-              location: { lng: 10, lat: 46 },
-            },
-            {
-              id: "h1",
-              name: "Hotel",
-              type: "accommodation", // generated overnight finish, no `end`
-              location: { lng: 11, lat: 46.5 },
-            },
-          ],
-        },
-        {
-          ...activeTrip.days[0]!,
-          dayNumber: 2,
-          startLinked: false, // link broken by a manual start edit
-          waypoints: [
-            {
-              id: "s2",
-              name: "Start",
-              type: "start",
-              location: { lng: 12, lat: 47 },
-            },
-            {
-              id: "e2",
-              name: "End",
-              type: "end",
-              location: { lng: 13, lat: 47.5 },
-            },
-          ],
-        },
-      ],
-    };
+  it("hides the day column and header day count while the trip is unsplit", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.splitStatus = "none";
+    storeState.dayPlans = null;
 
     render(<TripPlannerPage />);
 
-    // Day 2 must offer "Link to previous day" even though day 1 finishes at an
-    // accommodation rather than an explicit end.
+    // No day concept anywhere in 'single' mode (revision 2 §A/§B/§C).
+    expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Day 1")).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d+ days ·/)).not.toBeInTheDocument();
+  });
+
+  const samplePlans = [
+    {
+      dayNumber: 1,
+      segmentIds: ["d1-s0"],
+      distanceKm: 240,
+      timeMin: 250,
+      quality: {
+        distanceKm: 240,
+        timeMin: 250,
+        score: 4.1,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Start",
+      endTown: "Brno",
+      suggestedStays: [],
+      endKm: 240,
+    },
+    {
+      dayNumber: 2,
+      segmentIds: ["d1-s1"],
+      distanceKm: 210,
+      timeMin: 220,
+      quality: {
+        distanceKm: 210,
+        timeMin: 220,
+        score: 3.6,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "Brno",
+      endTown: "Finish",
+      suggestedStays: [],
+      noTownNearby: true,
+      endKm: 450,
+    },
+  ];
+
+  it("renders DayPlans in the day column once split", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = samplePlans;
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Day 2")).toBeInTheDocument();
+    expect(screen.getByText("START → BRNO")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Link to previous day" }),
+      screen.getByText(/No overnight town near this break/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Route changed/)).not.toBeInTheDocument();
+    // Split button reads Re-split while split.
+    expect(
+      screen.getByRole("button", { name: /Re-split/i }),
     ).toBeInTheDocument();
   });
 
-  it("shows Add day button and disables it at 14 days (MAX_TRIP_DAYS)", () => {
-    // Create a 14-day trip (max)
-    const days = Array.from({ length: 14 }, (_, i) => ({
-      ...activeTrip.days[0]!,
-      dayNumber: i + 1,
-      title: `Day ${i + 1}`,
-      waypoints: i === 0 ? activeTrip.days[0]!.waypoints : [],
-    }));
-    storeState.activeTrip = { ...activeTrip, days };
+  it("dims stale days and offers a RE-SPLIT shortcut after a route edit", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "stale";
+    storeState.dayPlans = samplePlans;
 
     render(<TripPlannerPage />);
 
-    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
-    expect(addDayBtn).toBeInTheDocument();
-    expect(addDayBtn).toBeDisabled();
+    // Both the day-column banner and the BUILD-tab hint surface the change.
+    expect(screen.getAllByText(/Route changed/).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(
+      screen.getByRole("button", { name: "RE-SPLIT" }),
+    ).toBeInTheDocument();
+    // Days remain visible (dimmed) for orientation.
+    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
   });
 
-  it("calls addDay when Add day button is clicked (below 14 days)", () => {
-    storeState.activeTrip = activeTrip; // 1 day
+  it("shows the day count in the header only after a split", () => {
+    storeState.activeTrip = activeTrip;
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = samplePlans;
 
     render(<TripPlannerPage />);
 
-    const addDayBtn = screen.getByRole("button", { name: /Add day/i });
-    expect(addDayBtn).not.toBeDisabled();
-    fireEvent.click(addDayBtn);
-    expect(storeState.addDay).toHaveBeenCalledTimes(1);
+    // Post-split header: "N days · <total> km" (revision 2 §C).
+    expect(screen.getByText(/2 days · 240 km/)).toBeInTheDocument();
+  });
+
+  it("expanding Plan as multi-day trip is the day-planning opt-in", () => {
+    storeState.activeTrip = activeTrip;
+    const { container } = render(<TripPlannerPage />);
+
+    const details = container.querySelector("details")!;
+    // Collapsed by default — the optional layer stays out of the way.
+    expect(details.open).toBe(false);
+
+    details.open = true;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+    expect(storeState.setPlanningMode).toHaveBeenCalledWith("multiday");
+
+    // Collapsing before ever splitting backs out of the day concept.
+    details.open = false;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+    expect(storeState.setPlanningMode).toHaveBeenLastCalledWith("single");
+  });
+
+  it("gates re-splitting off for loaded multi-day trips", async () => {
+    // A saved multi-day trip already carries materialized days; splitting
+    // only day 1 would show a wrong itinerary that materializeSplit()
+    // refuses to persist — every re-split entry point must be gated.
+    const mkPlan = (dayNumber: number, endKm: number) => ({
+      dayNumber,
+      segmentIds: [],
+      distanceKm: 200,
+      timeMin: 240,
+      quality: {
+        distanceKm: 200,
+        timeMin: 240,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "A",
+      endTown: "B",
+      suggestedStays: [],
+      endKm,
+    });
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        activeTrip.days[0]!,
+        { ...activeTrip.days[0]!, dayNumber: 2, startLinked: true },
+      ],
+    };
+    storeState.planningMode = "multiday";
+    storeState.splitStatus = "split";
+    storeState.dayPlans = [mkPlan(1, 200), mkPlan(2, 400)];
+
+    const { container, rerender } = render(<TripPlannerPage />);
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle", { bubbles: false }));
+
+    // The BUILD split button is disabled and explains why.
+    expect(screen.getByRole("button", { name: /Re-split/ })).toBeDisabled();
+    expect(screen.getByText(/This trip's days are saved/)).toBeInTheDocument();
+
+    // Changing the day controls must not recompute a bogus split.
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "300" },
+    });
+    await act(async () => {});
+    expect(storeState.applySplit).not.toHaveBeenCalled();
+
+    // A stale split on a multi-day trip offers no day-column shortcut.
+    storeState.splitStatus = "stale";
+    rerender(<TripPlannerPage />);
+    expect(screen.queryByRole("button", { name: "RE-SPLIT" })).toBeNull();
   });
 });

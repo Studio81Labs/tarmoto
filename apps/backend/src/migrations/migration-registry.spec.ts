@@ -70,4 +70,24 @@ describe('migration registry — every file on disk is registered', () => {
     );
     expect(missing).toEqual([]);
   });
+
+  // A migration registered TWICE in the runtime list is as fatal as a
+  // missing one: TypeORM refuses to initialize with duplicate migration
+  // names, so a fresh bootstrap fails outright. `includes` above can't
+  // see this — count the entries of the inline array.
+  it('never registers a migration twice in the runtime list', () => {
+    const source = readFileSync(
+      join(__dirname, '..', 'modules', 'database', 'database.module.ts'),
+      'utf8',
+    );
+    const block = source.match(/migrations:\s*\[([\s\S]*?)\]/)?.[1] ?? '';
+    const entries = block
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const duplicates = entries.filter(
+      (entry, index) => entries.indexOf(entry) !== index,
+    );
+    expect(duplicates).toEqual([]);
+  });
 });

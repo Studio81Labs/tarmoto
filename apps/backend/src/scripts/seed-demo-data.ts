@@ -64,6 +64,8 @@ async function main(): Promise<void> {
     console.log(`  trips        : ${result.tripsCreated}`);
     console.log(`  follows      : ${result.followsCreated}`);
     console.log(`  badges earned: ${result.badgesAwarded}`);
+    console.log(`  passes ensured: ${result.passesEnsured}`);
+    console.log(`  closures     : ${result.closuresCreated}`);
     console.log('');
     console.log("Demo accounts (each account's password is its own email):");
     console.log('  newbie@tarmoto.app          — fresh signup, no badges');

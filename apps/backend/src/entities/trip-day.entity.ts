@@ -55,6 +55,14 @@ export class TripDay {
   @Column({ type: 'boolean', default: false })
   start_linked!: boolean;
 
+  /**
+   * Per-leg road-character overrides (revision 3 §C): one routing
+   * preference per consecutive routing-waypoint pair, in travel order.
+   * NULL = every leg inherits the trip-wide preference.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  leg_preferences!: string[] | null;
+
   @Column({ type: 'interval', nullable: true })
   estimated_time!: string | null;
 

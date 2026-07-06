@@ -2,8 +2,16 @@ import { create } from "zustand";
 
 /** Maximum number of days in a multi-day trip (companion mirror of the backend cap). */
 export const MAX_TRIP_DAYS = 14;
-import { filterRoutingWaypoints } from "@/lib/trip-routing";
+import type { Position as GeoJSONPosition } from "geojson";
+import { haversineKm } from "@tarmoto/shared";
+import { filterRoutingWaypoints, isRoutingWaypoint } from "@/lib/trip-routing";
 import type { RouteResponse } from "@/lib/api";
+import type {
+  DayPlan,
+  PlanningMode,
+  PoiCategory,
+  SplitStatus,
+} from "@/lib/planner/types";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
 import type {
   RoutePreviewSegment,
@@ -166,16 +174,78 @@ interface TripState {
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
 
+  /**
+   * Quality segment selected in the Plan & inspect planner — set by a route
+   * click on the map OR a flagged-section card in the panel, so the two
+   * surfaces stay in sync. Ids live in the derived-quality-segment id space
+   * (`deriveDayQualitySegments`), not `day.segments`.
+   */
+  selectedPlannerSegmentId: string | null;
+
+  /**
+   * Active POI categories (revision 4 §A) — ONE source of truth driving
+   * BOTH the map-top POI chip bar and the STOPS-tab filters. Multi-select;
+   * an empty set means no POI pins and no checked STOPS filters.
+   */
+  activePoiCategories: ReadonlySet<PoiCategory>;
+
+  /**
+   * Did the rider opt into day-planning (revision 2 §A)? 'single' means
+   * no day concept exists anywhere: no day column, no daily-km, no split.
+   */
+  planningMode: PlanningMode;
+  /**
+   * Two-phase planner lifecycle (addendum): the route is LIVE; days are
+   * computed on demand. Only meaningful in 'multiday'. 'none' = no days
+   * yet; 'split' = dayPlans current; 'stale' = route/prefs changed since
+   * the last split — days render dimmed until the rider re-splits.
+   */
+  splitStatus: SplitStatus;
+  /** Day plans from the last split (kept for dimmed display while stale). */
+  dayPlans: DayPlan[] | null;
+  /** Manual day-break overrides (along-route km) that survive re-splits. */
+  pinnedBreakKms: number[];
+
+  /**
+   * Flip the day-planning opt-in. Entering 'single' also drops any
+   * existing split — days exist only inside the multi-day layer.
+   */
+  setPlanningMode: (mode: PlanningMode) => void;
+  /** Store the splitter result and enter the 'split' state. */
+  applySplit: (dayPlans: DayPlan[], pinnedBreakKms?: number[]) => void;
+  /** Drop the split back to 'none' (route stays). */
+  clearSplit: () => void;
+  /** Pin/replace the manual break overrides (addendum §6). */
+  setPinnedBreaks: (kms: number[]) => void;
+  /**
+   * Rewrite `activeTrip.days` from the current dayPlans so the existing
+   * save contract persists the split: day k = boundary start + the
+   * original vias/stops that fall inside + boundary finish, with the
+   * route polyline sliced per day. No-op unless state is 'split'.
+   */
+  materializeSplit: () => void;
+
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (generating: boolean) => void;
   /** Set routeDirty to true. Called by user-facing controls that change routing inputs. */
   markRouteDirty: () => void;
+  /**
+   * Day-scoped dirty: stales ONLY the given day's preview (by index).
+   * For inputs that affect a single day (e.g. a LEG override) — the
+   * global variant would stale every routable day, and since live
+   * routing only reroutes the selected day, the others would wedge the
+   * Save gate until each was visited.
+   */
+  markDayRouteDirty: (dayIndex: number) => void;
   /** Mirror the planner controls' parameters for context-menu draft creation. */
   setDraftPlannerParameters: (parameters: TripParameters) => void;
 
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
+  selectPlannerSegment: (segmentId: string | null) => void;
+  /** Toggle a POI category in the shared map-bar/STOPS filter set. */
+  togglePoiCategory: (category: PoiCategory) => void;
 
   // Waypoint management
   addWaypoint: (dayIndex: number, waypoint: Waypoint) => void;
@@ -185,7 +255,29 @@ interface TripState {
     parameters?: Trip["parameters"],
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: Waypoint) => void;
+  /**
+   * Insert a waypoint immediately before the waypoint with the given id
+   * (route-order aware — used by "Reroute around this"). A null id, or an id
+   * that isn't in the day, falls back to the finish boundary like
+   * `insertWaypointBeforeEnd`. Never inserts before the day's start.
+   */
+  insertWaypointBefore: (
+    dayIndex: number,
+    beforeWaypointId: string | null,
+    waypoint: Waypoint,
+  ) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  /**
+   * Rename a waypoint on the active planner day (reverse-geocoded pin
+   * names, typed-search picks). Not a routing input — no dirty flag, no
+   * undo entry, no split invalidation.
+   */
+  renameWaypoint: (waypointId: string, name: string) => void;
+  /**
+   * Rename the working trip (planner header dialog). Undo-able and
+   * marks the draft dirty so the new name reaches the next save.
+   */
+  renameActiveTrip: (name: string) => void;
   moveWaypoint: (
     dayIndex: number,
     waypointId: string,
@@ -211,6 +303,12 @@ interface TripState {
     coords: { lat: number; lng: number },
     action: PlacementActionId,
     parameters?: TripParameters,
+    /**
+     * POI provenance for pins placed from the map's POI popover: names
+     * the waypoint and carries the category so the map renders the
+     * glyph-in-circle pin (revision 4).
+     */
+    meta?: { name?: string; poiCategory?: PoiCategory },
   ) => void;
 
   /**
@@ -265,7 +363,11 @@ interface TripState {
    * passes the day it routed so concurrent multi-day routing lands in the
    * correct slot regardless of `selectedDayIndex` at call time.
    */
-  applyRouteResult: (dayNumber: number, result: RouteResponse) => void;
+  applyRouteResult: (
+    dayNumber: number,
+    result: RouteResponse,
+    legBreaks?: Array<{ legId: string; startVertex: number }>,
+  ) => void;
 
   /**
    * Append a new day to the active trip (capped at MAX_TRIP_DAYS). The new
@@ -414,6 +516,47 @@ export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
   return waypoints.find((w) => w.type === "end");
 }
 
+/** Matches the auto-generated names the planner assigns to routing waypoints. */
+const DEFAULT_ROLE_NAME_RE = /^(Start|Finish|Via \d+|Reroute via)$/;
+
+/**
+ * Role-from-index: among the ROUTING waypoints (start/via/end — stop types
+ * like fuel or accommodation keep their type and don't participate), the
+ * first is the start, the last is the finish, everything between is a via.
+ * Called after any reorder/removal so dragging a via to the top makes it
+ * the start (demoting the old start to a via), and deleting the start
+ * promotes the next routing waypoint. Auto-generated names ("Start",
+ * "Via 2", …) are re-derived to match the new role; custom names (geocoded
+ * towns) are preserved.
+ */
+export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
+  const routing = waypoints
+    .map((waypoint, index) => ({ waypoint, index }))
+    .filter(
+      ({ waypoint }) =>
+        waypoint.type === "start" ||
+        waypoint.type === "via" ||
+        waypoint.type === "end",
+    );
+  if (routing.length === 0) return waypoints;
+
+  const next = [...waypoints];
+  let changed = false;
+  routing.forEach(({ waypoint, index }, order) => {
+    const role: Waypoint["type"] =
+      order === 0 ? "start" : order === routing.length - 1 ? "end" : "via";
+    if (waypoint.type === role) return;
+    changed = true;
+    let name = waypoint.name;
+    if (name === undefined || DEFAULT_ROLE_NAME_RE.test(name)) {
+      name =
+        role === "start" ? "Start" : role === "end" ? "Finish" : `Via ${order}`;
+    }
+    next[index] = { ...waypoint, type: role, name };
+  });
+  return changed ? next : waypoints;
+}
+
 /**
  * Index at which to insert a via so it lands BEFORE the day's finish (explicit
  * `end` or terminal `accommodation`). Returns `waypoints.length` (append) when
@@ -541,6 +684,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     draftPlannerParameters: null,
     focusedSegmentId: null,
     hoveredSegmentId: null,
+    selectedPlannerSegmentId: null,
+    activePoiCategories: new Set<PoiCategory>(),
+    planningMode: "single",
+    splitStatus: "none",
+    dayPlans: null,
+    pinnedBreakKms: [],
     undoStack: [],
     redoStack: [],
 
@@ -556,6 +705,19 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
+        selectedPlannerSegmentId: null,
+        // A loaded multi-day trip is already "split" — show its days in
+        // the day column; a fresh draft/single-day trip starts in single
+        // mode with no day concept at all (revision 2 §A).
+        planningMode:
+          activeTrip && activeTrip.days.length > 1 ? "multiday" : "single",
+        splitStatus:
+          activeTrip && activeTrip.days.length > 1 ? "split" : "none",
+        dayPlans:
+          activeTrip && activeTrip.days.length > 1
+            ? dayPlansFromTripDays(activeTrip.days)
+            : null,
+        pinnedBreakKms: [],
         undoStack: [],
         redoStack: [],
         canUndo: false,
@@ -566,6 +728,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     markRouteDirty: () =>
       set((s) => ({
         routeDirty: true,
+        // Routing inputs changed — a computed split no longer matches the
+        // route. Keep the plans for dimmed display, but flag them stale.
+        ...(s.splitStatus === "split"
+          ? { splitStatus: "stale" as SplitStatus }
+          : {}),
         // Avoid-option toggles are trip-level, but only mark ROUTABLE days
         // (>=2 routing waypoints) stale. Empty/under-specified days can't be
         // re-routed by the live hook (it bails for <2 routing waypoints), so
@@ -582,11 +749,210 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           )
           .map((d) => d.dayNumber),
       })),
+    markDayRouteDirty: (dayIndex) =>
+      set((s) => {
+        const day = s.activeTrip?.days[dayIndex];
+        const routable =
+          day &&
+          filterRoutingWaypoints(normalizeDayFinish(day.waypoints)).length >= 2;
+        return {
+          routeDirty: true,
+          ...(s.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
+            : {}),
+          // Same routability rule as markRouteDirty: never stale a day the
+          // live hook can't re-route, or the flag wedges the Save gate.
+          ...(routable
+            ? {
+                stalePreviewDays: s.stalePreviewDays.includes(day.dayNumber)
+                  ? s.stalePreviewDays
+                  : [...s.stalePreviewDays, day.dayNumber],
+              }
+            : {}),
+        };
+      }),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),
 
     focusSegment: (segmentId) => set({ focusedSegmentId: segmentId }),
     hoverSegment: (segmentId) => set({ hoveredSegmentId: segmentId }),
+    selectPlannerSegment: (segmentId) =>
+      set({ selectedPlannerSegmentId: segmentId }),
+
+    togglePoiCategory: (category) =>
+      set((state) => {
+        const next = new Set(state.activePoiCategories);
+        if (next.has(category)) next.delete(category);
+        else next.add(category);
+        return { activePoiCategories: next };
+      }),
+
+    renameActiveTrip: (name) =>
+      set((state) => {
+        const trimmed = name.trim();
+        if (!trimmed || !state.activeTrip || state.activeTrip.name === trimmed)
+          return state;
+        const committed = commitTripChange(state, (activeTrip) =>
+          activeTrip
+            ? {
+                ...activeTrip,
+                name: trimmed,
+                updatedAt: new Date().toISOString(),
+              }
+            : activeTrip,
+        );
+        if (committed === state) return state;
+        // A rename is a METADATA edit: never routeDirty. Arming the
+        // route save for it would re-route the whole trip (unpreviewed,
+        // with whatever options sit in the sidebar) just to carry a
+        // title — persisted trips PATCH the title directly instead.
+        return committed;
+      }),
+
+    renameWaypoint: (waypointId, name) =>
+      set((state) => {
+        const trip = state.activeTrip;
+        if (!trip) return state;
+        let changed = false;
+        const days = trip.days.map((day) => {
+          if (!day.waypoints.some((w) => w.id === waypointId)) return day;
+          changed = true;
+          return {
+            ...day,
+            waypoints: day.waypoints.map((w) =>
+              w.id === waypointId ? { ...w, name } : w,
+            ),
+          };
+        });
+        if (!changed) return state;
+        return { activeTrip: { ...trip, days } };
+      }),
+
+    setPlanningMode: (mode) =>
+      set(
+        // Leaving multi-day drops the day concept entirely — splits only
+        // exist inside the opt-in layer (revision 2 §A).
+        mode === "single"
+          ? {
+              planningMode: mode,
+              splitStatus: "none",
+              dayPlans: null,
+              pinnedBreakKms: [],
+            }
+          : { planningMode: mode },
+      ),
+
+    applySplit: (dayPlans, pinnedBreakKms) =>
+      set((state) => ({
+        dayPlans,
+        // Running a split IS acting on the multi-day section.
+        planningMode: "multiday",
+        splitStatus: "split",
+        pinnedBreakKms: pinnedBreakKms ?? state.pinnedBreakKms,
+        // A split is a save-worthy change on its own: without this a
+        // clean loaded route could be split but never saved (the save
+        // gate keys on routeDirty), so materializeSplit would never run.
+        routeDirty: true,
+      })),
+    clearSplit: () =>
+      set({ splitStatus: "none", dayPlans: null, pinnedBreakKms: [] }),
+    setPinnedBreaks: (kms) => set({ pinnedBreakKms: kms }),
+
+    materializeSplit: () =>
+      set((state) => {
+        const trip = state.activeTrip;
+        const plans = state.dayPlans;
+        if (
+          !trip ||
+          !plans ||
+          plans.length === 0 ||
+          state.splitStatus !== "split" ||
+          // Working-day model only: a loaded multi-day trip already has
+          // materialized days; re-slicing from day 1's geometry alone
+          // would corrupt them.
+          trip.days.length !== 1
+        ) {
+          return state;
+        }
+        const routeDay = trip.days[0];
+        const coordinates = routeDay?.routeGeometry?.coordinates;
+        if (!routeDay || !coordinates || coordinates.length < 2) return state;
+
+        const kmAt = cumulativeKm(coordinates);
+        const totalKm = kmAt[kmAt.length - 1] ?? 0;
+        if (totalKm <= 0) return state;
+        // Along-route position of every original waypoint (nearest vertex).
+        const waypointKms = routeDay.waypoints.map((waypoint) =>
+          nearestVertexKm(coordinates, kmAt, waypoint.location),
+        );
+
+        const days: TripDay[] = plans.map((plan, index) => {
+          const fromKm = index === 0 ? 0 : (plans[index - 1]?.endKm ?? 0);
+          const toKm = index === plans.length - 1 ? totalKm : plan.endKm;
+          const sliced = sliceCoordinatesByKm(coordinates, kmAt, fromKm, toKm);
+          const startCoord = sliced[0]!;
+          const endCoord = sliced[sliced.length - 1]!;
+
+          const interior = routeDay.waypoints.filter((waypoint, wIndex) => {
+            if (waypoint.type === "start" || waypoint.type === "end")
+              return false;
+            const km = waypointKms[wIndex]!;
+            return km > fromKm + 0.5 && km < toKm - 0.5;
+          });
+
+          const startWaypoint: Waypoint =
+            index === 0
+              ? (routeDay.waypoints.find((w) => w.type === "start") ?? {
+                  id: `split-start-${plan.dayNumber}`,
+                  name: plan.startTown,
+                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                  type: "start",
+                })
+              : {
+                  id: `split-start-${plan.dayNumber}`,
+                  name: plan.startTown,
+                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                  type: "start",
+                };
+          const endWaypoint: Waypoint =
+            index === plans.length - 1
+              ? (routeDay.waypoints.find((w) => w.type === "end") ?? {
+                  id: `split-end-${plan.dayNumber}`,
+                  name: plan.endTown,
+                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                  type: "end",
+                })
+              : {
+                  id: `split-end-${plan.dayNumber}`,
+                  name: plan.endTown,
+                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                  type: "end",
+                };
+
+          const share = totalKm > 0 ? (toKm - fromKm) / totalKm : 0;
+          return {
+            dayNumber: plan.dayNumber,
+            title: `Day ${plan.dayNumber}`,
+            waypoints: [startWaypoint, ...interior, endWaypoint],
+            routeGeometry: { type: "LineString", coordinates: sliced },
+            distanceKm: plan.distanceKm,
+            durationMinutes: plan.timeMin,
+            elevationGain: Math.round(routeDay.elevationGain * share),
+            avgQuality: plan.quality.score ?? 0,
+            segments: [],
+            startLinked: index > 0,
+          };
+        });
+
+        return {
+          activeTrip: {
+            ...trip,
+            days,
+            num_days: days.length,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }),
 
     addWaypoint: (dayIndex, waypoint) =>
       set((state) => {
@@ -652,6 +1018,49 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         };
       }),
 
+    insertWaypointBefore: (dayIndex, beforeWaypointId, waypoint) =>
+      set((state) => ({
+        ...commitTripChange(state, (activeTrip) => {
+          if (!activeTrip) return activeTrip;
+          const day = activeTrip.days[dayIndex];
+          if (!day) return activeTrip;
+          const days = [...activeTrip.days];
+          const waypoints = [...day.waypoints];
+          const anchorIndex = beforeWaypointId
+            ? waypoints.findIndex((w) => w.id === beforeWaypointId)
+            : -1;
+          // Missing anchor → finish boundary; found anchor → clamp so the
+          // via can never land ahead of the day's start.
+          const insertionIndex =
+            anchorIndex >= 0
+              ? Math.max(1, anchorIndex)
+              : viaInsertIndex(waypoints);
+          waypoints.splice(insertionIndex, 0, waypoint);
+          days[dayIndex] = updatePlannerDayRoute(
+            day,
+            waypoints,
+            activeTrip.parameters,
+          );
+          return {
+            ...activeTrip,
+            days,
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+        // A reroute via is a route edit — arm Save and the live-routing hook.
+        // Non-routing stops (fuel/rest/photo/mid-day accommodation) never
+        // change the spine: they arm Save (they must persist) but must not
+        // stale a day the live hook won't revisit, or Save wedges until the
+        // rider manually reroutes an unchanged day.
+        routeDirty: true,
+        stalePreviewDays: !isRoutingWaypoint(waypoint)
+          ? get().stalePreviewDays
+          : markDayStale(
+              get().stalePreviewDays,
+              get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+            ),
+      })),
+
     insertWaypointBeforeEnd: (dayIndex, waypoint) =>
       set((state) => ({
         ...commitTripChange(state, (activeTrip) => {
@@ -678,11 +1087,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         }),
         // POI stops (fuel/food/photo) inserted from TripStopsPanel are a route
         // edit — mark dirty so they enable Save route (gated on routeDirty).
+        // But only ROUTING waypoints (vias) stale the preview: a stop never
+        // changes the spine, and staling a day the live hook won't revisit
+        // wedges Save until the rider manually reroutes an unchanged day.
         routeDirty: true,
-        stalePreviewDays: markDayStale(
-          get().stalePreviewDays,
-          get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
-        ),
+        stalePreviewDays: !isRoutingWaypoint(waypoint)
+          ? get().stalePreviewDays
+          : markDayStale(
+              get().stalePreviewDays,
+              get().activeTrip?.days[dayIndex]?.dayNumber ?? 1,
+            ),
       })),
 
     removeWaypoint: (dayIndex, waypointId) =>
@@ -694,7 +1108,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const days = [...activeTrip.days];
           days[dayIndex] = updatePlannerDayRoute(
             day,
-            day.waypoints.filter((w) => w.id !== waypointId),
+            // Deleting the start/finish promotes its neighbour (role from index).
+            reassignWaypointRoles(
+              day.waypoints.filter((w) => w.id !== waypointId),
+            ),
             activeTrip.parameters,
           );
           return {
@@ -782,7 +1199,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           waypoints.splice(toIndex, 0, moved);
           days[dayIndex] = updatePlannerDayRoute(
             day,
-            waypoints,
+            // Roles derive from position: dragging a via to the top makes
+            // it the start; to the bottom, the finish.
+            reassignWaypointRoles(waypoints),
             activeTrip.parameters,
           );
           return {
@@ -839,6 +1258,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
+          selectedPlannerSegmentId: null,
+          ...(state.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
+            : {}),
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -870,6 +1293,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           ),
           focusedSegmentId: null,
           hoveredSegmentId: null,
+          selectedPlannerSegmentId: null,
+          ...(state.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
+            : {}),
           undoStack,
           redoStack,
           canUndo: undoStack.length > 0,
@@ -879,7 +1306,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     // ── Task 9: server-driven route geometry + context-menu waypoint actions ──
 
-    placeWaypoint: (coords, action, parameters) =>
+    placeWaypoint: (coords, action, parameters, meta) =>
       set((state) => {
         const committed = commitTripChange(state, (activeTrip) => {
           const isDraftCreation = activeTrip === null;
@@ -905,15 +1332,22 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           if (action === "set-start" || action === "set-new-start") {
             const startIndex = waypoints.findIndex((w) => w.type === "start");
             if (startIndex >= 0) {
-              waypoints[startIndex] = {
+              const updated: Waypoint = {
                 ...waypoints[startIndex]!,
                 location: { lng: coords.lng, lat: coords.lat },
               };
+              // A re-placed start is a NEW place: refresh or drop the POI
+              // provenance so a stale glyph never survives the move.
+              if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
+              else delete updated.poiCategory;
+              if (meta?.name) updated.name = meta.name;
+              waypoints[startIndex] = updated;
             } else {
               waypoints.unshift({
                 ...newWaypoint,
                 type: "start",
-                name: "Start",
+                name: meta?.name ?? "Start",
+                ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
             // Manual start placement on a non-first day breaks the overnight link.
@@ -932,20 +1366,35 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                   waypoints[i] = { ...waypoints[i]!, type: "via" };
                 }
               }
-              waypoints[finishIdx] = {
+              const updated: Waypoint = {
                 ...finish,
                 type: "end",
-                name: finish.type === "end" ? finish.name : "Finish",
+                name:
+                  meta?.name ??
+                  (finish.type === "end" ? finish.name : "Finish"),
                 location: { lng: coords.lng, lat: coords.lat },
               };
+              if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
+              else delete updated.poiCategory;
+              waypoints[finishIdx] = updated;
             } else {
-              waypoints.push({ ...newWaypoint, type: "end", name: "Finish" });
+              waypoints.push({
+                ...newWaypoint,
+                type: "end",
+                name: meta?.name ?? "Finish",
+                ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
+              });
             }
           } else {
             // add-via: insert before the day's finish (explicit end OR a
             // terminal accommodation on a generated overnight day), else append.
             const insertAt = viaInsertIndex(waypoints);
-            waypoints.splice(insertAt, 0, { ...newWaypoint, type: "via" });
+            waypoints.splice(insertAt, 0, {
+              ...newWaypoint,
+              type: "via",
+              ...(meta?.name ? { name: meta.name } : {}),
+              ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
+            });
           }
 
           days[idx] = updatePlannerDayRoute(
@@ -1020,15 +1469,25 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
     removeWaypointById: (waypointId) =>
       set((state) => {
+        // The map renders every day's pins, so the id may belong to any
+        // day — resolve its OWNING day instead of assuming the selected
+        // one (a Day 2+ pin removal was a silent no-op otherwise).
+        const idx =
+          state.activeTrip?.days.findIndex((day) =>
+            day.waypoints.some((w) => w.id === waypointId),
+          ) ?? -1;
+        if (idx < 0) return state;
         const committed = commitTripChange(state, (activeTrip) => {
           if (!activeTrip) return activeTrip;
-          const idx = state.selectedDayIndex;
           const day = activeTrip.days[idx];
           if (!day) return activeTrip;
           const days = [...activeTrip.days];
           days[idx] = updatePlannerDayRoute(
             day,
-            day.waypoints.filter((w) => w.id !== waypointId),
+            // Deleting the start/finish promotes its neighbour (role from index).
+            reassignWaypointRoles(
+              day.waypoints.filter((w) => w.id !== waypointId),
+            ),
             activeTrip.parameters,
           );
           return {
@@ -1042,7 +1501,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
 
         return {
           ...committed,
-          ...applyPostCommitSync(committed, state, state.selectedDayIndex),
+          ...applyPostCommitSync(committed, state, idx),
         };
       }),
 
@@ -1098,7 +1557,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       return result;
     },
 
-    applyRouteResult: (dayNumber, result) =>
+    applyRouteResult: (dayNumber, result, legBreaks) =>
       set((state) => {
         const { activeTrip } = state;
         if (!activeTrip) return state;
@@ -1118,6 +1577,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           durationMinutes: result.duration_min,
           avgQuality: result.avg_quality ?? 0,
           elevationGain: result.elevation_gain_m,
+          surfaceMix: result.surface_mix,
+          // Always overwritten (or cleared) so a stale leg mapping can't
+          // outlive the geometry it described. Client-only; never saved.
+          legBreaks,
         };
         return {
           ...state,
@@ -1303,6 +1766,11 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         selectedDayIndex: 0,
         focusedSegmentId: null,
         hoveredSegmentId: null,
+        selectedPlannerSegmentId: null,
+        planningMode: "single",
+        splitStatus: "none",
+        dayPlans: null,
+        pinnedBreakKms: [],
         undoStack: [],
         redoStack: [],
       }),
@@ -1354,6 +1822,11 @@ function commitTripChange(
     redoStack: [],
     canUndo: undoStack.length > 0,
     canRedo: false,
+    // Any waypoint mutation invalidates a computed split (addendum §3):
+    // days dim until the rider explicitly re-splits.
+    ...(state.splitStatus === "split"
+      ? { splitStatus: "stale" as SplitStatus }
+      : {}),
   };
 }
 
@@ -1413,4 +1886,128 @@ function mergePlannerParameters(
     ...next,
     days: Math.max(next.days, dayCount),
   };
+}
+
+// ── Split materialization helpers (addendum §4) ──────────────────────────────
+
+function cumulativeKm(coordinates: GeoJSONPosition[]): number[] {
+  const kms: number[] = [0];
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const [lng1, lat1] = coordinates[i - 1] ?? [];
+    const [lng2, lat2] = coordinates[i] ?? [];
+    const step =
+      typeof lng1 === "number" &&
+      typeof lat1 === "number" &&
+      typeof lng2 === "number" &&
+      typeof lat2 === "number"
+        ? haversineKm(lat1, lng1, lat2, lng2)
+        : 0;
+    kms.push((kms[i - 1] ?? 0) + step);
+  }
+  return kms;
+}
+
+function nearestVertexKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  location: { lat: number; lng: number },
+): number {
+  let bestKm = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < coordinates.length; i += 1) {
+    const [lng, lat] = coordinates[i] ?? [];
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    const distance = haversineKm(lat, lng, location.lat, location.lng);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestKm = kmAt[i] ?? 0;
+    }
+  }
+  return bestKm;
+}
+
+/**
+ * The exact coordinate at `km` along the line — the vertex when one sits
+ * there, linearly interpolated inside its segment otherwise.
+ */
+function pointAtKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  km: number,
+): GeoJSONPosition | null {
+  for (let i = 0; i < kmAt.length - 1; i += 1) {
+    const k0 = kmAt[i] ?? 0;
+    const k1 = kmAt[i + 1] ?? 0;
+    if (km < k0 || km > k1 || k1 <= k0) continue;
+    const [lng0, lat0] = coordinates[i] ?? [];
+    const [lng1, lat1] = coordinates[i + 1] ?? [];
+    if (
+      typeof lng0 !== "number" ||
+      typeof lat0 !== "number" ||
+      typeof lng1 !== "number" ||
+      typeof lat1 !== "number"
+    ) {
+      continue;
+    }
+    const t = (km - k0) / (k1 - k0);
+    return [lng0 + (lng1 - lng0) * t, lat0 + (lat1 - lat0) * t];
+  }
+  return null;
+}
+
+function sliceCoordinatesByKm(
+  coordinates: GeoJSONPosition[],
+  kmAt: number[],
+  fromKm: number,
+  toKm: number,
+): GeoJSONPosition[] {
+  // Interpolated endpoints: a break usually falls BETWEEN vertices, and
+  // dropping to the nearest one would leave a gap between consecutive
+  // days' geometry (and their start/end waypoints). Both neighbours slice
+  // at the same km, so they share the exact boundary coordinate.
+  const startPoint = pointAtKm(coordinates, kmAt, fromKm);
+  const endPoint = pointAtKm(coordinates, kmAt, toKm);
+  const interior = coordinates.filter((_, index) => {
+    const km = kmAt[index] ?? 0;
+    return km > fromKm && km < toKm;
+  });
+  const sliced = [
+    ...(startPoint ? [startPoint] : []),
+    ...interior,
+    ...(endPoint ? [endPoint] : []),
+  ];
+  return sliced.length >= 2
+    ? sliced
+    : coordinates.slice(0, Math.min(2, coordinates.length));
+}
+
+/**
+ * Display DayPlans for a trip loaded WITH days (saved multi-day trips):
+ * the day column shows them as an existing split. Segment/stay detail
+ * isn't reconstructed — only what the column renders.
+ */
+function dayPlansFromTripDays(days: TripDay[]): DayPlan[] {
+  let endKm = 0;
+  return days.map((day) => {
+    endKm += day.distanceKm;
+    const startName = day.waypoints.find((w) => w.type === "start")?.name;
+    const finishName = dayFinishWaypoint(day.waypoints)?.name;
+    return {
+      dayNumber: day.dayNumber,
+      segmentIds: [],
+      distanceKm: day.distanceKm,
+      timeMin: day.durationMinutes,
+      quality: {
+        distanceKm: day.distanceKm,
+        timeMin: day.durationMinutes,
+        score: day.avgQuality || null,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: startName ?? "Start",
+      endTown: finishName ?? "Finish",
+      suggestedStays: [],
+      endKm: Math.round(endKm * 10) / 10,
+    };
+  });
 }

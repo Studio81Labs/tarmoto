@@ -16,6 +16,42 @@ class LatLngResponse {
  * consumers must handle missing fields with their own defaults rather
  * than assume the server will fill them in.
  */
+/** Mirror of `UserRoutePrefsDto` — the rider's saved planner defaults. */
+class UserRoutePrefsResponse {
+  @ApiProperty({
+    enum: [
+      'direct',
+      'balanced',
+      'scenic_balance',
+      'maximum_twisty',
+      'efficient_loop',
+    ],
+  })
+  road_preference!:
+    | 'direct'
+    | 'balanced'
+    | 'scenic_balance'
+    | 'maximum_twisty'
+    | 'efficient_loop';
+
+  @ApiProperty()
+  avoid_highways!: boolean;
+
+  @ApiProperty()
+  avoid_tolls!: boolean;
+
+  @ApiProperty()
+  avoid_unpaved!: boolean;
+
+  @ApiProperty({ type: [String] })
+  surfaces!: string[];
+
+  @ApiProperty({
+    enum: ['any', 'fair_or_better', 'good_or_better', 'excellent_only'],
+  })
+  min_quality!: 'any' | 'fair_or_better' | 'good_or_better' | 'excellent_only';
+}
+
 class UserPreferencesResponse {
   @ApiProperty({ required: false, enum: ['metric', 'imperial'] })
   units?: 'metric' | 'imperial';
@@ -34,6 +70,9 @@ class UserPreferencesResponse {
 
   @ApiProperty({ required: false })
   crash_detection?: boolean;
+
+  @ApiProperty({ required: false, type: UserRoutePrefsResponse })
+  route_prefs?: UserRoutePrefsResponse;
 }
 
 export class UserResponseDto {

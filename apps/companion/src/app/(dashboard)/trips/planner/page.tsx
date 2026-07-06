@@ -1,43 +1,103 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
 import {
   useTripStore,
-  MAX_TRIP_DAYS,
   normalizeDayFinish,
   dayFinishWaypoint,
 } from "@/stores/trip";
 import {
   ArrowLeft,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  MoveRight,
+  X,
   Save,
-  Clock3,
+  SlidersHorizontal,
   GripVertical,
-  Link2,
-  MapPin,
-  Milestone,
-  Plus,
-  ShieldCheck,
   RotateCcw,
   RotateCw,
-  Trash2,
   Users,
   Upload,
   FileUp,
   Maximize2,
   Loader2,
+  Plus,
+  Star,
+  Pencil,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
+import type { PlannerClosure } from "@/lib/closures-summary";
 import { PassesPanel } from "@/components/PassesPanel";
+import { InspectTab } from "@/components/planner/InspectTab";
+import {
+  PlannerPanel,
+  SectionStamp,
+  type PlannerTab,
+} from "@/components/planner/PlannerPanel";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import {
+  coordinateAtKm,
+  kmAlongRouteAt,
+  rawBreakTargetKms,
+  splitIntoDays,
+} from "@/lib/planner/day-splitter";
+import { fetchOvernightTowns } from "@/lib/planner/api";
+import { plannerApi } from "@/lib/planner/api";
+import {
+  buildPrefsSummary,
+  DEFAULT_ROAD_PREFERENCE,
+  effectiveLegPreference,
+  fromTripRoadPreference,
+  legId as legPairId,
+  minQualityFromLevel,
+  minQualityToLevel,
+  reconcileLegPrefs,
+  sameUserRoutePrefs,
+  toTripRoadPreference,
+  FALLBACK_USER_ROUTE_PREFS,
+  ROAD_PREFERENCE_LABELS,
+  POINT_TO_POINT_PREFERENCES,
+  type LegPref,
+  type RoadPreference,
+  type UserRoutePrefs,
+} from "@/lib/planner/prefs";
+import type {
+  PlannerRoutingLeg,
+  TripLegBreak,
+} from "@/lib/planner/leg-routing";
+import { RoundtripDialog } from "@/components/planner/RoundtripDialog";
+import type { GeoResult } from "@/lib/planner/types";
+import type { RoundtripOptions } from "@/lib/planner/types";
+import {
+  rerouteAroundConditionInTrip,
+  rerouteAroundSegmentInTrip,
+} from "@/lib/planner/reroute";
+import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
+import {
+  deriveDayQualitySegments,
+  findPlannerQualitySegment,
+} from "@/lib/trip-planner-map";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
-import type { RegionDrawBbox } from "@/components/map/RegionDrawControl";
+import type {
+  RegionDrawBbox,
+  RegionDrawMode,
+} from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
@@ -46,7 +106,7 @@ import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
-import { DEMO_TRIP } from "@/lib/demo-trip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
 import {
   generatedOptionsFromResponse,
@@ -55,7 +115,10 @@ import {
   type GeneratedTripOption,
   type TripGenerationOptionId,
 } from "@/lib/trip-generation-options";
-import { currentUtcMonth } from "@/lib/passes-summary";
+import {
+  currentUtcMonth,
+  type MountainPass as MountainPassSummary,
+} from "@/lib/passes-summary";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import {
   findOwnerId,
@@ -99,7 +162,8 @@ const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
 const PLANNER_DEFAULTS = {
   days: 3,
   dailyKmTarget: 250,
-  roadPreference: "mixed" as TripParameters["roadPreference"],
+  // Revision 3 §A: 'direct' is the default road character — NOT balanced.
+  roadPreference: "direct" as TripParameters["roadPreference"],
   surfacePreference: ["asphalt"] as SurfaceType[],
   minQuality: 3,
   avoidHighways: true,
@@ -108,6 +172,16 @@ const PLANNER_DEFAULTS = {
 } as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * Same map spot within ~1 m — identifies a loop route (finish placed back
+ * on the start by the roundtrip draft, or by hand).
+ */
+function sameSpot(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): boolean {
+  return Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lng - b.lng) < 1e-5;
+}
 const VALID_ROAD_PREFERENCES: ReadonlyArray<TripParameters["roadPreference"]> =
   ["curvy", "scenic", "mixed", "direct"];
 const VALID_SURFACES: ReadonlyArray<SurfaceType> = [
@@ -131,13 +205,31 @@ const URL_PARAM_KEYS = {
 export default function TripPlannerPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
-  // Controlled Advanced disclosure — starts open (Playwright e2es +
-  // closures / route-builder warnings the rider relies on need the
-  // children visible on first render) and respects subsequent user
-  // toggles via the native `<details>` onToggle event. A hardcoded
-  // `open` attribute would re-open the section on every parent
-  // re-render, clobbering user collapses.
-  const [advancedOpen, setAdvancedOpen] = useState(true);
+  // Controlled "Plan as multi-day trip" disclosure — collapsed by default
+  // (revision 2 §D: splitting is an optional layer most riders never
+  // touch). Controlled rather than a bare `open` attribute so parent
+  // re-renders can't clobber the rider's toggle.
+  const [multiDayOpen, setMultiDayOpen] = useState(false);
+  // Honest sizing note from the last draft (revision 2 §E): set when the
+  // soft daily-km target couldn't be reached with genuinely good roads.
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+  // Roundtrip options dialog (revision 3 §E) — opened by Draft roundtrip
+  // when no finish exists, and by Recalculate roundtrip on a drafted loop.
+  const [roundtripOpen, setRoundtripOpen] = useState(false);
+  // Last confirmed roundtrip options: a drafted loop stays a roundtrip,
+  // and recalculating starts from what the rider picked last time.
+  const [lastRoundtripOpts, setLastRoundtripOpts] = useState<Pick<
+    RoundtripOptions,
+    "distanceKm" | "direction" | "preference"
+  > | null>(null);
+  // §02 collapsed summary row (revision 3 §B) — expanded inline.
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  // Saved user defaults (revision 3 §F): loaded once, pre-applied to
+  // fresh trips, and written back (debounced) when prefs change.
+  const [savedRoutePrefs, setSavedRoutePrefs] = useState<UserRoutePrefs | null>(
+    null,
+  );
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [travelMonth, setTravelMonth] = useState<number>(() =>
@@ -157,9 +249,12 @@ export default function TripPlannerPage() {
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
   );
-  const [roadPreference, setRoadPreference] = useState<
-    TripParameters["roadPreference"]
-  >(PLANNER_DEFAULTS.roadPreference);
+  // Trip-wide road character in the FIVE-value planner vocabulary
+  // (revision 3 §A) — the legacy TripParameters vocabulary only exists at
+  // the persistence/URL seams via to/fromTripRoadPreference.
+  const [roadPreference, setRoadPreference] = useState<RoadPreference>(
+    DEFAULT_ROAD_PREFERENCE,
+  );
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
     () => [...PLANNER_DEFAULTS.surfacePreference],
   );
@@ -180,6 +275,9 @@ export default function TripPlannerPage() {
   const [plannerRegion, setPlannerRegion] = useState<RegionDrawBbox | null>(
     null,
   );
+  // Live mirror of the map's region-draw state machine so the BUILD
+  // column's Fun-Zone checkbox can reflect and drive it.
+  const [regionDrawMode, setRegionDrawMode] = useState<RegionDrawMode>("idle");
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
   >([]);
@@ -211,15 +309,13 @@ export default function TripPlannerPage() {
   const routeDirty = useTripStore((s) => s.routeDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
+  const markDayRouteDirty = useTripStore((s) => s.markDayRouteDirty);
   const setDraftPlannerParameters = useTripStore(
     (s) => s.setDraftPlannerParameters,
   );
   // ── Multi-day store selectors ────────────────────────────────────────
   const selectedDayIndex = useTripStore((s) => s.selectedDayIndex);
   const setSelectedDay = useTripStore((s) => s.setSelectedDay);
-  const addDay = useTripStore((s) => s.addDay);
-  const removeDay = useTripStore((s) => s.removeDay);
-  const relinkDayStart = useTripStore((s) => s.relinkDayStart);
   // Stable selector identity — the store fn is recreated each call, but
   // we select the *selected day's waypoints array* so useMemo below only fires
   // when the waypoints array actually changes (reference equality).
@@ -238,6 +334,21 @@ export default function TripPlannerPage() {
   const appendPlannerWaypoint = useTripStore((s) => s.appendPlannerWaypoint);
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
   const moveWaypoint = useTripStore((s) => s.moveWaypoint);
+  const selectedPlannerSegmentId = useTripStore(
+    (s) => s.selectedPlannerSegmentId,
+  );
+  const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
+  const removeWaypointById = useTripStore((s) => s.removeWaypointById);
+  const splitStatus = useTripStore((s) => s.splitStatus);
+  const planningMode = useTripStore((s) => s.planningMode);
+  const setPlanningMode = useTripStore((s) => s.setPlanningMode);
+  const dayPlans = useTripStore((s) => s.dayPlans);
+  const applySplit = useTripStore((s) => s.applySplit);
+  const renameWaypoint = useTripStore((s) => s.renameWaypoint);
+  const insertWaypointBeforeEnd = useTripStore(
+    (s) => s.insertWaypointBeforeEnd,
+  );
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
@@ -246,7 +357,8 @@ export default function TripPlannerPage() {
   // (the store selector above) so this memo is driven by the waypoints
   // array reference rather than by calling `getState()` inside render.
   const routingWaypoints = useMemo(() => {
-    if (!activeDayWaypoints) return [] as { lat: number; lng: number }[];
+    if (!activeDayWaypoints)
+      return [] as { id: string; lat: number; lng: number }[];
     // Normalize a terminal accommodation (generated overnight) to the day's
     // finish FIRST — the same transform saveDays applies — so the live preview
     // routes start→overnight and matches what the backend persists. Without
@@ -254,6 +366,7 @@ export default function TripPlannerPage() {
     // can't refresh / clear stale) yet Save would persist an unpreviewed route.
     return filterRoutingWaypoints(normalizeDayFinish(activeDayWaypoints)).map(
       (w) => ({
+        id: w.id,
         lat: w.location.lat,
         lng: w.location.lng,
       }),
@@ -261,12 +374,95 @@ export default function TripPlannerPage() {
   }, [activeDayWaypoints]);
   const routeOptions = useMemo(
     () => ({
+      // Avoids are independent hard constraints layered on top of ANY
+      // road preference (revision 3 §A).
       avoid_highways: avoidHighways,
       avoid_tolls: avoidTolls,
       avoid_unpaved: avoidUnpaved,
+      // Reserved fields today (backend ignores them), sent anyway so the
+      // client is already correct when routing gains quality/surface
+      // costing — and so pref changes alter the request, re-firing the
+      // live-routing hook via its options dependency.
+      surfaces: surfacePreference,
+      prefer_quality: minQuality >= 3,
+      // Trip-wide road character (revision 3 §A) — per-leg overrides
+      // replace this on their own leg's request below. 'efficient_loop'
+      // costs like the engine default, same as 'direct'.
+      preference: roadPreference,
     }),
-    [avoidHighways, avoidTolls, avoidUnpaved],
+    [
+      avoidHighways,
+      avoidTolls,
+      avoidUnpaved,
+      surfacePreference,
+      minQuality,
+      roadPreference,
+    ],
   );
+  // ── Per-leg road filters (revision 3 §C) ───────────────────────────
+  // Overrides keyed by waypoint identity, stored PER DAY: reconciliation
+  // (which re-inherits broken pairs) must only ever run a day's legs
+  // against that day's own spine — switching the selected day is not a
+  // spine edit, so it must not discard another day's overrides.
+  const [legPrefsByDay, setLegPrefsByDay] = useState<Record<number, LegPref[]>>(
+    {},
+  );
+  const legPrefs = legPrefsByDay[selectedDayIndex] ?? EMPTY_LEG_PREFS;
+  useEffect(() => {
+    const ids = routingWaypoints.map((w) => w.id);
+    setLegPrefsByDay((previous) => {
+      const current = previous[selectedDayIndex] ?? EMPTY_LEG_PREFS;
+      const next = reconcileLegPrefs(current, ids);
+      return next.length === current.length &&
+        next.every(
+          (leg, i) =>
+            leg.fromWaypointId === current[i]!.fromWaypointId &&
+            leg.toWaypointId === current[i]!.toWaypointId &&
+            leg.preference === current[i]!.preference,
+        )
+        ? previous
+        : { ...previous, [selectedDayIndex]: next };
+    });
+  }, [routingWaypoints, selectedDayIndex]);
+  const handleChangeLegPref = useCallback(
+    (fromWaypointId: string, preference: LegPref["preference"]) => {
+      setLegPrefsByDay((previous) => ({
+        ...previous,
+        [selectedDayIndex]: (previous[selectedDayIndex] ?? []).map((leg) =>
+          leg.fromWaypointId === fromWaypointId ? { ...leg, preference } : leg,
+        ),
+      }));
+      // A leg's road character is a routing input for THIS day only —
+      // staling every day would wedge the Save gate on days the live
+      // hook never revisits.
+      markDayRouteDirty(selectedDayIndex);
+    },
+    [markDayRouteDirty, selectedDayIndex],
+  );
+  // Per-leg routing requests (revision 3 §C): each consecutive pair is
+  // requested with its EFFECTIVE preference; the hook concatenates the
+  // responses back into one route tagged with leg breaks.
+  const routingLegs = useMemo<PlannerRoutingLeg[]>(() => {
+    if (routingWaypoints.length < 2) return [];
+    const legs = reconcileLegPrefs(
+      legPrefs,
+      routingWaypoints.map((w) => w.id),
+    );
+    return legs.map((leg, index) => {
+      const from = routingWaypoints[index]!;
+      const to = routingWaypoints[index + 1]!;
+      const effective = effectiveLegPreference(leg, roadPreference);
+      return {
+        legId: legPairId(leg.fromWaypointId, leg.toWaypointId),
+        from: { lat: from.lat, lng: from.lng },
+        to: { lat: to.lat, lng: to.lng },
+        options: {
+          ...routeOptions,
+          preference: effective === "efficient_loop" ? "direct" : effective,
+        },
+      };
+    });
+  }, [routingWaypoints, legPrefs, routeOptions, roadPreference]);
   // Gate live routing: only route when the selected day is stale (has
   // unsent edits since last applyRouteResult) AND the route is dirty.
   // This prevents an existing saved trip from being silently re-routed
@@ -277,13 +473,233 @@ export default function TripPlannerPage() {
   // fires automatically because `selectedDay.dayNumber` appears in
   // `stalePreviewDays`. This is the intended behavior for phase 2.
   const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  // ── Plan & inspect panel: tab state + bidirectional panel↔map wiring ──
+  const [panelTab, setPanelTab] = useState<PlannerTab>("BUILD");
+  // Day column selection — scopes the INSPECT tab to one DayPlan.
+  const [selectedPlanIndex, setSelectedPlanIndex] = useState<number | null>(
+    null,
+  );
+  // A route-section click on the map opens its Road Preview; surface the
+  // matching panel context too so the flagged-card highlight is visible.
+  useEffect(() => {
+    if (selectedPlannerSegmentId) setPanelTab("INSPECT");
+  }, [selectedPlannerSegmentId]);
+  useEffect(() => {
+    // A re-split renumbers days — drop the day-scope selection.
+    setSelectedPlanIndex(null);
+  }, [dayPlans]);
+  const handleInspectSegment = useCallback(
+    (segmentId: string) => {
+      selectPlannerSegment(segmentId);
+      mapRef.current?.flyToSegment(segmentId);
+    },
+    [selectPlannerSegment],
+  );
+  // Shared with the map's Road Preview reroute: arm a one-shot animated
+  // fit for whenever the rerouted line lands.
+  const armFitAfterRoute = useCallback(() => {
+    fitAfterRouteRef.current = true;
+  }, []);
+  // On-route condition cards (revision 7): the tab's REROUTE buttons run
+  // the same via-insert as the marker popover, then glide back to the
+  // whole route once the new line lands.
+  const handleRerouteClosure = useCallback(
+    (closure: PlannerClosure) => {
+      const anchor = closure.geometry[0];
+      if (!anchor) return;
+      const done = rerouteAroundConditionInTrip(
+        activeTripRef.current,
+        { id: closure.id, location: anchor, line: closure.geometry },
+        insertWaypointBefore,
+      );
+      if (done) fitAfterRouteRef.current = true;
+    },
+    [insertWaypointBefore],
+  );
+  const handleReroutePass = useCallback(
+    (pass: MountainPassSummary) => {
+      const done = rerouteAroundConditionInTrip(
+        activeTripRef.current,
+        { id: pass.id, location: { lng: pass.lng, lat: pass.lat } },
+        insertWaypointBefore,
+      );
+      if (done) fitAfterRouteRef.current = true;
+    },
+    [insertWaypointBefore],
+  );
+  const handleRerouteSegment = useCallback(
+    (segmentId: string) => {
+      const trip = activeTripRef.current;
+      const segment = findPlannerQualitySegment(trip, segmentId);
+      if (segment) {
+        rerouteAroundSegmentInTrip(trip, segment, insertWaypointBefore);
+        // The rider is often zoomed into the flagged segment they just
+        // rerouted away from — animate back to the whole route once the
+        // new line lands so they keep the overview.
+        fitAfterRouteRef.current = true;
+      }
+      selectPlannerSegment(null);
+    },
+    [insertWaypointBefore, selectPlannerSegment],
+  );
+  // ── Phase 2: on-demand day split (addendum §4/§5) ──
+  // Daily km is the primary input; a day count is an OPTIONAL override.
+  const [forcedDays, setForcedDays] = useState<number | null>(null);
+  const [splitting, setSplitting] = useState(false);
+  const handleSplit = useCallback(async () => {
+    const trip = activeTripRef.current;
+    // Splitting operates on the SINGLE working route only. A loaded
+    // multi-day trip already carries materialized days: splitting just
+    // day 1 would replace the day column with a wrong itinerary that
+    // materializeSplit() refuses to persist. (The auto-resplit effect
+    // and re-split buttons are gated too — this is the backstop.)
+    if (trip && trip.days.length > 1) return;
+    const routeDay = trip?.days[0];
+    const coordinates = routeDay?.routeGeometry?.coordinates;
+    if (!routeDay || !coordinates || coordinates.length < 2) {
+      toast.error(t("Build a route first — the splitter needs a routed line."));
+      return;
+    }
+    setSplitting(true);
+    try {
+      const segments = deriveDayQualitySegments(routeDay);
+      const totalKm = routeDay.distanceKm;
+      const targets = rawBreakTargetKms(
+        totalKm,
+        dailyKmTarget,
+        forcedDays,
+        useTripStore.getState().pinnedBreakKms,
+      );
+      // Overnight-town candidates near each raw break (real POI endpoint);
+      // a failed fetch just means breaks land at raw distances.
+      const towns = await fetchOvernightTowns(coordinates, targets).catch(
+        () => [],
+      );
+      const plans = splitIntoDays(
+        segments,
+        {
+          dailyKmTarget,
+          forcedDays,
+          totalTimeMin: routeDay.durationMinutes,
+        },
+        towns,
+        useTripStore.getState().pinnedBreakKms,
+      );
+      if (plans.length === 0) {
+        toast.error(t("Could not split this route into days."));
+        return;
+      }
+      applySplit(plans);
+    } finally {
+      setSplitting(false);
+    }
+  }, [applySplit, dailyKmTarget, forcedDays]);
+  // Changing the DAY CONTROLS while split means "recompute now" — route
+  // and pref edits, by contrast, only mark the split stale (§5).
+  const splitInputsRef = useRef({ dailyKmTarget, forcedDays });
+  useEffect(() => {
+    const previous = splitInputsRef.current;
+    splitInputsRef.current = { dailyKmTarget, forcedDays };
+    if (splitStatus !== "split") return;
+    if (
+      previous.dailyKmTarget === dailyKmTarget &&
+      previous.forcedDays === forcedDays
+    ) {
+      return;
+    }
+    void handleSplit();
+  }, [dailyKmTarget, forcedDays, splitStatus, handleSplit]);
+  // When a trip arrives already split (saved multi-day trip, planner
+  // reopened), surface the multi-day section so its controls are in
+  // view. Only fires on status transitions — a rider's manual collapse
+  // while split stays collapsed.
+  useEffect(() => {
+    if (splitStatus !== "none") setMultiDayOpen(true);
+  }, [splitStatus]);
+  // Day-break markers for the map — one per split boundary (not the finish).
+  const dayBreakMarkers = useMemo(() => {
+    if (splitStatus === "none" || !dayPlans || dayPlans.length < 2) return [];
+    const trip = displayedTrip;
+    // Working-day model only: a loaded multi-day trip has per-day geometry
+    // and draws its own boundaries via the waypoint markers.
+    const coordinates =
+      trip && trip.days.length === 1
+        ? trip.days[0]?.routeGeometry?.coordinates
+        : undefined;
+    if (!coordinates || coordinates.length < 2) return [];
+    return dayPlans.slice(0, -1).flatMap((plan) => {
+      const at = coordinateAtKm(coordinates, plan.endKm);
+      return at
+        ? [
+            {
+              lng: at.lng,
+              lat: at.lat,
+              label: plan.endTown,
+              pinned: plan.breakPinned === true,
+            },
+          ]
+        : [];
+    });
+  }, [splitStatus, dayPlans, displayedTrip]);
+  // Map-placed pins carry auto-generated names ("Start", "Via 2") —
+  // reverse-geocode them to a place name once per placement (addendum §2).
+  const reverseGeocodedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const waypoints = selectedDay?.waypoints ?? [];
+    for (const waypoint of waypoints) {
+      const name = waypoint.name ?? "";
+      if (!/^(Start|Finish|Via \d+|Reroute via)$/.test(name)) continue;
+      const key = `${waypoint.id}:${waypoint.location.lat.toFixed(4)}:${waypoint.location.lng.toFixed(4)}`;
+      if (reverseGeocodedRef.current.has(key)) continue;
+      reverseGeocodedRef.current.add(key);
+      void plannerApi
+        .reverseGeocode(waypoint.location.lat, waypoint.location.lng)
+        .then((placeName) => {
+          if (placeName) renameWaypoint(waypoint.id, placeName);
+        })
+        .catch(() => {
+          // Naming is cosmetic — keep the default label on failure.
+        });
+    }
+  }, [selectedDay, renameWaypoint]);
+  // Dropping a day-break marker pins that break at the drop's along-route
+  // km and re-splits the surrounding days around it (addendum §6).
+  const handleMoveDayBreak = useCallback(
+    (boundary: number, location: { lng: number; lat: number }) => {
+      const trip = activeTripRef.current;
+      const plans = useTripStore.getState().dayPlans;
+      const coordinates =
+        trip && trip.days.length === 1
+          ? trip.days[0]?.routeGeometry?.coordinates
+          : undefined;
+      if (!coordinates || !plans || boundary < 1 || boundary > plans.length - 1)
+        return;
+      const droppedKm = kmAlongRouteAt(coordinates, location);
+      const movedBreakKm = plans[boundary - 1]?.endKm ?? null;
+      if (movedBreakKm === null || droppedKm <= 0) return;
+      // Keep every OTHER existing pin; the moved boundary re-pins at the
+      // drop. Unpinned breaks recompute around the pins on re-split.
+      const otherPins = useTripStore
+        .getState()
+        .pinnedBreakKms.filter((km) => Math.abs(km - movedBreakKm) > 1);
+      useTripStore
+        .getState()
+        .setPinnedBreaks([...otherPins, Math.round(droppedKm * 10) / 10]);
+      void handleSplit();
+    },
+    [handleSplit],
+  );
   const liveRouteEnabled =
     routeDirty &&
     selectedDay !== null &&
     stalePreviewDays.includes(selectedDay.dayNumber);
+  // Set by the draft flows: the next live-routing result represents a
+  // freshly built route, so the map should zoom to fit it.
+  const fitAfterRouteRef = useRef(false);
   const handleRouteResult = useCallback(
     (
       result: Parameters<typeof applyRouteResult>[1],
+      legBreaks: TripLegBreak[],
       requestDayNumber: number | null,
     ) => {
       // Apply geometry to the day the request was FIRED for (passed back by the
@@ -291,15 +707,25 @@ export default function TripPlannerPage() {
       // before this response resolved, which would otherwise corrupt the
       // now-current day and clear its stale flag.
       if (requestDayNumber == null) return;
-      applyRouteResult(requestDayNumber, result);
+      // Fit when a route is BUILT (the day had no routed line yet, or a
+      // draft just replaced it) — but never on ordinary edits, which
+      // must preserve the rider's zoom/pan (#559).
+      const day = activeTripRef.current?.days.find(
+        (d) => d.dayNumber === requestDayNumber,
+      );
+      const hadGeometry = Boolean(day?.routeGeometry?.coordinates?.length);
+      applyRouteResult(requestDayNumber, result, legBreaks);
+      if (!hadGeometry || fitAfterRouteRef.current) {
+        fitAfterRouteRef.current = false;
+        setFitRouteToken((token) => token + 1);
+      }
     },
     [applyRouteResult],
   );
   const { routing } = usePlannerRouting(
-    routingWaypoints,
-    routeOptions,
+    routingLegs,
     handleRouteResult,
-    (msg) => toast.error(msg),
+    (msg: string) => toast.error(msg),
     liveRouteEnabled,
     selectedDay?.dayNumber ?? null,
   );
@@ -317,6 +743,17 @@ export default function TripPlannerPage() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const canCreateInviteLink =
+    !serverTripId ||
+    serverTripCallerRole === "owner" ||
+    serverTripCallerRole === "admin";
+  // Metadata (title, planner parameters) is owner/admin-only on the
+  // backend. Plain members build and save route geometry but must not be
+  // offered metadata edits that would silently revert — and while a
+  // PERSISTED trip's role is still loading, stay locked too: treating
+  // that window as editable would let a member queue a metadata PATCH
+  // that fails after the route already committed. Unsaved local trips
+  // have no role to wait for.
+  const canEditTripMetadata =
     !serverTripId ||
     serverTripCallerRole === "owner" ||
     serverTripCallerRole === "admin";
@@ -351,12 +788,15 @@ export default function TripPlannerPage() {
       const params = hydrated.parameters;
       setDays(params.days);
       setDailyKmTarget(params.dailyKmTarget);
-      setRoadPreference(params.roadPreference);
+      setRoadPreference(fromTripRoadPreference(params.roadPreference));
       setSurfacePreference(params.surfacePreference);
       setMinQuality(params.minQuality);
       setAvoidHighways(params.avoidHighways);
       setAvoidTolls(params.avoidTolls);
       setAvoidUnpaved(params.avoidUnpaved);
+      // Collaborator values, not rider edits — never write them back as
+      // the rider's saved defaults (§F).
+      prefsTouchedRef.current = false;
     },
     [currentUserId, serverTripId, setActiveTrip],
   );
@@ -453,12 +893,15 @@ export default function TripPlannerPage() {
           const params = hydrated.parameters;
           setDays(params.days);
           setDailyKmTarget(params.dailyKmTarget);
-          setRoadPreference(params.roadPreference);
+          setRoadPreference(fromTripRoadPreference(params.roadPreference));
           setSurfacePreference(params.surfacePreference);
           setMinQuality(params.minQuality);
           setAvoidHighways(params.avoidHighways);
           setAvoidTolls(params.avoidTolls);
           setAvoidUnpaved(params.avoidUnpaved);
+          // Persisted trip parameters, not rider edits — keep them out
+          // of the saved-defaults write-back (§F).
+          prefsTouchedRef.current = false;
         }
       } catch {
         // Non-fatal — modal / hook will surface concrete errors on
@@ -485,7 +928,7 @@ export default function TripPlannerPage() {
     () => ({
       days,
       dailyKmTarget,
-      roadPreference,
+      roadPreference: toTripRoadPreference(roadPreference),
       surfacePreference,
       avoidHighways,
       avoidTolls,
@@ -502,6 +945,54 @@ export default function TripPlannerPage() {
       roadPreference,
       surfacePreference,
     ],
+  );
+  // Panel typed search: picking a result relocates the row's waypoint
+  // (forward geocode → coordinates) and adopts the place name.
+  const handleRelocateWaypoint = useCallback(
+    (waypointId: string, result: GeoResult) => {
+      moveWaypoint(
+        selectedDayIndex,
+        waypointId,
+        { lng: result.lng, lat: result.lat },
+        plannerParams,
+      );
+      renameWaypoint(waypointId, result.name);
+    },
+    [moveWaypoint, plannerParams, renameWaypoint, selectedDayIndex],
+  );
+  // Empty START/FINISH spine rows: typing a place creates the endpoint
+  // (same store path as a map click), then adopts the geocoded name.
+  const handleCreateEndpoint = useCallback(
+    (role: "start" | "end", result: GeoResult) => {
+      useTripStore
+        .getState()
+        .placeWaypoint(
+          { lat: result.lat, lng: result.lng },
+          role === "start" ? "set-start" : "set-end",
+          plannerParams,
+        );
+      const state = useTripStore.getState();
+      const day = state.activeTrip?.days[state.selectedDayIndex];
+      const created =
+        role === "start"
+          ? day?.waypoints.find((w) => w.type === "start")
+          : day
+            ? dayFinishWaypoint(day.waypoints)
+            : undefined;
+      if (created) renameWaypoint(created.id, result.name);
+    },
+    [plannerParams, renameWaypoint],
+  );
+  const handleAddViaFromSearch = useCallback(
+    (result: GeoResult) => {
+      insertWaypointBeforeEnd(selectedDayIndex, {
+        id: `search-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: result.name,
+        location: { lng: result.lng, lat: result.lat },
+        type: "via",
+      });
+    },
+    [insertWaypointBeforeEnd, selectedDayIndex],
   );
 
   // Mirror the current planner controls into the store so the map's
@@ -526,24 +1017,92 @@ export default function TripPlannerPage() {
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
-  type TimelineDayLike = {
-    dayNumber: number;
-    title?: string | undefined;
-    distanceKm?: number | undefined;
-    elevationGain?: number | undefined;
-    durationMinutes?: number | undefined;
-    overnightStop?: { name: string } | undefined;
-  };
-  const timelineDays: TimelineDayLike[] = activeTrip?.days ?? [
-    { dayNumber: 1 },
-    { dayNumber: 2 },
-    { dayNumber: 3 },
-  ];
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
-  const handleSave = useCallback(async () => {
+  // Reset / Discard confirm through the app-styled ConfirmDialog —
+  // system dialogs are disallowed (they block the tab and ignore the
+  // design system).
+  const [pendingConfirm, setPendingConfirm] = useState<
+    "reset" | "discard" | null
+  >(null);
+  // Trip rename dialog (rider feedback) — the header title opens it.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const renameActiveTrip = useTripStore((s) => s.renameActiveTrip);
+  const openRenameDialog = useCallback(() => {
+    const trip = activeTripRef.current;
+    if (!trip) return;
+    setNameDraft(tripDisplayName(trip) ?? "");
+    setRenameOpen(true);
+  }, []);
+  const confirmRename = useCallback(() => {
+    const trimmed = nameDraft.trim();
+    if (trimmed) {
+      renameActiveTrip(trimmed);
+      // Persisted trips save the rename IMMEDIATELY: a rename is a
+      // metadata edit, not a route edit, so it must not arm Save route
+      // (which would re-route the whole trip unpreviewed just to carry
+      // a title, or leave the title unsaved when routing is down).
+      const tripId = resolveExistingTripId(serverTripId, activeTripRef.current);
+      if (tripId && canEditTripMetadata) {
+        void tripsApi
+          .update(tripId, { title: trimmed })
+          .then(() => toast.success(t("Trip renamed")))
+          .catch(() =>
+            toast.error(t("Could not rename the trip. Please try again.")),
+          );
+      }
+    }
+    setRenameOpen(false);
+  }, [nameDraft, renameActiveTrip, serverTripId, canEditTripMetadata]);
+  // Start over WITHOUT leaving the planner (rider feedback): drop the
+  // working route, drawn region, splits and any server-trip binding so
+  // the canvas is blank again. Pref controls keep their values.
+  const performReset = useCallback(() => {
+    setActiveTrip(null);
+    setPlannerRegion(null);
+    setGeneratedOptions([]);
+    setGeneratedOptionsSignature(null);
+    setSelectedOptionId(null);
+    setServerTripId(null);
+    setServerTripOwnerId(null);
+    setServerTripCallerRole(null);
+    setDraftNote(null);
+    setLegPrefsByDay({});
+    setForcedDays(null);
+    setLastRoundtripOpts(null);
+    setMultiDayOpen(false);
+    const url = new URL(window.location.href);
+    url.search = "";
+    window.history.replaceState({}, "", url);
+  }, [setActiveTrip]);
+  // Discard: delete the persisted trip (routes save server-side) and
+  // leave the planner back to the trips list.
+  const performDiscard = useCallback(async () => {
+    const persistedTripId =
+      serverTripId ??
+      (activeTripRef.current && UUID_RE.test(activeTripRef.current.id)
+        ? activeTripRef.current.id
+        : null);
+    if (persistedTripId) {
+      try {
+        await tripsApi.delete(persistedTripId);
+      } catch {
+        toast.error(
+          t("Could not delete the saved trip — it may still be listed."),
+        );
+      }
+    }
+    setActiveTrip(null);
+    router.push("/trips");
+  }, [router, serverTripId, setActiveTrip]);
+  // Dormant: the "Push to phone" toolbar action was pulled from the UI
+  // (rider feedback — not needed for now). Kept intact for when the
+  // itinerary-push flow returns; it is still the metadata+imported-route
+  // save path the tests exercised.
+  const _handleSave = useCallback(async () => {
     if (!displayedTrip || saving || isGenerating || generationLockRef.current) {
       return;
     }
@@ -709,7 +1268,16 @@ export default function TripPlannerPage() {
     // Resolve or lazily create the backend trip. Reuse the same pattern
     // as the existing handleSave so collab/deep-link trips are updated
     // in place rather than duplicated.
-    const currentTrip = activeTripRef.current;
+    // Persist the computed split: rewrite trip.days from the DayPlans so
+    // the existing per-day save contract carries them (addendum decision).
+    const wasSplitMaterialized =
+      useTripStore.getState().splitStatus === "split" &&
+      useTripStore.getState().activeTrip?.days.length === 1;
+    if (wasSplitMaterialized) {
+      useTripStore.getState().materializeSplit();
+    }
+    const currentTrip =
+      useTripStore.getState().activeTrip ?? activeTripRef.current;
     const existingTripId = resolveExistingTripId(serverTripId, currentTrip);
     // Use the store's saveDays() to derive the canonical per-day payload.
     // Calling getState() inside a click handler / useCallback is safe Zustand
@@ -749,12 +1317,64 @@ export default function TripPlannerPage() {
         if (!tripId) throw new Error("Trip creation did not return an id");
         createdTripId = tripId;
       }
+      // Per-leg road overrides ride along with their day (§C): the save
+      // re-routes server-side, and without them a custom leg would
+      // persist a different line than the approved preview. Payload days
+      // are the surviving (non-empty) trip days in order — mirror
+      // saveDays' filter to align indexes.
+      const survivingDayIndexes = (currentTrip?.days ?? [])
+        .map((day, index) => (day.waypoints.length > 0 ? index : -1))
+        .filter((index) => index >= 0);
+      const daysWithLegs = days.map((day, k) => {
+        const dayIndex = survivingDayIndexes[k];
+        const tripDay =
+          dayIndex === undefined ? undefined : currentTrip?.days[dayIndex];
+        if (!tripDay || dayIndex === undefined) return day;
+        // A just-materialized split rewrote the single working day into
+        // day indexes 0..N-1, but every override still lives under the
+        // ORIGINAL day 0 — reconcile that list against each new day's
+        // spine (surviving via pairs keep their override; pairs broken
+        // by a split boundary re-inherit, §C).
+        const sourceLegs = wasSplitMaterialized
+          ? (legPrefsByDay[0] ?? [])
+          : (legPrefsByDay[dayIndex] ?? []);
+        const legs = reconcileLegPrefs(
+          sourceLegs,
+          filterRoutingWaypoints(normalizeDayFinish(tripDay.waypoints)).map(
+            (w) => w.id,
+          ),
+        );
+        if (!legs.some((leg) => leg.preference !== "inherit")) return day;
+        return {
+          ...day,
+          leg_preferences: legs.map((leg) => {
+            const effective = effectiveLegPreference(leg, roadPreference);
+            return effective === "efficient_loop" ? "direct" : effective;
+          }),
+        };
+      });
       const { data } = await tripsApi.saveRoute(tripId, {
-        days,
+        days: daysWithLegs,
         options: routeOptions,
       });
+      let detail = data;
+      if (existingTripId && currentTrip && canEditTripMetadata) {
+        // PUT /route replaces days but never the trip metadata, and the
+        // hydration below would otherwise revert the title AND planner
+        // parameters (road preference, min quality, daily km) to stale
+        // server values. The PATCH runs AFTER the route commit so a
+        // failed re-route can't persist new parameters against old
+        // geometry; its response carries both for hydration. Skipped for
+        // plain members (metadata is owner/admin-only while route saves
+        // are any-member).
+        const { data: updated } = await tripsApi.update(tripId, {
+          ...buildTripMetadataPayload(currentTrip, plannerParams),
+          num_days: days.length,
+        });
+        detail = updated as typeof data;
+      }
       const hydrated = tripFromDetail(
-        data as unknown as Parameters<typeof tripFromDetail>[0],
+        detail as unknown as Parameters<typeof tripFromDetail>[0],
       );
       setActiveTrip(hydrated);
       if (!existingTripId) {
@@ -777,7 +1397,10 @@ export default function TripPlannerPage() {
     savingRoute,
     routing,
     serverTripId,
+    canEditTripMetadata,
     plannerParams,
+    legPrefsByDay,
+    roadPreference,
     routeOptions,
     setActiveTrip,
     handlePromotedToServer,
@@ -805,16 +1428,46 @@ export default function TripPlannerPage() {
     },
     [openImport],
   );
-  const handleSurfaceToggle = useCallback((surface: SurfaceType) => {
-    setSurfacePreference((current) => {
-      if (current.includes(surface)) {
-        return current.length === 1
-          ? current
-          : current.filter((value) => value !== surface);
-      }
-      return [...current, surface];
-    });
-  }, []);
+  // Set ONLY by the user-facing pref controls below — the persistence
+  // effect uses it to tell a rider's change apart from trip-load /
+  // URL-hydration sync (which must never overwrite saved defaults, §F).
+  const prefsTouchedRef = useRef(false);
+  const handleSurfaceToggle = useCallback(
+    (surface: SurfaceType) => {
+      setSurfacePreference((current) => {
+        if (current.includes(surface)) {
+          return current.length === 1
+            ? current
+            : current.filter((value) => value !== surface);
+        }
+        return [...current, surface];
+      });
+      // Routing input per the addendum (§3): re-fire live routing and
+      // invalidate a computed split.
+      prefsTouchedRef.current = true;
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  // Road preference + min quality are routing inputs too (addendum §3):
+  // they dirty the route (staling any split) and re-fire live routing
+  // through the per-leg request options (revision 3 §C).
+  const handleRoadPreferenceChange = useCallback(
+    (value: RoadPreference) => {
+      setRoadPreference(value);
+      prefsTouchedRef.current = true;
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
+  const handleMinQualityChange = useCallback(
+    (value: number) => {
+      setMinQuality(value);
+      prefsTouchedRef.current = true;
+      markRouteDirty();
+    },
+    [markRouteDirty],
+  );
   // Wrapped avoid-option handlers: update state AND mark route dirty so
   // live routing fires on a loaded trip when the rider changes an option.
   // These are ONLY called from user-facing controls (the JSX checkboxes
@@ -823,6 +1476,7 @@ export default function TripPlannerPage() {
   const handleAvoidHighwaysChange = useCallback(
     (value: boolean) => {
       setAvoidHighways(value);
+      prefsTouchedRef.current = true;
       markRouteDirty();
     },
     [markRouteDirty],
@@ -830,6 +1484,7 @@ export default function TripPlannerPage() {
   const handleAvoidTollsChange = useCallback(
     (value: boolean) => {
       setAvoidTolls(value);
+      prefsTouchedRef.current = true;
       markRouteDirty();
     },
     [markRouteDirty],
@@ -837,10 +1492,90 @@ export default function TripPlannerPage() {
   const handleAvoidUnpavedChange = useCallback(
     (value: boolean) => {
       setAvoidUnpaved(value);
+      prefsTouchedRef.current = true;
       markRouteDirty();
     },
     [markRouteDirty],
   );
+  // ── Persisted user route prefs (revision 3 §F) ─────────────────────
+  // The trip-wide subset only — per-leg overrides and waypoints stay
+  // per-trip.
+  const currentRoutePrefs = useMemo<UserRoutePrefs>(
+    () => ({
+      roadPreference,
+      avoidHighways,
+      avoidTolls,
+      avoidUnpaved,
+      surfaces: surfacePreference,
+      minQuality: minQualityToLevel(minQuality),
+    }),
+    [
+      roadPreference,
+      avoidHighways,
+      avoidTolls,
+      avoidUnpaved,
+      surfacePreference,
+      minQuality,
+    ],
+  );
+  const prefsLoadStartedRef = useRef(false);
+  useEffect(() => {
+    // Load the rider's saved defaults once; pre-apply them ONLY on a
+    // fresh planner (no tripId, no shared-URL control overrides) — a
+    // loaded trip's own parameters and an explicit URL always win.
+    // Gated on authReady like the trip fetch above: on a hard load the
+    // auth store has no token yet and the GET would 401 silently,
+    // leaving the saved defaults unapplied.
+    if (!authReady || prefsLoadStartedRef.current) return;
+    prefsLoadStartedRef.current = true;
+    let cancelled = false;
+    const search = typeof window === "undefined" ? "" : window.location.search;
+    const params = new URLSearchParams(search);
+    const hasOverrides =
+      params.has("tripId") ||
+      Object.values(URL_PARAM_KEYS).some((key) => params.has(key));
+    plannerApi
+      .getUserRoutePrefs()
+      .then((prefs) => {
+        if (cancelled) return;
+        setSavedRoutePrefs(prefs);
+        if (prefs && !hasOverrides) {
+          setRoadPreference(prefs.roadPreference);
+          setAvoidHighways(prefs.avoidHighways);
+          setAvoidTolls(prefs.avoidTolls);
+          setAvoidUnpaved(prefs.avoidUnpaved);
+          if (prefs.surfaces.length > 0) setSurfacePreference(prefs.surfaces);
+          setMinQuality(minQualityFromLevel(prefs.minQuality));
+        }
+      })
+      .catch(() => {
+        // Saved defaults are a convenience — the fallbacks already apply.
+      })
+      .finally(() => {
+        if (!cancelled) setPrefsHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Runs once when auth is ready; reads the initial URL like the
+    // tripId effect above.
+  }, [authReady]);
+  useEffect(() => {
+    // Debounced write-back of rider-made pref changes as the new saved
+    // defaults. Trip-load sync never triggers this (prefsTouchedRef).
+    if (!prefsHydrated || !prefsTouchedRef.current) return;
+    const baseline = savedRoutePrefs ?? FALLBACK_USER_ROUTE_PREFS;
+    if (sameUserRoutePrefs(currentRoutePrefs, baseline)) return;
+    const handle = window.setTimeout(() => {
+      void plannerApi
+        .saveUserRoutePrefs(currentRoutePrefs)
+        .then(() => setSavedRoutePrefs(currentRoutePrefs))
+        .catch(() => {
+          // Persisting defaults is best-effort; the session keeps them.
+        });
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [currentRoutePrefs, prefsHydrated, savedRoutePrefs]);
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -864,12 +1599,44 @@ export default function TripPlannerPage() {
     const params = activeTrip.parameters;
     setDays(params.days);
     setDailyKmTarget(params.dailyKmTarget);
-    setRoadPreference(params.roadPreference);
+    setRoadPreference(fromTripRoadPreference(params.roadPreference));
     setSurfacePreference(params.surfacePreference);
     setMinQuality(params.minQuality);
     setAvoidHighways(params.avoidHighways);
     setAvoidTolls(params.avoidTolls);
     setAvoidUnpaved(params.avoidUnpaved);
+    // The values above are the TRIP's parameters, not rider edits: drop
+    // any earlier touch so the saved-defaults write-back (§F) can't
+    // persist a loaded/remote trip's parameters as the rider's defaults.
+    prefsTouchedRef.current = false;
+    // Re-seed the leg overrides from the persisted days (§C): saved
+    // leg_preferences map positionally onto each day's routing pairs.
+    // Values equal to the trip-wide preference collapse back to inherit
+    // so the UI shows CUSTOM only where the rider actually diverged.
+    const tripWide = fromTripRoadPreference(params.roadPreference);
+    const seeded: Record<number, LegPref[]> = {};
+    activeTrip.days.forEach((day, index) => {
+      const stored = day.legPreferences;
+      if (!stored || stored.length === 0) return;
+      const ids = filterRoutingWaypoints(normalizeDayFinish(day.waypoints)).map(
+        (w) => w.id,
+      );
+      if (stored.length !== ids.length - 1) return;
+      const legs = ids.slice(0, -1).map((fromWaypointId, i) => ({
+        fromWaypointId,
+        toWaypointId: ids[i + 1]!,
+        preference: (stored[i] === tripWide
+          ? "inherit"
+          : stored[i]!) as LegPref["preference"],
+      }));
+      if (legs.some((leg) => leg.preference !== "inherit")) {
+        seeded[index] = legs;
+      }
+    });
+    // Only replace state when the trip actually carries overrides: the
+    // reconcile effect owns the empty shape, and stale entries from a
+    // previous trip re-inherit there on their own (broken pairs, §C).
+    if (Object.keys(seeded).length > 0) setLegPrefsByDay(seeded);
   }, [activeTrip]);
   // Hydrate the planner controls from `?days=…&road=…` etc. **after** mount
   // so that the SSR/static prerender and the client's first render both
@@ -896,7 +1663,7 @@ export default function TripPlannerPage() {
       if (dirty) {
         setDays(fromUrl.days);
         setDailyKmTarget(fromUrl.dailyKmTarget);
-        setRoadPreference(fromUrl.roadPreference);
+        setRoadPreference(fromTripRoadPreference(fromUrl.roadPreference));
         setSurfacePreference(fromUrl.surfacePreference);
         setMinQuality(fromUrl.minQuality);
         setAvoidHighways(fromUrl.avoidHighways);
@@ -911,7 +1678,7 @@ export default function TripPlannerPage() {
     syncPlannerControlsToUrl({
       days,
       dailyKmTarget,
-      roadPreference,
+      roadPreference: toTripRoadPreference(roadPreference),
       surfacePreference,
       avoidHighways,
       avoidTolls,
@@ -977,120 +1744,205 @@ export default function TripPlannerPage() {
   const handleGenerate = useCallback(async () => {
     if (generationLockRef.current) return;
     const activeTripAtStart = activeTripRef.current;
-    const validationError = validateGenerationInput(
-      activeTripAtStart,
-      plannerParams,
+    // ── Start + finish set (revision 2 §E cases 2/3): drafting measures
+    // the DIRECT route against the daily-km sizing value, then either
+    // inflates a short hop through Fun Zones toward it (soft target) or
+    // leaves a full-day route natural with light corridor flavor. The
+    // draft returns the vias; live routing redraws through them. Days
+    // stay with the splitter — a draft never creates them.
+    // The SELECTED day: the draft button's visibility keys on it and the
+    // via inserts below target it, so reading any other day would draft
+    // one leg's endpoints into another leg's waypoints.
+    const routeDay = activeTripAtStart?.days[selectedDayIndex];
+    const startWp = routeDay?.waypoints.find((w) => w.type === "start");
+    const finishWp = routeDay ? dayFinishWaypoint(routeDay.waypoints) : null;
+    // A drafted loop (finish back on the start) is still a roundtrip —
+    // recalculating reopens the options dialog, never the A→B draft
+    // (whose "direct route" would be 0 km).
+    const isLoop = Boolean(
+      startWp &&
+      finishWp &&
+      startWp !== finishWp &&
+      sameSpot(startWp.location, finishWp.location),
     );
-    if (validationError) {
-      toast.error(validationError);
+    if (startWp && finishWp && startWp !== finishWp && !isLoop) {
+      setGenerating(true);
+      try {
+        const result = await plannerApi.draftRoute(
+          { lat: startWp.location.lat, lng: startWp.location.lng },
+          { lat: finishWp.location.lat, lng: finishWp.location.lng },
+          {
+            region: plannerRegion,
+            prefs: routeOptions,
+            dailyKmForSizing: dailyKmTarget,
+          },
+        );
+        const draftedKm = Math.round(result.summary.distanceKm);
+        if (result.vias.length > 0) {
+          // Replace existing plain vias with the drafted ones (stops like
+          // fuel/stays are kept). Sequential before-finish inserts
+          // preserve the travel order.
+          const store = useTripStore.getState();
+          for (const waypoint of routeDay!.waypoints) {
+            if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
+          }
+          result.vias.forEach((via, index) => {
+            useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
+              id: `draft-${Date.now()}-${index}`,
+              name: via.name,
+              location: { lat: via.lat, lng: via.lng },
+              type: "via",
+            });
+          });
+          fitAfterRouteRef.current = true;
+        }
+        if (!result.inflated && result.reachedTargetKm) {
+          // Case 3 — already a full day's ride; drafted natural.
+          setDraftNote(null);
+          toast.success(
+            result.vias.length > 0
+              ? t("Drafted ≈{km} km through {count} Fun Zone{s} on the way.", {
+                  km: draftedKm,
+                  count: result.vias.length,
+                  s: result.vias.length === 1 ? "" : "s",
+                })
+              : t("≈{km} km — already a full day's ride, left as routed.", {
+                  km: draftedKm,
+                }),
+          );
+        } else if (result.reachedTargetKm) {
+          setDraftNote(null);
+          toast.success(
+            t("Drafted ≈{km} km through {count} Fun Zone{s}.", {
+              km: draftedKm,
+              count: result.vias.length,
+              s: result.vias.length === 1 ? "" : "s",
+            }),
+          );
+        } else {
+          // Honest report — the soft target is a goal, not a contract.
+          const note = t("≈{km} km — limited fun roads nearby.", {
+            km: draftedKm,
+          });
+          setDraftNote(note);
+          toast.success(note);
+        }
+      } catch {
+        toast.error(t("Could not draft the route right now."));
+      } finally {
+        setGenerating(false);
+      }
       return;
     }
-    const requestToken = requestTokenRef.current + 1;
-    requestTokenRef.current = requestToken;
-    generationLockRef.current = true;
-    setGenerating(true);
-    let createdTripId: string | null = null;
-    try {
-      if (!activeTripAtStart) return;
-      const generationInputAtStart = buildGenerationInputSignature(
-        activeTripAtStart,
-        plannerParams,
-        plannerRegion,
-      );
-      const existingTripId = resolveExistingTripId(
-        serverTripId,
-        activeTripAtStart,
-      );
-      const metadataPayload = buildTripMetadataPayload(
-        activeTripAtStart,
-        plannerParams,
-      );
-      const { data: saved } = existingTripId
-        ? await tripsApi.update(existingTripId, metadataPayload)
-        : await tripsApi.create(metadataPayload);
-      const tripId =
-        (
-          saved as {
-            id?: string;
-          }
-        ).id ?? existingTripId;
-      if (!tripId) {
-        throw new Error("Trip generation response did not include an id");
-      }
-      if (!existingTripId) createdTripId = tripId;
-      const startWaypoint = findStartWaypoint(activeTripAtStart);
-      if (!startWaypoint) {
-        throw new Error("Missing start waypoint");
-      }
-      const { data } = await tripsApi.generate(
-        tripId,
-        buildGenerationPayload(plannerParams, startWaypoint, plannerRegion),
-      );
-      const latestTrip = activeTripRef.current;
-      const latestTripId = latestTrip?.id ?? null;
-      const latestTripMatchesRequest =
-        latestTripId !== null &&
-        (latestTripId === activeTripAtStart.id || latestTripId === tripId);
-      const generationInputNow = buildGenerationInputSignature(
-        latestTrip,
-        plannerParams,
-        plannerRegion,
-      );
-      if (
-        !isMountedRef.current ||
-        requestTokenRef.current !== requestToken ||
-        !latestTripMatchesRequest ||
-        generationInputNow !== generationInputAtStart
-      ) {
-        if (createdTripId) {
-          await cleanupCreatedTrip(createdTripId);
-        }
-        return;
-      }
-      const response = data as GenerateTripResponse;
-      const options = generatedOptionsFromResponse(response, plannerParams);
-      const selected =
-        selectedGeneratedOption(options, response.selected_option) ?? null;
-      setGeneratedOptions(options);
-      setGeneratedOptionsSignature(
-        buildGenerationInputSignature(
-          selected?.trip ?? null,
-          plannerParams,
-          plannerRegion,
-        ),
-      );
-      setSelectedOptionId(selected?.id ?? null);
-      setActiveTrip(selected?.trip ?? null);
-      setFitRouteToken((t) => t + 1);
-      setServerTripId(tripId);
-      setServerTripOwnerId(currentUserId);
-      setServerTripCallerRole("owner");
-      writeServerTripIdToUrl(tripId);
-    } catch {
-      if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
-        return;
-      }
-      if (createdTripId) {
-        await cleanupCreatedTrip(createdTripId);
-      }
-      toast.error("Could not generate itinerary options right now.");
-    } finally {
-      if (requestTokenRef.current === requestToken) {
-        generationLockRef.current = false;
-        if (isMountedRef.current) {
-          setGenerating(false);
-        }
-      }
+    // ── Start only (revision 3 §D): drafting a roundtrip is a discrete
+    // generate action — open the options dialog (distance + direction +
+    // preference); nothing drafts until the rider confirms.
+    if (startWp) {
+      setRoundtripOpen(true);
+      return;
     }
+    toast.error(
+      t("Place a start point first — click the map or type a place."),
+    );
   }, [
-    currentUserId,
-    plannerParams,
+    dailyKmTarget,
     plannerRegion,
-    serverTripId,
-    setActiveTrip,
+    routeOptions,
+    selectedDayIndex,
     setGenerating,
   ]);
-  const handleSelectOption = useCallback(
+  // Confirmed roundtrip options → REAL loop draft (revision 3 §E). The
+  // result lands as waypoints (Fun-Zone vias + turnaround + finish back
+  // at the start), so the loop is live-editable like any other route.
+  const handleDraftRoundtrip = useCallback(
+    async (
+      opts: Pick<RoundtripOptions, "distanceKm" | "direction" | "preference">,
+    ) => {
+      // Selected day, matching the inserts below (see handleGenerate).
+      const routeDay = activeTripRef.current?.days[selectedDayIndex];
+      const startWp = routeDay?.waypoints.find((w) => w.type === "start");
+      if (!routeDay || !startWp) return;
+      setGenerating(true);
+      try {
+        const result = await plannerApi.draftRoundtrip(
+          { lat: startWp.location.lat, lng: startWp.location.lng },
+          // Sidebar avoids ride along so the measured loop obeys the same
+          // constraints the live reroute will; the dialog preference wins.
+          { ...opts, region: plannerRegion, prefs: routeOptions },
+        );
+        // The confirmed dialog preference IS the loop's road character:
+        // apply it to the live route inputs too, or the recompute through
+        // the drafted vias would fall back to the old trip-wide value.
+        // A per-loop choice, not an edit of the rider's saved defaults
+        // (§F) — and an EARLIER touch this session must not smuggle it
+        // into the write-back either, so the flag is cleared, not just
+        // left unset.
+        prefsTouchedRef.current = false;
+        setRoadPreference(opts.preference);
+        const store = useTripStore.getState();
+        // The loop replaces plain vias; stops (fuel/stays) are kept.
+        for (const waypoint of routeDay.waypoints) {
+          if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
+        }
+        // A roundtrip finishes back at its start.
+        const hasFinish = Boolean(dayFinishWaypoint(routeDay.waypoints));
+        if (!hasFinish) {
+          useTripStore
+            .getState()
+            .placeWaypoint(
+              { lat: startWp.location.lat, lng: startWp.location.lng },
+              "set-end",
+              plannerParams,
+            );
+          const day =
+            useTripStore.getState().activeTrip?.days[selectedDayIndex];
+          const finish = day ? dayFinishWaypoint(day.waypoints) : undefined;
+          if (finish) {
+            renameWaypoint(finish.id, startWp.name ?? t("Back at start"));
+          }
+        }
+        result.vias.forEach((via, index) => {
+          useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
+            id: `loop-${Date.now()}-${index}`,
+            name: via.name,
+            location: { lat: via.lat, lng: via.lng },
+            type: "via",
+          });
+        });
+        fitAfterRouteRef.current = true;
+        const draftedKm = Math.round(result.summary.distanceKm);
+        if (result.reachedTargetKm) {
+          setDraftNote(null);
+          toast.success(t("Drafted a ≈{km} km roundtrip.", { km: draftedKm }));
+        } else {
+          const note = t("≈{km} km — limited fun roads nearby.", {
+            km: draftedKm,
+          });
+          setDraftNote(note);
+          toast.success(note);
+        }
+        // Remember the confirmed options: the loop stays a roundtrip and
+        // "Recalculate roundtrip" starts from these next time.
+        setLastRoundtripOpts(opts);
+        setRoundtripOpen(false);
+      } catch {
+        toast.error(t("Could not draft a roundtrip right now."));
+      } finally {
+        setGenerating(false);
+      }
+    },
+    [
+      plannerParams,
+      plannerRegion,
+      renameWaypoint,
+      routeOptions,
+      selectedDayIndex,
+      setGenerating,
+    ],
+  );
+  // Dormant until the multi-day option cards return (see the placeholder
+  // comment in the JSX) — underscore keeps the unused-var lint quiet.
+  const _handleSelectOption = useCallback(
     async (option: GeneratedTripOption) => {
       if (generationLockRef.current) return;
       if (option.selected || !serverTripId) {
@@ -1169,6 +2021,52 @@ export default function TripPlannerPage() {
     );
     return sum > 0 ? Math.round(sum) : null;
   }, [displayedTrip]);
+  // Approximate ride time from the routing engine's per-day durations —
+  // shown next to the distance so riders can gauge the day at a glance.
+  const totalTimeMin = useMemo(() => {
+    if (!displayedTrip) return null;
+    const sum = displayedTrip.days.reduce(
+      (acc, day) => acc + (day.durationMinutes ?? 0),
+      0,
+    );
+    return sum > 0 ? Math.round(sum) : null;
+  }, [displayedTrip]);
+  // Revision 2 §B: the day column exists ONLY after an actual split
+  // inside the multi-day opt-in — otherwise there is no day concept.
+  const daysVisible =
+    planningMode === "multiday" &&
+    splitStatus !== "none" &&
+    (dayPlans?.length ?? 0) > 0;
+  // Roundtrip mode (revision 3 §D + rider feedback): a start without a
+  // finish, OR a drafted loop whose finish sits back on the start — a
+  // confirmed roundtrip must STAY a roundtrip, so Draft becomes
+  // "Recalculate roundtrip" instead of falling into the A→B path.
+  const spineStart =
+    selectedDay?.waypoints.find((w) => w.type === "start") ?? null;
+  const spineFinish = selectedDay
+    ? (dayFinishWaypoint(selectedDay.waypoints) ?? null)
+    : null;
+  const isLoopRoute = Boolean(
+    spineStart &&
+    spineFinish &&
+    spineStart !== spineFinish &&
+    sameSpot(spineStart.location, spineFinish.location),
+  );
+  const isRoundtripMode = Boolean(spineStart) && (!spineFinish || isLoopRoute);
+  // Fun-Zone region checkbox (rider feedback): checking starts the draw
+  // on the map, unchecking mid-draw cancels it, unchecking with a drawn
+  // region removes the region. The in-map Draw region button is gone.
+  const regionDrawing = regionDrawMode === "drawing";
+  const regionChecked = regionDrawing || plannerRegion !== null;
+  const handleToggleRegionDraw = useCallback(() => {
+    if (regionDrawMode === "drawing") {
+      mapRef.current?.cancelRegionDraw();
+    } else if (plannerRegion) {
+      setPlannerRegion(null);
+    } else {
+      mapRef.current?.startRegionDraw();
+    }
+  }, [regionDrawMode, plannerRegion]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-cream">
       {/* Slim top toolbar — keeps Save / Undo / Redo / Import / Export /
@@ -1176,9 +2074,57 @@ export default function TripPlannerPage() {
           column primary CTA per spec; Parameters / Segments toggles
           drop since both panels are always visible in the 3-col grid. */}
       <div className="flex items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
-        <h1 className="min-w-0 truncate text-sm font-semibold text-ink">
-          {displayedTrip?.name ?? t("New Trip")}
-        </h1>
+        {/* Trip identity lives up here (design v2 top bar): the left day
+            column only exists after a split, so it can't own the title.
+            Header shows a day count ONLY post-split (revision 2 §C). */}
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            href="/trips"
+            className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-bold text-fg-dim transition hover:text-ink"
+          >
+            <ArrowLeft size={14} />
+            {t("Trips")}
+          </Link>
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={openRenameDialog}
+              disabled={!displayedTrip || !canEditTripMetadata}
+              title={
+                displayedTrip && canEditTripMetadata
+                  ? t("Rename trip")
+                  : undefined
+              }
+              className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
+            >
+              <h1 className="min-w-0 truncate text-sm font-semibold leading-tight text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
+                {tripDisplayName(displayedTrip) ?? t("New Trip")}
+              </h1>
+              {displayedTrip && canEditTripMetadata ? (
+                <Pencil
+                  size={11}
+                  aria-hidden
+                  className="shrink-0 text-fg-faint transition group-hover:text-accent"
+                />
+              ) : null}
+            </button>
+            {totalDistanceKm !== null ? (
+              <p className="truncate font-mono text-[10px] tracking-[0.3px] text-fg-mute">
+                {daysVisible && dayPlans
+                  ? t("{days} day{s} · {km} km", {
+                      days: dayPlans.length,
+                      s: dayPlans.length === 1 ? "" : "s",
+                      km: totalDistanceKm,
+                    })
+                  : t("{km} km", { km: totalDistanceKm })}
+                {totalTimeMin !== null
+                  ? ` · ~${formatDuration(totalTimeMin)}`
+                  : null}
+              </p>
+            ) : null}
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -1244,197 +2190,133 @@ export default function TripPlannerPage() {
           >
             {savingRoute ? t("Saving…") : t("Save route")}
           </Button>
-          {!displayedTrip && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setGeneratedOptions([]);
-                setGeneratedOptionsSignature(null);
-                setSelectedOptionId(null);
-                setActiveTrip(DEMO_TRIP);
-              }}
-            >
-              {t("Load demo trip")}
-            </Button>
-          )}
+          {/* Reset starts over in place; Discard deletes any persisted
+              trip and leaves the planner (rider feedback — routes save
+              server-side, so backing out needs an explicit discard). */}
+          {displayedTrip ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPendingConfirm("reset")}
+              >
+                {t("Reset")}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setPendingConfirm("discard")}
+              >
+                {t("Discard")}
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
       {/* Phase 2: multi-day option cards return here */}
 
-      {/* 3-column grid — left legs, center map (+ floating footer card),
-          right parameters. Spec: v2-pages.jsx Trip Planner. */}
-      <div className="grid min-h-0 flex-1 grid-cols-[340px_1fr_340px]">
-        {/* LEFT — back link + spec header + scrollable legs list */}
-        <aside className="flex min-h-0 flex-col border-r border-line">
-          <div className="border-b border-line px-5 pb-3 pt-[18px]">
-            <Link
-              href="/trips"
-              className="mb-2.5 inline-flex items-center gap-1.5 text-[12px] text-fg-dim transition hover:text-ink"
-            >
-              <ArrowLeft size={14} />
-              {t("Trips")}
-            </Link>
-            <div className="mb-1.5 flex items-center justify-between gap-2">
+      {/* Grid — the left day column exists ONLY after a split inside the
+          multi-day opt-in (revision 2 §B); otherwise the map takes the
+          space. Right panel is always present. */}
+      <div
+        className={`grid min-h-0 flex-1 ${
+          daysVisible ? "grid-cols-[340px_1fr_360px]" : "grid-cols-[1fr_360px]"
+        }`}
+      >
+        {/* LEFT — itinerary surface: the split's day cards. Absent (not
+            empty-state) before a split. */}
+        {daysVisible && dayPlans ? (
+          <aside className="flex min-h-0 flex-col border-r border-line">
+            <div className="border-b border-line px-5 pb-3 pt-[18px]">
               <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                {t("Route · Day {n} of {total}", {
-                  n: selectedDayIndex + 1,
-                  total: Math.max(1, timelineDays.length),
+                {t("Itinerary · {days} day{s}", {
+                  days: dayPlans.length,
+                  s: dayPlans.length === 1 ? "" : "s",
                 })}
               </span>
-              {displayedTrip?.status === "draft" && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-ink">
-                  <span
-                    aria-hidden="true"
-                    className="h-1.5 w-1.5 rounded-full bg-ink"
-                  />
-                  {t("AI draft")}
-                </span>
-              )}
             </div>
-            <h2 className="mt-2 font-sans text-[22px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-              {displayedTrip?.name ?? t("New Trip")}
-            </h2>
-            <div className="mt-2.5 flex flex-wrap gap-3.5 font-mono text-[12px] text-fg-dim">
-              {totalDistanceKm !== null && (
-                <span>
-                  <span className="font-bold text-ink">{totalDistanceKm}</span>{" "}
-                  {t("km")}
-                </span>
-              )}
-              <span>
-                <span className="font-bold text-ink">
-                  {timelineDays.length}
-                </span>{" "}
-                {timelineDays.length === 1 ? t("day") : t("days")}
-              </span>
-            </div>
-          </div>
-
-          {/* Legs list (replaces bottom timeline strip). When no trip
-              is loaded, render 3 disabled placeholder day chips so the
-              existing test (`getByRole('button', { name: /Day 1/ })`)
-              still resolves and stays non-interactive. */}
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
-            {timelineDays.map((day, i) => {
-              const isActive = !!activeTrip && selectedDayIndex === i;
-              // startLinked is only present on real TripDay objects (not placeholders)
-              const startLinked =
-                "startLinked" in day ? day.startLinked : undefined;
-              // Only offer relink once the predecessor actually has a finish to
-              // mirror — an explicit `end` OR a terminal accommodation (a
-              // generated overnight day). Relinking with no predecessor finish
-              // would form an invalid link (the store guards this too, so the
-              // button would otherwise be a no-op).
-              const prevHasFinish = !!dayFinishWaypoint(
-                activeTrip?.days[i - 1]?.waypoints ?? [],
-              );
-              const showRelink =
-                !!activeTrip &&
-                i >= 1 &&
-                startLinked === false &&
-                prevHasFinish;
-              return (
-                <div
-                  key={day.dayNumber}
-                  className="relative flex flex-col gap-1"
-                >
+            <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
+              <>
+                {splitStatus === "stale" &&
+                (displayedTrip?.days.length ?? 0) <= 1 ? (
+                  <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
+                    <span className="text-[11.5px] font-semibold text-ink">
+                      {t("Route changed ")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleSplit()}
+                      className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
+                    >
+                      {t("RE-SPLIT")}
+                    </button>
+                  </div>
+                ) : null}
+                {dayPlans.map((plan, planIndex) => (
                   <button
+                    key={plan.dayNumber}
                     type="button"
+                    aria-label={`Day ${plan.dayNumber}`}
+                    aria-pressed={selectedPlanIndex === planIndex}
                     onClick={() => {
-                      if (!activeTrip) return;
-                      setSelectedDay(i);
+                      setSelectedPlanIndex(planIndex);
+                      setPanelTab("INSPECT");
+                      // Loaded multi-day trips: the card also selects the
+                      // real day (drives per-day live routing + preview).
+                      if (activeTrip && planIndex < activeTrip.days.length) {
+                        setSelectedDay(planIndex);
+                      }
                     }}
-                    disabled={!activeTrip}
-                    aria-pressed={isActive}
-                    aria-label={`Day ${day.dayNumber}${day.title ? ` ${day.title}` : ""}`}
-                    className={`rounded-[12px] border p-3 pr-9 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isActive
-                        ? "border-ink bg-ink text-cream"
-                        : "border-line bg-cream text-ink hover:border-line-strong"
-                    }`}
+                    className={`w-full rounded-[12px] border bg-cream p-3 text-left transition hover:border-line-strong ${
+                      selectedPlanIndex === planIndex
+                        ? "border-accent"
+                        : "border-line"
+                    } ${splitStatus === "stale" ? "opacity-45" : ""}`}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div
-                          className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] font-mono text-[11px] font-bold ${
-                            isActive
-                              ? "bg-cream/15 text-cream"
-                              : "bg-paper text-ink"
-                          }`}
-                        >
-                          {String(day.dayNumber).padStart(2, "0")}
+                      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
+                        {String(plan.dayNumber).padStart(2, "0")}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-bold text-ink">
+                          {t("Day")} {plan.dayNumber}
                         </div>
-                        <div className="truncate text-[13px] font-bold">
-                          {day.title
-                            ? day.title
-                            : `${t("Day")} ${day.dayNumber}`}
+                        <div className="truncate font-mono text-[10px] text-fg-mute">
+                          {plan.startTown.toUpperCase()} →{" "}
+                          {plan.endTown.toUpperCase()}
                         </div>
                       </div>
                     </div>
-                    <div
-                      className={`mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] ${
-                        isActive ? "text-cream/70" : "text-fg-dim"
-                      }`}
-                    >
-                      {day.distanceKm ? (
-                        <span>{Math.round(day.distanceKm)} KM</span>
+                    <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-fg-dim">
+                      <span>{Math.round(plan.distanceKm)} KM</span>
+                      {plan.timeMin ? (
+                        <span>{formatDuration(plan.timeMin)}</span>
                       ) : null}
-                      {day.elevationGain ? (
-                        <span>↗ {Math.round(day.elevationGain)}M</span>
-                      ) : null}
-                      {day.durationMinutes ? (
-                        <span>{formatDuration(day.durationMinutes)}</span>
+                      {plan.quality.score !== null ? (
+                        <span className="text-accent">
+                          {plan.quality.score.toFixed(1)} / 5
+                        </span>
                       ) : null}
                     </div>
+                    {plan.noTownNearby ? (
+                      <p className="mt-1.5 text-[10.5px] leading-snug text-fg-mute">
+                        {t(
+                          "No overnight town near this break — it lands at the raw distance. ",
+                        )}
+                      </p>
+                    ) : null}
+                    {plan.breakPinned ? (
+                      <p className="mt-1.5 font-mono text-[9.5px] tracking-[0.4px] text-fg-mute">
+                        {t("BREAK PINNED ")}
+                      </p>
+                    ) : null}
                   </button>
-                  {/* Per-day remove button — sibling of tab button, absolutely positioned top-right */}
-                  {!!activeTrip && activeTrip.days.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeDay(i);
-                      }}
-                      aria-label={t("Remove day {n}", { n: day.dayNumber })}
-                      className={`absolute right-2 top-2 z-10 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] transition hover:opacity-70 ${
-                        isActive ? "text-cream/70" : "text-fg-dim"
-                      }`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                  {/* "Link to previous day" — shown for days ≥1 where the
-                      rider manually broke the start link */}
-                  {showRelink && (
-                    <button
-                      type="button"
-                      onClick={() => relinkDayStart(i)}
-                      className="flex items-center gap-1.5 rounded-[8px] border border-line px-3 py-1.5 text-left text-[11px] text-fg-dim transition hover:border-line-strong hover:text-ink"
-                    >
-                      <Link2 size={11} />
-                      {t("Link to previous day")}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {/* "+ Add day" button — shown only when an active trip exists */}
-            {!!activeTrip && (
-              <button
-                type="button"
-                onClick={addDay}
-                disabled={activeTrip.days.length >= MAX_TRIP_DAYS}
-                aria-label={t("Add day")}
-                className="flex items-center gap-1.5 rounded-[12px] border border-dashed border-line px-3 py-2.5 text-[13px] text-fg-dim transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Plus size={14} />
-                {t("Add day")}
-              </button>
-            )}
-          </div>
-        </aside>
+                ))}
+              </>
+            </div>
+          </aside>
+        ) : null}
 
         {/* CENTER — Map canvas + floating multi-day footer card */}
         <div
@@ -1450,6 +2332,8 @@ export default function TripPlannerPage() {
               month={travelMonth}
               drawnRegion={plannerRegion}
               onDrawnRegionChange={setPlannerRegion}
+              onDrawModeChange={setRegionDrawMode}
+              onRerouteRequested={armFitAfterRoute}
               closuresData={closuresData}
               passesData={passesData}
               selectedDayNumber={selectedDay?.dayNumber ?? 1}
@@ -1460,8 +2344,11 @@ export default function TripPlannerPage() {
               onMoveWaypoint={(dayNumber, waypointId, location) =>
                 moveWaypoint(dayNumber - 1, waypointId, location, plannerParams)
               }
+              onRemoveWaypoint={removeWaypointById}
               collaboratorCursors={collabSession.cursors}
               suggestions={collabSession.suggestions}
+              dayBreaks={dayBreakMarkers}
+              onMoveDayBreak={handleMoveDayBreak}
               {...(serverTripId
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
@@ -1519,284 +2406,476 @@ export default function TripPlannerPage() {
               </div>
             </div>
           )}
-
-          {/* Floating multi-day footer — only when we have real days
-              from a loaded trip. The placeholder-day case (no trip)
-              keeps the map fully clear. */}
-          {activeTrip && activeTrip.days.length > 0 && (
-            <div className="absolute bottom-4 left-4 right-4 z-10 rounded-[14px] border border-line-strong bg-cream p-3.5 shadow-[0_12px_32px_rgba(14,14,16,0.14)]">
-              <div className="mb-2.5 flex items-center justify-between gap-2">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                  {t("Multi-day itinerary")}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || isGenerating}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold tracking-[0.2px] text-cream transition hover:opacity-90 disabled:opacity-60"
-                >
-                  {/* Visible text stays static so the toolbar Save
-                      button ("Saving…" in flight) keeps a unique
-                      accessible name for selectors like
-                      `getByRole({ name: "Saving…" })`. The disabled
-                      state here conveys the in-flight feedback. */}
-                  {t("Push to phone →")}
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-                {activeTrip.days.map((day, i) => {
-                  const isActive = selectedDayIndex === i;
-                  return (
-                    <button
-                      key={day.dayNumber}
-                      type="button"
-                      onClick={() => setSelectedDay(i)}
-                      aria-pressed={isActive}
-                      className={`rounded-[10px] border p-2.5 text-left transition ${
-                        isActive
-                          ? "border-ink bg-ink text-cream"
-                          : "border-line bg-paper text-ink hover:border-line-strong"
-                      }`}
-                    >
-                      <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <span
-                          className={`font-mono text-[10px] font-bold uppercase tracking-[1.6px] ${
-                            isActive ? "text-accent" : "text-fg-dim"
-                          }`}
-                        >
-                          {t("Day")} {day.dayNumber}
-                        </span>
-                      </div>
-                      <div className="truncate text-[13px] font-bold">
-                        {day.title ?? `${t("Day")} ${day.dayNumber}`}
-                      </div>
-                      <div
-                        className={`mt-1.5 flex flex-wrap gap-2 font-mono text-[11px] ${
-                          isActive ? "text-cream/70" : "text-fg-dim"
-                        }`}
-                      >
-                        {day.distanceKm ? (
-                          <span>{Math.round(day.distanceKm)} KM</span>
-                        ) : null}
-                        {day.waypoints?.length ? (
-                          <span>{day.waypoints.length} STOPS</span>
-                        ) : null}
-                      </div>
-                      {day.overnightStop?.name && (
-                        <div
-                          className={`mt-1.5 truncate font-mono text-[11px] ${
-                            isActive ? "text-cream/55" : "text-fg-mute"
-                          }`}
-                        >
-                          {t("Overnight ·")} {day.overnightStop.name}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* RIGHT — Parameters panel (always visible). Spec leads with
-            Days segmented + Road preference radio cards; the existing
-            advanced controls (daily km, surfaces, min quality, avoid
-            flags, route builder, passes, closures, stops) live behind
-            an Advanced disclosure so the spec idle visual stays clean
-            while every test selector remains reachable. */}
-        <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-line bg-paper px-5 py-[18px]">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-            {t("Parameters")}
-          </span>
-          <h2 className="mt-1.5 font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-            {t("Tune the AI draft")}
-          </h2>
-          <p className="mb-[18px] mt-1 text-[12px] text-fg-dim">
-            {t("Changes re-run Fun Zone discovery live.")}
-          </p>
-
-          <div className="flex flex-col gap-[18px]">
-            {/* Days segmented control — full 1..14 supported range so a
-                persisted `days=1` or `days=10` trip lands on a visible
-                selected segment instead of leaving the control with no
-                highlighted option. Spec shows 2..8; we cover the full
-                state range to keep the visible control and submitted
-                value consistent. */}
-            <div>
-              <div className="mb-2 flex justify-between">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                  {t("Days")}
-                </span>
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-                  {days}
-                </span>
+        {/* RIGHT — Plan & inspect panel: BUILD / INSPECT / CONDITIONS /
+            STOPS. Every legacy control keeps its selector — BUILD hosts
+            the route spine + generation controls, INSPECT the quality
+            readout, CONDITIONS the passes/closures panels, STOPS the
+            stop suggestions. Panes stay mounted while hidden. */}
+        <PlannerPanel
+          tab={panelTab}
+          onTabChange={setPanelTab}
+          build={
+            <div className="flex flex-col gap-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <SectionStamp n="01">{t("Route ")}</SectionStamp>
+                  {isRoundtripMode ? (
+                    <span className="mb-3 inline-flex items-center gap-1.5 font-mono text-[8.5px] font-bold tracking-[0.4px] text-accent">
+                      <span
+                        aria-hidden="true"
+                        className="h-[7px] w-[7px] rounded-full bg-accent"
+                      />
+                      {t("ROUNDTRIP")}
+                    </span>
+                  ) : null}
+                </div>
+                <WaypointEditor
+                  waypoints={selectedDay?.waypoints ?? []}
+                  legPrefs={legPrefs}
+                  tripPreference={roadPreference}
+                  onChangeLegPref={handleChangeLegPref}
+                  onRemove={removeWaypointById}
+                  onReorder={(fromIndex, toIndex) =>
+                    reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
+                  }
+                  onRelocate={handleRelocateWaypoint}
+                  onAddVia={handleAddViaFromSearch}
+                  onCreateEndpoint={handleCreateEndpoint}
+                />
               </div>
-              <div className="grid grid-cols-7 gap-1">
-                {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setDays(n)}
-                    aria-label={`Set days to ${n}`}
-                    className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
-                      days === n
-                        ? "border-ink bg-ink text-cream"
-                        : "border-line bg-cream text-fg-dim hover:text-ink"
+
+              {/* §02 ROUTE PREFERENCES — collapsed inline summary by
+                  default (revision 3 §B): a single derived row; expanding
+                  toggles the full controls inline (no modal, map stays
+                  visible, changes re-route live). */}
+              <div>
+                <SectionStamp n="02">{t("Route preferences ")}</SectionStamp>
+                <button
+                  type="button"
+                  aria-expanded={prefsOpen}
+                  aria-label={t("Route preferences")}
+                  onClick={() => setPrefsOpen((open) => !open)}
+                  className={`flex w-full items-center gap-2.5 rounded-[11px] border px-3.5 py-3 text-left transition ${
+                    prefsOpen
+                      ? "border-accent bg-accent/[0.04]"
+                      : "border-line bg-cream hover:border-line-strong"
+                  }`}
+                >
+                  <SlidersHorizontal
+                    size={15}
+                    className={`shrink-0 ${prefsOpen ? "text-accent" : "text-fg-mute"}`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block">
+                      <span className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono text-[8px] tracking-[0.5px] text-fg-mute">
+                        {sameUserRoutePrefs(
+                          currentRoutePrefs,
+                          savedRoutePrefs ?? FALLBACK_USER_ROUTE_PREFS,
+                        )
+                          ? t("SAVED DEFAULTS")
+                          : t("CUSTOM")}
+                      </span>
+                    </span>
+                    <span className="mt-1 block truncate text-[12px] font-bold text-ink">
+                      {buildPrefsSummary(currentRoutePrefs)}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 text-fg-mute transition-transform ${
+                      prefsOpen ? "rotate-180" : ""
                     }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-              {/* sr-only semantic input keeps `getByLabelText("Number of
-                  days")` resolvable for the existing tests; changes
-                  fire through the same setDays handler. `tabIndex={-1}`
-                  removes it from sequential focus so keyboard users
-                  don't land on an invisible control. */}
-              <label htmlFor="trip-planner-days" className="sr-only">
-                {t("Number of days")}
-              </label>
-              <input
-                id="trip-planner-days"
-                type="number"
-                min={1}
-                max={14}
-                value={days}
-                tabIndex={-1}
-                onChange={(event) =>
-                  setDays(clampNumberInput(event.target.value, 1, 14, 3))
-                }
-                className="sr-only"
-              />
-            </div>
+                  />
+                </button>
 
-            {/* Road preference radio cards — includes a "Balanced" card
-                for the `mixed` planner default so the visible UI and
-                submitted payload stay in sync. Spec's 3-card design
-                doesn't surface `mixed`, but it's the default planner
-                state and a persisted trip can carry it; hiding it
-                would leave the control with nothing selected. */}
-            <div>
-              <label
-                htmlFor="trip-planner-road-preference"
-                className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim"
-              >
-                {t("Road preference")}
-              </label>
-              <div className="flex flex-col gap-1.5">
-                {(
-                  [
-                    {
-                      value: "curvy",
-                      label: t("Maximum twisty"),
-                      sub: t("Fun-factor first, chain passes"),
-                    },
-                    {
-                      value: "scenic",
-                      label: t("Scenic balance"),
-                      sub: t("Views + curves mixed"),
-                    },
-                    {
-                      value: "mixed",
-                      label: t("Balanced"),
-                      sub: t("All-rounder default"),
-                    },
-                    {
-                      value: "direct",
-                      label: t("Efficient loop"),
-                      sub: t("Minimize backtracking"),
-                    },
-                  ] as const
-                ).map((opt) => {
-                  const selected = roadPreference === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() =>
-                        setRoadPreference(
-                          opt.value as TripParameters["roadPreference"],
+                <div
+                  className={
+                    prefsOpen
+                      ? "mt-2.5 rounded-[12px] border border-line-strong bg-cream px-3.5 pb-1 pt-3.5"
+                      : "hidden"
+                  }
+                >
+                  <p className="mb-3.5 text-[11px] leading-relaxed text-fg-mute">
+                    {t(
+                      "Applied to every new trip. Changing a value re-draws the route on the map live. ",
+                    )}
+                  </p>
+                  {/* Road preference — one card per row (rider
+                    preference over the design's 2-col chips): all five
+                    characters in the revision 3 §A vocabulary; the loop
+                    mode also drives the roundtrip dialog default. */}
+                  <div>
+                    <label
+                      htmlFor="trip-planner-road-preference"
+                      className="mb-2 block text-xs font-bold text-fg-dim"
+                    >
+                      {t("Road preference")}
+                    </label>
+                    <div className="flex flex-col gap-1.5">
+                      {(
+                        [
+                          {
+                            value: "direct",
+                            label: t("Direct"),
+                            sub: t("Shortest sensible — no fun detours"),
+                          },
+                          {
+                            value: "balanced",
+                            label: t("Balanced"),
+                            sub: t("Fun and progress in balance"),
+                          },
+                          {
+                            value: "scenic_balance",
+                            label: t("Scenic balance"),
+                            sub: t("Views + curves mixed"),
+                          },
+                          {
+                            value: "maximum_twisty",
+                            label: t("Maximum twisty"),
+                            sub: t("Fun-factor first, chain passes"),
+                          },
+                          {
+                            value: "efficient_loop",
+                            label: t("Efficient loop"),
+                            sub: t("Roundtrips — minimize backtracking"),
+                          },
+                        ] as ReadonlyArray<{
+                          value: RoadPreference;
+                          label: string;
+                          sub: string;
+                        }>
+                      ).map((opt) => {
+                        const selected = roadPreference === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() =>
+                              handleRoadPreferenceChange(opt.value)
+                            }
+                            aria-pressed={selected}
+                            disabled={!canEditTripMetadata}
+                            className={`rounded-[10px] border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              selected
+                                ? "border-ink bg-ink text-cream"
+                                : "border-line bg-cream hover:border-line-strong"
+                            }`}
+                          >
+                            <span className="block text-[12.5px] font-bold">
+                              {opt.label}
+                            </span>
+                            <span
+                              className={`mt-0.5 block text-[11px] ${
+                                selected ? "text-cream/70" : "text-fg-mute"
+                              }`}
+                            >
+                              {opt.sub}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!canEditTripMetadata ? (
+                      <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
+                        {t(
+                          "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits. ",
+                        )}
+                      </p>
+                    ) : null}
+                    {/* sr-only select keeps `getByLabelText("Road preference")`
+                      + `fireEvent.change` resolvable. */}
+                    <select
+                      id="trip-planner-road-preference"
+                      value={toTripRoadPreference(roadPreference)}
+                      disabled={!canEditTripMetadata}
+                      tabIndex={-1}
+                      onChange={(event) =>
+                        handleRoadPreferenceChange(
+                          fromTripRoadPreference(
+                            event.target
+                              .value as TripParameters["roadPreference"],
+                          ),
                         )
                       }
-                      aria-pressed={selected}
-                      className={`rounded-[8px] border px-3 py-2.5 text-left transition ${
-                        selected
-                          ? "border-ink bg-cream"
-                          : "border-line bg-transparent hover:bg-cream/50"
+                      className="sr-only"
+                    >
+                      <option value="curvy">{t("Maximum curviness")}</option>
+                      <option value="scenic">{t("Scenic roads")}</option>
+                      <option value="mixed">{t("Mixed (balanced)")}</option>
+                      <option value="direct">{t("Direct / efficient")}</option>
+                    </select>
+                  </div>
+
+                  <div className="mt-4">
+                    <label
+                      htmlFor="trip-planner-min-quality"
+                      className="mb-2 block text-xs font-bold text-fg-dim"
+                    >
+                      {t("Minimum road quality")}
+                    </label>
+                    {/* Owner metadata like the road character above: a member's
+                        edit could never persist, only desync the control
+                        from the saved value on reload. */}
+                    <Select
+                      id="trip-planner-min-quality"
+                      value={minQuality}
+                      onChange={(value) =>
+                        handleMinQualityChange(Number(value))
+                      }
+                      tone="cream"
+                      disabled={!canEditTripMetadata}
+                    >
+                      <option value="1">{t("Any condition")}</option>
+                      <option value="2">{t("Fair or better")}</option>
+                      <option value="3">{t("Good or better")}</option>
+                      <option value="4">{t("Excellent only")}</option>
+                    </Select>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="mb-1 block text-xs font-bold text-fg-dim">
+                      {t("Surface")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                      {SURFACE_OPTIONS.map((surface) => (
+                        <Checkbox
+                          key={surface.value}
+                          checked={surfacePreference.includes(surface.value)}
+                          onChange={() => handleSurfaceToggle(surface.value)}
+                          label={surface.label}
+                          ariaLabel={surface.label}
+                          className="py-1"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="mb-1 block text-xs font-bold text-fg-dim">
+                      {t("Avoid")}
+                    </p>
+                    {/* Short visible labels per the design (the "Avoid"
+                        heading carries the context); ariaLabel keeps the
+                        long accessible names the tests target. */}
+                    <div className="flex flex-col items-start gap-1">
+                      <Checkbox
+                        checked={avoidHighways}
+                        onChange={handleAvoidHighwaysChange}
+                        label={t("Highways")}
+                        ariaLabel={t("Avoid highways")}
+                        className="py-1"
+                      />
+                      <Checkbox
+                        checked={avoidTolls}
+                        onChange={handleAvoidTollsChange}
+                        label={t("Tolls")}
+                        ariaLabel={t("Avoid tolls")}
+                        className="py-1"
+                      />
+                      <Checkbox
+                        checked={avoidUnpaved}
+                        onChange={handleAvoidUnpavedChange}
+                        label={t("Unpaved roads")}
+                        ariaLabel={t("Avoid unpaved roads")}
+                        className="py-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* §03 DRAFT ROUTE — the propose action produces the LINE
+                  only (revision 2 §E); days never come from here. The
+                  section is conditional on waypoint state (rider
+                  feedback): the route is LIVE once start + finish exist,
+                  so drafting only has a real job while the trip is a
+                  roundtrip — with both points set the whole section
+                  disappears and the "Route ready" chip speaks instead. */}
+              <div>
+                {/* sr-only semantic input keeps `getByLabelText("Number of
+                    days")` resolvable for the existing tests; drafting
+                    itself always proposes a single day's worth of riding. */}
+                <label htmlFor="trip-planner-days" className="sr-only">
+                  {t("Number of days")}
+                </label>
+                <input
+                  id="trip-planner-days"
+                  type="number"
+                  min={1}
+                  max={14}
+                  value={days}
+                  tabIndex={-1}
+                  onChange={(event) =>
+                    setDays(clampNumberInput(event.target.value, 1, 14, 3))
+                  }
+                  className="sr-only"
+                />
+
+                {isRoundtripMode ? (
+                  <>
+                    <SectionStamp n="03">{t("Draft route ")}</SectionStamp>
+                    {!isLoopRoute ? (
+                      <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
+                        {t(
+                          "No finish set — Tarmoto will loop you back to your start. ",
+                        )}
+                      </p>
+                    ) : null}
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      block
+                      loading={isGenerating}
+                      disabled={isGenerating}
+                      onClick={() => void handleGenerate()}
+                    >
+                      {isGenerating
+                        ? t("Drafting…")
+                        : isLoopRoute
+                          ? t("Recalculate roundtrip")
+                          : t("Draft roundtrip")}
+                    </Button>
+                    {draftNote ? (
+                      <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
+                        {draftNote}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={regionChecked}
+                  onClick={handleToggleRegionDraw}
+                  className={`mt-4 flex w-full items-center gap-3 rounded-[11px] border px-3.5 py-3 text-left transition ${
+                    regionChecked
+                      ? "border-accent bg-cream"
+                      : "border-line bg-cream hover:border-line-strong"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border-2 transition ${
+                      regionChecked
+                        ? "border-accent bg-accent"
+                        : "border-line-strong bg-paper"
+                    }`}
+                  >
+                    {regionChecked ? (
+                      <Check
+                        size={13}
+                        strokeWidth={3.5}
+                        className="text-cream"
+                      />
+                    ) : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block text-[13px] font-extrabold ${
+                        regionChecked ? "text-accent" : "text-ink"
                       }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          aria-hidden="true"
-                          className={`flex h-[14px] w-[14px] items-center justify-center rounded-full border-[1.5px] ${
-                            selected ? "border-ink" : "border-fg-mute"
-                          }`}
-                        >
-                          {selected && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-ink" />
-                          )}
-                        </span>
-                        <span className="text-[13px] font-semibold text-ink">
-                          {opt.label}
-                        </span>
-                      </div>
-                      <p className="ml-6 mt-1 text-[11px] text-fg-mute">
-                        {opt.sub}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* sr-only select keeps `getByLabelText("Road preference")`
-                  + `fireEvent.change` resolvable; carries the full
-                  4-option enum so tests that select `mixed` still
-                  reach a real value. `tabIndex={-1}` removes it from
-                  sequential focus so keyboard users don't land on an
-                  invisible control. */}
-              <select
-                id="trip-planner-road-preference"
-                value={roadPreference}
-                tabIndex={-1}
-                onChange={(event) =>
-                  setRoadPreference(
-                    event.target.value as TripParameters["roadPreference"],
-                  )
-                }
-                className="sr-only"
-              >
-                <option value="curvy">{t("Maximum curviness")}</option>
-                <option value="scenic">{t("Scenic roads")}</option>
-                <option value="mixed">{t("Mixed (balanced)")}</option>
-                <option value="direct">{t("Direct / efficient")}</option>
-              </select>
-            </div>
+                      {t("Draw region · Fun Zones")}
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-dim">
+                      {regionDrawing
+                        ? t("Drag a box on the map to scan it. ")
+                        : plannerRegion
+                          ? t(
+                              "Region set — drafting keeps the route inside it. ",
+                            )
+                          : t("Find dense clusters of great road. ")}
+                    </span>
+                  </span>
+                  <Star
+                    size={14}
+                    aria-hidden="true"
+                    fill="currentColor"
+                    className={`shrink-0 ${
+                      regionChecked ? "text-accent" : "text-fg-mute"
+                    }`}
+                  />
+                </button>
 
-            {/* Advanced — every legacy control lives here so the rider
-                still has access to surfaces, daily km, min quality,
-                avoid flags, route builder, and passes / closures
-                without cluttering the spec's two-control simplicity. */}
-            {/* Phase A keeps the Advanced disclosure open by default —
-                closures / passes / route-builder warnings are content
-                the rider relies on, and existing Playwright e2es
-                assert `toBeVisible()` on text rendered inside this
-                group. A follow-up phase B can collapse the disclosure
-                once those surfaces are reshaped for the spec's
-                minimal idle visual. The state is controlled
-                explicitly so user collapses survive subsequent
-                parent re-renders. */}
-            <details
-              className="border-t border-line pt-[14px]"
-              open={advancedOpen}
-              onToggle={(event) =>
-                setAdvancedOpen((event.target as HTMLDetailsElement).open)
-              }
-            >
-              <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim hover:text-ink">
-                {t("Advanced")}
-              </summary>
-              <div className="mt-3 flex flex-col gap-3">
-                <div>
+                {totalDistanceKm !== null && splitStatus === "none" ? (
+                  <div className="mt-4 flex items-center gap-2.5 rounded-[10px] border border-quality-q5/40 bg-quality-q5/15 px-3.5 py-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-quality-q5"
+                    >
+                      <Check size={11} strokeWidth={3.5} className="text-ink" />
+                    </span>
+                    <p className="text-[12px] leading-snug text-fg-dim">
+                      <b className="block text-ink">
+                        {totalTimeMin !== null
+                          ? t("Route ready — {km} km · ~{time}", {
+                              km: totalDistanceKm,
+                              time: formatDuration(totalTimeMin),
+                            })
+                          : t("Route ready — {km} km", {
+                              km: totalDistanceKm,
+                            })}
+                      </b>
+                      {t("Save it as-is, or add days below. ")}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Everything below is the OPTIONAL day-planning layer
+                  (revision 2 §D) — most riders never open it. */}
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-line" />
+                <span className="font-mono text-[9px] font-bold tracking-[1.2px] text-fg-mute">
+                  {t("OPTIONAL")}
+                </span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+
+              {/* PLAN AS MULTI-DAY TRIP — collapsed by default; expanding
+                  it IS the day-planning opt-in (planningMode='multiday').
+                  The daily-km input lives here, nowhere else in BUILD. */}
+              <details
+                className="overflow-hidden rounded-[13px] border border-line-strong bg-cream"
+                open={multiDayOpen}
+                onToggle={(event) => {
+                  const open = (event.target as HTMLDetailsElement).open;
+                  setMultiDayOpen(open);
+                  if (open) {
+                    setPlanningMode("multiday");
+                  } else if (splitStatus === "none") {
+                    // Collapsing before ever splitting backs out of the
+                    // day concept entirely; an existing split keeps it.
+                    setPlanningMode("single");
+                  }
+                }}
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-line bg-paper text-fg-dim"
+                  >
+                    <CalendarDays size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-extrabold text-ink">
+                      {t("Plan as multi-day trip")}
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] text-fg-dim">
+                      {t("Add daily stages, stays & viewpoints")}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 text-fg-mute transition-transform ${
+                      multiDayOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </summary>
+                <div className="border-t border-line px-4 pb-4 pt-3.5">
                   <label
                     htmlFor="trip-planner-daily-km"
                     className="mb-1 block text-xs text-fg-dim"
@@ -1812,125 +2891,148 @@ export default function TripPlannerPage() {
                     onChange={setDailyKmTarget}
                     tone="cream"
                   />
-                </div>
-
-                <div>
-                  <p className="mb-2 block text-xs text-fg-dim">
-                    {t("Surface preference")}
-                  </p>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                    {SURFACE_OPTIONS.map((surface) => (
-                      <Checkbox
-                        key={surface.value}
-                        checked={surfacePreference.includes(surface.value)}
-                        onChange={() => handleSurfaceToggle(surface.value)}
-                        label={surface.label}
-                        ariaLabel={surface.label}
-                        className="py-1"
-                      />
+                  <div className="mb-2 mt-4 flex justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+                      {t("Days")}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
+                      {forcedDays ?? t("Auto")}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForcedDays(null)}
+                    aria-pressed={forcedDays === null}
+                    className={`mb-1 w-full rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                      forcedDays === null
+                        ? "border-ink bg-ink text-cream"
+                        : "border-line bg-cream text-fg-dim hover:text-ink"
+                    }`}
+                  >
+                    {t("Auto (from daily km)")}
+                  </button>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setForcedDays(n);
+                          setDays(n);
+                        }}
+                        aria-label={`Force ${n} days`}
+                        className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
+                          forcedDays === n
+                            ? "border-ink bg-ink text-cream"
+                            : "border-line bg-cream text-fg-dim hover:text-ink"
+                        }`}
+                      >
+                        {n}
+                      </button>
                     ))}
                   </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="trip-planner-min-quality"
-                    className="mb-1 block text-xs text-fg-dim"
+                  {(() => {
+                    const routeKm = displayedTrip?.days[0]?.distanceKm ?? 0;
+                    const perDay = forcedDays ? routeKm / forcedDays : null;
+                    return perDay !== null && perDay > 400 ? (
+                      <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
+                        {t(
+                          "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route. ",
+                        )}
+                      </p>
+                    ) : null;
+                  })()}
+                  <Button
+                    variant="accent"
+                    size="md"
+                    block
+                    uppercase
+                    className="mt-3"
+                    loading={splitting}
+                    disabled={
+                      splitting ||
+                      !displayedTrip?.days[0]?.routeGeometry ||
+                      (displayedTrip?.days.length ?? 0) > 1
+                    }
+                    onClick={() => void handleSplit()}
                   >
-                    {t("Minimum road quality")}
-                  </label>
-                  <Select
-                    id="trip-planner-min-quality"
-                    value={minQuality}
-                    onChange={(value) => setMinQuality(Number(value))}
-                    tone="cream"
-                  >
-                    <option value="1">{t("Any condition")}</option>
-                    <option value="2">{t("Fair or better")}</option>
-                    <option value="3">{t("Good or better")}</option>
-                    <option value="4">{t("Excellent only")}</option>
-                  </Select>
-                </div>
-
-                <div className="flex flex-col items-start gap-2 pt-2">
-                  <Checkbox
-                    checked={avoidHighways}
-                    onChange={handleAvoidHighwaysChange}
-                    label={t("Avoid highways")}
-                  />
-                  <Checkbox
-                    checked={avoidTolls}
-                    onChange={handleAvoidTollsChange}
-                    label={t("Avoid tolls")}
-                  />
-                  <Checkbox
-                    checked={avoidUnpaved}
-                    onChange={handleAvoidUnpavedChange}
-                    label={t("Avoid unpaved roads")}
-                  />
-                </div>
-
-                <div className="space-y-3 border-t border-line pt-2">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                    <MapPin size={14} className="text-accent" />
-                    {t("Route builder")}
-                  </div>
-                  {selectedDay ? (
-                    <>
-                      <div className="grid grid-cols-3 gap-2">
-                        <PlannerStat
-                          label="Distance"
-                          value={`${selectedDay.distanceKm.toFixed(1)} km`}
-                          icon={Milestone}
-                        />
-                        <PlannerStat
-                          label="Ride time"
-                          value={`${selectedDay.durationMinutes} min`}
-                          icon={Clock3}
-                        />
-                        <PlannerStat
-                          label="Quality"
-                          value={
-                            selectedDay.avgQuality
-                              ? selectedDay.avgQuality.toFixed(1)
-                              : "—"
-                          }
-                          icon={ShieldCheck}
-                        />
-                      </div>
-                      <WaypointEditor
-                        dayNumber={selectedDay.dayNumber}
-                        waypoints={selectedDay.waypoints}
-                        onReorder={(fromIndex, toIndex) =>
-                          reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
-                        }
-                      />
-                    </>
-                  ) : (
-                    <p className="text-xs text-fg-dim">
+                    {splitStatus === "none"
+                      ? t("Split into days")
+                      : t("Re-split")}
+                  </Button>
+                  {(displayedTrip?.days.length ?? 0) > 1 ? (
+                    <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
                       {t(
-                        "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
+                        "This trip's days are saved — edit them directly; re-splitting applies to a single working route. ",
                       )}
                     </p>
-                  )}
+                  ) : splitStatus === "stale" ? (
+                    <p className="mt-2 text-[11.5px] leading-snug text-accent">
+                      {t("Route changed — re-split to refresh the days. ")}
+                    </p>
+                  ) : null}
                 </div>
-
+              </details>
+            </div>
+          }
+          inspect={
+            <InspectTab
+              day={displayedTrip?.days[selectedDayIndex] ?? null}
+              selectedSegmentId={selectedPlannerSegmentId}
+              plan={
+                selectedPlanIndex !== null
+                  ? (dayPlans?.[selectedPlanIndex] ?? null)
+                  : null
+              }
+              onClearPlan={() => setSelectedPlanIndex(null)}
+              onInspectSegment={handleInspectSegment}
+              onRerouteSegment={handleRerouteSegment}
+            />
+          }
+          conditions={
+            <div className="flex flex-col gap-6">
+              <div>
+                <SectionStamp n="01">{t("Seasonal passes ")}</SectionStamp>
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
                   routes={closureRoutes}
                   data={passesData}
+                  showRegionalList={false}
+                  onFocusPass={(pass) =>
+                    mapRef.current?.openConditionPopover({
+                      kind: "pass",
+                      id: pass.id,
+                    })
+                  }
+                  onReroutePass={handleReroutePass}
                 />
+              </div>
+              <div>
+                <SectionStamp n="02">{t("Closures & roadworks ")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
                   routes={closureRoutes}
                   data={closuresData}
+                  showRegionalList={false}
+                  onFocusClosure={(closure) =>
+                    mapRef.current?.openConditionPopover({
+                      kind: "closure",
+                      id: closure.id,
+                    })
+                  }
+                  onRerouteClosure={handleRerouteClosure}
                 />
-                <TripStopsPanel trip={displayedTrip} />
               </div>
-            </details>
-          </div>
-        </aside>
+            </div>
+          }
+          stops={
+            <TripStopsPanel
+              trip={displayedTrip}
+              onFocusStop={(stop) => mapRef.current?.openPoiPopover(stop)}
+            />
+          }
+        />
       </div>
 
       <TripImportDialog
@@ -1955,9 +3057,108 @@ export default function TripPlannerPage() {
         onPromoted={handlePromotedToServer}
         onClose={() => setCollaborateOpen(false)}
       />
+
+      {/* Roundtrip options (revision 3 §E) — keyed on open so each visit
+          starts from the last confirmed options (recalculate) or the
+          current trip-wide preference (first draft). */}
+      <RoundtripDialog
+        key={roundtripOpen ? "roundtrip-open" : "roundtrip-closed"}
+        open={roundtripOpen}
+        defaultPreference={lastRoundtripOpts?.preference ?? roadPreference}
+        initialDistanceKm={lastRoundtripOpts?.distanceKm ?? 250}
+        initialDirection={lastRoundtripOpts?.direction ?? "random"}
+        recalculate={isLoopRoute}
+        hasRegion={Boolean(plannerRegion)}
+        drafting={isGenerating}
+        onClose={() => setRoundtripOpen(false)}
+        onConfirm={(opts) => void handleDraftRoundtrip(opts)}
+      />
+
+      <ConfirmDialog
+        open={renameOpen}
+        title={t("Name this trip")}
+        message={t("Shown in your trips list and on exports. ")}
+        confirmLabel={t("Save name")}
+        onCancel={() => setRenameOpen(false)}
+        onConfirm={confirmRename}
+      >
+        <input
+          type="text"
+          value={nameDraft}
+          autoFocus
+          aria-label={t("Trip name")}
+          onChange={(event) => setNameDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") confirmRename();
+          }}
+          className="w-full rounded-[10px] border border-line-strong bg-paper px-3 py-2 text-[13px] font-semibold text-ink outline-none focus:border-accent"
+        />
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={
+          pendingConfirm === "discard"
+            ? t("Discard this route?")
+            : t("Start over?")
+        }
+        message={
+          pendingConfirm === "discard"
+            ? t(
+                "The route is removed and a saved trip is deleted for good. This cannot be undone. ",
+              )
+            : t("This clears the current route from the planner. ")
+        }
+        tone={pendingConfirm === "discard" ? "danger" : "default"}
+        confirmLabel={
+          pendingConfirm === "discard" ? t("Discard route") : t("Reset planner")
+        }
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          const action = pendingConfirm;
+          setPendingConfirm(null);
+          if (action === "reset") performReset();
+          else if (action === "discard") void performDiscard();
+        }}
+      />
     </div>
   );
 }
+/** The placeholder name a fresh planner draft carries until renamed. */
+function isDefaultTripName(name: string | undefined): boolean {
+  return !name || name === "New Trip";
+}
+
+/**
+ * Derive a name from the route's endpoints when the rider never set one
+ * — "Praha → Brno", or "Praha loop" for roundtrips. Reverse-geocoded
+ * "near X" prefixes are stripped for the title.
+ */
+function deriveDefaultTripName(trip: Trip | null): string | null {
+  const day = trip?.days[0];
+  if (!day) return null;
+  const start = day.waypoints.find((w) => w.type === "start");
+  const finish = dayFinishWaypoint(day.waypoints) ?? null;
+  const clean = (name: string | undefined) =>
+    name?.replace(/^near /i, "").trim() ?? "";
+  const startName = clean(start?.name);
+  if (!startName) return null;
+  const loop =
+    !finish || (start !== finish && sameSpot(start!.location, finish.location));
+  if (loop) return `${startName} loop`;
+  const finishName = clean(finish?.name);
+  return finishName ? `${startName} → ${finishName}` : null;
+}
+
+/**
+ * The trip name we show AND save: the rider's own name, or the derived
+ * endpoints name while the placeholder is still in place.
+ */
+function tripDisplayName(trip: Trip | null): string | null {
+  if (!trip) return null;
+  if (!isDefaultTripName(trip.name)) return trip.name;
+  return deriveDefaultTripName(trip) ?? trip.name;
+}
+
 function clampNumberInput(
   rawValue: string,
   min: number,
@@ -1989,7 +3190,7 @@ function findCallerRole(
 function buildTripMetadataPayload(trip: Trip, params: TripParameters) {
   const dailyKmTarget = normalizeBackendDailyKm(params.dailyKmTarget);
   return {
-    title: trip.name,
+    title: tripDisplayName(trip) ?? trip.name,
     num_days: params.days,
     min_quality: params.minQuality,
     road_preference: toBackendRoadPreference(params.roadPreference),
@@ -2044,21 +3245,6 @@ function buildGenerationInputSignature(
       : null,
     bbox: drawnRegion ? formatBboxParam(drawnRegion) : null,
   });
-}
-function validateGenerationInput(
-  trip: Trip | null,
-  params: TripParameters,
-): string | null {
-  if (params.surfacePreference.length === 0) {
-    return "Select at least one surface type to generate a trip.";
-  }
-  if (generationSurfaces(params).length === 0) {
-    return "Select at least one paved surface or turn off Avoid unpaved roads before generating.";
-  }
-  if (!findStartWaypoint(trip)) {
-    return "Add a start waypoint before generating this trip.";
-  }
-  return null;
 }
 function findStartWaypoint(trip: Trip | null): Waypoint | null {
   const firstDay = trip?.days[0];
@@ -2339,7 +3525,7 @@ function buildImportedRoutePayload(trip: Trip) {
   const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
   if (coordinates.length < 2) return null;
   return {
-    title: trip.name,
+    title: tripDisplayName(trip) ?? trip.name,
     source_format: trip.importSourceFormat ?? "gpx",
     geometry: coordinates.flatMap(([lng, lat]) =>
       lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],
@@ -2362,95 +3548,296 @@ function buildImportedRoutePayload(trip: Trip) {
     }),
   };
 }
-function PlannerStat({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Clock3;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-cream/70 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-fg-dim">
-        {label}
-      </div>
-      <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-ink">
-        <Icon size={12} className="text-fg-dim" />
-        {value}
-      </div>
-    </div>
-  );
-}
+const EMPTY_LEG_PREFS: LegPref[] = [];
+
+const SPINE_ROLE_COLORS: Record<string, string> = {
+  start: "#1F8A5B",
+  via: "#1FA6B8",
+  end: "#FF6A1A",
+};
+
 function WaypointEditor({
-  dayNumber,
   waypoints,
+  legPrefs = [],
+  tripPreference = "direct",
+  onChangeLegPref,
+  onRemove,
   onReorder,
+  onRelocate,
+  onAddVia,
+  onCreateEndpoint,
 }: {
-  dayNumber: number;
   waypoints: Array<{
     id: string;
     name?: string | undefined;
     type: string;
   }>;
+  /** Per-leg road filters (revision 3 §C), keyed by waypoint identity. */
+  legPrefs?: LegPref[];
+  tripPreference?: RoadPreference;
+  onChangeLegPref?: (
+    fromWaypointId: string,
+    preference: LegPref["preference"],
+  ) => void;
+  /** Remove a waypoint from the spine (roles re-derive from position). */
+  onRemove?: (waypointId: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  onRelocate?: (waypointId: string, result: GeoResult) => void;
+  onAddVia?: (result: GeoResult) => void;
+  onCreateEndpoint?: (role: "start" | "end", result: GeoResult) => void;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  if (waypoints.length === 0) {
-    return (
-      <p className="text-xs text-fg-dim">
-        {t("No waypoints yet for Day ")}
-        {dayNumber}
-        {t(". Click the map to begin the route. ")}
-      </p>
-    );
-  }
+  const [addingVia, setAddingVia] = useState(false);
+  // Which leg's road-type picker is expanded (fromWaypointId), if any.
+  const [openLegFrom, setOpenLegFrom] = useState<string | null>(null);
+  const hasStart = waypoints.some((w) => w.type === "start");
+  const hasFinish = waypoints.some(
+    (w, index) =>
+      w.type === "end" ||
+      (w.type === "accommodation" && index === waypoints.length - 1),
+  );
   return (
     <div className="space-y-2">
-      <p className="text-xs text-fg-dim">
-        {t("Drag via points to reorder them. Start and finish stay pinned. ")}
-      </p>
-      {waypoints.map((waypoint, index) => {
-        const draggable = waypoint.type !== "start" && waypoint.type !== "end";
-        return (
-          <div
-            key={waypoint.id}
-            draggable={draggable}
-            onDragStart={() => {
-              if (!draggable) return;
-              setDragIndex(index);
-            }}
-            onDragOver={(event) => {
-              if (dragIndex === null || !draggable) return;
-              event.preventDefault();
-            }}
-            onDrop={() => {
-              if (dragIndex === null || dragIndex === index || !draggable) {
-                setDragIndex(null);
-                return;
-              }
-              onReorder(dragIndex, index);
-              setDragIndex(null);
-            }}
-            onDragEnd={() => setDragIndex(null)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-              draggable
-                ? "border-line bg-cream/70 text-ink"
-                : "border-line bg-paper text-fg-dim"
-            }`}
-          >
-            <GripVertical
-              size={14}
-              className={draggable ? "text-fg-dim" : "text-fg-faint"}
-            />
-            <span className="min-w-12 text-xs uppercase tracking-wide text-fg-dim">
-              {waypoint.type}
+      {/* Empty endpoint rows: the spine always shows START and FINISH so
+          the rider can fill them by typing a place here OR by clicking
+          the map — whichever comes first. */}
+      {!hasStart && onCreateEndpoint ? (
+        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+          <span
+            aria-hidden="true"
+            className="h-[9px] w-[9px] shrink-0 rounded-full"
+            style={{ background: SPINE_ROLE_COLORS.start }}
+          />
+          <div className="min-w-0 flex-1">
+            <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              start
             </span>
-            <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
+            <GeocodeSearchField
+              placeholder={t("Type a place or click the map… ")}
+              ariaLabel="Search location for start waypoint"
+              onSelect={(result) => onCreateEndpoint("start", result)}
+              clearOnSelect
+            />
           </div>
+        </div>
+      ) : null}
+      {waypoints.map((waypoint, index) => {
+        const role = waypoint.type === "end" ? "finish" : waypoint.type;
+        const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
+        // Thin LEG row between consecutive routing waypoints (revision 3
+        // §C): its road-type control overrides the trip-wide preference
+        // for just that stretch.
+        const legAfter = legPrefs.find(
+          (leg) => leg.fromWaypointId === waypoint.id,
+        );
+        return (
+          <Fragment key={waypoint.id}>
+            <div
+              draggable
+              onDragStart={() => {
+                setDragIndex(index);
+              }}
+              onDragOver={(event) => {
+                if (dragIndex === null) return;
+                event.preventDefault();
+              }}
+              onDrop={() => {
+                if (dragIndex === null || dragIndex === index) {
+                  setDragIndex(null);
+                  return;
+                }
+                onReorder(dragIndex, index);
+                setDragIndex(null);
+              }}
+              onDragEnd={() => setDragIndex(null)}
+              className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
+            >
+              <GripVertical
+                size={13}
+                className="shrink-0 cursor-grab text-fg-mute"
+              />
+              <span
+                aria-hidden="true"
+                className="h-[9px] w-[9px] shrink-0 rounded-full"
+                style={{ background: dotColor }}
+              />
+              <div className="min-w-0 flex-1">
+                <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                  {role}
+                </span>
+                {onRelocate ? (
+                  // The name line is a typed geocode search: the current
+                  // name is the placeholder, so the row reads like a label
+                  // until the rider types a new place.
+                  <GeocodeSearchField
+                    variant="spine"
+                    placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
+                    ariaLabel={`Search location for ${role} waypoint`}
+                    onSelect={(result) => onRelocate(waypoint.id, result)}
+                  />
+                ) : (
+                  <span className="block truncate text-[13px] font-bold text-ink">
+                    {waypoint.name ?? `Waypoint ${index + 1}`}
+                  </span>
+                )}
+              </div>
+              {onRemove ? (
+                <button
+                  type="button"
+                  aria-label={t("Remove {name}", {
+                    name: waypoint.name ?? `waypoint ${index + 1}`,
+                  })}
+                  onClick={() => onRemove(waypoint.id)}
+                  className="shrink-0 rounded p-0.5 text-fg-mute transition hover:text-quality-q1"
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
+            </div>
+            {legAfter && onChangeLegPref ? (
+              <div className="relative pl-[21px]">
+                <div
+                  aria-hidden="true"
+                  className="absolute bottom-[-6px] left-[8.5px] top-[-6px] w-px bg-line-strong"
+                />
+                <button
+                  type="button"
+                  aria-expanded={openLegFrom === legAfter.fromWaypointId}
+                  aria-label={t("Road type for this leg")}
+                  onClick={() =>
+                    setOpenLegFrom((current) =>
+                      current === legAfter.fromWaypointId
+                        ? null
+                        : legAfter.fromWaypointId,
+                    )
+                  }
+                  className={`my-[3px] flex w-full items-center gap-2 rounded-[8px] border px-2.5 py-1.5 text-left transition ${
+                    legAfter.preference === "inherit"
+                      ? "border-transparent bg-paper"
+                      : "border-accent/50 bg-accent/10"
+                  }`}
+                >
+                  <MoveRight size={12} className="shrink-0 text-fg-mute" />
+                  <span className="shrink-0 font-mono text-[8.5px] text-fg-mute">
+                    {t("LEG")}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-fg-dim">
+                    {legAfter.preference === "inherit"
+                      ? t("Trip default")
+                      : ROAD_PREFERENCE_LABELS[legAfter.preference]}
+                  </span>
+                  {legAfter.preference !== "inherit" ? (
+                    <span className="shrink-0 rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-[0.4px] text-accent">
+                      {t("CUSTOM")}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    size={12}
+                    className={`shrink-0 text-fg-mute transition-transform ${
+                      openLegFrom === legAfter.fromWaypointId
+                        ? "rotate-180"
+                        : ""
+                    }`}
+                  />
+                </button>
+                {openLegFrom === legAfter.fromWaypointId ? (
+                  <div className="mb-1.5 flex flex-col gap-1 rounded-[8px] border border-line bg-cream p-1.5">
+                    {(
+                      [
+                        ["inherit", t("Trip default")] as const,
+                        ...POINT_TO_POINT_PREFERENCES.map(
+                          (preference) =>
+                            [
+                              preference,
+                              ROAD_PREFERENCE_LABELS[preference],
+                            ] as const,
+                        ),
+                      ] as ReadonlyArray<[LegPref["preference"], string]>
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-pressed={legAfter.preference === value}
+                        onClick={() => {
+                          onChangeLegPref(legAfter.fromWaypointId, value);
+                          setOpenLegFrom(null);
+                        }}
+                        className={`rounded-[6px] px-2.5 py-1.5 text-left text-[11.5px] font-semibold transition ${
+                          legAfter.preference === value
+                            ? "bg-ink text-cream"
+                            : "text-fg-dim hover:bg-paper hover:text-ink"
+                        }`}
+                      >
+                        {value === "inherit"
+                          ? `${label} · ${ROAD_PREFERENCE_LABELS[tripPreference]}`
+                          : label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </Fragment>
         );
       })}
+      {!hasFinish && onCreateEndpoint ? (
+        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+          <span
+            aria-hidden="true"
+            className="h-[9px] w-[9px] shrink-0 rounded-full"
+            style={{ background: SPINE_ROLE_COLORS.end }}
+          />
+          <div className="min-w-0 flex-1">
+            <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              finish
+            </span>
+            <GeocodeSearchField
+              placeholder={t("Type a place or click the map… ")}
+              ariaLabel="Search location for finish waypoint"
+              onSelect={(result) => onCreateEndpoint("end", result)}
+              clearOnSelect
+            />
+          </div>
+        </div>
+      ) : null}
+      {onAddVia && waypoints.length >= 2 ? (
+        addingVia ? (
+          <div className="flex items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5">
+            <span
+              aria-hidden="true"
+              className="h-[9px] w-[9px] shrink-0 rounded-full"
+              style={{ background: SPINE_ROLE_COLORS.via }}
+            />
+            <GeocodeSearchField
+              placeholder={t("Search a place… ")}
+              ariaLabel="Search location for a new via point"
+              autoFocus
+              clearOnSelect
+              onSelect={(result) => {
+                onAddVia(result);
+                setAddingVia(false);
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t("Cancel adding via point")}
+              onClick={() => setAddingVia(false)}
+              className="shrink-0 font-mono text-[10px] font-bold text-fg-mute transition hover:text-ink"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingVia(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5 text-[12.5px] font-bold text-fg-dim transition hover:border-ink hover:text-ink"
+          >
+            <Plus size={13} />
+            {t("Add via point")}
+          </button>
+        )
+      ) : null}
     </div>
   );
 }

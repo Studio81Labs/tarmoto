@@ -16,17 +16,30 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
+import { Layers3, Plus, TriangleAlert } from "lucide-react";
 import {
-  AlertTriangle,
-  Layers3,
-  Maximize2,
-  Mountain,
-  Route,
-  Sparkles,
-  Square,
-  X,
-} from "lucide-react";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
+  MapCanvas,
+  SURFACE_COLORS,
+  TARMOTO_QUALITY_LAYER,
+  type MapCanvasHandle,
+} from "@/components/map/MapCanvas";
+import {
+  ensureAerialBasemap,
+  setAerialBasemapVisible,
+} from "@/components/map/AerialBasemap";
+import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
+import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
+import {
+  QUALITY_BAND_COLORS,
+  QUALITY_BAND_LABELS_SHORT,
+} from "@/lib/planner/quality-bands";
+import {
+  insertionAnchorForPoint,
+  nearestDayIndexToPoint,
+  rerouteAroundSegmentInTrip,
+} from "@/lib/planner/reroute";
+import type { GeoResult, Poi, PoiCategory } from "@/lib/planner/types";
+import type { RouteSegment } from "@/lib/planner/types";
 import {
   createRegionDrawControl,
   type RegionDrawControl,
@@ -35,22 +48,28 @@ import {
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
+import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import {
-  buildTripClosureRoutes,
   detourLengthKm,
   formatClosureWindow,
+  type PlannerClosure,
 } from "@/lib/closures-summary";
-import { monthLabel } from "@/lib/passes-summary";
+import type { MountainPass as MountainPassSummary } from "@/lib/passes-summary";
+import { rerouteAroundConditionInTrip } from "@/lib/planner/reroute";
 import {
   buildPlannerClosureLineCollection,
   buildPlannerClosureMarkerCollection,
   buildPlannerPassMarkerCollection,
 } from "@/lib/trip-planner-overlays";
 import {
-  buildTripPlannerRouteCollection,
+  buildPlannerQualityRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
+  findPlannerQualitySegment,
   getTripPlannerBounds,
+  plannerRouteLineColor,
+  plannerSegmentBounds,
+  type PlannerLineColorMode,
 } from "@/lib/trip-planner-map";
 import { useTripStore, dayFinishWaypoint } from "@/stores/trip";
 import {
@@ -61,34 +80,159 @@ import {
   snapWaypointToRoadFeatures,
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
-import {
-  fetchFunZoneDetail,
-  fetchFunZonesInBbox,
-  type FunZoneDetail,
-  type FunZoneListItem,
-} from "@/lib/discover";
+import { fetchFunZonesInBbox } from "@/lib/discover";
+import { plannerApi } from "@/lib/planner/api";
 import {
   FUN_ZONES_FILL,
   installFunZoneLayer,
   setFunZoneSelection,
   updateFunZoneLayerData,
 } from "@/components/map/FunZoneLayer";
-import type { Trip } from "@/lib/types";
+import type { Trip, Waypoint } from "@/lib/types";
 import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
-import { formatDistance, roundCoordinate } from "@/lib/utils";
+import { roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
+export interface DayBreakMarker {
+  lng: number;
+  lat: number;
+  label: string;
+  pinned: boolean;
+}
+
 /** Imperative handle exposed on the TripPlannerMap ref (Task 11). */
 export interface TripPlannerMapHandle {
   /** Fit the viewport to the current route bounds. No-op when no bounds. */
   fitRoute: () => void;
+  /**
+   * Fly to a quality segment's bounds (panel → map). No-op when the
+   * segment id doesn't resolve against the current trip geometry.
+   */
+  flyToSegment: (segmentId: string) => void;
+  /**
+   * Begin drawing a Fun-Zone region. Driven by the BUILD-column
+   * checkbox card — the map no longer renders its own Draw region
+   * button (rider feedback).
+   */
+  startRegionDraw: () => void;
+  /** Cancel an in-progress region draw (leaves a drawn region alone). */
+  cancelRegionDraw: () => void;
+  /**
+   * Fly to a POI and open its pin popover (revision 5 §D) — the STOPS
+   * rows reuse the exact map-pin interaction instead of a list-only
+   * path.
+   */
+  openPoiPopover: (poi: Poi) => void;
+  /**
+   * Fly to a condition marker and open its popover (revision 7) — the
+   * CONDITIONS tab's on-route cards reuse the marker interaction.
+   */
+  openConditionPopover: (ref: { kind: "closure" | "pass"; id: string }) => void;
 }
 
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
+const ROUTE_CASING_LINE = "trip-planner-route-casing";
 const ROUTE_LINE = "trip-planner-route-line";
-const WAYPOINT_CIRCLE = "trip-planner-waypoint-circle";
+const ROUTE_HIT_LINE = "trip-planner-route-hit";
+const WAYPOINT_PIN = "trip-planner-waypoint-pin";
 const WAYPOINT_LABEL = "trip-planner-waypoint-label";
+
+/**
+ * Right-click tolerance around a waypoint pin, in screen px. Symbol-layer
+ * events only fire on rendered icon pixels, so without padding a near-miss
+ * falls through to the placement menu — infuriating on a small target.
+ */
+const PIN_HIT_PADDING_PX = 8;
+
+const POI_SOURCE = "trip-planner-pois";
+const POI_CLUSTER_LAYER = "trip-planner-poi-clusters";
+const POI_CLUSTER_COUNT_LAYER = "trip-planner-poi-cluster-count";
+const POI_PIN_LAYER = "trip-planner-poi-pins";
+/** Viewport/filter refetch debounce for the category POI layer (§C). */
+const POI_FETCH_DEBOUNCE_MS = 400;
+/**
+ * Ambient condition markers reveal at planning zoom (revision 7) — at
+ * country zoom they'd be noise; the closure lines still hint presence.
+ */
+const CONDITION_MARKER_MINZOOM = 7;
+const CONDITION_IMAGE_PREFIX = "tarmoto-condition-";
+/**
+ * Diamond icon badges, deliberately OFF the road-quality palette so a
+ * closed road never reads as a "red quality" line: crimson closures,
+ * construction amber roadworks, slate/crimson mountain passes.
+ */
+const CONDITION_BADGES: Record<string, { color: string; glyph: string }> = {
+  "closure-full": {
+    color: "#C81E3C",
+    glyph: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  },
+  "closure-works": {
+    color: "#B45309",
+    glyph:
+      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  },
+  "pass-closed": {
+    color: "#C81E3C",
+    glyph:
+      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  },
+  "pass-unknown": {
+    color: "#5B6B8C",
+    glyph:
+      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  },
+};
+const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
+
+/**
+ * Lucide 24x24 icon geometry per category (same glyphs as the toolbar
+ * chips) — rasterized into accent-circle pin images so riders can tell
+ * WHAT a pin is before clicking it.
+ */
+const POI_PIN_ICON_CHILDREN: Record<PoiCategory, string> = {
+  fuel: '<path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0v-6.998a2 2 0 0 0-.59-1.42L18 5"/><path d="M14 21V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16"/><path d="M2 21h13"/><path d="M3 9h11"/>',
+  food: '<path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/>',
+  cafe: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
+  viewpoint:
+    '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  campground:
+    '<path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/>',
+  biker_hotel:
+    '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+  mountain_pass:
+    '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  // Design frame glyph — S-bends, not the lucide route icon.
+  twisty_highlight:
+    '<path d="M5 20c3 0 3-5 6-5s3 5 6 5M5 9c3 0 3-5 6-5s3 5 6 5"/>',
+};
+
+/**
+ * Waypoint stop-type per POI category for "Add as stop" (revision 4 §C)
+ * — only categories with a stop semantic map; the rest stay via-only.
+ */
+const STOP_TYPE_BY_CATEGORY: Partial<Record<PoiCategory, Waypoint["type"]>> = {
+  fuel: "fuel",
+  food: "rest",
+  cafe: "rest",
+  viewpoint: "photo",
+  campground: "accommodation",
+  biker_hotel: "accommodation",
+};
+
+function queryWaypointPinsAt(
+  map: MapLibreMap,
+  point: { x: number; y: number },
+) {
+  if (!map.getLayer(WAYPOINT_PIN)) return [];
+  return map.queryRenderedFeatures(
+    [
+      [point.x - PIN_HIT_PADDING_PX, point.y - PIN_HIT_PADDING_PX],
+      [point.x + PIN_HIT_PADDING_PX, point.y + PIN_HIT_PADDING_PX],
+    ],
+    { layers: [WAYPOINT_PIN] },
+  );
+}
 const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
 const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
 const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
@@ -100,6 +244,9 @@ const CURSOR_LAYER = "trip-planner-collab-cursors";
 const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
 const SUGGESTION_SOURCE = "trip-planner-suggestions";
 const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
+const DAY_BREAK_SOURCE = "trip-planner-day-breaks";
+const DAY_BREAK_CIRCLE_LAYER = "trip-planner-day-break-circle";
+const DAY_BREAK_LABEL_LAYER = "trip-planner-day-break-label";
 const SEGMENT_HIGHLIGHT_SOURCE = "trip-planner-segment-highlight";
 const SEGMENT_HIGHLIGHT_GLOW_LAYER = "trip-planner-segment-highlight-glow";
 const SEGMENT_HIGHLIGHT_LINE_LAYER = "trip-planner-segment-highlight-line";
@@ -109,6 +256,11 @@ interface TripPlannerMapProps {
   month: number;
   drawnRegion?: RegionDrawBbox | null;
   onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
+  /**
+   * Mirrors the region-draw state machine to the parent so the BUILD
+   * column's checkbox card can reflect drawing/idle without owning it.
+   */
+  onDrawModeChange?: (mode: RegionDrawMode) => void;
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
@@ -122,6 +274,16 @@ interface TripPlannerMapProps {
     waypointId: string,
     location: { lng: number; lat: number },
   ) => void;
+  /**
+   * Called from a waypoint pin's context menu "Remove point" action.
+   * Undefined hides the action (read-only maps).
+   */
+  onRemoveWaypoint?: (waypointId: string) => void;
+  /**
+   * Fired when the Road Preview popover's "Reroute around this" kicks
+   * off a reroute — the page arms an animated fit for the new line.
+   */
+  onRerouteRequested?: () => void;
   selectedDayNumber?: number;
   /**
    * When true, only the selected day's route is rendered on the map.
@@ -143,6 +305,20 @@ interface TripPlannerMapProps {
    */
   onCursorMove?: (lat: number, lng: number) => void;
   /**
+   * Day-break markers from the splitter — one per day boundary. Rendered
+   * as pinned dots with the overnight-town label.
+   */
+  dayBreaks?: DayBreakMarker[];
+  /**
+   * Called when a rider drops a day-break marker at a new location —
+   * the page pins that break and re-splits around it (addendum §6).
+   * Undefined keeps break markers static.
+   */
+  onMoveDayBreak?: (
+    boundary: number,
+    location: { lng: number; lat: number },
+  ) => void;
+  /**
    * Bump to trigger a one-shot refit to the current route bounds,
    * independent of the per-`trip.id` auto-fit. The auto-fit fires
    * once per trip so waypoint edits don't rip the viewport
@@ -162,14 +338,19 @@ export const TripPlannerMap = forwardRef<
     month,
     drawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     closuresData,
     passesData,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -183,14 +364,19 @@ export const TripPlannerMap = forwardRef<
         month={month}
         drawnRegion={drawnRegion}
         onDrawnRegionChange={onDrawnRegionChange}
+        onDrawModeChange={onDrawModeChange}
         closuresData={closuresData}
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
         onMoveWaypoint={onMoveWaypoint}
+        onRemoveWaypoint={onRemoveWaypoint}
+        onRerouteRequested={onRerouteRequested}
         selectedDayNumber={selectedDayNumber}
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
+        dayBreaks={dayBreaks}
+        onMoveDayBreak={onMoveDayBreak}
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
       />
@@ -203,12 +389,16 @@ export const TripPlannerMap = forwardRef<
       month={month}
       drawnRegion={drawnRegion}
       onDrawnRegionChange={onDrawnRegionChange}
+      onDrawModeChange={onDrawModeChange}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
+      onRemoveWaypoint={onRemoveWaypoint}
+      onRerouteRequested={onRerouteRequested}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
+      dayBreaks={dayBreaks}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
     />
@@ -221,6 +411,7 @@ const FetchedTripPlannerMap = forwardRef<
     month: number;
     drawnRegion?: RegionDrawBbox | null | undefined;
     onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
+    onDrawModeChange?: ((mode: RegionDrawMode) => void) | undefined;
     onAddWaypoint?:
       | ((location: { lng: number; lat: number }) => void)
       | undefined;
@@ -231,10 +422,16 @@ const FetchedTripPlannerMap = forwardRef<
           location: { lng: number; lat: number },
         ) => void)
       | undefined;
+    onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
+    onRerouteRequested?: (() => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
+    dayBreaks?: DayBreakMarker[] | undefined;
+    onMoveDayBreak?:
+      | ((boundary: number, location: { lng: number; lat: number }) => void)
+      | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
@@ -244,12 +441,17 @@ const FetchedTripPlannerMap = forwardRef<
     month,
     drawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -265,14 +467,19 @@ const FetchedTripPlannerMap = forwardRef<
       month={month}
       drawnRegion={drawnRegion}
       onDrawnRegionChange={onDrawnRegionChange}
+      onDrawModeChange={onDrawModeChange}
       closuresData={closuresData}
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
+      onRemoveWaypoint={onRemoveWaypoint}
+      onRerouteRequested={onRerouteRequested}
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
+      dayBreaks={dayBreaks}
+      onMoveDayBreak={onMoveDayBreak}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
     />
@@ -285,6 +492,7 @@ const TripPlannerMapContent = forwardRef<
     month: number;
     drawnRegion?: RegionDrawBbox | null | undefined;
     onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
+    onDrawModeChange?: ((mode: RegionDrawMode) => void) | undefined;
     closuresData: ClosuresQueryResult;
     passesData: PassesQueryResult;
     onAddWaypoint?:
@@ -297,27 +505,38 @@ const TripPlannerMapContent = forwardRef<
           location: { lng: number; lat: number },
         ) => void)
       | undefined;
+    onRemoveWaypoint?: ((waypointId: string) => void) | undefined;
+    onRerouteRequested?: (() => void) | undefined;
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     suggestions?: TripSuggestion[] | undefined;
+    dayBreaks?: DayBreakMarker[] | undefined;
+    onMoveDayBreak?:
+      | ((boundary: number, location: { lng: number; lat: number }) => void)
+      | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
   }
 >(function TripPlannerMapContent(
   {
     trip,
-    month,
+    month: _month,
     drawnRegion: controlledDrawnRegion,
     onDrawnRegionChange,
+    onDrawModeChange,
     closuresData,
     passesData,
     onAddWaypoint,
     onMoveWaypoint,
+    onRemoveWaypoint,
+    onRerouteRequested,
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
     suggestions,
+    dayBreaks,
+    onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
   },
@@ -349,6 +568,73 @@ const TripPlannerMapContent = forwardRef<
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
   // appending a duplicate waypoint at the same spot.
   const swallowNextClickRef = useRef(false);
+  // ── Ambient conditions layer (revision 7): toggle + marker popover ──
+  const [conditionsVisible, setConditionsVisible] = useState(true);
+  const [conditionMenu, setConditionMenu] = useState<
+    | {
+        kind: "closure";
+        closure: PlannerClosure;
+        affectsRoute: boolean;
+        lng: number;
+        lat: number;
+        x: number;
+        y: number;
+      }
+    | {
+        kind: "pass";
+        pass: MountainPassSummary;
+        affectsRoute: boolean;
+        lng: number;
+        lat: number;
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+  const closeConditionMenu = useCallback(() => setConditionMenu(null), []);
+  /** Latest condition arrays for ready-time click closures. */
+  const conditionsRef = useRef<{
+    closures: readonly PlannerClosure[];
+    passes: readonly MountainPassSummary[];
+    affectsClosureIds: ReadonlySet<string>;
+    affectsPassIds: ReadonlySet<string>;
+  }>({
+    closures: [],
+    passes: [],
+    affectsClosureIds: new Set(),
+    affectsPassIds: new Set(),
+  });
+  // ── Category POI layer (revision 4 §C) ──
+  const activePoiCategories = useTripStore((s) => s.activePoiCategories);
+  const planningMode = useTripStore((s) => s.planningMode);
+  const [poiViewportToken, setPoiViewportToken] = useState(0);
+  const [poiMenu, setPoiMenu] = useState<{
+    poi: Poi;
+    x: number;
+    y: number;
+    /** Set when the popover was opened from an already-placed waypoint. */
+    placedWaypointId?: string;
+  } | null>(null);
+  const closePoiMenu = useCallback(() => setPoiMenu(null), []);
+  /** id → Poi for resolving pin clicks back to the fetched objects. */
+  const poisByIdRef = useRef(new Map<string, Poi>());
+  // POIs already placed as waypoints (their waypoint id is
+  // poi-<poiId>-<timestamp>) render ONLY as their role-colored waypoint
+  // circle — never a second POI pin stacked underneath (rider feedback).
+  const usedPois = useMemo(() => {
+    const ids = new Set<string>();
+    const spots = new Set<string>();
+    for (const day of trip?.days ?? []) {
+      for (const waypoint of day.waypoints) {
+        const match = /^poi-(.*)-\d+$/.exec(waypoint.id);
+        if (match?.[1]) ids.add(match[1]);
+        // Start/finish placed from a POI keep planner ids — match those
+        // by exact coordinates instead.
+        spots.add(`${waypoint.location.lng},${waypoint.location.lat}`);
+      }
+    }
+    return { ids, spots };
+  }, [trip]);
   // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
   // on every parent render (the planner page passes an inline arrow,
   // and live collab cursor/suggestion updates re-render mid-drag) does
@@ -360,30 +646,36 @@ const TripPlannerMapContent = forwardRef<
   }, [onMoveWaypoint]);
   const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
-  const [showQuality, setShowQuality] = useState(true);
-  const [showSurface, setShowSurface] = useState(false);
+  // Two INDEPENDENT map toggles (design): how the route line is colored,
+  // and which basemap sits under it.
+  const [lineColorMode, setLineColorMode] =
+    useState<PlannerLineColorMode>("quality");
+  const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
+  // Ephemeral how-to hints (rider feedback): each hint lives exactly as
+  // long as the action it describes is still pending, then it's gone.
+  // Placement hint: only until THIS trip gets its first point — placing
+  // one latches the hint off even if every point is removed again.
+  const [pointPlacedForTrip, setPointPlacedForTrip] = useState(false);
+  // Outline hint: only from entering draw mode until the drag begins.
+  const [outlineStarted, setOutlineStarted] = useState(false);
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(
     controlledDrawnRegion ?? null,
   );
-  const [funZones, setFunZones] = useState<FunZoneListItem[]>([]);
-  const [funZonesLoading, setFunZonesLoading] = useState(false);
-  const [funZonesError, setFunZonesError] = useState<string | null>(null);
-  const [funZonesRetryNonce, setFunZonesRetryNonce] = useState(0);
   const [selectedFunZoneId, setSelectedFunZoneId] = useState<string | null>(
     null,
   );
-  const [selectedFunZoneDetail, setSelectedFunZoneDetail] =
-    useState<FunZoneDetail | null>(null);
-  const [selectedFunZoneLoading, setSelectedFunZoneLoading] = useState(false);
-  const [selectedFunZoneError, setSelectedFunZoneError] = useState<
-    string | null
-  >(null);
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   // Sidebar publishes the focused segment id so the map can paint the
   // matching slice of the route in a contrasting color (issue #473).
   const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
+  // Plan & inspect selection — shared with the panel so a route click here
+  // and a flagged-card click there open the same Road Preview.
+  const selectedPlannerSegmentId = useTripStore(
+    (s) => s.selectedPlannerSegmentId,
+  );
+  const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const insertWaypointBefore = useTripStore((s) => s.insertWaypointBefore);
 
   // ── Context-menu waypoint placement (Task 10) ────────────────────────────
   // Task 9 store actions for context-menu placement.
@@ -411,7 +703,140 @@ const TripPlannerMapContent = forwardRef<
   } | null>(null);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  // Right-clicking a waypoint pin opens ITS menu instead of placement:
+  // point info (role, coordinates, resolved place name) + Remove.
+  const [waypointMenu, setWaypointMenu] = useState<{
+    waypointId: string;
+    name: string;
+    role: string;
+    lng: number;
+    lat: number;
+    x: number;
+    y: number;
+    address: string | null;
+  } | null>(null);
+  const closeWaypointMenu = useCallback(() => setWaypointMenu(null), []);
 
+  // Reroute around an ambient condition (revision 7) — the ONLY marker
+  // reroute entry point; the tab cards call the same store path via the
+  // page. The page arms an animated fit through onRerouteRequested.
+  const handleConditionReroute = useCallback(
+    (menu: NonNullable<typeof conditionMenu>) => {
+      const target =
+        menu.kind === "closure"
+          ? {
+              id: menu.closure.id,
+              location: {
+                lng: menu.closure.geometry[0]?.lng ?? menu.lng,
+                lat: menu.closure.geometry[0]?.lat ?? menu.lat,
+              },
+              line: menu.closure.geometry,
+            }
+          : {
+              id: menu.pass.id,
+              location: { lng: menu.pass.lng, lat: menu.pass.lat },
+            };
+      const done = rerouteAroundConditionInTrip(
+        useTripStore.getState().activeTrip,
+        target,
+        insertWaypointBefore,
+      );
+      if (done) onRerouteRequested?.();
+      setConditionMenu(null);
+    },
+    [insertWaypointBefore, onRerouteRequested],
+  );
+  // Address search (revision 4 §D, revised by rider feedback): picking a
+  // result never places anything — it flies the map to the address and
+  // opens the SAME placement menu as a right-click there, so the rider
+  // chooses start / via / finish deliberately. The menu is anchored to
+  // the coordinate and keeps tracking it through the flight.
+  const handleSearchResult = useCallback((result: GeoResult) => {
+    const map = handleRef.current?.map;
+    if (!map) return;
+    setPoiMenu(null);
+    setWaypointMenu(null);
+    const coords = { lng: result.lng, lat: result.lat };
+    const rect = map.getCanvas()?.getBoundingClientRect?.();
+    const projected =
+      typeof map.project === "function"
+        ? map.project([coords.lng, coords.lat])
+        : null;
+    setContextMenu({
+      x:
+        rect && projected
+          ? rect.left + projected.x + 10
+          : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+      y:
+        rect && projected
+          ? rect.top + projected.y + 10
+          : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+      coords,
+    });
+    if (typeof map.flyTo === "function") {
+      map.flyTo({
+        center: [coords.lng, coords.lat],
+        zoom: Math.max(map.getZoom?.() ?? 0, 11),
+        duration: 1200,
+        essential: true,
+      });
+    }
+  }, []);
+  // POI pin -> start/finish: the placement rule engine handles the role
+  // juggling; the meta names the point and carries the glyph category.
+  const handlePlacePoiEndpoint = useCallback(
+    (poi: Poi, endpoint: "start" | "end") => {
+      const store = useTripStore.getState();
+      const action =
+        endpoint === "start"
+          ? hasStart
+            ? "set-new-start"
+            : "set-start"
+          : hasEnd
+            ? "set-new-end"
+            : "set-end";
+      store.placeWaypoint(
+        { lat: poi.lat, lng: poi.lng },
+        action,
+        store.draftPlannerParameters ?? undefined,
+        { name: poi.name, poiCategory: poi.category },
+      );
+      setPoiMenu(null);
+    },
+    [hasStart, hasEnd],
+  );
+  // POI pin -> waypoint (revision 4 §E): a plain ordered-list insert, so it
+  // works with only start+finish placed (no computed route required) and
+  // the result is a normal draggable/removable waypoint.
+  const handleAddPoiWaypoint = useCallback(
+    (poi: Poi, type: Waypoint["type"]) => {
+      const store = useTripStore.getState();
+      // The popover also opens from the route-wide STOPS list, whose
+      // stops can sit on ANY day of a multi-day trip — insert into the
+      // day whose route passes the POI, AT its along-route position (an
+      // early-route stop appended before the finish would make the next
+      // reroute backtrack through every later via). Pre-route (no
+      // geometry anywhere) falls back to appending on the selected day.
+      const owningDay = nearestDayIndexToPoint(trip, {
+        lat: poi.lat,
+        lng: poi.lng,
+      });
+      const dayIndex = owningDay >= 0 ? owningDay : store.selectedDayIndex;
+      const day = trip?.days[dayIndex];
+      const anchorId = day
+        ? insertionAnchorForPoint(day, { lat: poi.lat, lng: poi.lng })
+        : null;
+      store.insertWaypointBefore(dayIndex, anchorId, {
+        id: `poi-${poi.id}-${Date.now()}`,
+        name: poi.name,
+        location: { lat: poi.lat, lng: poi.lng },
+        type,
+        poiCategory: poi.category,
+      });
+      setPoiMenu(null);
+    },
+    [trip],
+  );
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {
       if (!contextMenu) return;
@@ -429,12 +854,18 @@ const TripPlannerMapContent = forwardRef<
   // ─────────────────────────────────────────────────────────────────────────
   const routeCollection = useMemo(
     () =>
-      buildTripPlannerRouteCollection(
+      buildPlannerQualityRouteCollection(
         trip,
         selectedDayNumber,
         focusSelectedDay,
       ),
     [trip, selectedDayNumber, focusSelectedDay],
+  );
+  // Resolve the selected quality segment against current geometry — a stale
+  // id (after a reroute or undo) simply resolves to null and closes the card.
+  const previewSegment = useMemo(
+    () => findPlannerQualitySegment(trip, selectedPlannerSegmentId),
+    [trip, selectedPlannerSegmentId],
   );
   const waypointCollection = useMemo(
     () =>
@@ -445,25 +876,51 @@ const TripPlannerMapContent = forwardRef<
       ),
     [trip, selectedDayNumber, focusSelectedDay],
   );
+  // Latest waypoint collection for the drag preview below — the drag
+  // effect must not re-run per render, so it reads through a ref.
+  const waypointCollectionRef = useRef(waypointCollection);
+  useEffect(() => {
+    waypointCollectionRef.current = waypointCollection;
+  }, [waypointCollection]);
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
-  const waypointCount = waypointCollection.features.length;
-  const {
-    closures,
-    routeClosures,
-    routeCounts,
-    loading: closuresLoading,
-    routeLoading: routeClosuresLoading,
-    routeError: closuresRouteError,
-  } = closuresData;
-  const {
-    passes,
-    routePasses,
-    routeClosedCount,
-    routeUnknownCount,
-    loading: passesLoading,
-    routeLoading: routePassesLoading,
-    routeError: passesRouteError,
-  } = passesData;
+  const { closures } = closuresData;
+  const { passes } = passesData;
+  const affectsClosureIds = useMemo(
+    () => new Set(closuresData.routeClosures.map((closure) => closure.id)),
+    [closuresData.routeClosures],
+  );
+  const affectsPassIds = useMemo(
+    () =>
+      new Set(
+        passesData.routePasses
+          .filter((pass) => pass.status !== "open")
+          .map((pass) => pass.id),
+      ),
+    [passesData.routePasses],
+  );
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    const visibility = conditionsVisible ? "visible" : "none";
+    for (const layer of [
+      CLOSURE_LINE_LAYER,
+      CLOSURE_MARKER_LAYER,
+      PASS_MARKER_LAYER,
+    ]) {
+      if (map.getLayer(layer)) {
+        map.setLayoutProperty(layer, "visibility", visibility);
+      }
+    }
+    if (!conditionsVisible) setConditionMenu(null);
+  }, [conditionsVisible, ready]);
+  useEffect(() => {
+    conditionsRef.current = {
+      closures,
+      passes,
+      affectsClosureIds,
+      affectsPassIds,
+    };
+  }, [closures, passes, affectsClosureIds, affectsPassIds]);
   const closureLineCollection = useMemo(
     () => buildPlannerClosureLineCollection(closures),
     [closures],
@@ -484,51 +941,46 @@ const TripPlannerMapContent = forwardRef<
     () => buildSuggestionCollection(suggestions),
     [suggestions],
   );
-  const segmentHighlightCollection = useMemo(
-    () => buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId),
-    [trip, focusedSegmentId],
+  const dayBreakCollection = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: (dayBreaks ?? []).map((breakMarker, index) => ({
+        type: "Feature" as const,
+        properties: {
+          label: breakMarker.label,
+          pinned: breakMarker.pinned,
+          boundary: index + 1,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [breakMarker.lng, breakMarker.lat],
+        },
+      })),
+    }),
+    [dayBreaks],
   );
-  const selectedFunZone =
-    funZones.find((zone) => zone.id === selectedFunZoneId) ?? null;
-  const highlightedClosures =
-    routeClosures.length > 0 ? routeClosures : closures;
-  const highlightedPasses =
-    routePasses.length > 0
-      ? routePasses.filter((pass) => pass.status !== "open")
-      : passes;
-  const activeMonthLabel = monthLabel(month);
-  const conditionsLoading =
-    closuresLoading ||
-    routeClosuresLoading ||
-    passesLoading ||
-    routePassesLoading;
-  const routeWarningParts: string[] = [];
-  const routeErrors = dedupeMessages([closuresRouteError, passesRouteError]);
-  const routeErrorsBlock =
-    routeErrors.length > 0 ? (
-      <div className="mt-2 space-y-1">
-        {routeErrors.map((message) => (
-          <p key={message} className="text-xs text-rose-300">
-            {message}
-          </p>
-        ))}
-      </div>
-    ) : null;
-  if (routeCounts.total > 0) {
-    routeWarningParts.push(
-      `${routeCounts.total} route ${routeCounts.total === 1 ? "closure" : "closures"}`,
-    );
-  }
-  if (routeClosedCount > 0) {
-    routeWarningParts.push(
-      `${routeClosedCount} closed ${routeClosedCount === 1 ? "pass" : "passes"}`,
-    );
-  }
-  if (routeUnknownCount > 0) {
-    routeWarningParts.push(
-      `${routeUnknownCount} unknown ${routeUnknownCount === 1 ? "pass" : "passes"}`,
-    );
-  }
+  const segmentHighlightCollection = useMemo(() => {
+    // Plan & inspect selection wins: its derived geometry is exact, no
+    // distance-slicing needed. Fall back to the legacy sidebar focus
+    // (day.segments id space) when no quality segment is selected.
+    if (previewSegment) {
+      return {
+        type: "FeatureCollection" as const,
+        features: [
+          {
+            type: "Feature" as const,
+            properties: {
+              segmentId: previewSegment.id,
+              dayNumber: previewSegment.dayNumber,
+              orderInDay: 0,
+            },
+            geometry: previewSegment.geometry,
+          },
+        ],
+      };
+    }
+    return buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId);
+  }, [trip, focusedSegmentId, previewSegment]);
   useEffect(() => {
     // Drop the "already fitted" marker when the trip is closed so
     // the next opened trip gets its initial fit. We intentionally
@@ -552,7 +1004,10 @@ const TripPlannerMapContent = forwardRef<
       return;
     }
     closeContextMenu();
-  }, [closeContextMenu]);
+    closeWaypointMenu();
+    closePoiMenu();
+    closeConditionMenu();
+  }, [closeContextMenu, closeWaypointMenu, closePoiMenu, closeConditionMenu]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -563,11 +1018,193 @@ const TripPlannerMapContent = forwardRef<
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
     installFunZoneLayer(map);
+    // ── Route-section click → Road Preview Card (any segment, not just
+    // flagged ones). Waypoints render on top and are the drag targets, so a
+    // click that also hits a waypoint is theirs, not ours.
+    map.on("mouseenter", ROUTE_HIT_LINE, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", ROUTE_HIT_LINE, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "";
+    });
+    map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const overWaypoint =
+        map.getLayer(WAYPOINT_PIN) &&
+        map.queryRenderedFeatures(event.point, {
+          layers: [WAYPOINT_PIN],
+        }).length > 0;
+      if (overWaypoint) return;
+      const segmentId = event.features?.[0]?.properties?.segmentId as
+        | string
+        | undefined;
+      if (!segmentId) return;
+      useTripStore.getState().selectPlannerSegment(segmentId);
+    });
+    ensurePoiLayers(map);
+    map.on("mouseenter", POI_PIN_LAYER, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", POI_PIN_LAYER, () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "";
+    });
+    map.on("click", POI_PIN_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const props = event.features?.[0]?.properties as
+        | { poiId?: string }
+        | undefined;
+      const poi = props?.poiId ? poisByIdRef.current.get(props.poiId) : null;
+      if (!poi) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu({
+        poi,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    // A POI placed as a waypoint keeps its popover: clicking the role
+    // circle reopens the POI card (info + remove) instead of doing
+    // nothing. Non-POI waypoints keep their existing behavior.
+    map.on("click", WAYPOINT_PIN, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const feature = event.features?.[0];
+      const props = feature?.properties as
+        | { waypointId?: string; poiCategory?: PoiCategory; label?: string }
+        | undefined;
+      if (!props?.waypointId) return;
+      const [lng, lat] =
+        feature?.geometry.type === "Point"
+          ? (feature.geometry.coordinates as [number, number])
+          : [event.lngLat.lng, event.lngLat.lat];
+      if (!props.poiCategory) {
+        // Plain waypoint: left-click opens the same point dialog as
+        // right-click (rider feedback).
+        swallowNextClickRef.current = true;
+        openWaypointMenuFromFeature(
+          props,
+          lng,
+          lat,
+          event.originalEvent.clientX,
+          event.originalEvent.clientY,
+        );
+        return;
+      }
+      // Waypoint ids from POIs are poi-<poiId>-<timestamp>; the source
+      // mapping mirrors the resolver (§B).
+      const poiId =
+        /^poi-(.*)-\d+$/.exec(props.waypointId)?.[1] ?? props.waypointId;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu({
+        poi: {
+          id: poiId,
+          category: props.poiCategory,
+          source:
+            props.poiCategory === "mountain_pass"
+              ? "passes"
+              : props.poiCategory === "twisty_highlight"
+                ? "tarmoto"
+                : "osm",
+          name: props.label ?? t("Waypoint"),
+          lat,
+          lng,
+        },
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+        placedWaypointId: props.waypointId,
+      });
+    });
+    // Ambient condition markers (revision 7): click -> popover with the
+    // condition's detail; the reroute action appears ONLY here (and on
+    // the on-route tab cards that reuse this popover).
+    map.on("click", CLOSURE_MARKER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const id = event.features?.[0]?.properties?.id as string | undefined;
+      const closure = id
+        ? conditionsRef.current.closures.find((c) => c.id === id)
+        : undefined;
+      if (!closure) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      const anchor = closure.geometry[0];
+      setConditionMenu({
+        kind: "closure",
+        closure,
+        affectsRoute: conditionsRef.current.affectsClosureIds.has(closure.id),
+        lng: anchor?.lng ?? event.lngLat.lng,
+        lat: anchor?.lat ?? event.lngLat.lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    map.on("click", PASS_MARKER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const id = event.features?.[0]?.properties?.id as string | undefined;
+      const pass = id
+        ? conditionsRef.current.passes.find((p) => p.id === id)
+        : undefined;
+      if (!pass) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      setConditionMenu({
+        kind: "pass",
+        pass,
+        affectsRoute: conditionsRef.current.affectsPassIds.has(pass.id),
+        lng: pass.lng,
+        lat: pass.lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    });
+    for (const layer of [CLOSURE_MARKER_LAYER, PASS_MARKER_LAYER]) {
+      map.on("mouseenter", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
+    // Cluster click zooms toward the cluster's expansion level.
+    map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const feature = event.features?.[0];
+      const clusterId = feature?.properties?.cluster_id as number | undefined;
+      const source = map.getSource(POI_SOURCE) as
+        | (GeoJSONSource & {
+            getClusterExpansionZoom?: (id: number) => Promise<number>;
+          })
+        | undefined;
+      if (clusterId === undefined || !source?.getClusterExpansionZoom) return;
+      swallowNextClickRef.current = true;
+      void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+        map.easeTo({
+          center: event.lngLat,
+          zoom,
+          duration: 600,
+        });
+      });
+    });
     drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => updateDrawnRegion(bbox),
       onRegionCleared: () => updateDrawnRegion(null),
-      onModeChange: setDrawMode,
+      onModeChange: (mode) => {
+        setDrawMode(mode);
+        onDrawModeChange?.(mode);
+      },
     });
     const pointerOn = () => {
       if (drawRef.current?.getMode() !== "idle") return;
@@ -601,6 +1238,7 @@ const TripPlannerMapContent = forwardRef<
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
     syncGeoJsonSource(map, CURSOR_SOURCE, cursorCollection);
     syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
+    syncGeoJsonSource(map, DAY_BREAK_SOURCE, dayBreakCollection);
     syncGeoJsonSource(
       map,
       SEGMENT_HIGHLIGHT_SOURCE,
@@ -610,6 +1248,7 @@ const TripPlannerMapContent = forwardRef<
     closureLineCollection,
     closureMarkerCollection,
     cursorCollection,
+    dayBreakCollection,
     passMarkerCollection,
     ready,
     routeCollection,
@@ -617,6 +1256,74 @@ const TripPlannerMapContent = forwardRef<
     suggestionCollection,
     waypointCollection,
   ]);
+  // ── Day-break marker dragging (addendum §6) ──
+  // A compact grab-drop gesture: mousedown on a break marker arms it,
+  // the release location is handed to the page, which pins the break at
+  // that along-route km and re-splits. The marker "jumps" to the pinned
+  // break when the new DayPlans land — no mid-drag ghost needed.
+  const onMoveDayBreakRef = useRef(onMoveDayBreak);
+  useEffect(() => {
+    onMoveDayBreakRef.current = onMoveDayBreak;
+  }, [onMoveDayBreak]);
+  const breakDragEnabled = onMoveDayBreak != null;
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !breakDragEnabled) return;
+    let activeBoundary: number | null = null;
+    const begin = (event: MapLayerMouseEvent) => {
+      const boundary = event.features?.[0]?.properties?.boundary as
+        | number
+        | undefined;
+      if (typeof boundary !== "number") return;
+      event.preventDefault();
+      activeBoundary = boundary;
+      swallowNextClickRef.current = true;
+      map.getCanvas().style.cursor = "grabbing";
+    };
+    const finish = (event: MapMouseEvent) => {
+      if (activeBoundary === null) return;
+      const boundary = activeBoundary;
+      activeBoundary = null;
+      map.getCanvas().style.cursor = "";
+      onMoveDayBreakRef.current?.(boundary, {
+        lng: event.lngLat.lng,
+        lat: event.lngLat.lat,
+      });
+    };
+    const enter = () => {
+      if (activeBoundary === null) map.getCanvas().style.cursor = "grab";
+    };
+    const leave = () => {
+      if (activeBoundary === null) map.getCanvas().style.cursor = "";
+    };
+    map.on("mousedown", DAY_BREAK_CIRCLE_LAYER, begin);
+    map.on("mouseup", finish);
+    map.on("mouseenter", DAY_BREAK_CIRCLE_LAYER, enter);
+    map.on("mouseleave", DAY_BREAK_CIRCLE_LAYER, leave);
+    return () => {
+      map.off("mousedown", DAY_BREAK_CIRCLE_LAYER, begin);
+      map.off("mouseup", finish);
+      map.off("mouseenter", DAY_BREAK_CIRCLE_LAYER, enter);
+      map.off("mouseleave", DAY_BREAK_CIRCLE_LAYER, leave);
+    };
+  }, [ready, breakDragEnabled]);
+  // Line-coloring toggle — recolors the route line in place.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !map.getLayer(ROUTE_LINE)) return;
+    map.setPaintProperty(
+      ROUTE_LINE,
+      "line-color",
+      plannerRouteLineColor(lineColorMode, SURFACE_COLORS),
+    );
+  }, [lineColorMode, ready]);
+  // Basemap toggle — swaps the imagery UNDER the route line; the quality
+  // line and every planner overlay stay drawn on top.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    setAerialBasemapVisible(map, basemap === "aerial");
+  }, [basemap, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onCursorMove) return;
@@ -656,6 +1363,32 @@ const TripPlannerMapContent = forwardRef<
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
+  const waypointCount = useMemo(
+    () => trip?.days.reduce((sum, day) => sum + day.waypoints.length, 0) ?? 0,
+    [trip],
+  );
+  const hintTripId = trip?.id ?? null;
+  useEffect(() => {
+    setPointPlacedForTrip(false);
+  }, [hintTripId]);
+  useEffect(() => {
+    if (waypointCount > 0) setPointPlacedForTrip(true);
+  }, [waypointCount]);
+  useEffect(() => {
+    if (drawMode !== "drawing") {
+      setOutlineStarted(false);
+      return;
+    }
+    const map = handleRef.current?.map;
+    if (!map) return;
+    const onOutlineBegin = () => setOutlineStarted(true);
+    map.on("mousedown", onOutlineBegin);
+    map.on("touchstart", onOutlineBegin);
+    return () => {
+      map.off("mousedown", onOutlineBegin);
+      map.off("touchstart", onOutlineBegin);
+    };
+  }, [drawMode]);
   useEffect(() => {
     if (controlledDrawnRegion === undefined) return;
     setDrawnRegion(controlledDrawnRegion);
@@ -664,18 +1397,12 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     if (!drawnRegion) {
-      setFunZones([]);
-      setFunZonesLoading(false);
-      setFunZonesError(null);
       setSelectedFunZoneId(null);
-      setSelectedFunZoneDetail(null);
       updateFunZoneLayerData(map, []);
       return;
     }
     const controller = new AbortController();
     let cancelled = false;
-    setFunZonesLoading(true);
-    setFunZonesError(null);
     const timer = window.setTimeout(async () => {
       try {
         const zones = await fetchFunZonesInBbox(drawnRegion, {
@@ -685,7 +1412,6 @@ const TripPlannerMapContent = forwardRef<
         const rankedZones = [...zones].sort(
           (a, b) => b.composite_score - a.composite_score,
         );
-        setFunZones(rankedZones);
         updateFunZoneLayerData(map, rankedZones);
         setSelectedFunZoneId((current) =>
           current && rankedZones.some((zone) => zone.id === current)
@@ -695,11 +1421,7 @@ const TripPlannerMapContent = forwardRef<
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         console.warn("[planner] fun zones fetch failed", err);
-        setFunZones([]);
         updateFunZoneLayerData(map, []);
-        setFunZonesError("Couldn't load Fun Zones.");
-      } finally {
-        if (!cancelled) setFunZonesLoading(false);
       }
     }, FUN_ZONE_FETCH_DEBOUNCE_MS);
     return () => {
@@ -707,42 +1429,84 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [drawnRegion, funZonesRetryNonce, ready]);
+  }, [drawnRegion, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     setFunZoneSelection(map, selectedFunZoneId);
   }, [ready, selectedFunZoneId]);
+  // ── Category POIs (revision 4 §C): refetch on viewport + filter change ──
   useEffect(() => {
-    if (!selectedFunZoneId) {
-      setSelectedFunZoneDetail(null);
-      setSelectedFunZoneError(null);
-      setSelectedFunZoneLoading(false);
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const onMoveEnd = () => setPoiViewportToken((token) => token + 1);
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [ready, editable]);
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const categories = [...activePoiCategories];
+    const applyPois = (fetched: Poi[]) => {
+      const pois = fetched.filter(
+        (poi) =>
+          !usedPois.ids.has(poi.id) &&
+          !usedPois.spots.has(`${poi.lng},${poi.lat}`),
+      );
+      poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
+      const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
+      source?.setData({
+        type: "FeatureCollection",
+        features: pois.map((poi) => ({
+          type: "Feature" as const,
+          geometry: {
+            type: "Point" as const,
+            coordinates: [poi.lng, poi.lat],
+          },
+          properties: {
+            poiId: poi.id,
+            category: poi.category,
+            name: poi.name,
+            source: poi.source,
+          },
+        })),
+      });
+    };
+    if (categories.length === 0) {
+      applyPois([]);
+      setPoiMenu(null);
       return;
     }
+    // jsdom's map mock has no getBounds — the layer simply stays empty.
+    if (typeof map.getBounds !== "function") return;
     const controller = new AbortController();
     let cancelled = false;
-    setSelectedFunZoneLoading(true);
-    setSelectedFunZoneError(null);
-    fetchFunZoneDetail(selectedFunZoneId, { signal: controller.signal })
-      .then((detail) => {
-        if (cancelled) return;
-        setSelectedFunZoneDetail(detail);
-        if (!detail) setSelectedFunZoneError("Fun Zone details unavailable.");
-      })
-      .catch((err) => {
+    const timer = window.setTimeout(async () => {
+      try {
+        const bounds = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+        ];
+        const pois = await plannerApi.getPoisByCategories(bbox, categories, {
+          signal: controller.signal,
+        });
+        if (!cancelled) applyPois(pois);
+      } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
-        console.warn("[planner] fun zone detail fetch failed", err);
-        if (!cancelled) setSelectedFunZoneError("Couldn't load top roads.");
-      })
-      .finally(() => {
-        if (!cancelled) setSelectedFunZoneLoading(false);
-      });
+        console.warn("[planner] category poi fetch failed", err);
+      }
+    }, POI_FETCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       controller.abort();
     };
-  }, [selectedFunZoneId]);
+  }, [activePoiCategories, poiViewportToken, ready, editable, usedPois]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -778,6 +1542,120 @@ const TripPlannerMapContent = forwardRef<
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, ready]);
+  // Shared opener for the waypoint point dialog — reached by right-click
+  // AND left-click on a pin (rider feedback). Everything it touches is
+  // referentially stable, so ready-time closures may capture it.
+  const openWaypointMenuFromFeature = useCallback(
+    (
+      props: { waypointId?: string; label?: string; waypointType?: string },
+      lng: number,
+      lat: number,
+      clientX: number,
+      clientY: number,
+    ) => {
+      if (!props.waypointId) return;
+      const waypointId = props.waypointId;
+      setContextMenu(null);
+      setPoiMenu(null);
+      setWaypointMenu({
+        waypointId,
+        name: props.label ?? t("Waypoint"),
+        role:
+          props.waypointType === "end"
+            ? "finish"
+            : (props.waypointType ?? "via"),
+        lng,
+        lat,
+        x: clientX,
+        y: clientY,
+        address: null,
+      });
+      // Resolve the place name lazily; keep the menu snappy meanwhile.
+      void plannerApi
+        .reverseGeocode(lat, lng)
+        .then((address) => {
+          setWaypointMenu((menu) =>
+            menu && menu.waypointId === waypointId
+              ? { ...menu, address }
+              : menu,
+          );
+        })
+        .catch(() => {
+          // Address is informational — coordinates already show.
+        });
+    },
+    [],
+  );
+  // ── Waypoint pin context menu: info + remove (rider feedback) ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !editable) return;
+    const onPinContextMenu = (event: MapMouseEvent) => {
+      // Map-level handler with a padded hit test (not a layer-bound event):
+      // the pin icon is a small target and a right-click a few px off must
+      // still open the pin menu, not the placement menu.
+      const feature = queryWaypointPinsAt(map, event.point)[0];
+      if (!feature) return;
+      event.preventDefault();
+      const props = feature.properties as
+        | { waypointId?: string; label?: string; waypointType?: string }
+        | undefined;
+      if (!props?.waypointId) return;
+      const [lng, lat] =
+        feature.geometry.type === "Point"
+          ? (feature.geometry.coordinates as [number, number])
+          : [event.lngLat.lng, event.lngLat.lat];
+      openWaypointMenuFromFeature(
+        props,
+        lng,
+        lat,
+        event.originalEvent.clientX,
+        event.originalEvent.clientY,
+      );
+    };
+    map.on("contextmenu", onPinContextMenu);
+    return () => {
+      map.off("contextmenu", onPinContextMenu);
+    };
+  }, [ready, editable, openWaypointMenuFromFeature]);
+  // ── Dialogs follow their point while the map moves (rider feedback):
+  // every open menu is anchored to a geo coordinate and reprojected on
+  // each map move instead of staying frozen at the click position. ──
+  const anyMapMenuOpen = Boolean(
+    poiMenu || waypointMenu || contextMenu || conditionMenu,
+  );
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !anyMapMenuOpen) return;
+    // jsdom's map mock projects nothing — menus just keep their spot.
+    if (typeof map.project !== "function") return;
+    const reposition = () => {
+      const rect = map.getCanvas()?.getBoundingClientRect?.();
+      if (!rect) return;
+      const toScreen = (lng: number, lat: number) => {
+        const point = map.project([lng, lat]);
+        return { x: rect.left + point.x + 10, y: rect.top + point.y + 10 };
+      };
+      setPoiMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.poi.lng, menu.poi.lat) } : menu,
+      );
+      setWaypointMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+      setContextMenu((menu) =>
+        menu
+          ? { ...menu, ...toScreen(menu.coords.lng, menu.coords.lat) }
+          : menu,
+      );
+      setConditionMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+    };
+    map.on("move", reposition);
+    return () => {
+      map.off("move", reposition);
+    };
+  }, [ready, anyMapMenuOpen]);
   // ── Context-menu placement: right-click (desktop) + long-press (touch) ──
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -788,8 +1666,17 @@ const TripPlannerMapContent = forwardRef<
     // Desktop: contextmenu event (right-click).
     const onContextMenu = (event: MapMouseEvent) => {
       event.preventDefault();
-      // Don't open over the region-draw tool.
-      if (drawRef.current?.hitTest(event.point)) return;
+      // A right-click ON (or near — same padded hit test as the pin menu)
+      // a waypoint pin belongs to the pin's own menu, never the placement
+      // menu.
+      if (queryWaypointPinsAt(map, event.point).length > 0) {
+        return;
+      }
+      // Rider feedback: waypoints MUST be placeable inside a drawn region
+      // (that's exactly where a drafted route lives). Region move/resize
+      // are left-drag gestures, so a right-click never conflicts with
+      // them — the old hitTest guard blocked the whole rectangle. The
+      // effect installing this handler already bails while drawing.
       const snapped = snapPointerToRoad(map, event.point, event.lngLat) ?? {
         lng: roundCoordinate(event.lngLat.lng),
         lat: roundCoordinate(event.lngLat.lat),
@@ -913,16 +1800,44 @@ const TripPlannerMapContent = forwardRef<
     const handleLeave = () => {
       if (!active) setCursor("");
     };
+    // Rider feedback: the pin must STAY UNDER THE POINTER while
+    // dragging, not jump on drop — preview the position by patching the
+    // waypoint source locally. React state stays untouched until the
+    // drop commits (or the source re-syncs from state on cancel).
+    const previewDragPosition = (lngLat: { lng: number; lat: number }) => {
+      if (!active?.moved) return;
+      const collection = waypointCollectionRef.current;
+      syncGeoJsonSource(map, WAYPOINT_SOURCE, {
+        ...collection,
+        features: collection.features.map((feature) =>
+          feature.properties?.waypointId === active?.waypointId &&
+          feature.geometry.type === "Point"
+            ? {
+                ...feature,
+                geometry: {
+                  ...feature.geometry,
+                  coordinates: [lngLat.lng, lngLat.lat],
+                },
+              }
+            : feature,
+        ),
+      });
+    };
+    const restoreDragPreview = () => {
+      syncGeoJsonSource(map, WAYPOINT_SOURCE, waypointCollectionRef.current);
+    };
     const handleMouseMove = (event: MapMouseEvent) => {
       if (!active) return;
       event.preventDefault();
       setCursor("grabbing");
       noteIfPastTolerance(event.point);
+      previewDragPosition(event.lngLat);
     };
     const handleTouchMove = (event: MapTouchEvent) => {
       if (!active) return;
       event.preventDefault();
       noteIfPastTolerance(event.point);
+      previewDragPosition(event.lngLat);
     };
     const cancelDrag = () => {
       // Used when the gesture ends without a usable pointer position
@@ -932,6 +1847,7 @@ const TripPlannerMapContent = forwardRef<
       if (!active) return;
       active = null;
       setCursor("");
+      restoreDragPreview();
       // A cancelled touch never produces the synthetic post-pointer
       // `click` that would normally clear this flag — without this,
       // the rider's next legitimate map click would be silently
@@ -958,6 +1874,7 @@ const TripPlannerMapContent = forwardRef<
       // `swallowNextClickRef` swallow the synthetic click so the tap is
       // a true no-op.
       if (!drag.moved) return;
+      restoreDragPreview();
       const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
       const target = snapped ?? {
         lng: roundCoordinate(lngLat.lng),
@@ -977,6 +1894,12 @@ const TripPlannerMapContent = forwardRef<
       finishDrag(event.lngLat, event.point);
     };
     const beginDrag = (event: MapMouseEvent | MapTouchEvent) => {
+      // Primary button only — a right-click on a pin belongs to its
+      // context menu, and arming a drag here would swallow that gesture.
+      const original = (event as MapMouseEvent).originalEvent as
+        | MouseEvent
+        | undefined;
+      if (original && "button" in original && original.button !== 0) return;
       const features = (event as MapMouseEvent & { features?: unknown[] })
         .features as
         | Array<{
@@ -1011,10 +1934,10 @@ const TripPlannerMapContent = forwardRef<
       setCursor("grabbing");
     };
 
-    map.on("mouseenter", WAYPOINT_CIRCLE, handleEnter);
-    map.on("mouseleave", WAYPOINT_CIRCLE, handleLeave);
-    map.on("mousedown", WAYPOINT_CIRCLE, beginDrag);
-    map.on("touchstart", WAYPOINT_CIRCLE, beginDrag);
+    map.on("mouseenter", WAYPOINT_PIN, handleEnter);
+    map.on("mouseleave", WAYPOINT_PIN, handleLeave);
+    map.on("mousedown", WAYPOINT_PIN, beginDrag);
+    map.on("touchstart", WAYPOINT_PIN, beginDrag);
     map.on("mousemove", handleMouseMove);
     map.on("touchmove", handleTouchMove);
     map.on("mouseup", handleMouseUp);
@@ -1055,10 +1978,10 @@ const TripPlannerMapContent = forwardRef<
     window.addEventListener("touchcancel", onWindowTouchCancel);
 
     return () => {
-      map.off("mouseenter", WAYPOINT_CIRCLE, handleEnter);
-      map.off("mouseleave", WAYPOINT_CIRCLE, handleLeave);
-      map.off("mousedown", WAYPOINT_CIRCLE, beginDrag);
-      map.off("touchstart", WAYPOINT_CIRCLE, beginDrag);
+      map.off("mouseenter", WAYPOINT_PIN, handleEnter);
+      map.off("mouseleave", WAYPOINT_PIN, handleLeave);
+      map.off("mousedown", WAYPOINT_PIN, beginDrag);
+      map.off("touchstart", WAYPOINT_PIN, beginDrag);
       map.off("mousemove", handleMouseMove);
       map.off("touchmove", handleTouchMove);
       map.off("mouseup", handleMouseUp);
@@ -1079,11 +2002,47 @@ const TripPlannerMapContent = forwardRef<
       ],
       {
         padding: 72,
-        duration: 0,
+        // Animated like the geolocate fly-to (rider feedback) — both the
+        // toolbar Fit route and the fit-on-route-build glide instead of
+        // snapping.
+        duration: 1200,
+        essential: true,
         maxZoom: 11,
       },
     );
   }, [tripBounds]);
+  const flyToSegment = useCallback((segmentId: string) => {
+    const map = handleRef.current?.map;
+    const segment = findPlannerQualitySegment(
+      useTripStore.getState().activeTrip,
+      segmentId,
+    );
+    const bounds = segment ? plannerSegmentBounds(segment) : null;
+    if (!map || !bounds) return;
+    map.fitBounds(
+      [
+        [bounds[0], bounds[1]],
+        [bounds[2], bounds[3]],
+      ],
+      { padding: 120, maxZoom: 12 },
+    );
+  }, []);
+  // "Reroute around this" (v1): nudge the route by inserting a via offset
+  // from the flagged segment; live routing recomputes through it.
+  const handleReroute = useCallback(
+    (segment: RouteSegment) => {
+      rerouteAroundSegmentInTrip(
+        useTripStore.getState().activeTrip,
+        segment,
+        insertWaypointBefore,
+      );
+      // Same rider courtesy as the INSPECT-card reroute: the page arms
+      // an animated fit so the new line comes back into full view.
+      onRerouteRequested?.();
+      selectPlannerSegment(null);
+    },
+    [insertWaypointBefore, selectPlannerSegment, onRerouteRequested],
+  );
 
   useEffect(() => {
     // One-shot auto-fit per trip, but ONLY for a trip we first see with a
@@ -1129,8 +2088,107 @@ const TripPlannerMapContent = forwardRef<
     ref,
     () => ({
       fitRoute: fitMapToTrip,
+      flyToSegment,
+      startRegionDraw: () => drawRef.current?.start(),
+      cancelRegionDraw: () => drawRef.current?.cancel(),
+      openConditionPopover: (ref: { kind: "closure" | "pass"; id: string }) => {
+        const map = handleRef.current?.map;
+        if (!map) return;
+        const current = conditionsRef.current;
+        let lng: number | undefined;
+        let lat: number | undefined;
+        if (ref.kind === "closure") {
+          const closure = current.closures.find((c) => c.id === ref.id);
+          const anchor = closure?.geometry[0];
+          if (!closure || !anchor) return;
+          lng = anchor.lng;
+          lat = anchor.lat;
+          setConditionMenu({
+            kind: "closure",
+            closure,
+            affectsRoute: current.affectsClosureIds.has(closure.id),
+            lng,
+            lat,
+            x: 0,
+            y: 0,
+          });
+        } else {
+          const pass = current.passes.find((p) => p.id === ref.id);
+          if (!pass) return;
+          lng = pass.lng;
+          lat = pass.lat;
+          setConditionMenu({
+            kind: "pass",
+            pass,
+            affectsRoute: current.affectsPassIds.has(pass.id),
+            lng,
+            lat,
+            x: 0,
+            y: 0,
+          });
+        }
+        setContextMenu(null);
+        setWaypointMenu(null);
+        setPoiMenu(null);
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        const projected =
+          typeof map.project === "function" ? map.project([lng, lat]) : null;
+        setConditionMenu((menu) =>
+          menu
+            ? {
+                ...menu,
+                x:
+                  rect && projected
+                    ? rect.left + projected.x + 10
+                    : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+                y:
+                  rect && projected
+                    ? rect.top + projected.y + 10
+                    : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+              }
+            : menu,
+        );
+        if (typeof map.flyTo === "function") {
+          map.flyTo({
+            center: [lng, lat],
+            zoom: Math.max(map.getZoom?.() ?? 0, 9),
+            duration: 1200,
+            essential: true,
+          });
+        }
+      },
+      openPoiPopover: (poi: Poi) => {
+        const map = handleRef.current?.map;
+        if (!map) return;
+        setContextMenu(null);
+        setWaypointMenu(null);
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        const projected =
+          typeof map.project === "function"
+            ? map.project([poi.lng, poi.lat])
+            : null;
+        setPoiMenu({
+          poi,
+          x:
+            rect && projected
+              ? rect.left + projected.x + 10
+              : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+          y:
+            rect && projected
+              ? rect.top + projected.y + 10
+              : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+        });
+        if (typeof map.flyTo === "function") {
+          map.flyTo({
+            center: [poi.lng, poi.lat],
+            zoom: Math.max(map.getZoom?.() ?? 0, 11),
+            duration: 1200,
+            essential: true,
+          });
+        }
+      },
     }),
-    [fitMapToTrip],
+    [fitMapToTrip, flyToSegment],
   );
   useEffect(() => {
     return () => {
@@ -1143,372 +2201,386 @@ const TripPlannerMapContent = forwardRef<
       ref={handleRef}
       center={{ lng: 14.5, lat: 50.1 }}
       zoom={7}
-      showQuality={showQuality}
-      showSurface={showSurface}
+      // The all-roads tile overlay follows the line-coloring mode so the
+      // route and its surroundings speak the same color vocabulary; it is
+      // hidden entirely over aerial imagery.
+      showQuality={basemap === "map" && lineColorMode === "quality"}
+      showSurface={basemap === "map" && lineColorMode === "surface"}
       onReady={handleReady}
       // v2 planner renders on a cream basemap (grey roads) regardless of the
       // viewer's scheme, matching the design.
       forceColorScheme="light"
     >
-      <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
+      {/* "What am I searching / placing" cluster (revision 4 §F): address
+          search + POI chips own the top edge; the basemap/line-color/draw
+          cluster steps down one row to keep the two groups readable. */}
+      {editable ? <MapToolbar onPlace={handleSearchResult} /> : null}
+      <div
+        className={`absolute left-3 z-20 flex flex-col gap-2 ${
+          editable ? "top-[60px]" : "top-3"
+        }`}
+      >
+        {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
+        <div
+          role="group"
+          aria-label="Basemap"
+          className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
+        >
+          {(
+            [
+              ["map", "Map"],
+              ["aerial", "Aerial"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={basemap === id}
+              onClick={() => setBasemap(id)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                basemap === id
+                  ? "bg-ink text-cream"
+                  : "text-fg-dim hover:text-ink"
+              }`}
+            >
+              {t(label === "Map" ? "Map " : "Aerial ")}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-2">
+          {/* Line-coloring toggle — recolors the route line. */}
           <button
             type="button"
-            aria-pressed={showQuality}
-            aria-label={`Road quality overlay ${showQuality ? "on" : "off"}`}
-            onClick={() => setShowQuality((value) => !value)}
-            className={toggleClassName(showQuality)}
+            aria-pressed={lineColorMode === "quality"}
+            aria-label="Color the route line by road quality"
+            onClick={() => setLineColorMode("quality")}
+            className={toggleClassName(lineColorMode === "quality")}
           >
             <Layers3 size={14} />
             {t("Road quality ")}
           </button>
           <button
             type="button"
-            aria-pressed={showSurface}
-            aria-label={`Surface overlay ${showSurface ? "on" : "off"}`}
-            onClick={() => setShowSurface((value) => !value)}
-            className={toggleClassName(showSurface)}
+            aria-pressed={lineColorMode === "surface"}
+            aria-label="Color the route line by surface"
+            onClick={() => setLineColorMode("surface")}
+            className={toggleClassName(lineColorMode === "surface")}
           >
             <Layers3 size={14} />
             {t("Surface ")}
           </button>
+          {/* Ambient conditions overlay (revision 7) — a distinct layer
+              toggle, independent of basemap and line coloring. */}
           <button
             type="button"
-            aria-label="Fit map to the whole route"
-            onClick={fitMapToTrip}
-            disabled={!ready || !tripBounds}
-            // `ready` reflects the maplibre load, which only happens in the
-            // browser, so this control's disabled state is inherently
-            // client-only. On a real load it's `false` on both SSR and the
-            // first client render; the attribute only diverges when Fast
-            // Refresh preserves a loaded map across an HMR re-render.
-            suppressHydrationWarning
-            className={`${CREAM_PILL} disabled:cursor-not-allowed disabled:opacity-50`}
+            aria-pressed={conditionsVisible}
+            aria-label={t("Toggle the conditions overlay")}
+            onClick={() => setConditionsVisible((visible) => !visible)}
+            className={toggleClassName(conditionsVisible)}
           >
-            <Maximize2 size={14} />
-            {t("Fit to route ")}
+            <TriangleAlert size={14} />
+            {t("Conditions ")}
           </button>
         </div>
 
-        {drawMode === "drawing" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.cancel()}
-            className={`${PILL_BASE} self-start border-accent bg-cream text-accent hover:bg-paper`}
-          >
-            <X size={14} />
-            {t("Cancel drawing ")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.start()}
-            disabled={!ready}
-            // Client-only disabled state — see the "Fit to route" note above.
-            suppressHydrationWarning
-            className={`${INK_PILL} self-start disabled:cursor-wait disabled:opacity-60`}
-          >
-            <Square size={14} />
-            {drawnRegion ? t("Redraw region ") : t("Draw region ")}
-          </button>
-        )}
-
-        {drawnRegion && drawMode !== "drawing" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.clearDrawn()}
-            className={`${CREAM_PILL} self-start`}
-          >
-            <X size={12} />
-            {t("Clear region ")}
-          </button>
+        {drawMode === "drawing" && !outlineStarted ? (
+          <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
+            {t(
+              "Click and drag on the map to outline a region. Release to finish. ",
+            )}
+          </div>
+        ) : drawMode === "idle" && editable && !pointPlacedForTrip ? (
+          <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
+            {t(
+              "Click the map to add points. We snap to nearby roads when visible. ",
+            )}
+          </div>
         ) : null}
-
-        <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
-          {drawMode === "drawing" ? (
-            <>
-              {t(
-                "Click and drag on the map to outline a region. Release to finish. ",
-              )}
-            </>
-          ) : drawnRegion ? (
-            <>
-              {t(
-                "Drag the region to move it, drag a handle to resize, or press Delete to remove. ",
-              )}
-            </>
-          ) : (
-            <>
-              {t("Click the map to add waypoints ")}
-              {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}
-              {t(". We snap to nearby roads when visible. ")}
-            </>
-          )}
-        </div>
       </div>
 
-      <div className="absolute right-3 top-3 z-10 w-72 rounded-[14px] bg-ink p-4 text-cream shadow-[0_14px_36px_rgba(14,14,16,0.28)]">
-        <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-          <Route size={16} className="text-accent" />
-          {t("Planner map ")}
+      {/* ── Conditions marker legend (revision 7) ── */}
+      {conditionsVisible ? (
+        <div className="absolute bottom-20 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+          {(
+            [
+              ["#C81E3C", "Closure"],
+              ["#B45309", "Roadworks"],
+              ["#5B6B8C", "Pass closed/unknown"],
+            ] as const
+          ).map(([color, label]) => (
+            <span
+              key={label}
+              className="flex items-center gap-1.5 text-[11px] text-fg-dim"
+            >
+              <span
+                aria-hidden
+                className="inline-block h-2.5 w-2.5 rotate-45 rounded-[3px] border-2 bg-cream"
+                style={{ borderColor: color }}
+              />
+              {t(label)}
+            </span>
+          ))}
         </div>
-        <p className="mt-2 text-sm text-cream/90">
-          {trip
-            ? `${trip.days.length} day${trip.days.length === 1 ? "" : "s"} · ${waypointCount} waypoint${waypointCount === 1 ? "" : "s"}`
-            : "Load the demo trip or import GPX/KML to see your route on the map."}
-        </p>
-        <p className="mt-2 text-xs text-cream/55">
-          {t(
-            "Generated routes use backend road geometry from the start waypoint and planner parameters. ",
-          )}
-        </p>
-
-        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-              <Sparkles size={14} className="text-accent" />
-              {t("Fun Zones")}
-            </div>
-            {drawnRegion ? (
-              <span className="rounded bg-accent/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
-                {t("Drawn")}
-              </span>
-            ) : null}
-          </div>
-
-          {!drawnRegion ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Draw a region to discover Fun Zones.")}
-            </p>
-          ) : funZonesLoading && funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Loading Fun Zones…")}
-            </p>
-          ) : funZonesError ? (
-            <div className="mt-2">
-              <p className="text-xs text-rose-300">{funZonesError}</p>
-              <button
-                type="button"
-                onClick={() => setFunZonesRetryNonce((value) => value + 1)}
-                className="mt-2 text-xs font-medium text-accent hover:underline"
+      ) : null}
+      {/* ── Route legend for the active line-coloring mode ── */}
+      {routeCollection.features.length > 0 ? (
+        <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+          {lineColorMode === "quality"
+            ? (
+                Object.entries(QUALITY_BAND_COLORS) as [
+                  keyof typeof QUALITY_BAND_COLORS,
+                  string,
+                ][]
+              ).map(([band, color]) => (
+                <span key={band} className="flex items-center gap-1.5">
+                  <span
+                    className="h-1 w-3.5 rounded-sm"
+                    style={{ background: color }}
+                  />
+                  <span className="text-[11px] font-semibold text-fg-dim">
+                    {QUALITY_BAND_LABELS_SHORT[band]}
+                  </span>
+                </span>
+              ))
+            : Object.entries(SURFACE_COLORS).map(([surface, color]) => (
+                <span key={surface} className="flex items-center gap-1.5">
+                  <span
+                    className="h-1 w-3.5 rounded-sm"
+                    style={{ background: color }}
+                  />
+                  <span className="text-[11px] font-semibold capitalize text-fg-dim">
+                    {surface}
+                  </span>
+                </span>
+              ))}
+        </div>
+      ) : null}
+      {/* ── Road Preview Card — opened by clicking any route section ── */}
+      {previewSegment ? (
+        <RoadPreviewPopover
+          segment={previewSegment}
+          onClose={() => selectPlannerSegment(null)}
+          {...(editable ? { onReroute: handleReroute } : {})}
+        />
+      ) : null}
+      {/* ── Context menu overlay (Task 10) ── */}
+      {conditionMenu
+        ? (() => {
+            const isClosure = conditionMenu.kind === "closure";
+            const title = isClosure
+              ? conditionMenu.closure.title
+              : conditionMenu.pass.name;
+            const typeLabel = isClosure
+              ? `${conditionMenu.closure.reason} · ${conditionMenu.closure.severity}`
+              : t("Seasonal pass");
+            const detourKm =
+              isClosure && conditionMenu.closure.reason === "roadworks"
+                ? detourLengthKm(conditionMenu.closure)
+                : null;
+            const badgeColor = isClosure
+              ? conditionMenu.closure.severity === "full"
+                ? "#C81E3C"
+                : "#B45309"
+              : conditionMenu.pass.status === "closed"
+                ? "#C81E3C"
+                : "#5B6B8C";
+            return (
+              <div
+                role="dialog"
+                aria-label={t("Condition details")}
+                className="fixed z-30 w-72 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+                style={{ left: conditionMenu.x, top: conditionMenu.y }}
               >
-                {t("Retry")}
-              </button>
-            </div>
-          ) : funZones.length === 0 ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("No Fun Zones in this region yet. Try a larger area.")}
-            </p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {funZones.slice(0, 3).map((zone, index) => {
-                const active = zone.id === selectedFunZoneId;
-                return (
-                  <button
-                    key={zone.id}
-                    type="button"
-                    onClick={() => setSelectedFunZoneId(zone.id)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                      active
-                        ? "border-accent bg-accent/10"
-                        : "border-cream/[0.12] bg-cream/[0.05] hover:border-cream/25"
-                    }`}
+                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
+                  <span
+                    className="flex h-9 w-9 shrink-0 rotate-45 items-center justify-center rounded-[10px] border-2 bg-paper"
+                    style={{ borderColor: badgeColor }}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-cream">
-                          {index + 1}. {zone.name ?? fallbackZoneName(zone)}
-                        </p>
-                        <p className="mt-1 text-[11px] text-cream/60">
-                          {zone.road_count}
-                          {t(" roads")}
-                          {zone.total_curve_km != null
-                            ? ` · ${Math.round(zone.total_curve_km)} km curves`
-                            : ""}
-                        </p>
-                        {zone.best_season ? (
-                          <p className="mt-1 text-[11px] text-cream/55">
-                            {zone.best_season}
-                          </p>
-                        ) : null}
-                      </div>
-                      <span className="shrink-0 text-xs font-semibold text-accent">
-                        {zone.composite_score.toFixed(1)}
-                        {t(" score")}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-              {funZones.length > 3 ? (
-                <p className="text-[11px] text-cream/55">
-                  {t("+ {count} more in this region", {
-                    count: funZones.length - 3,
-                  })}
-                </p>
-              ) : null}
-            </div>
-          )}
-
-          {selectedFunZone ? (
-            <div className="mt-3 border-t border-cream/[0.12] pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-cream/90">
-                  {selectedFunZone.name ?? fallbackZoneName(selectedFunZone)}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFunZoneId(null)}
-                  className="text-[11px] text-cream/55 hover:text-cream/80"
-                >
-                  {t("Clear")}
-                </button>
-              </div>
-              <p className="mt-1 text-[11px] text-cream/55">
-                {selectedFunZone.composite_score.toFixed(1)}
-                {t(" score")}
-                {selectedFunZone.avg_quality != null
-                  ? ` · ${selectedFunZone.avg_quality.toFixed(1)} avg quality`
-                  : ""}
-              </p>
-              {selectedFunZoneLoading ? (
-                <p className="mt-2 text-[11px] text-cream/55">
-                  {t("Loading top roads…")}
-                </p>
-              ) : selectedFunZoneError ? (
-                <p className="mt-2 text-[11px] text-rose-300">
-                  {selectedFunZoneError}
-                </p>
-              ) : selectedFunZoneDetail?.top_roads.length ? (
-                <div className="mt-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cream/55">
-                    {t("Top roads")}
+                    <TriangleAlert
+                      size={15}
+                      className="-rotate-45"
+                      style={{ color: badgeColor }}
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-bold text-ink">
+                      {title}
+                    </p>
+                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                      {typeLabel}
+                    </p>
+                  </div>
+                </div>
+                {conditionMenu.affectsRoute ? (
+                  <p className="mx-1.5 mb-2 inline-flex items-center gap-1.5 rounded-[8px] border border-accent bg-accent/10 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[1.2px] text-accent">
+                    <TriangleAlert size={11} />
+                    {t("Affects your route")}
                   </p>
-                  <ul className="mt-1 space-y-1">
-                    {selectedFunZoneDetail.top_roads
-                      .slice(0, 3)
-                      .map((road: FunZoneDetail["top_roads"][number]) => (
-                        <li
-                          key={road.id}
-                          className="flex items-center justify-between gap-2 text-[11px] text-cream/60"
-                        >
-                          <span className="truncate">
-                            {road.road_name ??
-                              road.road_number ??
-                              t("Unnamed road")}
-                          </span>
-                          <span className="shrink-0 text-cream/55">
-                            {(road.length_m / 1000).toFixed(1)}
-                            {t(" km")}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-4 rounded-xl border border-cream/[0.12] bg-cream/[0.07] p-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-cream">
-            <AlertTriangle size={14} className="text-amber-300" />
-            {t("Conditions for ")}
-            {activeMonthLabel}
-          </div>
-
-          {conditionsLoading ? (
-            <p className="mt-2 text-xs text-cream/55">
-              {t("Loading passes and closures\u2026 ")}
-            </p>
-          ) : (
-            <>
-              {routeWarningParts.length > 0 ? (
-                <p className="mt-2 text-xs text-amber-200">
-                  {t("Route warnings: ")}
-                  {routeWarningParts.join(" · ")}.
-                </p>
-              ) : routeErrors.length > 0 ? (
-                routeErrorsBlock
-              ) : (
-                <p className="mt-2 text-xs text-emerald-300">
-                  {t("No route closures or pass warnings for this month. ")}
-                </p>
-              )}
-
-              {routeWarningParts.length > 0 ? routeErrorsBlock : null}
-
-              {highlightedClosures.length > 0 ? (
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
-                    <AlertTriangle size={12} />
-                    {t("Closures ")}
-                  </div>
-                  <ul className="mt-2 space-y-2">
-                    {highlightedClosures.slice(0, 2).map((closure) => {
-                      const detourKm =
-                        closure.reason === "roadworks"
-                          ? detourLengthKm(closure)
-                          : null;
-                      return (
-                        <li
-                          key={closure.id}
-                          className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
-                        >
-                          <p className="text-xs font-medium text-cream">
-                            {closure.title}
-                          </p>
-                          <p className="mt-1 text-[11px] text-cream/60">
-                            {reasonLabel(closure.reason)}
-                          </p>
-                          <p className="mt-1 text-[11px] text-cream/55">
-                            {formatClosureWindow(closure)}
-                          </p>
-                          {detourKm != null ? (
-                            <p className="mt-1 text-[11px] text-cyan-300">
-                              {t("Detour approx. {distance}", {
-                                distance: formatDistance(detourKm, unitSystem),
-                              })}
-                            </p>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-
-              {highlightedPasses.length > 0 ? (
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-cream/60">
-                    <Mountain size={12} />
-                    {t("Passes ")}
-                  </div>
-                  <ul className="mt-2 space-y-2">
-                    {highlightedPasses.slice(0, 2).map((pass) => (
-                      <li
-                        key={pass.id}
-                        className="rounded-lg border border-cream/[0.12] bg-cream/[0.05] p-2"
-                      >
-                        <p className="text-xs font-medium text-cream">
-                          {pass.name}
-                        </p>
-                        <p className="mt-1 text-[11px] text-cream/60">
-                          {t("{status} · {elevation} m", {
-                            status: statusLabel(pass.status),
-                            elevation: pass.elevation_m.toLocaleString(),
+                ) : null}
+                <div className="px-1.5 pb-2 text-[11.5px] leading-snug text-fg-dim">
+                  {isClosure ? (
+                    <>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
+                        {formatClosureWindow(conditionMenu.closure)}
+                      </p>
+                      {conditionMenu.closure.notes ? (
+                        <p className="mt-1">{conditionMenu.closure.notes}</p>
+                      ) : null}
+                      {detourKm != null ? (
+                        <p className="mt-1.5 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
+                          {t("Detour ~{km} km", {
+                            km: Math.round(detourKm * 10) / 10,
                           })}
                         </p>
-                      </li>
-                    ))}
-                  </ul>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p>
+                      {`${conditionMenu.pass.elevation_m.toLocaleString()} m`}
+                      {conditionMenu.pass.region
+                        ? ` · ${conditionMenu.pass.region}`
+                        : ""}
+                    </p>
+                  )}
                 </div>
-              ) : null}
-            </>
-          )}
+                {conditionMenu.affectsRoute && editable ? (
+                  // Editable maps only: on a read-only detail map the
+                  // store mutation would never reach the immutable trip
+                  // prop — a silent no-op with a desynced store.
+                  <button
+                    type="button"
+                    onClick={() => handleConditionReroute(conditionMenu)}
+                    className="w-full rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+                  >
+                    {t("Reroute around it")}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()
+        : null}
+      {poiMenu
+        ? (() => {
+            const meta = poiCategoryMeta(poiMenu.poi.category);
+            const MetaIcon = meta.icon;
+            const stopType = STOP_TYPE_BY_CATEGORY[poiMenu.poi.category];
+            const showAddAsStop =
+              stopType !== undefined && planningMode === "multiday";
+            return (
+              <div
+                role="dialog"
+                aria-label={t("POI details")}
+                className="fixed z-30 w-64 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+                style={{ left: poiMenu.x, top: poiMenu.y }}
+              >
+                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
+                    <MetaIcon size={16} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-bold text-ink">
+                      {poiMenu.poi.name}
+                    </p>
+                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                      {`${meta.label} · ${poiMenu.poi.source}`}
+                    </p>
+                  </div>
+                </div>
+                {poiMenu.placedWaypointId ? (
+                  onRemoveWaypoint ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRemoveWaypoint(poiMenu.placedWaypointId!);
+                        closePoiMenu();
+                      }}
+                      className="w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
+                    >
+                      {t("Remove from route")}
+                    </button>
+                  ) : null
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPoiWaypoint(poiMenu.poi, "via")}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+                    >
+                      <Plus size={14} strokeWidth={3} />
+                      {t("Add as via")}
+                    </button>
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlacePoiEndpoint(poiMenu.poi, "start")
+                        }
+                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Set as start")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlacePoiEndpoint(poiMenu.poi, "end")
+                        }
+                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Set as finish")}
+                      </button>
+                    </div>
+                    {showAddAsStop ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleAddPoiWaypoint(poiMenu.poi, stopType)
+                        }
+                        className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
+                      >
+                        {t("Add as stop")}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            );
+          })()
+        : null}
+      {waypointMenu ? (
+        <div
+          role="dialog"
+          aria-label={t("Waypoint details")}
+          className="fixed z-30 w-60 overflow-hidden rounded-xl border border-line bg-cream shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
+          style={{ left: waypointMenu.x, top: waypointMenu.y }}
+        >
+          <div className="px-3.5 pb-2.5 pt-3">
+            <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+              {waypointMenu.role}
+            </p>
+            <p className="mt-0.5 truncate text-[13px] font-bold text-ink">
+              {waypointMenu.name}
+            </p>
+            <p className="mt-1.5 text-[11.5px] leading-snug text-fg-dim">
+              {waypointMenu.address ?? t("Looking up the place… ")}
+            </p>
+            <p className="mt-1 font-mono text-[10px] tracking-[0.3px] text-fg-mute">
+              {waypointMenu.lat.toFixed(5)}, {waypointMenu.lng.toFixed(5)}
+            </p>
+          </div>
+          {onRemoveWaypoint ? (
+            <button
+              type="button"
+              onClick={() => {
+                onRemoveWaypoint(waypointMenu.waypointId);
+                closeWaypointMenu();
+              }}
+              className="w-full border-t border-line px-3.5 py-2.5 text-left text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
+            >
+              {t("Remove point")}
+            </button>
+          ) : null}
         </div>
-      </div>
-      {/* ── Context menu overlay (Task 10) ── */}
+      ) : null}
       {contextMenu ? (
         <div
           role="menu"
@@ -1541,34 +2613,11 @@ const TripPlannerMapContent = forwardRef<
 const PILL_BASE =
   "flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition";
 const CREAM_PILL = `${PILL_BASE} border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink`;
-const INK_PILL = `${PILL_BASE} border-ink bg-ink text-cream hover:bg-ink/90`;
 
 function toggleClassName(active: boolean): string {
   return active
     ? `${PILL_BASE} border-accent bg-cream text-accent`
     : CREAM_PILL;
-}
-function fallbackZoneName(zone: FunZoneListItem): string {
-  const points = zone.boundary as unknown as Array<{
-    lat: number;
-    lng: number;
-  }>;
-  if (points.length === 0) return t("Unnamed Fun Zone");
-  const lat =
-    points.reduce((sum: number, point) => sum + point.lat, 0) / points.length;
-  const lng =
-    points.reduce((sum: number, point) => sum + point.lng, 0) / points.length;
-  return t("Zone near {lat}, {lng}", {
-    lat: lat.toFixed(2),
-    lng: lng.toFixed(2),
-  });
-}
-function dedupeMessages(messages: Array<string | null>): string[] {
-  return [
-    ...new Set(
-      messages.filter((message): message is string => message !== null),
-    ),
-  ];
 }
 
 function snapPointerToRoad(
@@ -1601,11 +2650,240 @@ function snapPointerToRoad(
     features,
   );
 }
+const WAYPOINT_PIN_IMAGE_PREFIX = "tarmoto-waypoint-pin-";
+
+/**
+ * Canvas-drawn waypoint circles per role (2× for crisp rendering) — the
+ * design's unified pin language: a flat circle whose CENTER is the
+ * point, matching the POI pins. Start/via ring in white, the finish
+ * rings in ink (accent-on-cream needs the darker ring to read).
+ * jsdom has no 2D context — tests simply get no images, and the symbol
+ * layer renders nothing there.
+ */
+function installWaypointPinImages(map: MapLibreMap): void {
+  const roles: Array<[string, string, string]> = [
+    ["start", "#1F8A5B", "#FFFFFF"],
+    ["via", "#1FA6B8", "#FFFFFF"],
+    ["end", "#FF6A1A", "#0E0E10"],
+  ];
+  for (const [role, fill, ring] of roles) {
+    const imageId = `${WAYPOINT_PIN_IMAGE_PREFIX}${role}`;
+    if (map.hasImage?.(imageId)) continue;
+    const size = 56;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) continue;
+    const center = size / 2;
+    ctx.beginPath();
+    ctx.arc(center, center, 24, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = ring;
+    ctx.stroke();
+    const image = ctx.getImageData(0, 0, size, size);
+    map.addImage(imageId, image, { pixelRatio: 2 });
+  }
+}
+
+/**
+ * Rotated-square (diamond) badges for the ambient conditions layer —
+ * cream fill, colored ring + glyph, visually distinct from both the
+ * quality line palette and the circular POI/waypoint pins.
+ */
+function installConditionImages(map: MapLibreMap): void {
+  for (const [key, badge] of Object.entries(CONDITION_BADGES)) {
+    const imageId = `${CONDITION_IMAGE_PREFIX}${key}`;
+    if (map.hasImage?.(imageId)) continue;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">' +
+      `<rect x="12" y="12" width="36" height="36" rx="9" transform="rotate(45 30 30)" fill="#F5EFE6" stroke="${badge.color}" stroke-width="4"/>` +
+      `<g transform="translate(21,21) scale(0.75)" fill="none" stroke="${badge.color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">` +
+      badge.glyph +
+      "</g></svg>";
+    const image = new Image(60, 60);
+    image.onload = () => {
+      if (!map.hasImage?.(imageId)) {
+        map.addImage(imageId, image, { pixelRatio: 2 });
+      }
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+}
+
+/**
+ * Rasterize the category glyphs into accent-circle pin images (2x for
+ * crisp rendering). SVG -> Image is async; MapLibre repaints the symbol
+ * layer as each image lands. jsdom never fires Image onload — tests
+ * simply render no icons.
+ */
+function installPoiPinImages(map: MapLibreMap): void {
+  for (const [category, children] of Object.entries(POI_PIN_ICON_CHILDREN)) {
+    const imageId = `${POI_PIN_IMAGE_PREFIX}${category}`;
+    if (map.hasImage?.(imageId)) continue;
+    // Unified pin language: cream circle + ink glyph and ring — except
+    // twisty highlights, OUR derived layer, which invert to accent.
+    const accent = category === "twisty_highlight";
+    const fill = accent ? "#FF6A1A" : "#F5EFE6";
+    const ring = accent ? "#F5EFE6" : "#0E0E10";
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">' +
+      `<circle cx="28" cy="28" r="24" fill="${fill}" stroke="${ring}" stroke-width="5"/>` +
+      `<g transform="translate(15,15) scale(1.083)" fill="none" stroke="${ring === "#F5EFE6" ? "#F5EFE6" : "#0E0E10"}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">` +
+      children +
+      "</g></svg>";
+    const image = new Image(56, 56);
+    image.onload = () => {
+      if (!map.hasImage?.(imageId)) {
+        map.addImage(imageId, image, { pixelRatio: 2 });
+      }
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+}
+
+/**
+ * Role-colored circles WITH the category glyph, for waypoints that were
+ * placed from a POI pin — same circle as the plain role pins, same
+ * glyph as the POI pins, so a placed viewpoint reads as "a via that is
+ * a viewpoint" with a single marker.
+ */
+function installWaypointPoiPinImages(map: MapLibreMap): void {
+  const roles: Array<[string, string, string]> = [
+    ["start", "#1F8A5B", "#FFFFFF"],
+    ["via", "#1FA6B8", "#FFFFFF"],
+    ["end", "#FF6A1A", "#0E0E10"],
+  ];
+  for (const [role, fill, ring] of roles) {
+    for (const [category, children] of Object.entries(POI_PIN_ICON_CHILDREN)) {
+      const imageId = `${WAYPOINT_PIN_IMAGE_PREFIX}${role}-${category}`;
+      if (map.hasImage?.(imageId)) continue;
+      const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">' +
+        `<circle cx="28" cy="28" r="24" fill="${fill}" stroke="${ring}" stroke-width="5"/>` +
+        '<g transform="translate(15,15) scale(1.083)" fill="none" stroke="#F5EFE6" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+        children +
+        "</g></svg>";
+      const image = new Image(56, 56);
+      image.onload = () => {
+        if (!map.hasImage?.(imageId)) {
+          map.addImage(imageId, image, { pixelRatio: 2 });
+        }
+      };
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+  }
+}
+
+/**
+ * Clustered category-POI layer (revision 4 §C). Slotted under the
+ * waypoint pins so route points always stay on top of browse pins.
+ */
+function ensurePoiLayers(map: MapLibreMap): void {
+  installPoiPinImages(map);
+  installWaypointPoiPinImages(map);
+  if (!map.getSource(POI_SOURCE)) {
+    map.addSource(POI_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+      cluster: true,
+      clusterMaxZoom: 10,
+      clusterRadius: 46,
+    });
+  }
+  const beforeId = map.getLayer(WAYPOINT_PIN) ? WAYPOINT_PIN : undefined;
+  if (!map.getLayer(POI_CLUSTER_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_CLUSTER_LAYER,
+        type: "circle",
+        source: POI_SOURCE,
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": "#FF6A1A",
+          "circle-opacity": 0.9,
+          "circle-radius": ["step", ["get", "point_count"], 13, 5, 16, 15, 20],
+          "circle-stroke-color": "#F5EFE6",
+          "circle-stroke-width": 2,
+        },
+      },
+      beforeId,
+    );
+  }
+  if (!map.getLayer(POI_CLUSTER_COUNT_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_CLUSTER_COUNT_LAYER,
+        type: "symbol",
+        source: POI_SOURCE,
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-size": 11,
+          // Single hosted face — see the waypoint-label note.
+          "text-font": ["Noto Sans Regular"],
+        },
+        paint: { "text-color": "#F5EFE6" },
+      },
+      beforeId,
+    );
+  }
+  if (!map.getLayer(POI_PIN_LAYER)) {
+    map.addLayer(
+      {
+        id: POI_PIN_LAYER,
+        type: "symbol",
+        source: POI_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          // Category glyph pins (rider feedback) — the icon says what
+          // the POI is before any click.
+          "icon-image": ["concat", POI_PIN_IMAGE_PREFIX, ["get", "category"]],
+          "icon-size": 1,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      },
+      beforeId,
+    );
+  }
+}
+
 function ensurePlannerLayers(map: MapLibreMap): void {
+  // Aerial basemap raster sits under every planner layer AND under the
+  // tarmoto tile overlays (the lowest custom layer MapCanvas installs).
+  ensureAerialBasemap(map, TARMOTO_QUALITY_LAYER);
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
       type: "geojson",
-      data: buildTripPlannerRouteCollection(null),
+      data: buildPlannerQualityRouteCollection(null),
+    });
+  }
+  // Cream casing under the colored segments so the quality line reads
+  // against both the cream basemap and aerial imagery (design frames).
+  if (!map.getLayer(ROUTE_CASING_LINE)) {
+    map.addLayer({
+      id: ROUTE_CASING_LINE,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#F5EFE6",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          ["case", ["get", "selected"], 6, 3.5],
+          10,
+          ["case", ["get", "selected"], 9, 6],
+          14,
+          ["case", ["get", "selected"], 12, 8],
+        ],
+        "line-opacity": ["case", ["get", "selected"], 0.85, 0.4],
+      },
     });
   }
   if (!map.getLayer(ROUTE_LINE)) {
@@ -1613,9 +2891,11 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       id: ROUTE_LINE,
       type: "line",
       source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        // Each day's route carries its own stable color from DAY_COLORS.
-        "line-color": ["get", "color"],
+        // Quality-segmented coloring by default; the [Road quality|Surface]
+        // toggle swaps this expression via setPaintProperty.
+        "line-color": plannerRouteLineColor("quality", SURFACE_COLORS),
         // Selected day is rendered wider and fully opaque; non-selected days are
         // thinner and dimmed so the focused day is always visually dominant.
         // MapLibre allows only ONE zoom-based subexpression and it must be the
@@ -1636,6 +2916,21 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           ["case", ["get", "selected"], 7, 4],
         ],
         "line-opacity": ["case", ["get", "selected"], 1, 0.45],
+      },
+    });
+  }
+  // Invisible wide hit line so ANY route section is comfortably clickable
+  // (opens the Road Preview Card) without fattening the visible line.
+  if (!map.getLayer(ROUTE_HIT_LINE)) {
+    map.addLayer({
+      id: ROUTE_HIT_LINE,
+      type: "line",
+      source: ROUTE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#000000",
+        "line-opacity": 0,
+        "line-width": 22,
       },
     });
   }
@@ -1690,32 +2985,43 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       data: buildTripPlannerWaypointCollection(null),
     });
   }
-  if (!map.getLayer(WAYPOINT_CIRCLE)) {
+  installWaypointPinImages(map);
+  if (!map.getLayer(WAYPOINT_PIN)) {
     map.addLayer({
-      id: WAYPOINT_CIRCLE,
-      type: "circle",
+      id: WAYPOINT_PIN,
+      type: "symbol",
       source: WAYPOINT_SOURCE,
-      paint: {
-        "circle-radius": [
-          "match",
-          ["get", "waypointType"],
-          "start",
-          7,
-          "end",
-          7,
-          5.5,
+      layout: {
+        // Teardrop pins (rider feedback) in the spine's role colors:
+        // start green, vias/stops teal, finish coral — panel and map
+        // always agree on what "finish" looks like.
+        "icon-image": [
+          "concat",
+          WAYPOINT_PIN_IMAGE_PREFIX,
+          [
+            "match",
+            ["get", "waypointType"],
+            "start",
+            "start",
+            "end",
+            "end",
+            "via",
+          ],
+          // POI-derived waypoints carry their category -> glyph variant.
+          [
+            "case",
+            ["has", "poiCategory"],
+            ["concat", "-", ["get", "poiCategory"]],
+            "",
+          ],
         ],
-        "circle-color": [
-          "match",
-          ["get", "waypointType"],
-          "start",
-          "#22C55E",
-          "end",
-          "#F97316",
-          "#0ED3CF",
-        ],
-        "circle-stroke-color": "#020617",
-        "circle-stroke-width": 2,
+        // The image is authored at 2× (pixelRatio 2 → 28 px logical);
+        // the circle's CENTER sits exactly on the waypoint location,
+        // same anchor rule as the POI pins.
+        "icon-size": 1,
+        "icon-anchor": "center",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }
@@ -1726,13 +3032,58 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       source: WAYPOINT_SOURCE,
       layout: {
         "text-field": ["get", "label"],
-        "text-offset": [0, 1.25],
+        "text-offset": [0, 1.5],
         "text-size": 11,
         "text-anchor": "top",
+        // Single hosted font, not a stack: OpenFreeMap's glyph server only
+        // serves single-face fontstacks, so MapLibre's default stack (and
+        // any comma-joined list) 404s on every label range and falls back
+        // to noisy local glyph rendering.
+        "text-font": ["Noto Sans Regular"],
       },
       paint: {
         // Ink label with a cream halo for legibility on the cream basemap
         // (was light text + dark halo for the old dark map).
+        "text-color": "#0E0E10",
+        "text-halo-color": "#F5EFE6",
+        "text-halo-width": 1.4,
+      },
+    });
+  }
+  // Day-break markers (splitter boundaries): a pin-style dot + town label.
+  if (!map.getSource(DAY_BREAK_SOURCE)) {
+    map.addSource(DAY_BREAK_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(DAY_BREAK_CIRCLE_LAYER)) {
+    map.addLayer({
+      id: DAY_BREAK_CIRCLE_LAYER,
+      type: "circle",
+      source: DAY_BREAK_SOURCE,
+      paint: {
+        "circle-radius": 8,
+        // Pinned (manual) breaks render accent; computed ones ink.
+        "circle-color": ["case", ["get", "pinned"], "#FF6A1A", "#0E0E10"],
+        "circle-stroke-color": "#F5EFE6",
+        "circle-stroke-width": 2.5,
+      },
+    });
+  }
+  if (!map.getLayer(DAY_BREAK_LABEL_LAYER)) {
+    map.addLayer({
+      id: DAY_BREAK_LABEL_LAYER,
+      type: "symbol",
+      source: DAY_BREAK_SOURCE,
+      layout: {
+        "text-field": ["get", "label"],
+        "text-offset": [0, 1.3],
+        "text-size": 11,
+        "text-anchor": "top",
+        "text-font": ["Noto Sans Regular"],
+      },
+      paint: {
         "text-color": "#0E0E10",
         "text-halo-color": "#F5EFE6",
         "text-halo-width": 1.4,
@@ -1765,6 +3116,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
+  installConditionImages(map);
   if (!map.getSource(CLOSURE_MARKER_SOURCE)) {
     map.addSource(CLOSURE_MARKER_SOURCE, {
       type: "geojson",
@@ -1774,31 +3126,20 @@ function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getLayer(CLOSURE_MARKER_LAYER)) {
     map.addLayer({
       id: CLOSURE_MARKER_LAYER,
-      type: "circle",
+      type: "symbol",
       source: CLOSURE_MARKER_SOURCE,
-      paint: {
-        "circle-color": [
-          "match",
-          ["get", "severity"],
-          "full",
-          "#FB7185",
-          "partial",
-          "#FBBF24",
-          "#38BDF8",
+      // Zoom-gated (revision 7): country zoom hides individual markers.
+      minzoom: CONDITION_MARKER_MINZOOM,
+      layout: {
+        "icon-image": [
+          "case",
+          ["==", ["get", "severity"], "full"],
+          `${CONDITION_IMAGE_PREFIX}closure-full`,
+          `${CONDITION_IMAGE_PREFIX}closure-works`,
         ],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          7,
-          5,
-          12,
-          7,
-          15,
-          9,
-        ],
-        "circle-stroke-color": "#020617",
-        "circle-stroke-width": 2,
+        "icon-size": 1,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }
@@ -1811,31 +3152,22 @@ function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getLayer(PASS_MARKER_LAYER)) {
     map.addLayer({
       id: PASS_MARKER_LAYER,
-      type: "circle",
+      type: "symbol",
       source: PASS_MARKER_SOURCE,
-      paint: {
-        "circle-color": [
-          "match",
-          ["get", "status"],
-          "open",
-          "#4ADE80",
-          "closed",
-          "#FB7185",
-          "#94A3B8",
+      minzoom: CONDITION_MARKER_MINZOOM,
+      // Ambient awareness cares about passes you might NOT clear —
+      // open passes stay off the map (revision 7).
+      filter: ["!=", ["get", "status"], "open"],
+      layout: {
+        "icon-image": [
+          "case",
+          ["==", ["get", "status"], "closed"],
+          `${CONDITION_IMAGE_PREFIX}pass-closed`,
+          `${CONDITION_IMAGE_PREFIX}pass-unknown`,
         ],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          7,
-          4,
-          12,
-          6,
-          15,
-          8,
-        ],
-        "circle-stroke-color": "#020617",
-        "circle-stroke-width": 2,
+        "icon-size": 1,
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
       },
     });
   }
@@ -1888,6 +3220,8 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "text-offset": [0, 1.1],
         "text-size": 10,
         "text-anchor": "top",
+        // See WAYPOINT_LABEL: single hosted font avoids glyph 404 spam.
+        "text-font": ["Noto Sans Regular"],
       },
       paint: {
         "text-color": "#F9A8D4",
@@ -1976,34 +3310,4 @@ function syncGeoJsonSource(
     type: "geojson",
     data,
   });
-}
-function reasonLabel(
-  reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other",
-): string {
-  switch (reason) {
-    case "roadworks":
-      return "Roadworks";
-    case "seasonal":
-      return "Seasonal";
-    case "weather":
-      return "Weather";
-    case "event":
-      return "Event";
-    case "other":
-      return "Other";
-    case "closure":
-    default:
-      return "Closure";
-  }
-}
-function statusLabel(status: "open" | "closed" | "unknown"): string {
-  switch (status) {
-    case "open":
-      return "Open";
-    case "closed":
-      return "Closed";
-    case "unknown":
-    default:
-      return "Unknown";
-  }
 }

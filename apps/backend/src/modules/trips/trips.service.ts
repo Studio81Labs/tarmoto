@@ -37,6 +37,7 @@ import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { generateInviteCode } from './invite-code.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
+import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   PublicTripDetailDto,
@@ -210,6 +211,10 @@ export class TripsService {
               scenic_score: day.scenic_score,
               estimated_time: day.estimated_time,
               start_linked: day.start_linked,
+              // Custom per-leg road characters travel with the copy —
+              // dropping them would let the next edit/save reroute the
+              // duplicate with the trip-wide preference.
+              leg_preferences: day.leg_preferences,
             }),
           );
 
@@ -1044,16 +1049,71 @@ export class TripsService {
         `Day ${day.dayNumber} waypoints must be ordered from start to end`,
       );
     }
-    const route = await this.routingProvider.route(
-      routing.map((w) => ({ lat: w.lat, lng: w.lng })),
-      {
-        avoidHighways: options?.avoid_highways,
-        avoidTolls: options?.avoid_tolls,
-        preferQuality: options?.prefer_quality,
-      },
-    );
-    if (!route) {
-      throw new BadGatewayException(`No road route for day ${day.dayNumber}`);
+    const baseOptions = {
+      avoidHighways: options?.avoid_highways,
+      avoidTolls: options?.avoid_tolls,
+      preferQuality: options?.prefer_quality,
+      // Same costing as live routing — otherwise Save re-routes the
+      // approved preview with default costing and persists a
+      // different road character than the rider saw.
+      preference: options?.preference,
+    };
+    const legPreferences = day.leg_preferences;
+    if (legPreferences && legPreferences.length !== routing.length - 1) {
+      throw new BadRequestException(
+        `Day ${day.dayNumber} leg_preferences must have exactly one entry ` +
+          `per consecutive routing-waypoint pair (${routing.length - 1})`,
+      );
+    }
+    let route: {
+      distance_km: number;
+      duration_min: number;
+      geometry: { lat: number; lng: number }[];
+    };
+    if (legPreferences && legPreferences.length > 0) {
+      // Per-leg road characters (revision 3 §C): re-route the day with
+      // the SAME leg requests the live preview used, or a custom leg
+      // (e.g. one Maximum twisty stretch in a Direct trip) would persist
+      // a different line than the rider approved.
+      const legs = await Promise.all(
+        legPreferences.map((preference, i) =>
+          this.routingProvider.route(
+            [
+              { lat: routing[i]!.lat, lng: routing[i]!.lng },
+              { lat: routing[i + 1]!.lat, lng: routing[i + 1]!.lng },
+            ],
+            { ...baseOptions, preference },
+          ),
+        ),
+      );
+      const resolved = legs.filter(
+        (leg): leg is NonNullable<typeof leg> => leg !== null,
+      );
+      if (resolved.length !== legs.length) {
+        throw new BadGatewayException(`No road route for day ${day.dayNumber}`);
+      }
+      route = resolved.slice(1).reduce(
+        (merged, leg) => ({
+          distance_km: merged.distance_km + leg.distance_km,
+          duration_min: merged.duration_min + leg.duration_min,
+          // Legs share their boundary waypoint — drop the duplicate vertex.
+          geometry: [...merged.geometry, ...leg.geometry.slice(1)],
+        }),
+        {
+          distance_km: resolved[0]!.distance_km,
+          duration_min: resolved[0]!.duration_min,
+          geometry: [...resolved[0]!.geometry],
+        },
+      );
+    } else {
+      const whole = await this.routingProvider.route(
+        routing.map((w) => ({ lat: w.lat, lng: w.lng })),
+        baseOptions,
+      );
+      if (!whole) {
+        throw new BadGatewayException(`No road route for day ${day.dayNumber}`);
+      }
+      route = whole;
     }
     const m = await this.enrichment.aggregate(route.geometry);
     return {
@@ -1177,6 +1237,11 @@ export class TripsService {
             elevation_gain: b.elevation_gain,
             elevation_loss: b.elevation_loss,
             route_geom: b.route_geom,
+            // Persist the leg overrides WITH their day so the planner can
+            // re-seed them on reload — otherwise the next edit + save
+            // re-routes the approved custom legs with the trip-wide
+            // preference.
+            leg_preferences: d.leg_preferences ?? null,
           }),
         );
         // Persist ALL submitted waypoints (including non-routing stops such as
@@ -1468,6 +1533,9 @@ export class TripsService {
       scenic_score: d.scenic_score ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
       start_linked: d.start_linked ?? false,
+      leg_preferences: (d.leg_preferences ?? null) as
+        | RoutePreferenceOption[]
+        | null,
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
         // `location` is NOT NULL in the schema, but the shared helper

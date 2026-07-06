@@ -44,6 +44,10 @@ test.describe("trip planner — closures (T13)", () => {
       timeout: 10_000,
     });
 
+    // Closures & roadworks live in the Plan & inspect panel's
+    // CONDITIONS tab — surface it first.
+    await page.getByRole("tab", { name: "CONDITIONS" }).click();
+
     // The closures panel renders "Current trip crosses {count}
     // active {label}" once `useClosures.checkRoute` resolves with a
     // non-empty list. The mock reports the seeded closure for any

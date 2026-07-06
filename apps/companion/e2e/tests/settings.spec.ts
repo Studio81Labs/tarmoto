@@ -128,8 +128,16 @@ test.describe("settings: bikes", () => {
     expect(updateBody).not.toHaveProperty("photoUrl");
     await expect(page.getByText(/Yamaha MT-10/i).first()).toBeVisible();
 
-    // Delete via the trash icon — confirm window.confirm via dialog handler.
-    page.once("dialog", (dialog) => dialog.accept());
+    // Delete via the trash icon — system dialogs are disallowed; the
+    // app-styled ConfirmDialog carries the destructive commit now.
+    await page
+      .getByRole("button", { name: /delete Yamaha/i })
+      .first()
+      .click();
+    const removeDialog = page.getByRole("dialog", {
+      name: /remove this bike/i,
+    });
+    await expect(removeDialog).toBeVisible();
     const [deleteReq] = await Promise.all([
       page.waitForRequest(
         (r) =>
@@ -137,10 +145,7 @@ test.describe("settings: bikes", () => {
           r.method() === "DELETE",
         { timeout: 10_000 },
       ),
-      page
-        .getByRole("button", { name: /delete Yamaha/i })
-        .first()
-        .click(),
+      removeDialog.getByRole("button", { name: /^Remove bike$/i }).click(),
     ]);
     expect(deleteReq.method()).toBe("DELETE");
 

@@ -69,6 +69,7 @@ import { AddSurfaceFromReading1788000000000 } from '../../migrations/17880000000
 import { AggregateClusterFunZonesByWay1789000000000 } from '../../migrations/1789000000000-AggregateClusterFunZonesByWay.js';
 import { AddRoadSegmentWayKeyIndex1790000000000 } from '../../migrations/1790000000000-AddRoadSegmentWayKeyIndex.js';
 import { AddRoadSegmentDeactivatedAt1791000000000 } from '../../migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
+import { AddTripDayLegPreferences1792000000000 } from '../../migrations/1792000000000-AddTripDayLegPreferences.js';
 import {
   User,
   UserContact,
@@ -279,6 +280,7 @@ const entities = [
             AggregateClusterFunZonesByWay1789000000000,
             AddRoadSegmentWayKeyIndex1790000000000,
             AddRoadSegmentDeactivatedAt1791000000000,
+            AddTripDayLegPreferences1792000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

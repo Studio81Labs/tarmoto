@@ -72,6 +72,8 @@ export interface TripDetailDay {
   waypoints: TripDetailWaypoint[];
   /** True when the backend linked this day's start to the previous day's end. */
   start_linked?: boolean;
+  /** Per-leg road-character overrides as saved (revision 3 §C), or null. */
+  leg_preferences?: string[] | null;
 }
 
 export interface TripDetailWaypoint {
@@ -298,6 +300,8 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
     avgQuality: day.avg_quality ?? 0,
     overnightStop,
     startLinked: day.start_linked ?? false,
+    legPreferences:
+      (day.leg_preferences as TripDay["legPreferences"] | undefined) ?? null,
   };
 }
 

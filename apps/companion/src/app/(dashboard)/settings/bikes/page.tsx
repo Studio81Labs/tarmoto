@@ -6,6 +6,7 @@ import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
 import { Button, Card, Pill } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
@@ -29,6 +30,8 @@ export default function BikesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ListError>(null);
   const [modal, setModal] = useState<ModalState>({ kind: "closed" });
+  // Delete confirms through the app dialog — system dialogs are disallowed.
+  const [confirmDeleteBike, setConfirmDeleteBike] = useState<Bike | null>(null);
   const [pendingActionBikeId, setPendingActionBikeId] = useState<string | null>(
     null,
   );
@@ -118,11 +121,8 @@ export default function BikesPage() {
     }
   }
   async function handleDelete(bike: Bike) {
+    setConfirmDeleteBike(null);
     if (pendingActionBikeId) return;
-    const confirmed = window.confirm(
-      `Remove ${formatBikeTitle(bike)} from your garage? Rides already recorded with this bike will be kept.`,
-    );
-    if (!confirmed) return;
     setPendingActionBikeId(bike.id);
     try {
       await accountApi.deleteBike(bike.id);
@@ -183,7 +183,7 @@ export default function BikesPage() {
               bike={bike}
               pending={pendingActionBikeId === bike.id}
               onEdit={() => setModal({ kind: "edit", bike })}
-              onDelete={() => handleDelete(bike)}
+              onDelete={() => setConfirmDeleteBike(bike)}
               onSetActive={() => handleSetActive(bike)}
             />
           ))}
@@ -196,6 +196,25 @@ export default function BikesPage() {
         {...(modal.kind === "edit" ? { initialBike: modal.bike } : {})}
         onClose={() => setModal({ kind: "closed" })}
         onSubmit={handleSubmit}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteBike !== null}
+        title={t("Remove this bike?")}
+        message={
+          confirmDeleteBike
+            ? t(
+                "{bike} is removed from your garage. Rides already recorded with it are kept. ",
+                { bike: formatBikeTitle(confirmDeleteBike) },
+              )
+            : ""
+        }
+        tone="danger"
+        confirmLabel={t("Remove bike")}
+        onCancel={() => setConfirmDeleteBike(null)}
+        onConfirm={() => {
+          if (confirmDeleteBike) void handleDelete(confirmDeleteBike);
+        }}
       />
     </div>
   );

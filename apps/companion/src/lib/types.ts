@@ -184,10 +184,28 @@ export interface TripDay {
   durationMinutes: number;
   elevationGain: number;
   avgQuality: number;
+  /**
+   * Metres ridden per surface key for this day's routed geometry, straight
+   * from the routing response. Present only after live routing previews the
+   * day; loaded/imported trips derive a fallback mix from quality segments.
+   */
+  surfaceMix?: Record<string, number> | undefined;
   overnightStop?: POI | undefined;
   segments?: RoutePreviewSegment[] | undefined;
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
   startLinked?: boolean;
+  /**
+   * Per-leg road-character overrides as saved (revision 3 §C): one
+   * preference per consecutive routing-waypoint pair, travel order. The
+   * planner re-seeds its leg-override state from this on load.
+   */
+  legPreferences?: import("./planner/prefs").RoadPreference[] | null;
+  /**
+   * Client-only (never saved): where each routing leg starts in
+   * `routeGeometry` when the day was routed per leg (revision 3 §C).
+   * Lets quality segments be tagged with their legId on derivation.
+   */
+  legBreaks?: Array<{ legId: string; startVertex: number }> | undefined;
 }
 
 /**
@@ -225,6 +243,13 @@ export interface Waypoint {
   name?: string | undefined;
   location: { lng: number; lat: number };
   type: "start" | "via" | "end" | "fuel" | "rest" | "photo" | "accommodation";
+  /**
+   * Set when the waypoint was placed from a map POI pin (revision 4):
+   * the map renders the category glyph inside the role circle and
+   * clicking it reopens the POI popover. Client-side display metadata —
+   * not persisted by the save contract.
+   */
+  poiCategory?: import("@/lib/planner/types").PoiCategory;
 }
 
 export interface TripParameters {

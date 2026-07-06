@@ -23,7 +23,9 @@ const ACTIVE_OPACITY = 0.9;
 // Surface palette — must stay in sync with --color-surface-* in globals.css
 // so the legend swatches match what's painted on the map. "unknown" is not
 // user-filterable but always renders so the map doesn't blank fresh data.
-const SURFACE_COLORS = {
+// Exported so the planner's surface line-coloring mode paints the route
+// with the same vocabulary as the all-roads tile overlay.
+export const SURFACE_COLORS = {
   asphalt: "#3B82F6",
   concrete: "#6B7280",
   cobblestone: "#A78BFA",

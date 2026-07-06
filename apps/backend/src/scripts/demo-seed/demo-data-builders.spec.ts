@@ -1,10 +1,13 @@
 import { ROAD_QUALITY, SURFACE_TYPES } from '@tarmoto/shared';
 import {
-  DEMO_ROAD_MARKER,
   buildDemoRoadSpecs,
   buildLineString,
+  DEMO_PASS_ROWS,
+  DEMO_ROAD_MARKER,
   mulberry32,
+  offsetLine,
   seedFromString,
+  sliceLineByFraction,
 } from './demo-data-builders.js';
 
 describe('demo-data-builders', () => {
@@ -82,5 +85,62 @@ describe('demo-data-builders', () => {
     it('is deterministic across runs', () => {
       expect(buildDemoRoadSpecs(5)).toEqual(buildDemoRoadSpecs(5));
     });
+  });
+});
+
+describe('sliceLineByFraction', () => {
+  const line = {
+    type: 'LineString' as const,
+    coordinates: [
+      [15.0, 49.0],
+      [15.1, 49.1],
+      [15.2, 49.2],
+      [15.3, 49.3],
+      [15.4, 49.4],
+    ],
+  };
+
+  it('carves the requested vertex range', () => {
+    const slice = sliceLineByFraction(line, 0.25, 0.75);
+    expect(slice.coordinates[0]).toEqual([15.1, 49.1]);
+    expect(slice.coordinates.at(-1)).toEqual([15.3, 49.3]);
+  });
+
+  it('always returns at least two vertices, even for degenerate ranges', () => {
+    const slice = sliceLineByFraction(line, 0.99, 0.99);
+    expect(slice.coordinates.length).toBeGreaterThanOrEqual(2);
+    const full = sliceLineByFraction(line, 0, 1);
+    expect(full.coordinates).toEqual(line.coordinates);
+  });
+});
+
+describe('offsetLine', () => {
+  it('shifts every vertex by the given deltas', () => {
+    const line = {
+      type: 'LineString' as const,
+      coordinates: [
+        [15.0, 49.0],
+        [15.1, 49.1],
+      ],
+    };
+    expect(offsetLine(line, 0.01, -0.02).coordinates).toEqual([
+      [15.01, 48.98],
+      [15.11, 49.08],
+    ]);
+  });
+});
+
+describe('DEMO_PASS_ROWS', () => {
+  it('mirrors the AddMountainPasses migration catalog', () => {
+    expect(DEMO_PASS_ROWS).toHaveLength(11);
+    const names = DEMO_PASS_ROWS.map((row) => row.name);
+    expect(new Set(names).size).toBe(11);
+    expect(names).toContain('Červenohorské sedlo');
+    for (const row of DEMO_PASS_ROWS) {
+      expect(row.typical_open_month).toBeGreaterThanOrEqual(1);
+      expect(row.typical_close_month).toBeLessThanOrEqual(12);
+      expect(Math.abs(row.lat)).toBeLessThanOrEqual(90);
+      expect(Math.abs(row.lng)).toBeLessThanOrEqual(180);
+    }
   });
 });

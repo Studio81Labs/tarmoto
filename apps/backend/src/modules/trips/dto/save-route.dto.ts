@@ -16,7 +16,9 @@ import {
 import {
   LatLngDto,
   MAX_ROUTE_WAYPOINTS,
+  ROUTE_PREFERENCES,
   RouteOptionsDto,
+  type RoutePreferenceOption,
 } from '../../routing/dto/route.dto.js';
 
 // Canonical waypoint type set accepted by the backend — must match
@@ -76,6 +78,23 @@ export class SaveRouteDayDto {
   @ValidateNested({ each: true })
   @Type(() => SaveRouteWaypointDto)
   waypoints!: SaveRouteWaypointDto[];
+
+  @ApiProperty({
+    required: false,
+    enum: ROUTE_PREFERENCES,
+    isArray: true,
+    description:
+      'Per-leg road character overrides (revision 3 §C): one entry per ' +
+      'consecutive pair of ROUTING waypoints (start/via/end order), so ' +
+      'length must equal routing-waypoint count minus one. When present, ' +
+      'the day is re-routed leg by leg with these preferences — the same ' +
+      'requests the live preview used — instead of one day-wide call.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_ROUTE_WAYPOINTS)
+  @IsIn(ROUTE_PREFERENCES, { each: true })
+  leg_preferences?: RoutePreferenceOption[];
 }
 
 export class SaveRouteDto {

@@ -1,4 +1,6 @@
-import { useTripStore } from "./trip";
+import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
+import { splitIntoDays } from "@/lib/planner/day-splitter";
+import { dayFinishWaypoint, useTripStore } from "./trip";
 import type { RouteResponse } from "@/lib/api";
 import type { TripParameters } from "@/lib/types";
 
@@ -901,7 +903,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(useTripStore.getState().stalePreviewDays).toContain(2);
   });
 
-  it("reordering a terminal stay off the end clears the now-finishless link", () => {
+  it("reordering a terminal stay off the end promotes the trailing via to the finish (role-from-index)", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start"); // [start(1,1)]
     s.addWaypoint(0, {
@@ -919,17 +921,22 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     s.addDay(); // day 2 linked, seeded from the terminal stay (2,2)
     expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(true);
 
-    // Drag the stay BEFORE the via → day 1 has no terminal finish anymore.
+    // Drag the stay BEFORE the via. Roles derive from position, so the
+    // now-trailing via is promoted to the day's finish — the day never
+    // goes finishless while it has two routing waypoints.
     useTripStore.setState({ selectedDayIndex: 1 });
     s.reorderWaypoints(0, 2, 1);
     expect(
       useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type),
-    ).toEqual(["start", "accommodation", "via"]);
+    ).toEqual(["start", "accommodation", "end"]);
 
-    // No predecessor finish to mirror → the link is cleared (not left dangling).
-    expect(useTripStore.getState().activeTrip!.days[1]!.startLinked).toBe(
-      false,
-    );
+    // The linked successor re-seeds its start from the promoted finish.
+    const day2 = useTripStore.getState().activeTrip!.days[1]!;
+    expect(day2.startLinked).toBe(true);
+    expect(day2.waypoints.find((w) => w.type === "start")!.location).toEqual({
+      lng: 5,
+      lat: 5,
+    });
   });
 
   it("adding a stay after an explicit end re-seeds the linked successor to the stay", () => {
@@ -1064,6 +1071,72 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
       { lat: 1, lng: 1 },
       { lat: 3, lng: 3 },
     ]);
+  });
+
+  it("removeWaypointById removes from the pin's OWNING day, not the selected one", () => {
+    // The map shows every day's pins — removing a Day 2 pin while Day 1
+    // is selected must delete it from Day 2 (it was a silent no-op).
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.addDay();
+    s.setSelectedDay(1);
+    s.placeWaypoint({ lat: 4, lng: 4 }, "set-start");
+    s.placeWaypoint({ lat: 6, lng: 6 }, "set-end");
+    s.placeWaypoint({ lat: 5, lng: 5 }, "add-via");
+    const day2Via = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find((w) => w.type === "via")!;
+
+    s.setSelectedDay(0);
+    useTripStore.getState().removeWaypointById(day2Via.id);
+
+    const days = useTripStore.getState().activeTrip!.days;
+    expect(days[1]!.waypoints.find((w) => w.id === day2Via.id)).toBeUndefined();
+    // Day 1 untouched.
+    expect(days[0]!.waypoints).toHaveLength(2);
+  });
+
+  it("markDayRouteDirty stales ONLY the given day's preview", () => {
+    // A LEG override affects one day; staling every routable day would
+    // wedge the Save gate on days live routing never revisits.
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.addDay();
+    s.setSelectedDay(1);
+    s.placeWaypoint({ lat: 4, lng: 4 }, "set-start");
+    s.placeWaypoint({ lat: 6, lng: 6 }, "set-end");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+
+    useTripStore.getState().markDayRouteDirty(1);
+
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([2]);
+
+    // Idempotent — no duplicate entries.
+    useTripStore.getState().markDayRouteDirty(1);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([2]);
+  });
+
+  it("markDayRouteDirty never stales an unroutable day", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+
+    // Day 0 has a lone start — the live hook can't re-route it.
+    useTripStore.getState().markDayRouteDirty(0);
+
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
+  it("removeWaypointById with an unknown id is a state no-op", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().removeWaypointById("nope");
+    expect(useTripStore.getState().activeTrip).toBe(before);
   });
 
   it("setWaypointType changes the type of a waypoint on day 0", () => {
@@ -2111,5 +2184,587 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
       .getState()
       .activeTrip!.days[1]!.waypoints.find((w) => w.type === "start")!;
     expect(day2Start.location).toEqual({ lng: 9, lat: 9 });
+  });
+});
+
+describe("useTripStore Plan & inspect segment selection", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("selectPlannerSegment sets and clears the selection", () => {
+    useTripStore.getState().selectPlannerSegment("d1-s2");
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBe("d1-s2");
+    useTripStore.getState().selectPlannerSegment(null);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+
+  it("setActiveTrip and undo clear a stale segment selection", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+});
+
+describe("useTripStore insertWaypointBefore (reroute via)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seedRoute() {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "add-via");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+  }
+
+  it("inserts immediately before the anchor waypoint", () => {
+    seedRoute();
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+
+    useTripStore.getState().insertWaypointBefore(0, via.id, {
+      id: "reroute-1",
+      name: "Reroute via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+
+    const types = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.map((w) => w.id);
+    expect(types.indexOf("reroute-1")).toBe(types.indexOf(via.id) - 1);
+  });
+
+  it("falls back to the finish boundary when the anchor is missing or null", () => {
+    seedRoute();
+    useTripStore.getState().insertWaypointBefore(0, null, {
+      id: "reroute-2",
+      name: "Reroute via",
+      location: { lat: 4, lng: 4 },
+      type: "via",
+    });
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    // Lands before the end waypoint.
+    expect(waypoints[waypoints.length - 1]!.type).toBe("end");
+    expect(waypoints[waypoints.length - 2]!.id).toBe("reroute-2");
+
+    useTripStore.getState().insertWaypointBefore(0, "nope", {
+      id: "reroute-3",
+      name: "Reroute via",
+      location: { lat: 4.5, lng: 4.5 },
+      type: "via",
+    });
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after[after.length - 2]!.id).toBe("reroute-3");
+  });
+
+  it("never inserts ahead of the day's start", () => {
+    seedRoute();
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().insertWaypointBefore(0, start.id, {
+      id: "reroute-4",
+      name: "Reroute via",
+      location: { lat: 1.5, lng: 1.5 },
+      type: "via",
+    });
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(waypoints[0]!.type).toBe("start");
+    expect(waypoints[1]!.id).toBe("reroute-4");
+  });
+
+  it("marks the route dirty and the day stale so live routing re-runs", () => {
+    seedRoute();
+    const via = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "via")!;
+    useTripStore.getState().insertWaypointBefore(0, via.id, {
+      id: "reroute-5",
+      name: "Reroute via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toContain(1);
+  });
+});
+
+describe("useTripStore role-from-index waypoints (addendum §1)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seed() {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().placeWaypoint({ lat: 3, lng: 3 }, "add-via");
+  }
+  const types = () =>
+    useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.type);
+  const names = () =>
+    useTripStore.getState().activeTrip!.days[0]!.waypoints.map((w) => w.name);
+
+  it("dragging the via to the top makes it the start and demotes the old start", () => {
+    seed(); // [start, via, end]
+    useTripStore.getState().reorderWaypoints(0, 1, 0);
+    expect(types()).toEqual(["start", "via", "end"]);
+    // The moved via is now named Start; the old start became a via.
+    expect(names()).toEqual(["Start", "Via 1", "Finish"]);
+  });
+
+  it("dragging the start to the bottom makes it the finish", () => {
+    seed(); // [start, via, end]
+    useTripStore.getState().reorderWaypoints(0, 0, 2);
+    // Order after move: [via, end, start] → roles by index.
+    expect(types()).toEqual(["start", "via", "end"]);
+  });
+
+  it("preserves custom (geocoded) names across a re-role", () => {
+    seed();
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    const via = day.waypoints[1]!;
+    // Simulate a geocoded custom name.
+    useTripStore.setState((state) => {
+      const trip = state.activeTrip!;
+      const waypoints = trip.days[0]!.waypoints.map((w) =>
+        w.id === via.id ? { ...w, name: "Velké Meziříčí" } : w,
+      );
+      return {
+        activeTrip: {
+          ...trip,
+          days: [{ ...trip.days[0]!, waypoints }],
+        },
+      };
+    });
+    useTripStore.getState().reorderWaypoints(0, 1, 0);
+    expect(names()[0]).toBe("Velké Meziříčí");
+    expect(types()[0]).toBe("start");
+  });
+
+  it("removing the start promotes the next routing waypoint", () => {
+    seed();
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    useTripStore.getState().removeWaypointById(start.id);
+    expect(types()).toEqual(["start", "end"]);
+  });
+
+  it("stop-type waypoints keep their type and never take a role", () => {
+    seed();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      name: "Gas",
+      location: { lat: 4, lng: 4 },
+      type: "fuel",
+    });
+    // Move the fuel stop to the top — roles must skip it.
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    const fuelIndex = waypoints.findIndex((w) => w.id === "fuel-1");
+    useTripStore.getState().reorderWaypoints(0, fuelIndex, 0);
+    const after = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(after[0]!.type).toBe("fuel");
+    // Routing roles still valid on the remaining routing waypoints.
+    const routingTypes = after
+      .filter((w) => w.type !== "fuel")
+      .map((w) => w.type);
+    expect(routingTypes[0]).toBe("start");
+    expect(routingTypes[routingTypes.length - 1]).toBe("end");
+  });
+
+  it("supports a loop: finish placed on the start coordinate", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-end");
+    const waypoints = useTripStore.getState().activeTrip!.days[0]!.waypoints;
+    expect(waypoints).toHaveLength(2);
+    expect(waypoints[0]!.type).toBe("start");
+    expect(waypoints[1]!.type).toBe("end");
+    expect(waypoints[1]!.location).toEqual(waypoints[0]!.location);
+  });
+});
+
+describe("useTripStore split lifecycle (addendum)", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  const KM_PER_DEG_LAT = 111.194926;
+  const degPerKm = 1 / KM_PER_DEG_LAT;
+
+  function seedRoutedTrip(totalKm = 600) {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 45, lng: 15 }, "set-start");
+    s.placeWaypoint({ lat: 45 + totalKm * degPerKm, lng: 15 }, "set-end");
+    s.placeWaypoint({ lat: 45 + 100 * degPerKm, lng: 15 }, "add-via");
+    // Simulate the live-routing result: dense meridian geometry.
+    const geometry = Array.from({ length: totalKm + 1 }, (_, km) => ({
+      lat: 45 + km * degPerKm,
+      lng: 15,
+    }));
+    useTripStore.getState().applyRouteResult(1, {
+      geometry,
+      distance_km: totalKm,
+      duration_min: totalKm,
+      avg_quality: 3.9,
+      curviness_score: 40,
+      elevation_gain_m: 4000,
+      surface_mix: { asphalt: totalKm * 1000 },
+    });
+  }
+
+  function plansFor(totalKm = 600) {
+    const day = useTripStore.getState().activeTrip!.days[0]!;
+    const segments = deriveDayQualitySegments(day);
+    return splitIntoDays(segments, {
+      dailyKmTarget: 250,
+      forcedDays: null,
+      totalTimeMin: totalKm,
+    });
+  }
+
+  it("planningMode: defaults single; applySplit opts into multiday; leaving multiday drops the split", () => {
+    seedRoutedTrip();
+    expect(useTripStore.getState().planningMode).toBe("single");
+
+    // Running a split IS acting on the multi-day section (revision 2 §A).
+    useTripStore.getState().applySplit(plansFor());
+    expect(useTripStore.getState().planningMode).toBe("multiday");
+    expect(useTripStore.getState().splitStatus).toBe("split");
+
+    // Backing out to single mode removes the day concept entirely.
+    useTripStore.getState().setPlanningMode("single");
+    expect(useTripStore.getState().splitStatus).toBe("none");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+    expect(useTripStore.getState().pinnedBreakKms).toEqual([]);
+
+    // Opting in again has no day side effects until an actual split.
+    useTripStore.getState().setPlanningMode("multiday");
+    expect(useTripStore.getState().splitStatus).toBe("none");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+  });
+
+  it("loads a saved multi-day trip in multiday mode; fresh trips stay single", () => {
+    seedRoutedTrip();
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().materializeSplit();
+    const materialized = useTripStore.getState().activeTrip!;
+
+    useTripStore.getState().setActiveTrip(materialized);
+    expect(useTripStore.getState().planningMode).toBe("multiday");
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().planningMode).toBe("single");
+  });
+
+  it("starts unsplit; applySplit enters 'split'; route edits go 'stale'", () => {
+    seedRoutedTrip();
+    expect(useTripStore.getState().splitStatus).toBe("none");
+
+    useTripStore.getState().applySplit(plansFor());
+    expect(useTripStore.getState().splitStatus).toBe("split");
+    expect(useTripStore.getState().dayPlans!.length).toBeGreaterThanOrEqual(2);
+
+    // A waypoint edit invalidates the split but keeps the plans for display.
+    useTripStore.getState().placeWaypoint({ lat: 45.5, lng: 15.1 }, "add-via");
+    expect(useTripStore.getState().splitStatus).toBe("stale");
+    expect(useTripStore.getState().dayPlans).not.toBeNull();
+
+    // Pref changes (markRouteDirty) also invalidate.
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().markRouteDirty();
+    expect(useTripStore.getState().splitStatus).toBe("stale");
+  });
+
+  it("loads a saved multi-day trip as an existing split", () => {
+    seedRoutedTrip();
+    useTripStore.getState().applySplit(plansFor());
+    useTripStore.getState().materializeSplit();
+    const materialized = useTripStore.getState().activeTrip!;
+    useTripStore.getState().setActiveTrip(materialized);
+
+    expect(useTripStore.getState().splitStatus).toBe("split");
+    expect(useTripStore.getState().dayPlans!.length).toBe(
+      materialized.days.length,
+    );
+
+    useTripStore.getState().setActiveTrip(null);
+    expect(useTripStore.getState().splitStatus).toBe("none");
+    expect(useTripStore.getState().dayPlans).toBeNull();
+  });
+
+  it("materializeSplit rewrites days that satisfy the save gate", () => {
+    seedRoutedTrip();
+    const plans = plansFor();
+    useTripStore.getState().applySplit(plans);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    expect(trip.days).toHaveLength(plans.length);
+    expect(trip.num_days).toBe(plans.length);
+
+    let coveredKm = 0;
+    trip.days.forEach((day, index) => {
+      // Complete per the save gate: start + finish + geometry.
+      expect(day.waypoints.some((w) => w.type === "start")).toBe(true);
+      expect(dayFinishWaypoint(day.waypoints)).toBeDefined();
+      expect(day.routeGeometry!.coordinates.length).toBeGreaterThanOrEqual(2);
+      expect(day.distanceKm).toBeCloseTo(plans[index]!.distanceKm, 0);
+      expect(day.startLinked).toBe(index > 0);
+      coveredKm += day.distanceKm;
+    });
+    expect(coveredKm).toBeCloseTo(600, 0);
+
+    // The via placed at ~km 100 belongs to day 1.
+    expect(trip.days[0]!.waypoints.some((w) => w.type === "via")).toBe(true);
+    expect(trip.days[1]!.waypoints.some((w) => w.type === "via")).toBe(false);
+
+    // Original endpoints survive at the outer boundaries.
+    expect(trip.days[0]!.waypoints[0]!.name).toBe("Start");
+    expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
+  });
+
+  it("interpolates a between-vertices break so consecutive days share the exact boundary", () => {
+    // SPARSE geometry — one vertex every 40 km — so the 250 km break
+    // falls between vertices (240 / 280 km). Vertex-filtering alone
+    // would end day 1 at km 240 and start day 2 at km 280: a 40 km gap
+    // in the saved geometry and mismatched boundary waypoints.
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 45, lng: 15 }, "set-start");
+    s.placeWaypoint({ lat: 45 + 600 * degPerKm, lng: 15 }, "set-end");
+    const geometry = Array.from({ length: 16 }, (_, i) => ({
+      lat: 45 + i * 40 * degPerKm,
+      lng: 15,
+    }));
+    useTripStore.getState().applyRouteResult(1, {
+      geometry,
+      distance_km: 600,
+      duration_min: 600,
+      avg_quality: 4,
+      curviness_score: 40,
+      elevation_gain_m: 1000,
+      surface_mix: {},
+    });
+    const mkPlan = (dayNumber: number, endKm: number, distanceKm: number) => ({
+      dayNumber,
+      segmentIds: [],
+      distanceKm,
+      timeMin: distanceKm,
+      quality: {
+        distanceKm,
+        timeMin: distanceKm,
+        score: 4,
+        surfaceMix: [],
+        flagged: [],
+      },
+      startTown: "A",
+      endTown: "B",
+      suggestedStays: [],
+      endKm,
+    });
+    useTripStore
+      .getState()
+      .applySplit([mkPlan(1, 250, 250), mkPlan(2, 600, 350)]);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    const day1Coords = trip.days[0]!.routeGeometry!.coordinates;
+    const day2Coords = trip.days[1]!.routeGeometry!.coordinates;
+    const boundaryLat = 45 + 250 * degPerKm;
+
+    // Both days carry the interpolated km-250 point — no gap, and the
+    // linked-start boundary waypoints sit on the same spot.
+    expect(day1Coords.at(-1)![1]).toBeCloseTo(boundaryLat, 4);
+    expect(day2Coords[0]).toEqual(day1Coords.at(-1));
+    expect(trip.days[1]!.waypoints[0]!.location.lat).toBeCloseTo(
+      boundaryLat,
+      4,
+    );
+    expect(
+      dayFinishWaypoint(trip.days[0]!.waypoints)!.location.lat,
+    ).toBeCloseTo(boundaryLat, 4);
+  });
+});
+
+describe("stop inserts never stale unchanged geometry", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  function seedRoutableDay() {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+  }
+
+  it("a non-routing stop arms Save but does not stale the day", () => {
+    seedRoutableDay();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      name: "Fuel",
+      location: { lat: 2, lng: 2 },
+      type: "fuel",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
+  it("a via stales the day it changes", () => {
+    seedRoutableDay();
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "via-1",
+      name: "Via",
+      location: { lat: 2, lng: 2 },
+      type: "via",
+    });
+    expect(useTripStore.getState().stalePreviewDays).toEqual([1]);
+  });
+
+  it("insertWaypointBefore follows the same rule", () => {
+    seedRoutableDay();
+    const end = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!;
+    useTripStore.getState().insertWaypointBefore(0, end.id, {
+      id: "photo-1",
+      name: "Photo",
+      location: { lat: 2, lng: 2 },
+      type: "photo",
+    });
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+
+    useTripStore.getState().insertWaypointBefore(0, end.id, {
+      id: "via-2",
+      name: "Via",
+      location: { lat: 2.5, lng: 2.5 },
+      type: "via",
+    });
+    expect(useTripStore.getState().stalePreviewDays).toEqual([1]);
+  });
+});
+
+describe("useTripStore renameWaypoint", () => {
+  beforeEach(() => useTripStore.getState().resetForTest?.());
+
+  it("renames without dirtying the route or invalidating a split", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.setState({ routeDirty: false, splitStatus: "split" });
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+
+    useTripStore.getState().renameWaypoint(start.id, "Jihlava");
+
+    const renamed = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
+    expect(renamed.name).toBe("Jihlava");
+    expect(useTripStore.getState().routeDirty).toBe(false);
+    expect(useTripStore.getState().splitStatus).toBe("split");
+  });
+
+  it("is a no-op for unknown waypoint ids", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().renameWaypoint("nope", "X");
+    expect(useTripStore.getState().activeTrip).toBe(before);
+  });
+});
+
+describe("placeWaypoint POI metadata (revision 4)", () => {
+  beforeEach(() => {
+    useTripStore.setState({ activeTrip: null, selectedDayIndex: 0 });
+  });
+
+  it("names the placed point and carries poiCategory through every role", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Devět skal vista",
+      poiCategory: "viewpoint",
+    });
+    s.placeWaypoint({ lat: 49.2, lng: 16.6 }, "set-end", undefined, {
+      name: "Hotel Ráztoka",
+      poiCategory: "biker_hotel",
+    });
+    s.placeWaypoint({ lat: 49.5, lng: 16.3 }, "add-via", undefined, {
+      name: "Benzina Frenštát",
+      poiCategory: "fuel",
+    });
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    expect(waypoints.map((w) => [w.type, w.name, w.poiCategory])).toEqual([
+      ["start", "Devět skal vista", "viewpoint"],
+      ["via", "Benzina Frenštát", "fuel"],
+      ["end", "Hotel Ráztoka", "biker_hotel"],
+    ]);
+  });
+
+  it("clears stale POI provenance when a start is re-placed without meta", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Devět skal vista",
+      poiCategory: "viewpoint",
+    });
+    useTripStore
+      .getState()
+      .placeWaypoint({ lat: 50.0, lng: 14.4 }, "set-new-start");
+    const start = useTripStore
+      .getState()
+      .activeTrip?.days[0]?.waypoints.find((w) => w.type === "start");
+    expect(start?.poiCategory).toBeUndefined();
+    expect(start?.location).toEqual({ lng: 14.4, lat: 50.0 });
+  });
+});
+
+describe("renameActiveTrip", () => {
+  it("renames the working trip WITHOUT dirtying the route, and supports undo", () => {
+    useTripStore.setState({
+      activeTrip: null,
+      routeDirty: false,
+      undoStack: [],
+      redoStack: [],
+      selectedDayIndex: 0,
+    });
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.0, lng: 15.0 }, "set-start");
+    useTripStore.setState({ routeDirty: false });
+
+    useTripStore.getState().renameActiveTrip("  Vysočina dash  ");
+    expect(useTripStore.getState().activeTrip?.name).toBe("Vysočina dash");
+    // A rename is a metadata edit — arming Save route for it would
+    // re-route the whole trip unpreviewed just to carry a title.
+    expect(useTripStore.getState().routeDirty).toBe(false);
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");
+  });
+
+  it("ignores empty and unchanged names", () => {
+    const before = useTripStore.getState().activeTrip;
+    useTripStore.getState().renameActiveTrip("   ");
+    expect(useTripStore.getState().activeTrip).toBe(before);
+  });
+});
+
+describe("applySplit save-gate", () => {
+  it("marks the draft dirty so a split on a clean loaded route is saveable", () => {
+    useTripStore.setState({ routeDirty: false, splitStatus: "none" });
+    useTripStore.getState().applySplit([
+      {
+        dayNumber: 1,
+        segmentIds: [],
+        distanceKm: 120,
+        timeMin: 150,
+        quality: { score: 4, bands: [] } as never,
+        startTown: "A",
+        endTown: "B",
+        suggestedStays: [],
+        endKm: 120,
+      },
+    ]);
+    expect(useTripStore.getState().splitStatus).toBe("split");
+    expect(useTripStore.getState().routeDirty).toBe(true);
   });
 });

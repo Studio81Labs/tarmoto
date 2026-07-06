@@ -144,6 +144,19 @@ describe("tripFromDetail", () => {
     expect(trip.parameters.roadPreference).toBe("direct");
   });
 
+  it("carries persisted per-leg preferences onto the day (null when absent)", () => {
+    const detail = makeDetail();
+    detail.days[0]!.leg_preferences = ["scenic_balance", "maximum_twisty"];
+    const trip = tripFromDetail(detail);
+    expect(trip.days[0]!.legPreferences).toEqual([
+      "scenic_balance",
+      "maximum_twisty",
+    ]);
+
+    const bare = tripFromDetail(makeDetail());
+    expect(bare.days[0]!.legPreferences).toBeNull();
+  });
+
   it("sorts waypoints by sequence and translates the backend type vocabulary", () => {
     const trip = tripFromDetail(makeDetail());
     const wps = trip.days[0]!.waypoints;

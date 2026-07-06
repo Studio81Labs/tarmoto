@@ -156,3 +156,129 @@ describe('OsrmProvider', () => {
     expect(provider.version).toBe('osrm-v1');
   });
 });
+
+describe('OsrmProvider exclude fallback (public demo has no exclude classes)', () => {
+  const baseUrl = 'http://osrm.test';
+  let provider: OsrmProvider;
+  let fetchMock: jest.SpyInstance;
+
+  const okBody = {
+    code: 'Ok',
+    routes: [
+      {
+        distance: 22964.8,
+        duration: 1489.3,
+        geometry: {
+          coordinates: [
+            [15.58, 49.4],
+            [15.7, 49.41],
+            [15.8, 49.42],
+          ],
+        },
+      },
+    ],
+  };
+
+  /** The demo server's rejection of any `exclude=` class. */
+  const excludeRejected = {
+    message: 'Exclude flag combination is not supported.',
+    code: 'InvalidValue',
+  };
+
+  const waypoints = [
+    { lat: 49.4, lng: 15.58 },
+    { lat: 49.42, lng: 15.8 },
+  ];
+
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  beforeEach(() => {
+    const config = {
+      get: jest.fn().mockReturnValue(baseUrl),
+    } as unknown as ConfigService;
+    provider = new OsrmProvider(config);
+    fetchMock = jest.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    fetchMock.mockRestore();
+  });
+
+  it('route() keeps exclude= when the upstream accepts it', async () => {
+    fetchMock.mockResolvedValueOnce(json(okBody));
+
+    const result = await provider.route(waypoints, {
+      avoidHighways: true,
+      avoidTolls: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calls = fetchMock.mock.calls as Array<[string]>;
+    expect(calls[0][0]).toContain('exclude=motorway,toll');
+    expect(result?.distance_km).toBeCloseTo(22.96);
+  });
+
+  it('route() retries WITHOUT exclude= when the upstream rejects it with 400', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(excludeRejected, 400))
+      .mockResolvedValueOnce(json(okBody));
+
+    const result = await provider.route(waypoints, { avoidHighways: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const calls = fetchMock.mock.calls as Array<[string]>;
+    expect(calls[0][0]).toContain('exclude=motorway');
+    expect(calls[1][0]).not.toContain('exclude=');
+    // The rider still gets a routed line (without the avoidance).
+    expect(result).not.toBeNull();
+    expect(result?.geometry).toHaveLength(3);
+    expect(result?.duration_min).toBe(25);
+  });
+
+  it('route() does not retry a 400 when no exclude was sent', async () => {
+    fetchMock.mockResolvedValueOnce(json(excludeRejected, 400));
+
+    const result = await provider.route(waypoints);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull();
+  });
+
+  it('route() surfaces a failed retry as null', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(excludeRejected, 400))
+      .mockResolvedValueOnce(json({ message: 'boom' }, 500));
+
+    const result = await provider.route(waypoints, { avoidHighways: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toBeNull();
+  });
+
+  it('getAlternatives() applies the same no-exclude retry, keeping other params intact', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(excludeRejected, 400))
+      .mockResolvedValueOnce(
+        json({ code: 'Ok', routes: [okBody.routes[0], okBody.routes[0]] }),
+      );
+
+    const out = await provider.getAlternatives(49.4, 15.58, 49.42, 15.8, 2, {
+      avoidHighways: true,
+      includePrimary: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const calls = fetchMock.mock.calls as Array<[string]>;
+    expect(calls[0][0]).toContain('exclude=motorway');
+    const retryUrl = calls[1][0];
+    expect(retryUrl).not.toContain('exclude=');
+    expect(retryUrl).toContain('alternatives=1');
+    expect(retryUrl).toContain('overview=full');
+    expect(retryUrl).toContain('geometries=geojson');
+    expect(out).toHaveLength(2);
+  });
+});

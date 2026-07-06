@@ -144,3 +144,186 @@ function round2(n: number): number {
 function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
 }
+
+/** GeoJSON-compatible LineString (positions as plain number arrays). */
+export interface GeoJSONLineString {
+  type: 'LineString';
+  coordinates: number[][];
+}
+
+/**
+ * Slice a line to the [fromFrac, toFrac] vertex range (by index fraction,
+ * not arc length — plenty for carving demo closures out of a day route).
+ * Always returns at least two vertices.
+ */
+export function sliceLineByFraction(
+  line: GeoJSONLineString,
+  fromFrac: number,
+  toFrac: number,
+): GeoJSONLineString {
+  const last = line.coordinates.length - 1;
+  const from = Math.max(0, Math.min(last - 1, Math.floor(last * fromFrac)));
+  const to = Math.max(from + 1, Math.min(last, Math.ceil(last * toFrac)));
+  return {
+    type: 'LineString',
+    coordinates: line.coordinates.slice(from, to + 1),
+  };
+}
+
+/** Parallel-offset copy of a line — a plausible demo detour polyline. */
+export function offsetLine(
+  line: GeoJSONLineString,
+  dLng: number,
+  dLat: number,
+): GeoJSONLineString {
+  return {
+    type: 'LineString',
+    coordinates: line.coordinates.map((position) => [
+      round6((position[0] ?? 0) + dLng),
+      round6((position[1] ?? 0) + dLat),
+    ]),
+  };
+}
+
+export interface DemoPassRow {
+  name: string;
+  country_code: string;
+  region: string;
+  lng: number;
+  lat: number;
+  elevation_m: number;
+  typical_open_month: number;
+  typical_close_month: number;
+  notes: string;
+}
+
+/**
+ * The canonical pass catalog from the AddMountainPasses migration — the
+ * seeder re-inserts any that are missing (dev databases rebuilt from
+ * dumps have the migration marked done but the rows gone).
+ */
+export const DEMO_PASS_ROWS: DemoPassRow[] = [
+  {
+    name: 'Stelvio Pass',
+    country_code: 'IT',
+    region: 'Lombardy',
+    lng: 10.454,
+    lat: 46.5285,
+    elevation_m: 2757,
+    typical_open_month: 6,
+    typical_close_month: 10,
+    notes: "Italy's second-highest paved pass; classic 48-hairpin climb.",
+  },
+  {
+    name: 'Grossglockner High Alpine Road',
+    country_code: 'AT',
+    region: 'Carinthia/Salzburg',
+    lng: 12.8267,
+    lat: 47.0744,
+    elevation_m: 2504,
+    typical_open_month: 5,
+    typical_close_month: 10,
+    notes: 'Toll road; gates close at night even in season.',
+  },
+  {
+    name: 'Furka Pass',
+    country_code: 'CH',
+    region: 'Uri/Valais',
+    lng: 8.4156,
+    lat: 46.5723,
+    elevation_m: 2429,
+    typical_open_month: 6,
+    typical_close_month: 10,
+    notes: 'Featured in the 1964 Bond film; spectacular Rhone glacier views.',
+  },
+  {
+    name: 'Gotthard Pass (Tremola)',
+    country_code: 'CH',
+    region: 'Ticino',
+    lng: 8.5664,
+    lat: 46.5586,
+    elevation_m: 2106,
+    typical_open_month: 5,
+    typical_close_month: 10,
+    notes:
+      'Cobblestone Tremola road on south side; tunnel alternative year-round.',
+  },
+  {
+    name: 'San Bernardino Pass',
+    country_code: 'CH',
+    region: 'Graubünden',
+    lng: 9.1728,
+    lat: 46.4944,
+    elevation_m: 2066,
+    typical_open_month: 5,
+    typical_close_month: 10,
+    notes: 'Closes early after first heavy snow; tunnel below stays open.',
+  },
+  {
+    name: 'Col du Galibier',
+    country_code: 'FR',
+    region: 'Hautes-Alpes',
+    lng: 6.4078,
+    lat: 45.0639,
+    elevation_m: 2642,
+    typical_open_month: 6,
+    typical_close_month: 10,
+    notes: 'Often used in Tour de France; tunnel bypasses summit when closed.',
+  },
+  {
+    name: "Col d'Iseran",
+    country_code: 'FR',
+    region: 'Savoie',
+    lng: 7.0306,
+    lat: 45.4172,
+    elevation_m: 2770,
+    typical_open_month: 7,
+    typical_close_month: 9,
+    notes: 'Highest paved pass in the Alps; very short rideable season.',
+  },
+  {
+    name: 'Timmelsjoch / Passo Rombo',
+    country_code: 'AT',
+    region: 'Tyrol/South Tyrol',
+    lng: 11.0967,
+    lat: 46.9094,
+    elevation_m: 2509,
+    typical_open_month: 6,
+    typical_close_month: 10,
+    notes: 'Toll road; closed at night; Austrian/Italian border.',
+  },
+  {
+    name: 'Pordoi Pass',
+    country_code: 'IT',
+    region: 'Trentino/Veneto',
+    lng: 11.8128,
+    lat: 46.4878,
+    elevation_m: 2239,
+    typical_open_month: 5,
+    typical_close_month: 11,
+    notes: 'Dolomites; usually first to open and last to close in the region.',
+  },
+  {
+    name: 'Ovčiarsky Vrch (Donovaly)',
+    country_code: 'SK',
+    region: 'Banská Bystrica',
+    lng: 19.2225,
+    lat: 48.8775,
+    elevation_m: 960,
+    typical_open_month: 1,
+    typical_close_month: 12,
+    notes: 'Open year-round but expect winter conditions Nov–Mar.',
+  },
+  {
+    name: 'Červenohorské sedlo',
+    country_code: 'CZ',
+    region: 'Olomouc/Moravian-Silesian',
+    lng: 17.1242,
+    lat: 50.1125,
+    elevation_m: 1013,
+    typical_open_month: 1,
+    typical_close_month: 12,
+    notes:
+      'Jeseníky pass on road 44; open year-round with frequent winter closures.',
+  },
+];
