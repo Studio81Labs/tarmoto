@@ -1,47 +1,42 @@
-import { apiFetch } from "./client";
+import { api, openApiData } from "./client";
+import type { JsonResponse, JsonRequest } from "./client";
 
 // ── Trip folders (US-37: rider-owned folders that sync across devices) ──
 
-export interface TripFolderResponse {
-  id: string;
-  user_id: string;
-  name: string;
-  color: string | null;
-  position: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TripFolderListResponse {
-  items: TripFolderResponse[];
-  total: number;
-}
-
-export interface CreateTripFolderInput {
-  name: string;
-  color?: string | null;
-}
-
-export interface UpdateTripFolderInput {
-  name?: string;
-  color?: string | null;
-  position?: number;
-}
+export type TripFolderResponse = JsonResponse<
+  "/api/v1/trip-folders",
+  "post",
+  201
+>;
+export type TripFolderListResponse = JsonResponse<
+  "/api/v1/trip-folders",
+  "get",
+  200
+>;
+export type CreateTripFolderInput = JsonRequest<"/api/v1/trip-folders", "post">;
+export type UpdateTripFolderInput = JsonRequest<
+  "/api/v1/trip-folders/{id}",
+  "patch"
+>;
 
 export const tripFoldersApi = {
-  list: () => apiFetch<TripFolderListResponse>("/trip-folders"),
+  list: () =>
+    openApiData<TripFolderListResponse>(api.GET("/api/v1/trip-folders")),
   create: (input: CreateTripFolderInput) =>
-    apiFetch<TripFolderResponse>("/trip-folders", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    openApiData<TripFolderResponse>(
+      api.POST("/api/v1/trip-folders", { body: input }),
+    ),
   update: (id: string, input: UpdateTripFolderInput) =>
-    apiFetch<TripFolderResponse>(`/trip-folders/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(input),
-    }),
+    openApiData<TripFolderResponse>(
+      api.PATCH("/api/v1/trip-folders/{id}", {
+        params: { path: { id } },
+        body: input,
+      }),
+    ),
   delete: (id: string) =>
-    apiFetch<void>(`/trip-folders/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    }),
+    openApiData<void>(
+      api.DELETE("/api/v1/trip-folders/{id}", {
+        params: { path: { id } },
+      }),
+    ),
 };
