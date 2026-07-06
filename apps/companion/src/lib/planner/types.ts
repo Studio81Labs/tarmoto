@@ -294,6 +294,13 @@ export interface RoundtripOptions {
   preference: import("./prefs").RoadPreference;
   /** Drawn map region — wins over `direction` for Fun-Zone search. */
   region?: [number, number, number, number] | null;
+  /**
+   * The sidebar route options (avoid flags etc.): the measuring routes
+   * must honour the same constraints the live reroute will apply, or
+   * the confirmed loop's sizing and vias come from roads the rider
+   * disabled. `preference` above always wins over any preference here.
+   */
+  prefs?: RouteRequestBody["options"];
 }
 
 export interface DraftRoundtripResult {

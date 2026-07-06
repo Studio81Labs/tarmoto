@@ -1097,6 +1097,40 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(days[0]!.waypoints).toHaveLength(2);
   });
 
+  it("markDayRouteDirty stales ONLY the given day's preview", () => {
+    // A LEG override affects one day; staling every routable day would
+    // wedge the Save gate on days live routing never revisits.
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    s.placeWaypoint({ lat: 3, lng: 3 }, "set-end");
+    s.addDay();
+    s.setSelectedDay(1);
+    s.placeWaypoint({ lat: 4, lng: 4 }, "set-start");
+    s.placeWaypoint({ lat: 6, lng: 6 }, "set-end");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+
+    useTripStore.getState().markDayRouteDirty(1);
+
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([2]);
+
+    // Idempotent — no duplicate entries.
+    useTripStore.getState().markDayRouteDirty(1);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([2]);
+  });
+
+  it("markDayRouteDirty never stales an unroutable day", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.setState({ routeDirty: false, stalePreviewDays: [] });
+
+    // Day 0 has a lone start — the live hook can't re-route it.
+    useTripStore.getState().markDayRouteDirty(0);
+
+    expect(useTripStore.getState().routeDirty).toBe(true);
+    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+  });
+
   it("removeWaypointById with an unknown id is a state no-op", () => {
     const s = useTripStore.getState();
     s.placeWaypoint({ lat: 1, lng: 1 }, "set-start");

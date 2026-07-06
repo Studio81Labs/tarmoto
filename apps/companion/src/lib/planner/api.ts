@@ -421,6 +421,9 @@ export function createPlannerApi(): PlannerApi {
           ? Math.random() * 360
           : ROUNDTRIP_BEARING_DEG[opts.direction];
       const routeOptions: RouteRequestBody["options"] = {
+        // Sidebar constraints (avoid flags etc.) apply to the measuring
+        // routes exactly as they will to the live reroute (§E).
+        ...opts.prefs,
         // The loop's road character routes like its point-to-point
         // equivalent; 'efficient_loop' costs like 'direct'.
         preference:

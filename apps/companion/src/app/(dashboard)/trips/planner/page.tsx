@@ -309,6 +309,7 @@ export default function TripPlannerPage() {
   const routeDirty = useTripStore((s) => s.routeDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
+  const markDayRouteDirty = useTripStore((s) => s.markDayRouteDirty);
   const setDraftPlannerParameters = useTripStore(
     (s) => s.setDraftPlannerParameters,
   );
@@ -431,10 +432,12 @@ export default function TripPlannerPage() {
           leg.fromWaypointId === fromWaypointId ? { ...leg, preference } : leg,
         ),
       }));
-      // A leg's road character is a routing input — re-fire live routing.
-      markRouteDirty();
+      // A leg's road character is a routing input for THIS day only —
+      // staling every day would wedge the Save gate on days the live
+      // hook never revisits.
+      markDayRouteDirty(selectedDayIndex);
     },
-    [markRouteDirty, selectedDayIndex],
+    [markDayRouteDirty, selectedDayIndex],
   );
   // Per-leg routing requests (revision 3 §C): each consecutive pair is
   // requested with its EFFECTIVE preference; the hook concatenates the
@@ -1742,7 +1745,9 @@ export default function TripPlannerPage() {
       try {
         const result = await plannerApi.draftRoundtrip(
           { lat: startWp.location.lat, lng: startWp.location.lng },
-          { ...opts, region: plannerRegion },
+          // Sidebar avoids ride along so the measured loop obeys the same
+          // constraints the live reroute will; the dialog preference wins.
+          { ...opts, region: plannerRegion, prefs: routeOptions },
         );
         // The confirmed dialog preference IS the loop's road character:
         // apply it to the live route inputs too, or the recompute through
@@ -1806,6 +1811,7 @@ export default function TripPlannerPage() {
       plannerParams,
       plannerRegion,
       renameWaypoint,
+      routeOptions,
       selectedDayIndex,
       setGenerating,
     ],

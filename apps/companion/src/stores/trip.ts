@@ -230,6 +230,14 @@ interface TripState {
   setGenerating: (generating: boolean) => void;
   /** Set routeDirty to true. Called by user-facing controls that change routing inputs. */
   markRouteDirty: () => void;
+  /**
+   * Day-scoped dirty: stales ONLY the given day's preview (by index).
+   * For inputs that affect a single day (e.g. a LEG override) — the
+   * global variant would stale every routable day, and since live
+   * routing only reroutes the selected day, the others would wedge the
+   * Save gate until each was visited.
+   */
+  markDayRouteDirty: (dayIndex: number) => void;
   /** Mirror the planner controls' parameters for context-menu draft creation. */
   setDraftPlannerParameters: (parameters: TripParameters) => void;
 
@@ -741,6 +749,28 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           )
           .map((d) => d.dayNumber),
       })),
+    markDayRouteDirty: (dayIndex) =>
+      set((s) => {
+        const day = s.activeTrip?.days[dayIndex];
+        const routable =
+          day &&
+          filterRoutingWaypoints(normalizeDayFinish(day.waypoints)).length >= 2;
+        return {
+          routeDirty: true,
+          ...(s.splitStatus === "split"
+            ? { splitStatus: "stale" as SplitStatus }
+            : {}),
+          // Same routability rule as markRouteDirty: never stale a day the
+          // live hook can't re-route, or the flag wedges the Save gate.
+          ...(routable
+            ? {
+                stalePreviewDays: s.stalePreviewDays.includes(day.dayNumber)
+                  ? s.stalePreviewDays
+                  : [...s.stalePreviewDays, day.dayNumber],
+              }
+            : {}),
+        };
+      }),
     setDraftPlannerParameters: (parameters) =>
       set({ draftPlannerParameters: parameters }),
 

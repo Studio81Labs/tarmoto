@@ -549,6 +549,42 @@ describe("plannerApi.draftRoundtrip (revision 3 §E)", () => {
     expect(result.vias.at(-1)).toMatchObject({ name: "Turnaround" });
   });
 
+  it("measures the loop under the sidebar avoids, dialog preference winning", async () => {
+    // Without the avoids the sizing/vias would come from roads the rider
+    // disabled, and the post-draft live reroute (which applies them)
+    // would diverge from the confirmed loop.
+    mockLoopDistances([250]);
+    zonesMock.mockResolvedValue([] as never);
+
+    await createPlannerApi().draftRoundtrip(start, {
+      distanceKm: 250,
+      direction: "E",
+      preference: "maximum_twisty",
+      prefs: {
+        avoid_highways: true,
+        avoid_tolls: true,
+        avoid_unpaved: false,
+        preference: "direct",
+      },
+    });
+
+    const request = routeMock.mock.calls[0]![0] as {
+      options?: {
+        avoid_highways?: boolean;
+        avoid_tolls?: boolean;
+        avoid_unpaved?: boolean;
+        preference?: string;
+      };
+    };
+    expect(request.options).toMatchObject({
+      avoid_highways: true,
+      avoid_tolls: true,
+      avoid_unpaved: false,
+      // The dialog's choice overrides the trip-wide preference in prefs.
+      preference: "maximum_twisty",
+    });
+  });
+
   it("re-scales the loop once when the first measure lands far from target", async () => {
     mockLoopDistances([120, 240]);
     zonesMock.mockResolvedValue([] as never);

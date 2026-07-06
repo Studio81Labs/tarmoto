@@ -295,6 +295,7 @@ type TripStoreSnapshot = {
   removeDay: (index: number) => void;
   relinkDayStart: (index: number) => void;
   markRouteDirty: () => void;
+  markDayRouteDirty: (dayIndex: number) => void;
   draftPlannerParameters: TripParameters | null;
   setDraftPlannerParameters: (parameters: TripParameters) => void;
   focusSegment: (segmentId: string | null) => void;
@@ -487,6 +488,7 @@ describe("TripPlannerPage", () => {
       removeDay: vi.fn(),
       relinkDayStart: vi.fn(),
       markRouteDirty: vi.fn(),
+      markDayRouteDirty: vi.fn(),
       setDraftPlannerParameters: vi.fn(),
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
@@ -1039,6 +1041,10 @@ describe("TripPlannerPage", () => {
       screen.getAllByRole("button", { name: "Road type for this leg" })[0]!,
     );
     fireEvent.click(screen.getByRole("button", { name: "Maximum twisty" }));
+    // A leg edit stales its OWN day only — the global dirty would wedge
+    // the Save gate on days live routing never revisits.
+    expect(storeState.markDayRouteDirty).toHaveBeenCalledWith(0);
+    expect(storeState.markRouteDirty).not.toHaveBeenCalled();
     const firstLegButton = () =>
       screen.getAllByRole("button", { name: "Road type for this leg" })[0]!;
     expect(firstLegButton()).toHaveTextContent("Maximum twisty");
