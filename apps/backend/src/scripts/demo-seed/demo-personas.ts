@@ -43,6 +43,14 @@ export interface DemoPersona {
   tripCount: number;
   /** Emails of other personas this persona follows. */
   follows: string[];
+  /**
+   * When set, this persona's rides and trips come from real recorded Calimoto
+   * GPX (`real-demo-rides.data.ts`) instead of synthetic random-walk geometry,
+   * so the companion shows real routes. `rideCount`/`tripCount` must equal the
+   * data-module lengths (asserted in `demo-personas.spec.ts`); the other counts
+   * (hazards/reviews/roads/…) still seed synthetically around `home`.
+   */
+  useRealGpx?: boolean;
 }
 
 /**
@@ -169,5 +177,30 @@ export const DEMO_PERSONAS: DemoPersona[] = [
       'road.hunter@tarmoto.app',
       'trip.planner@tarmoto.app',
     ],
+  },
+  {
+    email: 'brno.rider@tarmoto.app',
+    display_name: 'Bára Brno',
+    bio: 'Moravian backroads from my doorstep in Zbýšov. Every route here is a ride I actually rode.',
+    subscription_tier: 'premium',
+    home_region: 'Brno, CZ',
+    // Zbýšov u Brna — the hub most of the real rides start/end at.
+    home: { lat: 49.1449, lng: 16.3953 },
+    // Covers the ~2-year span of the real GPX history (the seeder rebases the
+    // real ride dates so the newest lands ~today).
+    joinedDaysAgo: 850,
+    bikes: [{ make: 'Kawasaki', model: 'Z900', year: 2022 }],
+    // Real recorded rides + planned trips from Calimoto GPX exports
+    // (`real-demo-rides.data.ts`). rideCount/tripCount MUST equal the data
+    // lengths — asserted in the spec.
+    useRealGpx: true,
+    rideCount: 67,
+    baseRideKm: 50, // cosmetic; real rides carry their own distance
+    roadsRiddenCount: 30,
+    hazardCount: 4,
+    reviewCount: 8,
+    sharedRideCount: 10,
+    tripCount: 4,
+    follows: ['road.hunter@tarmoto.app', 'weekend.warrior@tarmoto.app'],
   },
 ];

@@ -73,6 +73,9 @@ async function main(): Promise<void> {
     console.log('  road.hunter@tarmoto.app     — power user, pro, gold badges');
     console.log('  trip.planner@tarmoto.app    — multi-day trips, premium');
     console.log('  community.scout@tarmoto.app — hazards & reviews, premium');
+    console.log(
+      '  brno.rider@tarmoto.app      — real recorded rides + trips, premium',
+    );
   } finally {
     await app.close();
   }
