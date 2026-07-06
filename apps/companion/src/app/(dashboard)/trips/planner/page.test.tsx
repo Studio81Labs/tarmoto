@@ -755,6 +755,37 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
+  // The exits are visible from the moment the planner opens \u2014 a rider
+  // shouldn't need to draw a route first to find the way out.
+  it("offers Reset and Discard on a fresh planner before any route exists", () => {
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
+  });
+
+  // Reset means "start from empty" — it only applies to a not-yet-saved
+  // draft. Once the trip is persisted (server binding) the toolbar
+  // offers Discard only.
+  it("hides Reset once the trip is persisted", () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    // Hydration failing is fine — the id stays bound either way.
+    tripsApiGetMock.mockRejectedValue(new Error("offline"));
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    expect(
+      screen.queryByRole("button", { name: "Reset" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
+  });
+
   // Reset/Discard confirm through the app-styled ConfirmDialog — the
   // planner never opens system dialogs (they block the whole tab).
   it("Reset clears the working trip after in-app confirmation", () => {
@@ -2629,8 +2660,10 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    // Post-split header: "N days · <total> km" (revision 2 §C).
-    expect(screen.getByText(/2 days · 240 km/)).toBeInTheDocument();
+    // Post-split header meta: day count + total distance segments
+    // (revision 2 §C; icon-per-segment layout).
+    expect(screen.getAllByText("2 days").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("240 km").length).toBeGreaterThan(0);
   });
 
   it("expanding Plan as multi-day trip is the day-planning opt-in", () => {
