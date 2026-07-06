@@ -27,7 +27,10 @@ export type TripActivityAction =
   | 'suggestion_voted'
   | 'suggestion_vote_removed'
   | 'suggestion_accepted'
-  | 'suggestion_rejected';
+  | 'suggestion_rejected'
+  | 'suggestion_reopened'
+  | 'member_removed'
+  | 'member_role_changed';
 
 @Entity('trip_activity')
 @Index('idx_trip_activity_trip', ['trip_id', 'created_at'])

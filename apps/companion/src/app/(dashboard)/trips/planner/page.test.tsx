@@ -1432,7 +1432,7 @@ describe("TripPlannerPage", () => {
           {
             user_id: "u-member",
             display_name: "Member",
-            role: "member",
+            role: "viewer",
             joined_at: "2026-04-23T09:15:00Z",
           },
         ],
@@ -1481,7 +1481,7 @@ describe("TripPlannerPage", () => {
           {
             user_id: "u-admin",
             display_name: "Admin",
-            role: "admin",
+            role: "editor",
             joined_at: "2026-04-23T09:15:00Z",
           },
         ],
@@ -1697,6 +1697,17 @@ describe("TripPlannerPage", () => {
       "",
       "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
     );
+    // Route saves are role-gated now — resolve the caller as the owner.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Failing trip", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
     storeState.activeTrip = {
       ...activeTrip,
       id: "11111111-2222-4333-8444-666666666666",
@@ -1709,6 +1720,10 @@ describe("TripPlannerPage", () => {
         <TripPlannerPage />
         <ToastHost />
       </>,
+    );
+    // The role-gated Save arms once the caller resolves as the owner.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
@@ -1790,9 +1805,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: /Best fit/ })).toBeDisabled();
   });
 
-  it("skips the metadata PATCH when the caller is a plain member", async () => {
-    // PATCH /trips/:id is owner/admin-only while route saves are
-    // any-member — a member's Save route must not fail on a 403.
+  it("locks route saves and metadata for viewers", async () => {
+    // Viewers are read-and-comment only: PUT /trips/:id/route 403s on
+    // the backend, so the planner must not let them build a route
+    // locally and then fail a Save with a generic error.
     window.history.replaceState(
       {},
       "",
@@ -1804,7 +1820,7 @@ describe("TripPlannerPage", () => {
       accessToken: "test-access-token",
     });
     tripsApiGetMock.mockResolvedValue({
-      data: buildTripDetail("Member trip", {
+      data: buildTripDetail("Viewer trip", {
         id: "11111111-2222-4333-8444-777777777777",
         members: [
           {
@@ -1816,7 +1832,7 @@ describe("TripPlannerPage", () => {
           {
             user_id: "u-member",
             display_name: "M",
-            role: "member",
+            role: "viewer",
             joined_at: "2026-04-23T09:15:00Z",
           },
         ],
@@ -1832,22 +1848,22 @@ describe("TripPlannerPage", () => {
         "11111111-2222-4333-8444-777777777777",
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
-    await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+    // Save route is disabled — even with a dirty route — so the click
+    // is a no-op and no doomed PUT fires.
+    const saveButton = screen.getByRole("button", { name: "Save route" });
+    expect(saveButton).toBeDisabled();
+    fireEvent.click(saveButton);
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
     expect(tripsApiUpdateMock).not.toHaveBeenCalled();
-    // And the rename affordance is not offered — a member's rename
-    // could never persist, so the header title is read-only.
-    expect(screen.getByRole("button", { name: /Saved route/ })).toBeDisabled();
 
-    // The trip-wide road character is owner metadata: locked for
-    // members (their per-leg overrides still persist via the save).
+    // The trip-wide road character is owner/editor metadata: locked.
     fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
     expect(screen.getByRole("button", { name: /^Direct/ })).toBeDisabled();
     expect(
       screen.getByText(/road character is set by the trip owner/),
     ).toBeInTheDocument();
-    // Min quality is owner metadata too.
+    // Min quality is owner/editor metadata too.
     expect(screen.getByLabelText("Minimum road quality")).toBeDisabled();
   });
 
@@ -2150,11 +2166,39 @@ describe("TripPlannerPage", () => {
       "",
       `/trips/planner?tripId=${serverTripId}`,
     );
+    // Route saves are role-gated: resolve the caller as an editor.
+    useAuthStore.setState({
+      user: { id: "u-member", email: "m@example.com", displayName: "M" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Joined trip", {
+        id: serverTripId,
+        members: [
+          {
+            user_id: "u-owner",
+            display_name: "Owner",
+            role: "owner",
+            joined_at: "2026-04-23T09:00:00Z",
+          },
+          {
+            user_id: "u-member",
+            display_name: "M",
+            role: "editor",
+            joined_at: "2026-04-23T09:15:00Z",
+          },
+        ],
+      }),
+    } as never);
     storeState.activeTrip = { ...activeTrip, id: serverTripId };
     storeState.routeDirty = true;
 
     render(<TripPlannerPage />);
 
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
     await waitFor(() =>

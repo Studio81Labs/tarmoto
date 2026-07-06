@@ -9,6 +9,7 @@ import type { RideStats } from '../../../../entities/ride-stats.entity.js';
 import type { Trip } from '../../../../entities/trip.entity.js';
 import type { TripDay } from '../../../../entities/trip-day.entity.js';
 import type { TripMember } from '../../../../entities/trip-member.entity.js';
+import type { TripInvite } from '../../../../entities/trip-invite.entity.js';
 import type { RoadReview } from '../../../../entities/road-review.entity.js';
 import type { HazardReport } from '../../../../entities/hazard-report.entity.js';
 import type { UserBadge } from '../../../../entities/user-badge.entity.js';
@@ -29,6 +30,10 @@ export interface BundleRepos {
   trips: Pick<Repository<Trip>, 'find'>;
   tripDays: Pick<Repository<TripDay>, 'find'>;
   tripMembers: Pick<Repository<TripMember>, 'find'>;
+  // Pending trip invites are keyed by EMAIL (no user FK), so the rows
+  // addressed to the exporting rider are personal data the Article 15
+  // bundle must include.
+  tripInvites: Pick<Repository<TripInvite>, 'find'>;
   reviews: Pick<Repository<RoadReview>, 'find'>;
   hazards: Pick<Repository<HazardReport>, 'find'>;
   badges: Pick<Repository<UserBadge>, 'find'>;
@@ -72,6 +77,7 @@ export class BundleAssembler {
       rideTagEvents,
       bikes,
       userNotifications,
+      pendingTripInvites,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -97,6 +103,10 @@ export class BundleAssembler {
       this.repos.userNotifications.find({
         where: { user_id: userId },
         order: { created_at: 'DESC' },
+      }),
+      this.repos.tripInvites.find({
+        where: { email: user.email.toLowerCase() },
+        order: { created_at: 'ASC' },
       }),
     ]);
 
@@ -137,7 +147,16 @@ export class BundleAssembler {
     });
     archive.append(json({ rides, stats: rideStats }), { name: 'rides.json' });
     archive.append(
-      json({ trips, days: visibleDays, memberships: tripMembers }),
+      json({
+        trips,
+        days: visibleDays,
+        memberships: tripMembers,
+        // Live join codes are credentials — export the invite facts
+        // without turning the bundle into a way into the trip.
+        pending_invites: pendingTripInvites.map(
+          ({ invite_code: _code, ...rest }) => rest,
+        ),
+      }),
       { name: 'trips.json' },
     );
     archive.append(json(reviews), { name: 'reviews.json' });

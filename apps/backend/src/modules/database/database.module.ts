@@ -71,6 +71,8 @@ import { AddRoadSegmentWayKeyIndex1790000000000 } from '../../migrations/1790000
 import { AddRoadSegmentDeactivatedAt1791000000000 } from '../../migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from '../../migrations/1792000000000-AddTripDayLegPreferences.js';
 import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations/1793000000000-AddPoiDecisionSupportFields.js';
+import { AddTripCollaboratorRoles1793000000000 } from '../../migrations/1793000000000-AddTripCollaboratorRoles.js';
+import { DropTripWideInviteCode1794000000000 } from '../../migrations/1794000000000-DropTripWideInviteCode.js';
 import { AddTierFeatureEntitlements1795000000000 } from '../../migrations/1795000000000-AddTierFeatureEntitlements.js';
 import { SwapTierNamesAddLaunchMode1796000000000 } from '../../migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
 import {
@@ -102,6 +104,8 @@ import {
   TripSuggestion,
   TripSuggestionVote,
   TripMessage,
+  TripActivity,
+  TripInvite,
   UserFollow,
   UserBadge,
   Challenge,
@@ -162,6 +166,8 @@ const entities = [
   TripSuggestion,
   TripSuggestionVote,
   TripMessage,
+  TripActivity,
+  TripInvite,
   UserFollow,
   UserBadge,
   Challenge,
@@ -289,6 +295,8 @@ const entities = [
             AddRoadSegmentDeactivatedAt1791000000000,
             AddTripDayLegPreferences1792000000000,
             AddPoiDecisionSupportFields1793000000000,
+            AddTripCollaboratorRoles1793000000000,
+            DropTripWideInviteCode1794000000000,
             AddTierFeatureEntitlements1795000000000,
             SwapTierNamesAddLaunchMode1796000000000,
           ],

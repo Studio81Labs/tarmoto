@@ -5,6 +5,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from './trip-shares.service.js';
@@ -14,6 +16,8 @@ describe('TripSharesService', () => {
   let repo: Partial<jest.Mocked<Repository<TripShare>>>;
   let tripRepo: Partial<jest.Mocked<Repository<Trip>>>;
   let memberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
+  let inviteRepo: Partial<jest.Mocked<Repository<TripInvite>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
 
   const mockShare = {
@@ -49,6 +53,13 @@ describe('TripSharesService', () => {
         invite_code: 'ABCDEFGH',
       }),
     };
+    inviteRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+    userRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
     memberRepo = {
       findOne: jest.fn().mockResolvedValue({
         trip_id: 'trip-1',
@@ -68,6 +79,8 @@ describe('TripSharesService', () => {
         { provide: getRepositoryToken(TripShare), useValue: repo },
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: getRepositoryToken(TripInvite), useValue: inviteRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: TripActivityService, useValue: activity },
       ],
     }).compile();
@@ -132,13 +145,13 @@ describe('TripSharesService', () => {
       expect(memberRepo.save).toHaveBeenCalledWith({
         trip_id: 'trip-1',
         user_id: 'user-2',
-        role: 'member',
+        role: 'viewer',
       });
       expect(activity.recordSafe).toHaveBeenCalledWith(
         'trip-1',
         'user-2',
         'member_joined',
-        { source: 'trip_share' },
+        { source: 'trip_share', role: 'viewer' },
       );
       expect(
         JSON.stringify(activity.recordSafe.mock.calls[0]?.[3]),
@@ -157,7 +170,7 @@ describe('TripSharesService', () => {
       (memberRepo.findOne as jest.Mock).mockResolvedValueOnce({
         trip_id: 'trip-1',
         user_id: 'user-2',
-        role: 'member',
+        role: 'viewer',
       });
 
       const result = await service.joinByToken('user-2', 'a'.repeat(32));

@@ -10,6 +10,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, LessThanOrEqual, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
 import {
   AccountDeletionLog,
   type AccountDeletionEvent,
@@ -362,6 +363,14 @@ export class AccountDeletionService {
         // postponed. Skip the audit and leave the row intact.
         return false;
       }
+
+      // Pending trip invites are keyed by EMAIL, not user_id — no FK
+      // cascade reaches them, so purge them explicitly or the address
+      // outlives the account (invites the user SENT are detached by the
+      // `invited_by` ON DELETE SET NULL rule instead).
+      await manager.delete(TripInvite, {
+        email: user.email.toLowerCase(),
+      });
 
       const log = manager.create(AccountDeletionLog, {
         user_id: user.id,

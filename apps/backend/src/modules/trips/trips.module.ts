@@ -9,6 +9,7 @@ import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -38,6 +39,7 @@ import { TripCollabService } from './trip-collab.service.js';
       TripSuggestion,
       TripSuggestionVote,
       TripMessage,
+      TripInvite,
       RoadSegment,
       RouteCollectionItem,
       User,

@@ -1342,6 +1342,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/{tripId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Collaborator roster: joined members + pending invites
+         * @description Any member can list the roster. Emails and the pending-invite list are only included when the caller is the owner or an editor — viewers get names and roles only.
+         */
+        get: operations["TripsController_listCollaborators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{tripId}/members/{memberUserId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a member from the trip (owner only)
+         * @description Revokes access from now on; the removed rider’s past suggestions, votes, and messages stay in the history.
+         */
+        delete: operations["TripsController_removeMember"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a member's role (owner only)
+         * @description Switch a collaborator between `editor` and `viewer`. The owner role is fixed — it cannot be assigned or removed.
+         */
+        patch: operations["TripsController_updateMemberRole"];
+        trace?: never;
+    };
+    "/api/v1/trips/{tripId}/invites/{inviteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw a pending email invite (owner only)
+         * @description Deletes the pending invite; the personal invite code in the already-sent mail stops working immediately.
+         */
+        delete: operations["TripsController_revokeInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community/trips/{tripId}": {
         parameters: {
             query?: never;
@@ -1392,7 +1456,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a suggestion
-         * @description Authors can always delete their own; trip owners/admins can delete any suggestion.
+         * @description Authors can always delete their own; the trip owner can delete any suggestion.
          */
         delete: operations["TripCollabController_deleteSuggestion"];
         options?: never;
@@ -1410,8 +1474,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept a suggestion (owner/admin only)
-         * @description Marks the suggestion as `accepted`. Only privileged roles may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
+         * Accept a suggestion (owner only)
+         * @description Marks the suggestion as `accepted`. Only the trip owner may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
          */
         post: operations["TripCollabController_acceptSuggestion"];
         delete?: never;
@@ -1429,8 +1493,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reject a suggestion (owner/admin only) */
+        /** Reject a suggestion (owner only) */
         post: operations["TripCollabController_rejectSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{tripId}/suggestions/{suggestionId}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen a resolved suggestion (owner only)
+         * @description Flips an `accepted`/`rejected` suggestion back to `open` so the group can keep voting and the owner can re-decide. Reopening an already-open row returns 400.
+         */
+        post: operations["TripCollabController_reopenSuggestion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4349,7 +4433,7 @@ export interface components {
             user_id: string;
             display_name: string;
             /** @enum {string} */
-            role: "owner" | "admin" | "member";
+            role: "owner" | "editor" | "viewer";
             joined_at: string;
         };
         TripWaypointDto: {
@@ -4408,7 +4492,6 @@ export interface components {
             min_quality: number;
             /** @enum {string} */
             road_preference: "curvy" | "scenic" | "fast" | "mixed";
-            invite_code: string;
             members: components["schemas"]["TripMemberDto"][];
             days: components["schemas"]["TripDayDto"][];
         };
@@ -4532,7 +4615,7 @@ export interface components {
             options: components["schemas"]["TripGenerationOptionDto"][];
         };
         JoinTripDto: {
-            /** @description Short uppercase invite code shown to the trip owner. Case-insensitive on input — server normalizes to uppercase. */
+            /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
         };
         InviteTripDto: {
@@ -4543,10 +4626,51 @@ export interface components {
             email: string;
             /** @description Optional personal note from the inviter, rendered into the email body verbatim (HTML-escaped). Capped at 500 chars to keep the mail readable on small screens. */
             message?: string;
+            /**
+             * @description Role the invitee receives when they accept. Defaults to `editor` (they are being invited by name, unlike anonymous link-joiners who start as `viewer`).
+             * @enum {string}
+             */
+            role?: "editor" | "viewer";
         };
         InviteTripResponseDto: {
             /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
             status: string;
+        };
+        TripCollaboratorMemberDto: {
+            user_id: string;
+            display_name: string;
+            /** @description Only present when the caller is the trip owner or an editor; viewers get `null` so the roster does not leak addresses. */
+            email: string | null;
+            avatar_url: string | null;
+            /** @enum {string} */
+            role: "owner" | "editor" | "viewer";
+            joined_at: string;
+            /**
+             * @description Collaborator state discriminator — members are always `joined`; pending email invitees appear in `invites` with state `invited`.
+             * @enum {string}
+             */
+            state: "joined";
+        };
+        TripPendingInviteDto: {
+            id: string;
+            email: string;
+            /** @enum {string} */
+            role: "editor" | "viewer";
+            created_at: string;
+            /** @enum {string} */
+            state: "invited";
+        };
+        TripCollaboratorsDto: {
+            members: components["schemas"]["TripCollaboratorMemberDto"][];
+            /** @description Pending email invites — visible to the owner and editors only; empty array for viewers. */
+            invites: components["schemas"]["TripPendingInviteDto"][];
+        };
+        UpdateTripMemberRoleDto: {
+            /**
+             * @description New role for the member. `editor` can edit the route, propose suggestions, and vote; `viewer` can view the trip and comment only.
+             * @enum {string}
+             */
+            role: "editor" | "viewer";
         };
         PublicTripDetailDto: {
             id: string;
@@ -4628,7 +4752,7 @@ export interface components {
             actor_id: string | null;
             actor_name: string | null;
             /** @enum {string} */
-            action: "member_joined" | "member_left" | "member_invited" | "trip_updated" | "trip_generated" | "suggestion_created" | "suggestion_deleted" | "suggestion_voted" | "suggestion_vote_removed" | "suggestion_accepted" | "suggestion_rejected";
+            action: "member_joined" | "member_left" | "member_invited" | "trip_updated" | "trip_generated" | "suggestion_created" | "suggestion_deleted" | "suggestion_voted" | "suggestion_vote_removed" | "suggestion_accepted" | "suggestion_rejected" | "suggestion_reopened" | "member_removed" | "member_role_changed";
             /** @description Action-specific structured payload. Shape depends on `action`. */
             payload: Record<string, never>;
             created_at: string;
@@ -5891,6 +6015,10 @@ export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripR
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
+export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
+export type SchemaTripPendingInviteDto = components['schemas']['TripPendingInviteDto'];
+export type SchemaTripCollaboratorsDto = components['schemas']['TripCollaboratorsDto'];
+export type SchemaUpdateTripMemberRoleDto = components['schemas']['UpdateTripMemberRoleDto'];
 export type SchemaPublicTripDetailDto = components['schemas']['PublicTripDetailDto'];
 export type SchemaSuggestionDto = components['schemas']['SuggestionDto'];
 export type SchemaCreateSuggestionDto = components['schemas']['CreateSuggestionDto'];
@@ -8277,6 +8405,144 @@ export interface operations {
             };
         };
     };
+    TripsController_listCollaborators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripCollaboratorsDto"];
+                };
+            };
+            /** @description Trip not found or not a member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripsController_removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                memberUserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not the owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Trip or member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripsController_updateMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                memberUserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTripMemberRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripCollaboratorsDto"];
+                };
+            };
+            /** @description Caller is not the owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Trip or member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripsController_revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                inviteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invite revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not the owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Trip or invite not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CommunityTripsController_getPublicDetail: {
         parameters: {
             query?: never;
@@ -8419,7 +8685,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not owner or admin */
+            /** @description Not the trip owner */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8455,7 +8721,43 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not owner or admin */
+            /** @description Not the trip owner */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Suggestion not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripCollabController_reopenSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                suggestionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionDto"];
+                };
+            };
+            /** @description Not the trip owner */
             403: {
                 headers: {
                     [name: string]: unknown;

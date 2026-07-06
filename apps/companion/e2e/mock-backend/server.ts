@@ -1571,6 +1571,33 @@ export function buildApp(): Express {
     },
   );
 
+  // ── Trip collaborators (People tab roster) ───────────────────────
+  app.get(
+    "/api/v1/trips/:id/members",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const tripId = param(req, "id");
+      const trip = state.trips.get(tripId);
+      if (!trip) {
+        res.status(404).json({ message: "Trip not found" });
+        return;
+      }
+      const members = trip.members.map((userId) => {
+        const user = state.users.get(userId);
+        return {
+          user_id: userId,
+          display_name: user?.display_name ?? "Rider",
+          email: user?.email ?? null,
+          avatar_url: null,
+          role: userId === trip.owner_id ? "owner" : "editor",
+          joined_at: trip.created_at,
+          state: "joined",
+        };
+      });
+      res.json({ members, invites: [] });
+    },
+  );
+
   // ── Trip shares ───────────────────────────────────────────────────
   app.post("/api/v1/trip-shares", requireAuth, (req: AuthedRequest, res) => {
     const id = randomUUID();

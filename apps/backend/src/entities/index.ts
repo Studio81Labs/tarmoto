@@ -34,6 +34,7 @@ export { MapShare } from './map-share.entity.js';
 export { TripSuggestion } from './trip-suggestion.entity.js';
 export { TripSuggestionVote } from './trip-suggestion-vote.entity.js';
 export { TripMessage } from './trip-message.entity.js';
+export { TripInvite } from './trip-invite.entity.js';
 export { TripActivity } from './trip-activity.entity.js';
 export { UserFollow } from './user-follow.entity.js';
 export { UserBadge } from './user-badge.entity.js';

@@ -106,7 +106,6 @@ function buildDetail(
     daily_km_max: 300,
     min_quality: 4,
     road_preference: "scenic",
-    invite_code: "ABCDEFGH",
     members: [
       {
         user_id: "owner-1",
@@ -351,7 +350,7 @@ describe("TripDetailPage — member-role gating", () => {
 
     expect(screen.queryByText("Invite riders")).not.toBeInTheDocument();
     expect(
-      screen.queryByText(/or share a group link/i),
+      screen.queryByText(/open collaborate & invite/i),
     ).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("tab", { name: /collaborate/i }));
@@ -362,7 +361,7 @@ describe("TripDetailPage — member-role gating", () => {
     });
   });
 
-  it("shows trip invite controls for admins", async () => {
+  it("shows trip invite controls for editors", async () => {
     primeStores("member-1");
     tripsApiGetMock.mockResolvedValue({
       data: buildDetail({
@@ -376,7 +375,7 @@ describe("TripDetailPage — member-role gating", () => {
           {
             user_id: "member-1",
             display_name: "Eve",
-            role: "admin",
+            role: "editor",
             joined_at: "2026-04-24T11:00:00.000Z",
           },
         ],
@@ -388,7 +387,7 @@ describe("TripDetailPage — member-role gating", () => {
     fireEvent.click(screen.getByRole("tab", { name: /members/i }));
 
     expect(await screen.findByText("Invite riders")).toBeInTheDocument();
-    expect(screen.getByText(/or share a group link/i)).toBeInTheDocument();
+    expect(screen.getByText(/open collaborate & invite/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
         expect.objectContaining({ canCreateInviteLink: true }),

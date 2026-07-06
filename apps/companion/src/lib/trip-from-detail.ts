@@ -26,7 +26,6 @@ export interface TripDetailResponse {
   daily_km_max: number;
   min_quality: number;
   road_preference: string;
-  invite_code: string;
   members: TripDetailMember[];
   days: TripDetailDay[];
   /**
@@ -53,7 +52,7 @@ export interface TripDetailResponse {
 export interface TripDetailMember {
   user_id: string;
   display_name: string;
-  role: string; // 'owner' | 'admin' | 'member'
+  role: string; // 'owner' | 'editor' | 'viewer'
   joined_at: string;
 }
 
@@ -343,6 +342,7 @@ function mapMemberRoleToCollaboratorRole(
   role: string,
 ): "owner" | "editor" | "viewer" {
   if (role === "owner") return "owner";
-  if (role === "admin") return "editor";
+  // 'admin' is the pre-1793 name for 'editor'; accept both.
+  if (role === "editor" || role === "admin") return "editor";
   return "viewer";
 }

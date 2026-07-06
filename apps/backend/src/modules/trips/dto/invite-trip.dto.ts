@@ -1,6 +1,16 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  ASSIGNABLE_TRIP_ROLES,
+  type AssignableTripRole,
+} from './collaborators.dto.js';
 
 export class InviteTripDto {
   @ApiProperty({
@@ -30,6 +40,18 @@ export class InviteTripDto {
   @IsString()
   @MaxLength(500)
   message?: string;
+
+  @ApiProperty({
+    required: false,
+    enum: ASSIGNABLE_TRIP_ROLES,
+    description:
+      'Role the invitee receives when they accept. Defaults to `editor` ' +
+      '(they are being invited by name, unlike anonymous link-joiners ' +
+      'who start as `viewer`).',
+  })
+  @IsOptional()
+  @IsIn(ASSIGNABLE_TRIP_ROLES)
+  role?: AssignableTripRole;
 }
 
 export class InviteTripResponseDto {

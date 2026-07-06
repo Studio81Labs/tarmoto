@@ -21,7 +21,7 @@ export const TRIP_ROAD_PREFERENCES = [
 ] as const;
 export type TripRoadPreference = (typeof TRIP_ROAD_PREFERENCES)[number];
 
-export const TRIP_MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
+export const TRIP_MEMBER_ROLES = ['owner', 'editor', 'viewer'] as const;
 export type TripMemberRole = (typeof TRIP_MEMBER_ROLES)[number];
 
 export const TRIP_WAYPOINT_TYPES = [
@@ -222,9 +222,6 @@ export class TripDetailDto extends TripSummaryDto {
   @ApiProperty({ enum: TRIP_ROAD_PREFERENCES })
   road_preference!: TripRoadPreference;
 
-  @ApiProperty()
-  invite_code!: string;
-
   @ApiProperty({ type: [TripMemberDto] })
   members!: TripMemberDto[];
 
@@ -239,7 +236,7 @@ export class TripDetailDto extends TripSummaryDto {
  * of {@link TripSummaryDto}/{@link TripDetailDto}) so sensitive owner-only
  * fields can never leak by inheritance — only the fields listed here are ever
  * sent. Notably excluded:
- *  - `invite_code` — the join secret; exposing it would let any viewer silently
+ *  - personal invite codes — join secrets; exposing them would let any viewer silently
  *    become a trip member.
  *  - the `members[]` roster — non-members get the aggregate `member_count` and
  *    (when permitted) the owner's name only, not rider identities.

@@ -3,13 +3,15 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripSharesController } from './trip-shares.controller.js';
 import { TripSharesService } from './trip-shares.service.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TripShare, Trip, TripMember]),
+    TypeOrmModule.forFeature([TripShare, Trip, TripMember, TripInvite, User]),
     TripActivityModule,
   ],
   controllers: [TripSharesController],

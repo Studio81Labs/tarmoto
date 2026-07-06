@@ -13,6 +13,7 @@ import {
 import { EmailService } from '../email/email.service.js';
 import { User } from '../../entities/user.entity.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
+import { TripInvite } from '../../entities/trip-invite.entity.js';
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
@@ -338,6 +339,11 @@ describe('AccountDeletionService', () => {
           }),
         }),
       );
+      // Pending trip invites are keyed by email — no FK cascade reaches
+      // them, so the purge must delete them explicitly.
+      expect(txManager.delete).toHaveBeenCalledWith(TripInvite, {
+        email: 'rider@tarmoto.app',
+      });
       expect(txManager.save).toHaveBeenCalledWith(
         AccountDeletionLog,
         expect.objectContaining({
