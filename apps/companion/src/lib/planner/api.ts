@@ -8,6 +8,7 @@ import {
   type RouteRequestBody,
   type RouteResponse,
   type RoutePoiSuggestion,
+  type StoredPoiSuggestion,
   type UserRoutePrefsWire,
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
@@ -37,6 +38,8 @@ import type {
   PlannerApi,
   PlannerPoi,
   PlannerPoiType,
+  Poi,
+  PoiCategory,
   RoadPreview,
   RoundtripOptions,
   RouteQualitySummary,
@@ -151,6 +154,105 @@ function accommodationToPlannerPoi(stay: AccommodationSuggestion): PlannerPoi {
     lng: stay.lng,
     distanceFromRouteKm: stay.distance_km,
   };
+}
+
+// ── Category POIs (map-top bar, revision 4 §B) ──
+// The OSM-backed categories now read the offline `pois` store via
+// `/poi/in-bbox` (#856). `mountain_pass` (seasonal-pass source) and
+// `twisty_highlight` (Tarmoto curviness layer) are NOT in that store and stay
+// on their own source until wired — see `getPoisByCategories`.
+
+/** Companion category → the store `kind`s that back it (OSM categories only). */
+const STORE_KINDS_BY_CATEGORY: Partial<Record<PoiCategory, string[]>> = {
+  fuel: ["fuel_station"],
+  food: ["restaurant", "fast_food", "ice_cream"],
+  cafe: ["cafe"],
+  viewpoint: ["viewpoint"],
+  campground: ["camp_site"],
+  biker_hotel: [
+    "hotel",
+    "motel",
+    "guest_house",
+    "hostel",
+    "chalet",
+    "apartment",
+  ],
+};
+
+/** Reverse map: store `kind` → the companion category it renders under. */
+const CATEGORY_BY_STORE_KIND: Record<string, PoiCategory> = Object.entries(
+  STORE_KINDS_BY_CATEGORY,
+).reduce<Record<string, PoiCategory>>((acc, [category, kinds]) => {
+  for (const kind of kinds ?? []) acc[kind] = category as PoiCategory;
+  return acc;
+}, {});
+
+/** Categories not backed by the `pois` store — kept on their own source. */
+const NON_STORE_CATEGORIES: ReadonlySet<PoiCategory> = new Set<PoiCategory>([
+  "mountain_pass",
+  "twisty_highlight",
+]);
+
+function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
+  const category = CATEGORY_BY_STORE_KIND[poi.kind];
+  if (!category) return null;
+  return {
+    id: poi.id,
+    category,
+    source: "osm",
+    name: poi.name ?? "Unnamed",
+    lat: poi.lat,
+    lng: poi.lng,
+    meta: {
+      stars: poi.stars,
+      website: poi.website,
+      phone: poi.phone,
+      openingHours: poi.opening_hours,
+      addressCity: poi.address_city,
+      cuisine: poi.cuisine,
+      brand: poi.brand,
+      osmUrl: poi.osm_url,
+    },
+  };
+}
+
+async function fetchCategoryPois(
+  bbox: [number, number, number, number],
+  categories: PoiCategory[],
+  init?: { signal?: AbortSignal },
+): Promise<Poi[]> {
+  // bbox is [west, south, east, north] = [minLng, minLat, maxLng, maxLat].
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  const storeCategories = categories.filter(
+    (c) => !NON_STORE_CATEGORIES.has(c),
+  );
+  const nonStoreCategories = categories.filter((c) =>
+    NON_STORE_CATEGORIES.has(c),
+  );
+  const kinds = [
+    ...new Set(
+      storeCategories.flatMap((c) => STORE_KINDS_BY_CATEGORY[c] ?? []),
+    ),
+  ];
+
+  const [stored, others] = await Promise.all([
+    kinds.length > 0
+      ? poiApi
+          .getInBbox({ minLng, minLat, maxLng, maxLat, kinds }, init)
+          .then((res) =>
+            res.data.pois
+              .map(storedPoiToCategoryPoi)
+              .filter((p): p is Poi => p !== null),
+          )
+      : Promise.resolve<Poi[]>([]),
+    // mountain_pass / twisty_highlight aren't OSM — keep the mock source until
+    // the passes API + curviness layer are wired (#849 follow-up).
+    nonStoreCategories.length > 0
+      ? Promise.resolve(mockPoisByCategories(bbox, nonStoreCategories))
+      : Promise.resolve<Poi[]>([]),
+  ]);
+
+  return [...stored, ...others];
 }
 
 async function fetchPois(
@@ -392,8 +494,8 @@ export function createPlannerApi(): PlannerApi {
       return fetchPois(route, types, init);
     },
 
-    getPoisByCategories(bbox, categories) {
-      return Promise.resolve(mockPoisByCategories(bbox, categories));
+    getPoisByCategories(bbox, categories, init) {
+      return fetchCategoryPois(bbox, categories, init);
     },
 
     getRouteStops(routeGeometry, categories, corridorKm, minStayRating) {
