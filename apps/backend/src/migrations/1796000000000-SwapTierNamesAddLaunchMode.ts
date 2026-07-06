@@ -8,9 +8,12 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *    naming is the other way around — `pro` = €29.99 mid tier,
  *    `premium` = €49.99 top tier. Existing rows swap values so every
  *    user keeps the plan (price point / feature set) they had.
- *    NOTE: Stripe products/prices use `pro`/`premium` lookup keys and the
- *    TARMOTO_STRIPE_{PREMIUM,PRO}_PRICE_ID env vars — those must be
- *    re-pointed to the matching amounts when billing goes live.
+ *    NOTE: the TARMOTO_STRIPE_{PREMIUM,PRO}_PRICE_ID env vars must be
+ *    re-pointed to the matching amounts when billing goes live. The
+ *    code resolves configured price IDs BEFORE Stripe lookup keys, so
+ *    correctly re-pointed env vars are sufficient even while lookup
+ *    keys still carry the pre-swap pairing — but migrate the lookup
+ *    keys too so the Stripe dashboard doesn't lie.
  *
  * 2. `users.plan_source` — tier provenance (`subscription` | `founder` |
  *    `promo` | `admin`); `founder` marks launch-mode auto-grants.
