@@ -178,6 +178,23 @@ export class TripSharesService {
     };
   }
 
+  /**
+   * Revoke every share of a trip created by one user. Called when the
+   * owner removes that member: their `trip_shares` rows would otherwise
+   * stay live — and invisible to the owner, who can only list/revoke
+   * shares by `owner_id` — so a removed editor's group link would keep
+   * admitting new riders after removal.
+   */
+  async revokeAllForTripMember(
+    tripId: string,
+    memberUserId: string,
+  ): Promise<void> {
+    await this.tripShareRepo.delete({
+      trip_id: tripId,
+      owner_id: memberUserId,
+    });
+  }
+
   async revoke(userId: string, id: string): Promise<void> {
     const share = await this.tripShareRepo.findOne({ where: { id } });
     if (!share) {

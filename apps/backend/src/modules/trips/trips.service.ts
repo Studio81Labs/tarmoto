@@ -1639,6 +1639,10 @@ export class TripsService {
     // at subscribe time, so without eviction an open planner would keep
     // receiving trip broadcasts until the next reconnect.
     await this.events.evictFromTrip(tripId, memberUserId);
+    // And revoke any group links the removed member created — they're
+    // owned by that user, so the trip owner can't see or revoke them,
+    // and they'd otherwise keep admitting new riders after removal.
+    await this.tripShares.revokeAllForTripMember(tripId, memberUserId);
     // Their past contributions (suggestions, votes, messages, activity)
     // stay — removal only revokes access from now on.
     await this.activity.recordSafe(tripId, userId, 'member_removed', {

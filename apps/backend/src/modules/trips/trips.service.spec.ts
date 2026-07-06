@@ -169,7 +169,9 @@ describe('TripsService', () => {
   let collectionItemRepo: jest.Mocked<Repository<RouteCollectionItem>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip' | 'evictFromTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
-  let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
+  let tripShares: jest.Mocked<
+    Pick<TripSharesService, 'findActiveByToken' | 'revokeAllForTripMember'>
+  >;
   let email: jest.Mocked<Pick<EmailService, 'sendTripInvite'>>;
   let config: jest.Mocked<Pick<ConfigService, 'get'>>;
   let privacy: jest.Mocked<
@@ -282,7 +284,10 @@ describe('TripsService', () => {
       evictFromTrip: jest.fn().mockResolvedValue(undefined),
     };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
-    tripShares = { findActiveByToken: jest.fn() };
+    tripShares = {
+      findActiveByToken: jest.fn(),
+      revokeAllForTripMember: jest.fn().mockResolvedValue(undefined),
+    };
     // Default: nobody is private, so owner identity is unmasked unless a test
     // opts in by returning a Set containing the owner id.
     privacy = {
@@ -1858,6 +1863,11 @@ describe('TripsService', () => {
       expect(memberRepo.delete).toHaveBeenCalledWith({ id: 'm-x' });
       // Live sockets are kicked from the trip room, not just future REST.
       expect(events.evictFromTrip).toHaveBeenCalledWith(TRIP_ID, OTHER_ID);
+      // Any group links the removed member created stop admitting riders.
+      expect(tripShares.revokeAllForTripMember).toHaveBeenCalledWith(
+        TRIP_ID,
+        OTHER_ID,
+      );
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         OWNER_ID,
