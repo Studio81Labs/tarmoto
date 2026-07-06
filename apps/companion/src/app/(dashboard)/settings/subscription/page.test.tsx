@@ -356,6 +356,67 @@ describe("SubscriptionPage", () => {
     );
   });
 
+  it("keeps routing a granted user through Checkout after an abandoned Checkout created a Stripe customer", async () => {
+    // Starting Checkout persists a Stripe customer, so portal_available
+    // flips true — but there is still no subscription (status stays
+    // canceled). Plan changes must keep going through Checkout; the
+    // portal's subscription flows would be rejected without a
+    // subscription id.
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          name: "Pro",
+          status: "canceled",
+          price_label: "€29.99/yr",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          {
+            tier: "free",
+            name: "Free",
+            price_label: "€0",
+            features: ["Basic navigation"],
+          },
+          {
+            tier: "pro",
+            name: "Pro",
+            price_label: "€29.99/yr",
+            highlighted: true,
+            features: ["Unlimited trip planning"],
+          },
+          {
+            tier: "premium",
+            name: "Premium",
+            price_label: "€49.99/yr",
+            features: ["Advanced analytics"],
+          },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+      },
+    });
+    createCheckoutSessionMock.mockResolvedValueOnce({
+      data: { url: "https://checkout.stripe.com/session/test" },
+    });
+
+    render(<SubscriptionPage />);
+
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
+    fireEvent.click(
+      within(premiumCard!).getByRole("button", { name: "Upgrade" }),
+    );
+
+    await waitFor(() =>
+      expect(createCheckoutSessionMock).toHaveBeenCalledWith({
+        tier: "premium",
+      }),
+    );
+    expect(createPortalSessionMock).not.toHaveBeenCalled();
+  });
+
   it("opens the payment-method update portal flow", async () => {
     getSubscriptionMock.mockResolvedValueOnce({
       data: {

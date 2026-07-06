@@ -154,22 +154,27 @@ export default function SubscriptionPage() {
       });
     }
   }
-  // A paid tier without a Stripe customer is an operator grant (launch-mode
-  // `founder`, promo, or admin) — there is no subscription to manage in the
-  // portal, but Checkout is open: the backend only blocks checkout for
-  // ACTIVE paid subscriptions, and grants keep `status: canceled`. Route
-  // these users through Checkout so they can convert the grant to a paid
-  // plan (same tier) or pick the other paid tier. Preview snapshots stay
-  // inert — their synthesized paid plan isn't a real grant.
-  const grantWithoutBilling =
+  // A paid tier with a canceled status means there is no live Stripe
+  // subscription behind the plan — an operator grant (launch-mode
+  // `founder`, promo, or admin), or a grant whose Checkout was started
+  // and abandoned (which already persisted a Stripe customer, so
+  // `portalAvailable` alone cannot identify grants). The portal's
+  // subscription flows would be rejected without a subscription id, but
+  // Checkout is open: the backend only blocks it for ACTIVE paid
+  // subscriptions. Route these users through Checkout so they can
+  // convert the grant to a paid plan (same tier) or pick the other paid
+  // tier. Preview snapshots stay inert — their synthesized plan isn't a
+  // real grant.
+  const paidPlanNeedsCheckout =
     snapshot !== null &&
     !snapshot.preview &&
     snapshot.currentPlan.tier !== "free" &&
-    !snapshot.portalAvailable;
+    snapshot.currentPlan.status === "canceled";
   function handlePlanAction(planTier: SubscriptionTier) {
     if (!snapshot) return;
-    if (grantWithoutBilling) {
-      // No portal flows exist for a grant; every action is a Checkout.
+    if (paidPlanNeedsCheckout) {
+      // No subscription to manage/cancel via the portal; every plan
+      // action is a Checkout.
       if (planTier === "free") return;
       void openCheckout(planTier as "premium" | "pro");
       return;
@@ -274,7 +279,7 @@ export default function SubscriptionPage() {
                     actionState.kind === "portal-update"
                   }
                   portalAvailable={snapshot.portalAvailable}
-                  grantWithoutBilling={grantWithoutBilling}
+                  paidPlanNeedsCheckout={paidPlanNeedsCheckout}
                   onSelect={() => handlePlanAction(plan.tier)}
                 />
               ))}
@@ -294,7 +299,10 @@ export default function SubscriptionPage() {
             <RetentionDialog
               planName={snapshot.currentPlan.name}
               renewalLabel={renewalLabel}
-              canManage={snapshot.portalAvailable}
+              // A grant has no subscription for the portal's cancel flow
+              // to act on — even when an abandoned Checkout has already
+              // created the Stripe customer (portalAvailable true).
+              canManage={snapshot.portalAvailable && !paidPlanNeedsCheckout}
               busy={actionState.kind === "portal-cancel"}
               onOpenPortal={() => void openPortal("subscription_cancel")}
               onClose={() => setCancelDialogOpen(false)}
@@ -447,7 +455,7 @@ function PlanCard({
   busy,
   actionBusy,
   portalAvailable,
-  grantWithoutBilling,
+  paidPlanNeedsCheckout,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
@@ -455,20 +463,20 @@ function PlanCard({
   busy: boolean;
   actionBusy: boolean;
   portalAvailable: boolean;
-  grantWithoutBilling: boolean;
+  paidPlanNeedsCheckout: boolean;
 }) {
   const isCurrent = plan.tier === currentTier;
-  // Granted paid tier (no Stripe customer): every paid card routes to
-  // Checkout — the current one reads "Subscribe" (convert the grant to a
-  // paid subscription); only the free card is inert (no portal to cancel
-  // a grant, and the grant itself is not a subscription).
+  // Granted paid tier (no live subscription behind it): every paid card
+  // routes to Checkout — the current one reads "Subscribe" (convert the
+  // grant to a paid subscription); only the free card is inert (there is
+  // no subscription for the portal's cancel flow to act on).
   const actionLabel =
-    grantWithoutBilling && isCurrent
+    paidPlanNeedsCheckout && isCurrent
       ? "Subscribe"
       : planActionLabel(plan.tier, currentTier);
   const disabled =
     busy ||
-    (grantWithoutBilling
+    (paidPlanNeedsCheckout
       ? plan.tier === "free"
       : (!isCurrent && currentTier !== "free" && !portalAvailable) ||
         (isCurrent && !portalAvailable));
