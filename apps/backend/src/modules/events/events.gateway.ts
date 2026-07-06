@@ -17,6 +17,7 @@ import { Server, Socket } from 'socket.io';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 // Shared between subscribe handlers so a malformed id never reaches a
 // UUID column and bubbles up as a Postgres "invalid input syntax"
@@ -134,7 +135,26 @@ export class EventsGateway
     // active-state read goes through `groupRideMemberRepo`.
     @InjectRepository(GroupRideMember)
     private readonly groupRideMemberRepo: Repository<GroupRideMember>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
+
+  /**
+   * Live `group_rides` entitlement check for the socket path. The REST
+   * surface is enforced by `FeatureGuard` on `/group-rides/*`; the
+   * gateway must apply the same rule or a global `force_off` (kill
+   * switch) / tier revoke would only block HTTP while existing members
+   * kept streaming positions over Socket.IO. Fails closed: a resolver
+   * error (e.g. the account was deleted mid-session) counts as
+   * not-entitled.
+   */
+  private async hasGroupRidesFeature(userId: string): Promise<boolean> {
+    try {
+      const features = await this.featureResolver.resolveForUser(userId);
+      return features.group_rides;
+    } catch {
+      return false;
+    }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async afterInit(server: Server): Promise<void> {
@@ -250,6 +270,14 @@ export class EventsGateway
 
     if (!data.ride_id || typeof data.ride_id !== 'string') {
       client.emit('error', { message: 'ride_id is required' });
+      return;
+    }
+
+    // Same entitlement as /group-rides/* — a room join is the gate for
+    // the legacy ride-room sharing path (`location:update` fanout only
+    // reaches sockets already in the room).
+    if (!(await this.hasGroupRidesFeature(userId))) {
+      client.emit('error', { message: 'Feature unavailable: group_rides' });
       return;
     }
 
@@ -503,10 +531,17 @@ export class EventsGateway
     const room = `group-ride:${data.group_ride_id}`;
     if (client.rooms.has(room)) return;
 
-    const membership = await this.groupRideMemberRepo.findOne({
-      where: { group_ride_id: data.group_ride_id, user_id: userId },
-      relations: { group_ride: true },
-    });
+    const [entitled, membership] = await Promise.all([
+      this.hasGroupRidesFeature(userId),
+      this.groupRideMemberRepo.findOne({
+        where: { group_ride_id: data.group_ride_id, user_id: userId },
+        relations: { group_ride: true },
+      }),
+    ]);
+    if (!entitled) {
+      client.emit('error', { message: 'Feature unavailable: group_rides' });
+      return;
+    }
     if (!membership) {
       client.emit('error', {
         message: 'Group ride not found or access denied',
@@ -598,16 +633,21 @@ export class EventsGateway
     // the updated timestamp and bail before doing any DB work.
     this.groupPositionThrottle.set(throttleKey, nowMs);
 
-    // Re-verify membership AND active state on every accepted update.
-    // A client that joined the socket room then was kicked from the
-    // ride (or whose ride ended) must stop receiving fanout — without
-    // this re-check, the gateway would continue broadcasting their
-    // points until the connection drops.
-    const membership = await this.groupRideMemberRepo.findOne({
-      where: { group_ride_id: data.group_ride_id, user_id: userId },
-      relations: { group_ride: true },
-    });
-    if (!membership || membership.group_ride.ended_at !== null) {
+    // Re-verify membership, active state, AND the group_rides
+    // entitlement on every accepted update. A client that joined the
+    // socket room then was kicked from the ride (or whose ride ended,
+    // or whose feature was force_off'd / tier-revoked) must stop
+    // publishing — without this re-check, the gateway would continue
+    // broadcasting their points until the connection drops, making the
+    // kill switch only cover HTTP.
+    const [entitled, membership] = await Promise.all([
+      this.hasGroupRidesFeature(userId),
+      this.groupRideMemberRepo.findOne({
+        where: { group_ride_id: data.group_ride_id, user_id: userId },
+        relations: { group_ride: true },
+      }),
+    ]);
+    if (!entitled || !membership || membership.group_ride.ended_at !== null) {
       // Race: either left, or the owner ended the ride. Detach the
       // client from the room so subsequent ticks short-circuit before
       // hitting the DB. Drop the throttle entry so the next position
