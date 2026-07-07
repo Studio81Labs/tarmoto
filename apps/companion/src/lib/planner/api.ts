@@ -80,8 +80,42 @@ interface RouteChunk {
 }
 
 /**
+ * Insert interpolated points so no single edge exceeds `maxKm`. A sparse or
+ * heavily simplified imported line (e.g. a 2-point GPX hop over the limit) has
+ * edges longer than any chunk could be split at existing vertices; cutting
+ * inside them lets {@link chunkRouteByLengthKm} keep every chunk under the
+ * limit. Points lie on the straight lat/lng segment — exactly the rendered
+ * line — so the added vertices don't distort the route.
+ */
+function densifyMaxEdgeKm(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+  maxKm: number,
+): { lat: number; lng: number }[] {
+  if (points.length < 2) return points.map((p) => ({ ...p }));
+  const out: { lat: number; lng: number }[] = [{ ...points[0]! }];
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const edgeKm = haversineKm(a.lat, a.lng, b.lat, b.lng);
+    if (edgeKm > maxKm) {
+      const cuts = Math.ceil(edgeKm / maxKm);
+      for (let k = 1; k < cuts; k += 1) {
+        const t = k / cuts;
+        out.push({
+          lat: a.lat + (b.lat - a.lat) * t,
+          lng: a.lng + (b.lng - a.lng) * t,
+        });
+      }
+    }
+    out.push({ ...b });
+  }
+  return out;
+}
+
+/**
  * Split a routed polyline into contiguous chunks each at most `maxKm` long, so
- * a long day stays under the backend's per-request length limit. Chunks share
+ * a long day stays under the backend's per-request length limit. Long edges are
+ * first densified so a sparse imported line can be cut inside them. Chunks share
  * their boundary vertex (gap-free) and record where they sit on the whole route
  * so per-chunk quality fractions can be remapped back onto it.
  */
@@ -89,17 +123,18 @@ function chunkRouteByLengthKm(
   points: ReadonlyArray<{ lat: number; lng: number }>,
   maxKm: number,
 ): RouteChunk[] {
+  const dense = densifyMaxEdgeKm(points, maxKm);
   const cum: number[] = [0];
-  for (let i = 1; i < points.length; i += 1) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
+  for (let i = 1; i < dense.length; i += 1) {
+    const a = dense[i - 1]!;
+    const b = dense[i]!;
     cum.push((cum[i - 1] ?? 0) + haversineKm(a.lat, a.lng, b.lat, b.lng));
   }
   const total = cum[cum.length - 1] ?? 0;
-  if (points.length < 2 || total <= maxKm) {
+  if (dense.length < 2 || total <= maxKm) {
     return [
       {
-        points: points.map((p) => ({ ...p })),
+        points: dense.map((p) => ({ ...p })),
         startFraction: 0,
         fractionSpan: total > 0 ? 1 : 0,
       },
@@ -107,22 +142,22 @@ function chunkRouteByLengthKm(
   }
   const chunks: RouteChunk[] = [];
   let startIdx = 0;
-  while (startIdx < points.length - 1) {
+  while (startIdx < dense.length - 1) {
     const startKm = cum[startIdx] ?? 0;
     let endIdx = startIdx + 1;
     while (
-      endIdx + 1 <= points.length - 1 &&
+      endIdx + 1 <= dense.length - 1 &&
       (cum[endIdx + 1] ?? 0) - startKm <= maxKm
     ) {
       endIdx += 1;
     }
     const endKm = cum[endIdx] ?? 0;
     chunks.push({
-      points: points.slice(startIdx, endIdx + 1).map((p) => ({ ...p })),
+      points: dense.slice(startIdx, endIdx + 1).map((p) => ({ ...p })),
       startFraction: total > 0 ? startKm / total : 0,
       fractionSpan: total > 0 ? (endKm - startKm) / total : 0,
     });
-    if (endIdx >= points.length - 1) break;
+    if (endIdx >= dense.length - 1) break;
     startIdx = endIdx; // next chunk shares this boundary vertex
   }
   return chunks;

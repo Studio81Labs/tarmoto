@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { haversineKm } from "@tarmoto/shared";
 import {
   poiApi,
   roadsApi,
@@ -334,6 +335,50 @@ describe("plannerApi.getRouteQuality (#862)", () => {
     };
     expect(firstBody.geometry.length).toBeLessThan(longPoints.length);
     // Whole route rendered as real quality — no undercovered no_data gap.
+    expect(segments.every((s) => s.band === "good")).toBe(true);
+  });
+
+  it("splits an over-long single edge with interpolated cut points", async () => {
+    // Two points ~1335 km apart (a sparse imported GPX line): the single edge
+    // exceeds the limit, so cut points must be interpolated inside it rather
+    // than only at existing vertices — otherwise the request 400s and the route
+    // stays no_data.
+    const sparse = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 12 },
+    ];
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(sparse, 1);
+
+    // The single edge is densified + chunked into multiple within-limit requests.
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    for (const call of routeQualityMock.mock.calls) {
+      const body = call[0] as { geometry: { lat: number; lng: number }[] };
+      const geometry = body.geometry;
+      const lengthKm = haversineKm(
+        geometry[0]!.lat,
+        geometry[0]!.lng,
+        geometry.at(-1)!.lat,
+        geometry.at(-1)!.lng,
+      );
+      expect(lengthKm).toBeLessThanOrEqual(500);
+    }
     expect(segments.every((s) => s.band === "good")).toBe(true);
   });
 });
