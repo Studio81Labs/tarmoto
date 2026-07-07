@@ -14,6 +14,9 @@ function makeWaypoint(over: Partial<Waypoint> = {}): Waypoint {
     lng: 16.6,
     name: "Start",
     waypoint_type: "start",
+    road_segment_id: null,
+    notes: null,
+    duration_min: null,
     ...over,
   };
 }
@@ -21,12 +24,17 @@ function makeWaypoint(over: Partial<Waypoint> = {}): Waypoint {
 function makeTrip(over: Partial<Trip> = {}): Trip {
   return {
     id: "trip-1",
+    owner_id: "owner-1",
     title: "Tour",
     region: null,
     num_days: 1,
     status: "planned",
     member_count: 1,
+    folder_id: null,
     created_at: "2026-05-01T00:00:00Z",
+    distance_km: null,
+    quality_avg: null,
+    passes_count: null,
     daily_km_min: 100,
     daily_km_max: 300,
     min_quality: 3,
@@ -44,6 +52,7 @@ function makeTrip(over: Partial<Trip> = {}): Trip {
         curviness_score: 0.6,
         scenic_score: 0.7,
         estimated_time_min: 180,
+        start_linked: false,
         route_geometry: sampleGeometry,
         waypoints: [makeWaypoint()],
       },

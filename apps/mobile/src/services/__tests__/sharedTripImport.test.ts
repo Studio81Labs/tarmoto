@@ -13,6 +13,7 @@ import type { TripSharePublic } from "@/types";
 function share(snapshot: Record<string, unknown>): TripSharePublic {
   return {
     share_token: "tok-1",
+    trip_id: null,
     title: "Alps loop — demo",
     owner_name: "Adam",
     snapshot,
