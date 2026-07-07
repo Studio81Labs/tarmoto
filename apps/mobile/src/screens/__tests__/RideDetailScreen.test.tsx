@@ -95,7 +95,13 @@ const RIDE: RideDetail = {
   avg_speed: 45,
   avg_road_quality: 4.0,
   avg_curviness: null,
+  bike_id: null,
   name: null,
+  viewer_is_owner: true,
+  rider_id: "rider-1",
+  rider_name: "Test Rider",
+  rider_avatar_url: null,
+  share_token: null,
   route_geometry: [
     { lat: 49.0, lng: 18.0 },
     { lat: 49.1, lng: 18.1 },
