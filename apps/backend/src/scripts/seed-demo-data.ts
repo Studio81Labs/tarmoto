@@ -16,6 +16,11 @@
  * database unless `--force` is passed.
  */
 import 'reflect-metadata';
+// Load .env before main() runs so the NODE_ENV production guard below sees a
+// value set only in the env file (not just the shell). This used to happen
+// implicitly via AppModule's ConfigModule.forRoot() at static-import time;
+// bootstrapScriptContext() now imports AppModule lazily, so load it explicitly.
+import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { BadgesService } from '../modules/badges/badges.service.js';
 import { parseArgs, usage } from './seed-demo-data-args.js';
