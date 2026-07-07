@@ -56,15 +56,18 @@ export class RoadsService {
    * covers. The planner paints each span onto the polyline; gaps between spans
    * are genuine no-coverage stretches it renders as "no data".
    *
-   * The join samples the route at a fixed spacing (~30 m, capped for long
-   * routes), snaps each sample to the nearest live segment within `buffer_m`,
-   * then coalesces contiguous same-segment runs into spans (gaps-and-islands).
-   * Sampling — rather than projecting each segment's endpoints once — is what
-   * lets a loop or there-and-back route emit one span *per pass* over the same
-   * road instead of a single span smeared across the whole detour. The buffer
-   * stays tight (default 25 m) because the routed line follows the same OSM
-   * ways the segments were cut from — a wide buffer would snap to parallel
-   * roads.
+   * The join is geometric, not sampled: for each live segment whose geometry
+   * runs within `buffer_m` of the route, it intersects the route with the
+   * segment's buffer and dumps the result into one part per contiguous run.
+   * Each part's endpoints are linearly referenced onto the route
+   * (`ST_LineLocatePoint`) to give the exact fraction span. This means (a)
+   * span boundaries are the real segment transitions — adjacent segments abut
+   * instead of leaving sampling gaps the client would misread as "no data";
+   * (b) no segment is ever skipped, however short or however long the route;
+   * and (c) a loop or there-and-back route yields one span *per pass* (the
+   * dump splits the multiple route stretches). The buffer stays tight
+   * (default 25 m) because the routed line follows the same OSM ways the
+   * segments were cut from — a wide buffer would match parallel roads.
    *
    * Resilience mirrors the POI read path: any DB failure yields an empty list
    * rather than a 500 (a quality overlay must never break trip planning). The
@@ -89,77 +92,56 @@ export class RoadsService {
     const bufferParam = `$${params.length}`;
 
     const sql = `
-      WITH cfg AS (
-        SELECT
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      WITH route AS (
+        SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
       ),
-      route AS (
+      -- Live segments whose geometry runs within buffer_m of the route.
+      nearby AS (
         SELECT
-          line,
-          -- One sample roughly every 30 m, min 2, capped at 1500 so a very
-          -- long route stays bounded (spacing just grows past ~45 km).
-          GREATEST(
-            2,
-            LEAST(1500, CEIL(ST_Length(line::geography) / 30.0)::int)
-          ) AS n
-        FROM cfg
+          rs.osm_way_id, rs.segment_index, rs.quality_score,
+          rs.curviness_score, rs.surface_type, rs.reading_count, rs.geom
+        FROM road_segments rs, route
+        WHERE rs.deactivated_at IS NULL
+          AND ST_GeometryType(rs.geom) = 'ST_LineString'
+          AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
       ),
-      samples AS (
+      -- The exact route stretch(es) that run along each segment: intersect the
+      -- route with the segment's buffer, keep only the line components, and
+      -- dump into one part per contiguous run. A loop / there-and-back gives
+      -- several parts (one span per pass); boundaries are the real transition
+      -- points, so adjacent segments abut instead of leaving sampling gaps.
+      overlaps AS (
         SELECT
-          gs AS idx,
-          gs::float / route.n AS frac,
-          ST_LineInterpolatePoint(route.line, gs::float / route.n) AS pt
-        FROM route, generate_series(0, route.n) AS gs
-      ),
-      snapped AS (
-        SELECT
-          s.idx,
-          s.frac,
-          seg.id            AS seg_id,
-          seg.osm_way_id    AS osm_way_id,
-          seg.segment_index AS segment_index,
-          seg.quality_score AS quality_score,
-          seg.curviness_score AS curviness_score,
-          seg.surface_type  AS surface_type,
-          seg.reading_count AS reading_count
-        FROM samples s
-        LEFT JOIN LATERAL (
-          SELECT
-            rs.id, rs.osm_way_id, rs.segment_index, rs.quality_score,
-            rs.curviness_score, rs.surface_type, rs.reading_count
-          FROM road_segments rs
-          WHERE rs.deactivated_at IS NULL
-            AND ST_GeometryType(rs.geom) = 'ST_LineString'
-            AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
-          ORDER BY rs.geom <-> s.pt
-          LIMIT 1
-        ) seg ON TRUE
-      ),
-      -- Gaps-and-islands: number samples globally and per-segment; the
-      -- difference is constant across a contiguous run of the same segment, so
-      -- a second pass over that segment (separated by other / no-coverage
-      -- samples) falls into its own group and becomes its own span. NULL
-      -- (no-coverage) samples are kept in the numbering so they break runs,
-      -- then dropped from the output.
-      runs AS (
-        SELECT
-          *,
-          ROW_NUMBER() OVER (ORDER BY idx)
-            - ROW_NUMBER() OVER (PARTITION BY seg_id ORDER BY idx) AS grp
-        FROM snapped
+          n.osm_way_id, n.segment_index, n.quality_score, n.curviness_score,
+          n.surface_type, n.reading_count,
+          (ST_Dump(
+            ST_CollectionExtract(
+              ST_Intersection(
+                route.line,
+                ST_Buffer(n.geom::geography, ${bufferParam})::geometry
+              ),
+              2
+            )
+          )).geom AS part
+        FROM nearby n, route
       )
       SELECT
-        MIN(osm_way_id)::text AS osm_way_id,
-        MIN(segment_index)    AS segment_index,
-        MIN(quality_score)    AS quality_score,
-        MIN(curviness_score)  AS curviness_score,
-        MIN(surface_type)     AS surface_type,
-        MIN(reading_count)    AS reading_count,
-        MIN(frac)             AS start_fraction,
-        MAX(frac)             AS end_fraction
-      FROM runs
-      WHERE seg_id IS NOT NULL
-      GROUP BY seg_id, grp
+        o.osm_way_id::text AS osm_way_id,
+        o.segment_index    AS segment_index,
+        o.quality_score    AS quality_score,
+        o.curviness_score  AS curviness_score,
+        o.surface_type     AS surface_type,
+        o.reading_count    AS reading_count,
+        LEAST(
+          ST_LineLocatePoint(route.line, ST_StartPoint(o.part)),
+          ST_LineLocatePoint(route.line, ST_EndPoint(o.part))
+        ) AS start_fraction,
+        GREATEST(
+          ST_LineLocatePoint(route.line, ST_StartPoint(o.part)),
+          ST_LineLocatePoint(route.line, ST_EndPoint(o.part))
+        ) AS end_fraction
+      FROM overlaps o, route
+      WHERE ST_NPoints(o.part) >= 2
       ORDER BY start_fraction ASC
     `;
 

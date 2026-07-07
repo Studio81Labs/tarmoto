@@ -1006,14 +1006,14 @@ describe('RoadsService', () => {
       { lat: 49.2, lng: 16.8 },
     ];
 
-    it('samples the routed line and snaps each sample to the nearest segment, with flattened positional params and a default 25 m buffer', async () => {
+    it('intersects the route with each nearby segment buffer, with flattened positional params and a default 25 m buffer', async () => {
       await service.getRouteQuality({ geometry: route });
 
       expect(segmentRepo.query).toHaveBeenCalledTimes(1);
       expect(segmentRepo.query).toHaveBeenCalledWith(
-        // Sample along the route (ST_LineInterpolatePoint) then snap each
-        // sample to the nearest segment within the buffer (ST_DWithin).
-        expect.stringMatching(/ST_LineInterpolatePoint[\s\S]*ST_DWithin/),
+        // Nearby segments via ST_DWithin, then the exact route overlap via
+        // ST_Intersection of the route with each segment's buffer.
+        expect.stringMatching(/ST_DWithin[\s\S]*ST_Intersection/),
         // lng/lat interleaved per point, then the buffer.
         [16.7, 49.1, 16.8, 49.2, 25],
       );
@@ -1023,10 +1023,10 @@ describe('RoadsService', () => {
         expect.stringContaining('deactivated_at IS NULL'),
         expect.any(Array),
       );
-      // Repeated passes over the same road become separate spans via the
-      // gaps-and-islands grouping, not one smeared span.
+      // Repeated passes over the same road become separate spans by dumping
+      // the intersection into contiguous parts, not one smeared span.
       expect(segmentRepo.query).toHaveBeenCalledWith(
-        expect.stringContaining('ROW_NUMBER()'),
+        expect.stringContaining('ST_Dump'),
         expect.any(Array),
       );
     });
