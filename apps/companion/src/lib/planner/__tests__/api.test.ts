@@ -103,13 +103,13 @@ describe("deriveFlaggedSections", () => {
     ];
     expect(deriveFlaggedSections(segments)).toEqual([
       {
-        segmentId: "d1-s1",
+        segmentId: "run:d1-s1",
         kind: "rough",
         lengthKm: 4.2,
         label: "Rough · gravel, 4.2 km",
       },
       {
-        segmentId: "d1-s2",
+        segmentId: "run:d1-s2",
         kind: "no_data",
         lengthKm: 3.1,
         label: "No data yet · 3.1 km",
@@ -143,13 +143,13 @@ describe("deriveFlaggedSections", () => {
     ];
     expect(deriveFlaggedSections(segments)).toEqual([
       {
-        segmentId: "d1-s1",
+        segmentId: "run:d1-s1",
         kind: "rough",
         lengthKm: 5,
         label: "Rough · gravel, 5 km",
       },
       {
-        segmentId: "d1-s3",
+        segmentId: "run:d1-s3",
         kind: "no_data",
         lengthKm: 3,
         label: "No data yet · 3 km",
@@ -217,10 +217,11 @@ describe("plannerApi.generateRoute", () => {
       { surface: "asphalt", pct: 82 },
       { surface: "gravel", pct: 18 },
     ]);
-    // Flagged sections reference real segment ids.
+    // Flagged sections reference coalesced runs (id `run:<firstSegmentId>`);
+    // the underlying first segment is a real segment.
     const ids = new Set(result.segments.map((s) => s.id));
     for (const flag of result.summary.flagged) {
-      expect(ids.has(flag.segmentId)).toBe(true);
+      expect(ids.has(flag.segmentId.replace(/^run:/, ""))).toBe(true);
     }
   });
 

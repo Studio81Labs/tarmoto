@@ -79,9 +79,9 @@ describe("coalesceQualityRuns", () => {
     ]);
     expect(runs.map((r) => r.band)).toEqual(["good", "rough", "good"]);
     expect(runs.map((r) => r.lengthKm)).toEqual([15, 5, 4]);
-    // Run id + surface come from its first segment (the click target).
-    expect(runs[0]!.id).toBe("d1-s0");
-    expect(runs[1]!).toMatchObject({ id: "d1-s2", surface: "gravel" });
+    // Run id is `run:<firstSegmentId>`; surface comes from its first segment.
+    expect(runs[0]!.id).toBe("run:d1-s0");
+    expect(runs[1]!).toMatchObject({ id: "run:d1-s2", surface: "gravel" });
   });
 
   it("collapses a fully-uncovered route to a single no_data run", () => {
@@ -92,7 +92,7 @@ describe("coalesceQualityRuns", () => {
     ]);
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
-      id: "d1-s0",
+      id: "run:d1-s0",
       band: "no_data",
       lengthKm: 36,
     });

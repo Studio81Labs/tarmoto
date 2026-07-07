@@ -118,8 +118,10 @@ describe("InspectTab", () => {
       name: /Preview .* section/,
     });
     fireEvent.click(firstSection!);
+    // The strip coalesces adjacent same-band segments into runs (id
+    // `run:<firstSegmentId>`), so the click targets the run, not the fine span.
     expect(onInspectSegment).toHaveBeenCalledWith(
-      deriveDayQualitySegments(day)[0]!.id,
+      `run:${deriveDayQualitySegments(day)[0]!.id}`,
     );
   });
 

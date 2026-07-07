@@ -6,7 +6,10 @@ import {
   cumulativeKm,
   slicePolylineByDistanceKm,
 } from "@/lib/planner/polyline";
-import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
+import {
+  coalesceQualityRuns,
+  QUALITY_BAND_COLORS,
+} from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 
@@ -150,10 +153,15 @@ export function findPlannerQualitySegment(
   segmentId: string | null,
 ): RouteSegment | null {
   if (!trip || !segmentId) return null;
+  // Coalesced strip/flagged actions target a whole run (id `run:<firstId>`) —
+  // resolve those against the run's combined geometry so a preview/reroute
+  // covers the whole run, not just its first ~100 m span. Map clicks pass fine
+  // segment ids and resolve against the per-segment line.
+  const isRun = segmentId.startsWith("run:");
   for (const day of trip.days) {
-    const match = deriveDayQualitySegments(day).find(
-      (segment) => segment.id === segmentId,
-    );
+    const segments = deriveDayQualitySegments(day);
+    const pool = isRun ? coalesceQualityRuns(segments) : segments;
+    const match = pool.find((segment) => segment.id === segmentId);
     if (match) return match;
   }
   return null;

@@ -188,9 +188,11 @@ describe("splitIntoDays", () => {
       expect(
         plan.quality.surfaceMix.reduce((sum, mix) => sum + mix.pct, 0),
       ).toBeGreaterThan(95);
-      // Every flagged section belongs to this day's segments.
+      // Every flagged section belongs to this day's segments. Flagged cards
+      // reference coalesced runs (id `run:<firstSegmentId>`), so match on the
+      // underlying first segment id.
       for (const flag of plan.quality.flagged) {
-        expect(plan.segmentIds).toContain(flag.segmentId);
+        expect(plan.segmentIds).toContain(flag.segmentId.replace(/^run:/, ""));
       }
     }
     // Segment assignment covers the whole route exactly once.

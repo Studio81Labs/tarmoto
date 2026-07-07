@@ -1,3 +1,5 @@
+import type * as GeoJSON from "geojson";
+import { dedupeAdjacentPoints, type LngLat } from "./polyline";
 import type { QualityBand, RouteSegment } from "./types";
 
 /**
@@ -48,38 +50,47 @@ export function isLowConfidence(passes: number): boolean {
   return passes <= LOW_CONFIDENCE_MAX_PASSES;
 }
 
-/** A run of contiguous same-band segments, for list/strip presentation. */
-export interface QualityRun {
-  /** Id of the run's first segment — the click target (map flyTo / reroute). */
-  id: string;
-  band: QualityBand;
-  surface: RouteSegment["surface"];
-  lengthKm: number;
-}
-
 /**
- * Coalesce adjacent same-band segments into display runs. The map draws the
- * fine per-segment line, but the Inspect strip and flagged list would otherwise
- * render one DOM node per ~100 m road segment (thousands on a long covered
- * route). Merging same-band runs keeps those lists small — and reads better
- * (one "Rough · 40 km" card, not 400 hundred-metre ones).
+ * Coalesce adjacent same-band segments into runs — one {@link RouteSegment} per
+ * run, carrying the run's COMBINED geometry, summed length, and id
+ * `run:<firstSegmentId>`. The map draws the fine per-segment line, but the
+ * Inspect strip and flagged list (and their inspect/reroute actions, resolved
+ * through `findPlannerQualitySegment`) operate on runs — so a long covered route
+ * renders a handful of nodes instead of thousands, and a "Rough · 40 km" card
+ * previews/reroutes the WHOLE run, not just its first ~100 m span. The `run:`
+ * prefix keeps run ids distinct from the fine segment ids the map clicks use.
  */
 export function coalesceQualityRuns(
   segments: readonly RouteSegment[],
-): QualityRun[] {
-  const runs: QualityRun[] = [];
-  for (const segment of segments) {
-    const last = runs[runs.length - 1];
-    if (last && last.band === segment.band) {
-      last.lengthKm += segment.lengthKm;
-    } else {
-      runs.push({
-        id: segment.id,
-        band: segment.band,
-        surface: segment.surface,
-        lengthKm: segment.lengthKm,
-      });
+): RouteSegment[] {
+  const runs: RouteSegment[] = [];
+  let current: RouteSegment[] = [];
+  const flush = () => {
+    const first = current[0];
+    if (!first) return;
+    const coordinates: LngLat[] = [];
+    for (const segment of current) {
+      for (const coordinate of segment.geometry.coordinates) {
+        coordinates.push(coordinate as LngLat);
+      }
     }
+    const geometry: GeoJSON.LineString = {
+      type: "LineString",
+      coordinates: dedupeAdjacentPoints(coordinates),
+    };
+    runs.push({
+      ...first,
+      id: `run:${first.id}`,
+      geometry,
+      lengthKm: current.reduce((sum, segment) => sum + segment.lengthKm, 0),
+    });
+    current = [];
+  };
+  for (const segment of segments) {
+    const last = current[current.length - 1];
+    if (last && last.band !== segment.band) flush();
+    current.push(segment);
   }
+  flush();
   return runs;
 }
