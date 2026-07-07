@@ -192,6 +192,14 @@ export interface TripDay {
   surfaceMix?: Record<string, number> | undefined;
   overnightStop?: POI | undefined;
   segments?: RoutePreviewSegment[] | undefined;
+  /**
+   * Client-only (never saved): real per-segment surface quality for this day's
+   * routed polyline, fetched from `POST /roads/route-quality` after the
+   * geometry commits (#862). The map line and Inspect strip prefer these over
+   * the geometry-only `no_data` baseline. Cleared whenever `routeGeometry`
+   * changes so stale quality can't outlive the line it was computed for.
+   */
+  qualitySegments?: import("@/lib/planner/types").RouteSegment[] | undefined;
   /** True when this day's start is linked to the previous day's end (multi-day planner). */
   startLinked?: boolean;
   /**

@@ -10,6 +10,7 @@ import type {
   DayPlan,
   PlanningMode,
   PoiCategory,
+  RouteSegment,
   SplitStatus,
 } from "@/lib/planner/types";
 import type { PlacementActionId } from "@/lib/planner-context-menu";
@@ -367,6 +368,19 @@ interface TripState {
     dayNumber: number,
     result: RouteResponse,
     legBreaks?: Array<{ legId: string; startVertex: number }>,
+  ) => void;
+
+  /**
+   * Store real per-segment surface quality for a committed day (#862), fetched
+   * from `POST /roads/route-quality` after `applyRouteResult`. Guarded by the
+   * geometry it was computed for: applied only while the day's `routeGeometry`
+   * still matches `forGeometry`, so a late-resolving quality fetch can't paint
+   * a line the rider has since re-routed. A no-op otherwise.
+   */
+  applyRouteQuality: (
+    dayNumber: number,
+    forGeometry: ReadonlyArray<{ lat: number; lng: number }>,
+    segments: RouteSegment[],
   ) => void;
 
   /**
@@ -1581,6 +1595,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Always overwritten (or cleared) so a stale leg mapping can't
           // outlive the geometry it described. Client-only; never saved.
           legBreaks,
+          // New geometry invalidates any prior per-segment quality — the map
+          // falls back to the no_data baseline until getRouteQuality refills it.
+          qualitySegments: undefined,
         };
         return {
           ...state,
@@ -1591,6 +1608,27 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             days,
             updatedAt: new Date().toISOString(),
           },
+        };
+      }),
+
+    applyRouteQuality: (dayNumber, forGeometry, segments) =>
+      set((state) => {
+        const { activeTrip } = state;
+        if (!activeTrip) return state;
+        const dayIndex = activeTrip.days.findIndex(
+          (d) => d.dayNumber === dayNumber,
+        );
+        if (dayIndex < 0) return state;
+        const day = activeTrip.days[dayIndex]!;
+        // Only apply while the day's line is still the one quality was computed
+        // for — a re-route between the fetch and its resolution must win.
+        if (!geometryMatchesPoints(day.routeGeometry, forGeometry))
+          return state;
+        const days = [...activeTrip.days];
+        days[dayIndex] = { ...day, qualitySegments: segments };
+        return {
+          ...state,
+          activeTrip: { ...activeTrip, days },
         };
       }),
 
@@ -1836,6 +1874,35 @@ function markDayStale(staleDays: number[], dayNumber: number): number[] {
 
 function clearDayStale(staleDays: number[], dayNumber: number): number[] {
   return staleDays.filter((n) => n !== dayNumber);
+}
+
+/**
+ * Cheap check that a stored day route line is still the polyline `points` were
+ * derived from — same vertex count and endpoints. Gates a late-resolving
+ * route-quality fetch (`applyRouteQuality`) against an intervening re-route.
+ */
+function geometryMatchesPoints(
+  geometry: TripDay["routeGeometry"],
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+): boolean {
+  const coords = geometry?.coordinates;
+  if (!coords || coords.length !== points.length || points.length === 0) {
+    return false;
+  }
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const startPoint = points[0];
+  const endPoint = points[points.length - 1];
+  return (
+    !!first &&
+    !!last &&
+    !!startPoint &&
+    !!endPoint &&
+    first[0] === startPoint.lng &&
+    first[1] === startPoint.lat &&
+    last[0] === endPoint.lng &&
+    last[1] === endPoint.lat
+  );
 }
 
 function updatePlannerDayRoute(

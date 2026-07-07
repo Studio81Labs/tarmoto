@@ -6,10 +6,10 @@ import type { RouteRequestBody, RouteResponse } from "@/lib/api";
  * Plan & inspect planner contracts.
  *
  * The planner UI is built against these types and talks to data exclusively
- * through {@link PlannerApi}. Routing geometry/time/surface-mix are REAL
- * (backend Valhalla proxy); per-segment quality, rider-pass counts, and
- * street-level previews are MOCKED in `./mocks/` until the quality pipeline
- * serves them. Swapping mock → real is a change to `./api.ts` only.
+ * through {@link PlannerApi}. Routing geometry/time/surface-mix and
+ * per-segment surface quality are REAL (backend Valhalla proxy +
+ * `POST /roads/route-quality`); street-level previews and geocoding are
+ * MOCKED in `./mocks/`. Swapping mock → real is a change to `./api.ts` only.
  */
 
 export type QualityBand = "good" | "fair" | "rough" | "no_data";
@@ -186,15 +186,30 @@ export interface GeneratedPlannerRoute {
 
 export interface PlannerApi {
   /**
-   * Routes through the waypoints via the backend Valhalla proxy (REAL), then
-   * joins per-segment quality from the quality source (MOCK for now,
-   * deterministic on geometry so re-renders and reroutes are stable).
+   * Routes through the waypoints via the backend Valhalla proxy (REAL). The
+   * returned segments are the geometry-only `no_data` baseline (deterministic
+   * on geometry, so re-renders and reroutes are stable); real per-segment
+   * quality is fetched separately via {@link PlannerApi.getRouteQuality} once
+   * the day is committed.
    */
   generateRoute(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options: RouteRequestBody["options"],
     init?: { signal?: AbortSignal; dayNumber?: number },
   ): Promise<GeneratedPlannerRoute>;
+
+  /**
+   * REAL per-segment surface quality for a committed day's routed polyline
+   * (#862): calls `POST /roads/route-quality` and maps the returned spans onto
+   * the line. Called once per committed day — never in the draft sizing loops.
+   * An empty response (route not covered) or a failure leaves the caller on
+   * the geometry-only `no_data` baseline.
+   */
+  getRouteQuality(
+    points: ReadonlyArray<{ lat: number; lng: number }>,
+    dayNumber: number,
+    init?: { signal?: AbortSignal },
+  ): Promise<RouteSegment[]>;
 
   /** Road Preview Card payload for a clicked segment (MOCK). */
   getRoadPreview(segment: RouteSegment): Promise<RoadPreview>;

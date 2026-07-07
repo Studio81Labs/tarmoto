@@ -2,6 +2,7 @@ import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { splitIntoDays } from "@/lib/planner/day-splitter";
 import { dayFinishWaypoint, useTripStore } from "./trip";
 import type { RouteResponse } from "@/lib/api";
+import type { RouteSegment } from "@/lib/planner/types";
 import type { TripParameters } from "@/lib/types";
 
 describe("useTripStore planner editing", () => {
@@ -2766,5 +2767,102 @@ describe("applySplit save-gate", () => {
     ]);
     expect(useTripStore.getState().splitStatus).toBe("split");
     expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+});
+
+describe("useTripStore applyRouteQuality (#862)", () => {
+  beforeEach(() => {
+    useTripStore.setState(useTripStore.getInitialState());
+  });
+
+  function routeResult(
+    geometry: { lat: number; lng: number }[],
+  ): RouteResponse {
+    return {
+      geometry,
+      distance_km: 20,
+      duration_min: 30,
+      avg_quality: 4,
+      curviness_score: 40,
+      elevation_gain_m: 100,
+      surface_mix: { asphalt: 20_000 },
+    };
+  }
+
+  function qualitySegment(id: string): RouteSegment {
+    return {
+      id,
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [14.41, 50.08],
+          [14.61, 50.19],
+        ],
+      },
+      band: "good",
+      surface: "asphalt",
+      score: 4.2,
+      passes: 12,
+      lengthKm: 20,
+      dayNumber: 1,
+    };
+  }
+
+  // Seed a single day with committed geometry, returning the polyline the
+  // quality would be computed against.
+  function seedRoutedDay(): { lat: number; lng: number }[] {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    const geometry = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 50.19, lng: 14.61 },
+    ];
+    useTripStore.getState().applyRouteResult(1, routeResult(geometry));
+    return geometry;
+  }
+
+  it("stores quality for a day whose geometry still matches", () => {
+    const geometry = seedRoutedDay();
+    const segments = [qualitySegment("d1-s0")];
+    useTripStore.getState().applyRouteQuality(1, geometry, segments);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toEqual(segments);
+  });
+
+  it("ignores a late response for a line the day no longer has", () => {
+    seedRoutedDay();
+    // Endpoint moved — a response computed for a since-replaced route.
+    const staleGeometry = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 51.0, lng: 15.0 },
+    ];
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, staleGeometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
+  });
+
+  it("clears stored quality when the day is re-routed", () => {
+    const geometry = seedRoutedDay();
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toHaveLength(1);
+    useTripStore.getState().applyRouteResult(
+      1,
+      routeResult([
+        { lat: 50.08, lng: 14.41 },
+        { lat: 50.3, lng: 14.8 },
+      ]),
+    );
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
   });
 });

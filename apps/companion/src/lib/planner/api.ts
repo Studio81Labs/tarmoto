@@ -1,6 +1,7 @@
 import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   poiApi,
+  roadsApi,
   routingApi,
   usersApi,
   type AccommodationSuggestion,
@@ -15,6 +16,7 @@ import {
 import { sampleRoutePoints } from "@/lib/route-sampling";
 import { fetchFunZonesInBbox } from "@/lib/discover";
 import { deriveQualitySegments } from "./derive";
+import { mapRouteQualitySpans } from "./route-quality";
 import {
   corridorBbox,
   draftViasThroughZones,
@@ -51,8 +53,9 @@ import { QUALITY_BAND_LABELS_SHORT } from "./quality-bands";
 
 /**
  * The planner's single data seam. Real sources: backend Valhalla routing
- * (`routingApi`) and the `/poi/*` endpoints. Mock sources (see `./mocks/`):
- * per-segment quality join and road previews. Swapping a mock for its real
+ * (`routingApi`), the `/poi/*` endpoints, and per-segment surface quality
+ * (`roadsApi.getRouteQuality`, mapped in `./route-quality`). Mock sources
+ * (see `./mocks/`): road previews and geocoding. Swapping a mock for its real
  * source only ever touches this file.
  */
 
@@ -439,7 +442,12 @@ export async function fetchOvernightTowns(
   return [...towns.values()];
 }
 
-/** One REAL routing round-trip: backend Valhalla proxy + mock quality join. */
+/**
+ * One REAL routing round-trip: backend Valhalla proxy. The returned segments
+ * are the geometry-only `no_data` baseline — real per-segment quality is
+ * fetched separately (`getRouteQuality`) once a day is committed, so the draft
+ * sizing loops here never trigger a quality query per measuring route.
+ */
 async function routeReal(
   waypoints: ReadonlyArray<{ lat: number; lng: number }>,
   options: RouteRequestBody["options"],
@@ -477,6 +485,18 @@ export function createPlannerApi(): PlannerApi {
       init?: { signal?: AbortSignal; dayNumber?: number },
     ): Promise<GeneratedPlannerRoute> {
       return routeReal(waypoints, options, init);
+    },
+
+    async getRouteQuality(
+      points: ReadonlyArray<{ lat: number; lng: number }>,
+      dayNumber: number,
+      init?: { signal?: AbortSignal },
+    ): Promise<RouteSegment[]> {
+      const { data } = await roadsApi.getRouteQuality(
+        { geometry: [...points] },
+        init?.signal !== undefined ? { signal: init.signal } : {},
+      );
+      return mapRouteQualitySpans(points, data.segments, dayNumber);
     },
 
     async draftRoute(

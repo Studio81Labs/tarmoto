@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { poiApi, routingApi, usersApi, type RouteResponse } from "@/lib/api";
+import {
+  poiApi,
+  roadsApi,
+  routingApi,
+  usersApi,
+  type RouteResponse,
+} from "@/lib/api";
 import { fetchFunZonesInBbox } from "@/lib/discover";
 import {
   createPlannerApi,
@@ -10,12 +16,14 @@ import type { RouteSegment } from "../types";
 
 vi.mock("@/lib/api", () => ({
   routingApi: { route: vi.fn() },
+  roadsApi: { getRouteQuality: vi.fn() },
   poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
   usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
 vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
 
 const routeMock = vi.mocked(routingApi.route);
+const routeQualityMock = vi.mocked(roadsApi.getRouteQuality);
 const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
 const accommodationsMock = vi.mocked(poiApi.getAccommodations);
 const getMeMock = vi.mocked(usersApi.getMe);
@@ -131,7 +139,7 @@ describe("plannerApi.generateRoute", () => {
     surface_mix: { asphalt: 100_000, gravel: 22_100 },
   };
 
-  it("routes for real, then joins mock per-segment quality", async () => {
+  it("routes for real and applies the geometry-only no_data baseline", async () => {
     routeMock.mockResolvedValue({ data: rawResponse });
     const api = createPlannerApi();
 
@@ -157,6 +165,10 @@ describe("plannerApi.generateRoute", () => {
     expect(result.raw).toBe(rawResponse);
     expect(result.segments.length).toBeGreaterThanOrEqual(2);
     expect(result.segments.every((s) => s.dayNumber === 2)).toBe(true);
+    // Real per-segment quality is fetched separately (getRouteQuality); the
+    // generateRoute baseline carries none — every segment is no_data.
+    expect(result.segments.every((s) => s.band === "no_data")).toBe(true);
+    expect(result.segments.every((s) => s.score === null)).toBe(true);
     expect(result.summary.distanceKm).toBe(122.1);
     expect(result.summary.timeMin).toBe(96);
     expect(result.summary.score).toBe(3.8);
@@ -218,6 +230,74 @@ describe("plannerApi.generateRoute", () => {
         undefined,
       ),
     ).rejects.toThrow("routing down");
+  });
+});
+
+describe("plannerApi.getRouteQuality (#862)", () => {
+  const points = [
+    { lat: 49, lng: 16 },
+    { lat: 49.1, lng: 16.1 },
+  ];
+
+  beforeEach(() => {
+    routeQualityMock.mockReset();
+  });
+
+  it("requests quality for the polyline and maps the spans onto it", async () => {
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4.2,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 12,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(points, 2);
+
+    expect(routeQualityMock).toHaveBeenCalledWith({ geometry: points }, {});
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      band: "good",
+      surface: "asphalt",
+      score: 4.2,
+      passes: 12,
+      dayNumber: 2,
+    });
+  });
+
+  it("threads an abort signal through to the client", async () => {
+    routeQualityMock.mockResolvedValue({ data: { segments: [] } });
+    const controller = new AbortController();
+
+    await createPlannerApi().getRouteQuality(points, 1, {
+      signal: controller.signal,
+    });
+
+    expect(routeQualityMock).toHaveBeenCalledWith(expect.anything(), {
+      signal: controller.signal,
+    });
+  });
+
+  it("returns a single no_data segment when the route isn't covered", async () => {
+    routeQualityMock.mockResolvedValue({ data: { segments: [] } });
+
+    const segments = await createPlannerApi().getRouteQuality(points, 1);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      band: "no_data",
+      surface: "unknown",
+      score: null,
+    });
   });
 });
 

@@ -310,6 +310,7 @@ export default function TripPlannerPage() {
   const isGenerating = useTripStore((s) => s.isGenerating);
   const setGenerating = useTripStore((s) => s.setGenerating);
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
+  const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   const routeDirty = useTripStore((s) => s.routeDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
@@ -733,6 +734,40 @@ export default function TripPlannerPage() {
     liveRouteEnabled,
     selectedDay?.dayNumber ?? null,
   );
+  // Real per-segment quality for the selected day (#862): whenever a day has a
+  // committed line but no quality yet — freshly routed (applyRouteResult clears
+  // it), reopened, or just selected — fetch it once and store it. The attempt
+  // is deduped by a geometry signature so the effect's frequent re-renders
+  // don't re-hit the endpoint for the same line; a real re-route yields a new
+  // signature and retries. The store guards the apply against the geometry it
+  // was computed for, so a late response can't paint a line since re-routed; an
+  // uncovered or failed response simply leaves the no_data baseline.
+  const qualityAttemptRef = useRef(new Map<number, string>());
+  useEffect(() => {
+    const day = selectedDay;
+    const coordinates = day?.routeGeometry?.coordinates;
+    if (!day || !coordinates || coordinates.length < 2) return;
+    if (day.qualitySegments) return;
+    const points: { lat: number; lng: number }[] = [];
+    for (const coordinate of coordinates) {
+      const [lng, lat] = coordinate;
+      if (typeof lng === "number" && typeof lat === "number") {
+        points.push({ lat, lng });
+      }
+    }
+    if (points.length < 2) return;
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    const signature = `${points.length}:${first.lat},${first.lng}:${last.lat},${last.lng}`;
+    if (qualityAttemptRef.current.get(day.dayNumber) === signature) return;
+    qualityAttemptRef.current.set(day.dayNumber, signature);
+    void plannerApi
+      .getRouteQuality(points, day.dayNumber)
+      .then((segments) => applyRouteQuality(day.dayNumber, points, segments))
+      .catch(() => {
+        // Uncovered route or failed query — stay on the no_data baseline.
+      });
+  }, [selectedDay, applyRouteQuality]);
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
   // socket joins `trip:<id>`, cursors + suggestions + activity start
