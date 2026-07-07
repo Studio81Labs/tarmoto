@@ -101,6 +101,11 @@ function buildDetail(
     num_days: 2,
     status: "planned",
     member_count: 2,
+    owner_id: "owner-1",
+    folder_id: null,
+    distance_km: null,
+    quality_avg: null,
+    passes_count: null,
     created_at: "2026-04-24T10:00:00.000Z",
     daily_km_min: 200,
     daily_km_max: 300,
@@ -116,7 +121,7 @@ function buildDetail(
       {
         user_id: "member-1",
         display_name: "Eve",
-        role: "member",
+        role: "viewer",
         joined_at: "2026-04-24T11:00:00.000Z",
       },
     ],
@@ -132,6 +137,7 @@ function buildDetail(
         curviness_score: 75,
         scenic_score: 80,
         estimated_time_min: 270,
+        start_linked: false,
         route_geometry: [
           { lat: 46.5, lng: 11.2 },
           { lat: 46.6, lng: 11.3 },
@@ -405,7 +411,7 @@ describe("TripDetailPage — member-role gating", () => {
     expect(await screen.findByText("Adam")).toBeInTheDocument();
     expect(screen.getByText(/^owner$/i)).toBeInTheDocument();
     expect(screen.getByText("Eve")).toBeInTheDocument();
-    expect(screen.getByText(/^member$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^viewer$/i)).toBeInTheDocument();
   });
 });
 

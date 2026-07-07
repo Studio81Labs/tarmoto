@@ -1,37 +1,20 @@
-import {
-  tripFromDetail,
-  type TripDetailDay,
-  type TripDetailResponse,
-} from "@/lib/trip-from-detail";
+import type { components } from "@tarmoto/openapi-client";
+import { tripFromDetail } from "@/lib/trip-from-detail";
 import type { Trip, TripParameters } from "@/lib/types";
 
-export type TripGenerationOptionId = "best-fit" | "scenic" | "fastest";
+export type TripGenerationOptionResponse =
+  components["schemas"]["TripGenerationOptionDto"];
+export type GenerateTripResponse =
+  components["schemas"]["GenerateTripResponseDto"];
+export type TripGenerationOptionId = GenerateTripResponse["selected_option"];
 
+/** View model for a generated trip option — carries the camelCase `Trip`. */
 export interface GeneratedTripOption {
   id: TripGenerationOptionId;
   label: string;
   summary: string;
   trip: Trip;
   selected: boolean;
-}
-
-export interface TripGenerationOptionResponse {
-  id: TripGenerationOptionId;
-  label: string;
-  summary: string;
-  total_distance_km: number;
-  total_duration_min: number;
-  avg_quality: number;
-  avg_curviness: number;
-  avg_scenic: number;
-  selected: boolean;
-  days: TripDetailDay[];
-}
-
-export interface GenerateTripResponse {
-  trip: TripDetailResponse;
-  selected_option: TripGenerationOptionId;
-  options: TripGenerationOptionResponse[];
 }
 
 export function generatedOptionsFromResponse(
