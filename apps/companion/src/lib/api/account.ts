@@ -1,14 +1,21 @@
-import type {
-  InAppNotification,
-  InAppNotificationListResponse,
-  NotificationPreferences,
-  PrivacyPreferences,
-} from "@tarmoto/shared";
+import type { components } from "@tarmoto/openapi-client";
 import type { PartialNotificationPreferences } from "@/lib/notification-preferences";
 import type { PartialPrivacySettings } from "@/lib/privacy-settings";
 import type { PrivacySettings } from "@/lib/types";
-import { api, apiFetch, openApiData } from "./client";
+import { api, openApiData } from "./client";
 import type { JsonResponse, JsonRequest } from "./client";
+
+type NotificationPreferences =
+  components["schemas"]["NotificationPreferencesResponseDto"];
+type UpdateNotificationPreferences =
+  components["schemas"]["UpdateNotificationPreferencesDto"];
+type InAppNotification = components["schemas"]["InAppNotificationDto"];
+type InAppNotificationListResponse =
+  components["schemas"]["InAppNotificationListResponseDto"];
+type PrivacyPreferences =
+  components["schemas"]["PrivacyPreferencesResponseDto"];
+type UpdatePrivacyPreferences =
+  components["schemas"]["UpdatePrivacyPreferencesDto"];
 
 // ── Account endpoints (generated OpenAPI contract where available) ──
 export type SubscriptionSnapshotResponse = JsonResponse<
@@ -102,44 +109,51 @@ export const accountApi = {
     openApiData<DeleteAccountResponse>(
       api.DELETE("/api/v1/account", { body: input }),
     ),
-  // Transitional raw helpers owned by companion/settings until #861 follow-up:
-  // push notification preference endpoints are already represented in shared
-  // DTOs, but the page still maps through local partial update types.
+  // Notifications + notification preferences. The settings page still maps
+  // through the `@tarmoto/shared`-based merge helpers (defaults + category
+  // enums the generated schema doesn't carry); the wire types are generated.
   getNotificationPreferences: () =>
-    apiFetch<NotificationPreferences>("/me/notification-preferences"),
+    openApiData<NotificationPreferences>(
+      api.GET("/api/v1/me/notification-preferences"),
+    ),
+  // The settings page builds a `PartialNotificationPreferences` (partial
+  // per-channel toggles); the generated update DTO types every supplied
+  // category as a full channel set, so cast at the boundary — the backend
+  // merges partial channel updates.
   updateNotificationPreferences: (data: PartialNotificationPreferences) =>
-    apiFetch<NotificationPreferences>("/me/notification-preferences", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    openApiData<NotificationPreferences>(
+      api.PUT("/api/v1/me/notification-preferences", {
+        body: data as UpdateNotificationPreferences,
+      }),
+    ),
   getNotifications: () =>
-    apiFetch<InAppNotificationListResponse>("/me/notifications"),
+    openApiData<InAppNotificationListResponse>(
+      api.GET("/api/v1/me/notifications"),
+    ),
   markNotificationRead: (id: string) =>
-    apiFetch<InAppNotification>(
-      `/me/notifications/${encodeURIComponent(id)}/read`,
-      { method: "PATCH" },
+    openApiData<InAppNotification>(
+      api.PATCH("/api/v1/me/notifications/{id}/read", {
+        params: { path: { id } },
+      }),
     ),
   markAllNotificationsRead: () =>
-    apiFetch<InAppNotificationListResponse>("/me/notifications/read-all", {
-      method: "PATCH",
-    }),
+    openApiData<InAppNotificationListResponse>(
+      api.PATCH("/api/v1/me/notifications/read-all"),
+    ),
   // #279: typed `/account/privacy` endpoint (GET/PUT). The backend
   // uses snake_case keys; the companion's UI types are camelCase, so
   // we translate at the boundary to keep the page code unchanged.
   getPrivacySettings: async (): Promise<{ data: PrivacySettings }> => {
-    const { data } = await apiFetch<PrivacyPreferences>("/account/privacy");
+    const { data } = await openApiData<PrivacyPreferences>(
+      api.GET("/api/v1/account/privacy"),
+    );
     return { data: privacyFromBackend(data) };
   },
   updatePrivacySettings: async (
     data: PartialPrivacySettings,
   ): Promise<{ data: PrivacySettings }> => {
-    const body = privacyToBackend(data);
-    const { data: updated } = await apiFetch<PrivacyPreferences>(
-      "/account/privacy",
-      {
-        method: "PUT",
-        body: JSON.stringify(body),
-      },
+    const { data: updated } = await openApiData<PrivacyPreferences>(
+      api.PUT("/api/v1/account/privacy", { body: privacyToBackend(data) }),
     );
     return { data: privacyFromBackend(updated) };
   },
@@ -156,10 +170,8 @@ function privacyFromBackend(p: PrivacyPreferences): PrivacySettings {
   };
 }
 
-function privacyToBackend(
-  p: PartialPrivacySettings,
-): Partial<PrivacyPreferences> {
-  const out: Partial<PrivacyPreferences> = {};
+function privacyToBackend(p: PartialPrivacySettings): UpdatePrivacyPreferences {
+  const out: UpdatePrivacyPreferences = {};
   if (p.profileVisibility !== undefined) {
     out.profile_visibility = p.profileVisibility;
   }
