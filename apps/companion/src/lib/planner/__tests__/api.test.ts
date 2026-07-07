@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { haversineKm } from "@tarmoto/shared";
 import {
+  api,
   poiApi,
   roadsApi,
   routingApi,
@@ -16,6 +17,7 @@ import {
 import type { RouteSegment } from "../types";
 
 vi.mock("@/lib/api", () => ({
+  api: { GET: vi.fn() },
   routingApi: { route: vi.fn() },
   roadsApi: { getRouteQuality: vi.fn() },
   poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
@@ -29,6 +31,7 @@ const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
 const accommodationsMock = vi.mocked(poiApi.getAccommodations);
 const getMeMock = vi.mocked(usersApi.getMe);
 const updateMeMock = vi.mocked(usersApi.updateMe);
+const apiGetMock = vi.mocked(api.GET);
 
 function segment(overrides: Partial<RouteSegment>): RouteSegment {
   return {
@@ -953,5 +956,80 @@ describe("plannerApi user route prefs (revision 3 §F)", () => {
         },
       },
     });
+  });
+});
+
+describe("plannerApi.geocode (#864)", () => {
+  beforeEach(() => apiGetMock.mockReset());
+
+  it("maps backend results to GeoResult and forwards the query + abort signal", async () => {
+    apiGetMock.mockResolvedValue({
+      data: {
+        results: [
+          { label: "Brno, Czechia", lat: 49.2, lng: 16.6, importance: 0.7 },
+        ],
+      },
+      error: undefined,
+    } as never);
+    const controller = new AbortController();
+
+    const results = await createPlannerApi().geocode("  brno  ", {
+      signal: controller.signal,
+    });
+
+    // label → name; importance is dropped (not part of GeoResult).
+    expect(results).toEqual([{ name: "Brno, Czechia", lat: 49.2, lng: 16.6 }]);
+    // Query is trimmed; the abort signal is passed straight through.
+    expect(apiGetMock).toHaveBeenCalledWith("/api/v1/geocode", {
+      params: { query: { q: "brno" } },
+      signal: controller.signal,
+    });
+  });
+
+  it("short-circuits a query under two characters without calling the API", async () => {
+    expect(await createPlannerApi().geocode(" b ")).toEqual([]);
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+
+  it("returns no matches on an API error", async () => {
+    apiGetMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "boom" },
+    } as never);
+    expect(await createPlannerApi().geocode("praha")).toEqual([]);
+  });
+});
+
+describe("plannerApi.reverseGeocode (#864)", () => {
+  beforeEach(() => apiGetMock.mockReset());
+
+  it("names a point by the backend label", async () => {
+    apiGetMock.mockResolvedValue({
+      data: { label: "Brno" },
+      error: undefined,
+    } as never);
+
+    expect(await createPlannerApi().reverseGeocode(49.2, 16.6)).toBe("Brno");
+    expect(apiGetMock).toHaveBeenCalledWith("/api/v1/geocode/reverse", {
+      params: { query: { lat: 49.2, lng: 16.6 } },
+    });
+  });
+
+  it("falls back to trimmed coordinates when the point can't be named", async () => {
+    apiGetMock.mockResolvedValue({
+      data: { label: null },
+      error: undefined,
+    } as never);
+    expect(await createPlannerApi().reverseGeocode(0, 0)).toBe("0.000, 0.000");
+  });
+
+  it("falls back to coordinates on an API error", async () => {
+    apiGetMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "boom" },
+    } as never);
+    expect(await createPlannerApi().reverseGeocode(12.3456, -7.891)).toBe(
+      "12.346, -7.891",
+    );
   });
 });

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type {
   GeocodeProvider,
   GeocodeResult,
+  ReverseGeocodeResult,
 } from '../geocode-provider.interface.js';
 
 interface NominatimRow {
@@ -12,7 +13,38 @@ interface NominatimRow {
   importance?: number | string;
 }
 
+interface NominatimReverseRow {
+  // Present (with HTTP 200) when Nominatim can't name the point, e.g. open
+  // sea — treated as "unnamed", not an error.
+  error?: string;
+  name?: string;
+  display_name?: string;
+  address?: Record<string, string | undefined>;
+}
+
 const NOMINATIM_FETCH_TIMEOUT_MS = 8_000;
+
+// Reverse-geocode granularity: bias the matched feature toward locality
+// level (town / village / suburb) rather than a single building, so a
+// dropped pin names its area. `addressdetails` still returns the whole
+// hierarchy, so city / county / state remain available as fallbacks.
+const NOMINATIM_REVERSE_ZOOM = 14;
+
+// Address components to name a point by, most to least specific. The first
+// present one wins — a settlement is the useful answer to "what place is
+// this pin in", with administrative areas as the remote-area fallback.
+const REVERSE_ADDRESS_KEYS = [
+  'city',
+  'town',
+  'village',
+  'municipality',
+  'hamlet',
+  'suburb',
+  'city_district',
+  'county',
+  'state',
+  'country',
+] as const;
 
 /**
  * Nominatim (OpenStreetMap) geocoder. Chosen in ADR-0002.
@@ -51,10 +83,10 @@ export class NominatimProvider implements GeocodeProvider {
     url.searchParams.set('q', q);
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('limit', String(limit));
-    // Coarse place-type bias — we want regions, towns, landmarks, not
-    // individual addresses or POIs. Keeping this list short is better
-    // than extending it: Nominatim's default ranking is strong once the
-    // addressdetails category filter is out of the way.
+    // Free-form `q` search resolves street addresses, towns, and landmarks
+    // alike — the planner's waypoint search relies on address-level matches,
+    // so we deliberately set no feature-type filter. `accept-language` keeps
+    // labels stable (English) for a predictable dropdown.
     url.searchParams.set('accept-language', 'en');
 
     const controller = new AbortController();
@@ -91,6 +123,47 @@ export class NominatimProvider implements GeocodeProvider {
     return results;
   }
 
+  async reverse(
+    lat: number,
+    lng: number,
+  ): Promise<ReverseGeocodeResult | null> {
+    const url = new URL('reverse', this.endpoint);
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('lat', String(lat));
+    url.searchParams.set('lon', String(lng));
+    url.searchParams.set('addressdetails', '1');
+    url.searchParams.set('zoom', String(NOMINATIM_REVERSE_ZOOM));
+    url.searchParams.set('accept-language', 'en');
+
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      NOMINATIM_FETCH_TIMEOUT_MS,
+    );
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': this.userAgent,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Nominatim API error: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const row = (await response.json()) as NominatimReverseRow;
+    return this.normalizeReverse(row);
+  }
+
   private normalize(row: NominatimRow): GeocodeResult | null {
     const label = row.display_name?.trim();
     if (!label) return null;
@@ -106,5 +179,28 @@ export class NominatimProvider implements GeocodeProvider {
         ? Math.min(1, Math.max(0, importanceRaw))
         : 0;
     return { label, lat, lng, importance };
+  }
+
+  private normalizeReverse(
+    row: NominatimReverseRow,
+  ): ReverseGeocodeResult | null {
+    // Nominatim answers an un-nameable point with `{ error }` and HTTP 200.
+    if (!row || row.error) return null;
+    const label = this.pickPlaceName(row);
+    return label ? { label } : null;
+  }
+
+  private pickPlaceName(row: NominatimReverseRow): string | null {
+    const address = row.address ?? {};
+    for (const key of REVERSE_ADDRESS_KEYS) {
+      const value = address[key]?.trim();
+      if (value) return value;
+    }
+    // No settlement in the address (remote area): fall back to the matched
+    // feature's own name, then the first segment of the full display name.
+    const name = row.name?.trim();
+    if (name) return name;
+    const first = row.display_name?.split(',')[0]?.trim();
+    return first ? first : null;
   }
 }

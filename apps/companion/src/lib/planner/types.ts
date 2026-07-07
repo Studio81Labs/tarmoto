@@ -6,10 +6,11 @@ import type { RouteRequestBody, RouteResponse } from "@/lib/api";
  * Plan & inspect planner contracts.
  *
  * The planner UI is built against these types and talks to data exclusively
- * through {@link PlannerApi}. Routing geometry/time/surface-mix and
- * per-segment surface quality are REAL (backend Valhalla proxy +
- * `POST /roads/route-quality`); street-level previews and geocoding are
- * MOCKED in `./mocks/`. Swapping mock → real is a change to `./api.ts` only.
+ * through {@link PlannerApi}. Routing geometry/time/surface-mix, per-segment
+ * surface quality (backend Valhalla proxy + `POST /roads/route-quality`), and
+ * geocoding (`/api/v1/geocode` + `/geocode/reverse`) are REAL; street-level
+ * previews are still MOCKED in `./mocks/`. Swapping mock → real is a change to
+ * `./api.ts` only.
  */
 
 export type QualityBand = "good" | "fair" | "rough" | "no_data";
@@ -254,10 +255,14 @@ export interface PlannerApi {
     init?: { signal?: AbortSignal },
   ): Promise<RouteStop[]>;
 
-  /** Typed waypoint search in the panel (MOCK — corridor-city fixtures). */
-  geocode(query: string): Promise<GeoResult[]>;
+  /** Typed waypoint search in the panel (REAL — `GET /api/v1/geocode`). */
+  geocode(query: string, init?: { signal?: AbortSignal }): Promise<GeoResult[]>;
 
-  /** Name a map-placed pin from its coordinate (MOCK — nearest fixture). */
+  /**
+   * Name a map-placed pin from its coordinate (REAL —
+   * `GET /api/v1/geocode/reverse`); falls back to a coordinate label when the
+   * point can't be named.
+   */
   reverseGeocode(lat: number, lng: number): Promise<string>;
 
   /**
