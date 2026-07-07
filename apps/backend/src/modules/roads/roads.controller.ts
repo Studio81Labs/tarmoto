@@ -7,8 +7,15 @@ import {
   Post,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { RoadsService } from './roads.service.js';
 import {
   RouteQualityRequestDto,
@@ -69,8 +76,15 @@ export class RoadsController {
     return this.roadsService.findBest(query);
   }
 
+  // `route-quality` accepts an arbitrary routed polyline and runs the
+  // expensive per-sample PostGIS lateral (up to ~12.5k samples). Same rationale
+  // as `POST /passes/check-route`: keep it behind AuthGuard so anonymous
+  // traffic can't drive unbounded geospatial compute — the planner overlay is
+  // an authenticated, post-login surface anyway.
   @Post('route-quality')
   @HttpCode(200)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary:
       'Per-segment surface quality for a routed polyline (planner overlay)',

@@ -1023,10 +1023,10 @@ describe('RoadsService', () => {
         expect.stringContaining('deactivated_at IS NULL'),
         expect.any(Array),
       );
-      // Nearest-snap (KNN `<->`, LIMIT 1) so a crossed cross street doesn't
-      // claim a span of the rider's road.
+      // Nearest-snap by true metric distance (ST_Distance geography, LIMIT 1)
+      // so a crossed cross street doesn't claim a span of the rider's road.
       expect(segmentRepo.query).toHaveBeenCalledWith(
-        expect.stringContaining('<->'),
+        expect.stringMatching(/ORDER BY ST_Distance[\s\S]*LIMIT 1/),
         expect.any(Array),
       );
       // Repeated passes over the same road become separate spans via the

@@ -207,7 +207,11 @@ export class RoadsService {
             -- routed way just because the degree box is generous.
             AND ST_DWithin(rs.geom, s.pt, ${bufferDegExpr})
             AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
-          ORDER BY rs.geom <-> s.pt
+          -- Rank by true metric distance, not planar degrees, so the nearest
+          -- snap is correct at any latitude. The WHERE has already narrowed
+          -- to the handful of segments within buffer_m, so the exact distance
+          -- sort is cheap.
+          ORDER BY ST_Distance(rs.geom::geography, s.pt::geography)
           LIMIT 1
         ) seg ON TRUE
       ),

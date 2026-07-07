@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { RoadsController } from './roads.controller.js';
 import { RoadsService } from './roads.service.js';
+import { AuthGuard } from '../auth/auth.guard.js';
+import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 
 describe('RoadsController', () => {
   let controller: RoadsController;
@@ -63,7 +65,12 @@ describe('RoadsController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RoadsController],
-      providers: [{ provide: RoadsService, useValue: mockService }],
+      providers: [
+        { provide: RoadsService, useValue: mockService },
+        // `route-quality` is behind AuthGuard; provide its deps so the module
+        // compiles (the unit tests call methods directly, past the guard).
+        ...authGuardTestProviders,
+      ],
     }).compile();
 
     controller = module.get<RoadsController>(RoadsController);
@@ -83,6 +90,15 @@ describe('RoadsController', () => {
 
       expect(service.getRouteQuality).toHaveBeenCalledWith(dto);
       expect(result.segments).toHaveLength(1);
+    });
+
+    it('is behind AuthGuard so anonymous callers cannot trigger the spatial query', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        RoadsController.prototype.getRouteQuality,
+      ) as unknown[];
+      expect(guards).toBeDefined();
+      expect(guards).toContain(AuthGuard);
     });
   });
 
