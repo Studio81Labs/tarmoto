@@ -101,10 +101,17 @@ export function buildPlannerQualityRouteCollection(
  */
 export function deriveDayQualitySegments(day: TripDay): RouteSegment[] {
   // Prefer real per-segment quality fetched for this day's committed line
-  // (#862). Fall back to the geometry-only `no_data` baseline before that
-  // resolves, when the route isn't covered, or on a saved/imported day that
-  // was never routed in this session.
-  if (day.qualitySegments && day.qualitySegments.length > 0) {
+  // (#862) — but only while the day still has that routed line. Any geometry
+  // change clears the stored quality at the source; requiring current geometry
+  // here also guards against a route that became unroutable (routeGeometry
+  // dropped) so the map can't keep drawing quality for a line that's gone.
+  // Falls back to the geometry-only `no_data` baseline otherwise.
+  if (
+    day.routeGeometry &&
+    day.routeGeometry.coordinates.length >= 2 &&
+    day.qualitySegments &&
+    day.qualitySegments.length > 0
+  ) {
     return day.qualitySegments;
   }
   const coordinates = getDayRouteCoordinates(day);

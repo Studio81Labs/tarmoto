@@ -2865,4 +2865,53 @@ describe("useTripStore applyRouteQuality (#862)", () => {
       useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
     ).toBeUndefined();
   });
+
+  it("rejects a response for a different interior path with matching endpoints", () => {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    const original = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 50.13, lng: 14.5 },
+      { lat: 50.19, lng: 14.61 },
+    ];
+    useTripStore.getState().applyRouteResult(1, routeResult(original));
+    // Reroute (e.g. a road-preference change): same endpoints and vertex
+    // count, different middle vertex.
+    useTripStore.getState().applyRouteResult(
+      1,
+      routeResult([
+        { lat: 50.08, lng: 14.41 },
+        { lat: 50.16, lng: 14.44 },
+        { lat: 50.19, lng: 14.61 },
+      ]),
+    );
+    // A late response computed for the ORIGINAL interior path is rejected even
+    // though endpoints and count match the current line.
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, original, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
+  });
+
+  it("drops stored quality when the route becomes unroutable", () => {
+    const geometry = seedRoutedDay();
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toHaveLength(1);
+    // Removing the finish leaves <2 routing waypoints — updatePlannerDayRoute
+    // clears the route-derived line and its quality with it.
+    const endId = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!.id;
+    useTripStore.getState().removeWaypoint(0, endId);
+    const day = useTripStore.getState().activeTrip?.days[0];
+    expect(day?.routeGeometry).toBeUndefined();
+    expect(day?.qualitySegments).toBeUndefined();
+  });
 });

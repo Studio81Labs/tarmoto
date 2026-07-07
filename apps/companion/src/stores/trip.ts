@@ -1877,9 +1877,11 @@ function clearDayStale(staleDays: number[], dayNumber: number): number[] {
 }
 
 /**
- * Cheap check that a stored day route line is still the polyline `points` were
- * derived from — same vertex count and endpoints. Gates a late-resolving
- * route-quality fetch (`applyRouteQuality`) against an intervening re-route.
+ * Check that a stored day route line is still the exact polyline `points` were
+ * derived from — every vertex, not just count + endpoints. Gates a
+ * late-resolving route-quality fetch (`applyRouteQuality`) against an
+ * intervening re-route that kept the same waypoints but took a different
+ * interior path (e.g. a road-preference or avoidance change).
  */
 function geometryMatchesPoints(
   geometry: TripDay["routeGeometry"],
@@ -1889,20 +1891,14 @@ function geometryMatchesPoints(
   if (!coords || coords.length !== points.length || points.length === 0) {
     return false;
   }
-  const first = coords[0];
-  const last = coords[coords.length - 1];
-  const startPoint = points[0];
-  const endPoint = points[points.length - 1];
-  return (
-    !!first &&
-    !!last &&
-    !!startPoint &&
-    !!endPoint &&
-    first[0] === startPoint.lng &&
-    first[1] === startPoint.lat &&
-    last[0] === endPoint.lng &&
-    last[1] === endPoint.lat
-  );
+  for (let index = 0; index < coords.length; index += 1) {
+    const coordinate = coords[index]!;
+    const point = points[index]!;
+    if (coordinate[0] !== point.lng || coordinate[1] !== point.lat) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function updatePlannerDayRoute(
@@ -1927,6 +1923,8 @@ function updatePlannerDayRoute(
       avgQuality: 0,
       elevationGain: 0,
       segments: [],
+      // Route-derived per-segment quality goes with the line it described (#862).
+      qualitySegments: undefined,
     };
     // Clear any route-derived geometry: the live routing hook bails for <2
     // routing waypoints, so it won't recompute this day — drop the stale line.
