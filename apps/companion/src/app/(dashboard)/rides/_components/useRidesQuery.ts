@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
@@ -182,19 +183,8 @@ export function toFilterParams(
   return rest;
 }
 
-export interface RideSummary {
-  id: string;
-  name: string | null;
-  started_at: string;
-  ended_at: string | null;
-  ride_type: string;
-  status: string;
-  distance_km: number | null;
-  avg_speed: number | null;
-  avg_road_quality: number | null;
-  duration_min: number | null;
-  max_lean_angle: number | null;
-}
+/** Ride History list rows — the generated `RideSummaryDto`. */
+export type RideSummary = components["schemas"]["RideSummaryDto"];
 
 interface ListResult {
   rides: RideSummary[];
@@ -265,10 +255,9 @@ export function useRidesQuery() {
           });
           return;
         }
-        const d = data as unknown as { rides: RideSummary[]; total: number };
         setList({
-          rides: d.rides ?? [],
-          total: d.total ?? 0,
+          rides: data?.rides ?? [],
+          total: data?.total ?? 0,
           loading: false,
           error: null,
         });

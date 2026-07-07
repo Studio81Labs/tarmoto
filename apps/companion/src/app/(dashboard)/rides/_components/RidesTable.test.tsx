@@ -29,6 +29,8 @@ function ride(overrides: Partial<RideSummary> = {}): RideSummary {
     distance_km: 142.4,
     avg_speed: 63.2,
     avg_road_quality: 4.2,
+    avg_curviness: null,
+    bike_id: null,
     duration_min: 150,
     max_lean_angle: 38.6,
     ...overrides,
