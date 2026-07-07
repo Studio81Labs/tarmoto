@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -37,6 +42,15 @@ const BEST_ROADS_MIN_CONFIDENCE = 3;
 const BEST_ROADS_MIN_LENGTH_M = 500;
 const BEST_ROADS_DEFAULT_LIMIT = 10;
 const FUN_ZONE_TOP_ROADS_LIMIT = 10;
+
+// Route-quality sampling (#862). Spacing stays below the importer's ~100 m
+// `road_segments` length so a segment is never stepped over, and the accepted
+// route length is bounded so that fixed spacing also bounds the sample count
+// (~12.5k). A route longer than the limit can't be represented at segment
+// scale, so it's rejected rather than returned with silent no-data gaps — the
+// companion routes per day/leg and never approaches it.
+const ROUTE_QUALITY_SAMPLE_SPACING_M = 40;
+const MAX_ROUTE_QUALITY_LENGTH_M = 500_000;
 
 @Injectable()
 export class RoadsService {
@@ -85,6 +99,22 @@ export class RoadsService {
   ): Promise<RouteQualityResponseDto> {
     const bufferM = dto.buffer_m ?? 25;
 
+    // Reject routes too long to represent at segment scale (see the constants).
+    // Thrown before the try/catch so it surfaces as a 400, not swallowed into
+    // an empty overlay. Length is a cheap haversine sum — no DB round-trip.
+    let routeLengthM = 0;
+    for (let i = 1; i < dto.geometry.length; i += 1) {
+      const a = dto.geometry[i - 1];
+      const b = dto.geometry[i];
+      if (a && b) routeLengthM += haversineMeters(a.lat, a.lng, b.lat, b.lng);
+    }
+    if (routeLengthM > MAX_ROUTE_QUALITY_LENGTH_M) {
+      throw new BadRequestException(
+        `Route too long for per-segment quality (${Math.round(routeLengthM / 1000)} km ` +
+          `> ${MAX_ROUTE_QUALITY_LENGTH_M / 1000} km); request it per day/leg.`,
+      );
+    }
+
     // Build the route LineString via positional params so no user coordinate
     // is string-interpolated into the SQL.
     const params: number[] = [];
@@ -104,12 +134,10 @@ export class RoadsService {
       route AS (
         SELECT
           line,
-          -- ~40 m spacing so normal ~100 m segments are always sampled; capped
-          -- at 5000 samples (exact to ~200 km, spacing only grows beyond).
-          GREATEST(
-            2,
-            LEAST(5000, CEIL(ST_Length(line::geography) / 40.0)::int)
-          ) AS n
+          -- Fixed ~40 m spacing (never coarsened): the length guard above
+          -- bounds this to ~12.5k samples, so a normal ~100 m segment is never
+          -- stepped over regardless of route length.
+          GREATEST(2, CEIL(ST_Length(line::geography) / ${ROUTE_QUALITY_SAMPLE_SPACING_M}.0)::int) AS n
         FROM cfg
       ),
       -- Walk the route: one point every 1/n of its length.

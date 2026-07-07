@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { RoadsService } from './roads.service.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -1035,6 +1035,18 @@ describe('RoadsService', () => {
         expect.stringContaining('ROW_NUMBER()'),
         expect.any(Array),
       );
+    });
+
+    it('rejects a route too long to represent at segment scale (400, no DB round-trip)', async () => {
+      await expect(
+        service.getRouteQuality({
+          geometry: [
+            { lat: 49, lng: 0 },
+            { lat: 49, lng: 10 }, // ~730 km at this latitude, over the 500 km cap
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(segmentRepo.query).not.toHaveBeenCalled();
     });
 
     it('honours a custom buffer', async () => {

@@ -76,6 +76,11 @@ export class RoadsController {
       'Per-segment surface quality for a routed polyline (planner overlay)',
   })
   @ApiResponse({ status: 200, type: RouteQualityResponseDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Route exceeds the maximum length representable at segment scale',
+  })
   async getRouteQuality(
     @Body() dto: RouteQualityRequestDto,
   ): Promise<RouteQualityResponseDto> {
