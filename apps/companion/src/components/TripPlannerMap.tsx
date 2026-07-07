@@ -16,7 +16,15 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { ExternalLink, Layers3, Plus, TriangleAlert } from "lucide-react";
+import {
+  Ban,
+  Construction,
+  ExternalLink,
+  Layers3,
+  MountainSnow,
+  Plus,
+  TriangleAlert,
+} from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -162,33 +170,58 @@ const POI_FETCH_DEBOUNCE_MS = 400;
  * country zoom they'd be noise; the closure lines still hint presence.
  */
 const CONDITION_MARKER_MINZOOM = 7;
+/**
+ * Route line colour when no data layer is active (quality/surface toggled
+ * off): plain ink so the route reads as geometry, not as a measurement.
+ */
+const NEUTRAL_ROUTE_LINE_COLOR = "#0E0E10";
 const CONDITION_IMAGE_PREFIX = "tarmoto-condition-";
 /**
  * Diamond icon badges, deliberately OFF the road-quality palette so a
  * closed road never reads as a "red quality" line: crimson closures,
  * construction amber roadworks, slate/crimson mountain passes.
  */
-const CONDITION_BADGES: Record<string, { color: string; glyph: string }> = {
+type ConditionKind = "closure-full" | "closure-partial" | "roadworks" | "pass";
+const CONDITION_COLORS: Record<ConditionKind, string> = {
+  "closure-full": "#C23B22",
+  "closure-partial": "#D19A2E",
+  roadworks: "#C77D2E",
+  pass: "#3F6DB0",
+};
+const CONDITION_BADGES: Record<
+  ConditionKind,
+  { color: string; glyph: string }
+> = {
   "closure-full": {
-    color: "#C81E3C",
-    glyph: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+    color: CONDITION_COLORS["closure-full"],
+    glyph: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
   },
-  "closure-works": {
-    color: "#B45309",
-    glyph:
-      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  "closure-partial": {
+    color: CONDITION_COLORS["closure-partial"],
+    glyph: '<path d="M12 2 2 20h20z"/><path d="M12 9v5M12 17h.01"/>',
   },
-  "pass-closed": {
-    color: "#C81E3C",
+  roadworks: {
+    color: CONDITION_COLORS.roadworks,
     glyph:
-      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+      '<path d="M10 2v2M14 2v2M3 22l4-11h10l4 11M8.5 11l-2 11M15.5 11l2 11M6 16h12"/>',
   },
-  "pass-unknown": {
-    color: "#5B6B8C",
-    glyph:
-      '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  pass: {
+    color: CONDITION_COLORS.pass,
+    glyph: '<path d="m3 20 6-10 4 5 3-4 5 9z"/>',
   },
 };
+/**
+ * Marker kind for a closure: full closures lead, roadworks get their own
+ * badge, and any other partial/advisory reason reads as a partial closure.
+ */
+function closureConditionKind(closure: {
+  severity: string;
+  reason: string;
+}): ConditionKind {
+  if (closure.severity === "full") return "closure-full";
+  if (closure.reason === "roadworks") return "roadworks";
+  return "closure-partial";
+}
 const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
 
 /**
@@ -674,8 +707,9 @@ const TripPlannerMapContent = forwardRef<
   const [ready, setReady] = useState(false);
   // Two INDEPENDENT map toggles (design): how the route line is colored,
   // and which basemap sits under it.
+  // null = no data layer on the route line (neutral ink) and no legend.
   const [lineColorMode, setLineColorMode] =
-    useState<PlannerLineColorMode>("quality");
+    useState<PlannerLineColorMode | null>("quality");
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   // Ephemeral how-to hints (rider feedback): each hint lives exactly as
@@ -1362,7 +1396,9 @@ const TripPlannerMapContent = forwardRef<
     map.setPaintProperty(
       ROUTE_LINE,
       "line-color",
-      plannerRouteLineColor(lineColorMode, SURFACE_COLORS),
+      lineColorMode
+        ? plannerRouteLineColor(lineColorMode, SURFACE_COLORS)
+        : NEUTRAL_ROUTE_LINE_COLOR,
     );
   }, [lineColorMode, ready]);
   // Basemap toggle — swaps the imagery UNDER the route line; the quality
@@ -2335,7 +2371,11 @@ const TripPlannerMapContent = forwardRef<
             type="button"
             aria-pressed={lineColorMode === "quality"}
             aria-label="Color the route line by road quality"
-            onClick={() => setLineColorMode("quality")}
+            onClick={() =>
+              setLineColorMode((mode) =>
+                mode === "quality" ? null : "quality",
+              )
+            }
             className={toggleClassName(lineColorMode === "quality")}
           >
             <Layers3 size={14} />
@@ -2345,7 +2385,11 @@ const TripPlannerMapContent = forwardRef<
             type="button"
             aria-pressed={lineColorMode === "surface"}
             aria-label="Color the route line by surface"
-            onClick={() => setLineColorMode("surface")}
+            onClick={() =>
+              setLineColorMode((mode) =>
+                mode === "surface" ? null : "surface",
+              )
+            }
             className={toggleClassName(lineColorMode === "surface")}
           >
             <Layers3 size={14} />
@@ -2385,9 +2429,10 @@ const TripPlannerMapContent = forwardRef<
         <div className="absolute bottom-20 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
           {(
             [
-              ["#C81E3C", "Closure"],
-              ["#B45309", "Roadworks"],
-              ["#5B6B8C", "Pass closed/unknown"],
+              [CONDITION_COLORS.roadworks, "Roadworks"],
+              [CONDITION_COLORS["closure-full"], "Full closure"],
+              [CONDITION_COLORS["closure-partial"], "Partial closure"],
+              [CONDITION_COLORS.pass, "Seasonal pass"],
             ] as const
           ).map(([color, label]) => (
             <span
@@ -2405,7 +2450,7 @@ const TripPlannerMapContent = forwardRef<
         </div>
       ) : null}
       {/* ── Route legend for the active line-coloring mode ── */}
-      {routeCollection.features.length > 0 ? (
+      {lineColorMode && routeCollection.features.length > 0 ? (
         <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
           {lineColorMode === "quality"
             ? (
@@ -2459,13 +2504,18 @@ const TripPlannerMapContent = forwardRef<
               isClosure && conditionMenu.closure.reason === "roadworks"
                 ? detourLengthKm(conditionMenu.closure)
                 : null;
-            const badgeColor = isClosure
-              ? conditionMenu.closure.severity === "full"
-                ? "#C81E3C"
-                : "#B45309"
-              : conditionMenu.pass.status === "closed"
-                ? "#C81E3C"
-                : "#5B6B8C";
+            const conditionKind: ConditionKind = isClosure
+              ? closureConditionKind(conditionMenu.closure)
+              : "pass";
+            const badgeColor = CONDITION_COLORS[conditionKind];
+            const BadgeIcon =
+              conditionKind === "closure-full"
+                ? Ban
+                : conditionKind === "roadworks"
+                  ? Construction
+                  : conditionKind === "pass"
+                    ? MountainSnow
+                    : TriangleAlert;
             return (
               <div
                 role="dialog"
@@ -2478,7 +2528,7 @@ const TripPlannerMapContent = forwardRef<
                     className="flex h-9 w-9 shrink-0 rotate-45 items-center justify-center rounded-[10px] border-2 bg-paper"
                     style={{ borderColor: badgeColor }}
                   >
-                    <TriangleAlert
+                    <BadgeIcon
                       size={15}
                       className="-rotate-45"
                       style={{ color: badgeColor }}
@@ -3239,7 +3289,9 @@ function ensurePlannerLayers(map: MapLibreMap): void {
           "case",
           ["==", ["get", "severity"], "full"],
           `${CONDITION_IMAGE_PREFIX}closure-full`,
-          `${CONDITION_IMAGE_PREFIX}closure-works`,
+          ["==", ["get", "reason"], "roadworks"],
+          `${CONDITION_IMAGE_PREFIX}roadworks`,
+          `${CONDITION_IMAGE_PREFIX}closure-partial`,
         ],
         "icon-size": 1,
         "icon-allow-overlap": true,
@@ -3263,12 +3315,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       // open passes stay off the map (revision 7).
       filter: ["!=", ["get", "status"], "open"],
       layout: {
-        "icon-image": [
-          "case",
-          ["==", ["get", "status"], "closed"],
-          `${CONDITION_IMAGE_PREFIX}pass-closed`,
-          `${CONDITION_IMAGE_PREFIX}pass-unknown`,
-        ],
+        "icon-image": `${CONDITION_IMAGE_PREFIX}pass`,
         "icon-size": 1,
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,

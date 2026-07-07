@@ -352,6 +352,40 @@ describe("TripPlannerMap", () => {
     expect(canvas).toHaveAttribute("data-show-surface", "false");
   });
 
+  it("toggles the active line-coloring mode off entirely on re-click", () => {
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "trip-planner-route-line" ? { id: layerId } : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const canvas = screen.getByTestId("planner-map-canvas");
+    const qualityButton = screen.getByRole("button", {
+      name: "Color the route line by road quality",
+    });
+    expect(qualityButton).toHaveAttribute("aria-pressed", "true");
+    // The route legend for the active mode is visible while quality is on.
+    expect(screen.getByText("Good+")).toBeInTheDocument();
+
+    // Re-clicking the active mode disables the layer: no tile overlays,
+    // neutral ink route line, and the legend info box disappears.
+    fireEvent.click(qualityButton);
+    expect(qualityButton).toHaveAttribute("aria-pressed", "false");
+    expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+    const lineColorCalls = mockMap.setPaintProperty.mock.calls.filter(
+      ([layerId, prop]) =>
+        layerId === "trip-planner-route-line" && prop === "line-color",
+    );
+    expect(lineColorCalls.at(-1)?.[2]).toBe("#0E0E10");
+    expect(screen.queryByText("Good+")).not.toBeInTheDocument();
+
+    // Clicking it again re-enables the layer.
+    fireEvent.click(qualityButton);
+    expect(qualityButton).toHaveAttribute("aria-pressed", "true");
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
+    expect(screen.getByText("Good+")).toBeInTheDocument();
+  });
+
   it("swaps to the aerial basemap independently of the coloring mode", () => {
     // setAerialBasemapVisible no-ops unless the aerial layer exists.
     mockMap.getLayer.mockImplementation((layerId: string) =>
