@@ -140,6 +140,7 @@ export function TripExportMenu({
         <Button
           variant="secondary"
           size="sm"
+          uppercase
           onClick={() => !disabled && setOpen((o) => !o)}
           disabled={disabled}
           aria-haspopup="menu"

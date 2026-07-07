@@ -222,7 +222,11 @@ function primeStores(callerId: string | null = "owner-1") {
   useAuthStoreMock.mockImplementation(((selector: (s: unknown) => unknown) =>
     selector(authSnapshot)) as unknown as typeof useAuthStore);
   const setActiveTrip = vi.fn();
-  const tripSnapshot = { setActiveTrip };
+  const tripSnapshot = {
+    setActiveTrip,
+    selectedPlannerSegmentId: null,
+    selectPlannerSegment: vi.fn(),
+  };
   useTripStoreMock.mockImplementation(((selector: (s: unknown) => unknown) =>
     selector(tripSnapshot)) as unknown as typeof useTripStore);
   useClosuresMock.mockReturnValue(closuresResult);
@@ -255,20 +259,32 @@ describe("TripDetailPage — data fetching", () => {
   });
 
   it("fetches the trip via tripsApi.get and renders header + day stats", async () => {
-    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    const detail = buildDetail();
+    // Day-by-day cards render only for multi-day routes — mirror the
+    // fixture day as Day 2 so the section shows.
+    detail.days = [
+      detail.days[0]!,
+      {
+        ...detail.days[0]!,
+        id: "d-2",
+        day_number: 2,
+        title: "Descent to Canazei",
+      },
+    ];
+    tripsApiGetMock.mockResolvedValue({ data: detail } as never);
     render(<TripDetailPage />);
 
     await waitFor(() => {
       expect(tripsApiGetMock).toHaveBeenCalledWith("trip-1");
     });
     expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
-    // Header total + per-day card both render the same distance for a
-    // single-day trip; getAllByText sidesteps the duplicate without
-    // weakening the assertion (we still want to see at least one).
+    // Header meta + trip-summary tile + per-day cards all show distances;
+    // getAllByText sidesteps the duplicates without weakening the check.
     expect(screen.getAllByText(/220\.5 km/).length).toBeGreaterThan(0);
-    // Day-by-day surfaces the day title and its waypoint count.
+    // Day-by-day surfaces the day titles and their waypoint counts.
     expect(screen.getByText(/Climb to Sella/)).toBeInTheDocument();
-    expect(screen.getByText(/2 waypoints/)).toBeInTheDocument();
+    expect(screen.getByText(/Descent to Canazei/)).toBeInTheDocument();
+    expect(screen.getAllByText(/2 waypoints/).length).toBe(2);
   });
 
   it("renders the not-found state when the backend 404s", async () => {
@@ -346,20 +362,15 @@ describe("TripDetailPage — member-role gating", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides trip invite controls for plain members", async () => {
+  it("denies invite-link creation to plain members via the collaborate modal", async () => {
     primeStores("member-1");
     tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
     render(<TripDetailPage />);
 
     expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /members/i }));
-
-    expect(screen.queryByText("Invite riders")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/open collaborate & invite/i),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(await screen.findByRole("tab", { name: /collaborate/i }));
+    // Collaboration lives in the header now (planner parity) — the modal
+    // carries the role gating.
+    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
     await waitFor(() => {
       expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
         expect.objectContaining({ canCreateInviteLink: false }),
@@ -367,7 +378,7 @@ describe("TripDetailPage — member-role gating", () => {
     });
   });
 
-  it("shows trip invite controls for editors", async () => {
+  it("grants invite-link creation to editors via the collaborate modal", async () => {
     primeStores("member-1");
     tripsApiGetMock.mockResolvedValue({
       data: buildDetail({
@@ -390,28 +401,12 @@ describe("TripDetailPage — member-role gating", () => {
     render(<TripDetailPage />);
 
     expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /members/i }));
-
-    expect(await screen.findByText("Invite riders")).toBeInTheDocument();
-    expect(screen.getByText(/open collaborate & invite/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
     await waitFor(() => {
       expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
         expect.objectContaining({ canCreateInviteLink: true }),
       );
     });
-  });
-
-  it("renders the owner badge with the Crown icon for the owner row", async () => {
-    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
-    render(<TripDetailPage />);
-    fireEvent.click(await screen.findByRole("tab", { name: /members/i }));
-    // Roles render as uppercase pills next to each name; verifying
-    // both surface lets the test detect a regression that swaps the
-    // icon/label without changing visual state.
-    expect(await screen.findByText("Adam")).toBeInTheDocument();
-    expect(screen.getByText(/^owner$/i)).toBeInTheDocument();
-    expect(screen.getByText("Eve")).toBeInTheDocument();
-    expect(screen.getByText(/^viewer$/i)).toBeInTheDocument();
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useId, useMemo } from "react";
-import { AlertTriangle, ChevronDown, Images } from "lucide-react";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import type { RoutePreviewSegment } from "@/lib/types";
 import {
   QUALITY_CONFIG,
@@ -17,12 +17,21 @@ import {
 import { HAZARD_CONFIG } from "@/lib/utils";
 import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
+import { MiniRouteSvg, QualityBars } from "@tarmoto/ui";
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
-  none: "text-slate-500",
-  low: "text-yellow-400",
-  medium: "text-orange-400",
-  high: "text-red-400",
+  none: "text-fg-mute",
+  low: "text-yellow-600",
+  medium: "text-orange-500",
+  high: "text-red-500",
 };
+/** Clamp a fractional 0–5 quality score to the 1–5 tier QualityBars takes. */
+function tierOf(score: number): 1 | 2 | 3 | 4 | 5 {
+  return Math.min(5, Math.max(1, Math.round(score))) as 1 | 2 | 3 | 4 | 5;
+}
+/** Stable per-card seed so two MiniRouteSvg thumbnails don't render identically. */
+function seedOf(segment: RoutePreviewSegment): number {
+  return segment.dayNumber * 31 + segment.orderInDay * 7 + 5;
+}
 interface RoadPreviewCardProps {
   segment: RoutePreviewSegment;
   isFocused: boolean;
@@ -62,8 +71,8 @@ export function RoadPreviewCard({
         isFocused
           ? "border-accent bg-accent/5"
           : isHovered
-            ? "border-slate-600 bg-slate-900"
-            : "border-slate-800 bg-slate-900"
+            ? "border-line-strong bg-cream/60"
+            : "border-line bg-cream/60"
       }`}
     >
       <button
@@ -71,95 +80,51 @@ export function RoadPreviewCard({
         onClick={onFocus}
         aria-pressed={isFocused}
         aria-label={`Focus segment ${segment.name ?? segment.id} on the map`}
-        className="w-full text-left p-3"
+        className="flex w-full items-center gap-3 p-3 text-left"
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span
-                title={`Quality score ${segment.qualityScore.toFixed(1)}`}
-                className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-slate-950 ${tier.bg}`}
-              >
-                {segment.qualityScore.toFixed(1)}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white truncate">
-                  {segment.name ?? `Segment ${segment.orderInDay + 1}`}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {t("Day ")}
-                  {segment.dayNumber} · {formatDistance(segment.distanceKm)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {segment.photos.length > 0 && (
-              <span
-                className="flex items-center gap-1 text-xs text-slate-400"
-                title={`${segment.photos.length} photo(s)`}
-              >
-                <Images size={12} />
-                {segment.photos.length}
-              </span>
-            )}
-            <span
-              className={`flex items-center gap-1 text-xs ${SEVERITY_COLOR[severity]}`}
-              title={severityLabel}
-            >
-              <AlertTriangle size={12} />
-              {segment.activeHazards.length}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-          <span>{curvinessLabel(segment.curvinessScore)}</span>
-          <span className="tabular-nums">
-            {formatElevationRange(segment.elevationProfile)}
-          </span>
-        </div>
-
-        <svg
-          viewBox="0 0 240 40"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-          className="mt-2 w-full h-10 text-accent/70"
-        >
-          <path
-            d={elevationPath}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <span className="w-[18px] shrink-0 text-center font-mono text-xs font-extrabold text-fg-mute">
+          {String(segment.orderInDay + 1).padStart(2, "0")}
+        </span>
+        <span className="h-[46px] w-[68px] shrink-0 overflow-hidden rounded-lg border border-line">
+          <MiniRouteSvg
+            q={tierOf(segment.qualityScore)}
+            seed={seedOf(segment)}
+            className="h-full w-full"
           />
-        </svg>
-
-        {segment.photos.length > 0 && (
-          <div className="mt-3 grid grid-cols-3 gap-1.5">
-            {segment.photos.slice(0, 3).map((photo) => (
-              <div
-                key={photo.id}
-                className="aspect-[4/3] rounded-md bg-slate-800 border border-slate-700 overflow-hidden text-[10px] text-slate-500 flex items-center justify-center"
-                title={`${photo.riderName} · ${formatRelativeTime(photo.createdAt)}`}
-              >
-                {photo.riderName}
-              </div>
-            ))}
-          </div>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-bold text-ink">
+            {segment.name ?? `Segment ${segment.orderInDay + 1}`}
+          </span>
+          <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.3px] text-fg-mute">
+            {formatDistance(segment.distanceKm)} · {segment.surfaceType} ·{" "}
+            {curvinessLabel(segment.curvinessScore)}
+          </span>
+        </span>
+        {segment.activeHazards.length > 0 && (
+          <span
+            className={`flex shrink-0 items-center gap-1 text-xs ${SEVERITY_COLOR[severity]}`}
+            title={severityLabel}
+          >
+            <AlertTriangle size={12} />
+            {segment.activeHazards.length}
+          </span>
         )}
+        <QualityBars
+          q={tierOf(segment.qualityScore)}
+          size={4}
+          className="shrink-0"
+          ariaLabel={`Quality score ${segment.qualityScore.toFixed(1)} of 5`}
+        />
       </button>
 
-      <div className="flex items-center justify-end border-t border-slate-800 px-3 py-1.5">
+      <div className="flex items-center justify-end border-t border-line px-3 py-1.5">
         <button
           type="button"
           onClick={onToggleExpand}
           aria-expanded={isExpanded}
           aria-controls={detailId}
-          className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition"
+          className="flex items-center gap-1 text-xs text-fg-dim transition hover:text-ink"
         >
           {isExpanded ? "Hide details" : "Show details"}
           <ChevronDown
@@ -172,12 +137,12 @@ export function RoadPreviewCard({
       {isExpanded && (
         <div
           id={detailId}
-          className="border-t border-slate-800 px-3 py-3 space-y-4 text-xs text-slate-300"
+          className="space-y-4 border-t border-line px-3 py-3 text-xs text-fg-dim"
         >
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Stat
-              label="Quality tier"
-              value={tier.label}
+              label="Quality score"
+              value={`${segment.qualityScore.toFixed(1)} · ${tier.label}`}
               valueClass={tier.color}
             />
             <Stat
@@ -193,9 +158,34 @@ export function RoadPreviewCard({
             <Stat label="Distance" value={formatDistance(segment.distanceKm)} />
           </div>
 
+          <div>
+            <p className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wider text-fg-mute">
+              <span>{t("Elevation ")}</span>
+              <span className="tabular-nums normal-case">
+                {formatElevationRange(segment.elevationProfile)}
+              </span>
+            </p>
+            <svg
+              viewBox="0 0 240 40"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+              className="h-10 w-full text-accent/70"
+            >
+              <path
+                d={elevationPath}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+
           {segment.qualityHistory && segment.qualityHistory.length > 1 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
+              <p className="mb-2 text-[11px] uppercase tracking-wider text-fg-mute">
                 {t("Quality trend ")}
               </p>
               <SegmentTrendChart
@@ -207,11 +197,11 @@ export function RoadPreviewCard({
           )}
 
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+            <p className="mb-1 text-[11px] uppercase tracking-wider text-fg-mute">
               {t("Active hazards ")}
             </p>
             {segment.activeHazards.length === 0 ? (
-              <p className="text-slate-500">
+              <p className="text-fg-mute">
                 {t("No active hazards on this segment. ")}
               </p>
             ) : (
@@ -222,7 +212,7 @@ export function RoadPreviewCard({
                     <li key={hazard.id} className="flex items-start gap-2">
                       <span aria-hidden="true">{cfg.emoji}</span>
                       <div className="flex-1">
-                        <p className="text-slate-200">
+                        <p className="text-ink">
                           {cfg.label}
                           <span
                             className={`ml-2 text-[10px] uppercase tracking-wider ${SEVERITY_COLOR[hazard.severity]}`}
@@ -231,9 +221,9 @@ export function RoadPreviewCard({
                           </span>
                         </p>
                         {hazard.note && (
-                          <p className="text-slate-400">{hazard.note}</p>
+                          <p className="text-fg-dim">{hazard.note}</p>
                         )}
-                        <p className="text-slate-500 text-[10px] mt-0.5">
+                        <p className="mt-0.5 text-[10px] text-fg-mute">
                           {hazard.reporterName} ·{" "}
                           {formatRelativeTime(hazard.createdAt)} ·{" "}
                           {hazard.confirmations}
@@ -247,18 +237,18 @@ export function RoadPreviewCard({
             )}
           </div>
 
-          <RoadReviewsPanel segmentId={segment.id} />
+          <RoadReviewsPanel segmentId={segment.id} tone="cream" />
 
           {segment.photos.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+              <p className="mb-1 text-[11px] uppercase tracking-wider text-fg-mute">
                 {t("Rider photos ")}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
                 {segment.photos.map((photo) => (
                   <div
                     key={photo.id}
-                    className="aspect-[4/3] rounded-md bg-slate-800 border border-slate-700 overflow-hidden text-[10px] text-slate-500 flex items-center justify-center p-1 text-center"
+                    className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md border border-line bg-paper p-1 text-center text-[10px] text-fg-mute"
                     title={`${photo.riderName} · ${formatRelativeTime(photo.createdAt)}`}
                   >
                     {photo.riderName}
@@ -283,10 +273,10 @@ function Stat({
 }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-slate-500">
+      <p className="text-[11px] uppercase tracking-wider text-fg-mute">
         {label}
       </p>
-      <p className={`text-sm font-medium ${valueClass ?? "text-white"}`}>
+      <p className={`text-sm font-medium ${valueClass ?? "text-ink"}`}>
         {value}
       </p>
     </div>
