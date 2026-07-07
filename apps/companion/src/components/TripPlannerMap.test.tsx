@@ -352,6 +352,40 @@ describe("TripPlannerMap", () => {
     expect(canvas).toHaveAttribute("data-show-surface", "false");
   });
 
+  it("toggles the active line-coloring mode off entirely on re-click", () => {
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "trip-planner-route-line" ? { id: layerId } : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const canvas = screen.getByTestId("planner-map-canvas");
+    const qualityButton = screen.getByRole("button", {
+      name: "Color the route line by road quality",
+    });
+    expect(qualityButton).toHaveAttribute("aria-pressed", "true");
+    // The route legend for the active mode is visible while quality is on.
+    expect(screen.getByText("Good+")).toBeInTheDocument();
+
+    // Re-clicking the active mode disables the layer: no tile overlays,
+    // neutral ink route line, and the legend info box disappears.
+    fireEvent.click(qualityButton);
+    expect(qualityButton).toHaveAttribute("aria-pressed", "false");
+    expect(canvas).toHaveAttribute("data-show-quality", "false");
+    expect(canvas).toHaveAttribute("data-show-surface", "false");
+    const lineColorCalls = mockMap.setPaintProperty.mock.calls.filter(
+      ([layerId, prop]) =>
+        layerId === "trip-planner-route-line" && prop === "line-color",
+    );
+    expect(lineColorCalls.at(-1)?.[2]).toBe("#0E0E10");
+    expect(screen.queryByText("Good+")).not.toBeInTheDocument();
+
+    // Clicking it again re-enables the layer.
+    fireEvent.click(qualityButton);
+    expect(qualityButton).toHaveAttribute("aria-pressed", "true");
+    expect(canvas).toHaveAttribute("data-show-quality", "true");
+    expect(screen.getByText("Good+")).toBeInTheDocument();
+  });
+
   it("swaps to the aerial basemap independently of the coloring mode", () => {
     // setAerialBasemapVisible no-ops unless the aerial layer exists.
     mockMap.getLayer.mockImplementation((layerId: string) =>
@@ -2974,6 +3008,61 @@ describe("TripPlannerMap", () => {
     expect(
       screen.getByRole("button", { name: "Reroute around it" }),
     ).toBeInTheDocument();
+  });
+
+  it("labels the pass popover with its closed/unknown status", () => {
+    // The map draws ONE seasonal-pass badge for closed and unknown alike
+    // (design), so the popover must carry the distinction.
+    const demoPass = {
+      id: "pass-1",
+      name: "Stelvio Pass",
+      country_code: "IT",
+      region: "Lombardy",
+      lat: 46.52,
+      lng: 10.45,
+      elevation_m: 2757,
+      typical_open_month: 6,
+      typical_close_month: 10,
+      status: "closed" as const,
+      status_overridden: false,
+      notes: null,
+      last_updated: "2026-04-01T00:00:00Z",
+    };
+    const ref = createRef<TripPlannerMapHandle>();
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={trip()}
+        month={7}
+        closuresData={{
+          closures: [],
+          routeClosures: [],
+          counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+          previewDate: new Date("2026-07-15T12:00:00Z"),
+        }}
+        passesData={{
+          passes: [demoPass],
+          routePasses: [demoPass],
+          routeClosedCount: 1,
+          routeUnknownCount: 0,
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+        }}
+      />,
+    );
+
+    act(() =>
+      ref.current?.openConditionPopover({ kind: "pass", id: "pass-1" }),
+    );
+    expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
+    expect(screen.getByText("Seasonal pass · closed")).toBeInTheDocument();
   });
 
   it("passes per-segment quality features covering every day to the route source", async () => {
