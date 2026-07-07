@@ -11,25 +11,8 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { ACCOMMODATION_KINDS, type AccommodationKind } from '@tarmoto/shared';
 import { toOptionalNumber } from '../../../common/dto-transforms.js';
-
-/**
- * Kinds of overnight stops the mobile app surfaces. Mirrors the OSM
- * `tourism=*` tag subset we accept — anything outside this list is dropped
- * at the provider layer so client code doesn't need to handle unknown
- * kinds.
- */
-export const ACCOMMODATION_KINDS = [
-  'hotel',
-  'motel',
-  'hostel',
-  'guest_house',
-  'apartment',
-  'chalet',
-  'camp_site',
-] as const;
-
-export type AccommodationKind = (typeof ACCOMMODATION_KINDS)[number];
 
 const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 25;

@@ -10,8 +10,8 @@ import type {
 import {
   ACCOMMODATION_KINDS,
   type AccommodationKind,
-} from '../dto/accommodation.dto.js';
-import { type PoiKind } from '../dto/point-of-interest.dto.js';
+  type PoiKind,
+} from '@tarmoto/shared';
 
 interface OverpassElement {
   type: 'node' | 'way' | 'relation';
