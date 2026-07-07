@@ -1102,8 +1102,13 @@ const TripPlannerMapContent = forwardRef<
       swallowNextClickRef.current = true;
       setContextMenu(null);
       setWaypointMenu(null);
+      // Prefer the original POI (still in the by-id lookup after placement)
+      // so its `meta.mapsUrl` — and the Maps link that depends on it —
+      // survives; the waypoint-pin properties carry no meta, so a placed
+      // contactless POI would otherwise lose its only detail link.
+      const originalPoi = poisByIdRef.current.get(poiId);
       setPoiMenu({
-        poi: {
+        poi: originalPoi ?? {
           id: poiId,
           category: props.poiCategory,
           source:
@@ -1455,7 +1460,11 @@ const TripPlannerMapContent = forwardRef<
           !usedPois.ids.has(poi.id) &&
           !usedPois.spots.has(`${poi.lng},${poi.lat}`),
       );
-      poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
+      // Keep the FULL fetched set in the by-id lookup — not the
+      // placement-filtered `pois` — so a POI placed as a waypoint (dropped
+      // from the pin layer) can still be resolved with its `meta.mapsUrl`
+      // when its waypoint popover reopens.
+      poisByIdRef.current = new Map(fetched.map((poi) => [poi.id, poi]));
       const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
       source?.setData({
         type: "FeatureCollection",
