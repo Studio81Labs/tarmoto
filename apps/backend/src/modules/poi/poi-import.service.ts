@@ -10,7 +10,7 @@ import {
   type StoredPoiFields,
 } from './poi-provider.interface.js';
 import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
-import { poiImportConfig } from './poi-import.config.js';
+import { poiImportConfig, type PoiImportConfig } from './poi-import.config.js';
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
@@ -89,6 +89,11 @@ export class PoiImportService {
 
   get enabled(): boolean {
     return this.config.enabled;
+  }
+
+  /** The bbox the import runs over — exposed so the manual CLI can log it. */
+  get bbox(): PoiImportConfig['bbox'] {
+    return this.config.bbox;
   }
 
   async import(): Promise<PoiImportResult> {
