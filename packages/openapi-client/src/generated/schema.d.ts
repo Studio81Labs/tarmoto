@@ -696,6 +696,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/route-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Per-segment surface quality for a routed polyline (planner overlay) */
+        post: operations["RoadsController_getRouteQuality"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/{segmentId}": {
         parameters: {
             query?: never;
@@ -3915,6 +3932,35 @@ export interface components {
             region: components["schemas"]["BestRoadsRegionDto"];
             roads: components["schemas"]["BestRoadDto"][];
         };
+        RouteQualityPointDto: {
+            lat: number;
+            lng: number;
+        };
+        RouteQualityRequestDto: {
+            geometry: components["schemas"]["RouteQualityPointDto"][];
+            /** @description Buffer in meters around the routed line within which a `road_segments` row counts as "on the route". Defaults to 25 m when omitted — kept tight because the routed line follows the same OSM ways the segments were cut from, so a wide buffer would pull in parallel/adjacent roads. */
+            buffer_m?: number;
+        };
+        RouteQualitySegmentDto: {
+            /** @description OSM way id of the matched segment (segment identity from #751). Null for segments imported before OSM identity was captured. */
+            osm_way_id: string | null;
+            segment_index: number | null;
+            /** @description Distance-weighted road-surface quality, 1–5. Null when the segment has no snapped surface readings yet (rendered as an unscored stretch). */
+            quality_score: number | null;
+            /** @description Curviness score 0–5. */
+            curviness_score: number;
+            surface_type: string;
+            /** @description Number of surface readings snapped to this segment. Drives the low-confidence treatment when small. */
+            reading_count: number;
+            /** @description Fraction along the route (0 = start, 1 = end) where this span begins. Spans are returned ordered by `start_fraction`. */
+            start_fraction: number;
+            /** @description Fraction along the route where this span ends. */
+            end_fraction: number;
+        };
+        RouteQualityResponseDto: {
+            /** @description The road segments the route passes through, ordered along the route. Empty when no imported segments cover the route (the whole route is then "no data"). */
+            segments: components["schemas"]["RouteQualitySegmentDto"][];
+        };
         QualityBreakdownDto: {
             excellent: number;
             good: number;
@@ -6102,6 +6148,10 @@ export type SchemaFunZoneDetailDto = components['schemas']['FunZoneDetailDto'];
 export type SchemaBestRoadsRegionDto = components['schemas']['BestRoadsRegionDto'];
 export type SchemaBestRoadDto = components['schemas']['BestRoadDto'];
 export type SchemaBestRoadsResponseDto = components['schemas']['BestRoadsResponseDto'];
+export type SchemaRouteQualityPointDto = components['schemas']['RouteQualityPointDto'];
+export type SchemaRouteQualityRequestDto = components['schemas']['RouteQualityRequestDto'];
+export type SchemaRouteQualitySegmentDto = components['schemas']['RouteQualitySegmentDto'];
+export type SchemaRouteQualityResponseDto = components['schemas']['RouteQualityResponseDto'];
 export type SchemaQualityBreakdownDto = components['schemas']['QualityBreakdownDto'];
 export type SchemaReviewResponseDto = components['schemas']['ReviewResponseDto'];
 export type SchemaTrendPointDto = components['schemas']['TrendPointDto'];
@@ -7417,6 +7467,36 @@ export interface operations {
             };
             /** @description Region not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RoadsController_getRouteQuality: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteQualityRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteQualityResponseDto"];
+                };
+            };
+            /** @description Route exceeds the maximum length representable at segment scale */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

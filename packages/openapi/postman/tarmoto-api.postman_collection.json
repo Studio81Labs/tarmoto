@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "6fb0e141-02b5-42bb-bdf6-940a393d5ad5",
+    "_postman_id": "dab3c62d-8a41-40ed-955a-53d33366a7f4",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1180,6 +1180,32 @@
           }
         },
         {
+          "name": "Per-segment surface quality for a routed polyline (planner overlay)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/route-quality",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "route-quality"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Get road segment details (Road Preview Card data)",
           "request": {
             "method": "GET",
@@ -1424,6 +1450,87 @@
           }
         },
         {
+          "name": "List stored POIs within a bounding box (#849)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/in-bbox",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "in-bbox"],
+              "query": [
+                {
+                  "key": "min_lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "min_lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "max_lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "max_lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max rows to return (default 200, capped at 500).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stored POIs within a buffer of a route polyline (#849)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/in-corridor",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "in-corridor"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Find POIs within a buffer of a route polyline (US-36)",
           "request": {
             "method": "POST",
@@ -1446,6 +1553,29 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Fetch a single stored POI by id (#849)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
             }
           }
         }
@@ -2361,12 +2491,139 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"message\": \"\"\n}",
+              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"message\": \"\",\n  \"role\": \"editor\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Collaborator roster: joined members + pending invites",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "members"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change a member's role (owner only)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/members/:memberUserId",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "members",
+                ":memberUserId"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "memberUserId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"editor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove a member from the trip (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/members/:memberUserId",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "members",
+                ":memberUserId"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "memberUserId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Withdraw a pending email invite (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/invites/:inviteId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "invites", ":inviteId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "inviteId",
+                  "value": ""
+                }
+              ]
             }
           }
         },
@@ -2460,7 +2717,7 @@
           }
         },
         {
-          "name": "Accept a suggestion (owner/admin only)",
+          "name": "Accept a suggestion (owner only)",
           "request": {
             "method": "POST",
             "header": [
@@ -2495,7 +2752,7 @@
           }
         },
         {
-          "name": "Reject a suggestion (owner/admin only)",
+          "name": "Reject a suggestion (owner only)",
           "request": {
             "method": "POST",
             "header": [
@@ -2515,6 +2772,41 @@
                 "suggestions",
                 ":suggestionId",
                 "reject"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reopen a resolved suggestion (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/reopen",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId",
+                "reopen"
               ],
               "variable": [
                 {
@@ -4348,7 +4640,7 @@
           }
         },
         {
-          "name": "Export ride as GPX",
+          "name": "Export ride as GPX (requires the gpx_export entitlement)",
           "request": {
             "method": "GET",
             "header": [
