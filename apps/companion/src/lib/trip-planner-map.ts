@@ -451,6 +451,28 @@ export function getTripPlannerBounds(trip: Trip | null): PlannerBbox | null {
     }
   }
 
+  return bboxOfCoordinates(coordinates);
+}
+
+/** Bounds of one trip day's route + waypoints (day-card → map fit). */
+export function getTripPlannerDayBounds(
+  trip: Trip | null,
+  dayNumber: number,
+): PlannerBbox | null {
+  const day = trip?.days.find((d) => d.dayNumber === dayNumber);
+  if (!day) return null;
+
+  const coordinates: [number, number][] = [...getDayRouteCoordinates(day)];
+  for (const waypoint of day.waypoints) {
+    coordinates.push([waypoint.location.lng, waypoint.location.lat]);
+  }
+
+  return bboxOfCoordinates(coordinates);
+}
+
+function bboxOfCoordinates(
+  coordinates: [number, number][],
+): PlannerBbox | null {
   if (coordinates.length === 0) return null;
 
   let west = Infinity;

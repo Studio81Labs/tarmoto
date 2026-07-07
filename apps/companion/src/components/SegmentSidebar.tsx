@@ -5,11 +5,12 @@ import { GripVertical, MapPin } from "lucide-react";
 import { flattenSegments, useTripStore } from "@/stores/trip";
 import { RoadPreviewCard } from "@/components/RoadPreviewCard";
 import { formatDistance } from "@/lib/utils";
+import { Stamp } from "@tarmoto/ui";
 /**
- * Right-hand sidebar for the trip planner (US-33).
+ * "Road preview cards" list for the trip detail panel.
  * Renders one RoadPreviewCard per segment in the active trip, grouped by day.
- * Segment focus/hover is published into `trip` store so the future MapLibre
- * layer (#79) can zoom/highlight without coupling to this component.
+ * Segment focus/hover is published into `trip` store so the map layer can
+ * zoom/highlight without coupling to this component.
  */
 export function SegmentSidebar() {
   const activeTrip = useTripStore((s) => s.activeTrip);
@@ -39,31 +40,29 @@ export function SegmentSidebar() {
   return (
     <aside
       aria-label={t("Road preview cards")}
-      className="w-80 border-l border-slate-800 bg-slate-950 flex flex-col animate-slide-in-right"
+      className="flex w-full flex-col animate-slide-in-right"
     >
-      <div className="p-4 border-b border-slate-800 shrink-0">
-        <h3 className="text-sm font-semibold text-slate-300">
-          {t("Road Preview Cards ")}
-        </h3>
-        <p className="text-xs text-slate-500 mt-1">
+      <div className="shrink-0 p-4 pb-0">
+        <Stamp as="h3">{t("Road preview cards ")}</Stamp>
+        <p className="mt-1 text-xs text-fg-dim">
           {segments.length > 0
-            ? `${segments.length} segments across ${grouped.length} day${grouped.length === 1 ? "" : "s"}`
-            : "Each segment of your route"}
+            ? t("Tap a segment to preview it on the map ")
+            : t("Each segment of your route ")}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {segments.length === 0 ? (
           <div className="p-8 text-center">
-            <GripVertical size={32} className="mx-auto text-slate-700 mb-3" />
-            <p className="text-slate-500 text-sm">
+            <GripVertical size={32} className="mx-auto mb-3 text-fg-faint" />
+            <p className="text-sm text-fg-dim">
               {t(
                 "Add waypoints on the map or generate a route to see segment previews. ",
               )}
             </p>
           </div>
         ) : (
-          <div className="p-3 space-y-4">
+          <div className="space-y-4 p-4 pt-3">
             {grouped.map(([dayNumber, daySegments]) => {
               const dayDistance = daySegments.reduce(
                 (sum, seg) => sum + seg.distanceKm,
@@ -72,12 +71,12 @@ export function SegmentSidebar() {
               return (
                 <section key={dayNumber} className="space-y-2">
                   <header className="flex items-center justify-between px-1">
-                    <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      <MapPin size={12} />
+                    <h4 className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
+                      <MapPin size={11} />
                       {t("Day ")}
                       {dayNumber}
                     </h4>
-                    <span className="text-[11px] text-slate-500 tabular-nums">
+                    <span className="font-mono text-[10px] tabular-nums text-fg-mute">
                       {formatDistance(dayDistance)}
                     </span>
                   </header>

@@ -67,6 +67,7 @@ import {
   buildTripPlannerWaypointCollection,
   findPlannerQualitySegment,
   getTripPlannerBounds,
+  getTripPlannerDayBounds,
   plannerRouteLineColor,
   plannerSegmentBounds,
   type PlannerLineColorMode,
@@ -104,6 +105,11 @@ export interface DayBreakMarker {
 export interface TripPlannerMapHandle {
   /** Fit the viewport to the current route bounds. No-op when no bounds. */
   fitRoute: () => void;
+  /**
+   * Fit the viewport to one day's route bounds (day-card selection).
+   * No-op when the day has no framable geometry.
+   */
+  fitDay: (dayNumber: number) => void;
   /**
    * Fly to a quality segment's bounds (panel → map). No-op when the
    * segment id doesn't resolve against the current trip geometry.
@@ -328,6 +334,14 @@ interface TripPlannerMapProps {
    * the new geometry. Increment this token after each such action.
    */
   fitRouteToken?: number;
+  /**
+   * Shows the map-top address search + POI category bar on a read-only
+   * map (trip preview). Search only flies to the picked result — it
+   * never opens the placement menu — and POI pins open an info-only
+   * popover without the add/set route actions. Editable maps render
+   * the toolbar regardless of this flag.
+   */
+  searchAndPois?: boolean;
 }
 export const TripPlannerMap = forwardRef<
   TripPlannerMapHandle,
@@ -353,6 +367,7 @@ export const TripPlannerMap = forwardRef<
     onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
+    searchAndPois,
   },
   ref,
 ) {
@@ -379,6 +394,7 @@ export const TripPlannerMap = forwardRef<
         onMoveDayBreak={onMoveDayBreak}
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
+        searchAndPois={searchAndPois}
       />
     );
   }
@@ -401,6 +417,7 @@ export const TripPlannerMap = forwardRef<
       dayBreaks={dayBreaks}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
+      searchAndPois={searchAndPois}
     />
   );
 });
@@ -434,6 +451,7 @@ const FetchedTripPlannerMap = forwardRef<
       | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
+    searchAndPois?: boolean | undefined;
   }
 >(function FetchedTripPlannerMap(
   {
@@ -454,6 +472,7 @@ const FetchedTripPlannerMap = forwardRef<
     onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
+    searchAndPois,
   },
   ref,
 ) {
@@ -482,6 +501,7 @@ const FetchedTripPlannerMap = forwardRef<
       onMoveDayBreak={onMoveDayBreak}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
+      searchAndPois={searchAndPois}
     />
   );
 });
@@ -517,6 +537,7 @@ const TripPlannerMapContent = forwardRef<
       | undefined;
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
+    searchAndPois?: boolean | undefined;
   }
 >(function TripPlannerMapContent(
   {
@@ -539,6 +560,7 @@ const TripPlannerMapContent = forwardRef<
     onMoveDayBreak,
     onCursorMove,
     fitRouteToken,
+    searchAndPois,
   },
   ref,
 ) {
@@ -548,6 +570,10 @@ const TripPlannerMapContent = forwardRef<
   // detail map can't open the menu and mutate the global trip store. A boolean
   // keeps the placement effect's deps stable despite inline-callback identity.
   const editable = onMoveWaypoint != null;
+  // Search + POI browsing is available on editable maps and on read-only maps
+  // that opt in via `searchAndPois` (trip preview) — the toolbar and the POI
+  // pin fetching key off this, while placement stays gated on `editable`.
+  const poiBrowsing = editable || searchAndPois === true;
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   // Tracks the trip whose bounds we've already auto-fit. Keyed on
@@ -750,38 +776,45 @@ const TripPlannerMapContent = forwardRef<
   // result never places anything — it flies the map to the address and
   // opens the SAME placement menu as a right-click there, so the rider
   // chooses start / via / finish deliberately. The menu is anchored to
-  // the coordinate and keeps tracking it through the flight.
-  const handleSearchResult = useCallback((result: GeoResult) => {
-    const map = handleRef.current?.map;
-    if (!map) return;
-    setPoiMenu(null);
-    setWaypointMenu(null);
-    const coords = { lng: result.lng, lat: result.lat };
-    const rect = map.getCanvas()?.getBoundingClientRect?.();
-    const projected =
-      typeof map.project === "function"
-        ? map.project([coords.lng, coords.lat])
-        : null;
-    setContextMenu({
-      x:
-        rect && projected
-          ? rect.left + projected.x + 10
-          : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
-      y:
-        rect && projected
-          ? rect.top + projected.y + 10
-          : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
-      coords,
-    });
-    if (typeof map.flyTo === "function") {
-      map.flyTo({
-        center: [coords.lng, coords.lat],
-        zoom: Math.max(map.getZoom?.() ?? 0, 11),
-        duration: 1200,
-        essential: true,
-      });
-    }
-  }, []);
+  // the coordinate and keeps tracking it through the flight. On a
+  // read-only map (trip preview) the search only finds and focuses —
+  // there is nothing to place, so no menu opens.
+  const handleSearchResult = useCallback(
+    (result: GeoResult) => {
+      const map = handleRef.current?.map;
+      if (!map) return;
+      setPoiMenu(null);
+      setWaypointMenu(null);
+      const coords = { lng: result.lng, lat: result.lat };
+      if (editable) {
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        const projected =
+          typeof map.project === "function"
+            ? map.project([coords.lng, coords.lat])
+            : null;
+        setContextMenu({
+          x:
+            rect && projected
+              ? rect.left + projected.x + 10
+              : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+          y:
+            rect && projected
+              ? rect.top + projected.y + 10
+              : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+          coords,
+        });
+      }
+      if (typeof map.flyTo === "function") {
+        map.flyTo({
+          center: [coords.lng, coords.lat],
+          zoom: Math.max(map.getZoom?.() ?? 0, 11),
+          duration: 1200,
+          essential: true,
+        });
+      }
+    },
+    [editable],
+  );
   // POI pin -> start/finish: the placement rule engine handles the role
   // juggling; the meta names the point and carries the glyph category.
   const handlePlacePoiEndpoint = useCallback(
@@ -1453,16 +1486,16 @@ const TripPlannerMapContent = forwardRef<
   // ── Category POIs (revision 4 §C): refetch on viewport + filter change ──
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !editable) return;
+    if (!map || !ready || !poiBrowsing) return;
     const onMoveEnd = () => setPoiViewportToken((token) => token + 1);
     map.on("moveend", onMoveEnd);
     return () => {
       map.off("moveend", onMoveEnd);
     };
-  }, [ready, editable]);
+  }, [ready, poiBrowsing]);
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !editable) return;
+    if (!map || !ready || !poiBrowsing) return;
     const categories = [...activePoiCategories];
     const applyPois = (fetched: Poi[]) => {
       const pois = fetched.filter(
@@ -1539,7 +1572,7 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [activePoiCategories, poiViewportToken, ready, editable, usedPois]);
+  }, [activePoiCategories, poiViewportToken, ready, poiBrowsing, usedPois]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -2044,6 +2077,21 @@ const TripPlannerMapContent = forwardRef<
       },
     );
   }, [tripBounds]);
+  const fitMapToDay = useCallback(
+    (dayNumber: number) => {
+      const map = handleRef.current?.map;
+      const bounds = getTripPlannerDayBounds(trip, dayNumber);
+      if (!map || !bounds) return;
+      map.fitBounds(
+        [
+          [bounds[0], bounds[1]],
+          [bounds[2], bounds[3]],
+        ],
+        { padding: 72, duration: 1200, essential: true, maxZoom: 12 },
+      );
+    },
+    [trip],
+  );
   const flyToSegment = useCallback((segmentId: string) => {
     const map = handleRef.current?.map;
     const segment = findPlannerQualitySegment(
@@ -2121,6 +2169,7 @@ const TripPlannerMapContent = forwardRef<
     ref,
     () => ({
       fitRoute: fitMapToTrip,
+      fitDay: fitMapToDay,
       flyToSegment,
       startRegionDraw: () => drawRef.current?.start(),
       cancelRegionDraw: () => drawRef.current?.cancel(),
@@ -2221,7 +2270,7 @@ const TripPlannerMapContent = forwardRef<
         }
       },
     }),
-    [fitMapToTrip, flyToSegment],
+    [fitMapToTrip, fitMapToDay, flyToSegment],
   );
   useEffect(() => {
     return () => {
@@ -2247,10 +2296,10 @@ const TripPlannerMapContent = forwardRef<
       {/* "What am I searching / placing" cluster (revision 4 §F): address
           search + POI chips own the top edge; the basemap/line-color/draw
           cluster steps down one row to keep the two groups readable. */}
-      {editable ? <MapToolbar onPlace={handleSearchResult} /> : null}
+      {poiBrowsing ? <MapToolbar onPlace={handleSearchResult} /> : null}
       <div
         className={`absolute left-3 z-20 flex flex-col gap-2 ${
-          editable ? "top-[60px]" : "top-3"
+          poiBrowsing ? "top-[60px]" : "top-3"
         }`}
       >
         {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
@@ -2532,7 +2581,7 @@ const TripPlannerMapContent = forwardRef<
                       {t("Remove from route")}
                     </button>
                   ) : null
-                ) : (
+                ) : !editable ? null : (
                   <>
                     <button
                       type="button"

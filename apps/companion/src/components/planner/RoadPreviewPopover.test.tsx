@@ -91,6 +91,7 @@ describe("RoadPreviewPopover", () => {
       <RoadPreviewPopover
         segment={segment({ band: "no_data", score: null, passes: 0 })}
         onClose={vi.fn()}
+        onReroute={vi.fn()}
       />,
     );
 
@@ -109,7 +110,13 @@ describe("RoadPreviewPopover", () => {
   it("closes via the header button, the backdrop, and Keep anyway", async () => {
     getRoadPreviewMock.mockResolvedValue(measuredPreview());
     const onClose = vi.fn();
-    render(<RoadPreviewPopover segment={segment()} onClose={onClose} />);
+    render(
+      <RoadPreviewPopover
+        segment={segment()}
+        onClose={onClose}
+        onReroute={vi.fn()}
+      />,
+    );
     await screen.findByText("2.1");
 
     fireEvent.click(screen.getByRole("button", { name: /Close road preview/ }));
@@ -142,6 +149,11 @@ describe("RoadPreviewPopover", () => {
     await screen.findByText("2.1");
     expect(
       screen.queryByRole("button", { name: /Reroute around this/ }),
+    ).not.toBeInTheDocument();
+    // Read-only surfaces hide the route decisions entirely — no Keep
+    // anyway either, just the header close.
+    expect(
+      screen.queryByRole("button", { name: /Keep anyway/ }),
     ).not.toBeInTheDocument();
   });
 
