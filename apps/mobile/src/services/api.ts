@@ -1239,7 +1239,7 @@ class ApiService {
     const result = await client.GET("/api/v1/commute/stats", {
       params: { query: { period } },
     });
-    return unwrap(result, "Failed to load commute stats") as CommuteStats;
+    return unwrap(result, "Failed to load commute stats");
   }
 
   async setPrimaryCommuteRoute(routeId: string): Promise<CommuteRoute> {
