@@ -231,8 +231,11 @@ export class CorridorBodyDto {
   @Max(MAX_BUFFER_KM)
   buffer_km?: number;
 
+  // `type: [String]` (not `isArray: true`): on a request-body property the CLI
+  // plugin already infers `string[]` from the TS type, and `isArray` wraps it
+  // again into `string[][]` in the emitted spec. Mirrors the `route` field above.
   @ApiPropertyOptional({
-    isArray: true,
+    type: [String],
     description:
       'Store kinds to include (free-form OSM import superset). Omit for all.',
   })

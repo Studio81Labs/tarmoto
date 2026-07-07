@@ -4210,7 +4210,8 @@ export interface components {
              * @default 2
              */
             buffer_km: number;
-            kinds: string[][];
+            /** @description Store kinds to include (free-form OSM import superset). Omit for all. */
+            kinds?: string[];
         };
         StoredCorridorPoiDto: {
             id: string;
