@@ -37,6 +37,7 @@ import {
 } from "@/components/map/AerialBasemap";
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
 import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
+import { OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
@@ -2619,6 +2620,16 @@ const TripPlannerMapContent = forwardRef<
                     <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
                       {`${meta.label} · ${poiMenu.poi.source}`}
                     </p>
+                    {poiMenu.poi.source === "osm" ? (
+                      <a
+                        href="https://www.openstreetmap.org/copyright"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
+                      >
+                        © OpenStreetMap contributors
+                      </a>
+                    ) : null}
                   </div>
                 </div>
                 {poiMenu.placedWaypointId ? (
@@ -2948,6 +2959,10 @@ function ensurePoiLayers(map: MapLibreMap): void {
       cluster: true,
       clusterMaxZoom: 10,
       clusterRadius: 46,
+      // ODbL: the browse POIs are OpenStreetMap data, so MapLibre's attribution
+      // control credits OSM whenever the POI layer is present (#852). Same exact
+      // string as the base-map OSM credit → MapLibre dedupes it to one entry.
+      attribution: OSM_ATTRIBUTION,
     });
   }
   const beforeId = map.getLayer(WAYPOINT_PIN) ? WAYPOINT_PIN : undefined;

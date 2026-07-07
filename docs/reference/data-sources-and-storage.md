@@ -89,6 +89,10 @@ Overlays served as GeoJSON on top of the tiles:
 - **POIs** — _post-MVP_ (needs the stored `pois` table). MVP serves POIs only as live planner stop suggestions, not a pannable map layer.
 - **Fun zones** — `fun_zones` polygons
 
+### Attribution
+
+Under all of the above the companion renders an **OpenFreeMap** base map (OpenMapTiles schema, OpenStreetMap data). OSM data — the base map **and** the OSM-derived POIs (§1, §8.3) — is ODbL, so attribution is surfaced in three places: the MapLibre **attribution control** (`© OpenStreetMap contributors | © OpenMapTiles | OpenFreeMap`, plus `© ČÚZK` when the aerial basemap is active), the **POI popover** (OSM-sourced POIs), and the **trip STOPS** legend. The base map's own credit arrives as a single unlinked TileJSON blob, curated into the linked, provenance-ordered row above by `apps/companion/src/components/map/attribution.ts`. See [ADR-0008](../decisions/0008-map-attribution-and-odbl-compliance.md).
+
 ---
 
 ## 6. How the route builder consumes this
@@ -129,13 +133,14 @@ Sourcing detail for the feeds above. Endpoints, licenses, and the CZ launch bbox
 
 ### Licensing cheat-sheet
 
-| Source                   | License              | Obligation                                         |
-| ------------------------ | -------------------- | -------------------------------------------------- |
-| OSM (POIs, surface)      | ODbL                 | Attribution + share-alike on derived DB            |
-| Overture Places          | CDLA Permissive v2.0 | Permissive; **becomes ODbL if conflated with OSM** |
-| Czech NAP / DATEX II     | Free, per-source     | Attribute NDIC / ŘSD                               |
-| HeiGIT, StreetSurfaceVis | Open (CC)            | Attribution                                        |
-| Mapillary imagery        | CC-BY-SA             | Attribution + share-alike                          |
+| Source                                | License                          | Obligation                                                                                                |
+| ------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| OSM (POIs, surface)                   | ODbL                             | Attribution + share-alike on derived DB                                                                   |
+| OpenFreeMap / OpenMapTiles (base map) | OSM data (ODbL) + provider terms | Credit all three in the map UI — see [ADR-0008](../decisions/0008-map-attribution-and-odbl-compliance.md) |
+| Overture Places                       | CDLA Permissive v2.0             | Permissive; **becomes ODbL if conflated with OSM**                                                        |
+| Czech NAP / DATEX II                  | Free, per-source                 | Attribute NDIC / ŘSD                                                                                      |
+| HeiGIT, StreetSurfaceVis              | Open (CC)                        | Attribution                                                                                               |
+| Mapillary imagery                     | CC-BY-SA                         | Attribution + share-alike                                                                                 |
 
 ---
 
