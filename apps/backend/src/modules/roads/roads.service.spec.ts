@@ -1035,6 +1035,11 @@ describe('RoadsService', () => {
         expect.stringContaining('ROW_NUMBER()'),
         expect.any(Array),
       );
+      // A no-coverage route short-circuits before the per-sample lookup runs.
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('has_any'),
+        expect.any(Array),
+      );
     });
 
     it('rejects a route too long to represent at segment scale (400, no DB round-trip)', async () => {

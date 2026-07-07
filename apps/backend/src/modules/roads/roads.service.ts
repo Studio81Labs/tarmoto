@@ -84,10 +84,15 @@ export class RoadsService {
    *     which point-projection (`ST_LineLocatePoint`) cannot express.
    * Span boundaries are the sample-cell edges (±½ step), so adjacent segments
    * abut instead of leaving a gap the client would misread as "no data".
-   * Spacing is ~40 m (capped at 5000 samples, i.e. exact to ~200 km) so the
-   * normal ~100 m segments are never stepped over. The buffer stays tight
-   * (default 25 m) because the routed line follows the same OSM ways the
-   * segments were cut from — a wide buffer would snap to parallel roads.
+   * Spacing is fixed at ~40 m (never coarsened; the length guard above bounds
+   * the sample count) so the importer's normal ~100 m segments are never
+   * stepped over. A road segment shorter than the spacing that no sample lands
+   * on is the deliberate cost of sampling — a rare, ≤40 m no-data stretch,
+   * accepted because the alternative (an exact buffer intersection) can't
+   * position self-overlapping passes unambiguously and pulls in merely-crossed
+   * cross streets. The buffer stays tight (default 25 m) because the routed
+   * line follows the same OSM ways the segments were cut from — a wide buffer
+   * would snap to parallel roads.
    *
    * Resilience mirrors the POI read path: any DB failure yields an empty list
    * rather than a 500 (a quality overlay must never break trip planning). The
@@ -140,12 +145,27 @@ export class RoadsService {
           GREATEST(2, CEIL(ST_Length(line::geography) / ${ROUTE_QUALITY_SAMPLE_SPACING_M}.0)::int) AS n
         FROM cfg
       ),
-      -- Walk the route: one point every 1/n of its length.
+      -- Cheap indexed short-circuit: if nothing is near the whole route (a
+      -- backcountry / no-coverage import), skip sampling entirely rather than
+      -- run the per-sample nearest lookup n times for nothing. MATERIALIZED so
+      -- the GiST-indexed check runs exactly once. Routes that DO have coverage
+      -- still use the per-sample KNN below, which is index-backed and fast.
+      coverage AS MATERIALIZED (
+        SELECT EXISTS (
+          SELECT 1
+          FROM road_segments rs, route
+          WHERE rs.deactivated_at IS NULL
+            AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
+        ) AS has_any
+      ),
+      -- Walk the route: one point every 1/n of its length (only when there is
+      -- any coverage to snap to).
       samples AS (
         SELECT
           gs AS idx,
           ST_LineInterpolatePoint(route.line, gs::float / route.n) AS pt
-        FROM route, generate_series(0, route.n) AS gs
+        FROM route, generate_series(0, route.n) AS gs, coverage
+        WHERE coverage.has_any
       ),
       -- Snap each sample to the single nearest live segment within the buffer.
       -- Nearest (not "any within buffer") is what keeps a merely-crossed cross
