@@ -1,5 +1,5 @@
-import { API_BASE } from "@/lib/config";
 import type { paths } from "@tarmoto/openapi-client";
+import { api } from "./api";
 
 export type FunZoneListItem =
   paths["/api/v1/roads/fun-zones"]["get"]["responses"]["200"]["content"]["application/json"][number];
@@ -9,25 +9,25 @@ export type FunZoneDetail =
 
 /**
  * Client-side fetch for zones in a bbox. The endpoint is public, so no
- * Authorization header is attached. Uses the caller's AbortSignal so that
- * viewport-driven requests can cancel each other when the user is still
- * panning.
+ * Authorization header is attached (the shared client only adds one when a
+ * token is present). Uses the caller's AbortSignal so viewport-driven requests
+ * can cancel each other when the user is still panning.
  */
 export async function fetchFunZonesInBbox(
   bbox: [number, number, number, number],
   init?: { signal?: AbortSignal },
 ): Promise<FunZoneListItem[]> {
-  const query = new URLSearchParams({ bbox: bbox.join(",") });
-  const res = await fetch(`${API_BASE}/roads/fun-zones?${query.toString()}`, {
+  const { data, response } = await api.GET("/api/v1/roads/fun-zones", {
+    params: { query: { bbox: bbox.join(",") } },
     ...(init?.signal !== undefined ? { signal: init.signal } : {}),
   });
-  if (!res.ok) {
-    // The list endpoint returns 200 with [] for "no zones in bbox"; any
-    // non-2xx is a real error (bad bbox param, misconfigured API base,
-    // backend down) and should surface to the user, not be coerced to [].
-    throw new Error(`GET /roads/fun-zones failed (${res.status})`);
+  // The list endpoint returns 200 with [] for "no zones in bbox"; any non-2xx
+  // is a real error (bad bbox param, misconfigured API base, backend down) and
+  // should surface to the user, not be coerced to [].
+  if (!response.ok) {
+    throw new Error(`GET /roads/fun-zones failed (${response.status})`);
   }
-  return (await res.json()) as FunZoneListItem[];
+  return data ?? [];
 }
 
 /**
@@ -39,13 +39,13 @@ export async function fetchFunZoneDetail(
   id: string,
   init?: { signal?: AbortSignal },
 ): Promise<FunZoneDetail | null> {
-  const res = await fetch(
-    `${API_BASE}/roads/fun-zones/${encodeURIComponent(id)}`,
-    { ...(init?.signal !== undefined ? { signal: init.signal } : {}) },
-  );
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`GET /roads/fun-zones/${id} failed (${res.status})`);
+  const { data, response } = await api.GET("/api/v1/roads/fun-zones/{id}", {
+    params: { path: { id } },
+    ...(init?.signal !== undefined ? { signal: init.signal } : {}),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`GET /roads/fun-zones/${id} failed (${response.status})`);
   }
-  return (await res.json()) as FunZoneDetail;
+  return data ?? null;
 }

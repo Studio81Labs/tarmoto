@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
 import { roadsApi } from "@/lib/api";
+import type { RoadSegmentDetailResponse } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
 import { DEFAULT_MAP_FILTERS, cloneFilters } from "@/lib/map-filters";
@@ -139,7 +140,9 @@ function resetMapStore() {
   });
 }
 
-function segmentDetail(overrides: Record<string, unknown> = {}) {
+function segmentDetail(
+  overrides: Partial<RoadSegmentDetailResponse> = {},
+): RoadSegmentDetailResponse {
   return {
     id: "11111111-2222-4333-8444-555555555111",
     road_name: "Mock Ridge Road",

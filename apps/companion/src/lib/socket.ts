@@ -40,8 +40,17 @@ const persistentListeners = new Set<PersistentListener>();
  */
 const subscribedTripIds = new Set<string>();
 
-/** Hazard payload emitted by the backend on `hazard:new`. */
-export type HazardNewEvent = HazardResponse;
+/**
+ * Hazard payload emitted by the backend on `hazard:new`. Either a real hazard
+ * (a `HazardResponse`) or a moderation-removal sentinel — `severity: "dismissed"`
+ * retracts a marker and is NOT one of the REST `HazardResponse` severities.
+ * Modelled as a discriminated union so `applyHazardWsEvent` narrows on
+ * `severity === "dismissed"` and treats the other case as a plain hazard.
+ */
+export type HazardDismissedEvent = Omit<HazardResponse, "severity"> & {
+  severity: "dismissed";
+};
+export type HazardNewEvent = HazardResponse | HazardDismissedEvent;
 
 export function connectSocket(token: string | null = null): Socket {
   if (socket) {

@@ -1,46 +1,23 @@
-import { apiFetch } from "./client";
+import type { components } from "@tarmoto/openapi-client";
+import { api, openApiData, reqSignal } from "./client";
+import type { JsonRequest } from "./client";
 
 // ── Closures endpoints (US-40 seasonal closures & roadworks) ──
 
-export type RoadClosureReason =
-  | "closure"
-  | "roadworks"
-  | "seasonal"
-  | "weather"
-  | "event"
-  | "other";
+export type RoadClosure = components["schemas"]["RoadClosureDto"];
+export type RoadClosureReason = RoadClosure["reason"];
+export type RoadClosureSeverity = RoadClosure["severity"];
+export type RoadClosurePoint = components["schemas"]["ClosurePointDto"];
+export type CheckRouteClosuresResponse =
+  components["schemas"]["CheckRouteClosuresResponseDto"];
 
-export type RoadClosureSeverity = "advisory" | "partial" | "full";
-
-export interface RoadClosurePoint {
-  lat: number;
-  lng: number;
-}
-
-export interface RoadClosure {
-  id: string;
-  title: string;
-  reason: RoadClosureReason;
-  severity: RoadClosureSeverity;
-  geometry: RoadClosurePoint[];
-  detour: RoadClosurePoint[] | null;
-  country_code: string;
-  region: string | null;
-  starts_at: string;
-  ends_at: string | null;
-  notes: string | null;
-  source: "operator" | "osm" | "official";
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CheckRouteClosuresResponse {
-  closures: RoadClosure[];
-  full_count: number;
-  partial_count: number;
-  advisory_count: number;
-}
+// `buffer_m` is `@ApiPropertyOptional` (server default) in the backend, but
+// openapi-typescript emits defaulted fields as required. Keep it optional at
+// the boundary so callers can rely on the server default.
+type CheckRouteClosuresInput = Omit<
+  JsonRequest<"/api/v1/closures/check-route", "post">,
+  "buffer_m"
+> & { buffer_m?: number };
 
 export const closuresApi = {
   list: (
@@ -52,25 +29,20 @@ export const closuresApi = {
       include_past?: boolean;
     },
     init?: RequestInit,
-  ) => {
-    const query = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (value != null && value !== "") query.set(key, String(value));
-    }
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    return apiFetch<RoadClosure[]>(`/closures${suffix}`, init);
-  },
-  checkRoute: (
-    data: {
-      route: RoadClosurePoint[];
-      buffer_m?: number;
-      active_on?: string;
-    },
-    init?: RequestInit,
   ) =>
-    apiFetch<CheckRouteClosuresResponse>("/closures/check-route", {
-      ...init,
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    openApiData<RoadClosure[]>(
+      api.GET("/api/v1/closures", {
+        params: { query: params },
+        ...reqSignal(init),
+      }),
+    ),
+  checkRoute: (data: CheckRouteClosuresInput, init?: RequestInit) =>
+    openApiData<CheckRouteClosuresResponse>(
+      api.POST("/api/v1/closures/check-route", {
+        // Cast bridges the spec's spurious `buffer_m: required` (see the input
+        // type note) — omitting it at runtime lets the server apply its default.
+        body: data as JsonRequest<"/api/v1/closures/check-route", "post">,
+        ...reqSignal(init),
+      }),
+    ),
 };
