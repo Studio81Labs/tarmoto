@@ -25,10 +25,10 @@ export class FunZoneDetailZoneDto {
   best_season!: string | null;
 
   @ApiProperty({
-    type: [Object],
+    type: [GeometryPointDto],
     description: 'Outer ring of the zone polygon as {lat,lng} points, WGS84.',
   })
-  boundary!: Array<{ lat: number; lng: number }>;
+  boundary!: GeometryPointDto[];
 }
 
 export class FunZoneRoadDto {

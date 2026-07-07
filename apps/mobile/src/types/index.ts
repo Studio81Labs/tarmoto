@@ -43,7 +43,7 @@ export type {
   HazardType,
   WaypointType,
 } from "@tarmoto/shared";
-import type { HazardSeverity, HazardType, SurfaceType } from "@tarmoto/shared";
+import type { HazardSeverity, SurfaceType } from "@tarmoto/shared";
 export type Severity = HazardSeverity;
 
 // Generated OpenAPI component schemas — re-exported so screens, services,
@@ -135,16 +135,8 @@ export type RoadSegment = Schemas["RoadSegmentDto"];
  */
 export type RoadSegmentDetail = Schemas["RoadSegmentDetailDto"];
 
-export interface FunZone {
-  id: string;
-  name: string | null;
-  composite_score: number;
-  road_count: number;
-  total_curve_km: number | null;
-  avg_quality: number | null;
-  best_season: string | null;
-  boundary: LatLng[];
-}
+/** Fun-zone polygon (curviest-roads cluster) — the generated `FunZoneDto`. */
+export type FunZone = Schemas["FunZoneDto"];
 
 // ── Rides ──
 
@@ -169,25 +161,8 @@ export type RideSegment = Schemas["RideSegmentDto"];
 
 // ── Hazards ──
 
-export interface Hazard {
-  id: string;
-  lat: number;
-  lng: number;
-  hazard_type: HazardType;
-  severity: Severity;
-  note: string | null;
-  /**
-   * Public URL of the photo attached to this hazard, when present.
-   * Hosted on Tarmoto media storage and safe to render directly via
-   * `<Image source={{ uri: photo_url }} />` in the hazard callout.
-   */
-  photo_url: string | null;
-  confirmations: number;
-  reporter: string | null;
-  road_name: string | null;
-  created_at: string;
-  expires_at: string;
-}
+/** Hazard marker (`GET /hazards/nearby`, reports) — the generated `HazardResponseDto`. */
+export type Hazard = Schemas["HazardResponseDto"];
 
 /**
  * Wire shape of the `hazard:new` WebSocket event broadcast by the
@@ -437,131 +412,40 @@ export interface RouteWeatherResponse {
 
 // ── Accommodations (US-10) ──
 
-export type AccommodationKind =
-  | "hotel"
-  | "motel"
-  | "hostel"
-  | "guest_house"
-  | "apartment"
-  | "chalet"
-  | "camp_site";
+export type AccommodationKind = Schemas["AccommodationDto"]["kind"];
 
-export interface Accommodation {
-  external_id: string;
-  name: string | null;
-  kind: AccommodationKind;
-  lat: number;
-  lng: number;
-  distance_km: number;
-  website: string | null;
-  phone: string | null;
-  stars: number | null;
-  opening_hours: string | null;
-  address_street: string | null;
-  address_city: string | null;
-  address_postcode: string | null;
-  address_country: string | null;
-  osm_url: string | null;
-  maps_url: string;
-}
+/** Nearby lodging (US-10) — the generated `AccommodationDto`. */
+export type Accommodation = Schemas["AccommodationDto"];
 
-export interface AccommodationList {
-  accommodations: Accommodation[];
-  radius_km: number;
-  /** Echo of the kinds actually queried — matches the POI list endpoints. */
-  kinds: AccommodationKind[];
-}
+export type AccommodationList = Schemas["AccommodationListDto"];
 
 // ── Along-route POIs (US-10, US-36) ──
 
-export type PoiKind = "restaurant" | "viewpoint" | "cafe" | "fuel_station";
+export type PoiKind = Schemas["PoiDto"]["kind"];
 
-export interface Poi {
-  external_id: string;
-  name: string | null;
-  kind: PoiKind;
-  lat: number;
-  lng: number;
-  distance_km: number;
-  website: string | null;
-  phone: string | null;
-  hint: string | null;
-  opening_hours: string | null;
-  address_street: string | null;
-  address_city: string | null;
-  address_postcode: string | null;
-  address_country: string | null;
-  cuisine: string | null;
-  brand: string | null;
-  osm_url: string | null;
-  maps_url: string;
-}
+/** Nearby POI (US-10) — the generated `PoiDto`. */
+export type Poi = Schemas["PoiDto"];
 
-export interface PoiList {
-  pois: Poi[];
-  radius_km: number;
-  kinds: PoiKind[];
-}
+export type PoiList = Schemas["PoiListDto"];
 
 /**
- * POI matched against a route polyline (US-36). Unlike `Poi` the
- * distance is expressed relative to the route: how far the POI sits
- * along the route from its start, and how far it is off the route.
+ * POI matched against a route polyline (US-36) — the generated
+ * `AlongRoutePoiDto`. Distance is expressed relative to the route (how far
+ * along, and how far off).
  */
-export interface AlongRoutePoi {
-  external_id: string;
-  name: string | null;
-  kind: PoiKind;
-  lat: number;
-  lng: number;
-  distance_along_route_km: number;
-  distance_from_route_km: number;
-  website: string | null;
-  phone: string | null;
-  hint: string | null;
-  opening_hours: string | null;
-  address_street: string | null;
-  address_city: string | null;
-  address_postcode: string | null;
-  address_country: string | null;
-  cuisine: string | null;
-  brand: string | null;
-  osm_url: string | null;
-  maps_url: string;
-}
+export type AlongRoutePoi = Schemas["AlongRoutePoiDto"];
 
-export interface AlongRoutePoiList {
-  pois: AlongRoutePoi[];
-  buffer_km: number;
-  kinds: PoiKind[];
-  route_length_km: number;
-}
+export type AlongRoutePoiList = Schemas["AlongRoutePoiListDto"];
 
 // ── Mountain Passes (US-11) ──
 
-export type PassStatus = "open" | "closed" | "unknown";
+export type PassStatus = Schemas["MountainPassDto"]["status"];
 
-export interface MountainPass {
-  id: string;
-  name: string;
-  country_code: string;
-  region: string | null;
-  lat: number;
-  lng: number;
-  elevation_m: number;
-  typical_open_month: number; // 1..12
-  typical_close_month: number; // 1..12
-  status: PassStatus;
-  status_overridden: boolean;
-  notes: string | null;
-  last_updated: string;
-}
+/** Mountain pass (US-11) — the generated `MountainPassDto`. */
+export type MountainPass = Schemas["MountainPassDto"];
 
-export interface CheckRouteForPassesResponse {
-  passes: MountainPass[];
-  closed_count: number;
-  unknown_count: number;
-}
+/** `POST /passes/check-route` response — the generated `CheckRouteResponseDto`. */
+export type CheckRouteForPassesResponse = Schemas["CheckRouteResponseDto"];
 
 // ── Sensor Data ──
 
