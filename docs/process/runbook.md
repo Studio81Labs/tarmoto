@@ -120,6 +120,6 @@ This design allows POI data maintenance (migrations, backups, maintenance window
 The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. Two ways to fill it:
 
 - **On demand:** `pnpm poi:import` runs the OSM/Overpass import once against the configured bbox (default: the CZ/Beskydy launch box; override with `TARMOTO_POI_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"`). It writes to the POI database and bypasses the scheduled-import gate.
-- **Recurring (production):** set `TARMOTO_POI_IMPORT_ENABLED=true` (and optionally `TARMOTO_POI_IMPORT_BBOX`) on the backend to enable the weekly BullMQ import cron. Leave it unset/`false` in dev and CI so they don't run a full-area Overpass fetch.
+- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor) runs on the process where `TARMOTO_QUEUE_WORKER_ENABLED=true` — the dedicated worker process in a split API/worker deployment, **not** the API. Set `TARMOTO_POI_IMPORT_ENABLED=true` (and optionally `TARMOTO_POI_IMPORT_BBOX`) **there**; setting it only on the API app has no effect. That worker process also needs `TARMOTO_POI_DATABASE_*` (it writes the import to the POI DB). Leave `TARMOTO_POI_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a full-area Overpass fetch.
 
 Overpass is a shared public API — keep imports region-scoped. Continent-scale coverage is a separate bulk-extract path (Geofabrik/osmium), not Overpass.
