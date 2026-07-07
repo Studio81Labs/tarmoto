@@ -12,6 +12,7 @@ import {
   navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
+  poiOpenCandidates,
   routeGeometrySignature,
   summarizeFuelRange,
   summarizeWaypoints,
@@ -925,5 +926,48 @@ describe("isLastDay", () => {
   it("handles a single-day trip", () => {
     const days: TripDay[] = [{ ...dayFrom([], []), day_number: 1 }];
     expect(isLastDay(days, 1)).toBe(true);
+  });
+});
+
+describe("poiOpenCandidates", () => {
+  const base = {
+    website: null as string | null,
+    phone: null as string | null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=x",
+    lat: 49.5,
+    lng: 18.4,
+  };
+
+  it("orders website, phone, maps_url, then the OSM coordinate link", () => {
+    const urls = poiOpenCandidates({
+      ...base,
+      website: "https://koliba.cz",
+      phone: "+420 555 000 111",
+      maps_url: "https://www.google.com/maps/search/?api=1&query=Koliba",
+    });
+
+    expect(urls).toEqual([
+      "https://koliba.cz",
+      "tel:+420555000111",
+      "https://www.google.com/maps/search/?api=1&query=Koliba",
+      "https://www.openstreetmap.org/?mlat=49.5&mlon=18.4#map=17/49.5/18.4",
+    ]);
+  });
+
+  it("tries maps_url before the OSM pin for a coordinate-only POI", () => {
+    // No website, no phone: the Google Maps deep link must come before the
+    // bare OSM coordinate pin so contactless rows still open a rich page.
+    const urls = poiOpenCandidates(base);
+
+    expect(urls[0]).toBe(base.maps_url);
+    expect(urls[1]).toContain("openstreetmap.org");
+    expect(urls).toHaveLength(2);
+  });
+
+  it("drops a non-http website but keeps the rest of the chain", () => {
+    const urls = poiOpenCandidates({ ...base, website: "koliba.cz" });
+
+    expect(urls.some((u) => u.includes("koliba.cz"))).toBe(false);
+    expect(urls[0]).toBe(base.maps_url);
   });
 });

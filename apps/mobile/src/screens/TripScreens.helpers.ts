@@ -674,6 +674,33 @@ export function bboxAroundPoint(
   return `${minLng.toFixed(4)},${minLat.toFixed(4)},${maxLng.toFixed(4)},${maxLat.toFixed(4)}`;
 }
 
+/**
+ * Ordered list of URLs to try when a rider taps a POI row, most-useful
+ * first: the venue's own website, a phone dialer, then the Google Maps
+ * deep link (`maps_url` — photos / reviews / live hours), and finally a
+ * bare OpenStreetMap coordinate pin. `maps_url` sits ahead of the OSM
+ * fallback so contactless rows — which the backend now keeps precisely
+ * because `maps_url` makes them navigable — still open a rich page.
+ */
+export function poiOpenCandidates(item: {
+  website: string | null;
+  phone: string | null;
+  maps_url: string;
+  lat: number;
+  lng: number;
+}): string[] {
+  const website =
+    item.website && /^https?:\/\//i.test(item.website.trim())
+      ? item.website.trim()
+      : null;
+  return [
+    website,
+    item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
+    item.maps_url || null,
+    `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
+  ].filter((value): value is string => !!value);
+}
+
 function overnightFitScore(accommodation: Accommodation): number {
   const nameBonus = accommodation.name?.trim() ? 0.75 : 0;
   const starsBonus = (accommodation.stars ?? 0) * 0.6;
