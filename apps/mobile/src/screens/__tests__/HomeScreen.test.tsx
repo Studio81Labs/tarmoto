@@ -36,6 +36,7 @@ const baseRoute: CommuteRoute = {
   avg_quality: 4.2,
   is_primary: true,
   route_geometry: [],
+  created_at: "2026-04-20T07:30:00.000Z",
 };
 
 describe("HomeScreen", () => {

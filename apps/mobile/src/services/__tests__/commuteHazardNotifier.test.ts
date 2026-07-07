@@ -66,6 +66,7 @@ function makeRoute(overrides: Partial<CommuteRoute> = {}): CommuteRoute {
     avg_quality: 3.5,
     is_primary: true,
     route_geometry: [],
+    created_at: "2026-04-20T07:30:00.000Z",
     ...overrides,
   };
 }
@@ -77,6 +78,7 @@ function makeStatus(
   return {
     route: makeRoute(),
     hazards,
+    hazard_count: hazards.length,
     weather: {
       temperature_c: 15,
       condition: "clear",
