@@ -16,24 +16,14 @@
  */
 
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
 import { PoiImportService } from '../modules/poi/poi-import.service.js';
+import { bootstrapScriptContext } from './bootstrap-script-context.js';
 
 async function main(): Promise<void> {
-  // One-off command: disable the BullMQ workers + recurring-job scheduler
-  // before AppModule loads. JobsModule defaults workers ON and reads this
-  // gate inside forRoot() at module-eval time, so loading AppModule would
-  // otherwise start every queue processor and (re)register the schedules —
-  // on a shared Redis this import would then consume unrelated jobs (account
-  // deletion, data export) and refresh the recurring schedules before the
-  // process exits. The dynamic import defers AppModule evaluation until after
-  // the gate is set.
-  process.env.TARMOTO_QUEUE_WORKER_ENABLED = 'false';
-  const { AppModule } = await import('../app.module.js');
-
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
-  });
+  // Boots AppModule with the BullMQ workers + scheduler disabled, so this
+  // one-off import can't consume unrelated jobs on a shared Redis (see the
+  // helper for the full rationale).
+  const app = await bootstrapScriptContext();
 
   try {
     const service = app.get(PoiImportService);
