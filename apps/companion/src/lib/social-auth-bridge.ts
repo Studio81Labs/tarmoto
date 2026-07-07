@@ -1,18 +1,9 @@
-import { API_BASE_SERVER } from "@/lib/config";
+import type { components } from "@tarmoto/openapi-client";
+import { apiServer } from "@/lib/api/server";
 import { SOCIAL_ACCOUNT_CONFLICT_MESSAGE } from "@/lib/auth-errors";
 
-export interface BackendAuthResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  user: {
-    id: string;
-    email: string;
-    display_name: string;
-    phone?: string;
-    created_at: string;
-  };
-}
+/** Backend auth response for login / register / refresh. */
+export type BackendAuthResponse = components["schemas"]["AuthResponseDto"];
 
 interface BridgeUser {
   email: string | null | undefined;
@@ -20,9 +11,11 @@ interface BridgeUser {
 }
 
 interface ExchangeOptions {
-  apiBaseServer?: string;
+  /**
+   * Overrides the HMAC secret — defaults to `AUTH_SECRET`. Tests pass a fixed
+   * value so the derived bridge password is deterministic.
+   */
   bridgeSecret?: string;
-  fetchImpl?: typeof fetch;
 }
 
 function normalizeEmail(email: string): string {
@@ -33,17 +26,14 @@ function fallbackDisplayName(email: string): string {
   return normalizeEmail(email).split("@")[0] ?? "Tarmoto rider";
 }
 
-async function readErrorMessage(response: Response): Promise<string | null> {
-  const body = await response.json().catch(() => null);
-  const message =
-    body &&
-    typeof body === "object" &&
-    "message" in body &&
-    typeof body.message === "string"
-      ? body.message
-      : null;
-
-  return message;
+/** Pull a `{ message }` out of an openapi-fetch error body, when present. */
+function errorMessage(error: unknown): string | null {
+  return error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+    ? error.message
+    : null;
 }
 
 // Uses Web Crypto (subtle) instead of node:crypto so the auth module can
@@ -76,6 +66,10 @@ export async function buildSocialBridgePassword(
  * Exchange a verified OAuth user for the backend's existing auth tokens
  * without changing the NestJS contract. This only runs server-side from
  * Auth.js callbacks, so the derived password never reaches the browser.
+ *
+ * Registers the derived credentials; on a 409 (email already registered) it
+ * falls back to logging in with the same derived password. A 401 on that login
+ * means the email belongs to a real password account, surfaced as a conflict.
  */
 export async function exchangeOAuthUserForBackendTokens(
   user: BridgeUser,
@@ -95,42 +89,29 @@ export async function exchangeOAuthUserForBackendTokens(
 
   const password = await buildSocialBridgePassword(email, bridgeSecret);
   const displayName = user.displayName?.trim() || fallbackDisplayName(email);
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const apiBaseServer = options.apiBaseServer ?? API_BASE_SERVER;
 
-  const registerResponse = await fetchImpl(`${apiBaseServer}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email,
-      password,
-      display_name: displayName,
-    }),
+  const register = await apiServer.POST("/api/v1/auth/register", {
+    body: { email, password, display_name: displayName },
   });
-
-  if (registerResponse.ok) {
-    return (await registerResponse.json()) as BackendAuthResponse;
+  if (register.response.ok && register.data) {
+    return register.data;
+  }
+  if (register.response.status !== 409) {
+    throw new Error(
+      errorMessage(register.error) ?? "Could not finish social sign-in.",
+    );
   }
 
-  if (registerResponse.status !== 409) {
-    const message = await readErrorMessage(registerResponse);
-    throw new Error(message ?? "Could not finish social sign-in.");
-  }
-
-  const loginResponse = await fetchImpl(`${apiBaseServer}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+  const login = await apiServer.POST("/api/v1/auth/login", {
+    body: { email, password },
   });
-
-  if (loginResponse.ok) {
-    return (await loginResponse.json()) as BackendAuthResponse;
+  if (login.response.ok && login.data) {
+    return login.data;
   }
-
-  if (loginResponse.status === 401) {
+  if (login.response.status === 401) {
     throw new Error(SOCIAL_ACCOUNT_CONFLICT_MESSAGE);
   }
-
-  const message = await readErrorMessage(loginResponse);
-  throw new Error(message ?? "Could not sign in with this social account.");
+  throw new Error(
+    errorMessage(login.error) ?? "Could not sign in with this social account.",
+  );
 }

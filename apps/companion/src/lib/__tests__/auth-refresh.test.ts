@@ -16,7 +16,9 @@ function mockResponse(
       phone: null,
     },
     ...overrides,
-  } as BackendAuthResponse;
+    // Dedup tests only read the token fields; a minimal user stands in for
+    // the full `UserResponseDto` the generated `AuthResponseDto` now carries.
+  } as unknown as BackendAuthResponse;
 }
 
 afterEach(() => {

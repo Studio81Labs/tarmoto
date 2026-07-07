@@ -5,11 +5,8 @@ import Apple from "next-auth/providers/apple";
 import type { NextAuthConfig } from "next-auth";
 import "./auth-types";
 
-import { API_BASE_SERVER } from "@/lib/config";
-import {
-  exchangeOAuthUserForBackendTokens,
-  type BackendAuthResponse,
-} from "@/lib/social-auth-bridge";
+import { apiServer } from "@/lib/api/server";
+import { exchangeOAuthUserForBackendTokens } from "@/lib/social-auth-bridge";
 import { dedupedRefresh } from "@/lib/auth-refresh";
 import {
   SOCIAL_ACCOUNT_CONFLICT_ERROR,
@@ -29,24 +26,22 @@ const providers: NextAuthConfig["providers"] = [
       if (!credentials?.email || !credentials?.password) return null;
 
       try {
-        const res = await fetch(`${API_BASE_SERVER}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: credentials.email,
-            password: credentials.password,
-          }),
+        const { data, response } = await apiServer.POST("/api/v1/auth/login", {
+          body: {
+            email: credentials.email as string,
+            password: credentials.password as string,
+          },
         });
 
-        if (!res.ok) return null;
-
-        const data: BackendAuthResponse = await res.json();
+        if (!response.ok || !data) return null;
 
         return {
           id: data.user.id,
           email: data.user.email,
           displayName: data.user.display_name,
-          phone: data.user.phone,
+          // `UserResponseDto.phone` is `string | null`; the NextAuth `User`
+          // models an absent phone as `undefined`.
+          phone: data.user.phone ?? undefined,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
@@ -103,7 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: data.user.id,
           email: data.user.email,
           displayName: data.user.display_name,
-          phone: data.user.phone,
+          phone: data.user.phone ?? undefined,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,

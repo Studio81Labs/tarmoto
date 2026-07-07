@@ -1,18 +1,42 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildSocialBridgePassword,
   exchangeOAuthUserForBackendTokens,
 } from "@/lib/social-auth-bridge";
+import { apiServer } from "@/lib/api/server";
+
+vi.mock("@/lib/api/server", () => ({
+  apiServer: { POST: vi.fn() },
+}));
+
+const post = vi.mocked(apiServer.POST);
+
+// Build an openapi-fetch-style result: 2xx populates `data`, otherwise `error`.
+function result(status: number, body: unknown) {
+  const ok = status >= 200 && status < 300;
+  return {
+    data: ok ? body : undefined,
+    error: ok ? undefined : body,
+    response: new Response(null, { status }),
+    // The bridge only reads `data` / `error` / `response.ok` / `response.status`.
+  } as unknown as Awaited<ReturnType<typeof apiServer.POST>>;
+}
+
+const AUTH_RESPONSE = {
+  access_token: "access-token",
+  refresh_token: "refresh-token",
+  expires_in: 3600,
+  user: {
+    id: "user-1",
+    email: "rider@example.com",
+    display_name: "Rider One",
+    created_at: "2026-04-23T10:00:00.000Z",
+  },
+};
 
 describe("social auth bridge", () => {
-  const fetchMock = vi.fn<typeof fetch>();
-
   beforeEach(() => {
-    fetchMock.mockReset();
-    vi.stubGlobal("fetch", fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    post.mockReset();
   });
 
   it("derives a stable backend password from the normalized email", async () => {
@@ -22,148 +46,68 @@ describe("social auth bridge", () => {
   });
 
   it("registers a new OAuth rider against the backend", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          access_token: "access-token",
-          refresh_token: "refresh-token",
-          expires_in: 3600,
-          user: {
-            id: "user-1",
-            email: "rider@example.com",
-            display_name: "Rider One",
-            created_at: "2026-04-23T10:00:00.000Z",
-          },
-        }),
-        {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+    post.mockResolvedValueOnce(result(201, AUTH_RESPONSE));
+
+    const authResult = await exchangeOAuthUserForBackendTokens(
+      { email: "rider@example.com", displayName: "Rider One" },
+      { bridgeSecret: "secret-key" },
     );
 
-    const result = await exchangeOAuthUserForBackendTokens(
-      {
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith("/api/v1/auth/register", {
+      body: {
         email: "rider@example.com",
-        displayName: "Rider One",
+        password: await buildSocialBridgePassword(
+          "rider@example.com",
+          "secret-key",
+        ),
+        display_name: "Rider One",
       },
-      {
-        apiBaseServer: "https://api.example.com/api/v1",
-        bridgeSecret: "secret-key",
-      },
-    );
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/auth/register",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    expect(
-      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "")),
-    ).toEqual({
-      email: "rider@example.com",
-      display_name: "Rider One",
-      password: await buildSocialBridgePassword(
-        "rider@example.com",
-        "secret-key",
-      ),
     });
-    expect(result.access_token).toBe("access-token");
+    expect(authResult.access_token).toBe("access-token");
   });
 
   it("falls back to backend login when the social account already exists", async () => {
-    fetchMock
+    post
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "Email already registered" }), {
-          status: 409,
-          headers: { "Content-Type": "application/json" },
-        }),
+        result(409, { message: "Email already registered" }),
       )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            expires_in: 3600,
-            user: {
-              id: "user-1",
-              email: "rider@example.com",
-              display_name: "Rider One",
-              created_at: "2026-04-23T10:00:00.000Z",
-            },
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      );
+      .mockResolvedValueOnce(result(200, AUTH_RESPONSE));
 
-    const result = await exchangeOAuthUserForBackendTokens(
-      {
+    const authResult = await exchangeOAuthUserForBackendTokens(
+      { email: "rider@example.com", displayName: "Rider One" },
+      { bridgeSecret: "secret-key" },
+    );
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenNthCalledWith(2, "/api/v1/auth/login", {
+      body: {
         email: "rider@example.com",
-        displayName: "Rider One",
+        password: await buildSocialBridgePassword(
+          "rider@example.com",
+          "secret-key",
+        ),
       },
-      {
-        apiBaseServer: "https://api.example.com/api/v1",
-        bridgeSecret: "secret-key",
-      },
-    );
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "https://api.example.com/api/v1/auth/login",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    expect(
-      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "")),
-    ).toEqual({
-      email: "rider@example.com",
-      password: await buildSocialBridgePassword(
-        "rider@example.com",
-        "secret-key",
-      ),
     });
-    expect(result.refresh_token).toBe("refresh-token");
+    expect(authResult.refresh_token).toBe("refresh-token");
   });
 
   it("throws a clear collision error when the email already belongs to a password account", async () => {
-    fetchMock
+    post
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "Email already registered" }), {
-          status: 409,
-          headers: { "Content-Type": "application/json" },
-        }),
+        result(409, { message: "Email already registered" }),
       )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "Invalid credentials" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      .mockResolvedValueOnce(result(401, { message: "Invalid credentials" }));
 
     await expect(
       exchangeOAuthUserForBackendTokens(
-        {
-          email: "rider@example.com",
-          displayName: "Rider One",
-        },
-        {
-          apiBaseServer: "https://api.example.com/api/v1",
-          bridgeSecret: "secret-key",
-        },
+        { email: "rider@example.com", displayName: "Rider One" },
+        { bridgeSecret: "secret-key" },
       ),
     ).rejects.toThrow(
       "This email already has a Tarmoto password account. Sign in with your password instead.",
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledTimes(2);
   });
 });
