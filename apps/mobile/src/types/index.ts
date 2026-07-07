@@ -33,6 +33,26 @@ export type { MeProfile } from "@tarmoto/shared";
 export type { FeatureKey, FeatureSnapshot } from "@tarmoto/shared";
 import type { FeatureSnapshot, SubscriptionTier } from "@tarmoto/shared";
 
+// Domain enums (surface / ride / hazard / waypoint types + hazard severity)
+// are the canonical `@tarmoto/shared` definitions the backend DTOs are built
+// from — re-exported here rather than re-declared so mobile stays in
+// lock-step with backend + companion. `Severity` keeps its historical mobile
+// name, aliased to the identical shared `HazardSeverity` (`low|medium|high`).
+export type {
+  SurfaceType,
+  RideType,
+  HazardType,
+  WaypointType,
+} from "@tarmoto/shared";
+import type {
+  HazardSeverity,
+  HazardType,
+  RideType,
+  SurfaceType,
+  WaypointType,
+} from "@tarmoto/shared";
+export type Severity = HazardSeverity;
+
 // Generated OpenAPI component schemas — re-exported so screens, services,
 // and stores can refer to spec-derived shapes through `@/types` instead
 // of importing from `@tarmoto/openapi-client` directly. `Schemas["FooDto"]`
@@ -188,13 +208,6 @@ export interface EmergencyContactInput {
 
 // ── Road Segments ──
 
-export type SurfaceType =
-  | "asphalt"
-  | "concrete"
-  | "cobblestone"
-  | "gravel"
-  | "dirt"
-  | "unknown";
 export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
 
 export interface RoadSegment {
@@ -258,7 +271,6 @@ export interface FunZone {
 
 // ── Rides ──
 
-export type RideType = "free" | "commute" | "trip" | "tracked";
 export type RideStatus = "active" | "completed" | "cancelled";
 
 /**
@@ -353,19 +365,6 @@ export interface RideSegment {
 
 // ── Hazards ──
 
-export type HazardType =
-  | "pothole"
-  | "gravel"
-  | "oil_spill"
-  | "roadworks"
-  | "animals"
-  | "police"
-  | "flooding"
-  | "ice"
-  | "other";
-
-export type Severity = "low" | "medium" | "high";
-
 export interface Hazard {
   id: string;
   lat: number;
@@ -407,15 +406,6 @@ export interface HazardAlertEvent extends Omit<Hazard, "severity"> {
 
 export type TripStatus = "draft" | "planned" | "active" | "completed";
 export type RoadPreference = "curvy" | "scenic" | "fast" | "mixed";
-export type WaypointType =
-  | "start"
-  | "via"
-  | "fuel"
-  | "food"
-  | "coffee"
-  | "hotel"
-  | "photo"
-  | "end";
 
 export interface TripSummary {
   id: string;
