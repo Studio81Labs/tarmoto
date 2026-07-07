@@ -13,6 +13,15 @@ import {
 } from 'class-validator';
 
 /**
+ * Body limit for `POST /roads/route-quality`. A routed day/leg polyline can
+ * carry a few thousand vertices — well over the global 100 kb default — while
+ * still under the service's 500 km length cap, so this endpoint is scoped up in
+ * `main.ts` and the request reaches the handler instead of a body-parser 413.
+ * 1 MiB comfortably fits a dense max-length route's geometry.
+ */
+export const ROUTE_QUALITY_BODY_LIMIT_BYTES = 1_048_576;
+
+/**
  * One point of a routed polyline (request side). Mirrors the passes
  * `RoutePointDto` — validated lat/lng so a malformed body is rejected at
  * the DTO boundary before it reaches the spatial query.
