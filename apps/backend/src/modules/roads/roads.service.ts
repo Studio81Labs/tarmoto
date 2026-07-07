@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -26,6 +31,10 @@ import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto, BestRoadDto } from './dto/best-roads.dto.js';
 import { FunZoneDetailDto, FunZoneRoadDto } from './dto/fun-zone-detail.dto.js';
+import {
+  RouteQualityRequestDto,
+  RouteQualityResponseDto,
+} from './dto/route-quality.dto.js';
 
 const RECENT_REVIEW_LIMIT = 5;
 const ACTIVE_HAZARD_LIMIT = 10;
@@ -34,14 +43,248 @@ const BEST_ROADS_MIN_LENGTH_M = 500;
 const BEST_ROADS_DEFAULT_LIMIT = 10;
 const FUN_ZONE_TOP_ROADS_LIMIT = 10;
 
+// Route-quality sampling (#862). Spacing stays below the importer's ~100 m
+// `road_segments` length so a segment is never stepped over, and the accepted
+// route length is bounded so that fixed spacing also bounds the sample count
+// (~12.5k). A route longer than the limit can't be represented at segment
+// scale, so it's rejected rather than returned with silent no-data gaps — the
+// companion routes per day/leg and never approaches it.
+const ROUTE_QUALITY_SAMPLE_SPACING_M = 40;
+const MAX_ROUTE_QUALITY_LENGTH_M = 500_000;
+
 @Injectable()
 export class RoadsService {
+  private readonly logger = new Logger(RoadsService.name);
+
   constructor(
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(FunZone)
     private readonly funZoneRepo: Repository<FunZone>,
   ) {}
+
+  /**
+   * Per-segment surface quality for an already-routed polyline (#862). Returns,
+   * ordered along the route, every stretch the line runs over a `road_segments`
+   * row, with its quality / surface / curviness and the route-fraction span it
+   * covers. The planner paints each span onto the polyline; gaps between spans
+   * are genuine no-coverage stretches it renders as "no data".
+   *
+   * The join walks the route by sampling it at ~40 m and snapping each sample
+   * to the single *nearest* live segment within `buffer_m`, then coalescing
+   * contiguous same-segment runs into spans. Two properties make this the
+   * right model where a plain buffer-intersection is not:
+   *   - Nearest-snap (not "any segment within the buffer") means a sample
+   *     picks the road the rider is actually on, so a cross street merely
+   *     *crossed* at an intersection doesn't spawn its own quality span.
+   *   - Each sample's position is the route parameter `idx/n`, which is
+   *     unambiguous even when the route overlaps itself — so a loop or
+   *     there-and-back emits one span *per pass* over the same road (the two
+   *     passes fall at different sample indices and coalesce separately),
+   *     which point-projection (`ST_LineLocatePoint`) cannot express.
+   * Span boundaries are the sample-cell edges (±½ step), so adjacent segments
+   * abut instead of leaving a gap the client would misread as "no data".
+   * Spacing is fixed at ~40 m (never coarsened; the length guard above bounds
+   * the sample count) so the importer's normal ~100 m segments are never
+   * stepped over. A road segment shorter than the spacing that no sample lands
+   * on is the deliberate cost of sampling — a rare, ≤40 m no-data stretch,
+   * accepted because the alternative (an exact buffer intersection) can't
+   * position self-overlapping passes unambiguously and pulls in merely-crossed
+   * cross streets. The buffer stays tight (default 25 m) because the routed
+   * line follows the same OSM ways the segments were cut from — a wide buffer
+   * would snap to parallel roads.
+   *
+   * Resilience mirrors the POI read path: any DB failure yields an empty list
+   * rather than a 500 (a quality overlay must never break trip planning). The
+   * failure is logged (message only — never the route coordinates) so a real
+   * outage/schema drift is still an operational signal, not silent "no data".
+   */
+  async getRouteQuality(
+    dto: RouteQualityRequestDto,
+  ): Promise<RouteQualityResponseDto> {
+    const bufferM = dto.buffer_m ?? 25;
+
+    // Reject routes too long to represent at segment scale (see the constants).
+    // Thrown before the try/catch so it surfaces as a 400, not swallowed into
+    // an empty overlay. Length is a cheap haversine sum — no DB round-trip.
+    let routeLengthM = 0;
+    for (let i = 1; i < dto.geometry.length; i += 1) {
+      const a = dto.geometry[i - 1];
+      const b = dto.geometry[i];
+      if (a && b) routeLengthM += haversineMeters(a.lat, a.lng, b.lat, b.lng);
+    }
+    if (routeLengthM > MAX_ROUTE_QUALITY_LENGTH_M) {
+      throw new BadRequestException(
+        `Route too long for per-segment quality (${Math.round(routeLengthM / 1000)} km ` +
+          `> ${MAX_ROUTE_QUALITY_LENGTH_M / 1000} km); request it per day/leg.`,
+      );
+    }
+
+    // Build the route LineString via positional params so no user coordinate
+    // is string-interpolated into the SQL.
+    const params: number[] = [];
+    const pointsSql = dto.geometry
+      .map((p) => {
+        params.push(p.lng, p.lat);
+        return `ST_MakePoint($${params.length - 1}, $${params.length})`;
+      })
+      .join(',');
+    params.push(bufferM);
+    const bufferParam = `$${params.length}`;
+    // Indexable degree prefilter for the spatial predicates: a plain
+    // `ST_DWithin(rs.geom, …)` in SRID-4326 degrees hits the geometry GiST
+    // index (`idx_road_segments_geom`), whereas a `geom::geography` distance
+    // cannot and would full-scan. `/ 111320` is metres per degree of latitude;
+    // `* 2` is a generous factor so the degree box still covers `buffer_m` of
+    // *longitude* up to ~lat 60° (Tarmoto's northern coverage). It only
+    // *narrows* candidates — each predicate pairs it with a precise
+    // `geom::geography` check on the real `buffer_m`, so the generosity never
+    // loosens the actual snap/coverage distance.
+    const bufferDegExpr = `(${bufferParam} / 111320.0 * 2)`;
+
+    const sql = `
+      WITH cfg AS (
+        SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      ),
+      route AS (
+        SELECT
+          line,
+          -- Fixed ~40 m spacing (never coarsened): the length guard above
+          -- bounds this to ~12.5k samples, so a normal ~100 m segment is never
+          -- stepped over regardless of route length.
+          GREATEST(2, CEIL(ST_Length(line::geography) / ${ROUTE_QUALITY_SAMPLE_SPACING_M}.0)::int) AS n
+        FROM cfg
+      ),
+      -- Cheap indexed short-circuit: if nothing is near the whole route (a
+      -- backcountry / no-coverage import), skip sampling entirely rather than
+      -- run the per-sample nearest lookup n times for nothing. MATERIALIZED so
+      -- the GiST-indexed check runs exactly once. Routes that DO have coverage
+      -- still use the per-sample KNN below, which is index-backed and fast.
+      coverage AS MATERIALIZED (
+        SELECT EXISTS (
+          SELECT 1
+          FROM road_segments rs, route
+          WHERE rs.deactivated_at IS NULL
+            -- Indexable degree prefilter (uses idx_road_segments_geom) narrows
+            -- to candidates, then the precise metric check confirms coverage.
+            AND ST_DWithin(rs.geom, route.line, ${bufferDegExpr})
+            AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
+        ) AS has_any
+      ),
+      -- Walk the route: one point every 1/n of its length (only when there is
+      -- any coverage to snap to).
+      samples AS (
+        SELECT
+          gs AS idx,
+          ST_LineInterpolatePoint(route.line, gs::float / route.n) AS pt
+        FROM route, generate_series(0, route.n) AS gs, coverage
+        WHERE coverage.has_any
+      ),
+      -- Snap each sample to the single nearest live segment within the buffer.
+      -- Nearest (not "any within buffer") is what keeps a merely-crossed cross
+      -- street at an intersection from claiming a span of the rider's road.
+      snapped AS (
+        SELECT
+          s.idx,
+          seg.id            AS seg_id,
+          seg.osm_way_id    AS osm_way_id,
+          seg.segment_index AS segment_index,
+          seg.quality_score AS quality_score,
+          seg.curviness_score AS curviness_score,
+          seg.surface_type  AS surface_type,
+          seg.reading_count AS reading_count
+        FROM samples s
+        LEFT JOIN LATERAL (
+          SELECT
+            rs.id, rs.osm_way_id, rs.segment_index, rs.quality_score,
+            rs.curviness_score, rs.surface_type, rs.reading_count
+          FROM road_segments rs
+          WHERE rs.deactivated_at IS NULL
+            AND ST_GeometryType(rs.geom) = 'ST_LineString'
+            -- Indexable degree prefilter bounds the KNN scan via the GiST
+            -- index; the precise metric check keeps the snap within the real
+            -- buffer_m so a sample can't grab an adjacent road ~30-50 m off the
+            -- routed way just because the degree box is generous.
+            AND ST_DWithin(rs.geom, s.pt, ${bufferDegExpr})
+            AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
+          -- Rank by true metric distance, not planar degrees, so the nearest
+          -- snap is correct at any latitude. The WHERE has already narrowed
+          -- to the handful of segments within buffer_m, so the exact distance
+          -- sort is cheap.
+          ORDER BY ST_Distance(rs.geom::geography, s.pt::geography)
+          LIMIT 1
+        ) seg ON TRUE
+      ),
+      -- Gaps-and-islands: the difference of the two row numbers is constant
+      -- across a contiguous run of the same segment, so a second pass over
+      -- that segment (separated by other / no-coverage samples) forms its own
+      -- run and its own span. NULL samples stay in the numbering so they break
+      -- runs, then are dropped from the output.
+      runs AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (ORDER BY idx)
+            - ROW_NUMBER() OVER (PARTITION BY seg_id ORDER BY idx) AS grp
+        FROM snapped
+      )
+      SELECT
+        MIN(osm_way_id)::text AS osm_way_id,
+        MIN(segment_index)    AS segment_index,
+        MIN(quality_score)    AS quality_score,
+        MIN(curviness_score)  AS curviness_score,
+        MIN(surface_type)     AS surface_type,
+        MIN(reading_count)    AS reading_count,
+        -- Cell edges (±½ step): adjacent runs share a boundary and abut, so a
+        -- segment transition isn't reported as a no-coverage gap.
+        GREATEST(0.0, (MIN(idx) - 0.5) / (SELECT n FROM route)) AS start_fraction,
+        LEAST(1.0, (MAX(idx) + 0.5) / (SELECT n FROM route))    AS end_fraction
+      FROM runs
+      WHERE seg_id IS NOT NULL
+      GROUP BY seg_id, grp
+      ORDER BY start_fraction ASC
+    `;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const rows = await this.segmentRepo.query(sql, params);
+
+      return {
+        segments: (
+          rows as Array<{
+            osm_way_id: string | null;
+            segment_index: number | null;
+            quality_score: string | number | null;
+            curviness_score: string | number;
+            surface_type: string;
+            reading_count: string | number;
+            start_fraction: string | number;
+            end_fraction: string | number;
+          }>
+        ).map((r) => ({
+          osm_way_id: r.osm_way_id ?? null,
+          segment_index: r.segment_index ?? null,
+          quality_score:
+            r.quality_score == null ? null : Number(r.quality_score),
+          curviness_score: Number(r.curviness_score),
+          surface_type: r.surface_type,
+          reading_count: Number(r.reading_count),
+          start_fraction: Number(r.start_fraction),
+          end_fraction: Number(r.end_fraction),
+        })),
+      };
+    } catch (err) {
+      // Never surface a 500 to the planner over a quality lookup — but do log
+      // the failure so an outage / schema drift / bad query is a real signal
+      // rather than an empty overlay indistinguishable from a no-coverage
+      // route. Log the message only: the SQL carries `$n` placeholders (no
+      // values) and the route coordinates are location data that must not be
+      // written to logs.
+      this.logger.error(
+        `route-quality query failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { segments: [] };
+    }
+  }
 
   async findNearby(query: QueryNearbyDto): Promise<RoadSegmentDto[]> {
     const radius = query.radius ?? 5000;

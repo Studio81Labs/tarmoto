@@ -28,6 +28,7 @@ import { IMPORT_TRIP_BODY_LIMIT_PATHS } from './config/body-limits.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
 import { MAX_MAP_SNAPSHOT_BYTES } from './modules/map-shares/dto/map-share.dto.js';
 import { IMPORT_TRIP_BODY_LIMIT_BYTES } from './modules/trips/dto/import-trip.dto.js';
+import { ROUTE_QUALITY_BODY_LIMIT_BYTES } from './modules/roads/dto/route-quality.dto.js';
 
 // Default JSON body limit, matching body-parser's built-in default. Every
 // endpoint except trip-share creation stays on this limit so we don't widen
@@ -114,6 +115,17 @@ async function bootstrap() {
     IMPORT_TRIP_BODY_LIMIT_PATHS,
     expressJson({
       limit: IMPORT_TRIP_BODY_LIMIT_BYTES,
+      verify: captureRawBody,
+    }),
+  );
+  // POST /api/v1/roads/route-quality carries the full routed day/leg polyline,
+  // which can run to a few thousand vertices — over the 100 kb default — while
+  // still under the service's 500 km length cap. Scope it up so a valid
+  // overlay request reaches the handler instead of body-parser's generic 413.
+  app.use(
+    '/api/v1/roads/route-quality',
+    expressJson({
+      limit: ROUTE_QUALITY_BODY_LIMIT_BYTES,
       verify: captureRawBody,
     }),
   );

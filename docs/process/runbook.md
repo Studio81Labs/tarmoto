@@ -79,3 +79,36 @@ Per `.github/workflows/backend-deploy.yml`:
 
 - `BACKEND_URL` — the environment's backend origin (`https://api-staging.tarmoto.app` / `https://api.tarmoto.app`).
 - `COOLIFY_BACKEND_UUID` — the backend app's Coolify UUID for that environment.
+
+## Databases & Migrations
+
+### POI database topology
+
+The POI (point-of-interest) database is a **separate PostgreSQL + PostGIS instance** (see [ADR 0007](../decisions/0007-separate-poi-database.md)). It isolates the high-write POI data path from the core backend database, reducing contention and operational risk.
+
+**Local development:**
+
+```bash
+pnpm db:up                  # Starts both tarmoto (5433) and tarmoto-poi-db (5434) Compose services
+pnpm db:migrate:poi         # Runs POI database migrations
+```
+
+**Production:**
+
+Provision a dedicated Coolify Postgres instance (separate from the core backend database). Set the following on the backend Coolify application:
+
+- `TARMOTO_POI_DATABASE_HOST`
+- `TARMOTO_POI_DATABASE_PORT`
+- `TARMOTO_POI_DATABASE_NAME`
+- `TARMOTO_POI_DATABASE_USER`
+- `TARMOTO_POI_DATABASE_PASSWORD`
+
+### POI database resilience
+
+The backend **tolerates the POI database being unavailable**. When the POI DB is down:
+
+- POI store reads return `503 Service Unavailable`.
+- `GET /poi/health` reports `{ poiDb: 'down' }` (while the rest of the app status remains healthy).
+- The rest of the backend stays operational; trips, users, and ride data are unaffected.
+
+This design allows POI data maintenance (migrations, backups, maintenance windows) without blocking core app traffic.

@@ -696,6 +696,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/route-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Per-segment surface quality for a routed polyline (planner overlay) */
+        post: operations["RoadsController_getRouteQuality"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/{segmentId}": {
         parameters: {
             query?: never;
@@ -901,6 +918,26 @@ export interface paths {
          * @description Given a route polyline, returns POIs (fuel stations, restaurants, viewpoints, cafés) within `buffer_km` of any route vertex. Each POI is annotated with its distance along the route (in km from start) and its shortest distance to the route, so clients can order them on a day timeline and judge reachability. Used by the mobile fuel-range warning to surface live fuel stations inside legs that exceed the rider’s declared range.
          */
         post: operations["PoiController_findPointsOfInterestAlongRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * POI store readiness (ADR 0007)
+         * @description Reports whether the separate POI database is connected. Always 200 — a "down" POI DB is a degraded, non-fatal state; the store read endpoints return 503 while it is down.
+         */
+        get: operations["PoiController_health"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3915,6 +3952,35 @@ export interface components {
             region: components["schemas"]["BestRoadsRegionDto"];
             roads: components["schemas"]["BestRoadDto"][];
         };
+        RouteQualityPointDto: {
+            lat: number;
+            lng: number;
+        };
+        RouteQualityRequestDto: {
+            geometry: components["schemas"]["RouteQualityPointDto"][];
+            /** @description Buffer in meters around the routed line within which a `road_segments` row counts as "on the route". Defaults to 25 m when omitted — kept tight because the routed line follows the same OSM ways the segments were cut from, so a wide buffer would pull in parallel/adjacent roads. */
+            buffer_m?: number;
+        };
+        RouteQualitySegmentDto: {
+            /** @description OSM way id of the matched segment (segment identity from #751). Null for segments imported before OSM identity was captured. */
+            osm_way_id: string | null;
+            segment_index: number | null;
+            /** @description Distance-weighted road-surface quality, 1–5. Null when the segment has no snapped surface readings yet (rendered as an unscored stretch). */
+            quality_score: number | null;
+            /** @description Curviness score 0–5. */
+            curviness_score: number;
+            surface_type: string;
+            /** @description Number of surface readings snapped to this segment. Drives the low-confidence treatment when small. */
+            reading_count: number;
+            /** @description Fraction along the route (0 = start, 1 = end) where this span begins. Spans are returned ordered by `start_fraction`. */
+            start_fraction: number;
+            /** @description Fraction along the route where this span ends. */
+            end_fraction: number;
+        };
+        RouteQualityResponseDto: {
+            /** @description The road segments the route passes through, ordered along the route. Empty when no imported segments cover the route (the whole route is then "no data"). */
+            segments: components["schemas"]["RouteQualitySegmentDto"][];
+        };
         QualityBreakdownDto: {
             excellent: number;
             good: number;
@@ -4306,6 +4372,14 @@ export interface components {
             kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
             /** @description Total length of the supplied route polyline, km. */
             route_length_km: number;
+        };
+        PoiHealthDto: {
+            /**
+             * @description Whether the separate POI database is currently reachable.
+             * @example up
+             * @enum {string}
+             */
+            poiDb: "up" | "down";
         };
         UserRoutePrefsDto: {
             /** @enum {string} */
@@ -6102,6 +6176,10 @@ export type SchemaFunZoneDetailDto = components['schemas']['FunZoneDetailDto'];
 export type SchemaBestRoadsRegionDto = components['schemas']['BestRoadsRegionDto'];
 export type SchemaBestRoadDto = components['schemas']['BestRoadDto'];
 export type SchemaBestRoadsResponseDto = components['schemas']['BestRoadsResponseDto'];
+export type SchemaRouteQualityPointDto = components['schemas']['RouteQualityPointDto'];
+export type SchemaRouteQualityRequestDto = components['schemas']['RouteQualityRequestDto'];
+export type SchemaRouteQualitySegmentDto = components['schemas']['RouteQualitySegmentDto'];
+export type SchemaRouteQualityResponseDto = components['schemas']['RouteQualityResponseDto'];
 export type SchemaQualityBreakdownDto = components['schemas']['QualityBreakdownDto'];
 export type SchemaReviewResponseDto = components['schemas']['ReviewResponseDto'];
 export type SchemaTrendPointDto = components['schemas']['TrendPointDto'];
@@ -6131,6 +6209,7 @@ export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
 export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
 export type SchemaAlongRoutePoiListDto = components['schemas']['AlongRoutePoiListDto'];
+export type SchemaPoiHealthDto = components['schemas']['PoiHealthDto'];
 export type SchemaUserRoutePrefsDto = components['schemas']['UserRoutePrefsDto'];
 export type SchemaUserPreferencesDto = components['schemas']['UserPreferencesDto'];
 export type SchemaUpdateProfileDto = components['schemas']['UpdateProfileDto'];
@@ -7424,6 +7503,36 @@ export interface operations {
             };
         };
     };
+    RoadsController_getRouteQuality: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteQualityRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteQualityResponseDto"];
+                };
+            };
+            /** @description Route exceeds the maximum length representable at segment scale */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     RoadsController_findById: {
         parameters: {
             query?: never;
@@ -7678,6 +7787,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlongRoutePoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoiHealthDto"];
                 };
             };
         };

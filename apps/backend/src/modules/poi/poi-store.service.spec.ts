@@ -1,5 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { DataSource, Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { PoiStoreService, toStoredPoiDto } from './poi-store.service.js';
 
@@ -83,7 +86,10 @@ describe('PoiStoreService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn(),
     };
-    service = new PoiStoreService(repo as unknown as Repository<Poi>);
+    service = new PoiStoreService({
+      isInitialized: true,
+      getRepository: () => repo as unknown as Repository<Poi>,
+    } as unknown as DataSource);
   });
 
   const bbox = { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 };
@@ -191,5 +197,86 @@ describe('PoiStoreService', () => {
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
       expect(kindParams).toEqual({ kinds: ['fuel_station'] });
     });
+  });
+});
+
+function serviceWithDataSource(ds: Partial<DataSource>): PoiStoreService {
+  return new PoiStoreService(ds as DataSource);
+}
+
+describe('PoiStoreService when the POI DB is down', () => {
+  it('throws 503 from findInBbox when the DataSource is not initialized', async () => {
+    const svc = serviceWithDataSource({ isInitialized: false });
+    await expect(
+      svc.findInBbox(
+        { minLng: 18, minLat: 49, maxLng: 19, maxLat: 50 },
+        undefined,
+        50,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('throws 503 from findById when the DataSource is not initialized', async () => {
+    const svc = serviceWithDataSource({ isInitialized: false });
+    await expect(svc.findById('id')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+});
+
+describe('PoiStoreService when a connected POI DB drops at runtime', () => {
+  it('throws 503 (not the raw driver error) from findInBbox when the query fails with a connection error', async () => {
+    const droppedQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Connection terminated unexpectedly'), {
+          code: '08006',
+        }),
+      ),
+    };
+    const droppedRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(droppedQb),
+    };
+    const svc = serviceWithDataSource({
+      isInitialized: true,
+      getRepository: () => droppedRepo as unknown as Repository<Poi>,
+    });
+
+    await expect(
+      svc.findInBbox(
+        { minLng: 18, minLat: 49, maxLng: 19, maxLat: 50 },
+        undefined,
+        50,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
+describe('PoiStoreService.isReady', () => {
+  it('returns false without probing when the DataSource was never initialized', async () => {
+    const query = jest.fn();
+    const svc = serviceWithDataSource({ isInitialized: false, query });
+
+    await expect(svc.isReady()).resolves.toBe(false);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('returns true when initialized and the live probe query resolves', async () => {
+    const query = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    const svc = serviceWithDataSource({ isInitialized: true, query });
+
+    await expect(svc.isReady()).resolves.toBe(true);
+    expect(query).toHaveBeenCalledWith('SELECT 1');
+  });
+
+  it('returns false when initialized but the connection dropped at runtime (probe rejects)', async () => {
+    const query = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const svc = serviceWithDataSource({ isInitialized: true, query });
+
+    await expect(svc.isReady()).resolves.toBe(false);
   });
 });

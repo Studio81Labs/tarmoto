@@ -19,6 +19,15 @@ export class AddPois1787000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
+      -- The standalone POI database (ADR 0007) never runs the app database's
+      -- schema setup (InitSchema / schema.sql), which is where the app DB's
+      -- PostGIS extension gets enabled. This lineage owns its own database
+      -- end-to-end, so it must bootstrap PostGIS itself before the first
+      -- migration that needs the \`geometry\` type. \`IF NOT EXISTS\` keeps
+      -- this idempotent for the postgis/postgis Docker image, which already
+      -- enables the extension in its default database.
+      CREATE EXTENSION IF NOT EXISTS postgis;
+
       CREATE TABLE pois (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         source VARCHAR(32) NOT NULL,
