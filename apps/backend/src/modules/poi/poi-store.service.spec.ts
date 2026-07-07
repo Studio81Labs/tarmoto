@@ -1,5 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { DataSource, Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { PoiStoreService, toStoredPoiDto } from './poi-store.service.js';
 
@@ -83,7 +86,10 @@ describe('PoiStoreService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn(),
     };
-    service = new PoiStoreService(repo as unknown as Repository<Poi>);
+    service = new PoiStoreService({
+      isInitialized: true,
+      getRepository: () => repo as unknown as Repository<Poi>,
+    } as unknown as DataSource);
   });
 
   const bbox = { minLng: 18, minLat: 49.3, maxLng: 18.9, maxLat: 49.75 };
@@ -191,5 +197,29 @@ describe('PoiStoreService', () => {
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
       expect(kindParams).toEqual({ kinds: ['fuel_station'] });
     });
+  });
+});
+
+function serviceWithDataSource(ds: Partial<DataSource>): PoiStoreService {
+  return new PoiStoreService(ds as DataSource);
+}
+
+describe('PoiStoreService when the POI DB is down', () => {
+  it('throws 503 from findInBbox when the DataSource is not initialized', async () => {
+    const svc = serviceWithDataSource({ isInitialized: false });
+    await expect(
+      svc.findInBbox(
+        { minLng: 18, minLat: 49, maxLng: 19, maxLat: 50 },
+        undefined,
+        50,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('throws 503 from findById when the DataSource is not initialized', async () => {
+    const svc = serviceWithDataSource({ isInitialized: false });
+    await expect(svc.findById('id')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });

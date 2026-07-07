@@ -1,6 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  Injectable,
+  ServiceUnavailableException,
+  BadRequestException,
+} from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
@@ -41,9 +45,21 @@ interface RoutePoint {
 @Injectable()
 export class PoiStoreService {
   constructor(
-    @InjectRepository(Poi)
-    private readonly repo: Repository<Poi>,
+    @InjectDataSource('poi')
+    private readonly poiDataSource: DataSource,
   ) {}
+
+  // The POI store lives in a separate, resilient connection (ADR 0007). When
+  // it isn't connected, surface an explicit 503 rather than a silent empty
+  // result so callers can distinguish "no POIs here" from "store is down".
+  private repo(): Repository<Poi> {
+    if (!this.poiDataSource.isInitialized) {
+      throw new ServiceUnavailableException(
+        'POI store is temporarily unavailable',
+      );
+    }
+    return this.poiDataSource.getRepository(Poi);
+  }
 
   /**
    * List stored POIs whose point falls inside the bounding box, optionally
@@ -65,7 +81,7 @@ export class PoiStoreService {
       MAX_LIMIT,
     );
 
-    const qb = this.repo
+    const qb = this.repo()
       .createQueryBuilder('poi')
       // ST_Intersects is GiST-index-accelerated (it bbox-prefilters via the
       // spatial index), and for point geometry it's equivalent to a bbox test.
@@ -86,7 +102,7 @@ export class PoiStoreService {
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
   async findById(id: string): Promise<StoredPoiDto | null> {
-    const poi = await this.repo.findOne({ where: { id } });
+    const poi = await this.repo().findOne({ where: { id } });
     return poi ? toStoredPoiDto(poi) : null;
   }
 
@@ -123,14 +139,16 @@ export class PoiStoreService {
       })
       .join(',');
 
-    const qb = this.repo.createQueryBuilder('poi').where(
-      `ST_DWithin(
+    const qb = this.repo()
+      .createQueryBuilder('poi')
+      .where(
+        `ST_DWithin(
           poi.geom::geography,
           ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
           :buffer
         )`,
-      params,
-    );
+        params,
+      );
     if (kinds && kinds.length > 0) {
       qb.andWhere('poi.kind IN (:...kinds)', { kinds });
     }
