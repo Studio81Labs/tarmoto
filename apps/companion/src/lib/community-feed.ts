@@ -7,9 +7,14 @@ export interface CommunityFeedLocation {
   km: number;
 }
 
+/** Ride-type filter values — the wire ride types plus the "all" sentinel. */
+export type RideTypeFilter =
+  | "all"
+  | NonNullable<CommunityRideQuery["ride_type"]>;
+
 export interface CommunityFeedFormState {
   sort: CommunityRideSort;
-  rideType: string;
+  rideType: RideTypeFilter;
   minQuality: string;
   minPopularity: string;
   minCurviness: string;

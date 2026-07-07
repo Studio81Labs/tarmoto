@@ -3,19 +3,14 @@
  * card, the regional "km ridden" leaderboard, and "people you might follow".
  * Each fetch is independent so one failing widget never blanks the others.
  */
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "./api";
 import {
   fetchActiveChallenges,
   fetchChallengeDetail,
 } from "./gamification-fetch";
 
-export interface SuggestedRider {
-  id: string;
-  display_name: string;
-  avatar_url: string | null;
-  home_region: string | null;
-  ride_count: number;
-}
+export type SuggestedRider = components["schemas"]["SuggestedRiderDto"];
 
 /** "People you might follow" — riders the caller doesn't already follow. */
 export async function fetchSuggestedRiders(
