@@ -223,3 +223,35 @@ describe('PoiStoreService when the POI DB is down', () => {
     );
   });
 });
+
+describe('PoiStoreService when a connected POI DB drops at runtime', () => {
+  it('throws 503 (not the raw driver error) from findInBbox when the query fails with a connection error', async () => {
+    const droppedQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Connection terminated unexpectedly'), {
+          code: '08006',
+        }),
+      ),
+    };
+    const droppedRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(droppedQb),
+    };
+    const svc = serviceWithDataSource({
+      isInitialized: true,
+      getRepository: () => droppedRepo as unknown as Repository<Poi>,
+    });
+
+    await expect(
+      svc.findInBbox(
+        { minLng: 18, minLat: 49, maxLng: 19, maxLat: 50 },
+        undefined,
+        50,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});

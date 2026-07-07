@@ -1,13 +1,10 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
+import { withPoiRepo } from './poi-repo.js';
 import {
   DEFAULT_BUFFER_KM,
   MAX_BUFFER_KM,
@@ -49,18 +46,6 @@ export class PoiStoreService {
     private readonly poiDataSource: DataSource,
   ) {}
 
-  // The POI store lives in a separate, resilient connection (ADR 0007). When
-  // it isn't connected, surface an explicit 503 rather than a silent empty
-  // result so callers can distinguish "no POIs here" from "store is down".
-  private repo(): Repository<Poi> {
-    if (!this.poiDataSource.isInitialized) {
-      throw new ServiceUnavailableException(
-        'POI store is temporarily unavailable',
-      );
-    }
-    return this.poiDataSource.getRepository(Poi);
-  }
-
   /** Readiness check backing `GET /poi/health` (ADR 0007) — never throws. */
   isReady(): boolean {
     return this.poiDataSource.isInitialized;
@@ -86,28 +71,32 @@ export class PoiStoreService {
       MAX_LIMIT,
     );
 
-    const qb = this.repo()
-      .createQueryBuilder('poi')
-      // ST_Intersects is GiST-index-accelerated (it bbox-prefilters via the
-      // spatial index), and for point geometry it's equivalent to a bbox test.
-      .where(
-        'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
-        bbox,
-      );
-    if (kinds && kinds.length > 0) {
-      qb.andWhere('poi.kind IN (:...kinds)', { kinds });
-    }
-    const rows = await qb
-      .orderBy('poi.kind', 'ASC')
-      .addOrderBy('poi.name', 'ASC')
-      .limit(capped)
-      .getMany();
+    const rows = await withPoiRepo(this.poiDataSource, async (repo) => {
+      const qb = repo
+        .createQueryBuilder('poi')
+        // ST_Intersects is GiST-index-accelerated (it bbox-prefilters via the
+        // spatial index), and for point geometry it's equivalent to a bbox test.
+        .where(
+          'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
+          bbox,
+        );
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      return qb
+        .orderBy('poi.kind', 'ASC')
+        .addOrderBy('poi.name', 'ASC')
+        .limit(capped)
+        .getMany();
+    });
     return rows.map(toStoredPoiDto);
   }
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
   async findById(id: string): Promise<StoredPoiDto | null> {
-    const poi = await this.repo().findOne({ where: { id } });
+    const poi = await withPoiRepo(this.poiDataSource, (repo) =>
+      repo.findOne({ where: { id } }),
+    );
     return poi ? toStoredPoiDto(poi) : null;
   }
 
@@ -144,9 +133,8 @@ export class PoiStoreService {
       })
       .join(',');
 
-    const qb = this.repo()
-      .createQueryBuilder('poi')
-      .where(
+    const rows = await withPoiRepo(this.poiDataSource, (repo) => {
+      const qb = repo.createQueryBuilder('poi').where(
         `ST_DWithin(
           poi.geom::geography,
           ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
@@ -154,10 +142,11 @@ export class PoiStoreService {
         )`,
         params,
       );
-    if (kinds && kinds.length > 0) {
-      qb.andWhere('poi.kind IN (:...kinds)', { kinds });
-    }
-    const rows = await qb.getMany();
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      return qb.getMany();
+    });
 
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer

@@ -267,4 +267,18 @@ describe('PoiImportService', () => {
       ServiceUnavailableException,
     );
   });
+
+  it('throws 503 (not the raw driver error) from import() when upsert fails with a connection error (runtime POI-DB drop)', async () => {
+    provider.findImportPoisInBbox.mockResolvedValueOnce([
+      poi({ external_id: 'node/1' }),
+    ]);
+    repo.upsert.mockRejectedValueOnce(
+      Object.assign(new Error('Connection terminated unexpectedly'), {
+        code: '08006',
+      }),
+    );
+    await expect(service.import()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
 });

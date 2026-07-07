@@ -1,12 +1,7 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
 import {
@@ -16,6 +11,7 @@ import {
 } from './poi-provider.interface.js';
 import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
 import { poiImportConfig, type PoiImportConfig } from './poi-import.config.js';
+import { withPoiRepo } from './poi-repo.js';
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
@@ -101,18 +97,6 @@ export class PoiImportService {
     return this.config.bbox;
   }
 
-  // The POI store lives in a separate, resilient connection (ADR 0007). When
-  // it isn't connected, surface an explicit 503 rather than silently
-  // no-op'ing so a scheduled import failure is visible instead of masked.
-  private repo(): Repository<Poi> {
-    if (!this.poiDataSource.isInitialized) {
-      throw new ServiceUnavailableException(
-        'POI store is temporarily unavailable',
-      );
-    }
-    return this.poiDataSource.getRepository(Poi);
-  }
-
   async import(): Promise<PoiImportResult> {
     // Fetch POIs + accommodations together. Promise.all so a failure on
     // either aborts before any write (the outage-safety contract) rather
@@ -168,14 +152,15 @@ export class PoiImportService {
     // Resolve (and readiness-check) the repo once, unconditionally, so an
     // unavailable POI store surfaces a 503 even when this snapshot has no
     // rows to write (an empty chunk loop would otherwise never touch it).
-    const repo = this.repo();
-    for (const part of chunk(rows, UPSERT_CHUNK)) {
-      if (part.length) {
-        await repo.upsert(part, {
-          conflictPaths: ['source', 'external_id'],
-        });
+    await withPoiRepo(this.poiDataSource, async (repo) => {
+      for (const part of chunk(rows, UPSERT_CHUNK)) {
+        if (part.length) {
+          await repo.upsert(part, {
+            conflictPaths: ['source', 'external_id'],
+          });
+        }
       }
-    }
+    });
 
     const fetched = pois.length + accommodations.length;
     this.logger.log(
