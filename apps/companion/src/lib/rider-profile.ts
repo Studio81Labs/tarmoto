@@ -26,26 +26,14 @@ import {
   initialsFromName,
   type PublicProfile,
 } from "@tarmoto/shared";
+import type { components } from "@tarmoto/openapi-client";
 import { api, ApiError } from "@/lib/api";
 
 export { formatCount, formatJoinedLabel, initialsFromName };
 export type { PublicProfile };
 
-/** UI badge entry — matches the `BadgeDto` shape exported by the backend. */
-export interface UserBadge {
-  key: string;
-  name: string;
-  description: string;
-  category: string;
-  tier: string | null;
-  earned_at: string | null;
-  progress: {
-    current: number;
-    bronze: number;
-    silver: number;
-    gold: number;
-  };
-}
+/** UI badge entry — the generated `BadgeDto`. */
+export type UserBadge = components["schemas"]["BadgeDto"];
 
 export class RiderProfileNotFoundError extends Error {
   constructor(public readonly riderId: string) {

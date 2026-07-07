@@ -1,31 +1,13 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
-/**
- * Lightweight ride summary returned by `GET /api/v1/rides`. Mirrors the
- * `RideSummaryDto` shape on the backend — kept inline here so the collections
- * picker doesn't need to reach into `useRidesQuery` (its `RideSummary`
- * interface is private to the rides dashboard).
- */
-export interface UserRide {
-  id: string;
-  name: string | null;
-  status: string;
-  ride_type: string;
-  started_at: string;
-  ended_at: string | null;
-  distance_km: number | null;
-  duration_min: number | null;
-  avg_speed: number | null;
-  avg_road_quality: number | null;
-}
-
-export interface RideListResponse {
-  rides: UserRide[];
-  total: number;
-}
+/** Lightweight ride summary returned by `GET /api/v1/rides` — the generated
+ * `RideSummaryDto`. */
+export type UserRide = components["schemas"]["RideSummaryDto"];
+export type RideListResponse = components["schemas"]["RideListResponseDto"];
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
