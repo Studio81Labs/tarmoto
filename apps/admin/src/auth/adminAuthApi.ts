@@ -1,19 +1,16 @@
+import type { components } from "@tarmoto/openapi-client";
 import { apiClient } from "../data/apiClient.js";
 
-export type AdminRole = "read_only" | "support" | "admin" | "super_admin";
-export interface AdminUserView {
-  id: string;
-  email: string;
-  role: AdminRole;
-  status: "active" | "disabled";
-}
+/** Admin identity + role — the generated `AdminUserViewDto`. */
+export type AdminUserView = components["schemas"]["AdminUserViewDto"];
+export type AdminRole = AdminUserView["role"];
 
 export const adminAuthApi = {
   async getConfig(): Promise<{ passwordLoginEnabled: boolean }> {
     try {
       const { data, error } = await apiClient.GET("/admin/auth/config");
       if (error || !data) return { passwordLoginEnabled: import.meta.env.DEV };
-      return data as { passwordLoginEnabled: boolean };
+      return data;
     } catch {
       return { passwordLoginEnabled: import.meta.env.DEV };
     }
@@ -23,7 +20,7 @@ export const adminAuthApi = {
     try {
       const { data, error } = await apiClient.GET("/admin/auth/me");
       if (error || !data) return null;
-      return data.user as AdminUserView;
+      return data.user;
     } catch {
       return null;
     }
@@ -37,7 +34,7 @@ export const adminAuthApi = {
       body: { email, password },
     });
     if (error || !data) throw new Error("Invalid credentials");
-    return data.user as AdminUserView;
+    return data.user;
   },
 
   async logout(): Promise<void> {
