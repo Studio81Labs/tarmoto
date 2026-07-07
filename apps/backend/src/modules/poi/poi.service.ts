@@ -4,7 +4,13 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { haversineKm } from '@tarmoto/shared';
+import {
+  haversineKm,
+  POI_KINDS,
+  ACCOMMODATION_KINDS,
+  type PoiKind,
+  type AccommodationKind,
+} from '@tarmoto/shared';
 import {
   POI_PROVIDER,
   type PoiProvider,
@@ -13,10 +19,8 @@ import {
 } from './poi-provider.interface.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import {
-  ACCOMMODATION_KINDS,
   AccommodationDto,
   AccommodationListDto,
-  type AccommodationKind,
   DEFAULT_RADIUS_KM,
   MAX_RADIUS_KM,
 } from './dto/accommodation.dto.js';
@@ -26,8 +30,6 @@ import {
   AlongRoutePoiQueryDto,
   PoiDto,
   PoiListDto,
-  POI_KINDS,
-  type PoiKind,
   DEFAULT_BUFFER_KM,
   DEFAULT_RADIUS_KM as POI_DEFAULT_RADIUS_KM,
   MAX_BUFFER_KM,

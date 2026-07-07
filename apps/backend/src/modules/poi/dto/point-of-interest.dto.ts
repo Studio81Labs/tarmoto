@@ -14,25 +14,8 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POI_KINDS, type PoiKind } from '@tarmoto/shared';
 import { toOptionalNumber } from '../../../common/dto-transforms.js';
-
-/**
- * Kinds of along-route POIs the mobile app surfaces in the trip-day view.
- * Mirrors the OSM tag subset we accept — anything outside this list is
- * dropped at the provider layer so client code doesn't need to deal with
- * unknown kinds. Kept deliberately small (restaurants + viewpoints + cafés
- * + fuel stations) because these are the kinds the spec calls out for
- * US-10 pit-stop suggestions and US-36 fuel-stop markers; the mobile card
- * stays scannable with glove-sized rows.
- */
-export const POI_KINDS = [
-  'restaurant',
-  'viewpoint',
-  'cafe',
-  'fuel_station',
-] as const;
-
-export type PoiKind = (typeof POI_KINDS)[number];
 
 const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 25;

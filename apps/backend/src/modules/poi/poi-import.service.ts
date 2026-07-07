@@ -14,7 +14,7 @@ import {
   type PoiProvider,
   type StoredPoiFields,
 } from './poi-provider.interface.js';
-import { ACCOMMODATION_KINDS } from './dto/accommodation.dto.js';
+import { ACCOMMODATION_KINDS } from '@tarmoto/shared';
 import { poiImportConfig, type PoiImportConfig } from './poi-import.config.js';
 import { withPoiRepo } from './poi-repo.js';
 
