@@ -1,4 +1,5 @@
-import { Repository } from 'typeorm';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { DataSource, Repository } from 'typeorm';
 import { PoiImportService } from './poi-import.service.js';
 import { Poi } from '../../entities/poi.entity.js';
 import type {
@@ -72,7 +73,10 @@ describe('PoiImportService', () => {
     repo = { upsert: jest.fn().mockResolvedValue({}) };
     service = new PoiImportService(
       provider as unknown as PoiProvider,
-      repo as unknown as Repository<Poi>,
+      {
+        isInitialized: true,
+        getRepository: () => repo as unknown as Repository<Poi>,
+      } as unknown as DataSource,
       CONFIG,
     );
   });
@@ -251,5 +255,16 @@ describe('PoiImportService', () => {
     const result = await service.import();
     expect(repo.upsert).not.toHaveBeenCalled();
     expect(result).toEqual({ fetched: 0, upserted: 0 });
+  });
+
+  it('throws 503 from import() when the POI DataSource is not initialized', async () => {
+    const service = new PoiImportService(
+      provider as unknown as PoiProvider,
+      { isInitialized: false } as DataSource,
+      CONFIG,
+    );
+    await expect(service.import()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });

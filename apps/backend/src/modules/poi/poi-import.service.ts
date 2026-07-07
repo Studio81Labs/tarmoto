@@ -1,7 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
 import {
@@ -81,8 +86,8 @@ export class PoiImportService {
   constructor(
     @Inject(POI_PROVIDER)
     private readonly provider: PoiProvider,
-    @InjectRepository(Poi)
-    private readonly repo: Repository<Poi>,
+    @InjectDataSource('poi')
+    private readonly poiDataSource: DataSource,
     @Inject(poiImportConfig.KEY)
     private readonly config: ConfigType<typeof poiImportConfig>,
   ) {}
@@ -94,6 +99,18 @@ export class PoiImportService {
   /** The bbox the import runs over — exposed so the manual CLI can log it. */
   get bbox(): PoiImportConfig['bbox'] {
     return this.config.bbox;
+  }
+
+  // The POI store lives in a separate, resilient connection (ADR 0007). When
+  // it isn't connected, surface an explicit 503 rather than silently
+  // no-op'ing so a scheduled import failure is visible instead of masked.
+  private repo(): Repository<Poi> {
+    if (!this.poiDataSource.isInitialized) {
+      throw new ServiceUnavailableException(
+        'POI store is temporarily unavailable',
+      );
+    }
+    return this.poiDataSource.getRepository(Poi);
   }
 
   async import(): Promise<PoiImportResult> {
@@ -148,9 +165,13 @@ export class PoiImportService {
     for (const a of accommodations) add(a);
     const rows = [...byExternalId.values()];
 
+    // Resolve (and readiness-check) the repo once, unconditionally, so an
+    // unavailable POI store surfaces a 503 even when this snapshot has no
+    // rows to write (an empty chunk loop would otherwise never touch it).
+    const repo = this.repo();
     for (const part of chunk(rows, UPSERT_CHUNK)) {
       if (part.length) {
-        await this.repo.upsert(part, {
+        await repo.upsert(part, {
           conflictPaths: ['source', 'external_id'],
         });
       }
