@@ -1040,6 +1040,12 @@ describe('RoadsService', () => {
         expect.stringContaining('has_any'),
         expect.any(Array),
       );
+      // Indexable degree prefilter is paired with a precise metric
+      // (`::geography`) check so the snap stays within the real buffer_m.
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('::geography'),
+        expect.any(Array),
+      );
     });
 
     it('rejects a route too long to represent at segment scale (400, no DB round-trip)', async () => {

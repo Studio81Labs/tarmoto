@@ -131,14 +131,15 @@ export class RoadsService {
       .join(',');
     params.push(bufferM);
     const bufferParam = `$${params.length}`;
-    // Buffer expressed in SRID-4326 degrees so the spatial predicates run
-    // against the geometry column and its GiST index (`idx_road_segments_geom`)
-    // — casting `geom::geography` would force a full scan. `/ 111320` is metres
-    // per degree of latitude; `* 2` is a generous factor so the degree box
-    // still covers `buffer_m` of *longitude* up to ~lat 60° (Tarmoto's northern
-    // coverage). Over-covering is harmless: the per-sample nearest-snap still
-    // picks the single closest segment, and the route-wide check is only a
-    // "definitely no coverage → skip" short-circuit.
+    // Indexable degree prefilter for the spatial predicates: a plain
+    // `ST_DWithin(rs.geom, …)` in SRID-4326 degrees hits the geometry GiST
+    // index (`idx_road_segments_geom`), whereas a `geom::geography` distance
+    // cannot and would full-scan. `/ 111320` is metres per degree of latitude;
+    // `* 2` is a generous factor so the degree box still covers `buffer_m` of
+    // *longitude* up to ~lat 60° (Tarmoto's northern coverage). It only
+    // *narrows* candidates — each predicate pairs it with a precise
+    // `geom::geography` check on the real `buffer_m`, so the generosity never
+    // loosens the actual snap/coverage distance.
     const bufferDegExpr = `(${bufferParam} / 111320.0 * 2)`;
 
     const sql = `
@@ -164,7 +165,10 @@ export class RoadsService {
           SELECT 1
           FROM road_segments rs, route
           WHERE rs.deactivated_at IS NULL
+            -- Indexable degree prefilter (uses idx_road_segments_geom) narrows
+            -- to candidates, then the precise metric check confirms coverage.
             AND ST_DWithin(rs.geom, route.line, ${bufferDegExpr})
+            AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
         ) AS has_any
       ),
       -- Walk the route: one point every 1/n of its length (only when there is
@@ -197,7 +201,12 @@ export class RoadsService {
           FROM road_segments rs
           WHERE rs.deactivated_at IS NULL
             AND ST_GeometryType(rs.geom) = 'ST_LineString'
+            -- Indexable degree prefilter bounds the KNN scan via the GiST
+            -- index; the precise metric check keeps the snap within the real
+            -- buffer_m so a sample can't grab an adjacent road ~30-50 m off the
+            -- routed way just because the degree box is generous.
             AND ST_DWithin(rs.geom, s.pt, ${bufferDegExpr})
+            AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
           ORDER BY rs.geom <-> s.pt
           LIMIT 1
         ) seg ON TRUE
