@@ -7495,6 +7495,13 @@ export interface operations {
                     "application/json": components["schemas"]["RouteQualityResponseDto"];
                 };
             };
+            /** @description Route exceeds the maximum length representable at segment scale */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     RoadsController_findById: {
