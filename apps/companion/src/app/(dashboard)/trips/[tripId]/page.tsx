@@ -1,24 +1,20 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   BedDouble,
-  Calendar,
-  Check,
-  Crown,
+  Clock,
   Edit,
-  Gauge,
+  Layers,
   Loader2,
   MapPin,
   Mountain,
   Route,
-  Share2,
-  Shield,
   Trash2,
-  User,
+  Users,
 } from "lucide-react";
 import { ApiError, tripsApi } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -27,9 +23,14 @@ import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
-import { TripPlannerMap } from "@/components/TripPlannerMap";
-import { UserAvatar } from "@/components/UserAvatar";
-import { SegmentSidebar } from "@/components/SegmentSidebar";
+import {
+  TripPlannerMap,
+  type TripPlannerMapHandle,
+} from "@/components/TripPlannerMap";
+import { InspectTab } from "@/components/planner/InspectTab";
+import { SectionStamp } from "@/components/planner/PlannerPanel";
+import { PassesPanel } from "@/components/PassesPanel";
+import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
@@ -41,8 +42,8 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
-import { Button, Card, Heading, Stamp } from "@tarmoto/ui";
-type RightTab = "days" | "members" | "collaborate";
+import { Button, Card, Heading, QualityBars, Stamp } from "@tarmoto/ui";
+type RightTab = "route" | "inspect" | "conditions";
 interface LoadedTrip {
   detail: TripDetailResponse;
   members: TripDetailMember[];
@@ -59,16 +60,45 @@ export default function TripDetailPage() {
   const [collaborateOpen, setCollaborateOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<RightTab>("days");
+  const [activeTab, setActiveTab] = useState<RightTab>("route");
+  const [inspectDayIndex, setInspectDayIndex] = useState(0);
   const [travelMonth, setTravelMonth] = useState<number>(() =>
     currentUtcMonth(),
+  );
+  const mapRef = useRef<TripPlannerMapHandle>(null);
+  const selectedPlannerSegmentId = useTripStore(
+    (s) => s.selectedPlannerSegmentId,
+  );
+  const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  // INSPECT card → map: same select + fly interaction as the planner.
+  const handleInspectSegment = useCallback(
+    (segmentId: string) => {
+      selectPlannerSegment(segmentId);
+      mapRef.current?.flyToSegment(segmentId);
+    },
+    [selectPlannerSegment],
+  );
+  // Day-by-day card → map: selecting a day dims the other days' lines
+  // (`selectedDayNumber`) and fits its bounds; reselecting clears back
+  // to the whole route.
+  const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(
+    null,
+  );
+  const handleSelectDay = useCallback(
+    (dayNumber: number) => {
+      const next = selectedDayNumber === dayNumber ? null : dayNumber;
+      setSelectedDayNumber(next);
+      if (next != null) mapRef.current?.fitDay(next);
+      else mapRef.current?.fitRoute();
+    },
+    [selectedDayNumber],
   );
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   // Memoise the local Trip projection so referential equality doesn't
-  // churn on every render — `TripPlannerMap` and `SegmentSidebar`
-  // re-derive their overlays whenever `trip` changes identity.
+  // churn on every render — `TripPlannerMap` re-derives its overlays
+  // whenever `trip` changes identity.
   const trip = useMemo(
     () => (loaded ? tripFromDetail(loaded.detail) : null),
     [loaded],
@@ -83,9 +113,9 @@ export default function TripDetailPage() {
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
-  // Activate the trip in the store so SegmentSidebar (which is
-  // store-driven) renders the correct day/segment list. Reset on
-  // unmount so navigating to the planner doesn't inherit a stale trip.
+  // Activate the trip in the store so the map's store-driven overlays
+  // (quality segments, segment focus) resolve against this trip. Reset
+  // on unmount so navigating to the planner doesn't inherit stale state.
   useEffect(() => {
     setActiveTrip(trip);
     return () => {
@@ -214,48 +244,65 @@ export default function TripDetailPage() {
   const totalElevation = trip.days.reduce((sum, d) => sum + d.elevationGain, 0);
   return (
     <div className="flex flex-col h-full">
-      {/* Header / action bar */}
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-paper/90 px-4 py-3 backdrop-blur-sm">
-        <div className="flex items-start gap-3">
-          <Link
-            href="/trips"
-            aria-label={t("Back to trips")}
-            className="mt-1 rounded-lg p-1.5 text-fg-dim hover:bg-paper hover:text-ink transition"
+      {/* Header / action bar — same chrome as the planner's top toolbar:
+          square back button + divider + compact identity block, and the
+          planner's button language on the right (uppercase labels, icon-only
+          danger delete behind a divider). Day count shows only for multi-day
+          routes; the member count always stays. */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button
+            iconOnly
+            size="sm"
+            variant="secondary"
+            renderLink={({ className, children }) => (
+              <Link
+                href="/trips"
+                aria-label={t("Back to trips")}
+                title={t("Back to trips")}
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
-            <ArrowLeft size={16} />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-ink">
+            <ArrowLeft size={15} />
+          </Button>
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink">
                 {loaded.detail.title}
               </h1>
               <StatusBadge status={loaded.detail.status} />
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-dim">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap text-[11px] text-fg-dim">
+              {trip.days.length > 1 && (
+                <span className="inline-flex items-center gap-1">
+                  <Layers size={11} aria-hidden className="text-fg-faint" />
+                  {t("{count} days", { count: trip.days.length })}
+                </span>
+              )}
               <span className="inline-flex items-center gap-1">
-                <Calendar size={11} />{" "}
-                {t(trip.days.length === 1 ? "{count} day" : "{count} days", {
-                  count: trip.days.length,
-                })}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Route size={11} /> {formatDistance(totalDistance)}
+                <MapPin size={11} aria-hidden className="text-fg-faint" />{" "}
+                {formatDistance(totalDistance)}
               </span>
               {totalDuration > 0 && (
                 <span className="inline-flex items-center gap-1">
-                  <Gauge size={11} /> {formatDuration(totalDuration)}
+                  <Clock size={11} aria-hidden className="text-fg-faint" />{" "}
+                  {formatDuration(totalDuration)}
                 </span>
               )}
               {totalElevation > 0 && (
                 <span className="inline-flex items-center gap-1">
-                  <Mountain size={11} />{" "}
+                  <Mountain size={11} aria-hidden className="text-fg-faint" />{" "}
                   {t("{elevation} m gain", {
                     elevation: Math.round(totalElevation),
                   })}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
-                <User size={11} />{" "}
+                <Users size={11} aria-hidden className="text-fg-faint" />{" "}
                 {t(
                   loaded.members.length === 1
                     ? "{count} member"
@@ -274,7 +321,7 @@ export default function TripDetailPage() {
             variant="accent"
             size="sm"
             uppercase
-            leftIcon={<Edit size={16} />}
+            leftIcon={<Edit size={14} />}
             renderLink={({ className, children }) => (
               <Link
                 href={`/trips/${loaded.detail.id}/edit`}
@@ -289,23 +336,31 @@ export default function TripDetailPage() {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<Share2 size={14} />}
+            uppercase
+            leftIcon={<Users size={14} />}
             onClick={() => setCollaborateOpen(true)}
           >
-            {t("Share ")}
+            {t("Collaborate")}
           </Button>
           <TripExportMenu trip={trip} />
           {isOwner && (
-            <Button
-              variant="danger"
-              size="sm"
-              loading={deleting}
-              leftIcon={<Trash2 size={14} />}
-              aria-label={t("Delete trip")}
-              onClick={() => setConfirmDeleteOpen(true)}
-            >
-              {t("Delete ")}
-            </Button>
+            <>
+              <span
+                aria-hidden="true"
+                className="h-[22px] w-px shrink-0 bg-line"
+              />
+              <Button
+                iconOnly
+                variant="danger"
+                size="sm"
+                loading={deleting}
+                aria-label={t("Delete trip")}
+                title={t("Delete trip")}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                <Trash2 size={15} />
+              </Button>
+            </>
           )}
         </div>
       </header>
@@ -337,82 +392,161 @@ export default function TripDetailPage() {
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 bg-cream">
           <TripPlannerMap
+            ref={mapRef}
             trip={trip}
             month={travelMonth}
             closuresData={closuresData}
             passesData={passesData}
             collaboratorCursors={collabSession.cursors}
             suggestions={collabSession.suggestions}
+            searchAndPois
+            {...(selectedDayNumber != null ? { selectedDayNumber } : {})}
           />
-          <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-paper/80 px-2.5 py-1 text-[11px] text-ink backdrop-blur-sm">
-            <label className="pointer-events-auto inline-flex items-center gap-2">
-              {t("Travel month ")}
-              <select
-                value={travelMonth}
-                onChange={(e) => setTravelMonth(Number(e.target.value))}
-                className="rounded border border-line-strong bg-cream px-1.5 py-0.5 text-[11px] text-ink"
-                aria-label={t("Travel month")}
-              >
-                {MONTHS.map((label, idx) => (
-                  <option key={idx} value={idx + 1}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
         </div>
 
         <aside
           aria-label={t("Trip detail panel")}
-          className="hidden w-96 shrink-0 flex-col border-l border-line bg-paper lg:flex"
+          className="hidden w-[360px] shrink-0 flex-col border-l border-line bg-paper lg:flex"
         >
-          <nav
-            role="tablist"
-            aria-label={t("Trip detail tabs")}
-            className="flex shrink-0 border-b border-line"
-          >
-            <TabButton
-              id="days"
-              label="Days"
-              active={activeTab === "days"}
-              onSelect={setActiveTab}
-            />
-            <TabButton
-              id="members"
-              label={`Members (${loaded.members.length})`}
-              active={activeTab === "members"}
-              onSelect={setActiveTab}
-            />
-            <TabButton
-              id="collaborate"
-              label="Collaborate"
-              active={activeTab === "collaborate"}
-              onSelect={setActiveTab}
-            />
-          </nav>
+          {/* Same panel chrome as the planner's "Plan & inspect" column. */}
+          <div className="shrink-0 px-5 pt-4">
+            <Stamp>{t("Trip preview ")}</Stamp>
+            <Heading size="md" as="h2" className="mt-1.5 text-[20px]">
+              {t("Route & inspect ")}
+            </Heading>
+            <p className="mt-1 text-[12px] leading-snug text-fg-dim">
+              {t(
+                "Crowdsourced road quality on every metre — no Street View detours. ",
+              )}
+            </p>
+            <div
+              role="tablist"
+              aria-label={t("Trip detail tabs")}
+              className="mt-4 flex gap-0.5 border-b border-line"
+            >
+              <TabButton
+                id="route"
+                label="Route"
+                active={activeTab === "route"}
+                onSelect={setActiveTab}
+              />
+              <TabButton
+                id="inspect"
+                label="Inspect"
+                active={activeTab === "inspect"}
+                onSelect={setActiveTab}
+              />
+              <TabButton
+                id="conditions"
+                label="Conditions"
+                active={activeTab === "conditions"}
+                onSelect={setActiveTab}
+              />
+            </div>
+          </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === "days" && (
-              <div className="p-4 space-y-4">
-                <DaysList trip={trip} />
-                <SegmentSidebarSection />
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-9 pt-5">
+            {activeTab === "route" && (
+              <div className="space-y-4">
+                <TripSummaryCard
+                  trip={trip}
+                  totalDistance={totalDistance}
+                  totalDuration={totalDuration}
+                  totalElevation={totalElevation}
+                  qualityAvg={loaded.detail.quality_avg ?? null}
+                />
+                {trip.days.length > 1 && (
+                  <DaysList
+                    trip={trip}
+                    selectedDayNumber={selectedDayNumber}
+                    onSelectDay={handleSelectDay}
+                  />
+                )}
               </div>
             )}
-            {activeTab === "members" && (
-              <MembersList
-                members={loaded.members}
-                canInvite={canManageInvites}
-                onShareLinkClick={() => {
-                  setCollaborateOpen(true);
-                }}
-              />
+            {activeTab === "inspect" && (
+              <div>
+                {trip.days.length > 1 && (
+                  <div
+                    role="group"
+                    aria-label={t("Inspect day")}
+                    className="mb-4 flex flex-wrap gap-1.5"
+                  >
+                    {trip.days.map((day, index) => {
+                      const active = index === inspectDayIndex;
+                      return (
+                        <button
+                          key={day.dayNumber}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setInspectDayIndex(index)}
+                          className={`rounded-lg border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.6px] transition ${
+                            active
+                              ? "border-ink bg-ink text-cream"
+                              : "border-line bg-cream text-fg-dim hover:border-ink"
+                          }`}
+                        >
+                          {t("Day ")}
+                          {day.dayNumber}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* Same readout as the planner's INSPECT tab, read-only:
+                    no onRerouteSegment, so flagged cards offer INSPECT. */}
+                <InspectTab
+                  day={
+                    trip.days[
+                      Math.min(
+                        inspectDayIndex,
+                        Math.max(0, trip.days.length - 1),
+                      )
+                    ] ?? null
+                  }
+                  selectedSegmentId={selectedPlannerSegmentId}
+                  onInspectSegment={handleInspectSegment}
+                />
+              </div>
             )}
-            {activeTab === "collaborate" && (
-              <CollaborateTabSummary
-                onOpenModal={() => setCollaborateOpen(true)}
-                suggestionsCount={collabSession.suggestions.length}
-              />
+            {activeTab === "conditions" && (
+              <div className="flex flex-col gap-6">
+                {/* Same panels as the planner's CONDITIONS tab, read-only:
+                    no onReroute* callbacks, so cards only focus the map. */}
+                <div>
+                  <SectionStamp n="01">{t("Seasonal passes ")}</SectionStamp>
+                  <PassesPanel
+                    month={travelMonth}
+                    onMonthChange={setTravelMonth}
+                    routes={closureRoutes}
+                    data={passesData}
+                    showRegionalList={false}
+                    onFocusPass={(pass) =>
+                      mapRef.current?.openConditionPopover({
+                        kind: "pass",
+                        id: pass.id,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <SectionStamp n="02">
+                    {t("Closures & roadworks ")}
+                  </SectionStamp>
+                  <ClosuresPanel
+                    month={travelMonth}
+                    routes={closureRoutes}
+                    data={closuresData}
+                    showRegionalList={false}
+                    onFocusClosure={(closure) =>
+                      mapRef.current?.openConditionPopover({
+                        kind: "closure",
+                        id: closure.id,
+                      })
+                    }
+                  />
+                </div>
+              </div>
             )}
           </div>
         </aside>
@@ -433,20 +567,6 @@ export default function TripDetailPage() {
     </div>
   );
 }
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 function StatusBadge({ status }: { status: string }) {
   // Mirrors the canonical STATUS_PILL map in /trips/page.tsx — the
   // four trip statuses span q3 (planned) → accent (active) → q5
@@ -462,7 +582,7 @@ function StatusBadge({ status }: { status: string }) {
           : "bg-paper text-fg-dim border border-line";
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide ${tone}`}
     >
       {status}
     </span>
@@ -485,20 +605,101 @@ function TabButton({
       role="tab"
       aria-selected={active}
       onClick={() => onSelect(id)}
-      className={`flex-1 px-3 py-3 text-xs font-medium transition ${
-        active
-          ? "border-b-2 border-accent text-ink"
-          : "border-b-2 border-transparent text-fg-dim hover:text-ink"
+      className={`relative flex-1 cursor-pointer pb-2.5 text-center font-mono text-[10.5px] font-bold uppercase tracking-[0.3px] transition ${
+        active ? "text-accent" : "text-fg-mute hover:text-ink"
       }`}
     >
       {label}
+      {active ? (
+        <span className="absolute -bottom-px left-1.5 right-1.5 h-0.5 rounded bg-accent" />
+      ) : null}
     </button>
+  );
+}
+/** Clamp a fractional 0–5 quality score to the 1–5 tier QualityBars takes. */
+function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
+  return Math.min(5, Math.max(1, Math.round(score))) as 1 | 2 | 3 | 4 | 5;
+}
+/**
+ * "Start → Finish" from the day's endpoints; a saved title wins unless it
+ * just repeats the "Day N" heading next to it (the planner's default).
+ */
+function dayRouteLabel(
+  day: NonNullable<ReturnType<typeof tripFromDetail>>["days"][number],
+): string | null {
+  const title = day.title?.trim();
+  if (title && title.toLowerCase() !== `day ${day.dayNumber}`) return title;
+  const start = day.waypoints[0]?.name?.trim();
+  const end = day.waypoints[day.waypoints.length - 1]?.name?.trim();
+  return day.waypoints.length >= 2 && start && end ? `${start} → ${end}` : null;
+}
+function TripSummaryCard({
+  trip,
+  totalDistance,
+  totalDuration,
+  totalElevation,
+  qualityAvg,
+}: {
+  trip: NonNullable<ReturnType<typeof tripFromDetail>>;
+  totalDistance: number;
+  totalDuration: number;
+  totalElevation: number;
+  qualityAvg: number | null;
+}) {
+  // Backend rows may not carry quality_avg yet — fall back to the mean of
+  // the measured day qualities so the row still reflects real data.
+  const dayQualities = trip.days.map((d) => d.avgQuality).filter((q) => q > 0);
+  const avg =
+    qualityAvg ??
+    (dayQualities.length > 0
+      ? dayQualities.reduce((sum, q) => sum + q, 0) / dayQualities.length
+      : null);
+  return (
+    <section className="rounded-xl border border-line bg-cream/60 p-4">
+      <Stamp as="h2" className="mb-3 block">
+        {t("Trip summary ")}
+      </Stamp>
+      <div className="grid grid-cols-2 gap-3">
+        <TileStat label="Distance" value={formatDistance(totalDistance)} />
+        <TileStat
+          label="Ride time"
+          value={totalDuration > 0 ? formatDuration(totalDuration) : "—"}
+        />
+        <TileStat label="Days" value={String(trip.days.length)} />
+        <TileStat
+          label="Elevation"
+          value={
+            totalElevation > 0
+              ? `${Math.round(totalElevation).toLocaleString()} m`
+              : "—"
+          }
+          accent
+        />
+      </div>
+      {avg != null && avg > 0 && (
+        <div className="mt-3.5 flex items-center gap-2 border-t border-line pt-3">
+          <span className="text-xl font-extrabold tracking-[-0.5px] text-accent">
+            {avg.toFixed(1)}
+          </span>
+          <div className="flex-1">
+            <QualityBars q={qualityTierOf(avg)} size={5} />
+            <span className="mt-0.5 block font-mono text-[9.5px] uppercase tracking-[0.5px] text-fg-mute">
+              {t("Avg route quality ")}
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 function DaysList({
   trip,
+  selectedDayNumber,
+  onSelectDay,
 }: {
   trip: NonNullable<ReturnType<typeof tripFromDetail>>;
+  selectedDayNumber: number | null;
+  onSelectDay: (dayNumber: number) => void;
 }) {
   if (trip.days.length === 0) {
     return (
@@ -512,200 +713,114 @@ function DaysList({
   return (
     <section className="space-y-2">
       <Stamp as="h2">{t("Day-by-day ")}</Stamp>
-      <ul className="space-y-2">
-        {trip.days.map((day) => (
-          <li
-            key={day.dayNumber}
-            className="rounded-lg border border-line bg-cream/60 p-3"
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <h3 className="text-sm font-semibold text-ink">
-                {t("Day ")}
-                {day.dayNumber}
-                {day.title ? (
-                  <span className="ml-1 font-normal text-fg-dim">
-                    · {day.title}
+      <ul className="space-y-3">
+        {trip.days.map((day) => {
+          const routeLabel = dayRouteLabel(day);
+          const selected = selectedDayNumber === day.dayNumber;
+          return (
+            <li key={day.dayNumber}>
+              <button
+                type="button"
+                aria-pressed={selected}
+                aria-label={t("Highlight day {day} on the map", {
+                  day: day.dayNumber,
+                })}
+                onClick={() => onSelectDay(day.dayNumber)}
+                className={`w-full cursor-pointer rounded-xl border bg-cream/60 p-4 text-left transition ${
+                  selected
+                    ? "border-accent"
+                    : "border-line hover:border-line-strong"
+                }`}
+              >
+                <div className="mb-3.5 flex items-center justify-between gap-2">
+                  <h3 className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 text-[17px] font-extrabold leading-tight tracking-[-0.5px] text-ink">
+                      {t("Day ")}
+                      {day.dayNumber}
+                    </span>
+                    {routeLabel ? (
+                      <span className="truncate font-mono text-[11px] text-fg-mute">
+                        · {routeLabel}
+                      </span>
+                    ) : null}
+                  </h3>
+                  {day.avgQuality > 0 && (
+                    <QualityBars
+                      q={qualityTierOf(day.avgQuality)}
+                      size={4}
+                      className="shrink-0"
+                    />
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <TileStat
+                    label="Distance"
+                    value={formatDistance(day.distanceKm)}
+                  />
+                  <TileStat
+                    label="Ride time"
+                    value={
+                      day.durationMinutes > 0
+                        ? formatDuration(day.durationMinutes)
+                        : "—"
+                    }
+                  />
+                  <TileStat
+                    label="Elevation"
+                    value={
+                      day.elevationGain > 0
+                        ? `${Math.round(day.elevationGain)} m`
+                        : "—"
+                    }
+                    accent
+                  />
+                </div>
+                <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-xs text-fg-dim">
+                  {day.overnightStop && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <BedDouble size={12} className="text-fg-mute" />
+                      {t("Overnight: ")}
+                      {day.overnightStop.name}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin size={12} className="text-fg-mute" />
+                    {t("{count} {waypointLabel}", {
+                      count: day.waypoints.length,
+                      waypointLabel:
+                        day.waypoints.length === 1 ? "waypoint" : "waypoints",
+                    })}
                   </span>
-                ) : null}
-              </h3>
-            </div>
-            <dl className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-              <Stat label="Distance" value={formatDistance(day.distanceKm)} />
-              <Stat
-                label="Ride time"
-                value={
-                  day.durationMinutes > 0
-                    ? formatDuration(day.durationMinutes)
-                    : "—"
-                }
-              />
-              <Stat
-                label="Elevation"
-                value={
-                  day.elevationGain > 0
-                    ? `${Math.round(day.elevationGain)} m`
-                    : "—"
-                }
-              />
-            </dl>
-            {day.overnightStop && (
-              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-fg-dim">
-                <BedDouble size={11} className="text-fg-dim" />
-                {t("Overnight: ")}
-                {day.overnightStop.name}
-              </p>
-            )}
-            <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-fg-dim">
-              <MapPin size={11} />
-              {t("{count} {waypointLabel}", {
-                count: day.waypoints.length,
-                waypointLabel:
-                  day.waypoints.length === 1 ? "waypoint" : "waypoints",
-              })}
-            </p>
-          </li>
-        ))}
+                </div>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
 }
-function Stat({ label, value }: { label: string; value: string }) {
+function TileStat({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
   return (
-    <div className="rounded-md bg-paper/60 px-2 py-1.5">
-      <dt className="text-[10px] uppercase tracking-wide text-fg-dim">
+    <div className="rounded-[10px] border border-line bg-paper px-3 py-2.5">
+      <span className="block font-mono text-[8.5px] uppercase tracking-[0.5px] text-fg-mute">
         {label}
-      </dt>
-      <dd className="mt-0.5 font-semibold tabular-nums text-ink">{value}</dd>
-    </div>
-  );
-}
-function SegmentSidebarSection() {
-  // Only show the Road Preview Cards header when the planner has populated
-  // segments. Backend-loaded trips currently arrive without segments, so
-  // showing an empty card list here would be noise — `SegmentSidebar`
-  // handles the empty case itself.
-  return (
-    <section className="-mx-4 -mb-4 border-t border-line">
-      <SegmentSidebar />
-    </section>
-  );
-}
-function MembersList({
-  members,
-  canInvite,
-  onShareLinkClick,
-}: {
-  members: TripDetailMember[];
-  canInvite: boolean;
-  onShareLinkClick: () => void;
-}) {
-  return (
-    <div className="space-y-4 p-4">
-      <section>
-        <Stamp as="h2">{t("Members ")}</Stamp>
-        <ul className="mt-2 space-y-2">
-          {members.length === 0 ? (
-            <li className="text-xs text-fg-dim">{t("No members yet.")}</li>
-          ) : (
-            members.map((m) => <MemberRow key={m.user_id} member={m} />)
-          )}
-        </ul>
-      </section>
-
-      {canInvite && (
-        <section className="rounded-lg border border-line bg-cream/40 p-3">
-          <h3 className="text-xs font-semibold text-ink">
-            {t("Invite riders")}
-          </h3>
-          <p className="mt-1 text-[11px] text-fg-dim">
-            {t(
-              "Send personal email invites or share a revocable group link from the collaborate dialog. ",
-            )}
-          </p>
-          <button
-            type="button"
-            onClick={onShareLinkClick}
-            className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-accent hover:underline"
-          >
-            <Share2 size={11} />
-            {t("Open collaborate & invite ")}
-          </button>
-        </section>
-      )}
-    </div>
-  );
-}
-function MemberRow({ member }: { member: TripDetailMember }) {
-  const roleStyle =
-    member.role === "owner"
-      ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
-      : member.role === "editor"
-        ? "bg-blue-500/10 text-blue-300 border-blue-500/30"
-        : "bg-paper text-ink border-line-strong";
-  const RoleIcon =
-    member.role === "owner" ? Crown : member.role === "editor" ? Shield : User;
-  return (
-    <li className="flex items-center gap-3 rounded-lg border border-line bg-cream/60 p-2.5">
-      <UserAvatar name={member.display_name} size={32} fontSize={12} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-ink">{member.display_name}</p>
-        <p className="text-[10px] text-fg-dim">
-          {t("Joined ")}
-          {formatJoinedDate(member.joined_at)}
-        </p>
-      </div>
-      <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${roleStyle}`}
-      >
-        <RoleIcon size={10} /> {member.role}
       </span>
-    </li>
-  );
-}
-function CollaborateTabSummary({
-  onOpenModal,
-  suggestionsCount,
-}: {
-  onOpenModal: () => void;
-  suggestionsCount: number;
-}) {
-  return (
-    <div className="p-4 space-y-3">
-      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-fg-dim">
-        {t("Collaborate ")}
-      </h2>
-      <p className="text-xs text-fg-dim">
-        {t(
-          "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ",
-        )}
-      </p>
-      <div className="rounded-lg border border-line bg-cream/60 p-3">
-        <p className="text-xs text-ink">
-          {suggestionsCount}
-          {t("open suggestion ")}
-          {suggestionsCount === 1 ? "" : "s"}
-        </p>
-        <Button
-          variant="accent"
-          size="sm"
-          uppercase
-          className="mt-2"
-          onClick={onOpenModal}
-        >
-          {t("Open collaboration panel ")}
-        </Button>
+      <div
+        className={`mt-1 text-[15px] font-extrabold tracking-[-0.3px] tabular-nums ${
+          accent && value !== "—" ? "text-accent" : "text-ink"
+        }`}
+      >
+        {value}
       </div>
     </div>
   );
-}
-function formatJoinedDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return "recently";
-  }
 }

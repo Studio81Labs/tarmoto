@@ -12,7 +12,8 @@ interface FlaggedSectionCardProps {
   flag: FlaggedSection;
   selected: boolean;
   onOpen: (segmentId: string) => void;
-  onReroute: (segmentId: string) => void;
+  /** Omit on read-only surfaces — rough sections then show INSPECT. */
+  onReroute?: ((segmentId: string) => void) | undefined;
 }
 
 const FLAG_COPY: Record<FlaggedSection["kind"], string> = {
@@ -30,7 +31,7 @@ export function FlaggedSectionCard({
     flag.kind === "rough"
       ? QUALITY_BAND_COLORS.rough
       : QUALITY_BAND_COLORS.no_data;
-  const action = flag.kind === "rough" ? "REROUTE" : "INSPECT";
+  const action = flag.kind === "rough" && onReroute ? "REROUTE" : "INSPECT";
   return (
     <div
       role="button"
@@ -64,7 +65,7 @@ export function FlaggedSectionCard({
         aria-label={`${action === "REROUTE" ? "Reroute around" : "Inspect"} flagged section: ${flag.label}`}
         onClick={(event) => {
           event.stopPropagation();
-          if (action === "REROUTE") onReroute(flag.segmentId);
+          if (action === "REROUTE" && onReroute) onReroute(flag.segmentId);
           else onOpen(flag.segmentId);
         }}
         className="shrink-0 rounded-lg border border-accent bg-transparent px-3 py-[7px] font-mono text-[10.5px] font-bold tracking-[0.5px] text-accent transition hover:bg-accent/10"

@@ -313,11 +313,11 @@ export function RoadPreviewPopover({
                 <StreetViewLink segment={segment} />
               </div>
 
-              <div className="mt-[18px] flex gap-2">
-                <Button variant="ghost" size="sm" block onClick={onClose}>
-                  {t("Keep anyway ")}
-                </Button>
-                {onReroute ? (
+              {onReroute ? (
+                <div className="mt-[18px] flex gap-2">
+                  <Button variant="ghost" size="sm" block onClick={onClose}>
+                    {t("Keep anyway ")}
+                  </Button>
                   <Button
                     variant="primary"
                     size="sm"
@@ -326,8 +326,8 @@ export function RoadPreviewPopover({
                   >
                     {t("Reroute around this ")}
                   </Button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </>
           ) : preview ? (
             <>
@@ -361,8 +361,8 @@ export function RoadPreviewPopover({
                 <b className="text-ink">{t("be the first to map it. ")}</b>
               </p>
               <StreetViewLink segment={segment} />
-              <div className="mt-[18px] flex gap-2">
-                {onReroute ? (
+              {onReroute ? (
+                <div className="mt-[18px] flex gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -371,11 +371,11 @@ export function RoadPreviewPopover({
                   >
                     {t("Reroute around this ")}
                   </Button>
-                ) : null}
-                <Button variant="primary" size="sm" block onClick={onClose}>
-                  {t("Keep in route ")}
-                </Button>
-              </div>
+                  <Button variant="primary" size="sm" block onClick={onClose}>
+                    {t("Keep in route ")}
+                  </Button>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="mt-3 flex items-center gap-2 text-[12.5px] text-fg-dim">
