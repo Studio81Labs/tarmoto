@@ -12,22 +12,12 @@
  * snapshot) stay deterministic and easy to test under vitest.
  */
 
+import type { components } from "@tarmoto/openapi-client";
 import type { ExplorationStats } from "@/lib/api";
 import { periodStartDate, type TimePeriod } from "@/lib/exploration";
 
 /** One row from `GET /exploration/ridden-segments`. */
-export interface RiddenSegment {
-  id: string;
-  /** ISO-8601 timestamp of the most recent ride that touched the segment. */
-  last_ridden_at: string;
-  /**
-   * `quality_reading` from the most recent ride for this segment, or null
-   * if the rider had no reading. Surfaced in the hover popup.
-   */
-  last_quality_score: number | null;
-  /** Total number of completed rides that have touched the segment. */
-  ride_count: number;
-}
+export type RiddenSegment = components["schemas"]["RiddenSegmentDto"];
 
 /**
  * Keep only segments whose most-recent ride falls inside the active period.
