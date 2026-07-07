@@ -18,17 +18,15 @@
  */
 
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module.js';
 import { FunZoneClusteringService } from '../modules/roads/fun-zone-clustering.service.js';
 import { parseArgs } from './cluster-fun-zones-args.js';
+import { bootstrapScriptContext } from './bootstrap-script-context.js';
 
 async function main(): Promise<void> {
   const { options } = parseArgs(process.argv.slice(2));
 
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
-  });
+  // Workers + scheduler disabled for this one-off job (see helper rationale).
+  const app = await bootstrapScriptContext();
 
   try {
     const service = app.get(FunZoneClusteringService);

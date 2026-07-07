@@ -16,12 +16,11 @@
  * database unless `--force` is passed.
  */
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../app.module.js';
 import { BadgesService } from '../modules/badges/badges.service.js';
 import { parseArgs, usage } from './seed-demo-data-args.js';
 import { DemoSeeder } from './demo-seed/demo-seeder.js';
+import { bootstrapScriptContext } from './bootstrap-script-context.js';
 
 async function main(): Promise<void> {
   const { options } = parseArgs(process.argv.slice(2));
@@ -38,9 +37,8 @@ async function main(): Promise<void> {
     );
   }
 
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
-  });
+  // Workers + scheduler disabled for this one-off seed (see helper rationale).
+  const app = await bootstrapScriptContext();
 
   try {
     const seeder = new DemoSeeder(app.get(DataSource), app.get(BadgesService));
