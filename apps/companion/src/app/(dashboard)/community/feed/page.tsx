@@ -14,7 +14,10 @@ import {
   PlaceSearch,
   type PlaceValue,
 } from "../../rides/_components/PlaceSearch";
-import { buildCommunityRideQuery } from "@/lib/community-feed";
+import {
+  buildCommunityRideQuery,
+  type RideTypeFilter,
+} from "@/lib/community-feed";
 import { useAuthStore } from "@/stores/auth";
 import { Card, Mono } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
@@ -33,7 +36,7 @@ const SORT_OPTIONS: Array<{
 ];
 export default function CommunityFeedPage() {
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
-  const [rideType, setRideType] = useState("all");
+  const [rideType, setRideType] = useState<RideTypeFilter>("all");
   const [minQuality, setMinQuality] = useState("all");
   const [minPopularity, setMinPopularity] = useState("all");
   const [minCurviness, setMinCurviness] = useState("all");
@@ -144,7 +147,9 @@ export default function CommunityFeedPage() {
           label="Ride type"
           value={rideType}
           onChange={(value) => {
-            setRideType(value);
+            // FilterSelect emits a bare string; the options are exactly
+            // "all" + RIDE_TYPES, so the value is always a RideTypeFilter.
+            setRideType(value as RideTypeFilter);
             setOffset(0);
           }}
           options={[
