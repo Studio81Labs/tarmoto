@@ -90,8 +90,16 @@ export function mapRouteQualitySpans(
   for (const { span, start, end } of ordered) {
     const spanStart = Math.max(start, cursor);
     if (end <= spanStart) continue; // fully covered by an earlier span
-    if (spanStart - cursor > MIN_FILLER_FRACTION) push(cursor, spanStart, null);
-    push(spanStart, end, span);
+    if (spanStart - cursor > MIN_FILLER_FRACTION) {
+      // A real gap becomes its own no_data filler.
+      push(cursor, spanStart, null);
+      push(spanStart, end, span);
+    } else {
+      // Sub-threshold gap: fold the `[cursor, spanStart]` interval into this
+      // span rather than dropping it, which would leave a hairline break in the
+      // line and undercount its length (and the splitter distances built on it).
+      push(cursor, end, span);
+    }
     cursor = end;
   }
   if (1 - cursor > MIN_FILLER_FRACTION) push(cursor, 1, null);

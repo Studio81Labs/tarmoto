@@ -110,6 +110,22 @@ describe("mapRouteQualitySpans", () => {
     expect(segments.map((s) => s.surface)).toEqual(["asphalt", "concrete"]);
   });
 
+  it("folds a sub-threshold leading gap into the span instead of dropping it", () => {
+    // start_fraction below MIN_FILLER_FRACTION (1e-4): no separate no_data
+    // filler, and the span still covers from the route start — the interval is
+    // never dropped (no hairline break, no undercounted length).
+    const segments = mapRouteQualitySpans(
+      ROUTE,
+      [span({ start_fraction: 0.00005, end_fraction: 1, quality_score: 4 })],
+      1,
+    );
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ band: "good" });
+    expect(segments[0]!.geometry.coordinates[0]).toEqual([0, 0]);
+    const whole = mapRouteQualitySpans(ROUTE, [], 1)[0]!.lengthKm;
+    expect(segments[0]!.lengthKm).toBeCloseTo(whole, 5);
+  });
+
   it("treats a matched-but-unscored span as no-data band while keeping its real surface", () => {
     const segments = mapRouteQualitySpans(
       ROUTE,

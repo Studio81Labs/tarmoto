@@ -614,6 +614,21 @@ export default function TripPlannerPage() {
     }
     void handleSplit();
   }, [dailyKmTarget, forcedDays, splitStatus, handleSplit]);
+  // Real quality can land AFTER a split was computed on the geometry-only
+  // baseline (the rider hit Split within the fetch window). Once it does,
+  // deriveDayQualitySegments switches from baseline slice ids to real span ids,
+  // orphaning the plans' captured `segmentIds` (InspectTab scopes its strip by
+  // them). Re-split on that absent→present transition to resync the ids. Single
+  // working-day split only — handleSplit no-ops on materialized multi-day trips.
+  const workingDayQuality = activeTrip?.days[0]?.qualitySegments;
+  const splitQualityRef = useRef(workingDayQuality);
+  useEffect(() => {
+    const previous = splitQualityRef.current;
+    splitQualityRef.current = workingDayQuality;
+    if (splitStatus !== "split") return;
+    if (previous || !workingDayQuality) return;
+    void handleSplit();
+  }, [workingDayQuality, splitStatus, handleSplit]);
   // When a trip arrives already split (saved multi-day trip, planner
   // reopened), surface the multi-day section so its controls are in
   // view. Only fires on status transitions — a rider's manual collapse
