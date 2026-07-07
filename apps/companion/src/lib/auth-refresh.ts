@@ -1,4 +1,4 @@
-import { API_BASE_SERVER } from "@/lib/config";
+import { apiServer } from "@/lib/api/server";
 import type { BackendAuthResponse } from "@/lib/social-auth-bridge";
 
 /**
@@ -10,14 +10,12 @@ import type { BackendAuthResponse } from "@/lib/social-auth-bridge";
 export async function refreshAccessToken(
   refreshToken: string,
 ): Promise<BackendAuthResponse> {
-  const res = await fetch(`${API_BASE_SERVER}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+  const { data, response } = await apiServer.POST("/api/v1/auth/refresh", {
+    body: { refresh_token: refreshToken },
   });
 
-  if (!res.ok) throw new Error("Token refresh failed");
-  return res.json() as Promise<BackendAuthResponse>;
+  if (!response.ok || !data) throw new Error("Token refresh failed");
+  return data;
 }
 
 /**
