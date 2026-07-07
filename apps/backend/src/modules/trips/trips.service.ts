@@ -1173,7 +1173,7 @@ export class TripsService {
     if (!member) throw new NotFoundException('Trip not found');
     if (member.role === 'viewer') {
       throw new ForbiddenException(
-        'Viewers can view and comment only — ask the trip owner for editor access',
+        'Editing the route needs editor access — ask the trip owner to upgrade your role',
       );
     }
 
@@ -1651,7 +1651,47 @@ export class TripsService {
       throw new BadRequestException('The owner cannot be removed');
     }
 
-    await this.memberRepo.delete({ id: target.id });
+    await this.evictMember(tripId, target, {
+      actorId: userId,
+      action: 'member_removed',
+    });
+  }
+
+  /**
+   * Self-service exit for a collaborator (viewer/editor). The owner has
+   * no leave path — deleting the trip is their only exit — so an owner
+   * calling this gets a 400 pointing them there. Non-members 404.
+   */
+  async leaveTrip(userId: string, tripId: string): Promise<void> {
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership) throw new NotFoundException('Trip not found');
+    if (membership.role === 'owner') {
+      throw new BadRequestException(
+        'The owner cannot leave their own trip; delete it instead',
+      );
+    }
+    await this.evictMember(tripId, membership, {
+      actorId: userId,
+      action: 'member_left',
+    });
+  }
+
+  /**
+   * Shared eviction path for both owner-driven removal and self-leave:
+   * drops the membership row, cuts LIVE socket access, and revokes the
+   * links/invites the departing rider owned so their codes stop admitting
+   * riders. Past contributions (suggestions, votes, messages) stay — this
+   * only revokes access from now on.
+   */
+  private async evictMember(
+    tripId: string,
+    member: TripMember,
+    opts: { actorId: string; action: 'member_removed' | 'member_left' },
+  ): Promise<void> {
+    const memberUserId = member.user_id;
+    await this.memberRepo.delete({ id: member.id });
     // Revoke LIVE access too: the socket room is only membership-checked
     // at subscribe time, so without eviction an open planner would keep
     // receiving trip broadcasts until the next reconnect.
@@ -1664,9 +1704,7 @@ export class TripsService {
     // the invite row alone, so those codes would keep admitting riders
     // (at the role the ex-member picked) after their authority ended.
     await this.inviteRepo.delete({ trip_id: tripId, invited_by: memberUserId });
-    // Their past contributions (suggestions, votes, messages, activity)
-    // stay — removal only revokes access from now on.
-    await this.activity.recordSafe(tripId, userId, 'member_removed', {
+    await this.activity.recordSafe(tripId, opts.actorId, opts.action, {
       member_user_id: memberUserId,
     });
   }

@@ -13,8 +13,9 @@ export class UpdateTripMemberRoleDto {
   @ApiProperty({
     enum: ASSIGNABLE_TRIP_ROLES,
     description:
-      'New role for the member. `editor` can edit the route, propose ' +
-      'suggestions, and vote; `viewer` can view the trip and comment only.',
+      'New role for the member. `editor` edits the route and moderates ' +
+      'suggestions; `viewer` can view, comment, propose suggestions, ' +
+      'and vote — the difference is route editing and moderation.',
   })
   @IsIn(ASSIGNABLE_TRIP_ROLES)
   role!: AssignableTripRole;

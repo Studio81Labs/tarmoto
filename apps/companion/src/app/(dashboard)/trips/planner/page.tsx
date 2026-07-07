@@ -28,6 +28,8 @@ import {
   Save,
   SlidersHorizontal,
   GripVertical,
+  Lightbulb,
+  LogOut,
   RotateCcw,
   RotateCw,
   Users,
@@ -95,8 +97,9 @@ import {
   deriveDayQualitySegments,
   findPlannerQualitySegment,
 } from "@/lib/trip-planner-map";
+import { tripCollabApi } from "@/lib/api/trip-collab";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
-import { TripExportMenu } from "@/components/TripExportMenu";
+import { TripExportButton } from "@/components/TripExportButton";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import type {
   RegionDrawBbox,
@@ -137,7 +140,7 @@ import type {
   TripParameters,
   Waypoint,
 } from "@/lib/types";
-import { formatDuration } from "@/lib/utils";
+import { formatDistance, formatDuration } from "@/lib/utils";
 /**
  * TripPlannerPage — Full-screen map-based trip planner.
  *
@@ -354,6 +357,13 @@ export default function TripPlannerPage() {
     (s) => s.insertWaypointBeforeEnd,
   );
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
+  // Header meta parity with the trip preview (days · length · time ·
+  // members): loaded trips carry member_count; an unsaved draft is just
+  // the rider, so it honestly reads "1 member".
+  const headerMemberCount = displayedTrip
+    ? (displayedTrip.member_count ??
+      Math.max(1, displayedTrip.collaborators?.length ?? 0))
+    : null;
   // ── Live routing (Task 11) ────────────────────────────────────────
   // Memoize both inputs so the hook's effect only re-fires when the
   // actual data changes — not on every parent render.
@@ -767,6 +777,34 @@ export default function TripPlannerPage() {
     !serverTripId ||
     serverTripCallerRole === "owner" ||
     serverTripCallerRole === "editor";
+  // Header-button gating for a SAVED trip (mirrors the preview page):
+  //  - owner: Collaborate + Discard (delete)
+  //  - editor/viewer: Suggestions + Leave, no Discard
+  // Unsaved local drafts have no server owner, so the local rider owns
+  // everything until they save.
+  const isSavedTrip = Boolean(serverTripId);
+  const isTripOwner = !isSavedTrip || serverTripCallerRole === "owner";
+  const isCollaborator =
+    isSavedTrip &&
+    (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");
+  // A viewer opening the edit URL for a saved trip has no business here —
+  // the backend 403s their writes. Show an access screen once the role
+  // resolves rather than a functional-looking editor.
+  const isViewerOnSavedTrip = isSavedTrip && serverTripCallerRole === "viewer";
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const handleLeaveTrip = useCallback(async () => {
+    if (!serverTripId) return;
+    setConfirmLeaveOpen(false);
+    setLeaving(true);
+    try {
+      await tripCollabApi.leaveTrip(serverTripId);
+      router.push("/trips");
+    } catch {
+      setLeaving(false);
+    }
+  }, [serverTripId, router]);
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast
@@ -2030,7 +2068,7 @@ export default function TripPlannerPage() {
       (acc, day) => acc + (day.distanceKm ?? 0),
       0,
     );
-    return sum > 0 ? Math.round(sum) : null;
+    return sum > 0 ? sum : null;
   }, [displayedTrip]);
   // Approximate ride time from the routing engine's per-day durations —
   // shown next to the distance so riders can gauge the day at a glance.
@@ -2078,6 +2116,54 @@ export default function TripPlannerPage() {
       mapRef.current?.startRegionDraw();
     }
   }, [regionDrawMode, plannerRegion]);
+  // Viewers have no edit rights — the backend 403s their writes, so the
+  // editor is a dead end. Once the role resolves as viewer, show an
+  // access screen pointing back to the read-only preview.
+  if (isViewerOnSavedTrip) {
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 bg-cream px-6 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full border border-line-strong text-fg-mute">
+          <Users size={22} />
+        </div>
+        <div>
+          <h1 className="text-lg font-extrabold text-ink">
+            {t("You have view-only access")}
+          </h1>
+          <p className="mt-1 max-w-sm text-sm text-fg-dim">
+            {t(
+              "Editing this trip needs editor access from the owner. You can still open the read-only preview and leave suggestions.",
+            )}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="accent"
+            size="sm"
+            uppercase
+            renderLink={({ className, children }) => (
+              <Link href={`/trips/${serverTripId}`} className={className}>
+                {children}
+              </Link>
+            )}
+          >
+            {t("Open preview")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            uppercase
+            renderLink={({ className, children }) => (
+              <Link href="/trips" className={className}>
+                {children}
+              </Link>
+            )}
+          >
+            {t("Back to trips")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full min-h-0 flex-col bg-cream">
       {/* Slim top toolbar — keeps Save / Undo / Redo / Import / Export /
@@ -2147,12 +2233,23 @@ export default function TripPlannerPage() {
                 ) : null}
                 <span className="inline-flex items-center gap-1">
                   <MapPin size={11} aria-hidden className="text-fg-faint" />
-                  {t("{km} km", { km: totalDistanceKm })}
+                  {formatDistance(totalDistanceKm)}
                 </span>
                 {totalTimeMin !== null ? (
                   <span className="inline-flex items-center gap-1">
                     <Clock size={11} aria-hidden className="text-fg-faint" />
                     {`~${formatDuration(totalTimeMin)}`}
+                  </span>
+                ) : null}
+                {headerMemberCount !== null ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Users size={11} aria-hidden className="text-fg-faint" />
+                    {t(
+                      headerMemberCount === 1
+                        ? "{count} member"
+                        : "{count} members",
+                      { count: headerMemberCount },
+                    )}
                   </span>
                 ) : null}
               </div>
@@ -2193,7 +2290,7 @@ export default function TripPlannerPage() {
           >
             <Upload size={15} />
           </Button>
-          <TripExportMenu trip={displayedTrip} iconOnly />
+          <TripExportButton trip={displayedTrip} />
           <Button
             iconOnly
             variant="secondary"
@@ -2205,15 +2302,39 @@ export default function TripPlannerPage() {
           >
             <Maximize2 size={15} />
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            uppercase
-            leftIcon={<Users size={14} />}
-            onClick={() => setCollaborateOpen(true)}
-          >
-            {t("Collaborate")}
-          </Button>
+          {isCollaborator && (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              leftIcon={<Lightbulb size={14} />}
+              onClick={() => setSuggestionsOpen(true)}
+            >
+              {t("Suggestions")}
+            </Button>
+          )}
+          {isTripOwner ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              leftIcon={<Users size={14} />}
+              onClick={() => setCollaborateOpen(true)}
+            >
+              {t("Collaborate")}
+            </Button>
+          ) : isCollaborator ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              loading={leaving}
+              leftIcon={<LogOut size={14} />}
+              onClick={() => setConfirmLeaveOpen(true)}
+            >
+              {t("Leave")}
+            </Button>
+          ) : null}
           {routing && (
             <span className="flex items-center gap-1.5 text-[11px] text-fg-dim">
               <Loader2 size={12} className="animate-spin" />
@@ -2239,26 +2360,36 @@ export default function TripPlannerPage() {
               planner (rider feedback — routes save server-side, so
               backing out needs an explicit discard). Both show from the
               moment the planner opens so the exits are always visible. */}
-          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
-          {!resolveExistingTripId(serverTripId, displayedTrip) ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setPendingConfirm("reset")}
-            >
-              {t("Reset")}
-            </Button>
-          ) : null}
-          <Button
-            iconOnly
-            variant="danger"
-            size="sm"
-            aria-label={t("Discard")}
-            title={t("Discard")}
-            onClick={() => setPendingConfirm("discard")}
-          >
-            <Trash2 size={15} />
-          </Button>
+          {/* Reset (unsaved drafts) and Discard-delete belong to the trip
+              owner — a collaborating editor can't delete someone else's
+              trip; they Leave instead. */}
+          {isTripOwner && (
+            <>
+              <span
+                aria-hidden="true"
+                className="h-[22px] w-px shrink-0 bg-line"
+              />
+              {!resolveExistingTripId(serverTripId, displayedTrip) ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPendingConfirm("reset")}
+                >
+                  {t("Reset")}
+                </Button>
+              ) : null}
+              <Button
+                iconOnly
+                variant="danger"
+                size="sm"
+                aria-label={t("Discard")}
+                title={t("Discard")}
+                onClick={() => setPendingConfirm("discard")}
+              >
+                <Trash2 size={15} />
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -2860,11 +2991,11 @@ export default function TripPlannerPage() {
                       <b className="block text-ink">
                         {totalTimeMin !== null
                           ? t("Route ready — {km} km · ~{time}", {
-                              km: totalDistanceKm,
+                              km: Math.round(totalDistanceKm),
                               time: formatDuration(totalTimeMin),
                             })
                           : t("Route ready — {km} km", {
-                              km: totalDistanceKm,
+                              km: Math.round(totalDistanceKm),
                             })}
                       </b>
                       {t("Save it as-is, or add days below. ")}
@@ -3104,6 +3235,34 @@ export default function TripPlannerPage() {
         suggestionsError={collabSession.suggestionsError}
         onPromoted={handlePromotedToServer}
         onClose={() => setCollaborateOpen(false)}
+      />
+
+      {/* Non-owner members reach suggestions through their own button. */}
+      <TripCollaborateModal
+        open={suggestionsOpen}
+        mode="suggestions"
+        trip={displayedTrip}
+        serverTripId={serverTripId}
+        ownerId={serverTripOwnerId}
+        currentUserId={currentUserId}
+        suggestions={collabSession.suggestions}
+        onSuggestionsChange={collabSession.setSuggestions}
+        suggestionsError={collabSession.suggestionsError}
+        onPromoted={handlePromotedToServer}
+        onClose={() => setSuggestionsOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmLeaveOpen}
+        title={t("Leave this trip?")}
+        message={t(
+          "You'll lose access to this trip and return to your trips. The owner can re-invite you later. ",
+        )}
+        tone="danger"
+        confirmLabel={t("Leave trip")}
+        busy={leaving}
+        onCancel={() => setConfirmLeaveOpen(false)}
+        onConfirm={() => void handleLeaveTrip()}
       />
 
       {/* Roundtrip options (revision 3 §E) — keyed on open so each visit

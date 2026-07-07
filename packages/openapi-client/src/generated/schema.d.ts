@@ -1483,6 +1483,26 @@ export interface paths {
         patch: operations["TripsController_updateMemberRole"];
         trace?: never;
     };
+    "/api/v1/trips/{tripId}/members/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Leave a trip you collaborate on (self-removal)
+         * @description Viewers and editors can remove themselves; the owner has no leave path (deleting the trip is their only exit) and gets a 400. Past suggestions, votes, and messages stay in the history.
+         */
+        delete: operations["TripsController_leaveTrip"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trips/{tripId}/invites/{inviteId}": {
         parameters: {
             query?: never;
@@ -1533,7 +1553,10 @@ export interface paths {
          */
         get: operations["TripCollabController_listSuggestions"];
         put?: never;
-        /** Suggest a route change or road segment */
+        /**
+         * Suggest a route change or road segment
+         * @description Any trip member may propose a suggestion.
+         */
         post: operations["TripCollabController_createSuggestion"];
         delete?: never;
         options?: never;
@@ -1571,8 +1594,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept a suggestion (owner only)
-         * @description Marks the suggestion as `accepted`. Only the trip owner may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
+         * Accept a suggestion (owner or editor)
+         * @description Marks the suggestion as `accepted`. Only the trip owner or editors may resolve — authors can only delete their own. Re-accepting an already-resolved row returns 400.
          */
         post: operations["TripCollabController_acceptSuggestion"];
         delete?: never;
@@ -1590,7 +1613,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reject a suggestion (owner only) */
+        /** Reject a suggestion (owner or editor) */
         post: operations["TripCollabController_rejectSuggestion"];
         delete?: never;
         options?: never;
@@ -1608,8 +1631,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Reopen a resolved suggestion (owner only)
-         * @description Flips an `accepted`/`rejected` suggestion back to `open` so the group can keep voting and the owner can re-decide. Reopening an already-open row returns 400.
+         * Reopen a resolved suggestion (owner or editor)
+         * @description Flips an `accepted`/`rejected` suggestion back to `open` so the group can keep voting and an owner or editor can re-decide. Reopening an already-open row returns 400.
          */
         post: operations["TripCollabController_reopenSuggestion"];
         delete?: never;
@@ -4892,7 +4915,7 @@ export interface components {
         };
         UpdateTripMemberRoleDto: {
             /**
-             * @description New role for the member. `editor` can edit the route, propose suggestions, and vote; `viewer` can view the trip and comment only.
+             * @description New role for the member. `editor` edits the route and moderates suggestions; `viewer` can view, comment, propose suggestions, and vote — the difference is route editing and moderation.
              * @enum {string}
              */
             role: "editor" | "viewer";
@@ -8865,6 +8888,40 @@ export interface operations {
             };
         };
     };
+    TripsController_leaveTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Left the trip */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The owner cannot leave their own trip */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a member of this trip */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     TripsController_revokeInvite: {
         parameters: {
             query?: never;
@@ -9042,7 +9099,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not the trip owner */
+            /** @description Not an owner or editor */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9078,7 +9135,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not the trip owner */
+            /** @description Not an owner or editor */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9114,7 +9171,7 @@ export interface operations {
                     "application/json": components["schemas"]["SuggestionDto"];
                 };
             };
-            /** @description Not the trip owner */
+            /** @description Not an owner or editor */
             403: {
                 headers: {
                     [name: string]: unknown;

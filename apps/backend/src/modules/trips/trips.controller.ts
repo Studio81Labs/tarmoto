@@ -340,6 +340,28 @@ export class TripsController {
     );
   }
 
+  @Delete(':tripId/members/me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Leave a trip you collaborate on (self-removal)',
+    description:
+      'Viewers and editors can remove themselves; the owner has no ' +
+      'leave path (deleting the trip is their only exit) and gets a 400. ' +
+      'Past suggestions, votes, and messages stay in the history.',
+  })
+  @ApiResponse({ status: 204, description: 'Left the trip' })
+  @ApiResponse({
+    status: 400,
+    description: 'The owner cannot leave their own trip',
+  })
+  @ApiResponse({ status: 404, description: 'Not a member of this trip' })
+  async leaveTrip(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+  ): Promise<void> {
+    await this.tripsService.leaveTrip(req.user!.userId, tripId);
+  }
+
   @Delete(':tripId/members/:memberUserId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

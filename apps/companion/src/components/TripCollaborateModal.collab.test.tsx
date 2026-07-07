@@ -203,6 +203,33 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
+  it("suggestions-only mode drops the tab bar and the redundant propose header", async () => {
+    render(
+      <TripCollaborateModal
+        open
+        mode="suggestions"
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    // Suggestions surface only — no invite/people/activity tabs.
+    expect(
+      screen.queryByRole("tab", { name: /invite link/i }),
+    ).not.toBeInTheDocument();
+    // The dialog header already says "Suggestions", so the in-box
+    // "Propose an alternative" heading is dropped — the form stays.
+    expect(
+      screen.queryByRole("heading", { name: /propose an alternative/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/suggestion title/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows accept/reject buttons for the trip owner", async () => {
     render(
       <TripCollaborateModal
@@ -1068,7 +1095,7 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
-  it("gates suggestions for viewers: no propose form, votes disabled", async () => {
+  it("lets viewers propose and vote but not moderate", async () => {
     hoisted.listMembers.mockReset().mockResolvedValue({
       data: {
         members: [
@@ -1098,13 +1125,16 @@ describe("TripCollaborateModal — collab tabs", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
 
+    // Viewers now propose and vote like everyone else — the form shows
+    // and votes are live (backend opened this surface to all members).
     expect(
-      await screen.findByText(/you're a viewer on this trip/i),
+      await screen.findByLabelText(/suggestion title/i),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/suggestion title/i),
-    ).not.toBeInTheDocument();
     await screen.findByText("Scenic pass alt");
-    expect(screen.getByRole("button", { name: /vote up/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /vote up/i })).not.toBeDisabled();
+    // But a viewer cannot moderate: no Accept/Reject on open suggestions.
+    expect(
+      screen.queryByRole("button", { name: /^accept/i }),
+    ).not.toBeInTheDocument();
   });
 });
