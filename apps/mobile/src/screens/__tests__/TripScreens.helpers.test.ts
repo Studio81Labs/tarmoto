@@ -761,7 +761,11 @@ describe("summarizeFuelRange", () => {
       expect(leg1FirstStop.distanceFromLegStartKm).toBeLessThan(65);
     });
 
-    it("drops stations with blank names since the UI has nothing to render", () => {
+    it("keeps blank-named stations with a fallback label so the warning still lists a refuel option", () => {
+      // An unmanned fuel stop on a sparse route often has no name. The
+      // backend now returns it (maps_url makes it navigable), so the
+      // fuel-range warning must surface it with a fallback label rather
+      // than silently dropping it and claiming there is no refuel option.
       const result = summarizeFuelRange(longDay(), 150, [
         {
           name: null,
@@ -783,8 +787,12 @@ describe("summarizeFuelRange", () => {
         },
       ]);
       expect(result.legs[0]?.suggestedStops?.map((s) => s.name)).toEqual([
+        "Fuel stop",
+        "Fuel stop",
         "Named",
       ]);
+      // The brand hint survives so the row can still read "Fuel stop · Shell".
+      expect(result.legs[0]?.suggestedStops?.[0]?.hint).toBe("Shell");
     });
 
     it("caps suggested stops per leg to stop the warning card from ballooning", () => {
