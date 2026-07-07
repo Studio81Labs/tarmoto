@@ -7,7 +7,6 @@ import { PasswordResetToken } from './entities/password-reset-token.entity.js';
 import { AccountDeletionLog } from './entities/account-deletion-log.entity.js';
 import { CrashAlert } from './entities/crash-alert.entity.js';
 import { RoadSegment } from './entities/road-segment.entity.js';
-import { Poi } from './entities/poi.entity.js';
 import { SurfaceReading } from './entities/surface-reading.entity.js';
 import { Ride } from './entities/ride.entity.js';
 import { RideSegment } from './entities/ride-segment.entity.js';
@@ -113,17 +112,16 @@ import { AddContentModeration1783000000000 } from './migrations/1783000000000-Ad
 import { AddNapClosureReconciliation1784000000000 } from './migrations/1784000000000-AddNapClosureReconciliation.js';
 import { ClearEndedGroupRideLocations1785000000000 } from './migrations/1785000000000-ClearEndedGroupRideLocations.js';
 import { AddRoadSegmentOsmIdentity1786000000000 } from './migrations/1786000000000-AddRoadSegmentOsmIdentity.js';
-import { AddPois1787000000000 } from './migrations/1787000000000-AddPois.js';
 import { AddSurfaceFromReading1788000000000 } from './migrations/1788000000000-AddSurfaceFromReading.js';
 import { AggregateClusterFunZonesByWay1789000000000 } from './migrations/1789000000000-AggregateClusterFunZonesByWay.js';
 import { AddRoadSegmentWayKeyIndex1790000000000 } from './migrations/1790000000000-AddRoadSegmentWayKeyIndex.js';
 import { AddRoadSegmentDeactivatedAt1791000000000 } from './migrations/1791000000000-AddRoadSegmentDeactivatedAt.js';
 import { AddTripDayLegPreferences1792000000000 } from './migrations/1792000000000-AddTripDayLegPreferences.js';
-import { AddPoiDecisionSupportFields1793000000000 } from './migrations/1793000000000-AddPoiDecisionSupportFields.js';
 import { AddTripCollaboratorRoles1793000000000 } from './migrations/1793000000000-AddTripCollaboratorRoles.js';
 import { DropTripWideInviteCode1794000000000 } from './migrations/1794000000000-DropTripWideInviteCode.js';
 import { AddTierFeatureEntitlements1795000000000 } from './migrations/1795000000000-AddTierFeatureEntitlements.js';
 import { SwapTierNamesAddLaunchMode1796000000000 } from './migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
+import { DropPois1797000000000 } from './migrations/1797000000000-DropPois.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -140,7 +138,6 @@ export const AppDataSource = new DataSource({
     AccountDeletionLog,
     CrashAlert,
     RoadSegment,
-    Poi,
     SurfaceReading,
     Ride,
     RideSegment,
@@ -255,17 +252,16 @@ export const AppDataSource = new DataSource({
     AddNapClosureReconciliation1784000000000,
     ClearEndedGroupRideLocations1785000000000,
     AddRoadSegmentOsmIdentity1786000000000,
-    AddPois1787000000000,
     AddSurfaceFromReading1788000000000,
     AggregateClusterFunZonesByWay1789000000000,
     AddRoadSegmentWayKeyIndex1790000000000,
     AddRoadSegmentDeactivatedAt1791000000000,
     AddTripDayLegPreferences1792000000000,
-    AddPoiDecisionSupportFields1793000000000,
     AddTripCollaboratorRoles1793000000000,
     DropTripWideInviteCode1794000000000,
     AddTierFeatureEntitlements1795000000000,
     SwapTierNamesAddLaunchMode1796000000000,
+    DropPois1797000000000,
   ],
   synchronize: false,
 });

@@ -1,4 +1,5 @@
-import { Repository } from 'typeorm';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { DataSource, Repository } from 'typeorm';
 import { PoiImportService } from './poi-import.service.js';
 import { Poi } from '../../entities/poi.entity.js';
 import type {
@@ -72,7 +73,11 @@ describe('PoiImportService', () => {
     repo = { upsert: jest.fn().mockResolvedValue({}) };
     service = new PoiImportService(
       provider as unknown as PoiProvider,
-      repo as unknown as Repository<Poi>,
+      {
+        isInitialized: true,
+        query: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+        getRepository: () => repo as unknown as Repository<Poi>,
+      } as unknown as DataSource,
       CONFIG,
     );
   });
@@ -251,5 +256,56 @@ describe('PoiImportService', () => {
     const result = await service.import();
     expect(repo.upsert).not.toHaveBeenCalled();
     expect(result).toEqual({ fetched: 0, upserted: 0 });
+  });
+
+  it('throws 503 from import() when the POI DataSource is not initialized, WITHOUT calling the provider (fail fast before the Overpass fetch)', async () => {
+    const service = new PoiImportService(
+      provider as unknown as PoiProvider,
+      { isInitialized: false } as DataSource,
+      CONFIG,
+    );
+    await expect(service.import()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    // The readiness check must run BEFORE Promise.all([...provider calls]) —
+    // otherwise a cold-start POI-DB outage would still spend the full
+    // Overpass request budget on every scheduled retry before 503ing.
+    expect(provider.findImportPoisInBbox).not.toHaveBeenCalled();
+    expect(provider.findAccommodationsInBbox).not.toHaveBeenCalled();
+  });
+
+  it('throws 503 from import() when the POI store SELECT 1 probe rejects (runtime drop caught before the fetch), WITHOUT calling the provider', async () => {
+    const service = new PoiImportService(
+      provider as unknown as PoiProvider,
+      {
+        isInitialized: true,
+        query: jest.fn().mockRejectedValue(
+          Object.assign(new Error('Connection terminated unexpectedly'), {
+            code: '08006',
+          }),
+        ),
+        getRepository: () => repo as unknown as Repository<Poi>,
+      } as unknown as DataSource,
+      CONFIG,
+    );
+    await expect(service.import()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(provider.findImportPoisInBbox).not.toHaveBeenCalled();
+    expect(provider.findAccommodationsInBbox).not.toHaveBeenCalled();
+  });
+
+  it('throws 503 (not the raw driver error) from import() when upsert fails with a connection error (runtime POI-DB drop)', async () => {
+    provider.findImportPoisInBbox.mockResolvedValueOnce([
+      poi({ external_id: 'node/1' }),
+    ]);
+    repo.upsert.mockRejectedValueOnce(
+      Object.assign(new Error('Connection terminated unexpectedly'), {
+        code: '08006',
+      }),
+    );
+    await expect(service.import()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });
