@@ -56,6 +56,22 @@ vi.mock("maplibre-gl", () => {
   };
 });
 
+// The map is created only after the curated base-map style resolves; stub that
+// fetch so it's synchronous and network-free (the maplibre mock ignores the
+// style value anyway).
+vi.mock("./attribution", async () => {
+  const actual =
+    await vi.importActual<typeof import("./attribution")>("./attribution");
+  return {
+    ...actual,
+    loadCuratedMapStyle: vi.fn(async () => ({
+      version: 8,
+      sources: {},
+      layers: [],
+    })),
+  };
+});
+
 describe("MapCanvas", () => {
   beforeAll(() => {
     class MockResizeObserver {
@@ -107,6 +123,10 @@ describe("MapCanvas", () => {
         />
       </div>,
     );
+
+    // The map (and its "load" handlers) appear only once the curated style
+    // resolves, so wait for it before firing them.
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
 
     act(() => {
       for (const handler of loadHandlers) handler();
