@@ -15,6 +15,7 @@ import {
   AccommodationListDto,
   AccommodationQueryDto,
 } from './dto/accommodation.dto.js';
+import { PoiHealthDto } from './dto/poi-health.dto.js';
 import {
   AlongRoutePoiListDto,
   AlongRoutePoiQueryDto,
@@ -152,9 +153,9 @@ export class PoiController {
       'a "down" POI DB is a degraded, non-fatal state; the store read endpoints ' +
       'return 503 while it is down.',
   })
-  @ApiResponse({ status: 200 })
-  health(): { poiDb: 'up' | 'down' } {
-    return { poiDb: this.poiStore.isReady() ? 'up' : 'down' };
+  @ApiResponse({ status: 200, type: PoiHealthDto })
+  async health(): Promise<PoiHealthDto> {
+    return { poiDb: (await this.poiStore.isReady()) ? 'up' : 'down' };
   }
 
   // Declared LAST: `:id` is a catch-all param route, so it must come after

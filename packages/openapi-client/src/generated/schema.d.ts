@@ -4373,6 +4373,14 @@ export interface components {
             /** @description Total length of the supplied route polyline, km. */
             route_length_km: number;
         };
+        PoiHealthDto: {
+            /**
+             * @description Whether the separate POI database is currently reachable.
+             * @example up
+             * @enum {string}
+             */
+            poiDb: "up" | "down";
+        };
         UserRoutePrefsDto: {
             /** @enum {string} */
             road_preference: "direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop";
@@ -6201,6 +6209,7 @@ export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
 export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
 export type SchemaAlongRoutePoiListDto = components['schemas']['AlongRoutePoiListDto'];
+export type SchemaPoiHealthDto = components['schemas']['PoiHealthDto'];
 export type SchemaUserRoutePrefsDto = components['schemas']['UserRoutePrefsDto'];
 export type SchemaUserPreferencesDto = components['schemas']['UserPreferencesDto'];
 export type SchemaUpdateProfileDto = components['schemas']['UpdateProfileDto'];
@@ -7795,7 +7804,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PoiHealthDto"];
+                };
             };
         };
     };

@@ -46,9 +46,19 @@ export class PoiStoreService {
     private readonly poiDataSource: DataSource,
   ) {}
 
-  /** Readiness check backing `GET /poi/health` (ADR 0007) — never throws. */
-  isReady(): boolean {
-    return this.poiDataSource.isInitialized;
+  /**
+   * Live readiness: `isInitialized` only records that TypeORM connected once (it
+   * stays true after a runtime drop), so probe with a trivial query so
+   * `/poi/health` reflects the store's ACTUAL current connectivity (ADR 0007).
+   */
+  async isReady(): Promise<boolean> {
+    if (!this.poiDataSource.isInitialized) return false;
+    try {
+      await this.poiDataSource.query('SELECT 1');
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

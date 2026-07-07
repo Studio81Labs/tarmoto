@@ -64,10 +64,12 @@ describe('PoiController — GET /poi/:id', () => {
 });
 
 describe('PoiController — GET /poi/health', () => {
-  it('reports poiDb up/down without failing', () => {
-    const store = { isReady: () => false } as unknown as PoiStoreService;
+  it('reports poiDb up/down without failing', async () => {
+    const store = {
+      isReady: () => Promise.resolve(false),
+    } as unknown as PoiStoreService;
     const controller = new PoiController({} as PoiService, store);
-    expect(controller.health()).toEqual({ poiDb: 'down' });
+    await expect(controller.health()).resolves.toEqual({ poiDb: 'down' });
   });
 });
 
@@ -100,7 +102,7 @@ describe('PoiController — GET /poi/health (HTTP)', () => {
   });
 
   it('is not shadowed by the :id catch-all', async () => {
-    poiStore.isReady.mockReturnValue(true);
+    poiStore.isReady.mockResolvedValue(true);
     const res = await request(app.getHttpServer() as App)
       .get('/poi/health')
       .expect(200);

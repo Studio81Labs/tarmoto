@@ -255,3 +255,28 @@ describe('PoiStoreService when a connected POI DB drops at runtime', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
+
+describe('PoiStoreService.isReady', () => {
+  it('returns false without probing when the DataSource was never initialized', async () => {
+    const query = jest.fn();
+    const svc = serviceWithDataSource({ isInitialized: false, query });
+
+    await expect(svc.isReady()).resolves.toBe(false);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('returns true when initialized and the live probe query resolves', async () => {
+    const query = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    const svc = serviceWithDataSource({ isInitialized: true, query });
+
+    await expect(svc.isReady()).resolves.toBe(true);
+    expect(query).toHaveBeenCalledWith('SELECT 1');
+  });
+
+  it('returns false when initialized but the connection dropped at runtime (probe rejects)', async () => {
+    const query = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const svc = serviceWithDataSource({ isInitialized: true, query });
+
+    await expect(svc.isReady()).resolves.toBe(false);
+  });
+});
