@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -40,6 +40,8 @@ const FUN_ZONE_TOP_ROADS_LIMIT = 10;
 
 @Injectable()
 export class RoadsService {
+  private readonly logger = new Logger(RoadsService.name);
+
   constructor(
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
@@ -48,21 +50,26 @@ export class RoadsService {
   ) {}
 
   /**
-   * Per-segment surface quality for an already-routed polyline (#862). Spatial-
-   * joins the routed line to `road_segments` and returns, ordered along the
-   * route, every segment the line passes through with its quality / surface /
-   * curviness and the route-fraction span it covers. The planner paints each
-   * span onto the polyline; gaps between spans are genuine no-coverage
-   * stretches it renders as "no data".
+   * Per-segment surface quality for an already-routed polyline (#862). Returns,
+   * ordered along the route, every stretch the line runs over a `road_segments`
+   * row, with its quality / surface / curviness and the route-fraction span it
+   * covers. The planner paints each span onto the polyline; gaps between spans
+   * are genuine no-coverage stretches it renders as "no data".
    *
-   * Each segment's route-fraction span is `LEAST/GREATEST` of where its two
-   * endpoints project onto the route (`ST_LineLocatePoint`), so a segment the
-   * route only clips still gets a sensible position. The buffer stays tight
-   * (default 25 m) because the routed line follows the same OSM ways the
-   * segments were cut from — a wide buffer would pull in parallel roads.
+   * The join samples the route at a fixed spacing (~30 m, capped for long
+   * routes), snaps each sample to the nearest live segment within `buffer_m`,
+   * then coalesces contiguous same-segment runs into spans (gaps-and-islands).
+   * Sampling — rather than projecting each segment's endpoints once — is what
+   * lets a loop or there-and-back route emit one span *per pass* over the same
+   * road instead of a single span smeared across the whole detour. The buffer
+   * stays tight (default 25 m) because the routed line follows the same OSM
+   * ways the segments were cut from — a wide buffer would snap to parallel
+   * roads.
    *
    * Resilience mirrors the POI read path: any DB failure yields an empty list
-   * rather than a 500, and rider coordinates are never written to logs.
+   * rather than a 500 (a quality overlay must never break trip planning). The
+   * failure is logged (message only — never the route coordinates) so a real
+   * outage/schema drift is still an operational signal, not silent "no data".
    */
   async getRouteQuality(
     dto: RouteQualityRequestDto,
@@ -82,29 +89,78 @@ export class RoadsService {
     const bufferParam = `$${params.length}`;
 
     const sql = `
-      WITH route AS (
-        SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      WITH cfg AS (
+        SELECT
+          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      ),
+      route AS (
+        SELECT
+          line,
+          -- One sample roughly every 30 m, min 2, capped at 1500 so a very
+          -- long route stays bounded (spacing just grows past ~45 km).
+          GREATEST(
+            2,
+            LEAST(1500, CEIL(ST_Length(line::geography) / 30.0)::int)
+          ) AS n
+        FROM cfg
+      ),
+      samples AS (
+        SELECT
+          gs AS idx,
+          gs::float / route.n AS frac,
+          ST_LineInterpolatePoint(route.line, gs::float / route.n) AS pt
+        FROM route, generate_series(0, route.n) AS gs
+      ),
+      snapped AS (
+        SELECT
+          s.idx,
+          s.frac,
+          seg.id            AS seg_id,
+          seg.osm_way_id    AS osm_way_id,
+          seg.segment_index AS segment_index,
+          seg.quality_score AS quality_score,
+          seg.curviness_score AS curviness_score,
+          seg.surface_type  AS surface_type,
+          seg.reading_count AS reading_count
+        FROM samples s
+        LEFT JOIN LATERAL (
+          SELECT
+            rs.id, rs.osm_way_id, rs.segment_index, rs.quality_score,
+            rs.curviness_score, rs.surface_type, rs.reading_count
+          FROM road_segments rs
+          WHERE rs.deactivated_at IS NULL
+            AND ST_GeometryType(rs.geom) = 'ST_LineString'
+            AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
+          ORDER BY rs.geom <-> s.pt
+          LIMIT 1
+        ) seg ON TRUE
+      ),
+      -- Gaps-and-islands: number samples globally and per-segment; the
+      -- difference is constant across a contiguous run of the same segment, so
+      -- a second pass over that segment (separated by other / no-coverage
+      -- samples) falls into its own group and becomes its own span. NULL
+      -- (no-coverage) samples are kept in the numbering so they break runs,
+      -- then dropped from the output.
+      runs AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (ORDER BY idx)
+            - ROW_NUMBER() OVER (PARTITION BY seg_id ORDER BY idx) AS grp
+        FROM snapped
       )
       SELECT
-        rs.osm_way_id::text AS osm_way_id,
-        rs.segment_index    AS segment_index,
-        rs.quality_score    AS quality_score,
-        rs.curviness_score  AS curviness_score,
-        rs.surface_type     AS surface_type,
-        rs.reading_count    AS reading_count,
-        LEAST(
-          ST_LineLocatePoint(route.line, ST_StartPoint(rs.geom)),
-          ST_LineLocatePoint(route.line, ST_EndPoint(rs.geom))
-        ) AS start_fraction,
-        GREATEST(
-          ST_LineLocatePoint(route.line, ST_StartPoint(rs.geom)),
-          ST_LineLocatePoint(route.line, ST_EndPoint(rs.geom))
-        ) AS end_fraction
-      FROM road_segments rs, route
-      WHERE rs.deactivated_at IS NULL
-        AND ST_GeometryType(rs.geom) = 'ST_LineString'
-        AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
-      ORDER BY start_fraction ASC, end_fraction ASC
+        MIN(osm_way_id)::text AS osm_way_id,
+        MIN(segment_index)    AS segment_index,
+        MIN(quality_score)    AS quality_score,
+        MIN(curviness_score)  AS curviness_score,
+        MIN(surface_type)     AS surface_type,
+        MIN(reading_count)    AS reading_count,
+        MIN(frac)             AS start_fraction,
+        MAX(frac)             AS end_fraction
+      FROM runs
+      WHERE seg_id IS NOT NULL
+      GROUP BY seg_id, grp
+      ORDER BY start_fraction ASC
     `;
 
     try {
@@ -135,9 +191,16 @@ export class RoadsService {
           end_fraction: Number(r.end_fraction),
         })),
       };
-    } catch {
-      // Never surface a 500 to the planner over a quality lookup, and never
-      // log the route coordinates (a rider's planned trip is location data).
+    } catch (err) {
+      // Never surface a 500 to the planner over a quality lookup — but do log
+      // the failure so an outage / schema drift / bad query is a real signal
+      // rather than an empty overlay indistinguishable from a no-coverage
+      // route. Log the message only: the SQL carries `$n` placeholders (no
+      // values) and the route coordinates are location data that must not be
+      // written to logs.
+      this.logger.error(
+        `route-quality query failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return { segments: [] };
     }
   }

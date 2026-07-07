@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { RoadsService } from './roads.service.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -1006,14 +1006,14 @@ describe('RoadsService', () => {
       { lat: 49.2, lng: 16.8 },
     ];
 
-    it('spatial-joins the routed line with flattened positional params and a default 25 m buffer', async () => {
+    it('samples the routed line and snaps each sample to the nearest segment, with flattened positional params and a default 25 m buffer', async () => {
       await service.getRouteQuality({ geometry: route });
 
       expect(segmentRepo.query).toHaveBeenCalledTimes(1);
       expect(segmentRepo.query).toHaveBeenCalledWith(
-        // route-order fraction (ST_LineLocatePoint in SELECT) + the spatial
-        // filter (ST_DWithin in WHERE), in that source order.
-        expect.stringMatching(/ST_LineLocatePoint[\s\S]*ST_DWithin/),
+        // Sample along the route (ST_LineInterpolatePoint) then snap each
+        // sample to the nearest segment within the buffer (ST_DWithin).
+        expect.stringMatching(/ST_LineInterpolatePoint[\s\S]*ST_DWithin/),
         // lng/lat interleaved per point, then the buffer.
         [16.7, 49.1, 16.8, 49.2, 25],
       );
@@ -1021,6 +1021,12 @@ describe('RoadsService', () => {
       // not leak stale quality spans into the overlay.
       expect(segmentRepo.query).toHaveBeenCalledWith(
         expect.stringContaining('deactivated_at IS NULL'),
+        expect.any(Array),
+      );
+      // Repeated passes over the same road become separate spans via the
+      // gaps-and-islands grouping, not one smeared span.
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('ROW_NUMBER()'),
         expect.any(Array),
       );
     });
@@ -1084,7 +1090,10 @@ describe('RoadsService', () => {
       ]);
     });
 
-    it('returns an empty list (never throws) when the spatial query fails', async () => {
+    it('returns an empty list (never throws) but logs the failure without route coordinates when the spatial query fails', async () => {
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       (segmentRepo.query as jest.Mock).mockRejectedValueOnce(
         new Error('pg unavailable'),
       );
@@ -1092,6 +1101,16 @@ describe('RoadsService', () => {
       await expect(
         service.getRouteQuality({ geometry: route }),
       ).resolves.toEqual({ segments: [] });
+
+      // The failure is surfaced to logs (a real outage must not look like a
+      // no-coverage route) — but the route coordinates never are.
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('route-quality query failed'),
+      );
+      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join(' ');
+      expect(logged).not.toContain('16.7');
+      expect(logged).not.toContain('49.1');
+      errorSpy.mockRestore();
     });
   });
 });
