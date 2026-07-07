@@ -381,6 +381,40 @@ describe("plannerApi.getRouteQuality (#862)", () => {
     }
     expect(segments.every((s) => s.band === "good")).toBe(true);
   });
+
+  it("chunks a dense route by vertex count when under the length limit", async () => {
+    // ~100 km but >20 000 vertices: under the length limit yet over the DTO's
+    // point cap, so it must still be split by vertex count.
+    const dense = Array.from({ length: 20001 }, (_, i) => ({
+      lat: 0,
+      lng: (i / 20000) * 0.9,
+    }));
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(dense, 1);
+
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    for (const call of routeQualityMock.mock.calls) {
+      const body = call[0] as { geometry: unknown[] };
+      expect(body.geometry.length).toBeLessThanOrEqual(20000);
+    }
+    expect(segments.every((s) => s.band === "good")).toBe(true);
+  });
 });
 
 describe("plannerApi.getRoadPreview", () => {

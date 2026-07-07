@@ -71,6 +71,11 @@ function asSurfaceType(key: string): SurfaceType {
 // request safely under it.
 const MAX_ROUTE_QUALITY_REQUEST_KM = 480;
 
+// The endpoint also caps a request at MAX_ROUTE_QUALITY_POINTS (25 000 vertices,
+// route-quality.dto.ts); a dense but short route can exceed that under the km
+// limit, so chunk by vertex count too. Kept under the cap with margin.
+const MAX_ROUTE_QUALITY_REQUEST_POINTS = 20000;
+
 interface RouteChunk {
   points: { lat: number; lng: number }[];
   /** Where this chunk starts on the whole route, as a fraction [0,1]. */
@@ -113,15 +118,17 @@ function densifyMaxEdgeKm(
 }
 
 /**
- * Split a routed polyline into contiguous chunks each at most `maxKm` long, so
- * a long day stays under the backend's per-request length limit. Long edges are
- * first densified so a sparse imported line can be cut inside them. Chunks share
- * their boundary vertex (gap-free) and record where they sit on the whole route
- * so per-chunk quality fractions can be remapped back onto it.
+ * Split a routed polyline into contiguous chunks under both the backend's
+ * per-request length limit (`maxKm`) and vertex limit (`maxPoints`), so a long
+ * OR dense day still gets real quality. Long edges are first densified so a
+ * sparse imported line can be cut inside them. Chunks share their boundary
+ * vertex (gap-free) and record where they sit on the whole route so per-chunk
+ * quality fractions can be remapped back onto it.
  */
 function chunkRouteByLengthKm(
   points: ReadonlyArray<{ lat: number; lng: number }>,
   maxKm: number,
+  maxPoints: number,
 ): RouteChunk[] {
   const dense = densifyMaxEdgeKm(points, maxKm);
   const cum: number[] = [0];
@@ -131,7 +138,7 @@ function chunkRouteByLengthKm(
     cum.push((cum[i - 1] ?? 0) + haversineKm(a.lat, a.lng, b.lat, b.lng));
   }
   const total = cum[cum.length - 1] ?? 0;
-  if (dense.length < 2 || total <= maxKm) {
+  if (dense.length < 2 || (total <= maxKm && dense.length <= maxPoints)) {
     return [
       {
         points: dense.map((p) => ({ ...p })),
@@ -147,7 +154,9 @@ function chunkRouteByLengthKm(
     let endIdx = startIdx + 1;
     while (
       endIdx + 1 <= dense.length - 1 &&
-      (cum[endIdx + 1] ?? 0) - startKm <= maxKm
+      (cum[endIdx + 1] ?? 0) - startKm <= maxKm &&
+      // keep the chunk (endIdx + 1 - startIdx + 1 vertices) under the cap
+      endIdx + 2 - startIdx <= maxPoints
     ) {
       endIdx += 1;
     }
@@ -596,7 +605,11 @@ export function createPlannerApi(): PlannerApi {
       // long day is chunked under that and each chunk's fractions are remapped
       // back onto the whole route before mapping — so long-but-covered routes
       // still get real quality instead of a swallowed 400.
-      const chunks = chunkRouteByLengthKm(points, MAX_ROUTE_QUALITY_REQUEST_KM);
+      const chunks = chunkRouteByLengthKm(
+        points,
+        MAX_ROUTE_QUALITY_REQUEST_KM,
+        MAX_ROUTE_QUALITY_REQUEST_POINTS,
+      );
       const spans: RouteQualitySegment[] = [];
       for (const chunk of chunks) {
         const { data } = await roadsApi.getRouteQuality(

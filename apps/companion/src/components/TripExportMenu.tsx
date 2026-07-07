@@ -12,6 +12,7 @@ import {
 import { ApiError, tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
+import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
 import {
   buildMobileDeepLink,
   buildTripShareUrl,
@@ -99,7 +100,10 @@ export function TripExportMenu({
       // trip into the rider's library.
       const { data } = await tripSharesApi.create({
         title: trip.name || "Untitled trip",
-        snapshot: trip as unknown as Record<string, unknown>,
+        snapshot: tripSnapshotForSharing(trip) as unknown as Record<
+          string,
+          unknown
+        >,
       });
       const deepLink = buildMobileDeepLink(trip.id, data.share_token);
       // Browser silently no-ops if the app isn't installed; copying the
