@@ -1,33 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAuthStore } from "@/stores/auth";
+import { api } from "@/lib/api";
 import { downloadAllRidesExport, downloadRideExport } from "../ride-export";
 
-const originalFetch = globalThis.fetch;
-const originalCreateObjectURL = globalThis.URL.createObjectURL;
-const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
+vi.mock("@/lib/api", () => ({ api: { GET: vi.fn() } }));
+const get = vi.mocked(api.GET);
+
+// An openapi-fetch blob result. The client attaches the bearer + handles 401
+// itself, so these tests only cover the export helper's own behaviour.
+function blobResult(status = 200) {
+  const ok = status >= 200 && status < 300;
+  return {
+    data: ok ? new Blob(["body"], { type: "text/csv" }) : undefined,
+    error: ok ? undefined : {},
+    response: new Response(null, { status }),
+  } as unknown as Awaited<ReturnType<typeof api.GET>>;
+}
 
 describe("ride-export", () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
   let clickSpy: ReturnType<typeof vi.fn>;
   let lastAnchor: HTMLAnchorElement | null;
+  const origCreateObjectURL = globalThis.URL.createObjectURL;
+  const origRevokeObjectURL = globalThis.URL.revokeObjectURL;
 
   beforeEach(() => {
-    useAuthStore.getState().setSession(
-      {
-        id: "u-1",
-        email: "rider@example.com",
-        displayName: "Rider",
-      },
-      "test-token",
-    );
-
-    fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      blob: async () => new Blob(["body"], { type: "text/csv" }),
-    })) as unknown as ReturnType<typeof vi.fn>;
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
+    get.mockReset().mockResolvedValue(blobResult());
     globalThis.URL.createObjectURL = vi.fn(() => "blob:mock");
     globalThis.URL.revokeObjectURL = vi.fn();
 
@@ -47,47 +43,35 @@ describe("ride-export", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    globalThis.fetch = originalFetch;
-    globalThis.URL.createObjectURL = originalCreateObjectURL;
-    globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
-    useAuthStore.getState().clearSession();
+    globalThis.URL.createObjectURL = origCreateObjectURL;
+    globalThis.URL.revokeObjectURL = origRevokeObjectURL;
   });
 
   describe("downloadRideExport", () => {
-    it("hits the per-ride CSV endpoint with a bearer token", async () => {
+    it("requests the per-ride CSV blob and triggers the download", async () => {
       await downloadRideExport("ride-1", "csv");
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(url).toContain("/rides/ride-1/csv");
-      expect(init.headers).toEqual({ Authorization: "Bearer test-token" });
+      expect(get).toHaveBeenCalledWith("/api/v1/rides/{rideId}/csv", {
+        params: { path: { rideId: "ride-1" } },
+        parseAs: "blob",
+      });
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(globalThis.URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock");
     });
 
-    it("uses the gpx path when requested", async () => {
+    it("uses the gpx endpoint when requested", async () => {
       await downloadRideExport("ride-2", "gpx");
 
-      const [url] = fetchMock.mock.calls[0] as [string];
-      expect(url).toContain("/rides/ride-2/gpx");
+      expect(get).toHaveBeenCalledWith("/api/v1/rides/{rideId}/gpx", {
+        params: { path: { rideId: "ride-2" } },
+        parseAs: "blob",
+      });
     });
 
     it("throws with the HTTP status when the request fails", async () => {
-      fetchMock.mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-      } as unknown as Response);
+      get.mockResolvedValueOnce(blobResult(403));
 
       await expect(downloadRideExport("ride-1", "csv")).rejects.toThrow(/403/);
-    });
-
-    it("omits the Authorization header when no session token is set", async () => {
-      useAuthStore.getState().clearSession();
-
-      await downloadRideExport("ride-1", "csv");
-
-      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(init.headers).toBeUndefined();
     });
   });
 
@@ -95,16 +79,18 @@ describe("ride-export", () => {
     it("builds a date-stamped CSV filename and hits /rides/export.csv", async () => {
       await downloadAllRidesExport("csv", new Date("2026-04-20T10:00:00Z"));
 
-      const [url] = fetchMock.mock.calls[0] as [string];
-      expect(url).toContain("/rides/export.csv");
+      expect(get).toHaveBeenCalledWith("/api/v1/rides/export.csv", {
+        parseAs: "blob",
+      });
       expect(lastAnchor?.download).toBe("tarmoto-rides-2026-04-20.csv");
     });
 
     it("uses the gpx extension for gpx format", async () => {
       await downloadAllRidesExport("gpx", new Date("2026-01-02T00:00:00Z"));
 
-      const [url] = fetchMock.mock.calls[0] as [string];
-      expect(url).toContain("/rides/export.gpx");
+      expect(get).toHaveBeenCalledWith("/api/v1/rides/export.gpx", {
+        parseAs: "blob",
+      });
     });
   });
 });

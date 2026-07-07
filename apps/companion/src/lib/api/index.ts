@@ -1,10 +1,9 @@
 // Public API facade. The per-endpoint-family modules live alongside this
 // barrel; callers keep importing from `@/lib/api` unchanged. See #861.
 //
-// `apiFetch`, `openApiData`, and the `JsonResponse`/`JsonRequest` helpers stay
+// `openApiData`, `reqSignal`, and the `JsonResponse`/`JsonRequest` helpers stay
 // internal to this directory (imported directly from `./client` by the family
-// modules) — they were module-private before the split and are not part of the
-// public surface.
+// modules) — they are not part of the public surface.
 export { api, $api, ApiError } from "./client";
 
 export * from "./auth";

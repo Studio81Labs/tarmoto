@@ -50,6 +50,18 @@ export default [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // Guard the #861 migration: the companion talks to the backend only
+      // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
+      // is built from an API base/host so a new raw helper can't creep back in.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.name='fetch'] > TemplateLiteral > Identifier[name=/^API_(BASE|HOST)/]",
+          message:
+            "Don't fetch the backend directly. Use the generated client — `api` / `apiServer` from `@/lib/api` (see #861).",
+        },
+      ],
     },
   },
 ];
