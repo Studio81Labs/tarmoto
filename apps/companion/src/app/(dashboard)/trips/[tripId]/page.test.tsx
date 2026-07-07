@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TripDetailPage from "./page";
 import { ApiError, tripsApi } from "@/lib/api";
+import { tripCollabApi } from "@/lib/api/trip-collab";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
@@ -43,6 +44,10 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/api/trip-collab", () => ({
+  tripCollabApi: { leaveTrip: vi.fn() },
+}));
+
 vi.mock("@/stores/auth", () => ({
   useAuthStore: vi.fn(),
 }));
@@ -81,8 +86,8 @@ vi.mock("@/components/SegmentSidebar", () => ({
   SegmentSidebar: () => <div data-testid="segment-sidebar" />,
 }));
 
-vi.mock("@/components/TripExportMenu", () => ({
-  TripExportMenu: () => <button>Export</button>,
+vi.mock("@/components/TripExportButton", () => ({
+  TripExportButton: () => <button>Export</button>,
 }));
 
 vi.mock("@/components/TripCollaborateModal", () => ({
@@ -394,23 +399,29 @@ describe("TripDetailPage — member-role gating", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("denies invite-link creation to plain members via the collaborate modal", async () => {
+  it("gives viewers Suggestions + Leave, no Collaborate/Edit/Delete", async () => {
+    // Default fixture: member-1 (Eve) is a viewer.
     primeStores("member-1");
     tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
     render(<TripDetailPage />);
 
     expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
-    // Collaboration lives in the header now (planner parity) — the modal
-    // carries the role gating.
-    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
-    await waitFor(() => {
-      expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
-        expect.objectContaining({ canCreateInviteLink: false }),
-      );
-    });
+    expect(
+      screen.getByRole("button", { name: /suggestions/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /collaborate/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /edit/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete trip/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("grants invite-link creation to editors via the collaborate modal", async () => {
+  it("gives editors Suggestions + Leave + Edit, no Collaborate/Delete", async () => {
     primeStores("member-1");
     tripsApiGetMock.mockResolvedValue({
       data: buildDetail({
@@ -433,12 +444,50 @@ describe("TripDetailPage — member-role gating", () => {
     render(<TripDetailPage />);
 
     expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
-    await waitFor(() => {
-      expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
-        expect.objectContaining({ canCreateInviteLink: true }),
-      );
-    });
+    expect(
+      screen.getByRole("button", { name: /suggestions/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /edit/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /collaborate/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete trip/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves the trip and returns to the list on confirm", async () => {
+    const leaveMock = vi.mocked(tripCollabApi.leaveTrip);
+    leaveMock.mockResolvedValue(undefined as never);
+    primeStores("member-1"); // viewer
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    render(<TripDetailPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
+    // Confirm dialog → confirm.
+    fireEvent.click(screen.getByRole("button", { name: /leave trip/i }));
+
+    await waitFor(() => expect(leaveMock).toHaveBeenCalledWith("trip-1"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/trips"));
+  });
+
+  it("gives the owner Collaborate + Edit + Delete, no Leave", async () => {
+    primeStores("owner-1");
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    render(<TripDetailPage />);
+
+    expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /collaborate/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /edit/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /delete trip/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^leave/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

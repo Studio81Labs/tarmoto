@@ -45,7 +45,7 @@ const WAYPOINT_TYPE_MAP: Record<string, Waypoint["type"]> = {
 /**
  * Convert a backend `TripDetailDto` into the companion's local `Trip`
  * shape so existing planner components (`TripPlannerMap`, `SegmentSidebar`,
- * `TripExportMenu`, `TripStopsPanel`, etc.) can render server-loaded trips
+ * `TripExportButton`, `TripStopsPanel`, etc.) can render server-loaded trips
  * without each component growing a snake_case branch.
  *
  * The mapping is intentionally lossy: the local `Trip` doesn't carry

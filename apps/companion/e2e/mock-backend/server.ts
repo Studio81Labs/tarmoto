@@ -3622,7 +3622,10 @@ function serializeTripDetail(trip: import("./state").MockTrip) {
     return {
       user_id: userId,
       display_name: user?.display_name ?? "Unknown",
-      role: userId === trip.owner_id ? "owner" : "member",
+      // Non-owner test members are editors (matches the /members roster
+      // above and the real backend, which renamed the legacy `member`
+      // role to `editor`).
+      role: userId === trip.owner_id ? "owner" : "editor",
       joined_at: trip.created_at,
     };
   });

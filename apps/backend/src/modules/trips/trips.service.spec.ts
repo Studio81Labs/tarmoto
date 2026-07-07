@@ -1902,6 +1902,47 @@ describe('TripsService', () => {
       );
     });
 
+    it('lets a collaborator leave: drops membership, evicts, revokes their links', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(memberRow({ role: 'editor' }));
+
+      await service.leaveTrip(OTHER_ID, TRIP_ID);
+
+      expect(memberRepo.delete).toHaveBeenCalledWith({ id: 'm-x' });
+      expect(events.evictFromTrip).toHaveBeenCalledWith(TRIP_ID, OTHER_ID);
+      expect(tripShares.revokeAllForTripMember).toHaveBeenCalledWith(
+        TRIP_ID,
+        OTHER_ID,
+      );
+      expect(inviteRepo.delete).toHaveBeenCalledWith({
+        trip_id: TRIP_ID,
+        invited_by: OTHER_ID,
+      });
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OTHER_ID,
+        'member_left',
+        { member_user_id: OTHER_ID },
+      );
+    });
+
+    it('forbids the owner from leaving their own trip', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(
+        memberRow({ user_id: OWNER_ID, role: 'owner' }),
+      );
+      await expect(service.leaveTrip(OWNER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(memberRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('404s a non-member trying to leave', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(null);
+      await expect(service.leaveTrip(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(memberRepo.delete).not.toHaveBeenCalled();
+    });
+
     it('revokes a pending invite (404 when already gone)', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',

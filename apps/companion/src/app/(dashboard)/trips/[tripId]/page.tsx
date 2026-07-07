@@ -9,14 +9,17 @@ import {
   Clock,
   Edit,
   Layers,
+  Lightbulb,
   Loader2,
+  LogOut,
   MapPin,
-  Mountain,
+  Maximize2,
   Route,
   Trash2,
   Users,
 } from "lucide-react";
 import { ApiError, tripsApi } from "@/lib/api";
+import { tripCollabApi } from "@/lib/api/trip-collab";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
@@ -33,7 +36,7 @@ import { SectionStamp } from "@/components/planner/PlannerPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
-import { TripExportMenu } from "@/components/TripExportMenu";
+import { TripExportButton } from "@/components/TripExportButton";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import {
@@ -119,6 +122,32 @@ export default function TripDetailPage() {
       : null;
   const isOwner = callerRole === "owner";
   const canManageInvites = callerRole === "owner" || callerRole === "editor";
+  // Only the owner may edit metadata/route and delete; editors can edit but
+  // not delete; viewers can do neither. Non-owner members leave rather than
+  // manage collaborators, and reach suggestions through their own button.
+  const canEdit = callerRole === "owner" || callerRole === "editor";
+  const isCollaborator = callerRole === "editor" || callerRole === "viewer";
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const handleLeave = useCallback(async () => {
+    if (!loaded) return;
+    setConfirmLeaveOpen(false);
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await tripCollabApi.leaveTrip(loaded.detail.id);
+      router.replace("/trips");
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 404
+          ? "You're no longer a member of this trip."
+          : "Couldn't leave the trip. Try again.";
+      setLeaveError(message);
+      setLeaving(false);
+    }
+  }, [loaded, router]);
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
@@ -322,15 +351,7 @@ export default function TripDetailPage() {
               {totalDuration > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <Clock size={11} aria-hidden className="text-fg-faint" />{" "}
-                  {formatDuration(totalDuration)}
-                </span>
-              )}
-              {totalElevation > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Mountain size={11} aria-hidden className="text-fg-faint" />{" "}
-                  {t("{elevation} m gain", {
-                    elevation: Math.round(totalElevation),
-                  })}
+                  {`~${formatDuration(totalDuration)}`}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
@@ -349,32 +370,73 @@ export default function TripDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <TripExportButton trip={trip} />
           <Button
-            variant="accent"
-            size="sm"
-            uppercase
-            leftIcon={<Edit size={14} />}
-            renderLink={({ className, children }) => (
-              <Link
-                href={`/trips/${loaded.detail.id}/edit`}
-                className={className}
-              >
-                {children}
-              </Link>
-            )}
-          >
-            {t("Edit ")}
-          </Button>
-          <Button
+            iconOnly
             variant="secondary"
             size="sm"
-            uppercase
-            leftIcon={<Users size={14} />}
-            onClick={() => setCollaborateOpen(true)}
+            aria-label={t("Fit route")}
+            title={t("Fit route")}
+            onClick={() => {
+              // Fit means the whole route — drop any day focus first so
+              // the dimming matches the framed geometry.
+              setSelectedDayNumber(null);
+              mapRef.current?.fitRoute();
+            }}
           >
-            {t("Collaborate")}
+            <Maximize2 size={15} />
           </Button>
-          <TripExportMenu trip={trip} />
+          {isCollaborator && (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              leftIcon={<Lightbulb size={14} />}
+              onClick={() => setSuggestionsOpen(true)}
+            >
+              {t("Suggestions")}
+            </Button>
+          )}
+          {isOwner ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              leftIcon={<Users size={14} />}
+              onClick={() => setCollaborateOpen(true)}
+            >
+              {t("Collaborate")}
+            </Button>
+          ) : isCollaborator ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              uppercase
+              loading={leaving}
+              leftIcon={<LogOut size={14} />}
+              onClick={() => setConfirmLeaveOpen(true)}
+            >
+              {t("Leave")}
+            </Button>
+          ) : null}
+          {canEdit && (
+            <Button
+              variant="accent"
+              size="sm"
+              uppercase
+              leftIcon={<Edit size={14} />}
+              renderLink={({ className, children }) => (
+                <Link
+                  href={`/trips/${loaded.detail.id}/edit`}
+                  className={className}
+                >
+                  {children}
+                </Link>
+              )}
+            >
+              {t("Edit ")}
+            </Button>
+          )}
           {isOwner && (
             <>
               <span
@@ -411,12 +473,26 @@ export default function TripDetailPage() {
         onConfirm={() => void handleDelete()}
       />
 
-      {deleteError && (
+      <ConfirmDialog
+        open={confirmLeaveOpen}
+        title={t("Leave this trip?")}
+        message={t(
+          'You\'ll lose access to "{name}" and return to your trips. The owner can re-invite you later. ',
+          { name: loaded.detail.title },
+        )}
+        tone="danger"
+        confirmLabel={t("Leave trip")}
+        busy={leaving}
+        onCancel={() => setConfirmLeaveOpen(false)}
+        onConfirm={() => void handleLeave()}
+      />
+
+      {(deleteError || leaveError) && (
         <div
           role="alert"
           className="border-b border-quality-q1/30 bg-quality-q1/10 px-4 py-2 text-xs text-red-400"
         >
-          {deleteError}
+          {deleteError ?? leaveError}
         </div>
       )}
 
@@ -595,6 +671,21 @@ export default function TripDetailPage() {
         onSuggestionsChange={collabSession.setSuggestions}
         suggestionsError={collabSession.suggestionsError}
         onClose={() => setCollaborateOpen(false)}
+      />
+
+      {/* Non-owner members reach suggestions through their own button —
+          the same modal in suggestions-only mode. */}
+      <TripCollaborateModal
+        open={suggestionsOpen}
+        mode="suggestions"
+        trip={trip}
+        serverTripId={loaded.detail.id}
+        ownerId={ownerId}
+        currentUserId={currentUserId}
+        suggestions={collabSession.suggestions}
+        onSuggestionsChange={collabSession.setSuggestions}
+        suggestionsError={collabSession.suggestionsError}
+        onClose={() => setSuggestionsOpen(false)}
       />
     </div>
   );

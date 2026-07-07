@@ -70,7 +70,7 @@ test.describe("trip planner extras", () => {
   //
   // Uses seedTrip instead of the removed "Generate itinerary" flow so
   // the export menu is enabled from the start (it requires a loaded trip).
-  test("T10: Export → Download GPX triggers a .gpx download", async ({
+  test("T10: Export button triggers a .gpx download", async ({
     authedPage: page,
     mockApi,
     user,
@@ -99,20 +99,12 @@ test.describe("trip planner extras", () => {
       page.getByRole("heading", { name: /alps loop/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Open the export dropdown.
-    await page.getByRole("button", { name: /export/i }).click();
-
-    // "Download GPX" menuitem should be visible in the open dropdown.
-    const downloadMenuItem = page.getByRole("menuitem", {
-      name: /download gpx/i,
-    });
-    await expect(downloadMenuItem).toBeVisible({ timeout: 5_000 });
-
-    // Clicking "Download GPX" with `force: true` in Playwright can fail to
-    // trigger React's synthetic event when the element is covered. Use
-    // `page.evaluate` to call `.click()` on the DOM node directly — this
-    // fires the trusted click event that React's event delegation handles.
-    await downloadMenuItem.evaluate((el) => (el as HTMLElement).click());
+    // Export is a one-click GPX button now (no dropdown). Clicking with
+    // `page.evaluate` fires the trusted click React's delegation handles;
+    // a plain `.click()` can miss when the map overlaps the toolbar.
+    const exportButton = page.getByRole("button", { name: /export gpx/i });
+    await expect(exportButton).toBeVisible({ timeout: 5_000 });
+    await exportButton.evaluate((el) => (el as HTMLElement).click());
 
     // The success toast is proof that `tripToGpx` completed without error
     // and the download was initiated — more reliable than `page.waitForEvent`

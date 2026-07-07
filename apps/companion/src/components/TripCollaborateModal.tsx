@@ -61,6 +61,13 @@ interface TripCollaborateModalProps {
    */
   suggestionsError?: string | null;
   onPromoted?: (serverTripId: string) => void;
+  /**
+   * "suggestions" opens a stripped dialog with only the Suggestions
+   * surface (no tab bar, no invite/people/activity) — the header
+   * "Suggestions" button for viewers/editors. Defaults to the full
+   * collaborate dialog.
+   */
+  mode?: "full" | "suggestions";
   onClose: () => void;
 }
 /**
@@ -85,9 +92,13 @@ export function TripCollaborateModal({
   onSuggestionsChange,
   suggestionsError: externalSuggestionsError = null,
   onPromoted,
+  mode = "full",
   onClose,
 }: TripCollaborateModalProps) {
-  const [tab, setTab] = useState<Tab>("invite");
+  const suggestionsOnly = mode === "suggestions";
+  const [tab, setTab] = useState<Tab>(
+    suggestionsOnly ? "suggestions" : "invite",
+  );
   const [share, setShare] = useState<TripShareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,8 +120,8 @@ export function TripCollaborateModal({
     setCopied(false);
     setLoading(false);
     setCollaborators(null);
-    setTab("invite");
-  }, [open]);
+    setTab(suggestionsOnly ? "suggestions" : "invite");
+  }, [open, suggestionsOnly]);
   useEffect(() => {
     if (!open) return;
     function handleKey(event: KeyboardEvent) {
@@ -275,13 +286,19 @@ export function TripCollaborateModal({
                   id="trip-collaborate-title"
                   className="font-sans text-[19px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink"
                 >
-                  {t("Collaborate on this trip ")}
+                  {suggestionsOnly
+                    ? t("Suggestions ")
+                    : t("Collaborate on this trip ")}
                 </h2>
               </div>
               <p className="mt-1.5 max-w-[380px] text-[12.5px] leading-normal text-fg-dim">
-                {t(
-                  "Share a group link, gather route suggestions from your riders, and track the activity log. ",
-                )}
+                {suggestionsOnly
+                  ? t(
+                      "Propose route changes, vote on your group's ideas, and follow which ones get accepted. ",
+                    )
+                  : t(
+                      "Share a group link, gather route suggestions from your riders, and track the activity log. ",
+                    )}
               </p>
             </div>
             <button
@@ -293,55 +310,57 @@ export function TripCollaborateModal({
               <X size={14} />
             </button>
           </div>
-          <nav
-            role="tablist"
-            aria-label={t("Collaboration tabs")}
-            className="mt-4 flex gap-[22px]"
-          >
-            {(
-              [
-                { id: "invite", label: "Invite link" },
-                { id: "people", label: "People", badge: peopleCount },
-                { id: "suggestions", label: "Suggestions" },
-                { id: "activity", label: "Activity" },
-              ] as {
-                id: Tab;
-                label: string;
-                badge?: number | null;
-              }[]
-            ).map(({ id, label, badge }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                onClick={() => {
-                  // Clear any parent-level error on tab change so an
-                  // invite-tab failure doesn't bleed into Suggestions /
-                  // Activity where the message is out of context.
-                  setError(null);
-                  setTab(id);
-                }}
-                className={
-                  "relative flex items-center gap-1.5 pb-2.5 text-[13.5px] font-bold transition " +
-                  (tab === id ? "text-ink" : "text-fg-mute hover:text-ink")
-                }
-              >
-                {label}
-                {badge != null && badge > 0 && (
-                  <span className="rounded-full bg-accent px-1.5 py-px font-mono text-[9px] font-bold text-cream">
-                    {badge}
-                  </span>
-                )}
-                {tab === id && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent"
-                  />
-                )}
-              </button>
-            ))}
-          </nav>
+          {!suggestionsOnly && (
+            <nav
+              role="tablist"
+              aria-label={t("Collaboration tabs")}
+              className="mt-4 flex gap-[22px]"
+            >
+              {(
+                [
+                  { id: "invite", label: "Invite link" },
+                  { id: "people", label: "People", badge: peopleCount },
+                  { id: "suggestions", label: "Suggestions" },
+                  { id: "activity", label: "Activity" },
+                ] as {
+                  id: Tab;
+                  label: string;
+                  badge?: number | null;
+                }[]
+              ).map(({ id, label, badge }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => {
+                    // Clear any parent-level error on tab change so an
+                    // invite-tab failure doesn't bleed into Suggestions /
+                    // Activity where the message is out of context.
+                    setError(null);
+                    setTab(id);
+                  }}
+                  className={
+                    "relative flex items-center gap-1.5 pb-2.5 text-[13.5px] font-bold transition " +
+                    (tab === id ? "text-ink" : "text-fg-mute hover:text-ink")
+                  }
+                >
+                  {label}
+                  {badge != null && badge > 0 && (
+                    <span className="rounded-full bg-accent px-1.5 py-px font-mono text-[9px] font-bold text-cream">
+                      {badge}
+                    </span>
+                  )}
+                  {tab === id && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent"
+                    />
+                  )}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -381,6 +400,7 @@ export function TripCollaborateModal({
               currentUserId={currentUserId}
               isOwner={isOwner}
               callerRole={callerRole}
+              hideProposeIntro={suggestionsOnly}
               externalSuggestions={externalSuggestions}
               onExternalChange={onSuggestionsChange}
               externalError={externalSuggestionsError}
@@ -829,12 +849,12 @@ function RoleMenu({
               {
                 value: "editor" as const,
                 label: t("Editor"),
-                hint: t("Can edit the route & vote"),
+                hint: t("Edits the route & moderates suggestions"),
               },
               {
                 value: "viewer" as const,
                 label: t("Viewer"),
-                hint: t("Can view & comment only"),
+                hint: t("Views, comments, suggests & votes"),
               },
             ].map((option) => (
               <button
@@ -886,6 +906,7 @@ function SuggestionsTab({
   currentUserId,
   isOwner,
   callerRole,
+  hideProposeIntro = false,
   externalSuggestions,
   onExternalChange,
   externalError,
@@ -896,6 +917,7 @@ function SuggestionsTab({
   currentUserId: string | null;
   isOwner: boolean;
   callerRole: TripMemberRole | null;
+  hideProposeIntro?: boolean;
   externalSuggestions?: TripSuggestion[] | undefined;
   onExternalChange?:
     | React.Dispatch<React.SetStateAction<TripSuggestion[]>>
@@ -1042,9 +1064,9 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
-  // Viewers are read-and-comment only: the backend 403s their propose /
-  // vote calls, so don't render dead-end controls in the first place.
-  const isViewer = callerRole === "viewer";
+  // Every member may propose and vote (backend opened this to viewers);
+  // only owners and editors moderate (accept/reject/reopen).
+  const canModerate = isOwner || callerRole === "editor";
   // Open proposals lead (they need votes / a decision); resolved ones
   // collapse behind a summary row so history doesn't bury the queue.
   const openSuggestions = suggestions.filter((s) => s.status === "open");
@@ -1056,8 +1078,9 @@ function SuggestionsTab({
     <SuggestionCard
       key={s.id}
       suggestion={s}
-      isOwner={isOwner}
-      canVote={!isViewer}
+      canModerate={canModerate}
+      canDeleteOthers={isOwner}
+      canVote
       isAuthor={currentUserId === s.suggested_by}
       onVote={(vote) =>
         s.caller_vote === vote ? handleUnvote(s.id) : handleVote(s.id, vote)
@@ -1069,13 +1092,7 @@ function SuggestionsTab({
   );
   return (
     <div className="space-y-4">
-      {isViewer ? (
-        <HintBox>
-          {t(
-            "You're a viewer on this trip — you can follow the plan and comment, but proposing and voting need editor access from the owner.",
-          )}
-        </HintBox>
-      ) : trip ? (
+      {trip ? (
         // Propose form is gated on a locally-loaded trip because we
         // anchor the new suggestion at the first waypoint so it has a
         // map marker. Callers who opened a shared `?tripId=` URL cold
@@ -1083,20 +1100,24 @@ function SuggestionsTab({
         // can still view + vote on existing suggestions via the list
         // further down.
         <section className="rounded-xl border border-line bg-paper p-3.5">
-          <h3 className="flex items-center gap-2 text-[13.5px] font-extrabold text-ink">
-            <Star
-              size={15}
-              strokeWidth={0}
-              fill="currentColor"
-              className="shrink-0 text-accent"
-            />
-            {t("Propose an alternative ")}
-          </h3>
-          <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
-            {t(
-              "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
-            )}
-          </p>
+          {!hideProposeIntro && (
+            <>
+              <h3 className="flex items-center gap-2 text-[13.5px] font-extrabold text-ink">
+                <Star
+                  size={15}
+                  strokeWidth={0}
+                  fill="currentColor"
+                  className="shrink-0 text-accent"
+                />
+                {t("Propose an alternative ")}
+              </h3>
+              <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
+                {t(
+                  "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
+                )}
+              </p>
+            </>
+          )}
           <Input
             tone="cream"
             placeholder={t("Short title (e.g. 'Scenic loop via Passo Giau')")}
@@ -1157,7 +1178,7 @@ function SuggestionsTab({
         <section>
           <div className="mb-2 flex items-center justify-between">
             <span className="font-mono text-[9.5px] uppercase tracking-[0.6px] text-fg-mute">
-              {isOwner ? t("Open · needs your call") : t("Open")}
+              {canModerate ? t("Open · needs a decision") : t("Open")}
             </span>
             <span className="font-mono text-[9.5px] text-fg-mute">
               {openSuggestions.length}
@@ -1231,7 +1252,8 @@ function SuggestionsTab({
 }
 function SuggestionCard({
   suggestion,
-  isOwner,
+  canModerate,
+  canDeleteOthers,
   canVote,
   isAuthor,
   onVote,
@@ -1240,7 +1262,8 @@ function SuggestionCard({
   onDelete,
 }: {
   suggestion: TripSuggestion;
-  isOwner: boolean;
+  canModerate: boolean;
+  canDeleteOthers: boolean;
   canVote: boolean;
   isAuthor: boolean;
   onVote: (vote: "up" | "down") => void;
@@ -1311,7 +1334,7 @@ function SuggestionCard({
           />
         </div>
         <div className="flex items-center gap-[7px]">
-          {isOwner && isOpen && (
+          {canModerate && isOpen && (
             <>
               <button
                 type="button"
@@ -1329,7 +1352,7 @@ function SuggestionCard({
               </button>
             </>
           )}
-          {isOwner && !isOpen && (
+          {canModerate && !isOpen && (
             <button
               type="button"
               onClick={onReopen}
@@ -1338,7 +1361,7 @@ function SuggestionCard({
               {t("Reopen")}
             </button>
           )}
-          {(isAuthor || isOwner) && (
+          {(isAuthor || canDeleteOthers) && (
             <button
               type="button"
               onClick={onDelete}

@@ -111,9 +111,8 @@ test.describe("trip collaboration", () => {
         u.pathname.includes("/trips/planner"),
       );
       await collaboratorPage
-        .getByRole("button", { name: /^Collaborate$/i })
+        .getByRole("button", { name: /^Suggestions$/i })
         .click();
-      await collaboratorPage.getByRole("tab", { name: /suggestions/i }).click();
       await expect(
         collaboratorPage.getByRole("heading", {
           name: /detour via passo giau/i,
@@ -278,9 +277,8 @@ test.describe("trip collaboration", () => {
       );
 
       await recipientPage
-        .getByRole("button", { name: /^Collaborate$/i })
+        .getByRole("button", { name: /^Suggestions$/i })
         .click();
-      await recipientPage.getByRole("tab", { name: /suggestions/i }).click();
       await recipientPage
         .getByRole("textbox", { name: /suggestion title/i })
         .fill("Add the lake viewpoint");
