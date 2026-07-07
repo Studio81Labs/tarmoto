@@ -309,7 +309,7 @@ class ApiService {
 
   async getProfile(): Promise<User> {
     const result = await client.GET("/api/v1/users/me");
-    return unwrap(result, "Failed to load profile") as User;
+    return unwrap(result, "Failed to load profile");
   }
 
   /**
@@ -327,7 +327,7 @@ class ApiService {
     const result = await client.PATCH("/api/v1/users/me", {
       body: updates as Schemas["UpdateProfileDto"],
     });
-    return unwrap(result, "Failed to update profile") as User;
+    return unwrap(result, "Failed to update profile");
   }
 
   // ── Rider profiles + follow (US-27) ──
@@ -377,7 +377,7 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/badges", {
       params: { path: { userId } },
     });
-    return unwrap(result, "Failed to load badges") as UserBadge[];
+    return unwrap(result, "Failed to load badges");
   }
 
   /**
@@ -393,10 +393,7 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/shared-rides", {
       params: { path: { userId }, query: params },
     });
-    return unwrap(
-      result,
-      "Failed to load shared rides",
-    ) as UserSharedRidesResponse;
+    return unwrap(result, "Failed to load shared rides");
   }
 
   /**
@@ -428,7 +425,7 @@ class ApiService {
       // multipart boundary.
       bodySerializer: (body) => body as unknown as FormData,
     });
-    return unwrap(result, "Failed to upload avatar") as User;
+    return unwrap(result, "Failed to upload avatar");
   }
 
   // ── Emergency Contacts (US-12) ──
