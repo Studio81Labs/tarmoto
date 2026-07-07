@@ -10,7 +10,7 @@ import {
   Route as RouteIcon,
   Wind,
 } from "lucide-react";
-import { API_BASE } from "@/lib/config";
+import { api } from "@/lib/api";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { formatRideEmbedStat, type RideWidgetVariant } from "@/lib/ride-embed";
 import type { SharedRideDetail } from "@/lib/shared-rides";
@@ -51,8 +51,10 @@ export function SharedRideEmbedWidget({
     14,
   );
   function handleOutboundClick() {
-    void fetch(`${API_BASE}/rides/shared/${token}/embed-click`, {
-      method: "POST",
+    // Fire-and-forget beacon; the endpoint is public so no bearer is needed
+    // (the client only attaches one when a session exists).
+    void api.POST("/api/v1/rides/shared/{token}/embed-click", {
+      params: { path: { token } },
       keepalive: true,
     });
   }

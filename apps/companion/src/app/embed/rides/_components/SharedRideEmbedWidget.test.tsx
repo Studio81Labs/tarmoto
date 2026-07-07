@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { api } from "@/lib/api";
 import { SharedRideEmbedWidget } from "./SharedRideEmbedWidget";
+
+vi.mock("@/lib/api", () => ({ api: { POST: vi.fn() } }));
+const post = vi.mocked(api.POST);
 
 describe("SharedRideEmbedWidget", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    post.mockClear();
   });
 
   it("renders a shared ride mini-widget and tracks CTA clicks", () => {
@@ -40,10 +40,10 @@ describe("SharedRideEmbedWidget", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "View full ride" }));
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/v1/rides/shared/abc123/embed-click",
+    expect(post).toHaveBeenCalledWith(
+      "/api/v1/rides/shared/{token}/embed-click",
       {
-        method: "POST",
+        params: { path: { token: "abc123" } },
         keepalive: true,
       },
     );
