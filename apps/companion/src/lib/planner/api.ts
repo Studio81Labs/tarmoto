@@ -5,6 +5,7 @@ import {
   routingApi,
   usersApi,
   type AccommodationSuggestion,
+  type RouteQualitySegment,
   type PoiKind,
   type RouteRequestBody,
   type RouteResponse,
@@ -63,6 +64,68 @@ const SURFACE_TYPE_SET: ReadonlySet<string> = new Set(SURFACE_TYPES);
 
 function asSurfaceType(key: string): SurfaceType {
   return SURFACE_TYPE_SET.has(key) ? (key as SurfaceType) : "unknown";
+}
+
+// The backend rejects a single /route-quality request over its route-length
+// limit (MAX_ROUTE_QUALITY_LENGTH_M = 500 km, roads.service.ts); keep each
+// request safely under it.
+const MAX_ROUTE_QUALITY_REQUEST_KM = 480;
+
+interface RouteChunk {
+  points: { lat: number; lng: number }[];
+  /** Where this chunk starts on the whole route, as a fraction [0,1]. */
+  startFraction: number;
+  /** This chunk's share of the whole route length, as a fraction. */
+  fractionSpan: number;
+}
+
+/**
+ * Split a routed polyline into contiguous chunks each at most `maxKm` long, so
+ * a long day stays under the backend's per-request length limit. Chunks share
+ * their boundary vertex (gap-free) and record where they sit on the whole route
+ * so per-chunk quality fractions can be remapped back onto it.
+ */
+function chunkRouteByLengthKm(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+  maxKm: number,
+): RouteChunk[] {
+  const cum: number[] = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    cum.push((cum[i - 1] ?? 0) + haversineKm(a.lat, a.lng, b.lat, b.lng));
+  }
+  const total = cum[cum.length - 1] ?? 0;
+  if (points.length < 2 || total <= maxKm) {
+    return [
+      {
+        points: points.map((p) => ({ ...p })),
+        startFraction: 0,
+        fractionSpan: total > 0 ? 1 : 0,
+      },
+    ];
+  }
+  const chunks: RouteChunk[] = [];
+  let startIdx = 0;
+  while (startIdx < points.length - 1) {
+    const startKm = cum[startIdx] ?? 0;
+    let endIdx = startIdx + 1;
+    while (
+      endIdx + 1 <= points.length - 1 &&
+      (cum[endIdx + 1] ?? 0) - startKm <= maxKm
+    ) {
+      endIdx += 1;
+    }
+    const endKm = cum[endIdx] ?? 0;
+    chunks.push({
+      points: points.slice(startIdx, endIdx + 1).map((p) => ({ ...p })),
+      startFraction: total > 0 ? startKm / total : 0,
+      fractionSpan: total > 0 ? (endKm - startKm) / total : 0,
+    });
+    if (endIdx >= points.length - 1) break;
+    startIdx = endIdx; // next chunk shares this boundary vertex
+  }
+  return chunks;
 }
 
 /** `surface_mix` arrives as metres per surface; render as whole-number %. */
@@ -492,11 +555,30 @@ export function createPlannerApi(): PlannerApi {
       dayNumber: number,
       init?: { signal?: AbortSignal },
     ): Promise<RouteSegment[]> {
-      const { data } = await roadsApi.getRouteQuality(
-        { geometry: [...points] },
-        init?.signal !== undefined ? { signal: init.signal } : {},
-      );
-      return mapRouteQualitySpans(points, data.segments, dayNumber);
+      const requestInit =
+        init?.signal !== undefined ? { signal: init.signal } : {};
+      // The backend rejects a single request over its route-length limit; a
+      // long day is chunked under that and each chunk's fractions are remapped
+      // back onto the whole route before mapping — so long-but-covered routes
+      // still get real quality instead of a swallowed 400.
+      const chunks = chunkRouteByLengthKm(points, MAX_ROUTE_QUALITY_REQUEST_KM);
+      const spans: RouteQualitySegment[] = [];
+      for (const chunk of chunks) {
+        const { data } = await roadsApi.getRouteQuality(
+          { geometry: chunk.points },
+          requestInit,
+        );
+        for (const span of data.segments) {
+          spans.push({
+            ...span,
+            start_fraction:
+              chunk.startFraction + span.start_fraction * chunk.fractionSpan,
+            end_fraction:
+              chunk.startFraction + span.end_fraction * chunk.fractionSpan,
+          });
+        }
+      }
+      return mapRouteQualitySpans(points, spans, dayNumber);
     },
 
     async draftRoute(

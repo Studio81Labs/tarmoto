@@ -299,6 +299,43 @@ describe("plannerApi.getRouteQuality (#862)", () => {
       score: null,
     });
   });
+
+  it("chunks a route over the backend length limit and remaps fractions", async () => {
+    // ~668 km along the equator exceeds MAX_ROUTE_QUALITY_REQUEST_KM (480 km),
+    // so the request is split; each chunk reports full coverage, and remapping
+    // must tile the whole route as real quality (not a swallowed 400).
+    const longPoints = Array.from({ length: 61 }, (_, i) => ({
+      lat: 0,
+      lng: i * 0.1,
+    }));
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(longPoints, 1);
+
+    // Split into more than one request, each shorter than the full route.
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    const firstBody = routeQualityMock.mock.calls[0]![0] as {
+      geometry: unknown[];
+    };
+    expect(firstBody.geometry.length).toBeLessThan(longPoints.length);
+    // Whole route rendered as real quality — no undercovered no_data gap.
+    expect(segments.every((s) => s.band === "good")).toBe(true);
+  });
 });
 
 describe("plannerApi.getRoadPreview", () => {

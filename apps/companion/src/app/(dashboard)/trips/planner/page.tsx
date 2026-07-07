@@ -753,12 +753,16 @@ export default function TripPlannerPage() {
   // not just the selected one — multi-day trips render all days at once, so a
   // selected-only fetch would leave the others on the no_data baseline until
   // visited. Runs when a day has a committed line but no quality yet: freshly
-  // routed (applyRouteResult clears it), reopened, or split. Deduped by
-  // routeGeometry identity — a reroute swaps the object (refetch), unrelated
-  // edits keep the same reference (skip). A failed or uncovered response leaves
-  // the day on the baseline; applyRouteQuality guards the apply against a
-  // reroute landing between the fetch and its resolution.
-  const qualityAttemptRef = useRef(
+  // routed (applyRouteResult clears it), reopened, or split.
+  //
+  // The ref tracks the routeGeometry a request is CURRENTLY in flight for (not
+  // merely "ever attempted"), keyed by day, and is cleared when the request
+  // settles. So an in-flight duplicate for the same geometry object is skipped,
+  // but a geometry restored by undo/redo (same object, no cached quality) can
+  // refetch. Success sets qualitySegments (skipped above); a failed/uncovered
+  // response leaves the baseline and is retried on the next change.
+  // applyRouteQuality guards the apply against a reroute landing mid-flight.
+  const qualityInFlightRef = useRef(
     new Map<number, NonNullable<TripDay["routeGeometry"]>>(),
   );
   useEffect(() => {
@@ -769,8 +773,7 @@ export default function TripPlannerPage() {
       const coordinates = geometry?.coordinates;
       if (!geometry || !coordinates || coordinates.length < 2) continue;
       if (day.qualitySegments) continue;
-      if (qualityAttemptRef.current.get(day.dayNumber) === geometry) continue;
-      qualityAttemptRef.current.set(day.dayNumber, geometry);
+      if (qualityInFlightRef.current.get(day.dayNumber) === geometry) continue;
       const points: { lat: number; lng: number }[] = [];
       for (const coordinate of coordinates) {
         const [lng, lat] = coordinate;
@@ -779,12 +782,21 @@ export default function TripPlannerPage() {
         }
       }
       if (points.length < 2) continue;
+      const dayNumber = day.dayNumber;
+      qualityInFlightRef.current.set(dayNumber, geometry);
+      const settle = () => {
+        // Only clear if a newer request for this day hasn't taken over.
+        if (qualityInFlightRef.current.get(dayNumber) === geometry) {
+          qualityInFlightRef.current.delete(dayNumber);
+        }
+      };
       void plannerApi
-        .getRouteQuality(points, day.dayNumber)
-        .then((segments) => applyRouteQuality(day.dayNumber, points, segments))
+        .getRouteQuality(points, dayNumber)
+        .then((segments) => applyRouteQuality(dayNumber, points, segments))
         .catch(() => {
           // Uncovered route or failed query — stay on the no_data baseline.
-        });
+        })
+        .finally(settle);
     }
   }, [activeTrip, applyRouteQuality]);
   // ── Collab session wiring (US-35) ─────────────────────────────────
