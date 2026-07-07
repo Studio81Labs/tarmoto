@@ -148,4 +148,41 @@ describe("findRunSegment", () => {
     expect(findRunSegment(fullDay, "run:d1-s3:d1-s0")).toBeNull();
     expect(findRunSegment(fullDay, "d1-s0")).toBeNull();
   });
+
+  it("aggregates score, passes, and surface across the run (length-weighted)", () => {
+    const scored = (
+      id: string,
+      lengthKm: number,
+      score: number,
+      passes: number,
+      surface: RouteSegment["surface"],
+    ): RouteSegment => ({
+      id,
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [0, 0],
+          [1, 0],
+        ],
+      },
+      band: "rough",
+      surface,
+      score,
+      passes,
+      lengthKm,
+      dayNumber: 1,
+    });
+    // A 100 m / 1-pass span followed by a 40 km / 50-pass span.
+    const day = [
+      scored("d1-s0", 0.1, 2.0, 1, "gravel"),
+      scored("d1-s1", 40, 2.4, 50, "dirt"),
+    ];
+
+    const run = findRunSegment(day, "run:d1-s0:d1-s1")!;
+    // Length-weighted, so the long span dominates — not the first 100 m.
+    expect(run.passes).toBe(50);
+    expect(run.score).toBeCloseTo(2.4, 1);
+    expect(run.surface).toBe("dirt");
+    expect(run.lengthKm).toBeCloseTo(40.1, 5);
+  });
 });

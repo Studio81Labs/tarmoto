@@ -122,12 +122,41 @@ export function findRunSegment(
 
   const runSegments = segments.slice(firstIdx, lastIdx + 1);
   const first = runSegments[0]!;
+
+  // Aggregate the preview metadata across the run (length-weighted) rather than
+  // taking the first span's — otherwise a run whose first ~100 m has 1 pass but
+  // the rest has many would open a whole-run preview labelled low-confidence.
   const coordinates: LngLat[] = [];
+  let scoreWeighted = 0;
+  let scoredLength = 0;
+  let passesWeighted = 0;
+  let totalLength = 0;
+  const surfaceLength = new Map<RouteSegment["surface"], number>();
   for (const segment of runSegments) {
     for (const coordinate of segment.geometry.coordinates) {
       coordinates.push(coordinate as LngLat);
     }
+    const length = segment.lengthKm;
+    totalLength += length;
+    passesWeighted += segment.passes * length;
+    if (segment.score != null) {
+      scoreWeighted += segment.score * length;
+      scoredLength += length;
+    }
+    surfaceLength.set(
+      segment.surface,
+      (surfaceLength.get(segment.surface) ?? 0) + length,
+    );
   }
+  let surface = first.surface;
+  let maxSurfaceLength = -1;
+  for (const [candidate, length] of surfaceLength) {
+    if (length > maxSurfaceLength) {
+      maxSurfaceLength = length;
+      surface = candidate;
+    }
+  }
+
   return {
     ...first,
     id: runId,
@@ -135,6 +164,13 @@ export function findRunSegment(
       type: "LineString",
       coordinates: dedupeAdjacentPoints(coordinates),
     },
-    lengthKm: runSegments.reduce((sum, segment) => sum + segment.lengthKm, 0),
+    surface,
+    score:
+      scoredLength > 0
+        ? Math.round((scoreWeighted / scoredLength) * 10) / 10
+        : null,
+    passes:
+      totalLength > 0 ? Math.round(passesWeighted / totalLength) : first.passes,
+    lengthKm: totalLength,
   };
 }
