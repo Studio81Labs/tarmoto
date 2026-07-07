@@ -834,9 +834,13 @@ function RoleMenu({
             className="fixed inset-0 z-10 cursor-default"
             onClick={() => setMenuOpen(false)}
           />
+          {/* Open UPWARD: member rows sit in a scrollable list, so a
+              downward menu on the lower rows falls below the fold and the
+              rider has to scroll to pick a role. The menu is short (2
+              options), so anchoring above the trigger keeps it in view. */}
           <div
             role="menu"
-            className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_12px_32px_rgba(20,17,14,0.18)]"
+            className="absolute bottom-full right-0 z-20 mb-1.5 w-56 overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_-12px_32px_rgba(20,17,14,0.18)]"
           >
             {[
               {
