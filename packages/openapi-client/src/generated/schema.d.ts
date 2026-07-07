@@ -907,6 +907,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/poi/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * POI store readiness (ADR 0007)
+         * @description Reports whether the separate POI database is connected. Always 200 — a "down" POI DB is a degraded, non-fatal state; the store read endpoints return 503 while it is down.
+         */
+        get: operations["PoiController_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/poi/{id}": {
         parameters: {
             query?: never;
@@ -7679,6 +7699,23 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AlongRoutePoiListDto"];
                 };
+            };
+        };
+    };
+    PoiController_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

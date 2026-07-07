@@ -61,6 +61,11 @@ export class PoiStoreService {
     return this.poiDataSource.getRepository(Poi);
   }
 
+  /** Readiness check backing `GET /poi/health` (ADR 0007) — never throws. */
+  isReady(): boolean {
+    return this.poiDataSource.isInitialized;
+  }
+
   /**
    * List stored POIs whose point falls inside the bounding box, optionally
    * filtered to a set of `kind`s, capped at `limit`. Ordered by kind then

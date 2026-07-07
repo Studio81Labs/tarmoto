@@ -62,3 +62,48 @@ describe('PoiController — GET /poi/:id', () => {
     );
   });
 });
+
+describe('PoiController — GET /poi/health', () => {
+  it('reports poiDb up/down without failing', () => {
+    const store = { isReady: () => false } as unknown as PoiStoreService;
+    const controller = new PoiController({} as PoiService, store);
+    expect(controller.health()).toEqual({ poiDb: 'down' });
+  });
+});
+
+/**
+ * HTTP-level coverage that `health` is registered ahead of the `:id`
+ * catch-all. `'health'` is not a valid UUID, so if the route order ever
+ * regresses, this request would be captured by `:id` and 400 from
+ * `ParseUUIDPipe` instead of reaching the handler — the unit test above
+ * calls `controller.health()` directly and can't see that failure mode.
+ */
+describe('PoiController — GET /poi/health (HTTP)', () => {
+  let app: INestApplication;
+  const poiStore = { isReady: jest.fn() };
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [PoiController],
+      providers: [
+        { provide: PoiService, useValue: {} },
+        { provide: PoiStoreService, useValue: poiStore },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    jest.clearAllMocks();
+  });
+
+  it('is not shadowed by the :id catch-all', async () => {
+    poiStore.isReady.mockReturnValue(true);
+    const res = await request(app.getHttpServer() as App)
+      .get('/poi/health')
+      .expect(200);
+    expect(res.body).toEqual({ poiDb: 'up' });
+  });
+});
