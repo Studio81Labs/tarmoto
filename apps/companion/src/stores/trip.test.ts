@@ -2940,4 +2940,24 @@ describe("useTripStore applyRouteQuality (#862)", () => {
     expect(survivor?.dayNumber).toBe(1);
     expect(survivor?.qualitySegments).toBeUndefined();
   });
+
+  it("clears a stale baseline selection for the day it hydrates", () => {
+    const geometry = seedRoutedDay();
+    // Rider selected a baseline segment before quality resolved.
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    // Real spans reuse the id pattern, so the stale selection is dropped.
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+
+  it("keeps a selection that belongs to a different day", () => {
+    const geometry = seedRoutedDay();
+    useTripStore.getState().selectPlannerSegment("d2-s0");
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBe("d2-s0");
+  });
 });

@@ -1626,8 +1626,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           return state;
         const days = [...activeTrip.days];
         days[dayIndex] = { ...day, qualitySegments: segments };
+        // The rider may have selected a baseline segment (`d{N}-s*`) before
+        // quality resolved; real spans reuse the same id pattern, so a stale
+        // selection for THIS day would silently resolve to a different span.
+        // Clear it — the preview closes and re-clicking selects a real span.
+        const staleSelection =
+          state.selectedPlannerSegmentId != null &&
+          dayNumberFromSegmentId(state.selectedPlannerSegmentId) === dayNumber;
         return {
           ...state,
+          ...(staleSelection ? { selectedPlannerSegmentId: null } : {}),
           activeTrip: { ...activeTrip, days },
         };
       }),
@@ -1893,6 +1901,12 @@ function clearDayStale(staleDays: number[], dayNumber: number): number[] {
  * intervening re-route that kept the same waypoints but took a different
  * interior path (e.g. a road-preference or avoidance change).
  */
+/** Day number embedded in a segment/run id (`d{N}-s*`, `run:d{N}-…`). */
+function dayNumberFromSegmentId(id: string): number | null {
+  const match = id.replace(/^run:/, "").match(/^d(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
 function geometryMatchesPoints(
   geometry: TripDay["routeGeometry"],
   points: ReadonlyArray<{ lat: number; lng: number }>,
