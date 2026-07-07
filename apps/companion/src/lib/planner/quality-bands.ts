@@ -1,4 +1,4 @@
-import type { QualityBand } from "./types";
+import type { QualityBand, RouteSegment } from "./types";
 
 /**
  * Route-quality band vocabulary for the Plan & inspect planner, per the
@@ -46,4 +46,40 @@ export function scoreToBand(score: number | null): QualityBand {
 
 export function isLowConfidence(passes: number): boolean {
   return passes <= LOW_CONFIDENCE_MAX_PASSES;
+}
+
+/** A run of contiguous same-band segments, for list/strip presentation. */
+export interface QualityRun {
+  /** Id of the run's first segment — the click target (map flyTo / reroute). */
+  id: string;
+  band: QualityBand;
+  surface: RouteSegment["surface"];
+  lengthKm: number;
+}
+
+/**
+ * Coalesce adjacent same-band segments into display runs. The map draws the
+ * fine per-segment line, but the Inspect strip and flagged list would otherwise
+ * render one DOM node per ~100 m road segment (thousands on a long covered
+ * route). Merging same-band runs keeps those lists small — and reads better
+ * (one "Rough · 40 km" card, not 400 hundred-metre ones).
+ */
+export function coalesceQualityRuns(
+  segments: readonly RouteSegment[],
+): QualityRun[] {
+  const runs: QualityRun[] = [];
+  for (const segment of segments) {
+    const last = runs[runs.length - 1];
+    if (last && last.band === segment.band) {
+      last.lengthKm += segment.lengthKm;
+    } else {
+      runs.push({
+        id: segment.id,
+        band: segment.band,
+        surface: segment.surface,
+        lengthKm: segment.lengthKm,
+      });
+    }
+  }
+  return runs;
 }

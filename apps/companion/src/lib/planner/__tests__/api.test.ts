@@ -117,6 +117,46 @@ describe("deriveFlaggedSections", () => {
     ]);
   });
 
+  it("coalesces adjacent same-band segments into a single card", () => {
+    // A long rough/uncovered stretch arrives as many ~100 m segments; the
+    // flagged list must merge them, not render one card each.
+    const segments = [
+      segment({ id: "d1-s0", band: "good" }),
+      segment({ id: "d1-s1", band: "rough", surface: "gravel", lengthKm: 2 }),
+      segment({ id: "d1-s2", band: "rough", surface: "dirt", lengthKm: 3 }),
+      segment({
+        id: "d1-s3",
+        band: "no_data",
+        surface: "unknown",
+        score: null,
+        passes: 0,
+        lengthKm: 1.5,
+      }),
+      segment({
+        id: "d1-s4",
+        band: "no_data",
+        surface: "unknown",
+        score: null,
+        passes: 0,
+        lengthKm: 1.5,
+      }),
+    ];
+    expect(deriveFlaggedSections(segments)).toEqual([
+      {
+        segmentId: "d1-s1",
+        kind: "rough",
+        lengthKm: 5,
+        label: "Rough · gravel, 5 km",
+      },
+      {
+        segmentId: "d1-s3",
+        kind: "no_data",
+        lengthKm: 3,
+        label: "No data yet · 3 km",
+      },
+    ]);
+  });
+
   it("returns nothing for a clean route", () => {
     expect(deriveFlaggedSections([segment({})])).toEqual([]);
   });

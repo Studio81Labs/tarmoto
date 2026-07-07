@@ -1,6 +1,7 @@
 "use client";
 import { Mono } from "@tarmoto/ui";
 import {
+  coalesceQualityRuns,
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS,
 } from "@/lib/planner/quality-bands";
@@ -26,10 +27,13 @@ export function RouteQualityStrip({
 }: RouteQualityStripProps) {
   if (segments.length === 0) return null;
   const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);
+  // Coalesce adjacent same-band segments so a long covered route (thousands of
+  // ~100 m spans) renders a handful of band runs, not thousands of buttons.
+  const runs = coalesceQualityRuns(segments);
   return (
     <div>
       <div className="flex h-4 overflow-hidden rounded-lg border border-line bg-paper">
-        {segments.map((segment) => (
+        {runs.map((segment) => (
           <button
             key={segment.id}
             type="button"

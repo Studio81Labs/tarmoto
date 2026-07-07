@@ -50,7 +50,10 @@ import type {
   RouteQualitySummary,
   RouteSegment,
 } from "./types";
-import { QUALITY_BAND_LABELS_SHORT } from "./quality-bands";
+import {
+  coalesceQualityRuns,
+  QUALITY_BAND_LABELS_SHORT,
+} from "./quality-bands";
 
 /**
  * The planner's single data seam. Real sources: backend Valhalla routing
@@ -197,18 +200,20 @@ export function deriveFlaggedSections(
   segments: readonly RouteSegment[],
 ): FlaggedSection[] {
   const flagged: FlaggedSection[] = [];
-  for (const segment of segments) {
-    const lengthKm = Math.round(segment.lengthKm * 10) / 10;
-    if (segment.band === "rough") {
+  // Coalesce adjacent same-band runs so a long rough/uncovered stretch is one
+  // card, not one per ~100 m segment.
+  for (const run of coalesceQualityRuns(segments)) {
+    const lengthKm = Math.round(run.lengthKm * 10) / 10;
+    if (run.band === "rough") {
       flagged.push({
-        segmentId: segment.id,
+        segmentId: run.id,
         kind: "rough",
         lengthKm,
-        label: `${QUALITY_BAND_LABELS_SHORT.rough} · ${segment.surface}, ${lengthKm} km`,
+        label: `${QUALITY_BAND_LABELS_SHORT.rough} · ${run.surface}, ${lengthKm} km`,
       });
-    } else if (segment.band === "no_data") {
+    } else if (run.band === "no_data") {
       flagged.push({
-        segmentId: segment.id,
+        segmentId: run.id,
         kind: "no_data",
         lengthKm,
         label: `No data yet · ${lengthKm} km`,
