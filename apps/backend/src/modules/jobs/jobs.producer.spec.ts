@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import { JobsProducer } from './jobs.producer.js';
+import { JobsProducer, POI_IMPORT_STAGGER_MS } from './jobs.producer.js';
 import { JOB_NAMES, QUEUE_NAMES } from './jobs.constants.js';
 
 interface QueueMock {
@@ -18,12 +18,14 @@ describe('JobsProducer', () => {
   let badgesRecheck: QueueMock;
   let digestWeekly: QueueMock;
   let qualityConflation: QueueMock;
+  let poiImport: QueueMock;
 
   beforeEach(async () => {
     accountDeletionFinalize = makeQueue(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE);
     badgesRecheck = makeQueue(QUEUE_NAMES.BADGES_RECHECK);
     digestWeekly = makeQueue(QUEUE_NAMES.DIGEST_WEEKLY);
     qualityConflation = makeQueue(QUEUE_NAMES.QUALITY_CONFLATION);
+    poiImport = makeQueue(QUEUE_NAMES.POI_IMPORT);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -43,6 +45,10 @@ describe('JobsProducer', () => {
         {
           provide: getQueueToken(QUEUE_NAMES.QUALITY_CONFLATION),
           useValue: qualityConflation,
+        },
+        {
+          provide: getQueueToken(QUEUE_NAMES.POI_IMPORT),
+          useValue: poiImport,
         },
       ],
     }).compile();
@@ -84,6 +90,33 @@ describe('JobsProducer', () => {
       { user_id: 'u1' },
       expect.objectContaining({ jobId: 'badges-recheck:u1' }),
     );
+  });
+
+  it('enqueues a staggered per-region POI import (delay = index * stagger, attempts 3, no jobId)', async () => {
+    await producer.enqueuePoiImportRegion('CZ', 2);
+    expect(poiImport.add).toHaveBeenCalledWith(
+      JOB_NAMES.POI_IMPORT_REGION,
+      { code: 'CZ' },
+      expect.objectContaining({
+        delay: 2 * POI_IMPORT_STAGGER_MS,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30_000 },
+      }),
+    );
+    // No jobId → each weekly dispatch enqueues a fresh run; a stable id would
+    // dedupe against last week's still-retained completed job and silently skip.
+    const opts = (
+      poiImport.add.mock.calls[0] as [string, unknown, { jobId?: string }]
+    )[2];
+    expect(opts.jobId).toBeUndefined();
+  });
+
+  it('does not stagger the first region (index 0 → no delay)', async () => {
+    await producer.enqueuePoiImportRegion('CZ', 0);
+    const opts = (
+      poiImport.add.mock.calls[0] as [string, unknown, { delay: number }]
+    )[2];
+    expect(opts.delay).toBe(0);
   });
 
   it('enqueues a quality-conflation run with no jobId (fresh per import)', async () => {

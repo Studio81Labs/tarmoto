@@ -1,23 +1,41 @@
 /**
- * CLI entry point to run the offline POI import on demand (#847).
+ * CLI entry point to run the offline POI import on demand (#850).
  *
- * Usage (after `pnpm backend:build`, with `pnpm db:up` running):
- *   node dist/scripts/import-pois.js
- *   TARMOTO_POI_IMPORT_BBOX=14.2,50.0,14.7,50.2 node dist/scripts/import-pois.js
+ * Usage (after `pnpm backend:build`, with `pnpm db:up` running and
+ * `TARMOTO_POI_IMPORT_DIR` pointing at the extract directory):
+ *   node dist/scripts/import-pois.js            # every configured region
+ *   node dist/scripts/import-pois.js CZ         # a single region by ISO code
  *
- * Mirrors POIs for the configured bbox (default: the CZ / Beskydy launch box,
- * override with TARMOTO_POI_IMPORT_BBOX) into the `pois` table via the same
- * `PoiImportService` the weekly BullMQ cron uses.
+ * Imports per-country Geofabrik `.osm` extracts (`<TARMOTO_POI_IMPORT_DIR>/<code>.osm`,
+ * lower-case) into the `pois` table via the same `PoiImportService` the weekly
+ * BullMQ dispatcher fans out to. With no argument it runs every region in
+ * `service.regions` (the `TARMOTO_POI_IMPORT_REGIONS` list, defaulting to the
+ * full coverage set); with a country code it runs just that region and errors
+ * on a code outside the configured list.
  *
  * Unlike the cron trigger, this bypasses the `TARMOTO_POI_IMPORT_ENABLED`
  * gate — a manual run should import on demand without flipping the global
- * flag. The fetch+upsert is idempotent (upsert by `(source, external_id)`),
- * so re-running is safe; a fetch failure aborts before any write.
+ * flag. The upsert is idempotent (by `(source, external_id)`) and a region
+ * with no extract yet is skipped, so re-running is safe; a parse failure aborts
+ * that region before any write.
  */
 
 import 'reflect-metadata';
-import { PoiImportService } from '../modules/poi/poi-import.service.js';
+import {
+  PoiImportService,
+  type PoiImportResult,
+} from '../modules/poi/poi-import.service.js';
 import { bootstrapScriptContext } from './bootstrap-script-context.js';
+
+function logResult(result: PoiImportResult): void {
+  console.log(`POI import [${result.region}]:`);
+  console.log(`  fetched   : ${result.fetched}`);
+  console.log(`  upserted  : ${result.upserted}`);
+  console.log(`  tombstoned: ${result.tombstoned}`);
+  if (result.skipped) {
+    console.log('  skipped   : no extract file yet (region not provisioned)');
+  }
+}
 
 async function main(): Promise<void> {
   // Boots AppModule with the BullMQ workers + scheduler disabled, so this
@@ -27,15 +45,31 @@ async function main(): Promise<void> {
 
   try {
     const service = app.get(PoiImportService);
-    const { minLng, minLat, maxLng, maxLat } = service.bbox;
-    console.log(
-      `Running POI import for bbox=${minLng},${minLat},${maxLng},${maxLat} ` +
-        `(manual run — ignores TARMOTO_POI_IMPORT_ENABLED)`,
-    );
-    const result = await service.import();
-    console.log('POI import complete:');
-    console.log(`  fetched : ${result.fetched}`);
-    console.log(`  upserted: ${result.upserted}`);
+    const requestedCode = process.argv[2]?.trim().toUpperCase();
+
+    if (requestedCode) {
+      const region = service.regions.find((r) => r.code === requestedCode);
+      if (!region) {
+        const known = service.regions.map((r) => r.code).join(', ');
+        throw new Error(
+          `Unknown region code "${requestedCode}". ` +
+            `Configured regions: ${known || '(none)'}`,
+        );
+      }
+      console.log(
+        `Running POI import for region ${region.code} ` +
+          `(manual run — ignores TARMOTO_POI_IMPORT_ENABLED)`,
+      );
+      logResult(await service.importRegion(region));
+    } else {
+      console.log(
+        `Running POI import for all ${service.regions.length} configured ` +
+          `region(s) (manual run — ignores TARMOTO_POI_IMPORT_ENABLED)`,
+      );
+      for (const result of await service.importAll()) {
+        logResult(result);
+      }
+    }
   } finally {
     await app.close();
   }

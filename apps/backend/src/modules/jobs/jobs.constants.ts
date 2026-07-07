@@ -118,9 +118,11 @@ export const QUEUE_NAMES = {
   NAP_CLOSURE_POLL: 'nap.closure-poll',
 
   /**
-   * Recurring (weekly). Mirrors POIs for the configured area into the
-   * `pois` table for offline use (#745). Dormant until
-   * `TARMOTO_POI_IMPORT_ENABLED=true`.
+   * Recurring (weekly dispatcher, #850). Each tick the `dispatch` job fans
+   * out one staggered `import-region` child per configured region, so a
+   * continent-scale run spreads its per-country `.osm` imports across hours
+   * instead of one giant job. Mirrors POIs into the `pois` table for offline
+   * use (#745). Dormant until `TARMOTO_POI_IMPORT_ENABLED=true`.
    */
   POI_IMPORT: 'poi.import',
 
@@ -168,7 +170,10 @@ export const JOB_NAMES = {
   MODEL_EVAL_RECONCILE_RUN: 'run',
   MODEL_EVAL_AGREEMENT_RUN: 'run',
   NAP_CLOSURE_POLL_RUN: 'run',
-  POI_IMPORT_RUN: 'run',
+  /** Weekly dispatcher: fans out one `import-region` job per configured region. */
+  POI_IMPORT_DISPATCH: 'dispatch',
+  /** Per-region child job (staggered): imports one country's `.osm` extract. */
+  POI_IMPORT_REGION: 'import-region',
   OSM_IMPORT_RUN: 'run',
   QUALITY_CONFLATION_RUN: 'run',
 } as const;

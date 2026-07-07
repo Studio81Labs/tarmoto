@@ -144,6 +144,16 @@ export class Poi {
   @Column({ name: 'last_imported_at', type: 'timestamptz' })
   last_imported_at!: Date;
 
+  /**
+   * Soft-tombstone stamp (#850). Set when the bulk import finds this row
+   * inside a region's bbox but absent from the latest extract (closed venue),
+   * bounded by that bbox so other regions are never touched. A re-import
+   * revives the row (the upsert clears this). Null = live; store read paths
+   * (#849) filter `deactivated_at IS NULL`.
+   */
+  @Column({ name: 'deactivated_at', type: 'timestamptz', nullable: true })
+  deactivated_at!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

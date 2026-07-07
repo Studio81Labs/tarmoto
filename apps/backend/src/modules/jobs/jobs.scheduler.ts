@@ -164,9 +164,9 @@ export class JobsScheduler implements OnApplicationBootstrap {
       },
       {
         queue: this.poiImport,
-        name: JOB_NAMES.POI_IMPORT_RUN,
+        name: JOB_NAMES.POI_IMPORT_DISPATCH,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300,
-        description: 'weekly offline POI import → pois (#745)',
+        description: 'weekly POI import dispatcher → per-region jobs (#850)',
       },
       {
         queue: this.osmImport,

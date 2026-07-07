@@ -1,3 +1,5 @@
+import { createReadStream, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   Inject,
   Injectable,
@@ -9,13 +11,9 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
-import {
-  POI_PROVIDER,
-  type PoiProvider,
-  type StoredPoiFields,
-} from './poi-provider.interface.js';
-import { ACCOMMODATION_KINDS } from '@tarmoto/shared';
-import { poiImportConfig, type PoiImportConfig } from './poi-import.config.js';
+import type { StoredPoiFields } from './poi-provider.interface.js';
+import { poiImportConfig, type PoiImportRegion } from './poi-import.config.js';
+import { parsePoiExtract } from './poi-extract-source.js';
 import { withPoiRepo } from './poi-repo.js';
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
@@ -49,9 +47,7 @@ function clamp(value: string | null, max: number): string | null {
 
 /**
  * The shape `add()` accepts — the common denominator of `ImportedPoi` and
- * `AccommodationPoi & StoredPoiFields`. `stars` is optional (only
- * accommodations carry it); the `StoredPoiFields` columns are optional so a
- * future provider that can't fill them still type-checks.
+ * `AccommodationPoi`. `stars` is optional (only accommodations carry it).
  */
 type StorableImportRow = {
   external_id: string;
@@ -65,34 +61,42 @@ type StorableImportRow = {
 } & Partial<StoredPoiFields>;
 
 export interface PoiImportResult {
+  /** ISO country code of the region this result covers. */
+  region: string;
   fetched: number;
   upserted: number;
+  tombstoned: number;
+  /** True when the region has no extract file yet (gradual provisioning). */
+  skipped?: boolean;
 }
 
 /**
- * Mirrors POIs for a configured area into the `pois` table for offline use
- * (#745). Fetches via the `PoiProvider` (Overpass) and upserts by
- * `(source, external_id)`, so a re-run is idempotent and overwrites in
- * place. The fetch throwing (Overpass down) aborts before any write, so a
- * provider outage never wipes existing rows. Does not delete absent rows —
- * a partial-area response can't blank the table.
+ * Mirrors OSM POIs into the `pois` table for offline use (#745), scaled to
+ * continent coverage in #850. The bulk import runs from **per-country Geofabrik
+ * `.osm` extracts** the operator produces with `osmium tags-filter` (see the
+ * runbook) — not a live Overpass bbox — so it survives 15+ countries without
+ * hitting the Overpass public-API limits. Overpass stays the live read-path
+ * fallback (`poi.service`), not the importer.
  *
- * The POI store's reachability is checked TWICE: once up front, before the
- * Overpass fetch, so a POI-DB outage 503s immediately instead of spending
- * the full request budget on a bbox the weekly cron can't persist (and will
- * retry anyway); and again around the upsert via `withPoiRepo`, in case the
- * store drops between the fetch and the write.
+ * Per region:
+ *  - parse the whole extract **before any write** (a parse failure aborts
+ *    before a single statement, so a bad extract never wipes existing rows);
+ *  - upsert by `(source, external_id)` — idempotent, and it clears
+ *    `deactivated_at`, so a reopened venue that reappears is revived;
+ *  - **stale-by-absence tombstoning bounded by the region's bbox**: rows inside
+ *    the bbox that are absent from the extract are soft-tombstoned (an UPDATE of
+ *    `deactivated_at`, never a DELETE), while rows outside the bbox are never
+ *    loaded and so never touched. This mirrors the roads importer's contract.
  *
- * The live planner read paths are unchanged (still per-request Overpass);
- * this only populates the store that offline packs / a POI tile layer read.
+ * The POI store's reachability is checked up front (a cheap `SELECT 1`) so a
+ * POI-DB outage 503s immediately instead of parsing an extract it can't persist,
+ * and again around the write via `withPoiRepo`.
  */
 @Injectable()
 export class PoiImportService {
   private readonly logger = new Logger(PoiImportService.name);
 
   constructor(
-    @Inject(POI_PROVIDER)
-    private readonly provider: PoiProvider,
     @InjectDataSource('poi')
     private readonly poiDataSource: DataSource,
     @Inject(poiImportConfig.KEY)
@@ -103,19 +107,27 @@ export class PoiImportService {
     return this.config.enabled;
   }
 
-  /** The bbox the import runs over — exposed so the manual CLI can log it. */
-  get bbox(): PoiImportConfig['bbox'] {
-    return this.config.bbox;
+  /** The configured coverage list — the dispatcher fans out one job per entry. */
+  get regions(): readonly PoiImportRegion[] {
+    return this.config.regions;
+  }
+
+  /** Resolve a region's extract path: `<extractDir>/<code>.osm` (lower-case). */
+  private extractPath(region: PoiImportRegion): string {
+    if (!this.config.extractDir) {
+      throw new Error(
+        'POI import is enabled but TARMOTO_POI_IMPORT_DIR is not set',
+      );
+    }
+    return join(this.config.extractDir, `${region.code.toLowerCase()}.osm`);
   }
 
   /**
-   * Fail fast: if the POI store is unreachable, don't spend the Overpass
-   * request budget fetching a bbox we can't persist (the weekly cron
-   * retries, so a POI-DB outage would otherwise hammer OSM on every tick).
-   * A cheap bounded probe (`SELECT 1`) catches a runtime connection drop,
-   * not just a cold-start `isInitialized === false`. The `withPoiRepo`
-   * upsert below remains the second check, for a drop between here and the
-   * write.
+   * Fail fast: if the POI store is unreachable, don't parse a large extract we
+   * can't persist (the weekly job retries, so a POI-DB outage would otherwise
+   * re-parse on every tick). A bounded `SELECT 1` catches a runtime drop, not
+   * just a cold-start `isInitialized === false`. `withPoiRepo` around the write
+   * is the second check, for a drop between here and the upsert.
    */
   private async assertStoreReachable(): Promise<void> {
     try {
@@ -130,24 +142,46 @@ export class PoiImportService {
     }
   }
 
-  async import(): Promise<PoiImportResult> {
+  /** Import every configured region sequentially (CLI / non-fan-out path). */
+  async importAll(): Promise<PoiImportResult[]> {
+    const results: PoiImportResult[] = [];
+    for (const region of this.config.regions) {
+      results.push(await this.importRegion(region));
+    }
+    return results;
+  }
+
+  async importRegion(region: PoiImportRegion): Promise<PoiImportResult> {
     await this.assertStoreReachable();
 
-    // Fetch POIs + accommodations together. Promise.all so a failure on
-    // either aborts before any write (the outage-safety contract) rather
-    // than half-importing — and the accommodation kinds reuse the
-    // `/accommodations` contract so the offline store can't drop hotels
-    // / campsites.
-    const [pois, accommodations] = await Promise.all([
-      this.provider.findImportPoisInBbox(this.config.bbox),
-      this.provider.findAccommodationsInBbox(this.config.bbox, [
-        ...ACCOMMODATION_KINDS,
-      ]),
-    ]);
+    const path = this.extractPath(region);
+    if (!existsSync(path)) {
+      // A configured region without an extract yet — skip (with a clear log)
+      // rather than fail, so provisioning can roll out country-by-country.
+      this.logger.warn(
+        `POI import (${region.code}): no extract at ${path}, skipping`,
+      );
+      return {
+        region: region.code,
+        fetched: 0,
+        upserted: 0,
+        tombstoned: 0,
+        skipped: true,
+      };
+    }
+
+    const { bbox } = region;
+    const inBbox = (lng: number, lat: number): boolean =>
+      lng >= bbox.minLng &&
+      lng <= bbox.maxLng &&
+      lat >= bbox.minLat &&
+      lat <= bbox.maxLat;
 
     const batchTime = new Date();
-    // Dedupe by external id (a duplicate id in one snapshot would make a
-    // single upsert touch the same row twice and abort the batch).
+    // Dedupe by external id (parsePoiExtract does not dedupe — a duplicate id in
+    // one extract would otherwise make a single upsert touch the same row twice
+    // and abort the batch). Buffering the whole (tag-filtered) extract before
+    // any write is the outage-safety contract: a parse throw aborts here.
     const byExternalId = new Map<string, QueryDeepPartialEntity<Poi>>();
     const add = (p: StorableImportRow): void => {
       byExternalId.set(p.external_id, {
@@ -178,31 +212,74 @@ export class PoiImportService {
         tags: p.tags ?? null,
         geom: { type: 'Point', coordinates: [p.lng, p.lat] },
         last_imported_at: batchTime,
+        // Revive: a re-import of a previously-tombstoned (reopened) venue
+        // clears the tombstone via this upsert.
+        deactivated_at: null,
       });
     };
-    for (const p of pois) add(p);
-    for (const a of accommodations) add(a);
-    const rows = [...byExternalId.values()];
 
-    // Resolve (and readiness-check) the repo once, unconditionally, so an
-    // unavailable POI store surfaces a 503 even when this snapshot has no
-    // rows to write (an empty chunk loop would otherwise never touch it).
+    let fetched = 0;
+    const stream = createReadStream(path);
+    for await (const item of parsePoiExtract(stream)) {
+      const row = 'poi' in item ? item.poi : item.accommodation;
+      fetched += 1;
+      // Drop osmium overhang: only rows whose point falls inside the region's
+      // authoritative bbox count — so the tombstone pass (bounded to the same
+      // bbox) can never wrongly delete a neighbour the extract clipped in.
+      if (!inBbox(row.lng, row.lat)) continue;
+      add(row);
+    }
+
+    const rows = [...byExternalId.values()];
+    const incomingIds = new Set(byExternalId.keys());
+    let tombstoned = 0;
+
     await withPoiRepo(this.poiDataSource, async (repo) => {
-      for (const part of chunk(rows, UPSERT_CHUNK)) {
-        if (part.length) {
-          await repo.upsert(part, {
-            conflictPaths: ['source', 'external_id'],
-          });
+      await repo.manager.transaction(async (tx) => {
+        // 1. Upsert (insert new + revive/refresh existing) in param-safe chunks.
+        for (const part of chunk(rows, UPSERT_CHUNK)) {
+          if (part.length) {
+            await tx.getRepository(Poi).upsert(part, {
+              conflictPaths: ['source', 'external_id'],
+            });
+          }
         }
-      }
+
+        // 2. Stale-by-absence tombstoning, bounded to the region's bbox. Load
+        // only live OSM rows *inside* the bbox (`geom &&` = point-in-envelope
+        // for a Point), then tombstone the ones the extract didn't carry. Rows
+        // outside the bbox are never loaded, so they can never be tombstoned.
+        const existing = await tx.query<{ id: string; external_id: string }[]>(
+          `SELECT id, external_id FROM pois
+             WHERE source = 'osm' AND deactivated_at IS NULL
+               AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+          [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat],
+        );
+
+        const tombstoneIds = existing
+          .filter((e) => !incomingIds.has(e.external_id))
+          .map((e) => e.id);
+
+        if (tombstoneIds.length > 0) {
+          await tx.query(
+            `UPDATE pois SET deactivated_at = NOW()
+               WHERE id = ANY($1) AND deactivated_at IS NULL`,
+            [tombstoneIds],
+          );
+          tombstoned = tombstoneIds.length;
+        }
+      });
     });
 
-    const fetched = pois.length + accommodations.length;
     this.logger.log(
-      `POI import (osm): fetched=${fetched} ` +
-        `(poi=${pois.length} accommodation=${accommodations.length}) ` +
-        `upserted=${rows.length}`,
+      `POI import (${region.code}): fetched=${fetched} ` +
+        `upserted=${rows.length} tombstoned=${tombstoned}`,
     );
-    return { fetched, upserted: rows.length };
+    return {
+      region: region.code,
+      fetched,
+      upserted: rows.length,
+      tombstoned,
+    };
   }
 }

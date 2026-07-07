@@ -1,64 +1,70 @@
-import { poiImportConfig } from './poi-import.config.js';
+import { DEFAULT_REGIONS, poiImportConfig } from './poi-import.config.js';
 
 describe('poiImportConfig', () => {
-  const KEY = 'TARMOTO_POI_IMPORT_BBOX';
   const ENABLED = 'TARMOTO_POI_IMPORT_ENABLED';
-  let savedBbox: string | undefined;
-  let savedEnabled: string | undefined;
+  const DIR = 'TARMOTO_POI_IMPORT_DIR';
+  const REGIONS = 'TARMOTO_POI_IMPORT_REGIONS';
+  const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedBbox = process.env[KEY];
-    savedEnabled = process.env[ENABLED];
-    delete process.env[KEY];
-    delete process.env[ENABLED];
+    for (const key of [ENABLED, DIR, REGIONS]) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
-    if (savedBbox === undefined) delete process.env[KEY];
-    else process.env[KEY] = savedBbox;
-    if (savedEnabled === undefined) delete process.env[ENABLED];
-    else process.env[ENABLED] = savedEnabled;
+    for (const key of [ENABLED, DIR, REGIONS]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
   });
 
-  it('defaults bbox to CZ/Beskydy when unset, disabled', () => {
+  it('defaults to disabled, no extract dir, and the full 17-region coverage list', () => {
     const cfg = poiImportConfig();
     expect(cfg.enabled).toBe(false);
-    expect(cfg.bbox).toEqual({
-      minLng: 18.0,
-      minLat: 49.3,
-      maxLng: 18.9,
-      maxLat: 49.75,
-    });
+    expect(cfg.extractDir).toBeNull();
+    expect(cfg.regions).toHaveLength(17);
+    expect(cfg.regions.map((r) => r.code)).toEqual(
+      DEFAULT_REGIONS.map((r) => r.code),
+    );
   });
 
-  it('parses a valid bbox and the enabled flag', () => {
-    process.env[KEY] = '14.0,48.5,17.0,51.0';
+  it('reads the enabled flag and the extract dir', () => {
     process.env[ENABLED] = 'true';
+    process.env[DIR] = '/data/poi-extracts';
     const cfg = poiImportConfig();
     expect(cfg.enabled).toBe(true);
-    expect(cfg.bbox).toEqual({
-      minLng: 14.0,
-      minLat: 48.5,
-      maxLng: 17.0,
-      maxLat: 51.0,
-    });
+    expect(cfg.extractDir).toBe('/data/poi-extracts');
   });
 
-  it('throws on a present-but-malformed bbox instead of silently defaulting', () => {
-    process.env[KEY] = '14.0,48.5,17.0'; // only 3 parts
-    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
+  it('narrows the coverage list to the selected regions, in order, deduped', () => {
+    process.env[REGIONS] = 'sk, cz , CZ';
+    const cfg = poiImportConfig();
+    expect(cfg.regions.map((r) => r.code)).toEqual(['SK', 'CZ']);
+    // The bbox comes from the authoritative default, not the env.
+    expect(cfg.regions[0]?.bbox).toEqual(
+      DEFAULT_REGIONS.find((r) => r.code === 'SK')?.bbox,
+    );
   });
 
-  it('throws when min >= max (degenerate box)', () => {
-    process.env[KEY] = '17.0,48.5,14.0,51.0'; // minLng > maxLng
-    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
+  it('falls back to the full list when the region list is blank', () => {
+    process.env[REGIONS] = '  ';
+    expect(poiImportConfig().regions).toHaveLength(17);
   });
 
-  it('throws on a blank component instead of coercing it to 0', () => {
-    // `Number('')` is 0 — `14,,17,51` must not pass as a valid box.
-    process.env[KEY] = '14,,17,51';
-    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
-    process.env[KEY] = ',48.5,17,51';
-    expect(() => poiImportConfig()).toThrow(/Invalid TARMOTO_POI_IMPORT_BBOX/);
+  it('throws on an unknown region code instead of silently skipping it', () => {
+    process.env[REGIONS] = 'CZ,ZZ';
+    expect(() => poiImportConfig()).toThrow(
+      /Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "ZZ"/,
+    );
+  });
+
+  it('every default region carries a non-degenerate bbox with a valid code', () => {
+    for (const { code, bbox } of DEFAULT_REGIONS) {
+      expect(code).toMatch(/^[A-Z]{2}$/);
+      expect(bbox.maxLng - bbox.minLng).toBeGreaterThan(0);
+      expect(bbox.maxLat - bbox.minLat).toBeGreaterThan(0);
+    }
   });
 });

@@ -104,6 +104,15 @@ describe('JobsScheduler', () => {
       { pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100 },
       expect.any(Object),
     );
+    // The weekly POI import registers its DISPATCH job (the fan-out entry point,
+    // #850), not a monolithic run, on the Sunday 03:00 slot.
+    expect(
+      queues[QUEUE_NAMES.POI_IMPORT].upsertJobScheduler,
+    ).toHaveBeenCalledWith(
+      'poi.import.dispatch',
+      { pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300 },
+      expect.any(Object),
+    );
   });
 
   it('skips schedule registration entirely when workers are disabled (split deployment API container)', async () => {
