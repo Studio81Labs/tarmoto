@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   coalesceQualityRuns,
   FAIR_BAND_MIN_SCORE,
+  findRunSegment,
   GOOD_BAND_MIN_SCORE,
   isLowConfidence,
   LOW_CONFIDENCE_MAX_PASSES,
@@ -79,9 +80,12 @@ describe("coalesceQualityRuns", () => {
     ]);
     expect(runs.map((r) => r.band)).toEqual(["good", "rough", "good"]);
     expect(runs.map((r) => r.lengthKm)).toEqual([15, 5, 4]);
-    // Run id is `run:<firstSegmentId>`; surface comes from its first segment.
-    expect(runs[0]!.id).toBe("run:d1-s0");
-    expect(runs[1]!).toMatchObject({ id: "run:d1-s2", surface: "gravel" });
+    // Run id is `run:<first>:<last>`; surface comes from its first segment.
+    expect(runs[0]!.id).toBe("run:d1-s0:d1-s1");
+    expect(runs[1]!).toMatchObject({
+      id: "run:d1-s2:d1-s3",
+      surface: "gravel",
+    });
   });
 
   it("collapses a fully-uncovered route to a single no_data run", () => {
@@ -92,7 +96,7 @@ describe("coalesceQualityRuns", () => {
     ]);
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
-      id: "run:d1-s0",
+      id: "run:d1-s0:d1-s2",
       band: "no_data",
       lengthKm: 36,
     });
@@ -100,5 +104,48 @@ describe("coalesceQualityRuns", () => {
 
   it("returns nothing for an empty input", () => {
     expect(coalesceQualityRuns([])).toEqual([]);
+  });
+});
+
+describe("findRunSegment", () => {
+  function seg(id: string, band: QualityBand): RouteSegment {
+    return {
+      id,
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [0, 0],
+          [1, 0],
+        ],
+      },
+      band,
+      surface: "gravel",
+      score: band === "no_data" ? null : 2,
+      passes: 1,
+      lengthKm: 5,
+      dayNumber: 1,
+    };
+  }
+  // A full uncovered day; two plans each scope half of it.
+  const fullDay = [
+    seg("d1-s0", "no_data"),
+    seg("d1-s1", "no_data"),
+    seg("d1-s2", "no_data"),
+    seg("d1-s3", "no_data"),
+  ];
+
+  it("resolves a plan-scoped run range against the full day, not the whole run", () => {
+    // Same band crosses the day boundary; each plan's run id must resolve to
+    // exactly its own segments — not the full-day run.
+    const first = findRunSegment(fullDay, "run:d1-s0:d1-s1")!;
+    expect(first.lengthKm).toBe(10);
+    const second = findRunSegment(fullDay, "run:d1-s2:d1-s3")!;
+    expect(second.lengthKm).toBe(10);
+  });
+
+  it("returns null for an unknown range, an out-of-order range, or a fine id", () => {
+    expect(findRunSegment(fullDay, "run:d1-s9:d1-s9")).toBeNull();
+    expect(findRunSegment(fullDay, "run:d1-s3:d1-s0")).toBeNull();
+    expect(findRunSegment(fullDay, "d1-s0")).toBeNull();
   });
 });

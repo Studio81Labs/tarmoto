@@ -7,7 +7,7 @@ import {
   slicePolylineByDistanceKm,
 } from "@/lib/planner/polyline";
 import {
-  coalesceQualityRuns,
+  findRunSegment,
   QUALITY_BAND_COLORS,
 } from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
@@ -160,8 +160,9 @@ export function findPlannerQualitySegment(
   const isRun = segmentId.startsWith("run:");
   for (const day of trip.days) {
     const segments = deriveDayQualitySegments(day);
-    const pool = isRun ? coalesceQualityRuns(segments) : segments;
-    const match = pool.find((segment) => segment.id === segmentId);
+    const match = isRun
+      ? findRunSegment(segments, segmentId)
+      : (segments.find((segment) => segment.id === segmentId) ?? null);
     if (match) return match;
   }
   return null;

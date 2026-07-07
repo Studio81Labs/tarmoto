@@ -1,4 +1,3 @@
-import type * as GeoJSON from "geojson";
 import { dedupeAdjacentPoints, type LngLat } from "./polyline";
 import type { QualityBand, RouteSegment } from "./types";
 
@@ -50,47 +49,92 @@ export function isLowConfidence(passes: number): boolean {
   return passes <= LOW_CONFIDENCE_MAX_PASSES;
 }
 
+/** A run of contiguous same-band segments, for list/strip presentation. */
+export interface QualityRun {
+  /** `run:<firstSegmentId>:<lastSegmentId>` — the exact segment range it spans. */
+  id: string;
+  band: QualityBand;
+  surface: RouteSegment["surface"];
+  lengthKm: number;
+}
+
 /**
- * Coalesce adjacent same-band segments into runs — one {@link RouteSegment} per
- * run, carrying the run's COMBINED geometry, summed length, and id
- * `run:<firstSegmentId>`. The map draws the fine per-segment line, but the
- * Inspect strip and flagged list (and their inspect/reroute actions, resolved
- * through `findPlannerQualitySegment`) operate on runs — so a long covered route
- * renders a handful of nodes instead of thousands, and a "Rough · 40 km" card
- * previews/reroutes the WHOLE run, not just its first ~100 m span. The `run:`
- * prefix keeps run ids distinct from the fine segment ids the map clicks use.
+ * Coalesce adjacent same-band segments into runs. The map draws the fine
+ * per-segment line, but the Inspect strip and flagged list render one node per
+ * run — so a long covered route shows a handful of nodes, not thousands.
+ *
+ * The id encodes the run's EXPLICIT segment range (`run:<first>:<last>`) so it
+ * resolves the same whether coalesced over the whole day or a plan-scoped
+ * subset (`findRunSegment`): a same-band run crossing a day boundary yields
+ * distinct, correctly-bounded ids per plan, and inspect/reroute target exactly
+ * the run — not the first span, and not beyond the selected plan.
  */
 export function coalesceQualityRuns(
   segments: readonly RouteSegment[],
-): RouteSegment[] {
-  const runs: RouteSegment[] = [];
-  let current: RouteSegment[] = [];
-  const flush = () => {
-    const first = current[0];
-    if (!first) return;
-    const coordinates: LngLat[] = [];
-    for (const segment of current) {
-      for (const coordinate of segment.geometry.coordinates) {
-        coordinates.push(coordinate as LngLat);
-      }
+): QualityRun[] {
+  const runs: {
+    firstId: string;
+    lastId: string;
+    band: QualityBand;
+    surface: RouteSegment["surface"];
+    lengthKm: number;
+  }[] = [];
+  for (const segment of segments) {
+    const last = runs[runs.length - 1];
+    if (last && last.band === segment.band) {
+      last.lastId = segment.id;
+      last.lengthKm += segment.lengthKm;
+    } else {
+      runs.push({
+        firstId: segment.id,
+        lastId: segment.id,
+        band: segment.band,
+        surface: segment.surface,
+        lengthKm: segment.lengthKm,
+      });
     }
-    const geometry: GeoJSON.LineString = {
+  }
+  return runs.map((run) => ({
+    id: `run:${run.firstId}:${run.lastId}`,
+    band: run.band,
+    surface: run.surface,
+    lengthKm: run.lengthKm,
+  }));
+}
+
+/**
+ * Reconstruct a coalesced run's {@link RouteSegment} (combined geometry, summed
+ * length) from `segments` given its `run:<first>:<last>` id. Slices exactly the
+ * `[first..last]` range, so an inspect/reroute action covers precisely the run
+ * — even when the id was minted from a plan-scoped subset. Null when the id
+ * isn't a run id or its range isn't present/ordered in `segments`.
+ */
+export function findRunSegment(
+  segments: readonly RouteSegment[],
+  runId: string,
+): RouteSegment | null {
+  if (!runId.startsWith("run:")) return null;
+  const [firstId, lastId] = runId.slice(4).split(":");
+  if (!firstId) return null;
+  const firstIdx = segments.findIndex((s) => s.id === firstId);
+  const lastIdx = segments.findIndex((s) => s.id === (lastId ?? firstId));
+  if (firstIdx < 0 || lastIdx < firstIdx) return null;
+
+  const runSegments = segments.slice(firstIdx, lastIdx + 1);
+  const first = runSegments[0]!;
+  const coordinates: LngLat[] = [];
+  for (const segment of runSegments) {
+    for (const coordinate of segment.geometry.coordinates) {
+      coordinates.push(coordinate as LngLat);
+    }
+  }
+  return {
+    ...first,
+    id: runId,
+    geometry: {
       type: "LineString",
       coordinates: dedupeAdjacentPoints(coordinates),
-    };
-    runs.push({
-      ...first,
-      id: `run:${first.id}`,
-      geometry,
-      lengthKm: current.reduce((sum, segment) => sum + segment.lengthKm, 0),
-    });
-    current = [];
+    },
+    lengthKm: runSegments.reduce((sum, segment) => sum + segment.lengthKm, 0),
   };
-  for (const segment of segments) {
-    const last = current[current.length - 1];
-    if (last && last.band !== segment.band) flush();
-    current.push(segment);
-  }
-  flush();
-  return runs;
 }

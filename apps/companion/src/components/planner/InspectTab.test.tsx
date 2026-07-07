@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InspectTab, daySurfaceMix } from "./InspectTab";
 import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { deriveFlaggedSections } from "@/lib/planner/api";
+import { coalesceQualityRuns } from "@/lib/planner/quality-bands";
 import type { RouteSegment } from "@/lib/planner/types";
 import type { TripDay } from "@/lib/types";
 
@@ -118,11 +119,10 @@ describe("InspectTab", () => {
       name: /Preview .* section/,
     });
     fireEvent.click(firstSection!);
-    // The strip coalesces adjacent same-band segments into runs (id
-    // `run:<firstSegmentId>`), so the click targets the run, not the fine span.
-    expect(onInspectSegment).toHaveBeenCalledWith(
-      `run:${deriveDayQualitySegments(day)[0]!.id}`,
-    );
+    // The strip coalesces adjacent same-band segments into runs, so the click
+    // targets the whole run (id `run:<first>:<last>`), not the fine span.
+    const firstRun = coalesceQualityRuns(deriveDayQualitySegments(day))[0]!;
+    expect(onInspectSegment).toHaveBeenCalledWith(firstRun.id);
   });
 
   it("wires flagged-section cards to inspect and reroute", () => {

@@ -392,7 +392,7 @@ describe("findPlannerQualitySegment / plannerSegmentBounds", () => {
 
     // The coalesced run spans both spans: combined geometry + summed length,
     // so a flagged-card reroute/preview covers the whole run.
-    const run = findPlannerQualitySegment(runTrip, "run:d1-s0")!;
+    const run = findPlannerQualitySegment(runTrip, "run:d1-s0:d1-s1")!;
     expect(run.lengthKm).toBe(10);
     expect(run.geometry.coordinates).toEqual([
       [0, 0],
