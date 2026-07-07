@@ -3819,6 +3819,10 @@ export interface components {
             /** @description Distance from query point in meters */
             distance_m?: number;
         };
+        LatLngResponseDto: {
+            lat: number;
+            lng: number;
+        };
         FunZoneDto: {
             id: string;
             name: string | null;
@@ -3827,7 +3831,12 @@ export interface components {
             total_curve_km: number | null;
             avg_quality: number | null;
             best_season: string | null;
-            boundary: Record<string, never>[];
+            /** @description Outer ring of the zone polygon as {lat,lng} points, WGS84. */
+            boundary: components["schemas"]["LatLngResponseDto"][];
+        };
+        GeometryPointDto: {
+            lat: number;
+            lng: number;
         };
         FunZoneDetailZoneDto: {
             id: string;
@@ -3838,11 +3847,7 @@ export interface components {
             avg_quality: number | null;
             best_season: string | null;
             /** @description Outer ring of the zone polygon as {lat,lng} points, WGS84. */
-            boundary: Record<string, never>[];
-        };
-        GeometryPointDto: {
-            lat: number;
-            lng: number;
+            boundary: components["schemas"]["GeometryPointDto"][];
         };
         FunZoneRoadDto: {
             id: string;
@@ -3909,10 +3914,6 @@ export interface components {
         BestRoadsResponseDto: {
             region: components["schemas"]["BestRoadsRegionDto"];
             roads: components["schemas"]["BestRoadDto"][];
-        };
-        LatLngResponseDto: {
-            lat: number;
-            lng: number;
         };
         QualityBreakdownDto: {
             excellent: number;
@@ -6092,15 +6093,15 @@ export type SchemaBadgeProgressDto = components['schemas']['BadgeProgressDto'];
 export type SchemaBadgeDto = components['schemas']['BadgeDto'];
 export type SchemaCheckBadgesResponseDto = components['schemas']['CheckBadgesResponseDto'];
 export type SchemaRoadSegmentDto = components['schemas']['RoadSegmentDto'];
+export type SchemaLatLngResponseDto = components['schemas']['LatLngResponseDto'];
 export type SchemaFunZoneDto = components['schemas']['FunZoneDto'];
-export type SchemaFunZoneDetailZoneDto = components['schemas']['FunZoneDetailZoneDto'];
 export type SchemaGeometryPointDto = components['schemas']['GeometryPointDto'];
+export type SchemaFunZoneDetailZoneDto = components['schemas']['FunZoneDetailZoneDto'];
 export type SchemaFunZoneRoadDto = components['schemas']['FunZoneRoadDto'];
 export type SchemaFunZoneDetailDto = components['schemas']['FunZoneDetailDto'];
 export type SchemaBestRoadsRegionDto = components['schemas']['BestRoadsRegionDto'];
 export type SchemaBestRoadDto = components['schemas']['BestRoadDto'];
 export type SchemaBestRoadsResponseDto = components['schemas']['BestRoadsResponseDto'];
-export type SchemaLatLngResponseDto = components['schemas']['LatLngResponseDto'];
 export type SchemaQualityBreakdownDto = components['schemas']['QualityBreakdownDto'];
 export type SchemaReviewResponseDto = components['schemas']['ReviewResponseDto'];
 export type SchemaTrendPointDto = components['schemas']['TrendPointDto'];

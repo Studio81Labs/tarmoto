@@ -734,7 +734,7 @@ class ApiService {
     const result = await client.GET("/api/v1/roads/fun-zones", {
       params: { query: { bbox } },
     });
-    return unwrap(result, "Failed to load fun zones") as FunZone[];
+    return unwrap(result, "Failed to load fun zones");
   }
 
   // ── Hazards ──
@@ -755,7 +755,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load hazards") as Hazard[];
+    return unwrap(result, "Failed to load hazards");
   }
 
   async reportHazard(
@@ -776,7 +776,7 @@ class ApiService {
         ...(photoUrl !== undefined ? { photo_url: photoUrl } : {}),
       },
     });
-    return unwrap(result, "Failed to report hazard") as Hazard;
+    return unwrap(result, "Failed to report hazard");
   }
 
   /**
@@ -876,7 +876,7 @@ class ApiService {
     const result = await client.POST("/api/v1/hazards/{hazardId}/confirm", {
       params: { path: { hazardId } },
     });
-    return unwrap(result, "Failed to confirm hazard") as Hazard;
+    return unwrap(result, "Failed to confirm hazard");
   }
 
   async dismissHazard(hazardId: string): Promise<void> {
@@ -893,7 +893,7 @@ class ApiService {
     const result = await client.POST("/api/v1/hazards/route", {
       body: { route, buffer_m: bufferM },
     });
-    return unwrap(result, "Failed to load route hazards") as Hazard[];
+    return unwrap(result, "Failed to load route hazards");
   }
 
   // ── Trips ──
@@ -1272,7 +1272,7 @@ class ApiService {
     const result = await client.GET("/api/v1/passes", {
       params: { query: bbox ? { bbox } : {} },
     });
-    return unwrap(result, "Failed to load passes") as MountainPass[];
+    return unwrap(result, "Failed to load passes");
   }
 
   async checkRouteForPasses(

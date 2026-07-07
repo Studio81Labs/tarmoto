@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
 export class FunZoneDto {
   @ApiProperty()
@@ -22,6 +23,9 @@ export class FunZoneDto {
   @ApiProperty({ nullable: true })
   best_season!: string | null;
 
-  @ApiProperty({ type: [Object] })
-  boundary!: Array<{ lat: number; lng: number }>;
+  @ApiProperty({
+    type: [LatLngResponseDto],
+    description: 'Outer ring of the zone polygon as {lat,lng} points, WGS84.',
+  })
+  boundary!: LatLngResponseDto[];
 }
