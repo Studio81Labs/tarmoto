@@ -39,7 +39,6 @@ const MIN_FILLER_FRACTION = 1e-4;
 // would give only the middle day any segments; slicing keeps every day of an
 // uncovered multi-day route covered.
 const NO_DATA_SLICE_KM = 12;
-const MAX_NO_DATA_SLICES = 12;
 
 export function mapRouteQualitySpans(
   points: ReadonlyArray<{ lat: number; lng: number }>,
@@ -94,40 +93,59 @@ export function mapRouteQualitySpans(
     });
   };
 
-  // A no-data stretch is sliced into ~NO_DATA_SLICE_KM chunks so the day
-  // splitter gives every day it spans its own segment(s).
+  // A no-data stretch is sliced into ~NO_DATA_SLICE_KM chunks (no upper cap):
+  // the day splitter assigns each segment to the day holding its midpoint, so a
+  // chunk larger than the day size would leave some days of a long uncovered
+  // route without any segments.
   const pushNoData = (startFraction: number, endFraction: number) => {
     const rangeKm = (endFraction - startFraction) * totalKm;
-    const slices = Math.min(
-      MAX_NO_DATA_SLICES,
-      Math.max(1, Math.round(rangeKm / NO_DATA_SLICE_KM)),
-    );
+    const slices = Math.max(1, Math.round(rangeKm / NO_DATA_SLICE_KM));
     const step = (endFraction - startFraction) / slices;
     for (let i = 0; i < slices; i += 1) {
       push(startFraction + step * i, startFraction + step * (i + 1), null);
     }
   };
 
+  // Build intervals that tile [0, 1] exactly: a real span where covered,
+  // no_data elsewhere. A sub-threshold gap (before/between/after spans) is
+  // folded into the adjacent span rather than dropped, so the line never breaks
+  // and lengths (and the splitter distances built on them) stay exact.
+  const intervals: {
+    start: number;
+    end: number;
+    quality: RouteQualitySegment | null;
+  }[] = [];
   let cursor = 0;
   for (const { span, start, end } of ordered) {
     const spanStart = Math.max(start, cursor);
     if (end <= spanStart) continue; // fully covered by an earlier span
     if (spanStart - cursor > MIN_FILLER_FRACTION) {
-      // A real gap becomes its own (segmented) no_data filler.
-      pushNoData(cursor, spanStart);
-      push(spanStart, end, span);
+      intervals.push({ start: cursor, end: spanStart, quality: null });
+      intervals.push({ start: spanStart, end, quality: span });
     } else {
-      // Sub-threshold gap: fold the `[cursor, spanStart]` interval into this
-      // span rather than dropping it, which would leave a hairline break in the
-      // line and undercount its length (and the splitter distances built on it).
-      push(cursor, end, span);
+      intervals.push({ start: cursor, end, quality: span }); // fold tiny lead gap
     }
     cursor = end;
   }
-  if (1 - cursor > MIN_FILLER_FRACTION) pushNoData(cursor, 1);
+  if (cursor < 1) {
+    if (intervals.length === 0 || 1 - cursor > MIN_FILLER_FRACTION) {
+      intervals.push({ start: cursor, end: 1, quality: null });
+    } else {
+      // Fold a sub-threshold trailing gap into the last segment so the line
+      // reaches the route end (there is no following span to extend from).
+      intervals[intervals.length - 1]!.end = 1;
+    }
+  }
 
-  // No covering spans at all → segment the whole no-data route so a multi-day
-  // split still gives every day its own segments.
+  for (const interval of intervals) {
+    if (interval.quality) {
+      push(interval.start, interval.end, interval.quality);
+    } else {
+      pushNoData(interval.start, interval.end);
+    }
+  }
+
+  // A valid route always yields at least one segment.
   if (out.length === 0) pushNoData(0, 1);
   return out;
 }

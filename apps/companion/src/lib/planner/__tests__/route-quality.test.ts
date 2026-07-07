@@ -138,6 +138,43 @@ describe("mapRouteQualitySpans", () => {
     expect(segments[0]!.lengthKm).toBeCloseTo(whole, 5);
   });
 
+  it("folds a sub-threshold trailing gap into the last segment", () => {
+    // Coverage ends just under 1 (e.g. 0.99995 on a long route). With no
+    // following span, the tail must fold into the last segment rather than drop
+    // it — the line reaches the route end and length isn't undercounted.
+    const segments = mapRouteQualitySpans(
+      ROUTE,
+      [span({ start_fraction: 0, end_fraction: 0.99995, quality_score: 4 })],
+      1,
+    );
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.band).toBe("good");
+    expect(segments.at(-1)!.geometry.coordinates.at(-1)).toEqual([0.4, 0]);
+    const whole = mapRouteQualitySpans(ROUTE, [], 1).reduce(
+      (sum, seg) => sum + seg.lengthKm,
+      0,
+    );
+    expect(segments.reduce((sum, s) => sum + s.lengthKm, 0)).toBeCloseTo(
+      whole,
+      5,
+    );
+  });
+
+  it("does not cap no_data slices on long routes so long splits stay populated", () => {
+    // ~222 km: a capped 12 slices would be ~18 km each — coarser than a short
+    // day, so a many-day split would leave some days without a segment.
+    const longRoute = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 2 },
+    ];
+    const segments = mapRouteQualitySpans(longRoute, [], 1);
+    expect(segments.length).toBeGreaterThan(12);
+    expect(segments.every((s) => s.band === "no_data")).toBe(true);
+    expect(segments.map((s) => s.id)).toEqual(
+      segments.map((_, i) => `d1-s${i}`),
+    );
+  });
+
   it("treats a matched-but-unscored span as no-data band while keeping its real surface", () => {
     const segments = mapRouteQualitySpans(
       ROUTE,

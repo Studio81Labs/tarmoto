@@ -1689,7 +1689,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         if (!trip || trip.days.length <= 1) return state; // min 1
         const days = trip.days
           .filter((_, i) => i !== index)
-          .map((d, i) => ({ ...d, dayNumber: i + 1 })); // renumber contiguously
+          .map((d, i) => {
+            const dayNumber = i + 1;
+            // Cached quality bakes in the old dayNumber and `dN-s*` segment ids;
+            // a renumbered day would point callers that resolve by
+            // `segment.dayNumber` (reroute-by-segment) at the wrong day and can
+            // collide ids with another day. Drop it on renumber so the fetch
+            // effect refills under the new number (#862).
+            return d.dayNumber === dayNumber
+              ? { ...d, dayNumber }
+              : { ...d, dayNumber, qualitySegments: undefined };
+          });
         // The new first day has no predecessor to mirror — a dangling
         // `startLinked` would let a future cascade re-seed from nothing, so
         // clear it. (Covers the index===0 removal case the boundary re-eval

@@ -2914,4 +2914,30 @@ describe("useTripStore applyRouteQuality (#862)", () => {
     expect(day?.routeGeometry).toBeUndefined();
     expect(day?.qualitySegments).toBeUndefined();
   });
+
+  it("clears cached quality for a day renumbered by a removal", () => {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    // Day 2: linked start seeded from day 1's end, plus a finish so it routes.
+    useTripStore.getState().addDay();
+    useTripStore.getState().appendPlannerWaypoint(1, { lng: 15.0, lat: 50.3 });
+    const geo2 = [
+      { lat: 50.19, lng: 14.61 },
+      { lat: 50.3, lng: 15.0 },
+    ];
+    useTripStore.getState().applyRouteResult(2, routeResult(geo2));
+    useTripStore
+      .getState()
+      .applyRouteQuality(2, geo2, [qualitySegment("d2-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[1]?.qualitySegments,
+    ).toHaveLength(1);
+    // Removing day 1 renumbers day 2 → day 1; its cached quality still says
+    // day 2 (ids `d2-s*`), so it must be dropped to refetch under the new id.
+    useTripStore.getState().removeDay(0);
+    const survivor = useTripStore.getState().activeTrip?.days[0];
+    expect(survivor?.dayNumber).toBe(1);
+    expect(survivor?.qualitySegments).toBeUndefined();
+  });
 });
