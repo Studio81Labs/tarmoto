@@ -1017,6 +1017,12 @@ describe('RoadsService', () => {
         // lng/lat interleaved per point, then the buffer.
         [16.7, 49.1, 16.8, 49.2, 25],
       );
+      // Tombstoned rows (deactivated_at set after an OSM split/remove) must
+      // not leak stale quality spans into the overlay.
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('deactivated_at IS NULL'),
+        expect.any(Array),
+      );
     });
 
     it('honours a custom buffer', async () => {

@@ -44,14 +44,17 @@ export class RouteQualityRequestDto {
   geometry!: RouteQualityPointDto[];
 
   @ApiPropertyOptional({
-    default: 25,
     minimum: 5,
     maximum: 200,
+    // No `default:` here on purpose — openapi-typescript emits a schema
+    // property that carries a default as *required*, which would force the
+    // companion to pass `buffer_m` on every default call. The default is
+    // applied server-side (`dto.buffer_m ?? 25`) and documented below.
     description:
       'Buffer in meters around the routed line within which a `road_segments` ' +
-      'row counts as "on the route". Kept tight (default 25 m) because the ' +
-      'routed line follows the same OSM ways the segments were cut from, so a ' +
-      'wide buffer would pull in parallel/adjacent roads.',
+      'row counts as "on the route". Defaults to 25 m when omitted — kept tight ' +
+      'because the routed line follows the same OSM ways the segments were cut ' +
+      'from, so a wide buffer would pull in parallel/adjacent roads.',
   })
   @IsOptional()
   @IsNumber()

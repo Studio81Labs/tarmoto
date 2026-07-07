@@ -3938,11 +3938,8 @@ export interface components {
         };
         RouteQualityRequestDto: {
             geometry: components["schemas"]["RouteQualityPointDto"][];
-            /**
-             * @description Buffer in meters around the routed line within which a `road_segments` row counts as "on the route". Kept tight (default 25 m) because the routed line follows the same OSM ways the segments were cut from, so a wide buffer would pull in parallel/adjacent roads.
-             * @default 25
-             */
-            buffer_m: number;
+            /** @description Buffer in meters around the routed line within which a `road_segments` row counts as "on the route". Defaults to 25 m when omitted — kept tight because the routed line follows the same OSM ways the segments were cut from, so a wide buffer would pull in parallel/adjacent roads. */
+            buffer_m?: number;
         };
         RouteQualitySegmentDto: {
             /** @description OSM way id of the matched segment (segment identity from #751). Null for segments imported before OSM identity was captured. */

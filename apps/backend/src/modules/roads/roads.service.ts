@@ -101,7 +101,8 @@ export class RoadsService {
           ST_LineLocatePoint(route.line, ST_EndPoint(rs.geom))
         ) AS end_fraction
       FROM road_segments rs, route
-      WHERE ST_GeometryType(rs.geom) = 'ST_LineString'
+      WHERE rs.deactivated_at IS NULL
+        AND ST_GeometryType(rs.geom) = 'ST_LineString'
         AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
       ORDER BY start_fraction ASC, end_fraction ASC
     `;
