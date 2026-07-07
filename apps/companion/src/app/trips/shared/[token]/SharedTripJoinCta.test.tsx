@@ -59,7 +59,7 @@ describe("SharedTripJoinCta", () => {
     );
   });
 
-  it("accepts the share token and opens the trip in the planner for authenticated visitors", async () => {
+  it("accepts the share token and opens the trip preview for authenticated visitors", async () => {
     useAuthStore.setState({
       user: {
         id: "user-2",
@@ -88,7 +88,7 @@ describe("SharedTripJoinCta", () => {
 
     await waitFor(() => {
       expect(hoisted.joinByToken).toHaveBeenCalledWith("share-token");
-      expect(router.push).toHaveBeenCalledWith("/trips/planner?tripId=trip-1");
+      expect(router.push).toHaveBeenCalledWith("/trips/trip-1");
     });
   });
 

@@ -1,6 +1,12 @@
 "use client";
 import { t } from "@/i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Check,
   ChevronDown,
@@ -813,9 +819,35 @@ function RoleMenu({
   onRemove: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // The rows live in the modal body's `overflow-y-auto` scrollport, which
+  // clips the menu on whichever side runs out of room — so pick the side
+  // (up/down) with more space inside that scroll container when opening.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [openUp, setOpenUp] = useState(false);
+  useLayoutEffect(() => {
+    if (!menuOpen || !triggerRef.current) return;
+    const trigger = triggerRef.current;
+    const MENU_HEIGHT = 176; // ~2 options + remove row + padding
+    let scroller: HTMLElement | null = trigger.parentElement;
+    while (scroller) {
+      const oy = getComputedStyle(scroller).overflowY;
+      if (oy === "auto" || oy === "scroll") break;
+      scroller = scroller.parentElement;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const topBound = scroller?.getBoundingClientRect().top ?? 0;
+    const bottomBound =
+      scroller?.getBoundingClientRect().bottom ?? window.innerHeight;
+    const spaceBelow = bottomBound - rect.bottom;
+    const spaceAbove = rect.top - topBound;
+    // Prefer opening down; only flip up when below can't fit AND above
+    // has more room, so neither edge of the scrollport clips the menu.
+    setOpenUp(spaceBelow < MENU_HEIGHT && spaceAbove > spaceBelow);
+  }, [menuOpen]);
   return (
     <div className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
@@ -836,7 +868,12 @@ function RoleMenu({
           />
           <div
             role="menu"
-            className="absolute right-0 top-full z-20 mt-1.5 w-56 overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_12px_32px_rgba(20,17,14,0.18)]"
+            className={
+              "absolute right-0 z-20 w-56 overflow-hidden rounded-[10px] border border-line-strong bg-cream " +
+              (openUp
+                ? "bottom-full mb-1.5 shadow-[0_-12px_32px_rgba(20,17,14,0.18)]"
+                : "top-full mt-1.5 shadow-[0_12px_32px_rgba(20,17,14,0.18)]")
+            }
           >
             {[
               {
