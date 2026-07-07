@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2, Scale } from "lucide-react";
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
@@ -26,18 +27,14 @@ import {
 } from "@/lib/ride-compare";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
-/** Subset of `RideSummaryDto` fields we use in the picker. */
-interface RideOption {
-  id: string;
-  name: string | null;
-  started_at: string;
-  distance_km: number | null;
-  duration_min: number | null;
-}
-interface FetchedRide extends ComparableRide {
-  name: string | null;
-  ride_type: string;
-}
+/** The `RideSummaryDto` fields the picker dropdown reads. */
+type RideOption = Pick<
+  components["schemas"]["RideSummaryDto"],
+  "id" | "name" | "started_at" | "distance_km" | "duration_min"
+>;
+/** A compared ride: the comparison subset plus the name + type the cards show. */
+type FetchedRide = ComparableRide &
+  Pick<components["schemas"]["RideDetailDto"], "name" | "ride_type">;
 
 /** Which slot a card represents — drives the stamp + accent hue. */
 type Slot = "a" | "b";
@@ -69,8 +66,7 @@ function CompareRidesPageInner() {
           setOptionsError("Could not load ride list");
           return;
         }
-        const rides = (data?.rides ?? []) as unknown as RideOption[];
-        setOptions(rides);
+        setOptions(data?.rides ?? []);
       })
       .catch(() => {
         if (!cancelled) setOptionsError("Could not load ride list");
@@ -400,7 +396,7 @@ async function fetchRide(rideId: string): Promise<FetchedRide | null> {
     params: { path: { rideId } },
   });
   if (error || !data) return null;
-  return data as unknown as FetchedRide;
+  return data;
 }
 
 /**

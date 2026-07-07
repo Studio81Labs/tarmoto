@@ -5,6 +5,8 @@
  * fetch and re-run cheaply when filters change.
  */
 
+import type { components } from "@tarmoto/openapi-client";
+
 export const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
 export type RideType = (typeof RIDE_TYPES)[number];
 
@@ -23,20 +25,22 @@ export const MONTH_LABELS = [
   "Dec",
 ] as const;
 
-// Minimal shape consumed by every helper. Both `RideSummaryDto` and
-// `RideDetailDto` from the OpenAPI spec satisfy this contract; using an
-// open interface here means the dashboard can also feed in mock data in tests
-// without depending on the generated types.
-export interface RideForStats {
-  id: string;
-  started_at: string;
-  ended_at?: string | null;
-  distance_km?: number | null;
-  duration_min?: number | null;
-  ride_type?: string | null;
-  /** Distance-weighted road-quality score (0–5); drives the quality trend. */
-  avg_road_quality?: number | null;
-}
+// Minimal shape consumed by every helper. The metric fields are derived from
+// `RideSummaryDto` (which `RideDetailDto` also satisfies) so a backend rename
+// of any of them surfaces here at typecheck time. They stay individually
+// optional — and `ride_type` stays an open `string` — so the dashboard can
+// still feed partial mock data in tests without depending on the full
+// generated type, and the stats stay agnostic to ride-type churn.
+export type RideForStats = Pick<
+  components["schemas"]["RideSummaryDto"],
+  "id" | "started_at"
+> &
+  Partial<
+    Pick<
+      components["schemas"]["RideSummaryDto"],
+      "ended_at" | "distance_km" | "duration_min" | "avg_road_quality"
+    >
+  > & { ride_type?: string | null };
 
 export interface AllTimeTotals {
   totalDistanceKm: number;
