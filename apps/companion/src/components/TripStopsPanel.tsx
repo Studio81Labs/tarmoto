@@ -196,10 +196,18 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
           })}
         </div>
         <div className="mt-2.5 flex gap-4">
-          <span className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute">
+          {/* The OSM legend dot doubles as the ODbL attribution link (#852);
+              the map control carries the full "© OpenStreetMap contributors". */}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="© OpenStreetMap contributors"
+            className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute transition hover:text-ink"
+          >
             <span className="h-1.5 w-1.5 rounded-full border border-line-strong" />
             {t("OSM")}
-          </span>
+          </a>
           <span className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             {t("TARMOTO-DERIVED")}

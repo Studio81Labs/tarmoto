@@ -7,9 +7,13 @@ import {
   useRef,
   useState,
 } from "react";
-import maplibregl, { type Map as MapLibreMap } from "maplibre-gl";
+import maplibregl, {
+  type Map as MapLibreMap,
+  type StyleSpecification,
+} from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { BASE_MAP_ATTRIBUTION, loadCuratedMapStyle } from "./attribution";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
@@ -93,6 +97,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
+  // Base map style with the provider's baked-in credit stripped, so we drive
+  // the attribution control with our own linked, ordered list (#852). Null until
+  // the fetch resolves — the map isn't created until then.
+  const [curatedStyle, setCuratedStyle] = useState<
+    StyleSpecification | string | null
+  >(null);
   // Always call the hook (rules of hooks); `forceColorScheme` overrides the
   // viewer preference when set.
   const viewerColorScheme = useMapColorScheme();
@@ -122,15 +132,34 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     onReadyRef.current = onReady;
   }, [onReady]);
 
-  // ── init map once ──
+  // Fetch + curate the base map style once: strip its baked-in attribution so
+  // the control shows only our own linked, ordered credits (#852).
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
+    void loadCuratedMapStyle(MAP_STYLE_URL).then((style) => {
+      if (!cancelled) setCuratedStyle(style);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── init map once (after the curated style resolves) ──
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || curatedStyle === null)
+      return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: curatedStyle,
       center: [center.lng, center.lat],
       zoom,
-      attributionControl: { compact: true },
+      attributionControl: {
+        compact: true,
+        // One joined string, not the array: the control length-sorts multiple
+        // entries but never reorders within one, so this preserves our
+        // provenance order (see attribution.ts).
+        customAttribution: BASE_MAP_ATTRIBUTION.join(" | "),
+      },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
     map.addControl(
@@ -278,7 +307,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     // Init center/zoom read once at mount; updates come from moveend so the
     // map doesn't yank the user's view when they pan.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [curatedStyle]);
 
   // ── layer visibility from toggles ──
   useEffect(() => {

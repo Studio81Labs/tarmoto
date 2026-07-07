@@ -52,6 +52,9 @@ Briefly: what else did we look at, and why not?
 - [0003 — Subscription pricing is EUR-denominated and EUR-displayed](./0003-subscription-pricing-currency.md)
 - [0004 — GraphHopper as the routing engine for road-filter & quality-weighted routing](./0004-routing-engine-graphhopper.md)
 - [0005 — Road-quality routing via OSM `smoothness` tag injection (GraphHopper)](./0005-road-quality-routing-via-smoothness.md)
+- [0006 — OSM way split/merge — geometry-overlap identity reassignment](./0006-osm-way-split-merge-reassignment.md)
+- [0007 — Separate PostgreSQL/PostGIS instance for POIs](./0007-separate-poi-database.md)
+- [0008 — Map attribution & ODbL compliance](./0008-map-attribution-and-odbl-compliance.md)
 
 ## Candidates worth writing up
 
