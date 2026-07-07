@@ -1,5 +1,6 @@
 import { formatRoadQualityColor } from "@/lib/best-roads-format";
 import { escapeHtmlAttribute } from "@/lib/embed-utils";
+import type { BestRoad } from "@/lib/bestRoads";
 
 export type BestRoadsWidgetVariant = "compact" | "landscape";
 
@@ -9,11 +10,10 @@ export interface BestRoadsEmbedLocation {
   subregion?: string;
 }
 
-export interface BestRoadsEmbedRoad {
-  id: string;
-  quality_score: number | null;
-  geometry: Array<{ lat: number; lng: number }>;
-}
+export type BestRoadsEmbedRoad = Pick<
+  BestRoad,
+  "id" | "quality_score" | "geometry"
+>;
 
 interface WidgetDimensions {
   heightPx: number;

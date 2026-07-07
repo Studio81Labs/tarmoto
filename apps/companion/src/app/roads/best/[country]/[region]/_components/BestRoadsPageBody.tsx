@@ -5,20 +5,19 @@ import { BestRoadsMap } from "./BestRoadsMap";
 import { BestRoadsEmbedPanel } from "./BestRoadsEmbedPanel";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
-interface Road {
-  id: string;
-  road_name: string | null;
-  road_number: string | null;
-  quality_score: number | null;
-  curviness_score: number;
-  surface_type: string;
-  length_m: number;
-  confidence: number;
-  geometry: {
-    lat: number;
-    lng: number;
-  }[];
-}
+import type { BestRoad } from "@/lib/bestRoads";
+type Road = Pick<
+  BestRoad,
+  | "id"
+  | "road_name"
+  | "road_number"
+  | "quality_score"
+  | "curviness_score"
+  | "surface_type"
+  | "length_m"
+  | "confidence"
+  | "geometry"
+>;
 interface Props {
   region: Region;
   country: Country;

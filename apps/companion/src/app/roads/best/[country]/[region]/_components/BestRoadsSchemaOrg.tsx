@@ -1,11 +1,13 @@
-interface Road {
-  id: string;
-  road_name: string | null;
-  road_number: string | null;
-  quality_score: number | null;
-  curviness_score: number;
-  length_m: number;
-}
+import type { BestRoad } from "@/lib/bestRoads";
+type Road = Pick<
+  BestRoad,
+  | "id"
+  | "road_name"
+  | "road_number"
+  | "quality_score"
+  | "curviness_score"
+  | "length_m"
+>;
 
 interface Props {
   regionName: string;

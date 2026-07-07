@@ -1,19 +1,21 @@
 import { t } from "@/i18n";
+import type { BestRoad } from "@/lib/bestRoads";
 import {
   formatRoadLabel,
   formatRoadLength,
   formatRoadQuality,
 } from "@/lib/best-roads-format";
-interface Road {
-  id: string;
-  road_name: string | null;
-  road_number: string | null;
-  quality_score: number | null;
-  curviness_score: number;
-  surface_type: string;
-  length_m: number;
-  confidence: number;
-}
+type Road = Pick<
+  BestRoad,
+  | "id"
+  | "road_name"
+  | "road_number"
+  | "quality_score"
+  | "curviness_score"
+  | "surface_type"
+  | "length_m"
+  | "confidence"
+>;
 interface Props {
   roads: Road[];
 }
