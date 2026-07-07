@@ -1,8 +1,6 @@
-interface RoadLabelInput {
-  id: string;
-  road_name: string | null;
-  road_number: string | null;
-}
+import type { BestRoad } from "@/lib/bestRoads";
+
+type RoadLabelInput = Pick<BestRoad, "id" | "road_name" | "road_number">;
 
 export function formatRoadLength(lengthM: number): string {
   return lengthM >= 1000

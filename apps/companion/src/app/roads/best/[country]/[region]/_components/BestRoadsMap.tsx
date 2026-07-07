@@ -8,14 +8,10 @@ import { MAP_STYLE_URL } from "@/lib/config";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { formatRoadQualityColor } from "@/lib/best-roads-format";
+import type { BestRoad } from "@/lib/bestRoads";
 import type { FeatureCollection, LineString } from "geojson";
 
-interface Road {
-  id: string;
-  road_name: string | null;
-  quality_score: number | null;
-  geometry: { lat: number; lng: number }[];
-}
+type Road = Pick<BestRoad, "id" | "road_name" | "quality_score" | "geometry">;
 
 interface Props {
   bbox: [number, number, number, number];
