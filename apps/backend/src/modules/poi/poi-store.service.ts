@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
+import { withPoiRepo } from './poi-repo.js';
 import {
   DEFAULT_BUFFER_KM,
   MAX_BUFFER_KM,
@@ -41,9 +42,24 @@ interface RoutePoint {
 @Injectable()
 export class PoiStoreService {
   constructor(
-    @InjectRepository(Poi)
-    private readonly repo: Repository<Poi>,
+    @InjectDataSource('poi')
+    private readonly poiDataSource: DataSource,
   ) {}
+
+  /**
+   * Live readiness: `isInitialized` only records that TypeORM connected once (it
+   * stays true after a runtime drop), so probe with a trivial query so
+   * `/poi/health` reflects the store's ACTUAL current connectivity (ADR 0007).
+   */
+  async isReady(): Promise<boolean> {
+    if (!this.poiDataSource.isInitialized) return false;
+    try {
+      await this.poiDataSource.query('SELECT 1');
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * List stored POIs whose point falls inside the bounding box, optionally
@@ -65,28 +81,32 @@ export class PoiStoreService {
       MAX_LIMIT,
     );
 
-    const qb = this.repo
-      .createQueryBuilder('poi')
-      // ST_Intersects is GiST-index-accelerated (it bbox-prefilters via the
-      // spatial index), and for point geometry it's equivalent to a bbox test.
-      .where(
-        'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
-        bbox,
-      );
-    if (kinds && kinds.length > 0) {
-      qb.andWhere('poi.kind IN (:...kinds)', { kinds });
-    }
-    const rows = await qb
-      .orderBy('poi.kind', 'ASC')
-      .addOrderBy('poi.name', 'ASC')
-      .limit(capped)
-      .getMany();
+    const rows = await withPoiRepo(this.poiDataSource, async (repo) => {
+      const qb = repo
+        .createQueryBuilder('poi')
+        // ST_Intersects is GiST-index-accelerated (it bbox-prefilters via the
+        // spatial index), and for point geometry it's equivalent to a bbox test.
+        .where(
+          'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
+          bbox,
+        );
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      return qb
+        .orderBy('poi.kind', 'ASC')
+        .addOrderBy('poi.name', 'ASC')
+        .limit(capped)
+        .getMany();
+    });
     return rows.map(toStoredPoiDto);
   }
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
   async findById(id: string): Promise<StoredPoiDto | null> {
-    const poi = await this.repo.findOne({ where: { id } });
+    const poi = await withPoiRepo(this.poiDataSource, (repo) =>
+      repo.findOne({ where: { id } }),
+    );
     return poi ? toStoredPoiDto(poi) : null;
   }
 
@@ -123,18 +143,20 @@ export class PoiStoreService {
       })
       .join(',');
 
-    const qb = this.repo.createQueryBuilder('poi').where(
-      `ST_DWithin(
+    const rows = await withPoiRepo(this.poiDataSource, (repo) => {
+      const qb = repo.createQueryBuilder('poi').where(
+        `ST_DWithin(
           poi.geom::geography,
           ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
           :buffer
         )`,
-      params,
-    );
-    if (kinds && kinds.length > 0) {
-      qb.andWhere('poi.kind IN (:...kinds)', { kinds });
-    }
-    const rows = await qb.getMany();
+        params,
+      );
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      return qb.getMany();
+    });
 
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer

@@ -15,6 +15,7 @@ import {
   AccommodationListDto,
   AccommodationQueryDto,
 } from './dto/accommodation.dto.js';
+import { PoiHealthDto } from './dto/poi-health.dto.js';
 import {
   AlongRoutePoiListDto,
   AlongRoutePoiQueryDto,
@@ -144,9 +145,22 @@ export class PoiController {
     return this.poiService.findPointsOfInterestAlongRoute(dto);
   }
 
+  @Get('health')
+  @ApiOperation({
+    summary: 'POI store readiness (ADR 0007)',
+    description:
+      'Reports whether the separate POI database is connected. Always 200 — ' +
+      'a "down" POI DB is a degraded, non-fatal state; the store read endpoints ' +
+      'return 503 while it is down.',
+  })
+  @ApiResponse({ status: 200, type: PoiHealthDto })
+  async health(): Promise<PoiHealthDto> {
+    return { poiDb: (await this.poiStore.isReady()) ? 'up' : 'down' };
+  }
+
   // Declared LAST: `:id` is a catch-all param route, so it must come after
-  // every static GET path above (`accommodations`, `nearby`, `in-bbox`)
-  // or it would shadow them.
+  // every static GET path above (`accommodations`, `nearby`, `in-bbox`,
+  // `health`) or it would shadow them.
   @Get(':id')
   @ApiOperation({
     summary: 'Fetch a single stored POI by id (#849)',

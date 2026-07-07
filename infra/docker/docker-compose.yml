@@ -22,6 +22,27 @@ services:
       timeout: 5s
       retries: 5
 
+  poi-postgres:
+    container_name: tarmoto-poi-db
+    image: postgis/postgis:17-3.4-alpine
+    restart: unless-stopped
+    # Separate PostGIS instance for POIs (ADR 0007). Host port 5434 so it
+    # doesn't clash with the app DB on 5433. Override with
+    # TARMOTO_POI_DATABASE_PORT.
+    ports:
+      - "${TARMOTO_POI_DATABASE_PORT:-5434}:5432"
+    environment:
+      POSTGRES_USER: ${TARMOTO_POI_DATABASE_USER:-tarmoto}
+      POSTGRES_PASSWORD: ${TARMOTO_POI_DATABASE_PASSWORD:-tarmoto}
+      POSTGRES_DB: ${TARMOTO_POI_DATABASE_NAME:-tarmoto_poi}
+    volumes:
+      - poipgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TARMOTO_POI_DATABASE_USER:-tarmoto}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     container_name: tarmoto-redis
     image: redis:8-alpine
@@ -167,3 +188,4 @@ volumes:
   pgdata:
   redisdata:
   miniodata:
+  poipgdata:
