@@ -22,6 +22,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
+import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import {
   TripPlannerMap,
@@ -70,6 +71,8 @@ export default function TripDetailPage() {
     (s) => s.selectedPlannerSegmentId,
   );
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const activeTrip = useTripStore((s) => s.activeTrip);
+  const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   // INSPECT card → map: same select + fly interaction as the planner.
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
@@ -122,6 +125,13 @@ export default function TripDetailPage() {
       setActiveTrip(null);
     };
   }, [trip, setActiveTrip]);
+  // Hydrate real per-segment quality for this saved trip's routed days (#862),
+  // the same way the planner does, so a covered trip shows real surface quality
+  // instead of the no_data baseline. Runs once this trip is the active store
+  // trip (set above); the map/Inspect render from that hydrated copy.
+  const storeTrip = activeTrip?.id === trip?.id ? activeTrip : null;
+  const displayedTrip = storeTrip ?? trip;
+  useRouteQualityHydration(storeTrip, applyRouteQuality);
   useEffect(() => {
     if (!tripId) return;
     // Gate on the auth store carrying a token — without this the fetch
@@ -393,7 +403,7 @@ export default function TripDetailPage() {
         <div className="relative flex-1 bg-cream">
           <TripPlannerMap
             ref={mapRef}
-            trip={trip}
+            trip={displayedTrip}
             month={travelMonth}
             closuresData={closuresData}
             passesData={passesData}
@@ -497,10 +507,10 @@ export default function TripDetailPage() {
                     no onRerouteSegment, so flagged cards offer INSPECT. */}
                 <InspectTab
                   day={
-                    trip.days[
+                    (displayedTrip ?? trip).days[
                       Math.min(
                         inspectDayIndex,
-                        Math.max(0, trip.days.length - 1),
+                        Math.max(0, (displayedTrip ?? trip).days.length - 1),
                       )
                     ] ?? null
                   }

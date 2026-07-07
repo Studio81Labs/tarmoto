@@ -105,6 +105,7 @@ import type {
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
+import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
@@ -758,75 +759,9 @@ export default function TripPlannerPage() {
     liveRouteEnabled,
     selectedDay?.dayNumber ?? null,
   );
-  // Real per-segment quality (#862): prefill EVERY routed day the map can draw,
-  // not just the selected one — multi-day trips render all days at once, so a
-  // selected-only fetch would leave the others on the no_data baseline until
-  // visited. Runs when a day has a committed line but no quality yet: freshly
-  // routed (applyRouteResult clears it), reopened, or split.
-  //
-  // The ref tracks the routeGeometry a request is CURRENTLY in flight for (not
-  // merely "ever attempted"), keyed by day, and is cleared when the request
-  // settles. So an in-flight duplicate for the same geometry object is skipped,
-  // but a geometry restored by undo/redo (same object, no cached quality) can
-  // refetch. Success sets qualitySegments (skipped above); a failed/uncovered
-  // response leaves the baseline and is retried on the next change.
-  // applyRouteQuality guards the apply against a reroute landing mid-flight, and
-  // a superseded request is aborted so rapid edits don't pile up spatial
-  // queries (a long route fans out into one backend call per length-limit chunk).
-  const qualityInFlightRef = useRef(
-    new Map<number, NonNullable<TripDay["routeGeometry"]>>(),
-  );
-  const qualityAbortRef = useRef(new Map<number, AbortController>());
-  useEffect(() => {
-    const trip = activeTrip;
-    if (!trip) return;
-    for (const day of trip.days) {
-      const geometry = day.routeGeometry;
-      const coordinates = geometry?.coordinates;
-      if (!geometry || !coordinates || coordinates.length < 2) continue;
-      if (day.qualitySegments) continue;
-      if (qualityInFlightRef.current.get(day.dayNumber) === geometry) continue;
-      const points: { lat: number; lng: number }[] = [];
-      for (const coordinate of coordinates) {
-        const [lng, lat] = coordinate;
-        if (typeof lng === "number" && typeof lat === "number") {
-          points.push({ lat, lng });
-        }
-      }
-      if (points.length < 2) continue;
-      const dayNumber = day.dayNumber;
-      // Abort a superseded in-flight request for this day (a reroute before the
-      // previous resolved) so its remaining chunk queries don't keep running.
-      qualityAbortRef.current.get(dayNumber)?.abort();
-      const controller = new AbortController();
-      qualityAbortRef.current.set(dayNumber, controller);
-      qualityInFlightRef.current.set(dayNumber, geometry);
-      const settle = () => {
-        // Only clear if a newer request for this day hasn't taken over.
-        if (qualityInFlightRef.current.get(dayNumber) === geometry) {
-          qualityInFlightRef.current.delete(dayNumber);
-        }
-        if (qualityAbortRef.current.get(dayNumber) === controller) {
-          qualityAbortRef.current.delete(dayNumber);
-        }
-      };
-      void plannerApi
-        .getRouteQuality(points, dayNumber, { signal: controller.signal })
-        .then((segments) => applyRouteQuality(dayNumber, points, segments))
-        .catch(() => {
-          // Aborted, uncovered, or failed — stay on the no_data baseline.
-        })
-        .finally(settle);
-    }
-  }, [activeTrip, applyRouteQuality]);
-  // Abort any in-flight quality fetches when the planner unmounts.
-  useEffect(() => {
-    const controllers = qualityAbortRef.current;
-    return () => {
-      for (const controller of controllers.values()) controller.abort();
-      controllers.clear();
-    };
-  }, []);
+  // Real per-segment quality (#862): hydrate every routed day the map can draw.
+  // Shared with the read-only saved-trip detail view via this hook.
+  useRouteQualityHydration(activeTrip, applyRouteQuality);
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
   // socket joins `trip:<id>`, cursors + suggestions + activity start
