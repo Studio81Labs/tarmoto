@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, Plus, TriangleAlert } from "lucide-react";
+import { ExternalLink, Layers3, Plus, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -2542,6 +2542,28 @@ const TripPlannerMapContent = forwardRef<
                     ) : null}
                   </>
                 )}
+                {(() => {
+                  // `maps_url` is a non-null Google Maps deep link on every
+                  // store-backed POI (mock passes / twisties don't set it).
+                  // Surfacing it here is the only way web riders can open the
+                  // Google photos / reviews page for contactless rows the
+                  // backend now keeps because maps_url makes them actionable.
+                  const mapsUrl =
+                    typeof poiMenu.poi.meta?.mapsUrl === "string"
+                      ? poiMenu.poi.meta.mapsUrl
+                      : null;
+                  return mapsUrl ? (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                    >
+                      <ExternalLink size={13} strokeWidth={2.5} />
+                      {t("View on Google Maps")}
+                    </a>
+                  ) : null;
+                })()}
               </div>
             );
           })()

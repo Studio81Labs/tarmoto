@@ -177,6 +177,8 @@ vi.mock("@/lib/api", async (importActual) => {
                   brand: null,
                   stars: null,
                   osm_url: "https://www.openstreetmap.org/node/100",
+                  maps_url:
+                    "https://www.google.com/maps/search/?api=1&query=devet-skal",
                   last_imported_at: "2026-07-06T00:00:00.000Z",
                 },
               ]
@@ -637,6 +639,19 @@ describe("TripPlannerMap", () => {
     expect(
       screen.getByRole("button", { name: "Set as finish" }),
     ).toBeInTheDocument();
+
+    // The popover surfaces the Google Maps detail link (#872) so web riders
+    // can open photos / reviews — critical for this contactless viewpoint
+    // (no website, no phone) that the backend now keeps because maps_url
+    // makes it actionable.
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+    expect(mapsLink).toHaveAttribute("target", "_blank");
 
     fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
 
