@@ -2,6 +2,7 @@ import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { splitIntoDays } from "@/lib/planner/day-splitter";
 import { dayFinishWaypoint, useTripStore } from "./trip";
 import type { RouteResponse } from "@/lib/api";
+import type { RouteSegment } from "@/lib/planner/types";
 import type { TripParameters } from "@/lib/types";
 
 describe("useTripStore planner editing", () => {
@@ -2766,5 +2767,197 @@ describe("applySplit save-gate", () => {
     ]);
     expect(useTripStore.getState().splitStatus).toBe("split");
     expect(useTripStore.getState().routeDirty).toBe(true);
+  });
+});
+
+describe("useTripStore applyRouteQuality (#862)", () => {
+  beforeEach(() => {
+    useTripStore.setState(useTripStore.getInitialState());
+  });
+
+  function routeResult(
+    geometry: { lat: number; lng: number }[],
+  ): RouteResponse {
+    return {
+      geometry,
+      distance_km: 20,
+      duration_min: 30,
+      avg_quality: 4,
+      curviness_score: 40,
+      elevation_gain_m: 100,
+      surface_mix: { asphalt: 20_000 },
+    };
+  }
+
+  function qualitySegment(id: string): RouteSegment {
+    return {
+      id,
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [14.41, 50.08],
+          [14.61, 50.19],
+        ],
+      },
+      band: "good",
+      surface: "asphalt",
+      score: 4.2,
+      passes: 12,
+      lengthKm: 20,
+      dayNumber: 1,
+    };
+  }
+
+  // Seed a single day with committed geometry, returning the polyline the
+  // quality would be computed against.
+  function seedRoutedDay(): { lat: number; lng: number }[] {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    const geometry = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 50.19, lng: 14.61 },
+    ];
+    useTripStore.getState().applyRouteResult(1, routeResult(geometry));
+    return geometry;
+  }
+
+  it("stores quality for a day whose geometry still matches", () => {
+    const geometry = seedRoutedDay();
+    const segments = [qualitySegment("d1-s0")];
+    useTripStore.getState().applyRouteQuality(1, geometry, segments);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toEqual(segments);
+  });
+
+  it("ignores a late response for a line the day no longer has", () => {
+    seedRoutedDay();
+    // Endpoint moved — a response computed for a since-replaced route.
+    const staleGeometry = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 51.0, lng: 15.0 },
+    ];
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, staleGeometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
+  });
+
+  it("clears stored quality when the day is re-routed", () => {
+    const geometry = seedRoutedDay();
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toHaveLength(1);
+    useTripStore.getState().applyRouteResult(
+      1,
+      routeResult([
+        { lat: 50.08, lng: 14.41 },
+        { lat: 50.3, lng: 14.8 },
+      ]),
+    );
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
+  });
+
+  it("rejects a response for a different interior path with matching endpoints", () => {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    const original = [
+      { lat: 50.08, lng: 14.41 },
+      { lat: 50.13, lng: 14.5 },
+      { lat: 50.19, lng: 14.61 },
+    ];
+    useTripStore.getState().applyRouteResult(1, routeResult(original));
+    // Reroute (e.g. a road-preference change): same endpoints and vertex
+    // count, different middle vertex.
+    useTripStore.getState().applyRouteResult(
+      1,
+      routeResult([
+        { lat: 50.08, lng: 14.41 },
+        { lat: 50.16, lng: 14.44 },
+        { lat: 50.19, lng: 14.61 },
+      ]),
+    );
+    // A late response computed for the ORIGINAL interior path is rejected even
+    // though endpoints and count match the current line.
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, original, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toBeUndefined();
+  });
+
+  it("drops stored quality when the route becomes unroutable", () => {
+    const geometry = seedRoutedDay();
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toHaveLength(1);
+    // Removing the finish leaves <2 routing waypoints — updatePlannerDayRoute
+    // clears the route-derived line and its quality with it.
+    const endId = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "end")!.id;
+    useTripStore.getState().removeWaypoint(0, endId);
+    const day = useTripStore.getState().activeTrip?.days[0];
+    expect(day?.routeGeometry).toBeUndefined();
+    expect(day?.qualitySegments).toBeUndefined();
+  });
+
+  it("clears cached quality for a day renumbered by a removal", () => {
+    const store = useTripStore.getState();
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+    // Day 2: linked start seeded from day 1's end, plus a finish so it routes.
+    useTripStore.getState().addDay();
+    useTripStore.getState().appendPlannerWaypoint(1, { lng: 15.0, lat: 50.3 });
+    const geo2 = [
+      { lat: 50.19, lng: 14.61 },
+      { lat: 50.3, lng: 15.0 },
+    ];
+    useTripStore.getState().applyRouteResult(2, routeResult(geo2));
+    useTripStore
+      .getState()
+      .applyRouteQuality(2, geo2, [qualitySegment("d2-s0")]);
+    expect(
+      useTripStore.getState().activeTrip?.days[1]?.qualitySegments,
+    ).toHaveLength(1);
+    // Removing day 1 renumbers day 2 → day 1; its cached quality still says
+    // day 2 (ids `d2-s*`), so it must be dropped to refetch under the new id.
+    useTripStore.getState().removeDay(0);
+    const survivor = useTripStore.getState().activeTrip?.days[0];
+    expect(survivor?.dayNumber).toBe(1);
+    expect(survivor?.qualitySegments).toBeUndefined();
+  });
+
+  it("clears a stale baseline selection for the day it hydrates", () => {
+    const geometry = seedRoutedDay();
+    // Rider selected a baseline segment before quality resolved.
+    useTripStore.getState().selectPlannerSegment("d1-s0");
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    // Real spans reuse the id pattern, so the stale selection is dropped.
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBeNull();
+  });
+
+  it("keeps a selection that belongs to a different day", () => {
+    const geometry = seedRoutedDay();
+    useTripStore.getState().selectPlannerSegment("d2-s0");
+    useTripStore
+      .getState()
+      .applyRouteQuality(1, geometry, [qualitySegment("d1-s0")]);
+    expect(useTripStore.getState().selectedPlannerSegmentId).toBe("d2-s0");
   });
 });

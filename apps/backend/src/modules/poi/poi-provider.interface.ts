@@ -1,5 +1,4 @@
-import type { AccommodationKind } from './dto/accommodation.dto.js';
-import type { PoiKind } from './dto/point-of-interest.dto.js';
+import type { AccommodationKind, PoiKind } from '@tarmoto/shared';
 
 /**
  * Normalized accommodation POI returned by any provider.

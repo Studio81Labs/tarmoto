@@ -368,6 +368,11 @@ type TripStoreSnapshot = {
     }[];
   }[];
   applyRouteResult: (dayNumber: number, result: unknown) => void;
+  applyRouteQuality: (
+    dayNumber: number,
+    forGeometry: unknown,
+    segments: unknown,
+  ) => void;
   resetForTest: () => void;
 };
 
@@ -429,6 +434,9 @@ describe("TripPlannerPage", () => {
     mockedClosuresPanel.mockClear();
     mockedTripCollaborateModal.mockClear();
     mockPush.mockClear();
+    // The selected-day route-quality effect (#862) fires for any committed
+    // day; stub the fetch so these tests don't reach the real client.
+    vi.spyOn(plannerApi, "getRouteQuality").mockResolvedValue([]);
     setActiveTrip.mockReset();
     setGenerating.mockReset();
     useClosuresMock.mockReset();
@@ -556,6 +564,7 @@ describe("TripPlannerPage", () => {
         },
       ]),
       applyRouteResult: vi.fn(),
+      applyRouteQuality: vi.fn(),
       resetForTest: vi.fn(),
     };
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
