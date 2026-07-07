@@ -31,7 +31,6 @@ export type { MeProfile } from "@tarmoto/shared";
 // `@tarmoto/shared` (`FEATURE_DEFINITIONS` / `resolveFeature`); the resolved
 // snapshot rides on `/users/me` and the auth responses as `user.features`.
 export type { FeatureKey, FeatureSnapshot } from "@tarmoto/shared";
-import type { FeatureSnapshot, SubscriptionTier } from "@tarmoto/shared";
 
 // Domain enums (surface / ride / hazard / waypoint types + hazard severity)
 // are the canonical `@tarmoto/shared` definitions the backend DTOs are built
@@ -70,116 +69,38 @@ export interface LatLng {
 
 // ── Auth ──
 
-export interface AuthResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  user: User;
-}
+export type AuthResponse = Schemas["AuthResponseDto"];
 
 // ── Users ──
 
-export interface User {
-  id: string;
-  email: string;
-  display_name: string;
-  /** Required-but-nullable on the wire (`UserResponseDto.phone`). */
-  phone: string | null;
-  /** US-27: avatar URL backed by /users/me/avatar uploads. */
-  avatar_url: string | null;
-  /** US-27: free-form rider bio shown on the profile screen. */
-  bio: string | null;
-  /** US-27: free-form home region label (e.g. "Beskydy"). */
-  home_region: string | null;
-  home_location: LatLng | null;
-  work_location: LatLng | null;
-  /**
-   * Lazy JSONB blob — every field is optional because freshly-registered
-   * users reach the client before any preference has been toggled. All
-   * consumers must default with `?? <default>` rather than assume keys
-   * are populated.
-   */
-  preferences: Partial<UserPreferences>;
-  /** The rider's subscription tier — drives feature grants server-side. */
-  subscription_tier: SubscriptionTier;
-  /**
-   * Resolved feature entitlements (tier + overrides), served on
-   * `/users/me` and the auth responses. UI gating only — gated endpoints
-   * re-check server-side and answer 403 when the feature is off.
-   */
-  features: FeatureSnapshot;
-  created_at: string;
-}
+/**
+ * Authenticated rider — the generated `UserResponseDto`. `preferences` is the
+ * spec's `UserPreferencesResponse` (every field optional, since a
+ * freshly-registered rider reaches the client before toggling anything), so
+ * consumers must still default with `?? <default>`.
+ */
+export type User = Schemas["UserResponseDto"];
 
 /** Single row from /users/:userId/followers and /users/:userId/following. */
-export interface FollowerListItem {
-  user_id: string;
-  display_name: string;
-  followed_at: string;
-}
+export type FollowerListItem = Schemas["FollowerDto"];
 
 /**
  * #336: per-rider shared-ride card returned by
- * `GET /users/:userId/shared-rides`. Drives the "Shared rides" section on
- * both own-profile and view-profile screens. The wire shape mirrors the
- * backend `UserSharedRideDto` — fields stay nullable when the underlying
- * stat hasn't been computed yet so the UI can render placeholders.
+ * `GET /users/:userId/shared-rides` — the generated `UserSharedRideDto`.
+ * Drives the "Shared rides" section on both own-profile and view-profile
+ * screens.
  */
-export interface UserSharedRide {
-  /** Underlying ride id — used to navigate into the ride detail screen. */
-  id: string;
-  share_token: string;
-  /** Rider-given ride name, used as the row title. Null if unset. */
-  name: string | null;
-  ride_type: string;
-  /**
-   * Whether the share is publicly visible. Always true for non-self viewers
-   * (private shares are filtered server-side); both states appear when the
-   * rider is viewing their own list so they can spot rides they later
-   * flipped to private.
-   */
-  is_public: boolean;
-  started_at: string;
-  ended_at: string | null;
-  distance_km: number | null;
-  avg_speed: number | null;
-  avg_road_quality: number | null;
-  avg_curviness: number | null;
-  duration_min: number | null;
-  view_count: number;
-  /** ISO 8601 timestamp of when the rider shared the ride (sort key). */
-  shared_at: string;
-  /** Polyline preview for profile cards. Null when the ride has no track. */
-  route_geometry: LatLng[] | null;
-}
+export type UserSharedRide = Schemas["UserSharedRideDto"];
 
 /** Paginated `GET /users/:userId/shared-rides` response. */
-export interface UserSharedRidesResponse {
-  items: UserSharedRide[];
-  /** Total matches for the rider visible to the viewer (ignores limit/offset). */
-  total: number;
-  /** Sum of `view_count` across the visible set (ignores limit/offset). */
-  total_views: number;
-  limit: number;
-  offset: number;
-}
+export type UserSharedRidesResponse = Schemas["UserSharedRidesResponseDto"];
 
-/** US-27: badge entry as returned by /users/:userId/badges. */
-export interface UserBadge {
-  key: string;
-  name: string;
-  description: string;
-  category: string;
-  tier: string | null;
-  /** ISO 8601 timestamp; null when not yet earned. */
-  earned_at: string | null;
-  progress: {
-    current: number;
-    bronze: number;
-    silver: number;
-    gold: number;
-  };
-}
+/**
+ * US-27: badge entry as returned by /users/:userId/badges — the generated
+ * `BadgeDto`. `earned_at` is optional on the wire (absent for badges that
+ * carry no timestamp), so consumers must null-check it.
+ */
+export type UserBadge = Schemas["BadgeDto"];
 
 export interface UserPreferences {
   units: "metric" | "imperial";
