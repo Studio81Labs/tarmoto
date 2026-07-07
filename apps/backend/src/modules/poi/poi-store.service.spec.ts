@@ -50,6 +50,8 @@ describe('toStoredPoiDto', () => {
         address_country: 'CZ',
         cuisine: 'regional',
         osm_url: 'https://www.openstreetmap.org/node/42',
+        maps_url:
+          'https://www.google.com/maps/search/?api=1&query=Koliba%2049.5%2C18.4',
         last_imported_at: '2026-07-06T00:00:00.000Z',
       }),
     );

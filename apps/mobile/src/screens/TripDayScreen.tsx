@@ -56,6 +56,7 @@ import {
   formatWaypointType,
   isLastDay,
   pickDayEndAnchor,
+  poiOpenCandidates,
   summarizeFuelRange,
   summarizeWaypoints,
   withSuggestedOvernightStop,
@@ -447,20 +448,11 @@ function FuelRangeWarning({
 async function openPoiFallback(item: {
   website: string | null;
   phone: string | null;
+  maps_url: string;
   lat: number;
   lng: number;
 }): Promise<void> {
-  const website =
-    item.website && /^https?:\/\//i.test(item.website.trim())
-      ? item.website.trim()
-      : null;
-  const candidates = [
-    website,
-    item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
-    `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
-  ].filter((value): value is string => !!value);
-
-  for (const url of candidates) {
+  for (const url of poiOpenCandidates(item)) {
     try {
       await Linking.openURL(url);
       return;

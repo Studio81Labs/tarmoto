@@ -14,6 +14,7 @@ import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { useTripStore } from "@/stores/trip";
+import { poiApi } from "@/lib/api";
 import { fetchFunZoneDetail, fetchFunZonesInBbox } from "@/lib/discover";
 
 const mockCanvas = {
@@ -177,6 +178,8 @@ vi.mock("@/lib/api", async (importActual) => {
                   brand: null,
                   stars: null,
                   osm_url: "https://www.openstreetmap.org/node/100",
+                  maps_url:
+                    "https://www.google.com/maps/search/?api=1&query=devet-skal",
                   last_imported_at: "2026-07-06T00:00:00.000Z",
                 },
               ]
@@ -638,6 +641,19 @@ describe("TripPlannerMap", () => {
       screen.getByRole("button", { name: "Set as finish" }),
     ).toBeInTheDocument();
 
+    // The popover surfaces the Google Maps detail link (#872) so web riders
+    // can open photos / reviews — critical for this contactless viewpoint
+    // (no website, no phone) that the backend now keeps because maps_url
+    // makes it actionable.
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+    expect(mapsLink).toHaveAttribute("target", "_blank");
+
     fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
 
     const waypoints =
@@ -786,6 +802,368 @@ describe("TripPlannerMap", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove from route" }));
     expect(onRemoveWaypoint).toHaveBeenCalledWith(
       "poi-view-vysocina-1-1751700000000",
+    );
+  });
+
+  it("keeps the Google Maps link on a placed POI's popover by resolving the POI by id", async () => {
+    // A placed POI is filtered out of the pin layer, so its popover is
+    // reopened from the WAYPOINT pin — whose properties carry no POI meta.
+    // The original POI (with its maps_url) must be resolved from the
+    // retained by-id lookup, or a contactless placed POI loses its only
+    // detail link.
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    // Clear prior call history so the fetch wait tracks THIS test's fetch,
+    // not a stale call from an earlier test (the mock impl is preserved).
+    vi.mocked(poiApi.getInBbox).mockClear();
+
+    // The viewpoint is already placed as a via — a "used" POI: dropped from
+    // the pin layer but still clickable as its waypoint circle.
+    const placed = trip();
+    placed.days[0]!.waypoints.splice(1, 0, {
+      id: "poi-view-vysocina-1-1751700000000",
+      name: "Devět skal vista",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "via",
+    });
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    // Wait for the viewport POI fetch itself (setData also fires for the
+    // route/waypoint sources, so it is not a reliable signal), then flush
+    // its resolution so the by-id lookup is populated before the click.
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "poi-view-vysocina-1-1751700000000",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    // Placed → Remove action, AND the Maps link resolved from the lookup.
+    expect(
+      screen.getByRole("button", { name: "Remove from route" }),
+    ).toBeInTheDocument();
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+  });
+
+  it("keeps the Maps link on a POI placed as start/finish (endpoint waypoint id has no poiId)", async () => {
+    // "Set as start/finish" keeps the planner endpoint id (e.g. `start-1`),
+    // not `poi-<id>-...`, so the by-id lookup misses — resolve the original
+    // POI by its placement coordinates instead, as usedPois already does.
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    vi.mocked(poiApi.getInBbox).mockClear();
+
+    // The viewpoint is the day's START — a used-by-coordinates POI whose
+    // waypoint id is the planner endpoint id, not `poi-<id>-...`.
+    const placed = trip();
+    placed.days[0]!.waypoints[0] = {
+      id: "start-1",
+      name: "Devět skal vista",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "start",
+    };
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "start-1",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+  });
+
+  it("keeps a placed POI's Maps link after its category is toggled off", async () => {
+    // Toggling the category off calls applyPois([]); panning away drops the
+    // POI from a later fetch. Either must NOT evict a still-placed POI from
+    // the by-id lookup, or its waypoint popover loses the Maps link.
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    vi.mocked(poiApi.getInBbox).mockClear();
+
+    const placed = trip();
+    placed.days[0]!.waypoints.splice(1, 0, {
+      id: "poi-view-vysocina-1-1751700000000",
+      name: "Devět skal vista",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "via",
+    });
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Toggle the viewpoint category off → applyPois([]).
+    await act(async () => {
+      useTripStore.setState({ activePoiCategories: new Set() });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "poi-view-vysocina-1-1751700000000",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+  });
+
+  it("resolves an endpoint POI by category so same-coordinate venues do not cross-bind", async () => {
+    // A fuel station and a café can be imported at the same OSM node. An
+    // endpoint waypoint id carries no poiId, so the coordinate fallback must
+    // also match the waypoint category, or reopening the fuel endpoint binds
+    // to the café's name/category/Maps link.
+    const sharedPoi = (
+      over: Record<string, unknown>,
+    ): Record<string, unknown> => ({
+      source: "osm",
+      external_id: "osm:node:1",
+      name: null,
+      lat: 49.66,
+      lng: 15.93,
+      website: null,
+      phone: null,
+      opening_hours: null,
+      address_street: null,
+      address_city: null,
+      address_postcode: null,
+      address_country: null,
+      cuisine: null,
+      brand: null,
+      stars: null,
+      osm_url: null,
+      last_imported_at: "2026-07-06T00:00:00.000Z",
+      ...over,
+    });
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    vi.mocked(poiApi.getInBbox).mockClear();
+    // Café first, fuel second — a coord-only match would wrongly pick the café.
+    vi.mocked(poiApi.getInBbox).mockResolvedValueOnce({
+      data: {
+        count: 2,
+        pois: [
+          sharedPoi({
+            id: "cafe-x",
+            kind: "cafe",
+            name: "Kavárna",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=cafe-x",
+          }),
+          sharedPoi({
+            id: "fuel-x",
+            kind: "fuel_station",
+            name: "MOL",
+            brand: "MOL",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=fuel-x",
+          }),
+        ],
+      },
+    } as never);
+
+    const placed = trip();
+    placed.days[0]!.waypoints[0] = {
+      id: "start-1",
+      name: "MOL",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "start",
+    };
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["fuel", "cafe"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "start-1",
+              poiCategory: "fuel",
+              label: "MOL",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    // Must bind to the FUEL POI at that coordinate, not the café.
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=fuel-x",
     );
   });
 

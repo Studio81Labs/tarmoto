@@ -214,6 +214,7 @@ function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
       cuisine: poi.cuisine,
       brand: poi.brand,
       osmUrl: poi.osm_url,
+      mapsUrl: poi.maps_url,
     },
   };
 }

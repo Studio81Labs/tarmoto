@@ -503,6 +503,14 @@ export function summarizeFuelRange(
 const MAX_SUGGESTED_STOPS_PER_LEG = 3;
 
 /**
+ * Display label for a fuel stop that carries no OSM name (common for
+ * unmanned / automated pumps). Mirrors `fallbackAccommodationName`: a
+ * plain data-level fallback so the pure helper stays free of i18n, and
+ * so a nameless-but-real refuel option is never dropped from the warning.
+ */
+const UNNAMED_FUEL_STOP_LABEL = "Fuel stop";
+
+/**
  * Re-project the leg breakdown onto the polyline's cumulative-km axis
  * so station positions (which arrive from the backend already indexed
  * by distance-along-route) can be bucketed into the right leg. We
@@ -566,20 +574,18 @@ function annotateLegsWithStations(
     if (!leg.exceedsRange) return leg;
     const startKm = legBoundaries[idx] ?? 0;
     const endKm = legBoundaries[idx + 1] ?? Infinity;
-    const inside = sortedStations
-      .filter(
-        (s) =>
-          s.distanceAlongRouteKm > startKm && s.distanceAlongRouteKm < endKm,
-      )
-      .filter((s): s is FuelStationAnchor & { name: string } =>
-        Boolean(s.name?.trim()),
-      );
+    const inside = sortedStations.filter(
+      (s) => s.distanceAlongRouteKm > startKm && s.distanceAlongRouteKm < endKm,
+    );
     if (inside.length === 0) return leg;
 
     const suggestedStops: FuelLegSuggestedStop[] = inside
       .slice(0, MAX_SUGGESTED_STOPS_PER_LEG)
       .map((s) => ({
-        name: s.name,
+        // Keep unnamed pumps — an unmanned fuel stop is still a real refuel
+        // option (navigable via maps_url) — with a fallback label so the
+        // warning card renders it instead of claiming there is no fuel.
+        name: s.name?.trim() || UNNAMED_FUEL_STOP_LABEL,
         hint: s.hint,
         distanceFromLegStartKm: s.distanceAlongRouteKm - startKm,
         distanceFromRouteKm: s.distanceFromRouteKm,
@@ -672,6 +678,33 @@ export function bboxAroundPoint(
   const maxLat = lat + latDelta;
   // West, South, East, North — the OGC convention the backend consumes.
   return `${minLng.toFixed(4)},${minLat.toFixed(4)},${maxLng.toFixed(4)},${maxLat.toFixed(4)}`;
+}
+
+/**
+ * Ordered list of URLs to try when a rider taps a POI row, most-useful
+ * first: the venue's own website, a phone dialer, then the Google Maps
+ * deep link (`maps_url` — photos / reviews / live hours), and finally a
+ * bare OpenStreetMap coordinate pin. `maps_url` sits ahead of the OSM
+ * fallback so contactless rows — which the backend now keeps precisely
+ * because `maps_url` makes them navigable — still open a rich page.
+ */
+export function poiOpenCandidates(item: {
+  website: string | null;
+  phone: string | null;
+  maps_url: string;
+  lat: number;
+  lng: number;
+}): string[] {
+  const website =
+    item.website && /^https?:\/\//i.test(item.website.trim())
+      ? item.website.trim()
+      : null;
+  return [
+    website,
+    item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
+    item.maps_url || null,
+    `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
+  ].filter((value): value is string => !!value);
 }
 
 function overnightFitScore(accommodation: Accommodation): number {

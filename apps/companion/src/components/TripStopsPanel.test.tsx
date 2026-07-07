@@ -48,6 +48,7 @@ function corridorPoi(
     brand: null,
     stars: null,
     osm_url: null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=x",
     last_imported_at: "2026-07-06T00:00:00.000Z",
     distance_along_route_km: 0,
     distance_from_route_km: 0,

@@ -11,7 +11,7 @@ import {
   type AccommodationPoi,
   type PointOfInterest,
 } from './poi-provider.interface.js';
-import { osmDetailUrl } from './providers/overpass.provider.js';
+import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import {
   ACCOMMODATION_KINDS,
   AccommodationDto,
@@ -110,10 +110,11 @@ export class PoiService {
   }
 
   /**
-   * Sort suggestions by "usefulness" = named-first, then by distance. We
-   * drop unnamed POIs with no website or phone — they'd show up on the
-   * card as "Unnamed hotel" with no way to act on them, which is worse
-   * than showing fewer results.
+   * Sort suggestions by "usefulness" = named-first, then by distance.
+   * Nameless / contactless rows are kept, not dropped: every POI now
+   * carries a `maps_url` (a Google Maps deep link from its coordinates),
+   * so even an "Unnamed hotel" is navigable — the named-first sort just
+   * ranks it after the ones that have a name.
    *
    * `kinds` and `minStars` are applied here (not in the provider) so all
    * providers share the same filter semantics and the service is the
@@ -139,8 +140,7 @@ export class PoiService {
       .map((poi) => ({
         poi,
         distance_km: haversineKm(lat, lng, poi.lat, poi.lng),
-      }))
-      .filter(({ poi }) => !!poi.name?.trim() || !!poi.website || !!poi.phone);
+      }));
 
     withDistance.sort((a, b) => {
       const aHasName = !!a.poi.name?.trim();
@@ -165,6 +165,7 @@ export class PoiService {
       address_postcode: poi.address_postcode,
       address_country: poi.address_country,
       osm_url: osmDetailUrl(poi.external_id),
+      maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
     }));
   }
 
@@ -223,12 +224,12 @@ export class PoiService {
       .map((poi) => ({
         poi,
         distance_km: haversineKm(lat, lng, poi.lat, poi.lng),
-      }))
-      // Drop rows with no name AND no contact — same rationale as the
-      // accommodation ranker: an "Unnamed cafe" row with no phone or
-      // website is worse than showing fewer results.
-      .filter(({ poi }) => !!poi.name?.trim() || !!poi.website || !!poi.phone);
+      }));
 
+    // Keep nameless / contactless rows: every POI now carries a `maps_url`
+    // (a Google Maps deep link from its coordinates), so it's navigable even
+    // without a name — the per-kind named-first sort below just ranks them
+    // after named ones. Dropping them hid usable stops (e.g. unmanned fuel).
     const byKind = new Map<PoiKind, typeof withDistance>();
     for (const entry of withDistance) {
       const list = byKind.get(entry.poi.kind) ?? [];
@@ -269,6 +270,7 @@ export class PoiService {
       cuisine: poi.cuisine,
       brand: poi.brand,
       osm_url: osmDetailUrl(poi.external_id),
+      maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
     }));
   }
 
@@ -363,7 +365,10 @@ export class PoiService {
     const deduped = new Map<string, Annotated>();
     for (const poi of raw) {
       if (!kindSet.has(poi.kind)) continue;
-      if (!poi.name?.trim() && !poi.website && !poi.phone) continue;
+      // Keep nameless / contactless rows — `maps_url` makes them navigable,
+      // which matters most here: unmanned fuel stops on a sparse route often
+      // carry no name/website/phone yet are exactly what the fuel-range
+      // warning needs to surface. Dropping them hid usable stops.
       // Project the POI onto the nearest polyline segment (closest point
       // on segment, not nearest vertex) so a station sitting halfway
       // along a long sparse segment is measured against the actual route
@@ -425,6 +430,7 @@ export class PoiService {
         cuisine: poi.cuisine,
         brand: poi.brand,
         osm_url: osmDetailUrl(poi.external_id),
+        maps_url: googleMapsUrl(poi.name, poi.lat, poi.lng),
       }),
     );
   }

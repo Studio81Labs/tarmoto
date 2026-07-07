@@ -106,6 +106,7 @@ describe("mockPoisByCategories (revision 4 §B)", () => {
             brand: "Shell",
             stars: null,
             osm_url: "https://www.openstreetmap.org/node/1",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=x",
             last_imported_at: "2026-07-06T00:00:00.000Z",
           },
           {
@@ -127,6 +128,7 @@ describe("mockPoisByCategories (revision 4 §B)", () => {
             brand: null,
             stars: null,
             osm_url: "https://www.openstreetmap.org/node/2",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=x",
             last_imported_at: "2026-07-06T00:00:00.000Z",
           },
         ],
@@ -185,6 +187,7 @@ describe("mockPoisByCategories (revision 4 §B)", () => {
             brand: "Shell",
             stars: null,
             osm_url: "https://www.openstreetmap.org/node/5",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=x",
             last_imported_at: "2026-07-06T00:00:00.000Z",
             distance_along_route_km: 12.3,
             distance_from_route_km: 0.4,

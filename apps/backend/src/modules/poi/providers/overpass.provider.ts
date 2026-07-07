@@ -572,15 +572,3 @@ export function extractStoredPoiFields(
     tags: boundedTagBag(tags),
   };
 }
-
-/**
- * Build the canonical OpenStreetMap detail URL for a POI from its
- * `osm:<type>:<id>` external id — the rider-facing "view source" link and
- * the ODbL attribution target. Returns null for an id that isn't an OSM
- * node/way/relation reference.
- */
-export function osmDetailUrl(externalId: string): string | null {
-  const match = /^osm:(node|way|relation):(\d+)$/.exec(externalId);
-  if (!match) return null;
-  return `https://www.openstreetmap.org/${match[1]}/${match[2]}`;
-}

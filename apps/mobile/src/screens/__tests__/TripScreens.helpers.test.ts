@@ -12,6 +12,7 @@ import {
   navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
+  poiOpenCandidates,
   routeGeometrySignature,
   summarizeFuelRange,
   summarizeWaypoints,
@@ -337,6 +338,7 @@ function makeAccommodation(
     address_postcode: null,
     address_country: null,
     osm_url: null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=x",
     ...overrides,
   };
 }
@@ -759,7 +761,11 @@ describe("summarizeFuelRange", () => {
       expect(leg1FirstStop.distanceFromLegStartKm).toBeLessThan(65);
     });
 
-    it("drops stations with blank names since the UI has nothing to render", () => {
+    it("keeps blank-named stations with a fallback label so the warning still lists a refuel option", () => {
+      // An unmanned fuel stop on a sparse route often has no name. The
+      // backend now returns it (maps_url makes it navigable), so the
+      // fuel-range warning must surface it with a fallback label rather
+      // than silently dropping it and claiming there is no refuel option.
       const result = summarizeFuelRange(longDay(), 150, [
         {
           name: null,
@@ -781,8 +787,12 @@ describe("summarizeFuelRange", () => {
         },
       ]);
       expect(result.legs[0]?.suggestedStops?.map((s) => s.name)).toEqual([
+        "Fuel stop",
+        "Fuel stop",
         "Named",
       ]);
+      // The brand hint survives so the row can still read "Fuel stop · Shell".
+      expect(result.legs[0]?.suggestedStops?.[0]?.hint).toBe("Shell");
     });
 
     it("caps suggested stops per leg to stop the warning card from ballooning", () => {
@@ -924,5 +934,48 @@ describe("isLastDay", () => {
   it("handles a single-day trip", () => {
     const days: TripDay[] = [{ ...dayFrom([], []), day_number: 1 }];
     expect(isLastDay(days, 1)).toBe(true);
+  });
+});
+
+describe("poiOpenCandidates", () => {
+  const base = {
+    website: null as string | null,
+    phone: null as string | null,
+    maps_url: "https://www.google.com/maps/search/?api=1&query=x",
+    lat: 49.5,
+    lng: 18.4,
+  };
+
+  it("orders website, phone, maps_url, then the OSM coordinate link", () => {
+    const urls = poiOpenCandidates({
+      ...base,
+      website: "https://koliba.cz",
+      phone: "+420 555 000 111",
+      maps_url: "https://www.google.com/maps/search/?api=1&query=Koliba",
+    });
+
+    expect(urls).toEqual([
+      "https://koliba.cz",
+      "tel:+420555000111",
+      "https://www.google.com/maps/search/?api=1&query=Koliba",
+      "https://www.openstreetmap.org/?mlat=49.5&mlon=18.4#map=17/49.5/18.4",
+    ]);
+  });
+
+  it("tries maps_url before the OSM pin for a coordinate-only POI", () => {
+    // No website, no phone: the Google Maps deep link must come before the
+    // bare OSM coordinate pin so contactless rows still open a rich page.
+    const urls = poiOpenCandidates(base);
+
+    expect(urls[0]).toBe(base.maps_url);
+    expect(urls[1]).toContain("openstreetmap.org");
+    expect(urls).toHaveLength(2);
+  });
+
+  it("drops a non-http website but keeps the rest of the chain", () => {
+    const urls = poiOpenCandidates({ ...base, website: "koliba.cz" });
+
+    expect(urls.some((u) => u.includes("koliba.cz"))).toBe(false);
+    expect(urls[0]).toBe(base.maps_url);
   });
 });

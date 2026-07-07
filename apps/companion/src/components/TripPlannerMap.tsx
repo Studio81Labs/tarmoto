@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, Plus, TriangleAlert } from "lucide-react";
+import { ExternalLink, Layers3, Plus, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -1102,8 +1102,23 @@ const TripPlannerMapContent = forwardRef<
       swallowNextClickRef.current = true;
       setContextMenu(null);
       setWaypointMenu(null);
+      // Prefer the original POI (still in the by-id lookup after placement)
+      // so its `meta.mapsUrl` — and the Maps link that depends on it —
+      // survives; the waypoint-pin properties carry no meta, so a placed
+      // contactless POI would otherwise lose its only detail link. VIA
+      // placements encode the poi id in the waypoint id; "Set as
+      // start/finish" keeps the planner endpoint id, so fall back to
+      // matching the placement coordinates (as `usedPois` does).
+      const originalPoi =
+        poisByIdRef.current.get(poiId) ??
+        [...poisByIdRef.current.values()].find(
+          (candidate) =>
+            candidate.lng === lng &&
+            candidate.lat === lat &&
+            candidate.category === props.poiCategory,
+        );
       setPoiMenu({
-        poi: {
+        poi: originalPoi ?? {
           id: poiId,
           category: props.poiCategory,
           source:
@@ -1455,7 +1470,25 @@ const TripPlannerMapContent = forwardRef<
           !usedPois.ids.has(poi.id) &&
           !usedPois.spots.has(`${poi.lng},${poi.lat}`),
       );
-      poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
+      // Keep the FULL fetched set in the by-id lookup — not the
+      // placement-filtered `pois` — so a POI placed as a waypoint (dropped
+      // from the pin layer) can still be resolved with its `meta.mapsUrl`
+      // when its waypoint popover reopens.
+      const nextPoiLookup = new Map(fetched.map((poi) => [poi.id, poi]));
+      // A placed POI can fall out of a later viewport/category fetch (pan
+      // away, or the category toggled off → applyPois([])). Retain any
+      // still-placed POI so its waypoint popover keeps resolving the
+      // original POI — and its maps_url — instead of a meta-less fallback.
+      for (const poi of poisByIdRef.current.values()) {
+        if (
+          !nextPoiLookup.has(poi.id) &&
+          (usedPois.ids.has(poi.id) ||
+            usedPois.spots.has(`${poi.lng},${poi.lat}`))
+        ) {
+          nextPoiLookup.set(poi.id, poi);
+        }
+      }
+      poisByIdRef.current = nextPoiLookup;
       const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
       source?.setData({
         type: "FeatureCollection",
@@ -2542,6 +2575,28 @@ const TripPlannerMapContent = forwardRef<
                     ) : null}
                   </>
                 )}
+                {(() => {
+                  // `maps_url` is a non-null Google Maps deep link on every
+                  // store-backed POI (mock passes / twisties don't set it).
+                  // Surfacing it here is the only way web riders can open the
+                  // Google photos / reviews page for contactless rows the
+                  // backend now keeps because maps_url makes them actionable.
+                  const mapsUrl =
+                    typeof poiMenu.poi.meta?.mapsUrl === "string"
+                      ? poiMenu.poi.meta.mapsUrl
+                      : null;
+                  return mapsUrl ? (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+                    >
+                      <ExternalLink size={13} strokeWidth={2.5} />
+                      {t("View on Google Maps")}
+                    </a>
+                  ) : null;
+                })()}
               </div>
             );
           })()
