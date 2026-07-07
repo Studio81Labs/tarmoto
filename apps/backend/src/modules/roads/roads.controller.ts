@@ -1,6 +1,19 @@
-import { Controller, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { RoadsService } from './roads.service.js';
+import {
+  RouteQualityRequestDto,
+  RouteQualityResponseDto,
+} from './dto/route-quality.dto.js';
 import { QueryNearbyDto } from './dto/query-nearby.dto.js';
 import {
   RoadSegmentDto,
@@ -54,6 +67,19 @@ export class RoadsController {
     @Query() query: QueryBestRoadsDto,
   ): Promise<BestRoadsResponseDto> {
     return this.roadsService.findBest(query);
+  }
+
+  @Post('route-quality')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Per-segment surface quality for a routed polyline (planner overlay)',
+  })
+  @ApiResponse({ status: 200, type: RouteQualityResponseDto })
+  async getRouteQuality(
+    @Body() dto: RouteQualityRequestDto,
+  ): Promise<RouteQualityResponseDto> {
+    return this.roadsService.getRouteQuality(dto);
   }
 
   @Get(':segmentId')

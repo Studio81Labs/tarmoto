@@ -26,6 +26,10 @@ import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto, BestRoadDto } from './dto/best-roads.dto.js';
 import { FunZoneDetailDto, FunZoneRoadDto } from './dto/fun-zone-detail.dto.js';
+import {
+  RouteQualityRequestDto,
+  RouteQualityResponseDto,
+} from './dto/route-quality.dto.js';
 
 const RECENT_REVIEW_LIMIT = 5;
 const ACTIVE_HAZARD_LIMIT = 10;
@@ -42,6 +46,100 @@ export class RoadsService {
     @InjectRepository(FunZone)
     private readonly funZoneRepo: Repository<FunZone>,
   ) {}
+
+  /**
+   * Per-segment surface quality for an already-routed polyline (#862). Spatial-
+   * joins the routed line to `road_segments` and returns, ordered along the
+   * route, every segment the line passes through with its quality / surface /
+   * curviness and the route-fraction span it covers. The planner paints each
+   * span onto the polyline; gaps between spans are genuine no-coverage
+   * stretches it renders as "no data".
+   *
+   * Each segment's route-fraction span is `LEAST/GREATEST` of where its two
+   * endpoints project onto the route (`ST_LineLocatePoint`), so a segment the
+   * route only clips still gets a sensible position. The buffer stays tight
+   * (default 25 m) because the routed line follows the same OSM ways the
+   * segments were cut from — a wide buffer would pull in parallel roads.
+   *
+   * Resilience mirrors the POI read path: any DB failure yields an empty list
+   * rather than a 500, and rider coordinates are never written to logs.
+   */
+  async getRouteQuality(
+    dto: RouteQualityRequestDto,
+  ): Promise<RouteQualityResponseDto> {
+    const bufferM = dto.buffer_m ?? 25;
+
+    // Build the route LineString via positional params so no user coordinate
+    // is string-interpolated into the SQL.
+    const params: number[] = [];
+    const pointsSql = dto.geometry
+      .map((p) => {
+        params.push(p.lng, p.lat);
+        return `ST_MakePoint($${params.length - 1}, $${params.length})`;
+      })
+      .join(',');
+    params.push(bufferM);
+    const bufferParam = `$${params.length}`;
+
+    const sql = `
+      WITH route AS (
+        SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      )
+      SELECT
+        rs.osm_way_id::text AS osm_way_id,
+        rs.segment_index    AS segment_index,
+        rs.quality_score    AS quality_score,
+        rs.curviness_score  AS curviness_score,
+        rs.surface_type     AS surface_type,
+        rs.reading_count    AS reading_count,
+        LEAST(
+          ST_LineLocatePoint(route.line, ST_StartPoint(rs.geom)),
+          ST_LineLocatePoint(route.line, ST_EndPoint(rs.geom))
+        ) AS start_fraction,
+        GREATEST(
+          ST_LineLocatePoint(route.line, ST_StartPoint(rs.geom)),
+          ST_LineLocatePoint(route.line, ST_EndPoint(rs.geom))
+        ) AS end_fraction
+      FROM road_segments rs, route
+      WHERE ST_GeometryType(rs.geom) = 'ST_LineString'
+        AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
+      ORDER BY start_fraction ASC, end_fraction ASC
+    `;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const rows = await this.segmentRepo.query(sql, params);
+
+      return {
+        segments: (
+          rows as Array<{
+            osm_way_id: string | null;
+            segment_index: number | null;
+            quality_score: string | number | null;
+            curviness_score: string | number;
+            surface_type: string;
+            reading_count: string | number;
+            start_fraction: string | number;
+            end_fraction: string | number;
+          }>
+        ).map((r) => ({
+          osm_way_id: r.osm_way_id ?? null,
+          segment_index: r.segment_index ?? null,
+          quality_score:
+            r.quality_score == null ? null : Number(r.quality_score),
+          curviness_score: Number(r.curviness_score),
+          surface_type: r.surface_type,
+          reading_count: Number(r.reading_count),
+          start_fraction: Number(r.start_fraction),
+          end_fraction: Number(r.end_fraction),
+        })),
+      };
+    } catch {
+      // Never surface a 500 to the planner over a quality lookup, and never
+      // log the route coordinates (a rider's planned trip is location data).
+      return { segments: [] };
+    }
+  }
 
   async findNearby(query: QueryNearbyDto): Promise<RoadSegmentDto[]> {
     const radius = query.radius ?? 5000;

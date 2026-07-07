@@ -42,6 +42,9 @@ describe('RoadsController', () => {
         avg_review_rating: 4.3,
         riders_per_month: 12,
       }),
+      getRouteQuality: jest
+        .fn()
+        .mockResolvedValue({ segments: [{ osm_way_id: '1' }] }),
       findFunZones: jest.fn().mockResolvedValue([]),
       findZoneById: jest.fn().mockResolvedValue({
         zone: {
@@ -65,6 +68,22 @@ describe('RoadsController', () => {
 
     controller = module.get<RoadsController>(RoadsController);
     service = module.get(RoadsService);
+  });
+
+  describe('POST /roads/route-quality', () => {
+    it('delegates the routed geometry to the service', async () => {
+      const dto = {
+        geometry: [
+          { lat: 49.1, lng: 16.7 },
+          { lat: 49.2, lng: 16.8 },
+        ],
+      };
+
+      const result = await controller.getRouteQuality(dto);
+
+      expect(service.getRouteQuality).toHaveBeenCalledWith(dto);
+      expect(result.segments).toHaveLength(1);
+    });
   });
 
   describe('GET /roads/nearby', () => {

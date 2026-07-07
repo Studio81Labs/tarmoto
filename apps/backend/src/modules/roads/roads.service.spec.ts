@@ -999,4 +999,93 @@ describe('RoadsService', () => {
       expect(result.top_roads[0].elevation_profile).toBeNull();
     });
   });
+
+  describe('getRouteQuality', () => {
+    const route = [
+      { lat: 49.1, lng: 16.7 },
+      { lat: 49.2, lng: 16.8 },
+    ];
+
+    it('spatial-joins the routed line with flattened positional params and a default 25 m buffer', async () => {
+      await service.getRouteQuality({ geometry: route });
+
+      expect(segmentRepo.query).toHaveBeenCalledTimes(1);
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        // route-order fraction (ST_LineLocatePoint in SELECT) + the spatial
+        // filter (ST_DWithin in WHERE), in that source order.
+        expect.stringMatching(/ST_LineLocatePoint[\s\S]*ST_DWithin/),
+        // lng/lat interleaved per point, then the buffer.
+        [16.7, 49.1, 16.8, 49.2, 25],
+      );
+    });
+
+    it('honours a custom buffer', async () => {
+      await service.getRouteQuality({ geometry: route, buffer_m: 60 });
+
+      expect(segmentRepo.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [16.7, 49.1, 16.8, 49.2, 60],
+      );
+    });
+
+    it('maps rows to spans, coercing pg string numerics and keeping null quality', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          osm_way_id: '123',
+          segment_index: 0,
+          quality_score: '4.2',
+          curviness_score: '3.1',
+          surface_type: 'asphalt',
+          reading_count: '12',
+          start_fraction: '0',
+          end_fraction: '0.4',
+        },
+        {
+          osm_way_id: null,
+          segment_index: null,
+          quality_score: null,
+          curviness_score: '0',
+          surface_type: 'unknown',
+          reading_count: '0',
+          start_fraction: '0.4',
+          end_fraction: '1',
+        },
+      ]);
+
+      const result = await service.getRouteQuality({ geometry: route });
+
+      expect(result.segments).toEqual([
+        {
+          osm_way_id: '123',
+          segment_index: 0,
+          quality_score: 4.2,
+          curviness_score: 3.1,
+          surface_type: 'asphalt',
+          reading_count: 12,
+          start_fraction: 0,
+          end_fraction: 0.4,
+        },
+        {
+          osm_way_id: null,
+          segment_index: null,
+          quality_score: null,
+          curviness_score: 0,
+          surface_type: 'unknown',
+          reading_count: 0,
+          start_fraction: 0.4,
+          end_fraction: 1,
+        },
+      ]);
+    });
+
+    it('returns an empty list (never throws) when the spatial query fails', async () => {
+      (segmentRepo.query as jest.Mock).mockRejectedValueOnce(
+        new Error('pg unavailable'),
+      );
+
+      await expect(
+        service.getRouteQuality({ geometry: route }),
+      ).resolves.toEqual({ segments: [] });
+    });
+  });
 });
