@@ -7,13 +7,16 @@ const ride: UserRide = {
   id: "r1",
   name: "Stelvio Loop",
   status: "completed",
-  ride_type: "tour",
+  ride_type: "trip",
   started_at: "2026-04-18T08:00:00Z",
   ended_at: "2026-04-18T12:12:00Z",
   distance_km: 186,
   duration_min: 252,
   avg_speed: 64,
   avg_road_quality: 4.6,
+  avg_curviness: null,
+  bike_id: null,
+  max_lean_angle: null,
 };
 
 describe("RecentRidesTable", () => {
