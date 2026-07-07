@@ -52,6 +52,40 @@ export const WAYPOINT_TYPES = [
 
 export type WaypointType = (typeof WAYPOINT_TYPES)[number];
 
+/**
+ * Kinds of along-route POI the API serves — the `kind` enum of the `/poi`
+ * endpoints. Mirrors the OSM tag subset we accept; anything outside this list
+ * is dropped at the provider layer so clients never see an unknown kind. Kept
+ * deliberately small (restaurants + viewpoints + cafés + fuel stations). The
+ * wider set the importer *stores* in `pois.kind` is intentionally decoupled
+ * from this served enum, so widening the store never changes the API contract.
+ */
+export const POI_KINDS = [
+  "restaurant",
+  "viewpoint",
+  "cafe",
+  "fuel_station",
+] as const;
+
+export type PoiKind = (typeof POI_KINDS)[number];
+
+/**
+ * Kinds of overnight stop the API serves — the `kind` enum of the
+ * `/accommodations` endpoint. Mirrors the OSM `tourism=*` tag subset we accept;
+ * anything outside this list is dropped at the provider layer.
+ */
+export const ACCOMMODATION_KINDS = [
+  "hotel",
+  "motel",
+  "hostel",
+  "guest_house",
+  "apartment",
+  "chalet",
+  "camp_site",
+] as const;
+
+export type AccommodationKind = (typeof ACCOMMODATION_KINDS)[number];
+
 // Ascending order: free → pro (mid, €29.99) → premium (top, €49.99).
 // Naming decided 2026-07: "Pro" is the mid tier, "Premium" the top tier
 // (the marketing page originally shipped them the other way around).

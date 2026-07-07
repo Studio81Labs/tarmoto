@@ -14,8 +14,7 @@ import {
   type PointOfInterest,
   type StoredPoiFields,
 } from './poi-provider.interface.js';
-import type { PoiKind } from './dto/point-of-interest.dto.js';
-import type { AccommodationKind } from './dto/accommodation.dto.js';
+import type { PoiKind, AccommodationKind } from '@tarmoto/shared';
 
 const NO_STORED_FIELDS: StoredPoiFields = {
   opening_hours: null,
