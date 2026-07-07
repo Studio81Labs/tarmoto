@@ -49,6 +49,12 @@ interface LoadedTrip {
   detail: TripDetailResponse;
   members: TripDetailMember[];
 }
+
+// Persisted trips carry a UUID id; in-memory planner drafts are `planner-*` /
+// `imported-*`. Used to avoid clobbering an unsaved draft in the shared store.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function TripDetailPage() {
   const { tripId } = useParams<{
     tripId: string;
@@ -119,10 +125,26 @@ export default function TripDetailPage() {
   // Activate the trip in the store so the map's store-driven overlays
   // (quality segments, segment focus) resolve against this trip. Reset
   // on unmount so navigating to the planner doesn't inherit stale state.
+  // The planner keeps an unsaved draft (`planner-*`/`imported-*`) as the shared
+  // activeTrip across navigation; overwriting + clearing it here would destroy
+  // the rider's working state just for viewing a saved trip. Stash a
+  // non-persisted previous trip once and restore it on unmount instead of
+  // clobbering the planner store (a lingering persisted UUID trip is still
+  // cleared, matching prior behaviour).
+  const stashedDraftRef = useRef<
+    ReturnType<typeof tripFromDetail> | null | undefined
+  >(undefined);
+  // Capture the unsaved draft present before this view activates (once, on the
+  // first render — activeTrip is still the planner's working state here). null
+  // means there was no draft to preserve.
+  if (stashedDraftRef.current === undefined) {
+    stashedDraftRef.current =
+      activeTrip && !UUID_RE.test(activeTrip.id) ? activeTrip : null;
+  }
   useEffect(() => {
     setActiveTrip(trip);
     return () => {
-      setActiveTrip(null);
+      setActiveTrip(stashedDraftRef.current ?? null);
     };
   }, [trip, setActiveTrip]);
   // Hydrate real per-segment quality for this saved trip's routed days (#862),
