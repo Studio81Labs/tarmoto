@@ -46,6 +46,7 @@
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
     "db:migrate": "pnpm backend:db:migrate",
     "db:seed": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend seed:demo",
+    "poi:import": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend poi:import",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "clean": "pnpm -r exec rm -rf dist node_modules"
