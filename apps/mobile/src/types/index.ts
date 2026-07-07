@@ -226,60 +226,11 @@ export type TripSharePublic = Schemas["TripSharePublicDto"];
 
 // ── Reviews ──
 
-export interface RoadReview {
-  id: string;
-  /**
-   * Author user id, used to deep-link the review byline to the rider
-   * profile. `null` when the author has been soft-deleted (paired with
-   * the masked "Deleted user" display name) — the card should hide the
-   * profile link in that case.
-   */
-  user_id: string | null;
-  user_display_name: string;
-  rating: number;
-  // Matches `ReviewResponseDto`: both fields are always present in the
-  // response, but `null` when the rider left the field blank. Using
-  // `string | null` (not `string | undefined`) so `JSON.stringify` /
-  // equality checks against the wire format line up with backend.
-  comment: string | null;
-  bike_model: string | null;
-  /**
-   * HTTPS URLs of photos uploaded with the review. Empty array when
-   * none. `null` when the author has been masked (deleted or
-   * `profile_visibility = 'private'`) — managed photo URLs embed
-   * the author's id in their filename, so the backend suppresses
-   * the array on masked surfaces to avoid leaking the rider's UUID
-   * through the path even when `user_id` is null (#279 / #501).
-   */
-  photos: string[] | null;
-  created_at: string;
-  /** Helpful votes cast by other riders. Always present (zero when none). */
-  helpful_count: number;
-  /** Not-helpful votes cast by other riders. Always present (zero when none). */
-  not_helpful_count: number;
-  /**
-   * The signed-in viewer's own vote on this review. `null` when the viewer
-   * hasn't voted, or is anonymous — which is also the case on the
-   * embedded-reviews field of a road-detail response, since that endpoint
-   * doesn't personalise per viewer.
-   */
-  my_vote: boolean | null;
-  /**
-   * True when this review belongs to the authenticated caller, false
-   * otherwise. The /roads/:id embedded-reviews shortcut always reports
-   * `false` (anonymous-friendly), so the form mounts /roads/:id/reviews
-   * separately when it needs to know whether the rider already has a
-   * review on this segment.
-   */
-  is_mine: boolean;
-}
+/** Road review (`GET /roads/:id/reviews`) — the generated `ReviewResponseDto`. */
+export type RoadReview = Schemas["ReviewResponseDto"];
 
-/** Result of POST / DELETE /roads/reviews/:reviewId/vote. */
-export interface ReviewVoteResult {
-  helpful_count: number;
-  not_helpful_count: number;
-  my_vote: boolean | null;
-}
+/** Result of POST / DELETE /roads/reviews/:reviewId/vote — `ReviewVoteResultDto`. */
+export type ReviewVoteResult = Schemas["ReviewVoteResultDto"];
 
 // ── Commute ──
 
@@ -509,27 +460,11 @@ export interface CalculatedRoute {
 
 // ── Group Rides (US-26) ──
 
-export interface GroupRideMember {
-  user_id: string;
-  display_name: string;
-  joined_at: string;
-  last_lat: number | null;
-  last_lng: number | null;
-  last_speed: number | null;
-  last_heading: number | null;
-  last_position_at: string | null;
-  recent_path: { lat: number; lng: number; at: string }[];
-}
+/** Group-ride participant (US-26) — the generated `GroupRideMemberDto`. */
+export type GroupRideMember = Schemas["GroupRideMemberDto"];
 
-export interface GroupRideDetail {
-  id: string;
-  owner_id: string;
-  name: string;
-  code: string;
-  started_at: string;
-  ended_at: string | null;
-  members: GroupRideMember[];
-}
+/** Group-ride detail (US-26) — the generated `GroupRideDetailDto`. */
+export type GroupRideDetail = Schemas["GroupRideDetailDto"];
 
 export interface GroupPositionEvent {
   group_ride_id: string;
@@ -567,47 +502,23 @@ export interface GroupEndedEvent {
 export type BadgeCategory = "distance" | "exploration" | "community";
 export type BadgeTier = "bronze" | "silver" | "gold";
 
-export interface CheckBadgesResponse {
-  newly_earned: string[];
-}
+/** `POST /badges/check` response — the generated `CheckBadgesResponseDto`. */
+export type CheckBadgesResponse = Schemas["CheckBadgesResponseDto"];
 
-export interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  metric: string;
-  target: number;
-  starts_at: string;
-  ends_at: string;
-  reward_badge_key: string | null;
-  participant_count: number;
-}
+/** Challenge summary — the generated `ChallengeDto`. */
+export type Challenge = Schemas["ChallengeDto"];
 
-export interface ChallengeLeaderboardEntry {
-  rank: number;
-  user_id: string;
-  display_name: string;
-  progress: number;
-  completed: boolean;
-}
+/** One challenge leaderboard row — the generated `LeaderboardEntryDto`. */
+export type ChallengeLeaderboardEntry = Schemas["LeaderboardEntryDto"];
 
-export interface ChallengeDetail extends Challenge {
-  my_progress: number | null;
-  my_completed: boolean | null;
-  leaderboard: ChallengeLeaderboardEntry[];
-}
+/** Challenge detail (+ my progress + leaderboard) — the generated `ChallengeDetailDto`. */
+export type ChallengeDetail = Schemas["ChallengeDetailDto"];
 
-export interface ChallengeJoinResponse {
-  challenge_id: string;
-  joined_at: string;
-}
+/** `POST /challenges/:id/join` response — the generated `JoinChallengeResponseDto`. */
+export type ChallengeJoinResponse = Schemas["JoinChallengeResponseDto"];
 
-export interface ExplorationStats {
-  ridden_segments: number;
-  total_segments: number;
-  percent_explored: number;
-  total_distance_km: number;
-}
+/** Rider exploration totals (US-30) — the generated `ExplorationStatsDto`. */
+export type ExplorationStats = Schemas["ExplorationStatsDto"];
 
 export type UnriddenSegment = Schemas["UnriddenSegmentDto"];
 
@@ -618,25 +529,9 @@ export type RiddenSegmentsList = Schemas["RiddenSegmentsListDto"];
 // ── Bikes (US-64) ──
 
 /**
- * A bike registered in the rider's garage. The mobile HUD surfaces
- * the active bike on `RideActiveScreen` and pins each new ride to it
- * server-side. Camel-cased keys mirror the backend's `BikeDto`.
- *
- * Mobile only consumes the active-bike lookup today; the full CRUD
- * lives on the companion. CRUD-input shapes will land here when a
- * mobile garage screen ships.
+ * A bike registered in the rider's garage — the generated `BikeDto` (one of
+ * the few camelCase wire DTOs). The mobile HUD surfaces the active bike on
+ * `RideActiveScreen` and pins each new ride to it server-side; mobile only
+ * consumes the active-bike lookup today (full CRUD lives on the companion).
  */
-export interface Bike {
-  id: string;
-  make: string;
-  model: string;
-  year: number | null;
-  isActive: boolean;
-  photoUrl: string | null;
-  icon: string | null;
-  notes: string | null;
-  totalKm: number;
-  totalRides: number;
-  createdAt: string;
-  updatedAt: string;
-}
+export type Bike = Schemas["BikeDto"];

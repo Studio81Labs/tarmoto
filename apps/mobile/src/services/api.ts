@@ -1082,7 +1082,7 @@ class ApiService {
     const result = await client.GET("/api/v1/roads/{segmentId}/reviews", {
       params: { path: { segmentId } },
     });
-    return unwrap(result, "Failed to load reviews") as RoadReview[];
+    return unwrap(result, "Failed to load reviews");
   }
 
   async submitReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
@@ -1095,7 +1095,7 @@ class ApiService {
         ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
-    return unwrap(result, "Failed to submit review") as RoadReview;
+    return unwrap(result, "Failed to submit review");
   }
 
   /**
@@ -1140,7 +1140,7 @@ class ApiService {
         ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
-    return unwrap(result, "Failed to update review") as RoadReview;
+    return unwrap(result, "Failed to update review");
   }
 
   async deleteReview(segmentId: string): Promise<void> {
@@ -1362,7 +1362,7 @@ class ApiService {
 
   async listChallenges(): Promise<Challenge[]> {
     const result = await client.GET("/api/v1/challenges");
-    return unwrap(result, "Failed to load challenges") as Challenge[];
+    return unwrap(result, "Failed to load challenges");
   }
 
   async getChallenge(challengeId: string): Promise<ChallengeDetail> {
@@ -1376,7 +1376,7 @@ class ApiService {
     const result = await client.POST("/api/v1/challenges/{challengeId}/join", {
       params: { path: { challengeId } },
     });
-    return unwrap(result, "Failed to join challenge") as ChallengeJoinResponse;
+    return unwrap(result, "Failed to join challenge");
   }
 
   // ── Gamification: Exploration / Personal road map (US-30) ──
