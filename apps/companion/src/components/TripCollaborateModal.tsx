@@ -393,6 +393,7 @@ export function TripCollaborateModal({
               currentUserId={currentUserId}
               isOwner={isOwner}
               callerRole={callerRole}
+              hideProposeIntro={suggestionsOnly}
               externalSuggestions={externalSuggestions}
               onExternalChange={onSuggestionsChange}
               externalError={externalSuggestionsError}
@@ -841,12 +842,12 @@ function RoleMenu({
               {
                 value: "editor" as const,
                 label: t("Editor"),
-                hint: t("Can edit the route & vote"),
+                hint: t("Edits the route & moderates suggestions"),
               },
               {
                 value: "viewer" as const,
                 label: t("Viewer"),
-                hint: t("Can view & comment only"),
+                hint: t("Views, comments, suggests & votes"),
               },
             ].map((option) => (
               <button
@@ -898,6 +899,7 @@ function SuggestionsTab({
   currentUserId,
   isOwner,
   callerRole,
+  hideProposeIntro = false,
   externalSuggestions,
   onExternalChange,
   externalError,
@@ -908,6 +910,7 @@ function SuggestionsTab({
   currentUserId: string | null;
   isOwner: boolean;
   callerRole: TripMemberRole | null;
+  hideProposeIntro?: boolean;
   externalSuggestions?: TripSuggestion[] | undefined;
   onExternalChange?:
     | React.Dispatch<React.SetStateAction<TripSuggestion[]>>
@@ -1090,20 +1093,24 @@ function SuggestionsTab({
         // can still view + vote on existing suggestions via the list
         // further down.
         <section className="rounded-xl border border-line bg-paper p-3.5">
-          <h3 className="flex items-center gap-2 text-[13.5px] font-extrabold text-ink">
-            <Star
-              size={15}
-              strokeWidth={0}
-              fill="currentColor"
-              className="shrink-0 text-accent"
-            />
-            {t("Propose an alternative ")}
-          </h3>
-          <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
-            {t(
-              "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
-            )}
-          </p>
+          {!hideProposeIntro && (
+            <>
+              <h3 className="flex items-center gap-2 text-[13.5px] font-extrabold text-ink">
+                <Star
+                  size={15}
+                  strokeWidth={0}
+                  fill="currentColor"
+                  className="shrink-0 text-accent"
+                />
+                {t("Propose an alternative ")}
+              </h3>
+              <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
+                {t(
+                  "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
+                )}
+              </p>
+            </>
+          )}
           <Input
             tone="cream"
             placeholder={t("Short title (e.g. 'Scenic loop via Passo Giau')")}

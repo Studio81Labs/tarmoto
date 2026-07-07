@@ -203,6 +203,33 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
+  it("suggestions-only mode drops the tab bar and the redundant propose header", async () => {
+    render(
+      <TripCollaborateModal
+        open
+        mode="suggestions"
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    // Suggestions surface only — no invite/people/activity tabs.
+    expect(
+      screen.queryByRole("tab", { name: /invite link/i }),
+    ).not.toBeInTheDocument();
+    // The dialog header already says "Suggestions", so the in-box
+    // "Propose an alternative" heading is dropped — the form stays.
+    expect(
+      screen.queryByRole("heading", { name: /propose an alternative/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/suggestion title/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows accept/reject buttons for the trip owner", async () => {
     render(
       <TripCollaborateModal

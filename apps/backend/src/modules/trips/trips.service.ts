@@ -1173,7 +1173,7 @@ export class TripsService {
     if (!member) throw new NotFoundException('Trip not found');
     if (member.role === 'viewer') {
       throw new ForbiddenException(
-        'Viewers can view and comment only — ask the trip owner for editor access',
+        'Editing the route needs editor access — ask the trip owner to upgrade your role',
       );
     }
 

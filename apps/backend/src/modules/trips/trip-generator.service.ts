@@ -153,7 +153,7 @@ export class TripGeneratorService {
     // a route write.
     if (membership.role === 'viewer') {
       throw new ForbiddenException(
-        'Viewers can view and comment only — ask the trip owner for editor access',
+        'Editing the route needs editor access — ask the trip owner to upgrade your role',
       );
     }
 
