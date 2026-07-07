@@ -406,7 +406,7 @@ export default function TripDetailPage() {
 
         <aside
           aria-label={t("Trip detail panel")}
-          className="hidden w-[360px] shrink-0 flex-col border-l border-line bg-paper lg:flex"
+          className="hidden w-[370px] shrink-0 flex-col border-l border-line bg-paper lg:flex"
         >
           {/* Same panel chrome as the planner's "Plan & inspect" column. */}
           <div className="shrink-0 px-5 pt-4">

@@ -2363,7 +2363,7 @@ export default function TripPlannerPage() {
           space. Right panel is always present. */}
       <div
         className={`grid min-h-0 flex-1 ${
-          daysVisible ? "grid-cols-[340px_1fr_360px]" : "grid-cols-[1fr_360px]"
+          daysVisible ? "grid-cols-[340px_1fr_370px]" : "grid-cols-[1fr_370px]"
         }`}
       >
         {/* LEFT — itinerary surface: the split's day cards. Absent (not
