@@ -1471,7 +1471,21 @@ const TripPlannerMapContent = forwardRef<
       // placement-filtered `pois` — so a POI placed as a waypoint (dropped
       // from the pin layer) can still be resolved with its `meta.mapsUrl`
       // when its waypoint popover reopens.
-      poisByIdRef.current = new Map(fetched.map((poi) => [poi.id, poi]));
+      const nextPoiLookup = new Map(fetched.map((poi) => [poi.id, poi]));
+      // A placed POI can fall out of a later viewport/category fetch (pan
+      // away, or the category toggled off → applyPois([])). Retain any
+      // still-placed POI so its waypoint popover keeps resolving the
+      // original POI — and its maps_url — instead of a meta-less fallback.
+      for (const poi of poisByIdRef.current.values()) {
+        if (
+          !nextPoiLookup.has(poi.id) &&
+          (usedPois.ids.has(poi.id) ||
+            usedPois.spots.has(`${poi.lng},${poi.lat}`))
+        ) {
+          nextPoiLookup.set(poi.id, poi);
+        }
+      }
+      poisByIdRef.current = nextPoiLookup;
       const source = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
       source?.setData({
         type: "FeatureCollection",
