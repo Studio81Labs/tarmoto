@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsLatitude,
@@ -11,6 +12,15 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/**
+ * Hard cap on routed-geometry vertices. Bounds the bind-param array and
+ * `ST_MakeLine` size independently of the 500 km length guard — a geometry
+ * densified well below segment scale is rejected at the DTO boundary (400)
+ * before any query is built. Sized to fit a dense max-length route (well over
+ * one vertex per sampled 40 m) while staying under the 1 MiB body limit.
+ */
+export const MAX_ROUTE_QUALITY_POINTS = 25000;
 
 /**
  * Body limit for `POST /roads/route-quality`. A routed day/leg polyline can
@@ -45,9 +55,14 @@ class RouteQualityPointDto {
  * joins it to `road_segments`.
  */
 export class RouteQualityRequestDto {
-  @ApiProperty({ type: [RouteQualityPointDto], minItems: 2 })
+  @ApiProperty({
+    type: [RouteQualityPointDto],
+    minItems: 2,
+    maxItems: MAX_ROUTE_QUALITY_POINTS,
+  })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_ROUTE_QUALITY_POINTS)
   @ValidateNested({ each: true })
   @Type(() => RouteQualityPointDto)
   geometry!: RouteQualityPointDto[];
