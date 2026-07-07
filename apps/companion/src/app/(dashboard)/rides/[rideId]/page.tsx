@@ -23,6 +23,7 @@ import {
   type DataTableColumn,
   type MetricTileProps,
 } from "@tarmoto/ui";
+import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
@@ -42,47 +43,12 @@ import { downloadRideExport } from "@/lib/ride-export";
 import { RideExportMenu } from "../_components/RideExportMenu";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
-interface LeanDistribution {
-  "0_10": number;
-  "10_20": number;
-  "20_30": number;
-  "30_plus": number;
-}
-
-interface RideSegment {
-  road_name: string | null;
-  quality_reading: number | null;
-  speed_avg: number | null;
-  speed_max: number | null;
-  lean_angle_max: number | null;
-}
-
-interface RideDetail {
-  id: string;
-  name: string | null;
-  status: string;
-  ride_type: string;
-  started_at: string;
-  ended_at: string | null;
-  distance_km: number | null;
-  duration_min: number | null;
-  avg_speed: number | null;
-  max_speed: number | null;
-  avg_road_quality: number | null;
-  elevation_gain: number | null;
-  elevation_loss: number | null;
-  curve_count: number | null;
-  max_lean_angle: number | null;
-  lean_distribution: LeanDistribution | null;
-  fuel_estimate_l: number | null;
-  route_geometry: Array<{ lat: number; lng: number }> | null;
-  segments: RideSegment[];
-  viewer_is_owner: boolean;
-  rider_id: string;
-  rider_name: string;
-  rider_avatar_url: string | null;
-  share_token: string | null;
-}
+// The ride detail endpoint's response, straight off the generated OpenAPI
+// contract — a backend field change surfaces here at typecheck time. The
+// nested segment + lean-distribution shapes come from the same source.
+type RideDetail = components["schemas"]["RideDetailDto"];
+type RideSegment = components["schemas"]["RideSegmentDto"];
+type LeanDistribution = components["schemas"]["LeanDistributionDto"];
 
 // Lean buckets the backend reports (US-19). The v2 "Time spent leaning" chart
 // uses these 4 buckets directly rather than the design mock's 5 — we render the
@@ -141,7 +107,7 @@ export default function RideDetailPage() {
           setError("Could not load ride");
           return;
         }
-        setRide(data as unknown as RideDetail);
+        setRide(data);
       })
       .catch(() => {
         if (!cancelled) setError("Could not load ride");

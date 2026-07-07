@@ -8,6 +8,7 @@
  * only hosts helpers that don't make sense outside the ride detail context.
  */
 
+import type { components } from "@tarmoto/openapi-client";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG, QUALITY_TIERS, scoreToTier } from "@/lib/utils";
 
@@ -20,13 +21,16 @@ export function readingToTier(
   return scoreToTier(reading);
 }
 
-export interface RideSegmentLike {
-  road_name: string | null;
-  quality_reading: number | null;
-  speed_avg: number | null;
-  speed_max?: number | null;
-  lean_angle_max: number | null;
-}
+/**
+ * The subset of `RideSegmentDto` the pure segment helpers read. Derived from
+ * the generated DTO (rather than re-declared) so a backend rename of any of
+ * these columns breaks here at typecheck time; `speed_max` stays optional so
+ * lean fixtures that omit it still satisfy the contract.
+ */
+export type RideSegmentLike = Pick<
+  components["schemas"]["RideSegmentDto"],
+  "road_name" | "quality_reading" | "speed_avg" | "lean_angle_max"
+> & { speed_max?: number | null };
 
 export interface QualityBreakdownRow {
   tier: QualityTier;

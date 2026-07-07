@@ -9,6 +9,7 @@
  * right", matching how the UI labels the columns.
  */
 
+import type { components } from "@tarmoto/openapi-client";
 import type { QualityTier } from "@/lib/types";
 import {
   buildRoutePreview,
@@ -19,23 +20,29 @@ import {
   type RoutePreview,
 } from "@/lib/ride-detail";
 
-/** Minimal ride shape required for comparison. Mirrors `RideDetailDto`. */
-export interface ComparableRide {
-  id: string;
-  started_at: string;
-  distance_km: number | null;
-  duration_min: number | null;
-  avg_speed: number | null;
-  max_speed: number | null;
-  avg_road_quality: number | null;
-  elevation_gain: number | null;
-  elevation_loss: number | null;
-  curve_count: number | null;
-  max_lean_angle: number | null;
-  fuel_estimate_l: number | null;
-  route_geometry: Array<{ lat: number; lng: number }> | null;
-  segments: RideSegmentLike[];
-}
+/**
+ * The subset of `RideDetailDto` the comparison helpers read. The scalar +
+ * geometry fields are derived from the generated DTO so a backend rename
+ * breaks here at typecheck time rather than silently skewing a delta;
+ * `segments` keeps the minimal `RideSegmentLike` contract the breakdown
+ * helper actually consumes (a full `RideDetailDto` still satisfies it).
+ */
+export type ComparableRide = Pick<
+  components["schemas"]["RideDetailDto"],
+  | "id"
+  | "started_at"
+  | "distance_km"
+  | "duration_min"
+  | "avg_speed"
+  | "max_speed"
+  | "avg_road_quality"
+  | "elevation_gain"
+  | "elevation_loss"
+  | "curve_count"
+  | "max_lean_angle"
+  | "fuel_estimate_l"
+  | "route_geometry"
+> & { segments: RideSegmentLike[] };
 
 export type StatKey =
   | "distance_km"
