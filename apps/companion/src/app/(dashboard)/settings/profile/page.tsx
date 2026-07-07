@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
-import { usersApi } from "@/lib/api";
+import { usersApi, type UpdateProfileInput } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import { Button, Card, Stamp } from "@tarmoto/ui";
@@ -161,11 +161,10 @@ export default function ProfilePage() {
     // omitted: the dedicated `/users/me/avatar` upload endpoint is the
     // only path that mutates it, so the form's PATCH has no business
     // shipping a value that could only have come from a stale local copy.
-    const payload: {
-      display_name: string;
-      bio?: string | null;
-      home_region?: string | null;
-    } = { display_name: trimmedName };
+    // Typed as the generated PATCH /users/me request body so the form can't
+    // drift from the contract. `avatar_url` (and the other optional fields)
+    // are simply never set here — see the note above on why avatar is omitted.
+    const payload: UpdateProfileInput = { display_name: trimmedName };
     if (didHydrateProfile || bioDirtyRef.current) {
       payload.bio = bio.trim() || null;
     }
