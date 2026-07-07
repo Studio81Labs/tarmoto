@@ -43,12 +43,7 @@ export type {
   HazardType,
   WaypointType,
 } from "@tarmoto/shared";
-import type {
-  HazardSeverity,
-  HazardType,
-  SurfaceType,
-  WaypointType,
-} from "@tarmoto/shared";
+import type { HazardSeverity, HazardType, SurfaceType } from "@tarmoto/shared";
 export type Severity = HazardSeverity;
 
 // Generated OpenAPI component schemas — re-exported so screens, services,
@@ -213,31 +208,11 @@ export interface HazardAlertEvent extends Omit<Hazard, "severity"> {
 
 // ── Trips ──
 
-export type TripStatus = "draft" | "planned" | "active" | "completed";
-export type RoadPreference = "curvy" | "scenic" | "fast" | "mixed";
+export type TripStatus = Schemas["TripSummaryDto"]["status"];
+export type RoadPreference = Schemas["TripDetailDto"]["road_preference"];
 
-export interface TripSummary {
-  id: string;
-  /**
-   * US-37 — owner uuid surfaced on the wire so callers can decide
-   * whether to carry folder assignments forward when duplicating
-   * (folders are private per-user; only the owner of the source can
-   * preserve filing without 404-ing the create).
-   */
-  owner_id?: string;
-  title: string;
-  region: string | null;
-  num_days: number;
-  status: TripStatus;
-  member_count: number;
-  /**
-   * US-37 — uuid of the rider-owned folder this trip is filed under.
-   * `null` (or absent on older API responses) for unfiled trips.
-   * Read-only on mobile for v1; folder CRUD lives in the companion.
-   */
-  folder_id?: string | null;
-  created_at: string;
-}
+/** Trip list row (`GET /trips`) — the generated `TripSummaryDto`. */
+export type TripSummary = Schemas["TripSummaryDto"];
 
 // US-37 — rider-owned folder that groups trips. Re-exported from
 // `@tarmoto/shared` so backend, mobile, and companion all consume the
@@ -246,97 +221,33 @@ export interface TripSummary {
 // guarantees the three layers stay in lock-step.
 export type { TripFolder } from "@tarmoto/shared";
 
-export interface Trip extends TripSummary {
-  daily_km_min: number;
-  daily_km_max: number;
-  min_quality: number;
-  road_preference: RoadPreference;
-  days: TripDay[];
-  members: TripMember[];
-}
+/** Full trip detail (`GET /trips/:id`) — the generated `TripDetailDto`. */
+export type Trip = Schemas["TripDetailDto"];
 
-export interface TripDay {
-  id: string;
-  day_number: number;
-  /**
-   * Optional+nullable for the same reason `Waypoint` is — both `null`
-   * (the wire shape) and `undefined` (older client fixtures) need to be
-   * acceptable. UI must default with `?? "Day N"`.
-   */
-  title?: string | null;
-  distance_km: number;
-  avg_quality: number;
-  elevation_gain: number;
-  elevation_loss: number;
-  curviness_score: number;
-  scenic_score: number;
-  estimated_time_min: number;
-  route_geometry: LatLng[];
-  waypoints: Waypoint[];
-}
+/** One day of a trip — the generated `TripDayDto`. */
+export type TripDay = Schemas["TripDayDto"];
 
-export type TripGenerationOptionId = "best-fit" | "scenic" | "fastest";
+export type TripGenerationOptionId =
+  Schemas["GenerateTripResponseDto"]["selected_option"];
 
-export interface TripGenerationOption {
-  id: TripGenerationOptionId;
-  label: string;
-  summary: string;
-  total_distance_km: number;
-  total_duration_min: number;
-  avg_quality: number;
-  avg_curviness: number;
-  avg_scenic: number;
-  selected: boolean;
-  days: TripDay[];
-}
+/** One generated trip option — the generated `TripGenerationOptionDto`. */
+export type TripGenerationOption = Schemas["TripGenerationOptionDto"];
 
-export interface TripGenerationResult {
-  trip: Trip;
-  selected_option: TripGenerationOptionId;
-  options: TripGenerationOption[];
-}
+/** `POST /trips/generate` response — the generated `GenerateTripResponseDto`. */
+export type TripGenerationResult = Schemas["GenerateTripResponseDto"];
+
+/** Trip waypoint — the generated `TripWaypointDto` (fields required-nullable). */
+export type Waypoint = Schemas["TripWaypointDto"];
+
+/** Trip collaborator — the generated `TripMemberDto`. */
+export type TripMember = Schemas["TripMemberDto"];
 
 /**
- * Trip waypoint. Optional+nullable fields here intentionally widen the
- * spec's `string | null` shape to `string | null | undefined` so existing
- * client-side fixtures that omit a field are still assignable. The real
- * wire shape is still required-nullable; consumers must handle both
- * `null` and `undefined` defensively.
+ * Public read-only payload from `GET /trip-shares/:token` (US-39 / #283) —
+ * the generated `TripSharePublicDto`. `snapshot` is the companion's serialised
+ * `Trip` shape, kept as an opaque record on the wire.
  */
-export interface Waypoint {
-  id: string;
-  sequence: number;
-  lat: number;
-  lng: number;
-  name?: string | null;
-  waypoint_type: WaypointType;
-  road_segment_id?: string | null;
-  notes?: string | null;
-  duration_min?: number | null;
-}
-
-export interface TripMember {
-  user_id: string;
-  display_name: string;
-  role: "owner" | "editor" | "viewer";
-  joined_at: string;
-}
-
-/**
- * Public read-only payload returned by `GET /trip-shares/:token` (US-39 /
- * #283). The `snapshot` is the companion's local `Trip` shape serialised
- * verbatim — keep it loosely typed here so the mobile import flow can
- * adapt without forcing every web schema change through this file.
- */
-export interface TripSharePublic {
-  share_token: string;
-  title: string;
-  owner_name: string;
-  snapshot: Record<string, unknown>;
-  view_count: number;
-  created_at: string;
-  updated_at: string;
-}
+export type TripSharePublic = Schemas["TripSharePublicDto"];
 
 // ── Reviews ──
 

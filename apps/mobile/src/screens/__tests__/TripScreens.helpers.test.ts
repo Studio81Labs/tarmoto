@@ -42,6 +42,7 @@ const wp = (
 const day = (distance_km: number, avg_quality: number): TripDay => ({
   id: `d-${distance_km}-${avg_quality}`,
   day_number: 1,
+  title: null,
   distance_km,
   avg_quality,
   elevation_gain: 0,
@@ -49,6 +50,7 @@ const day = (distance_km: number, avg_quality: number): TripDay => ({
   curviness_score: 0,
   scenic_score: 0,
   estimated_time_min: 0,
+  start_linked: false,
   route_geometry: [],
   waypoints: [],
 });
@@ -210,6 +212,7 @@ describe("flattenTripRoute", () => {
   ): TripDay => ({
     id: `d-${day_number}`,
     day_number,
+    title: null,
     distance_km,
     avg_quality: 0,
     elevation_gain: 0,
@@ -217,6 +220,7 @@ describe("flattenTripRoute", () => {
     curviness_score: 0,
     scenic_score: 0,
     estimated_time_min: 0,
+    start_linked: false,
     route_geometry: geom,
     waypoints: [],
   });
@@ -297,14 +301,24 @@ describe("routeGeometrySignature", () => {
 const MERIDIAN_LNG = 0;
 const KM_PER_DEGREE_LAT = 111.195;
 
+// Accepts partial waypoints (the identifying + positional fields) and fills
+// the required-nullable remainder, so inline call sites don't have to spell
+// out `road_segment_id`/`notes`/`duration_min` on every fixture.
+type PartialWaypoint = Pick<
+  Waypoint,
+  "id" | "sequence" | "lat" | "lng" | "waypoint_type"
+> &
+  Partial<Waypoint>;
+
 function dayFrom(
   vertices: LatLng[],
-  waypoints: Waypoint[],
+  waypoints: PartialWaypoint[],
   overrides: Partial<TripDay> = {},
 ): TripDay {
   return {
     id: "day-fixture",
     day_number: 1,
+    title: null,
     distance_km: 0,
     avg_quality: 0,
     elevation_gain: 0,
@@ -312,8 +326,15 @@ function dayFrom(
     curviness_score: 0,
     scenic_score: 0,
     estimated_time_min: 0,
+    start_linked: false,
     route_geometry: vertices,
-    waypoints,
+    waypoints: waypoints.map((w) => ({
+      name: null,
+      road_segment_id: null,
+      notes: null,
+      duration_min: null,
+      ...w,
+    })),
     ...overrides,
   };
 }
@@ -346,12 +367,17 @@ function makeAccommodation(
 function tripWithDays(days: TripDay[]): Trip {
   return {
     id: "trip-1",
+    owner_id: "owner-1",
     title: "Trip fixture",
     region: "Moravia",
     num_days: days.length,
     status: "planned",
     member_count: 1,
+    folder_id: null,
     created_at: "2026-04-23T08:00:00.000Z",
+    distance_km: null,
+    quality_avg: null,
+    passes_count: null,
     daily_km_min: 150,
     daily_km_max: 300,
     min_quality: 3,
@@ -704,6 +730,10 @@ describe("summarizeFuelRange", () => {
         lat: 50.5,
         lng: MERIDIAN_LNG,
         waypoint_type: "fuel",
+        name: null,
+        road_segment_id: null,
+        notes: null,
+        duration_min: null,
       });
       const result = summarizeFuelRange(day, 200, [
         {
@@ -732,6 +762,9 @@ describe("summarizeFuelRange", () => {
         lng: MERIDIAN_LNG,
         waypoint_type: "fuel",
         name: "BP",
+        road_segment_id: null,
+        notes: null,
+        duration_min: null,
       });
       const result = summarizeFuelRange(day, 100, [
         // Inside leg 1 (0..~220 km).

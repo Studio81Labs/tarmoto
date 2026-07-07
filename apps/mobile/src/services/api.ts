@@ -910,7 +910,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load trips") as TripSummary[];
+    return unwrap(result, "Failed to load trips");
   }
 
   /**
