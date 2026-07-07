@@ -58,21 +58,26 @@ const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
   features: [],
 };
 
-interface HazardProps {
-  id: string;
+// GeoJSON feature-properties bag for a hazard marker. The passthrough wire
+// fields are derived from the generated `HazardResponse` (a backend rename
+// breaks here at typecheck time); `hazard_type` is the normalised shared
+// enum, and `emoji` / `opacity` are computed client-side for the map paint.
+type HazardProps = Pick<
+  HazardResponse,
+  | "id"
+  | "note"
+  | "photo_url"
+  | "confirmations"
+  | "reporter"
+  | "road_name"
+  | "created_at"
+  | "expires_at"
+> & {
   hazard_type: HazardType;
   severity: string;
-  note: string | null;
-  /** Public URL of the rider-attached photo, when present. */
-  photo_url: string | null;
-  confirmations: number;
-  reporter: string | null;
-  road_name: string | null;
-  created_at: string;
-  expires_at: string;
   emoji: string;
   opacity: number;
-}
+};
 
 interface Props {
   center: { lng: number; lat: number };
