@@ -1,9 +1,11 @@
 import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   poiApi,
+  roadsApi,
   routingApi,
   usersApi,
   type AccommodationSuggestion,
+  type RouteQualitySegment,
   type PoiKind,
   type RouteRequestBody,
   type RouteResponse,
@@ -15,6 +17,7 @@ import {
 import { sampleRoutePoints } from "@/lib/route-sampling";
 import { fetchFunZonesInBbox } from "@/lib/discover";
 import { deriveQualitySegments } from "./derive";
+import { mapRouteQualitySpans } from "./route-quality";
 import {
   corridorBbox,
   draftViasThroughZones,
@@ -47,12 +50,16 @@ import type {
   RouteQualitySummary,
   RouteSegment,
 } from "./types";
-import { QUALITY_BAND_LABELS_SHORT } from "./quality-bands";
+import {
+  coalesceQualityRuns,
+  QUALITY_BAND_LABELS_SHORT,
+} from "./quality-bands";
 
 /**
  * The planner's single data seam. Real sources: backend Valhalla routing
- * (`routingApi`) and the `/poi/*` endpoints. Mock sources (see `./mocks/`):
- * per-segment quality join and road previews. Swapping a mock for its real
+ * (`routingApi`), the `/poi/*` endpoints, and per-segment surface quality
+ * (`roadsApi.getRouteQuality`, mapped in `./route-quality`). Mock sources
+ * (see `./mocks/`): road previews and geocoding. Swapping a mock for its real
  * source only ever touches this file.
  */
 
@@ -60,6 +67,112 @@ const SURFACE_TYPE_SET: ReadonlySet<string> = new Set(SURFACE_TYPES);
 
 function asSurfaceType(key: string): SurfaceType {
   return SURFACE_TYPE_SET.has(key) ? (key as SurfaceType) : "unknown";
+}
+
+// The backend rejects a single /route-quality request over its route-length
+// limit (MAX_ROUTE_QUALITY_LENGTH_M = 500 km, roads.service.ts); keep each
+// request safely under it.
+const MAX_ROUTE_QUALITY_REQUEST_KM = 480;
+
+// The endpoint also caps a request at MAX_ROUTE_QUALITY_POINTS (25 000 vertices,
+// route-quality.dto.ts); a dense but short route can exceed that under the km
+// limit, so chunk by vertex count too. Kept under the cap with margin.
+const MAX_ROUTE_QUALITY_REQUEST_POINTS = 20000;
+
+interface RouteChunk {
+  points: { lat: number; lng: number }[];
+  /** Where this chunk starts on the whole route, as a fraction [0,1]. */
+  startFraction: number;
+  /** This chunk's share of the whole route length, as a fraction. */
+  fractionSpan: number;
+}
+
+/**
+ * Insert interpolated points so no single edge exceeds `maxKm`. A sparse or
+ * heavily simplified imported line (e.g. a 2-point GPX hop over the limit) has
+ * edges longer than any chunk could be split at existing vertices; cutting
+ * inside them lets {@link chunkRouteByLengthKm} keep every chunk under the
+ * limit. Points lie on the straight lat/lng segment — exactly the rendered
+ * line — so the added vertices don't distort the route.
+ */
+function densifyMaxEdgeKm(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+  maxKm: number,
+): { lat: number; lng: number }[] {
+  if (points.length < 2) return points.map((p) => ({ ...p }));
+  const out: { lat: number; lng: number }[] = [{ ...points[0]! }];
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const edgeKm = haversineKm(a.lat, a.lng, b.lat, b.lng);
+    if (edgeKm > maxKm) {
+      const cuts = Math.ceil(edgeKm / maxKm);
+      for (let k = 1; k < cuts; k += 1) {
+        const t = k / cuts;
+        out.push({
+          lat: a.lat + (b.lat - a.lat) * t,
+          lng: a.lng + (b.lng - a.lng) * t,
+        });
+      }
+    }
+    out.push({ ...b });
+  }
+  return out;
+}
+
+/**
+ * Split a routed polyline into contiguous chunks under both the backend's
+ * per-request length limit (`maxKm`) and vertex limit (`maxPoints`), so a long
+ * OR dense day still gets real quality. Long edges are first densified so a
+ * sparse imported line can be cut inside them. Chunks share their boundary
+ * vertex (gap-free) and record where they sit on the whole route so per-chunk
+ * quality fractions can be remapped back onto it.
+ */
+function chunkRouteByLengthKm(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+  maxKm: number,
+  maxPoints: number,
+): RouteChunk[] {
+  const dense = densifyMaxEdgeKm(points, maxKm);
+  const cum: number[] = [0];
+  for (let i = 1; i < dense.length; i += 1) {
+    const a = dense[i - 1]!;
+    const b = dense[i]!;
+    cum.push((cum[i - 1] ?? 0) + haversineKm(a.lat, a.lng, b.lat, b.lng));
+  }
+  const total = cum[cum.length - 1] ?? 0;
+  if (dense.length < 2 || (total <= maxKm && dense.length <= maxPoints)) {
+    return [
+      {
+        points: dense.map((p) => ({ ...p })),
+        startFraction: 0,
+        fractionSpan: total > 0 ? 1 : 0,
+      },
+    ];
+  }
+  const chunks: RouteChunk[] = [];
+  let startIdx = 0;
+  while (startIdx < dense.length - 1) {
+    const startKm = cum[startIdx] ?? 0;
+    let endIdx = startIdx + 1;
+    while (
+      endIdx + 1 <= dense.length - 1 &&
+      (cum[endIdx + 1] ?? 0) - startKm <= maxKm &&
+      // keep the chunk (endIdx + 1 - startIdx + 1 vertices) under the cap
+      endIdx + 2 - startIdx <= maxPoints
+    ) {
+      endIdx += 1;
+    }
+    const endKm = cum[endIdx] ?? 0;
+    chunks.push({
+      points: dense.slice(startIdx, endIdx + 1).map((p) => ({ ...p })),
+      startFraction: total > 0 ? startKm / total : 0,
+      fractionSpan: total > 0 ? (endKm - startKm) / total : 0,
+    });
+    if (endIdx >= dense.length - 1) break;
+    startIdx = endIdx; // next chunk shares this boundary vertex
+  }
+  return chunks;
 }
 
 /** `surface_mix` arrives as metres per surface; render as whole-number %. */
@@ -87,18 +200,20 @@ export function deriveFlaggedSections(
   segments: readonly RouteSegment[],
 ): FlaggedSection[] {
   const flagged: FlaggedSection[] = [];
-  for (const segment of segments) {
-    const lengthKm = Math.round(segment.lengthKm * 10) / 10;
-    if (segment.band === "rough") {
+  // Coalesce adjacent same-band runs so a long rough/uncovered stretch is one
+  // card, not one per ~100 m segment.
+  for (const run of coalesceQualityRuns(segments)) {
+    const lengthKm = Math.round(run.lengthKm * 10) / 10;
+    if (run.band === "rough") {
       flagged.push({
-        segmentId: segment.id,
+        segmentId: run.id,
         kind: "rough",
         lengthKm,
-        label: `${QUALITY_BAND_LABELS_SHORT.rough} · ${segment.surface}, ${lengthKm} km`,
+        label: `${QUALITY_BAND_LABELS_SHORT.rough} · ${run.surface}, ${lengthKm} km`,
       });
-    } else if (segment.band === "no_data") {
+    } else if (run.band === "no_data") {
       flagged.push({
-        segmentId: segment.id,
+        segmentId: run.id,
         kind: "no_data",
         lengthKm,
         label: `No data yet · ${lengthKm} km`,
@@ -439,7 +554,12 @@ export async function fetchOvernightTowns(
   return [...towns.values()];
 }
 
-/** One REAL routing round-trip: backend Valhalla proxy + mock quality join. */
+/**
+ * One REAL routing round-trip: backend Valhalla proxy. The returned segments
+ * are the geometry-only `no_data` baseline — real per-segment quality is
+ * fetched separately (`getRouteQuality`) once a day is committed, so the draft
+ * sizing loops here never trigger a quality query per measuring route.
+ */
 async function routeReal(
   waypoints: ReadonlyArray<{ lat: number; lng: number }>,
   options: RouteRequestBody["options"],
@@ -477,6 +597,41 @@ export function createPlannerApi(): PlannerApi {
       init?: { signal?: AbortSignal; dayNumber?: number },
     ): Promise<GeneratedPlannerRoute> {
       return routeReal(waypoints, options, init);
+    },
+
+    async getRouteQuality(
+      points: ReadonlyArray<{ lat: number; lng: number }>,
+      dayNumber: number,
+      init?: { signal?: AbortSignal },
+    ): Promise<RouteSegment[]> {
+      const requestInit =
+        init?.signal !== undefined ? { signal: init.signal } : {};
+      // The backend rejects a single request over its route-length limit; a
+      // long day is chunked under that and each chunk's fractions are remapped
+      // back onto the whole route before mapping — so long-but-covered routes
+      // still get real quality instead of a swallowed 400.
+      const chunks = chunkRouteByLengthKm(
+        points,
+        MAX_ROUTE_QUALITY_REQUEST_KM,
+        MAX_ROUTE_QUALITY_REQUEST_POINTS,
+      );
+      const spans: RouteQualitySegment[] = [];
+      for (const chunk of chunks) {
+        const { data } = await roadsApi.getRouteQuality(
+          { geometry: chunk.points },
+          requestInit,
+        );
+        for (const span of data.segments) {
+          spans.push({
+            ...span,
+            start_fraction:
+              chunk.startFraction + span.start_fraction * chunk.fractionSpan,
+            end_fraction:
+              chunk.startFraction + span.end_fraction * chunk.fractionSpan,
+          });
+        }
+      }
+      return mapRouteQualitySpans(points, spans, dayNumber);
     },
 
     async draftRoute(

@@ -1,17 +1,18 @@
-import type * as GeoJSON from "geojson";
-import { mockJoinQuality } from "./mocks";
 import { segmentizeRoute } from "./segmentize";
 import type { RouteSegment } from "./types";
 
 /**
- * The quality-join seam: turns routed geometry into quality-annotated
- * display segments. Deterministic — same geometry in, same segments out —
- * so consumers can derive on demand (map layers, panel strips) without
- * caching or store state, and every geometry source (live routing, GPX
- * import, demo trips, saved trips) gets the same treatment.
+ * The geometry-only quality baseline: turns routed geometry into display
+ * segments carrying NO quality — every segment is `no_data`. Deterministic —
+ * same geometry in, same segments out — so consumers can derive on demand
+ * (map layers, panel strips) without caching or store state, and every
+ * geometry source (live routing, GPX import, demo trips, saved trips) gets
+ * the same treatment.
  *
- * The join itself is the MOCK from `./mocks`; swapping in the real
- * per-segment quality source changes this function only.
+ * Real per-segment quality comes from `POST /roads/route-quality`
+ * (`plannerApi.getRouteQuality`, mapped in `./route-quality`) and is stored on
+ * the day. This baseline is what renders before that resolves, and the
+ * fallback when the route isn't covered or the query fails.
  */
 export function deriveQualitySegments(
   points: ReadonlyArray<{ lat: number; lng: number }>,
@@ -25,23 +26,14 @@ export function deriveQualitySegments(
     dayNumber,
     leg ? `d${dayNumber}-l${leg.index}` : undefined,
   );
-  const segments = mockJoinQuality(slices);
-  return leg
-    ? segments.map((segment) => ({ ...segment, legId: leg.id }))
-    : segments;
-}
-
-/** Same join for GeoJSON LineString geometry ([lng, lat] coordinate order). */
-export function deriveQualitySegmentsFromLineString(
-  geometry: GeoJSON.LineString,
-  dayNumber: number,
-): RouteSegment[] {
-  const points: { lat: number; lng: number }[] = [];
-  for (const coordinate of geometry.coordinates) {
-    const [lng, lat] = coordinate;
-    if (typeof lng === "number" && typeof lat === "number") {
-      points.push({ lat, lng });
-    }
-  }
-  return deriveQualitySegments(points, dayNumber);
+  return slices.map(
+    (slice): RouteSegment => ({
+      ...slice,
+      band: "no_data",
+      surface: "unknown",
+      score: null,
+      passes: 0,
+      ...(leg ? { legId: leg.id } : {}),
+    }),
+  );
 }

@@ -33,6 +33,7 @@ import {
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
+import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
 import { Button, Input, Select, Textarea, Toggle } from "@tarmoto/ui";
 import { UserAvatar } from "@/components/UserAvatar";
 type Tab = "invite" | "people" | "suggestions" | "activity";
@@ -171,7 +172,10 @@ export function TripCollaborateModal({
     try {
       const { data } = await tripSharesApi.create({
         title: trip.name || "Untitled trip",
-        snapshot: trip as unknown as Record<string, unknown>,
+        snapshot: tripSnapshotForSharing(trip) as unknown as Record<
+          string,
+          unknown
+        >,
         trip_id: serverTripId,
       });
       if (session !== sessionRef.current) return;
@@ -223,7 +227,10 @@ export function TripCollaborateModal({
       await tripSharesApi.revoke(share.id);
       const { data } = await tripSharesApi.create({
         title: trip.name || "Untitled trip",
-        snapshot: trip as unknown as Record<string, unknown>,
+        snapshot: tripSnapshotForSharing(trip) as unknown as Record<
+          string,
+          unknown
+        >,
         trip_id: serverTripId,
       });
       if (session !== sessionRef.current) return;

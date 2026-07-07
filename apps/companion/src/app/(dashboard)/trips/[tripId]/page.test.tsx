@@ -210,7 +210,10 @@ const useTripCollabSessionMock = vi.mocked(useTripCollabSession);
 const tripsApiGetMock = vi.mocked(tripsApi.get);
 const tripsApiDeleteMock = vi.mocked(tripsApi.delete);
 
-function primeStores(callerId: string | null = "owner-1") {
+function primeStores(
+  callerId: string | null = "owner-1",
+  activeTrip: unknown = null,
+) {
   // Mirror the per-selector pattern used by Zustand: each call to
   // `useStore(selector)` invokes the selector against the current
   // snapshot. Tests don't need full reactivity — a fixed snapshot is
@@ -229,6 +232,8 @@ function primeStores(callerId: string | null = "owner-1") {
   const setActiveTrip = vi.fn();
   const tripSnapshot = {
     setActiveTrip,
+    applyRouteQuality: vi.fn(),
+    activeTrip,
     selectedPlannerSegmentId: null,
     selectPlannerSegment: vi.fn(),
   };
@@ -244,6 +249,7 @@ function primeStores(callerId: string | null = "owner-1") {
     suggestionsError: null,
     emitCursor: vi.fn(),
   });
+  return { setActiveTrip };
 }
 
 beforeEach(() => {
@@ -255,6 +261,32 @@ beforeEach(() => {
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────
+
+describe("TripDetailPage — planner draft preservation", () => {
+  it("restores an unsaved planner draft after viewing a saved trip", () => {
+    // The rider has an in-memory draft in the shared store; viewing this saved
+    // trip must not destroy it.
+    const draft = { id: "planner-20260707120000", days: [] };
+    const { setActiveTrip } = primeStores("owner-1", draft);
+    tripsApiGetMock.mockReturnValue(new Promise(() => {}));
+
+    const { unmount } = render(<TripDetailPage />);
+    unmount();
+
+    expect(setActiveTrip).toHaveBeenLastCalledWith(draft);
+  });
+
+  it("clears a lingering persisted (UUID) trip on leave", () => {
+    const persisted = { id: "123e4567-e89b-12d3-a456-426614174000", days: [] };
+    const { setActiveTrip } = primeStores("owner-1", persisted);
+    tripsApiGetMock.mockReturnValue(new Promise(() => {}));
+
+    const { unmount } = render(<TripDetailPage />);
+    unmount();
+
+    expect(setActiveTrip).toHaveBeenLastCalledWith(null);
+  });
+});
 
 describe("TripDetailPage — data fetching", () => {
   it("renders the loading state while the request is in flight", () => {

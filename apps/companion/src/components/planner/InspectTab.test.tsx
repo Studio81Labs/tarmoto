@@ -3,7 +3,29 @@ import { describe, expect, it, vi } from "vitest";
 import { InspectTab, daySurfaceMix } from "./InspectTab";
 import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { deriveFlaggedSections } from "@/lib/planner/api";
+import { coalesceQualityRuns } from "@/lib/planner/quality-bands";
+import type { RouteSegment } from "@/lib/planner/types";
 import type { TripDay } from "@/lib/types";
+
+function qualitySeg(over: Partial<RouteSegment>): RouteSegment {
+  return {
+    id: "d1-s0",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [14.2, 49.4],
+        [14.4, 49.42],
+      ],
+    },
+    band: "good",
+    surface: "asphalt",
+    score: 4.2,
+    passes: 20,
+    lengthKm: 15,
+    dayNumber: 1,
+    ...over,
+  };
+}
 
 function routedDay(overrides?: Partial<TripDay>): TripDay {
   return {
@@ -97,33 +119,36 @@ describe("InspectTab", () => {
       name: /Preview .* section/,
     });
     fireEvent.click(firstSection!);
-    expect(onInspectSegment).toHaveBeenCalledWith(
-      deriveDayQualitySegments(day)[0]!.id,
-    );
+    // The strip coalesces adjacent same-band segments into runs, so the click
+    // targets the whole run (id `run:<first>:<last>`), not the fine span.
+    const firstRun = coalesceQualityRuns(deriveDayQualitySegments(day))[0]!;
+    expect(onInspectSegment).toHaveBeenCalledWith(firstRun.id);
   });
 
   it("wires flagged-section cards to inspect and reroute", () => {
-    // Find a day whose deterministic mock join yields both flag kinds.
-    let day = routedDay();
-    for (let seed = 0; seed < 40; seed += 1) {
-      const candidate = routedDay({
-        routeGeometry: {
-          type: "LineString",
-          coordinates: Array.from({ length: 30 }, (_, i) => [
-            14.2 + i * 0.04,
-            49.4 + seed * 0.05 + Math.sin(i * 0.6) * 0.02,
-          ]),
-        },
-      });
-      const flags = deriveFlaggedSections(deriveDayQualitySegments(candidate));
-      if (
-        flags.some((f) => f.kind === "rough") &&
-        flags.some((f) => f.kind === "no_data")
-      ) {
-        day = candidate;
-        break;
-      }
-    }
+    // Stored real per-segment quality with both flag kinds — the Inspect tab
+    // reads day.qualitySegments in preference to the no_data baseline (#862).
+    const day = routedDay({
+      qualitySegments: [
+        qualitySeg({ id: "d1-s0", band: "good", score: 4.4, passes: 22 }),
+        qualitySeg({
+          id: "d1-s1",
+          band: "rough",
+          surface: "gravel",
+          score: 2,
+          passes: 5,
+          lengthKm: 6.2,
+        }),
+        qualitySeg({
+          id: "d1-s2",
+          band: "no_data",
+          surface: "unknown",
+          score: null,
+          passes: 0,
+          lengthKm: 4.1,
+        }),
+      ],
+    });
     const flags = deriveFlaggedSections(deriveDayQualitySegments(day));
     const rough = flags.find((f) => f.kind === "rough");
     const noData = flags.find((f) => f.kind === "no_data");
