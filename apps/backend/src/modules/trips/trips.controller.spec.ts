@@ -42,6 +42,7 @@ describe('TripsController', () => {
       update: jest.fn().mockResolvedValue(mockDetail),
       remove: jest.fn().mockResolvedValue(undefined),
       invite: jest.fn().mockResolvedValue(undefined),
+      leaveTrip: jest.fn().mockResolvedValue(undefined),
       importFromRoute: jest.fn().mockResolvedValue(mockDetail),
       importFromShare: jest.fn().mockResolvedValue(mockDetail),
     };
@@ -146,5 +147,10 @@ describe('TripsController', () => {
     // caller passed, so a regression that drops the field would flip
     // this back to the 'best-fit' default and fail.
     expect(result.selected_option).toBe('scenic');
+  });
+
+  it('DELETE /trips/:tripId/members/me delegates to service.leaveTrip', async () => {
+    await controller.leaveTrip(mockReq, 'trip-1');
+    expect(service.leaveTrip).toHaveBeenCalledWith('user-1', 'trip-1');
   });
 });

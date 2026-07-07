@@ -1068,7 +1068,7 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
-  it("gates suggestions for viewers: no propose form, votes disabled", async () => {
+  it("lets viewers propose and vote but not moderate", async () => {
     hoisted.listMembers.mockReset().mockResolvedValue({
       data: {
         members: [
@@ -1098,13 +1098,16 @@ describe("TripCollaborateModal — collab tabs", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
 
+    // Viewers now propose and vote like everyone else — the form shows
+    // and votes are live (backend opened this surface to all members).
     expect(
-      await screen.findByText(/you're a viewer on this trip/i),
+      await screen.findByLabelText(/suggestion title/i),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(/suggestion title/i),
-    ).not.toBeInTheDocument();
     await screen.findByText("Scenic pass alt");
-    expect(screen.getByRole("button", { name: /vote up/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /vote up/i })).not.toBeDisabled();
+    // But a viewer cannot moderate: no Accept/Reject on open suggestions.
+    expect(
+      screen.queryByRole("button", { name: /^accept/i }),
+    ).not.toBeInTheDocument();
   });
 });

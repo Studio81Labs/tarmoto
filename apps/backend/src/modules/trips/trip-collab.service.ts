@@ -30,6 +30,10 @@ const MAX_MESSAGE_PAGE_SIZE = 100;
 // authors can always delete their own rows). Keeping the set tight
 // here so role changes don't ripple through per-endpoint checks.
 const MODERATOR_ROLES = new Set(['owner']);
+// Suggestion moderation (approve / decline / reopen) is owner + editor per
+// the collaboration spec; delete-others stays owner-only via MODERATOR_ROLES
+// (authors delete their own regardless).
+const RESOLVER_ROLES = new Set(['owner', 'editor']);
 
 /**
  * Orchestrates the collaborative-trip surface: suggestions, votes,
@@ -113,7 +117,7 @@ export class TripCollabService {
     tripId: string,
     dto: CreateSuggestionDto,
   ): Promise<SuggestionDto> {
-    await this.requireContributor(userId, tripId);
+    await this.requireMembership(userId, tripId);
 
     if (dto.trip_day_id) {
       // A day-scoped suggestion must reference a day that belongs to the
@@ -224,9 +228,9 @@ export class TripCollabService {
     status: 'accepted' | 'rejected',
   ): Promise<SuggestionDto> {
     const membership = await this.requireMembership(userId, tripId);
-    if (!MODERATOR_ROLES.has(membership.role)) {
+    if (!RESOLVER_ROLES.has(membership.role)) {
       throw new ForbiddenException(
-        'Only the trip owner can resolve a suggestion',
+        'Only the trip owner or editors can resolve a suggestion',
       );
     }
 
@@ -295,9 +299,9 @@ export class TripCollabService {
     suggestionId: string,
   ): Promise<SuggestionDto> {
     const membership = await this.requireMembership(userId, tripId);
-    if (!MODERATOR_ROLES.has(membership.role)) {
+    if (!RESOLVER_ROLES.has(membership.role)) {
       throw new ForbiddenException(
-        'Only the trip owner can reopen a suggestion',
+        'Only the trip owner or editors can reopen a suggestion',
       );
     }
 
@@ -349,7 +353,7 @@ export class TripCollabService {
     suggestionId: string,
     vote: 'up' | 'down',
   ): Promise<SuggestionDto> {
-    await this.requireContributor(userId, tripId);
+    await this.requireMembership(userId, tripId);
 
     // Serialize against `resolveSuggestion` via a pessimistic_write
     // lock on the suggestion row. A naive read-then-write check would
@@ -467,7 +471,7 @@ export class TripCollabService {
     tripId: string,
     suggestionId: string,
   ): Promise<SuggestionDto> {
-    await this.requireContributor(userId, tripId);
+    await this.requireMembership(userId, tripId);
 
     // Mirrors `voteSuggestion`: pessimistic_write lock serializes
     // against a concurrent resolve so a late retry can't delete a vote
@@ -611,24 +615,6 @@ export class TripCollabService {
       where: { trip_id: tripId, user_id: userId },
     });
     if (!membership) throw new NotFoundException('Trip not found');
-    return membership;
-  }
-
-  /**
-   * Membership guard for the write surface viewers don't get:
-   * proposing suggestions and voting. Viewers can still read
-   * everything and post messages (`comment`).
-   */
-  private async requireContributor(
-    userId: string,
-    tripId: string,
-  ): Promise<TripMember> {
-    const membership = await this.requireMembership(userId, tripId);
-    if (membership.role === 'viewer') {
-      throw new ForbiddenException(
-        'Viewers can view and comment only — ask the trip owner for editor access',
-      );
-    }
     return membership;
   }
 

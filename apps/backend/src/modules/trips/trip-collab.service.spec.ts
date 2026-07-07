@@ -782,8 +782,8 @@ describe('TripCollabService', () => {
       expect(events.emitToTrip).not.toHaveBeenCalled();
     });
 
-    it('forbids non-owner/admin members from resolving', async () => {
-      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+    it('forbids viewers from resolving', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
 
       await expect(
         service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
@@ -795,19 +795,43 @@ describe('TripCollabService', () => {
     });
   });
 
-  describe('moderation is owner-only', () => {
-    it('forbids editors from resolving suggestions', async () => {
+  describe('moderation is owner + editor', () => {
+    it('lets editors resolve suggestions', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'accepted' }),
+      );
       await expect(
         service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(suggestionRepo.update).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({ status: 'accepted' });
+      expect(suggestionRepo.update).toHaveBeenCalled();
     });
 
-    it('forbids editors from reopening suggestions', async () => {
+    it('lets editors reopen suggestions', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('editor'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'open' }),
+      );
       await expect(
         service.reopenSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).resolves.toMatchObject({ status: 'open' });
+      expect(suggestionRepo.update).toHaveBeenCalled();
+    });
+
+    it('forbids viewers from resolving suggestions', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(suggestionRepo.update).not.toHaveBeenCalled();
     });
@@ -825,25 +849,13 @@ describe('TripCollabService', () => {
   });
 
   describe('viewer role gating', () => {
-    it('blocks viewers from proposing suggestions', async () => {
+    it('lets viewers propose suggestions', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
+      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
       await expect(
-        service.createSuggestion(USER_ID, TRIP_ID, { title: 'Nope' }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(suggestionRepo.save).not.toHaveBeenCalled();
-    });
-
-    it('blocks viewers from voting and unvoting', async () => {
-      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
-      await expect(
-        service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-
-      memberRepo.findOne.mockResolvedValueOnce(makeMembership('viewer'));
-      await expect(
-        service.unvoteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(txManager.findOne).not.toHaveBeenCalled();
+        service.createSuggestion(USER_ID, TRIP_ID, { title: 'Detour' }),
+      ).resolves.toMatchObject({ id: SUGGESTION_ID });
+      expect(suggestionRepo.save).toHaveBeenCalled();
     });
 
     it('still lets viewers post messages (comment)', async () => {

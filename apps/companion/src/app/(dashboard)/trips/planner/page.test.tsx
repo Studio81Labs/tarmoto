@@ -129,8 +129,8 @@ vi.mock("@/components/TripStopsPanel", () => ({
   TripStopsPanel: () => <div data-testid="trip-stops-panel" />,
 }));
 
-vi.mock("@/components/TripExportMenu", () => ({
-  TripExportMenu: () => <div data-testid="trip-export-menu" />,
+vi.mock("@/components/TripExportButton", () => ({
+  TripExportButton: () => <div data-testid="trip-export-menu" />,
 }));
 
 vi.mock("@/components/TripImportDialog", () => ({
@@ -767,23 +767,34 @@ describe("TripPlannerPage", () => {
   // Reset means "start from empty" — it only applies to a not-yet-saved
   // draft. Once the trip is persisted (server binding) the toolbar
   // offers Discard only.
-  it("hides Reset once the trip is persisted", () => {
+  it("hides Reset once the trip is persisted", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     window.history.replaceState(
       {},
       "",
       `/trips/planner?tripId=${serverTripId}`,
     );
-    // Hydration failing is fine — the id stays bound either way.
-    tripsApiGetMock.mockRejectedValue(new Error("offline"));
+    // Reset/Discard are owner-only now — hydrate the caller as the owner.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
     storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
 
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Discard" }),
+      ).toBeInTheDocument(),
+    );
     expect(
       screen.queryByRole("button", { name: "Reset" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
   // Reset/Discard confirm through the app-styled ConfirmDialog — the
@@ -818,12 +829,24 @@ describe("TripPlannerPage", () => {
       "",
       `/trips/planner?tripId=${serverTripId}`,
     );
-    // Hydration failing is fine — the id stays bound for deletion.
-    tripsApiGetMock.mockRejectedValue(new Error("offline"));
+    // Discard is owner-only — hydrate the caller as the owner.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
     tripsApiDeleteMock.mockResolvedValue({ data: {} } as never);
     storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Discard" }),
+      ).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
 
@@ -1435,7 +1458,7 @@ describe("TripPlannerPage", () => {
     expect(window.location.search).toContain("days=5");
   });
 
-  it("passes invite-link permission as false for joined planner members", async () => {
+  it("shows an access-denied screen to a viewer opening the editor", async () => {
     window.history.replaceState(
       {},
       "",
@@ -1472,16 +1495,16 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    await waitFor(() =>
-      expect(tripsApiGetMock).toHaveBeenCalledWith(
-        "11111111-2222-4333-8444-555555555555",
-      ),
-    );
-    await waitFor(() => {
-      expect(mockedTripCollaborateModal).toHaveBeenLastCalledWith(
-        expect.objectContaining({ canCreateInviteLink: false }),
-      );
-    });
+    // Once the role resolves as viewer, the editor is replaced by an
+    // access screen pointing back to the read-only preview.
+    expect(await screen.findByText(/view-only access/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /open preview/i }),
+    ).toBeInTheDocument();
+    // No editor chrome — the Save button isn't in the tree at all.
+    expect(
+      screen.queryByRole("button", { name: "Save route" }),
+    ).not.toBeInTheDocument();
   });
 
   it("passes invite-link permission as true for planner admins", async () => {
@@ -1527,7 +1550,7 @@ describe("TripPlannerPage", () => {
       ),
     );
     await waitFor(() => {
-      expect(mockedTripCollaborateModal).toHaveBeenLastCalledWith(
+      expect(mockedTripCollaborateModal).toHaveBeenCalledWith(
         expect.objectContaining({ canCreateInviteLink: true }),
       );
     });
@@ -1836,10 +1859,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByRole("button", { name: /Best fit/ })).toBeDisabled();
   });
 
-  it("locks route saves and metadata for viewers", async () => {
-    // Viewers are read-and-comment only: PUT /trips/:id/route 403s on
-    // the backend, so the planner must not let them build a route
-    // locally and then fail a Save with a generic error.
+  it("keeps the editor out of reach for viewers on a saved trip", async () => {
+    // Viewers are read-and-comment only — the planner replaces its whole
+    // body with an access screen rather than a functional-looking editor
+    // whose writes would 403.
     window.history.replaceState(
       {},
       "",
@@ -1870,32 +1893,14 @@ describe("TripPlannerPage", () => {
       }),
     } as never);
 
-    // Pre-set dirty: the mocked store isn't reactive, so the flag must
-    // be in place before the post-fetch re-render reads it.
-    storeState.routeDirty = true;
     render(<TripPlannerPage />);
-    await waitFor(() =>
-      expect(storeState.activeTrip?.id).toBe(
-        "11111111-2222-4333-8444-777777777777",
-      ),
-    );
 
-    // Save route is disabled — even with a dirty route — so the click
-    // is a no-op and no doomed PUT fires.
-    const saveButton = screen.getByRole("button", { name: "Save route" });
-    expect(saveButton).toBeDisabled();
-    fireEvent.click(saveButton);
-    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
-    expect(tripsApiUpdateMock).not.toHaveBeenCalled();
-
-    // The trip-wide road character is owner/editor metadata: locked.
-    fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
-    expect(screen.getByRole("button", { name: /^Direct/ })).toBeDisabled();
+    expect(await screen.findByText(/view-only access/i)).toBeInTheDocument();
+    // No route writes are even reachable.
     expect(
-      screen.getByText(/road character is set by the trip owner/),
-    ).toBeInTheDocument();
-    // Min quality is owner/editor metadata too.
-    expect(screen.getByLabelText("Minimum road quality")).toBeDisabled();
+      screen.queryByRole("button", { name: "Save route" }),
+    ).not.toBeInTheDocument();
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
   });
 
   it("sends per-leg preferences with the save when a LEG override exists", async () => {
@@ -2661,9 +2666,10 @@ describe("TripPlannerPage", () => {
     render(<TripPlannerPage />);
 
     // Post-split header meta: day count + total distance segments
-    // (revision 2 §C; icon-per-segment layout).
+    // (revision 2 §C; icon-per-segment layout). Distance formats via
+    // formatDistance for parity with the trip-preview header.
     expect(screen.getAllByText("2 days").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("240 km").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("240.0 km").length).toBeGreaterThan(0);
   });
 
   it("expanding Plan as multi-day trip is the day-planning opt-in", () => {

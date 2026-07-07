@@ -55,7 +55,10 @@ export class TripCollabController {
   }
 
   @Post('suggestions')
-  @ApiOperation({ summary: 'Suggest a route change or road segment' })
+  @ApiOperation({
+    summary: 'Suggest a route change or road segment',
+    description: 'Any trip member may propose a suggestion.',
+  })
   @ApiResponse({ status: 201, type: SuggestionDto })
   @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
   async createSuggestion(
@@ -88,14 +91,14 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Accept a suggestion (owner only)',
+    summary: 'Accept a suggestion (owner or editor)',
     description:
-      'Marks the suggestion as `accepted`. Only the trip owner may ' +
-      'resolve — authors can only delete their own. Re-accepting an ' +
-      'already-resolved row returns 400.',
+      'Marks the suggestion as `accepted`. Only the trip owner or ' +
+      'editors may resolve — authors can only delete their own. ' +
+      'Re-accepting an already-resolved row returns 400.',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not the trip owner' })
+  @ApiResponse({ status: 403, description: 'Not an owner or editor' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async acceptSuggestion(
     @Req() req: express.Request,
@@ -113,10 +116,10 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/reject')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reject a suggestion (owner only)',
+    summary: 'Reject a suggestion (owner or editor)',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not the trip owner' })
+  @ApiResponse({ status: 403, description: 'Not an owner or editor' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async rejectSuggestion(
     @Req() req: express.Request,
@@ -134,14 +137,14 @@ export class TripCollabController {
   @Post('suggestions/:suggestionId/reopen')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reopen a resolved suggestion (owner only)',
+    summary: 'Reopen a resolved suggestion (owner or editor)',
     description:
       'Flips an `accepted`/`rejected` suggestion back to `open` so the ' +
-      'group can keep voting and the owner can re-decide. Reopening an ' +
-      'already-open row returns 400.',
+      'group can keep voting and an owner or editor can re-decide. ' +
+      'Reopening an already-open row returns 400.',
   })
   @ApiResponse({ status: 200, type: SuggestionDto })
-  @ApiResponse({ status: 403, description: 'Not the trip owner' })
+  @ApiResponse({ status: 403, description: 'Not an owner or editor' })
   @ApiResponse({ status: 404, description: 'Suggestion not found' })
   async reopenSuggestion(
     @Req() req: express.Request,

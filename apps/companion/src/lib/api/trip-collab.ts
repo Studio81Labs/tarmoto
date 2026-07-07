@@ -132,6 +132,13 @@ export const tripCollabApi = {
         params: { path: { tripId, memberUserId } },
       }),
     ),
+  /** Self-removal for a collaborator (viewer/editor) — the owner has no leave path. */
+  leaveTrip: (tripId: string) =>
+    openApiData<void>(
+      api.DELETE("/api/v1/trips/{tripId}/members/me", {
+        params: { path: { tripId } },
+      }),
+    ),
   revokeInvite: (tripId: string, inviteId: string) =>
     openApiData<void>(
       api.DELETE("/api/v1/trips/{tripId}/invites/{inviteId}", {
