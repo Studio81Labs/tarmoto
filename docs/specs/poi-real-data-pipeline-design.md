@@ -96,11 +96,13 @@ Indexes: `GIN (tags jsonb_path_ops)` for tag filtering; existing `(source, exter
 
 ### 3.2 Detail links (answers "link to open a POI detail / restaurant page")
 
-A POI can now expose **up to three** links, normalized in the DTO:
+A POI exposes up to three links, normalized in the DTO — `maps_url` is always present; the other two are conditional:
 
-- **`osm_url`** — always derivable from `external_id` → `https://www.openstreetmap.org/<node|way|relation>/<id>`. Doubles as the ODbL **source/attribution** link.
-- **`website`** — the venue's own page (OSM `website`/`contact:website`).
-- **`maps_url`** — from `google_place_id` → `https://www.google.com/maps/place/?q=place_id:<id>` (or the FSQ venue URL). This is the rich "restaurant page" riders expect (photos, reviews, live hours).
+- **`osm_url`** — derivable from `external_id` → `https://www.openstreetmap.org/<node|way|relation>/<id>` (only for `osm:`-sourced rows). Doubles as the ODbL **source/attribution** link.
+- **`website`** — the venue's own page (OSM `website`/`contact:website`), when tagged.
+- **`maps_url`** — a **non-null** Google Maps link, delivered in two tiers with a stable type:
+  - **Today (free — no key, no API call, no enrichment):** a search deep link built from the POI's name + coordinates — `https://www.google.com/maps/search/?api=1&query=<name> <lat>,<lng>` (URL-encoded; coordinates only when the POI is unnamed). This already gives riders the Google "restaurant page" (photos, reviews, live hours) and makes even nameless/contactless rows navigable — which is why the rankers keep them rather than dropping "no name + no contact" rows.
+  - **After Phase 3 enrichment:** once a `google_place_id` match exists, `maps_url` **upgrades in place** to the exact-venue link `https://www.google.com/maps/place/?q=place_id:<id>` (or the FSQ venue URL).
 
 ### 3.3 Shared contract alignment
 
@@ -163,7 +165,7 @@ The steering choice is "commercial now." The **only compliant** way to do this i
 **Design:**
 
 1. **Match** OSM POIs to a commercial place (name-normalized + geo-proximity within ~50 m + category agreement), storing only `fsq_id` / `google_place_id` + `enrichment_matched_at`. Run as a low-priority pass after import (or lazily on first detail view).
-2. **Hydrate on demand** at `GET /poi/:id` via `EnrichmentProvider` (new interface, same pattern as routing/geocode provider abstractions): returns `rating`, `review_count`, `price_level`, `photos[]`, live `hours`, `maps_url`. Response cached short-TTL (Redis, ≤ provider limit) — **never written to `pois`**.
+2. **Hydrate on demand** at `GET /poi/:id` via `EnrichmentProvider` (new interface, same pattern as routing/geocode provider abstractions): returns `rating`, `review_count`, `price_level`, `photos[]`, live `hours`, and the **upgraded `maps_url`** (exact-venue place-id link, replacing the free name+coordinates search link). Response cached short-TTL (Redis, ≤ provider limit) — **never written to `pois`**.
 3. **Cost controls:** hydrate only on explicit detail view (not list/map render), Redis cache, per-day budget guard + rate limit, feature-flagged (`TARMOTO_POI_ENRICHMENT_ENABLED`, provider + key envs). Directional cost: on-demand + cache keeps this to detail-view volume, not POI-count volume. _(Confirm current Google/FSQ pricing at build time — pricing SKUs change.)_
 4. **Attribution/branding:** "Powered by Google" / FSQ attribution on any enriched detail surface, per each provider's brand requirements.
 
