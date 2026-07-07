@@ -3010,6 +3010,61 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
+  it("labels the pass popover with its closed/unknown status", () => {
+    // The map draws ONE seasonal-pass badge for closed and unknown alike
+    // (design), so the popover must carry the distinction.
+    const demoPass = {
+      id: "pass-1",
+      name: "Stelvio Pass",
+      country_code: "IT",
+      region: "Lombardy",
+      lat: 46.52,
+      lng: 10.45,
+      elevation_m: 2757,
+      typical_open_month: 6,
+      typical_close_month: 10,
+      status: "closed" as const,
+      status_overridden: false,
+      notes: null,
+      last_updated: "2026-04-01T00:00:00Z",
+    };
+    const ref = createRef<TripPlannerMapHandle>();
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={trip()}
+        month={7}
+        closuresData={{
+          closures: [],
+          routeClosures: [],
+          counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+          previewDate: new Date("2026-07-15T12:00:00Z"),
+        }}
+        passesData={{
+          passes: [demoPass],
+          routePasses: [demoPass],
+          routeClosedCount: 1,
+          routeUnknownCount: 0,
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+        }}
+      />,
+    );
+
+    act(() =>
+      ref.current?.openConditionPopover({ kind: "pass", id: "pass-1" }),
+    );
+    expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
+    expect(screen.getByText("Seasonal pass · closed")).toBeInTheDocument();
+  });
+
   it("passes per-segment quality features covering every day to the route source", async () => {
     const multiDayTrip: Trip = {
       ...trip(),

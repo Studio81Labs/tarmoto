@@ -2497,9 +2497,12 @@ const TripPlannerMapContent = forwardRef<
             const title = isClosure
               ? conditionMenu.closure.title
               : conditionMenu.pass.name;
+            // Pass markers share one badge (design), so the popover must
+            // carry the closed-vs-unknown distinction the marker no longer
+            // draws — mirror the closure `reason · severity` pattern.
             const typeLabel = isClosure
               ? `${conditionMenu.closure.reason} · ${conditionMenu.closure.severity}`
-              : t("Seasonal pass");
+              : `${t("Seasonal pass")} · ${conditionMenu.pass.status}`;
             const detourKm =
               isClosure && conditionMenu.closure.reason === "roadworks"
                 ? detourLengthKm(conditionMenu.closure)
