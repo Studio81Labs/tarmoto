@@ -56,18 +56,24 @@ export class RoadsService {
    * covers. The planner paints each span onto the polyline; gaps between spans
    * are genuine no-coverage stretches it renders as "no data".
    *
-   * The join is geometric, not sampled: for each live segment whose geometry
-   * runs within `buffer_m` of the route, it intersects the route with the
-   * segment's buffer and dumps the result into one part per contiguous run.
-   * Each part's endpoints are linearly referenced onto the route
-   * (`ST_LineLocatePoint`) to give the exact fraction span. This means (a)
-   * span boundaries are the real segment transitions — adjacent segments abut
-   * instead of leaving sampling gaps the client would misread as "no data";
-   * (b) no segment is ever skipped, however short or however long the route;
-   * and (c) a loop or there-and-back route yields one span *per pass* (the
-   * dump splits the multiple route stretches). The buffer stays tight
+   * The join walks the route by sampling it at ~40 m and snapping each sample
+   * to the single *nearest* live segment within `buffer_m`, then coalescing
+   * contiguous same-segment runs into spans. Two properties make this the
+   * right model where a plain buffer-intersection is not:
+   *   - Nearest-snap (not "any segment within the buffer") means a sample
+   *     picks the road the rider is actually on, so a cross street merely
+   *     *crossed* at an intersection doesn't spawn its own quality span.
+   *   - Each sample's position is the route parameter `idx/n`, which is
+   *     unambiguous even when the route overlaps itself — so a loop or
+   *     there-and-back emits one span *per pass* over the same road (the two
+   *     passes fall at different sample indices and coalesce separately),
+   *     which point-projection (`ST_LineLocatePoint`) cannot express.
+   * Span boundaries are the sample-cell edges (±½ step), so adjacent segments
+   * abut instead of leaving a gap the client would misread as "no data".
+   * Spacing is ~40 m (capped at 5000 samples, i.e. exact to ~200 km) so the
+   * normal ~100 m segments are never stepped over. The buffer stays tight
    * (default 25 m) because the routed line follows the same OSM ways the
-   * segments were cut from — a wide buffer would match parallel roads.
+   * segments were cut from — a wide buffer would snap to parallel roads.
    *
    * Resilience mirrors the POI read path: any DB failure yields an empty list
    * rather than a 500 (a quality overlay must never break trip planning). The
@@ -92,56 +98,79 @@ export class RoadsService {
     const bufferParam = `$${params.length}`;
 
     const sql = `
-      WITH route AS (
+      WITH cfg AS (
         SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
       ),
-      -- Live segments whose geometry runs within buffer_m of the route.
-      nearby AS (
+      route AS (
         SELECT
-          rs.osm_way_id, rs.segment_index, rs.quality_score,
-          rs.curviness_score, rs.surface_type, rs.reading_count, rs.geom
-        FROM road_segments rs, route
-        WHERE rs.deactivated_at IS NULL
-          AND ST_GeometryType(rs.geom) = 'ST_LineString'
-          AND ST_DWithin(rs.geom::geography, route.line::geography, ${bufferParam})
+          line,
+          -- ~40 m spacing so normal ~100 m segments are always sampled; capped
+          -- at 5000 samples (exact to ~200 km, spacing only grows beyond).
+          GREATEST(
+            2,
+            LEAST(5000, CEIL(ST_Length(line::geography) / 40.0)::int)
+          ) AS n
+        FROM cfg
       ),
-      -- The exact route stretch(es) that run along each segment: intersect the
-      -- route with the segment's buffer, keep only the line components, and
-      -- dump into one part per contiguous run. A loop / there-and-back gives
-      -- several parts (one span per pass); boundaries are the real transition
-      -- points, so adjacent segments abut instead of leaving sampling gaps.
-      overlaps AS (
+      -- Walk the route: one point every 1/n of its length.
+      samples AS (
         SELECT
-          n.osm_way_id, n.segment_index, n.quality_score, n.curviness_score,
-          n.surface_type, n.reading_count,
-          (ST_Dump(
-            ST_CollectionExtract(
-              ST_Intersection(
-                route.line,
-                ST_Buffer(n.geom::geography, ${bufferParam})::geometry
-              ),
-              2
-            )
-          )).geom AS part
-        FROM nearby n, route
+          gs AS idx,
+          ST_LineInterpolatePoint(route.line, gs::float / route.n) AS pt
+        FROM route, generate_series(0, route.n) AS gs
+      ),
+      -- Snap each sample to the single nearest live segment within the buffer.
+      -- Nearest (not "any within buffer") is what keeps a merely-crossed cross
+      -- street at an intersection from claiming a span of the rider's road.
+      snapped AS (
+        SELECT
+          s.idx,
+          seg.id            AS seg_id,
+          seg.osm_way_id    AS osm_way_id,
+          seg.segment_index AS segment_index,
+          seg.quality_score AS quality_score,
+          seg.curviness_score AS curviness_score,
+          seg.surface_type  AS surface_type,
+          seg.reading_count AS reading_count
+        FROM samples s
+        LEFT JOIN LATERAL (
+          SELECT
+            rs.id, rs.osm_way_id, rs.segment_index, rs.quality_score,
+            rs.curviness_score, rs.surface_type, rs.reading_count
+          FROM road_segments rs
+          WHERE rs.deactivated_at IS NULL
+            AND ST_GeometryType(rs.geom) = 'ST_LineString'
+            AND ST_DWithin(rs.geom::geography, s.pt::geography, ${bufferParam})
+          ORDER BY rs.geom <-> s.pt
+          LIMIT 1
+        ) seg ON TRUE
+      ),
+      -- Gaps-and-islands: the difference of the two row numbers is constant
+      -- across a contiguous run of the same segment, so a second pass over
+      -- that segment (separated by other / no-coverage samples) forms its own
+      -- run and its own span. NULL samples stay in the numbering so they break
+      -- runs, then are dropped from the output.
+      runs AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (ORDER BY idx)
+            - ROW_NUMBER() OVER (PARTITION BY seg_id ORDER BY idx) AS grp
+        FROM snapped
       )
       SELECT
-        o.osm_way_id::text AS osm_way_id,
-        o.segment_index    AS segment_index,
-        o.quality_score    AS quality_score,
-        o.curviness_score  AS curviness_score,
-        o.surface_type     AS surface_type,
-        o.reading_count    AS reading_count,
-        LEAST(
-          ST_LineLocatePoint(route.line, ST_StartPoint(o.part)),
-          ST_LineLocatePoint(route.line, ST_EndPoint(o.part))
-        ) AS start_fraction,
-        GREATEST(
-          ST_LineLocatePoint(route.line, ST_StartPoint(o.part)),
-          ST_LineLocatePoint(route.line, ST_EndPoint(o.part))
-        ) AS end_fraction
-      FROM overlaps o, route
-      WHERE ST_NPoints(o.part) >= 2
+        MIN(osm_way_id)::text AS osm_way_id,
+        MIN(segment_index)    AS segment_index,
+        MIN(quality_score)    AS quality_score,
+        MIN(curviness_score)  AS curviness_score,
+        MIN(surface_type)     AS surface_type,
+        MIN(reading_count)    AS reading_count,
+        -- Cell edges (±½ step): adjacent runs share a boundary and abut, so a
+        -- segment transition isn't reported as a no-coverage gap.
+        GREATEST(0.0, (MIN(idx) - 0.5) / (SELECT n FROM route)) AS start_fraction,
+        LEAST(1.0, (MAX(idx) + 0.5) / (SELECT n FROM route))    AS end_fraction
+      FROM runs
+      WHERE seg_id IS NOT NULL
+      GROUP BY seg_id, grp
       ORDER BY start_fraction ASC
     `;
 
