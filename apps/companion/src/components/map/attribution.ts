@@ -37,6 +37,24 @@ export const BASE_MAP_ATTRIBUTION: string[] = [
   OPENFREEMAP_ATTRIBUTION,
 ];
 
+/**
+ * Whether {@link loadCuratedMapStyle} + {@link BASE_MAP_ATTRIBUTION} apply to a
+ * style URL. The curation strips **every** source's baked-in attribution and
+ * replaces it with the OpenFreeMap-specific credits above, so it is correct
+ * only for an OpenFreeMap-hosted style. A different `NEXT_PUBLIC_MAP_STYLE_URL`
+ * (a commercial or self-hosted provider) must be passed through untouched, so it
+ * keeps its own required attribution and resolves its relative sprite/glyph/tile
+ * paths against the style URL rather than the companion origin.
+ */
+export function isCuratableBaseMap(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "openfreemap.org" || host.endsWith(".openfreemap.org");
+  } catch {
+    return false;
+  }
+}
+
 // TileJSON fields that describe where/how to fetch a source's tiles. We copy
 // these onto the source when inlining so it renders without its `url` — and
 // pointedly omit `attribution`, which is the whole reason for inlining.
@@ -50,7 +68,9 @@ const TILEJSON_TILE_FIELDS = [
 
 /**
  * Fetch the base map style and neutralise its provider attribution so the
- * control shows only our curated {@link BASE_MAP_ATTRIBUTION}:
+ * control shows only our curated {@link BASE_MAP_ATTRIBUTION}. Assumes an
+ * OpenFreeMap-family style — gate the call with {@link isCuratableBaseMap},
+ * since this strips **all** source attribution:
  *
  * - a source that references a TileJSON (`url`) has its tile config inlined and
  *   its `url` dropped, so MapLibre never fetches the TileJSON whose attribution

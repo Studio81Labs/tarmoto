@@ -1,6 +1,7 @@
 import type { StyleSpecification } from "maplibre-gl";
 import {
   BASE_MAP_ATTRIBUTION,
+  isCuratableBaseMap,
   OSM_ATTRIBUTION,
   loadCuratedMapStyle,
 } from "./attribution";
@@ -140,5 +141,24 @@ describe("base map attribution", () => {
     // The POI GeoJSON source reuses OSM_ATTRIBUTION verbatim, so it must live
     // inside the joined base-map string for that dedupe to collapse the two.
     expect(BASE_MAP_ATTRIBUTION.join(" | ")).toContain(OSM_ATTRIBUTION);
+  });
+});
+
+describe("isCuratableBaseMap", () => {
+  it("curates OpenFreeMap-hosted styles and passes any other provider through", () => {
+    expect(
+      isCuratableBaseMap("https://tiles.openfreemap.org/styles/liberty"),
+    ).toBe(true);
+    expect(isCuratableBaseMap("https://openfreemap.org/styles/liberty")).toBe(
+      true,
+    );
+    // A different (commercial) provider must keep its own required attribution.
+    expect(
+      isCuratableBaseMap("https://api.maptiler.com/maps/streets/style.json"),
+    ).toBe(false);
+    // A look-alike host must not be treated as OpenFreeMap.
+    expect(isCuratableBaseMap("https://notopenfreemap.org/style")).toBe(false);
+    // A malformed / relative URL is not curatable.
+    expect(isCuratableBaseMap("/local/style.json")).toBe(false);
   });
 });

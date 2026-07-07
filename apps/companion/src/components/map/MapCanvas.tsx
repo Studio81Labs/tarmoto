@@ -13,11 +13,20 @@ import maplibregl, {
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { BASE_MAP_ATTRIBUTION, loadCuratedMapStyle } from "./attribution";
+import {
+  BASE_MAP_ATTRIBUTION,
+  isCuratableBaseMap,
+  loadCuratedMapStyle,
+} from "./attribution";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
+
+// Attribution curation is OpenFreeMap-specific; a different
+// NEXT_PUBLIC_MAP_STYLE_URL is used as-is so it keeps its own attribution and
+// resolves relative sprite/glyph/tile paths against the style URL (#902).
+const CURATE_ATTRIBUTION = isCuratableBaseMap(MAP_STYLE_URL);
 
 export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
 export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
@@ -133,8 +142,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   }, [onReady]);
 
   // Fetch + curate the base map style once: strip its baked-in attribution so
-  // the control shows only our own linked, ordered credits (#852).
+  // the control shows only our own linked, ordered credits (#852). A non-
+  // OpenFreeMap style is used as-is — MapLibre keeps its own attribution and
+  // resolves relative resources against the style URL (#902).
   useEffect(() => {
+    if (!CURATE_ATTRIBUTION) {
+      setCuratedStyle(MAP_STYLE_URL);
+      return;
+    }
     let cancelled = false;
     void loadCuratedMapStyle(MAP_STYLE_URL).then((style) => {
       if (!cancelled) setCuratedStyle(style);
@@ -153,13 +168,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       style: curatedStyle,
       center: [center.lng, center.lat],
       zoom,
-      attributionControl: {
-        compact: true,
-        // One joined string, not the array: the control length-sorts multiple
-        // entries but never reorders within one, so this preserves our
-        // provenance order (see attribution.ts).
-        customAttribution: BASE_MAP_ATTRIBUTION.join(" | "),
-      },
+      attributionControl: CURATE_ATTRIBUTION
+        ? {
+            compact: true,
+            // One joined string, not the array: the control length-sorts
+            // multiple entries but never reorders within one, so this preserves
+            // our provenance order (see attribution.ts).
+            customAttribution: BASE_MAP_ATTRIBUTION.join(" | "),
+          }
+        : { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
     map.addControl(
