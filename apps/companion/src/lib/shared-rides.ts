@@ -1,6 +1,6 @@
 import type { paths } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
-import { API_BASE_SERVER } from "@/lib/config";
+import { apiServer } from "@/lib/api/server";
 
 export type SharedRideDetail =
   paths["/api/v1/rides/shared/{token}"]["get"]["responses"]["200"]["content"]["application/json"];
@@ -13,19 +13,17 @@ export type UserSharedRide = UserSharedRidesResponse["items"][number];
 export async function fetchSharedRide(
   token: string,
 ): Promise<SharedRideDetail | null> {
-  const res = await fetch(
-    `${API_BASE_SERVER}/rides/shared/${encodeURIComponent(token)}`,
-    {
-      cache: "no-store",
-    },
+  const { data, response } = await apiServer.GET(
+    "/api/v1/rides/shared/{token}",
+    { params: { path: { token } }, cache: "no-store" },
   );
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`GET /rides/shared/${token} failed (${res.status})`);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`GET /rides/shared/${token} failed (${response.status})`);
   }
 
-  return (await res.json()) as SharedRideDetail;
+  return data ?? null;
 }
 
 /**

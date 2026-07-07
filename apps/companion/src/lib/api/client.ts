@@ -3,7 +3,7 @@ import { createTarmotoClient } from "@tarmoto/openapi-client";
 import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
-import { API_HOST, API_BASE } from "@/lib/config";
+import { API_HOST } from "@/lib/config";
 
 // Typed openapi-fetch client for all spec-defined endpoints.
 //
@@ -65,43 +65,6 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
-}
-
-// ── Transitional raw fetch helper ──
-// Owner: companion web. Follow-up: #861 endpoint-family split for remaining
-// raw helpers (auth bootstrap, trip folders/shares/collab, collections/map
-// shares, hazards/closures/POI, community, passes, roads, users, notifications,
-// and privacy) after the core trips/exploration/account contracts below.
-// Checks res.ok and clears session on 401 (matching openapi-fetch client behavior).
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<{ data: T }> {
-  const token = useAuthStore.getState().accessToken;
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(init?.headers instanceof Headers
-      ? Object.fromEntries(init.headers.entries())
-      : (init?.headers ?? {})),
-  };
-  const { headers: _, ...rest } = init ?? {};
-  const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
-  if (!res.ok) {
-    if (res.status === 401) useAuthStore.getState().clearSession();
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      (body as { message?: string }).message ??
-        `Request failed (${res.status})`,
-      res.status,
-      body,
-    );
-  }
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    return { data: undefined as T };
-  }
-  const data = (await res.json()) as T;
-  return { data };
 }
 
 /**
