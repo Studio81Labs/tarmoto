@@ -64,6 +64,7 @@ describe('isPoiConnectionError', () => {
   it.each([
     ['pg SQLSTATE 08006 (connection failure)', connErr('08006')],
     ['pg SQLSTATE 57P03 (cannot connect now)', connErr('57P03')],
+    ['pg SQLSTATE 53300 (too_many_connections)', connErr('53300')],
     ['node socket code ECONNREFUSED', connErr('ECONNREFUSED')],
     [
       '"Connection terminated" message with no code',
