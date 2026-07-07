@@ -201,7 +201,7 @@ Expected: prints a PostGIS version (e.g. `3.4 …`), no error.
 
 ```bash
 git add infra/docker/docker-compose.yml
-git commit -m "infra(infra): add tarmoto-poi-db PostGIS service for the POI store"
+git commit -m "feat(infra): add tarmoto-poi-db PostGIS service for the POI store"
 ```
 
 ---
