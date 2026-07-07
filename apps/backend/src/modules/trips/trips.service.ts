@@ -18,14 +18,12 @@ import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
-import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
-import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   ROUTING_PROVIDER,
   type RoutingProvider,
@@ -42,7 +40,6 @@ import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
 import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
-  PublicTripDetailDto,
   TripDayDto,
   TripDetailDto,
   TripMemberDto,
@@ -83,14 +80,11 @@ export class TripsService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(TripInvite)
     private readonly inviteRepo: Repository<TripInvite>,
-    @InjectRepository(RouteCollectionItem)
-    private readonly collectionItemRepo: Repository<RouteCollectionItem>,
     private readonly events: EventsGateway,
     private readonly activity: TripActivityService,
     private readonly tripShares: TripSharesService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
-    private readonly privacy: PrivacyPreferencesService,
     @Inject(ROUTING_PROVIDER)
     private readonly routingProvider: RoutingProvider,
     private readonly enrichment: RouteEnrichmentService,
@@ -1340,105 +1334,6 @@ export class TripsService {
     return this.toDetail(trip, aggById.get(trip.id));
   }
 
-  /**
-   * Read-only trip detail for the community surface (`GET /community/trips/:id`).
-   * Unlike {@link getDetail}, this does NOT require trip membership — it is the
-   * ONLY path by which a non-member can read a trip, and it is deliberately
-   * narrow: a trip has no per-trip public flag (sharing is otherwise
-   * token-only), so the sole non-member grant is "this trip is an item in a
-   * discoverable (public/unlisted) collection". A member (e.g. the owner
-   * reaching their own trip from a private collection) is always allowed.
-   *
-   * The response masks owner-only fields ({@link PublicTripDetailDto} omits the
-   * invite code and the member roster) so following a collection link can never
-   * leak the join secret or rider identities.
-   */
-  async getPublicDetail(
-    viewerId: string | null,
-    tripId: string,
-  ): Promise<PublicTripDetailDto> {
-    // Hydrate the trip up-front (no membership join) so we can both
-    // authorize on the in-memory roster and build the response from one read.
-    const trip = await this.tripRepo
-      .createQueryBuilder('trip')
-      .leftJoinAndSelect('trip.members', 'm')
-      .leftJoinAndSelect('m.user', 'mu')
-      .leftJoinAndSelect('trip.days', 'd')
-      .leftJoinAndSelect('d.waypoints', 'w')
-      .where('trip.id = :tripId', { tripId })
-      .addOrderBy('d.day_number', 'ASC')
-      .addOrderBy('w.sequence', 'ASC')
-      .getOne();
-
-    // Fold "no such trip" and "not visible to you" into the same 404 so the
-    // endpoint can't be used to enumerate trip ids — mirrors getDetail.
-    if (!trip) {
-      throw new NotFoundException('Trip not found');
-    }
-
-    const isMember =
-      viewerId != null &&
-      (trip.members ?? []).some((m) => m.user_id === viewerId);
-    if (!isMember) {
-      // The trip must be an item in a discoverable (public/unlisted) collection
-      // AND the COLLECTION OWNER must be a member of that trip. `addItem` only
-      // checks collection ownership + UUID shape — it does NOT verify the owner
-      // has access to the trip_id they stored — so without this membership
-      // predicate a rider could park an arbitrary private trip_id in their own
-      // public collection and read its full geometry/waypoints here. The
-      // preview builder enforces the same trip_members scoping for exactly this
-      // reason; we mirror it.
-      const exposed = await this.collectionItemRepo
-        .createQueryBuilder('item')
-        .innerJoin('item.collection', 'c')
-        // The collection OWNER must be a member of the trip (addItem doesn't
-        // verify trip access) AND their account must be live — the collection
-        // read paths 404 a soft-deleted owner's collections during the deletion
-        // grace window, so a stale link must not keep exposing the trip.
-        .innerJoin(
-          TripMember,
-          'tm',
-          'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
-        )
-        .innerJoin(
-          User,
-          'owner',
-          'owner.id = c.owner_id AND owner.deleted_at IS NULL',
-        )
-        .where('item.trip_id = :tripId', { tripId })
-        .andWhere('c.visibility IN (:...visibilities)', {
-          visibilities: ['public', 'unlisted'],
-        })
-        .getExists();
-      if (!exposed) {
-        throw new NotFoundException('Trip not found');
-      }
-    }
-
-    // Mask the owner's identity when it must not be surfaced:
-    //  - the owner's account is soft-deleted (deletion grace window) — masked
-    //    for everyone, matching the public DTO contract and how the rides/
-    //    collection read paths hide deleted owners. The exposure join only
-    //    proves the COLLECTION owner is live; a collaborator can expose a trip
-    //    whose OWNER is mid-deletion, so we check the trip owner here.
-    //  - the owner keeps a private profile and the viewer is not a member —
-    //    mirroring the collection API (#279 / #501) so the discover→trip link
-    //    can't recover an identity the collection deliberately hid.
-    const ownerMember = (trip.members ?? []).find(
-      (m) => m.user_id === trip.owner_id,
-    );
-    const ownerIsDeleted = ownerMember?.user?.deleted_at != null;
-    const ownerIsPrivate =
-      !isMember &&
-      (await this.privacy.loadPrivateUserIds([trip.owner_id])).has(
-        trip.owner_id,
-      );
-    const maskOwner = ownerIsDeleted || ownerIsPrivate;
-
-    const aggById = await this.computeTripAggregates([trip.id]);
-    return this.toPublicDetail(trip, aggById.get(trip.id), maskOwner);
-  }
-
   async join(
     userId: string,
     tripId: string,
@@ -1820,53 +1715,6 @@ export class TripsService {
       road_preference: trip.road_preference as TripRoadPreference,
       members,
       days,
-    };
-  }
-
-  /**
-   * Map a hydrated trip to the masked, read-only {@link PublicTripDetailDto}.
-   * Derives the owner's display name from the loaded roster but drops the
-   * roster and invite code from the response (see the DTO for why). When
-   * `ownerIsPrivate` is set, the owner id + name are masked to `null`.
-   */
-  private toPublicDetail(
-    trip: Trip,
-    agg:
-      | {
-          distance_km: number | null;
-          quality_avg: number | null;
-          passes_count: number | null;
-        }
-      | undefined,
-    ownerIsPrivate: boolean,
-  ): PublicTripDetailDto {
-    // Reuse the owner mapper for the day/waypoint mapping, then copy fields
-    // into the public shape with an explicit ALLOW-LIST. An allow-list (rather
-    // than spread-and-delete) means a sensitive field added to TripDetailDto
-    // later can't silently leak through this non-member surface — it simply
-    // won't be carried over until someone consciously adds it here. (Note
-    // `folder_id` is intentionally NOT carried over — it's the owner's private
-    // filing folder.)
-    const detail = this.toDetail(trip, agg);
-    const owner = detail.members.find((m) => m.role === 'owner');
-    return {
-      id: detail.id,
-      owner_id: ownerIsPrivate ? null : detail.owner_id,
-      owner_name: ownerIsPrivate ? null : (owner?.display_name ?? null),
-      title: detail.title,
-      region: detail.region,
-      num_days: detail.num_days,
-      status: detail.status,
-      member_count: detail.member_count,
-      created_at: detail.created_at,
-      distance_km: detail.distance_km,
-      quality_avg: detail.quality_avg,
-      passes_count: detail.passes_count,
-      daily_km_min: detail.daily_km_min,
-      daily_km_max: detail.daily_km_max,
-      min_quality: detail.min_quality,
-      road_preference: detail.road_preference,
-      days: detail.days,
     };
   }
 }

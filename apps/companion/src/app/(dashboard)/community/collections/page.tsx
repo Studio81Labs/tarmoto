@@ -55,7 +55,6 @@ export default function RouteCollectionsPage() {
     updateCollection,
     removeCollection,
     unfollowCollection,
-    migration,
   } = useCollections(userId);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<
@@ -161,8 +160,6 @@ export default function RouteCollectionsPage() {
         </Button>
       }
     >
-      {migration && <MigrationBanner migration={migration} />}
-
       <Toolbar search={search} onSearch={setSearch} />
 
       <div className="mt-5">
@@ -301,65 +298,6 @@ export default function RouteCollectionsPage() {
         />
       )}
     </CommunityScaffold>
-  );
-}
-// ─────────────────────────────────────────────────────────
-// Migration banner
-// ─────────────────────────────────────────────────────────
-function MigrationBanner({
-  migration,
-}: {
-  migration: NonNullable<ReturnType<typeof useCollections>["migration"]>;
-}) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="mb-4 rounded-xl border border-accent/20 bg-accent/5 p-4">
-      <p className="text-sm text-ink">
-        {migration.count === 1
-          ? t(
-              "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
-            )
-          : t(
-              "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ",
-              { count: migration.count },
-            )}
-      </p>
-      {error && (
-        <p className="mt-2 text-xs text-amber-300" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="mt-3 flex items-center gap-2">
-        <Button
-          variant="accent"
-          size="sm"
-          uppercase
-          loading={pending}
-          onClick={async () => {
-            setPending(true);
-            setError(null);
-            try {
-              await migration.accept();
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Migration failed");
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          {pending ? "Moving…" : "Move to my account"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          onClick={migration.decline}
-        >
-          {t("Not now")}
-        </Button>
-      </div>
-    </div>
   );
 }
 // ─────────────────────────────────────────────────────────

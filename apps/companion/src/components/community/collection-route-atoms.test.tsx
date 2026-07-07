@@ -8,7 +8,6 @@ function item(
   return {
     item_id: "item-1",
     position: 0,
-    kind: "ride",
     target_id: "ride-1",
     lines: [
       [
@@ -17,7 +16,6 @@ function item(
       ],
     ],
     title: "Three Passes Sunday",
-    num_days: null,
     distance_km: 242,
     status: "completed",
     quality_avg: 4.4,
@@ -43,20 +41,10 @@ function renderRow(
 
 describe("CollectionRouteRow", () => {
   it("links a ride row to the community ride detail when linkable", () => {
-    renderRow(item({ kind: "ride", target_id: "ride-1" }), { linkable: true });
+    renderRow(item({ target_id: "ride-1" }), { linkable: true });
     expect(
       screen.getByRole("link", { name: /three passes sunday/i }),
     ).toHaveAttribute("href", "/community/rides/ride-1");
-  });
-
-  it("links a trip row to the community trip detail when linkable", () => {
-    renderRow(item({ kind: "trip", target_id: "trip-9", title: "Dolomites" }), {
-      linkable: true,
-    });
-    expect(screen.getByRole("link", { name: /dolomites/i })).toHaveAttribute(
-      "href",
-      "/community/trips/trip-9",
-    );
   });
 
   it("renders a non-interactive row by default (anonymous shared page)", () => {
@@ -71,12 +59,12 @@ describe("CollectionRouteRow", () => {
   });
 
   it("URL-encodes the target id in the detail link", () => {
-    renderRow(item({ kind: "trip", target_id: "a/b?c#d", title: "Edgey" }), {
+    renderRow(item({ target_id: "a/b?c#d", title: "Edgey" }), {
       linkable: true,
     });
     expect(screen.getByRole("link", { name: /edgey/i })).toHaveAttribute(
       "href",
-      "/community/trips/a%2Fb%3Fc%23d",
+      "/community/rides/a%2Fb%3Fc%23d",
     );
   });
 });

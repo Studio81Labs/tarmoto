@@ -19,13 +19,11 @@ import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
-import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
-import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { ROUTING_PROVIDER } from '../commute/routing-provider.interface.js';
 import { RouteEnrichmentService } from '../routing/route-enrichment.service.js';
 
@@ -166,7 +164,6 @@ describe('TripsService', () => {
   let userRepo: jest.Mocked<Repository<User>>;
   let inviteRepo: jest.Mocked<Repository<TripInvite>>;
   let folderRepo: jest.Mocked<Repository<TripFolder>>;
-  let collectionItemRepo: jest.Mocked<Repository<RouteCollectionItem>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip' | 'evictFromTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let tripShares: jest.Mocked<
@@ -174,9 +171,6 @@ describe('TripsService', () => {
   >;
   let email: jest.Mocked<Pick<EmailService, 'sendTripInvite'>>;
   let config: jest.Mocked<Pick<ConfigService, 'get'>>;
-  let privacy: jest.Mocked<
-    Pick<PrivacyPreferencesService, 'loadPrivateUserIds'>
-  >;
   let routingProvider: {
     route: jest.Mock;
     getAlternatives: jest.Mock;
@@ -273,12 +267,6 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<TripFolder>>;
 
-    // Defaults to "not exposed" so existing tests that never touch the
-    // community read path are unaffected; getPublicDetail tests override.
-    collectionItemRepo = {
-      createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
-    } as unknown as jest.Mocked<Repository<RouteCollectionItem>>;
-
     events = {
       emitToTrip: jest.fn(),
       evictFromTrip: jest.fn().mockResolvedValue(undefined),
@@ -287,11 +275,6 @@ describe('TripsService', () => {
     tripShares = {
       findActiveByToken: jest.fn(),
       revokeAllForTripMember: jest.fn().mockResolvedValue(undefined),
-    };
-    // Default: nobody is private, so owner identity is unmasked unless a test
-    // opts in by returning a Set containing the owner id.
-    privacy = {
-      loadPrivateUserIds: jest.fn().mockResolvedValue(new Set<string>()),
     };
     email = { sendTripInvite: jest.fn().mockResolvedValue(null) };
     config = {
@@ -327,10 +310,6 @@ describe('TripsService', () => {
         { provide: getRepositoryToken(TripDay), useValue: tripDayRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: getRepositoryToken(TripFolder), useValue: folderRepo },
-        {
-          provide: getRepositoryToken(RouteCollectionItem),
-          useValue: collectionItemRepo,
-        },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(TripInvite), useValue: inviteRepo },
         { provide: EventsGateway, useValue: events },
@@ -338,7 +317,6 @@ describe('TripsService', () => {
         { provide: TripSharesService, useValue: tripShares },
         { provide: EmailService, useValue: email },
         { provide: ConfigService, useValue: config },
-        { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: ROUTING_PROVIDER, useValue: routingProvider },
         { provide: RouteEnrichmentService, useValue: enrichment },
       ],
@@ -1615,125 +1593,6 @@ describe('TripsService', () => {
       await expect(service.getDetail(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
-    });
-  });
-
-  describe('getPublicDetail', () => {
-    /** Wire the collection-exposure existence check to resolve `exposed`. */
-    function mockExposed(exposed: boolean): QbMock {
-      const qb = makeQbMock({ getExists: exposed });
-      collectionItemRepo.createQueryBuilder.mockReturnValue(qb as never);
-      return qb;
-    }
-
-    it('returns masked detail (no invite_code/members) when the trip is exposed via a discoverable collection', async () => {
-      mockGetDetailReturns(makeOwnedTrip());
-      const itemQb = mockExposed(true);
-
-      // OTHER_ID is not a member — access is granted purely by the collection.
-      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
-
-      expect(result).not.toHaveProperty('invite_code');
-      expect(result).not.toHaveProperty('members');
-      // Owner-private fields that must never reach a non-member surface.
-      expect(result).not.toHaveProperty('folder_id');
-      // Owner display name is surfaced from the loaded roster.
-      expect(result.owner_name).toBe('Adam');
-      expect(result.owner_id).toBe(OWNER_ID);
-      expect(result.member_count).toBe(1);
-      expect(result.id).toBe(TRIP_ID);
-      // The exposure check is scoped to public/unlisted collections only...
-      expect(itemQb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('visibility'),
-        expect.objectContaining({ visibilities: ['public', 'unlisted'] }),
-      );
-      // ...AND requires the collection owner to be a member of the trip, so an
-      // arbitrary private trip_id parked in a public collection can't leak...
-      expect(itemQb.innerJoin).toHaveBeenCalledWith(
-        TripMember,
-        'tm',
-        'tm.trip_id = item.trip_id AND tm.user_id = c.owner_id',
-      );
-      // ...AND that the collection owner's account is live (a soft-deleted
-      // owner's collections 404, so a stale link must stop exposing the trip).
-      expect(itemQb.innerJoin).toHaveBeenCalledWith(
-        User,
-        'owner',
-        'owner.id = c.owner_id AND owner.deleted_at IS NULL',
-      );
-    });
-
-    it('allows a member without consulting collection visibility or owner privacy', async () => {
-      mockGetDetailReturns(makeOwnedTrip());
-
-      const result = await service.getPublicDetail(OWNER_ID, TRIP_ID);
-
-      expect(result.owner_name).toBe('Adam');
-      // A member short-circuits the collection exposure query entirely...
-      expect(collectionItemRepo.createQueryBuilder).not.toHaveBeenCalled();
-      // ...and never masks the owner (no privacy lookup needed).
-      expect(privacy.loadPrivateUserIds).not.toHaveBeenCalled();
-    });
-
-    it('masks owner id + name for a non-member when the owner keeps a private profile', async () => {
-      mockGetDetailReturns(makeOwnedTrip());
-      mockExposed(true);
-      privacy.loadPrivateUserIds.mockResolvedValueOnce(new Set([OWNER_ID]));
-
-      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
-
-      // Identity is hidden, matching how the collection API masks a private
-      // owner — the rest of the trip (days/geometry) still renders.
-      expect(result.owner_id).toBeNull();
-      expect(result.owner_name).toBeNull();
-      expect(result.id).toBe(TRIP_ID);
-      expect(privacy.loadPrivateUserIds).toHaveBeenCalledWith([OWNER_ID]);
-    });
-
-    it('masks owner id + name when the trip owner is soft-deleted, even with a public profile', async () => {
-      // A live collaborator can expose a trip whose OWNER is mid-deletion; the
-      // exposure join only proves the collection owner is live, so the trip
-      // owner's soft-delete is checked here. Privacy stays empty (public).
-      mockGetDetailReturns(
-        makeOwnedTrip({
-          members: [
-            {
-              id: 'm-1',
-              trip_id: TRIP_ID,
-              user_id: OWNER_ID,
-              role: 'owner',
-              joined_at: NOW,
-              user: { display_name: 'Adam', deleted_at: NOW },
-            } as unknown as TripMember,
-          ],
-        }),
-      );
-      mockExposed(true);
-
-      const result = await service.getPublicDetail(OTHER_ID, TRIP_ID);
-
-      expect(result.owner_id).toBeNull();
-      expect(result.owner_name).toBeNull();
-      expect(result.id).toBe(TRIP_ID);
-    });
-
-    it('404s when the trip is in no discoverable collection and the viewer is not a member', async () => {
-      mockGetDetailReturns(makeOwnedTrip());
-      mockExposed(false);
-
-      await expect(
-        service.getPublicDetail(OTHER_ID, TRIP_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it('404s when the trip does not exist (anonymous viewer)', async () => {
-      mockGetDetailReturns(null);
-
-      await expect(
-        service.getPublicDetail(null, TRIP_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      // No point checking collection exposure for a trip that doesn't exist.
-      expect(collectionItemRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 

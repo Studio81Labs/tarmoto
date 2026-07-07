@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -44,7 +44,6 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRides, type UserRide } from "@/hooks/useUserRides";
 import {
   ApiError,
@@ -62,13 +61,9 @@ import {
   moveItem,
   reorderPayload,
   type CollectionRideRef,
-  type CollectionTripRef,
   type RouteCollectionView,
 } from "@/lib/route-collections";
-import { tripDistanceKmOrNull } from "@/lib/trip-filters";
-import { type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
-import type { TripDay, TripSummary } from "@/lib/types";
 type LoadState =
   | {
       phase: "loading";
@@ -95,13 +90,6 @@ export default function CollectionDetailPage() {
   const { collectionId } = useParams<{
     collectionId: string;
   }>();
-  const router = useRouter();
-  const {
-    trips,
-    tripById,
-    loading: loadingTrips,
-    error: tripsError,
-  } = useUserTrips();
   const {
     rides,
     rideById,
@@ -166,24 +154,17 @@ export default function CollectionDetailPage() {
       cancelled = true;
     };
   }, [collectionId, authReady, itemSetKey]);
-  const handleAddItems = async (input: {
-    tripIds: string[];
-    rideIds: string[];
-  }) => {
+  const handleAddItems = async (input: { rideIds: string[] }) => {
     if (!collection) return;
-    if (input.tripIds.length === 0 && input.rideIds.length === 0) return;
+    if (input.rideIds.length === 0) return;
     setActionError(null);
     setBusy(true);
     try {
       // Sequential adds: the backend assigns position via MAX(position)+1
       // inside a per-collection txn, so concurrent adds against the same
       // collection can collide on the same position value. Serialising here
-      // keeps the resulting order deterministic. Trips first, then rides —
-      // matches picker tab order so users see the items appear in the order
-      // they selected them.
-      for (const tid of input.tripIds) {
-        await routeCollectionsApi.addItem(collection.id, { trip_id: tid });
-      }
+      // keeps the resulting order deterministic so users see the rides appear
+      // in the order they selected them.
       for (const rid of input.rideIds) {
         await routeCollectionsApi.addItem(collection.id, { ride_id: rid });
       }
@@ -197,53 +178,31 @@ export default function CollectionDetailPage() {
       setBusy(false);
     }
   };
-  const handleReorder = async (
-    section: "trips" | "rides",
-    fromIndex: number,
-    toIndex: number,
-  ) => {
+  const handleReorder = async (fromIndex: number, toIndex: number) => {
     if (!collection) return;
     if (fromIndex === toIndex) return;
-    const sourceRefs =
-      section === "trips" ? collection.tripRefs : collection.rideRefs;
     if (
       fromIndex < 0 ||
       toIndex < 0 ||
-      fromIndex >= sourceRefs.length ||
-      toIndex >= sourceRefs.length
+      fromIndex >= collection.rideRefs.length ||
+      toIndex >= collection.rideRefs.length
     ) {
       return;
     }
-    // Optimistic: rebuild the view with the new in-section order so the row
-    // animates to its new spot immediately. The server is the source of
-    // truth for `position`; we only renumber locally on success (after the
-    // refetch from `reorderItems`).
-    const optimistic: RouteCollectionView =
-      section === "trips"
-        ? (() => {
-            const nextRefs: CollectionTripRef[] = moveItem(
-              collection.tripRefs,
-              fromIndex,
-              toIndex,
-            );
-            return {
-              ...collection,
-              tripRefs: nextRefs,
-              tripIds: nextRefs.map((r) => r.tripId),
-            };
-          })()
-        : (() => {
-            const nextRefs: CollectionRideRef[] = moveItem(
-              collection.rideRefs,
-              fromIndex,
-              toIndex,
-            );
-            return {
-              ...collection,
-              rideRefs: nextRefs,
-              rideIds: nextRefs.map((r) => r.rideId),
-            };
-          })();
+    // Optimistic: rebuild the view with the new order so the row animates to
+    // its new spot immediately. The server is the source of truth for
+    // `position`; we only renumber locally on success (after the refetch from
+    // `reorderItems`).
+    const nextRefs: CollectionRideRef[] = moveItem(
+      collection.rideRefs,
+      fromIndex,
+      toIndex,
+    );
+    const optimistic: RouteCollectionView = {
+      ...collection,
+      rideRefs: nextRefs,
+      rideIds: nextRefs.map((r) => r.rideId),
+    };
     setLoad({ phase: "ready", collection: optimistic });
     setActionError(null);
     setBusy(true);
@@ -360,52 +319,20 @@ export default function CollectionDetailPage() {
     );
   }
   // ready
-  const presentTrips = collection!.tripRefs
-    .map((ref) => tripById.get(ref.tripId))
-    .filter((trip): trip is TripSummary => trip != null);
   const presentRides = collection!.rideRefs
     .map((ref) => rideById.get(ref.rideId))
     .filter((r): r is UserRide => r != null);
-  // Distance covers both trips (planner geometry) and rides (recorded distance).
-  // Trip distance is computed from per-day route geometry; ride distance comes
-  // straight from the backend `distance_km` field.
-  //
-  // `presentTrips` is sourced from `useUserTrips()` which currently returns
-  // TripSummaryDto[] (no `days`, no per-day distances). We exclude those
-  // unhydrated trips from the aggregate rather than letting their 0s pull the
-  // total down to a confidently-wrong number; the total below renders the
-  // partial sum and `tripsWithUnknownDistance` powers a "+N trips, distance
-  // pending" annotation on the stat card. Pending #541 (TripSummary type
-  // split) — once the list endpoint or its consumer carries a known total,
-  // these unhydrated trips contribute to the sum like rides do.
-  const tripDistances = presentTrips.map((trip) => tripDistanceKmOrNull(trip));
-  const tripsWithUnknownDistance = tripDistances.filter(
-    (d) => d === null,
-  ).length;
-  const knownTripDistanceKm = tripDistances.reduce<number>(
-    (sum, d) => sum + (d ?? 0),
+  // Recorded-ride distance comes straight from the backend `distance_km` field.
+  const totalDistance = presentRides.reduce(
+    (sum, r) => sum + (r.distance_km ?? 0),
     0,
   );
-  const totalDistance =
-    knownTripDistanceKm +
-    presentRides.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
-  // Riding days only counts trip days — recorded rides are point-in-time, not
-  // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
-  // alongside the planner-day count.
-  // `presentTrips` is fed by `useUserTrips()` which surfaces
-  // `TripSummary[]` — the list endpoint only carries `num_days`.
-  const totalDays = presentTrips.reduce((sum, trip) => sum + trip.num_days, 0);
-  const totalMissing =
-    collection!.tripRefs.length -
-    presentTrips.length +
-    (collection!.rideRefs.length - presentRides.length);
-  const memberTripIds = new Set(collection!.tripIds);
+  const totalMissing = collection!.rideRefs.length - presentRides.length;
   const memberRideIds = new Set(collection!.rideIds);
-  const availableTrips = trips.filter((trip) => !memberTripIds.has(trip.id));
   const availableRides = rides.filter((r) => !memberRideIds.has(r.id));
-  const totalRefs = collection!.tripRefs.length + collection!.rideRefs.length;
-  const loadingMembers = loadingTrips || loadingRides;
-  const memberLoadError = tripsError || ridesError;
+  const totalRefs = collection!.rideRefs.length;
+  const loadingMembers = loadingRides;
+  const memberLoadError = ridesError;
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <Link
@@ -473,17 +400,17 @@ export default function CollectionDetailPage() {
         </p>
       )}
 
-      <section className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+      <section className="mt-6 grid grid-cols-2 gap-3.5 sm:grid-cols-3">
         <MetricTile
           variant="ink"
           accentNumber
           label={t("Routes")}
           value={collection!.itemCount}
           delta={
-            // "Unavailable" rolls up trips + rides whose owning record was
-            // deleted (or hidden from the local cache). Suppressed while either
-            // fetch is in flight or errored so a transient outage doesn't look
-            // like everything was deleted.
+            // "Unavailable" rolls up rides whose owning record was deleted (or
+            // hidden from the local cache). Suppressed while the fetch is in
+            // flight or errored so a transient outage doesn't look like
+            // everything was deleted.
             totalMissing > 0 && !loadingMembers && !memberLoadError
               ? `${totalMissing} unavailable`
               : undefined
@@ -495,25 +422,6 @@ export default function CollectionDetailPage() {
             loadingMembers || memberLoadError
               ? "—"
               : formatDistance(totalDistance)
-          }
-          delta={
-            // List-endpoint trips don't carry per-day distances, so their
-            // contribution is omitted from the aggregate rather than counted as
-            // zero. Surface the omission so the total isn't silently lying.
-            !loadingMembers && !memberLoadError && tripsWithUnknownDistance > 0
-              ? `+${tripsWithUnknownDistance} trip${tripsWithUnknownDistance === 1 ? "" : "s"} not counted`
-              : undefined
-          }
-        />
-        <MetricTile
-          label={t("Riding days")}
-          value={loadingMembers || memberLoadError ? "—" : totalDays}
-          delta={
-            // Recorded rides contribute to the collection but don't roll up
-            // into the multi-day "riding days" count — surface them separately.
-            !loadingMembers && !memberLoadError && presentRides.length > 0
-              ? `+${presentRides.length} ride${presentRides.length === 1 ? "" : "s"}`
-              : undefined
           }
         />
         <MetricTile label={t("Followers")} value={collection!.followerCount} />
@@ -560,97 +468,52 @@ export default function CollectionDetailPage() {
               </div>
             )}
             <ul className="space-y-3">
-              {collection!.tripRefs.map((ref) => (
-                <LoadingTripRow key={`trip-${ref.itemId}`} />
-              ))}
               {collection!.rideRefs.map((ref) => (
                 <LoadingTripRow key={`ride-${ref.itemId}`} />
               ))}
             </ul>
           </div>
         ) : (
-          <>
-            {collection!.tripRefs.length > 0 && (
-              <SortableItemList
-                ariaLabel="Trips in this collection. Drag handle to reorder."
-                ids={collection!.tripRefs.map((r) => r.itemId)}
-                disabled={busy || collection!.tripRefs.length < 2}
-                onReorder={(from, to) => void handleReorder("trips", from, to)}
-              >
-                {collection!.tripRefs.map((ref) => {
-                  const trip = tripById.get(ref.tripId);
-                  return (
-                    <SortableRow
-                      key={ref.itemId}
-                      id={ref.itemId}
-                      disabled={busy || collection!.tripRefs.length < 2}
-                    >
-                      {trip ? (
-                        <TripRow
-                          trip={trip}
-                          lines={previewsByItem.get(ref.itemId)}
-                          onRemove={() => void handleRemoveItem(ref.itemId)}
-                        />
-                      ) : (
-                        <MissingItemRow
-                          kind="trip"
-                          onRemove={() => void handleRemoveItem(ref.itemId)}
-                        />
-                      )}
-                    </SortableRow>
-                  );
-                })}
-              </SortableItemList>
-            )}
-            {collection!.rideRefs.length > 0 && (
-              <SortableItemList
-                ariaLabel="Rides in this collection. Drag handle to reorder."
-                ids={collection!.rideRefs.map((r) => r.itemId)}
-                disabled={busy || collection!.rideRefs.length < 2}
-                onReorder={(from, to) => void handleReorder("rides", from, to)}
-              >
-                {collection!.rideRefs.map((ref) => {
-                  const ride = rideById.get(ref.rideId);
-                  return (
-                    <SortableRow
-                      key={ref.itemId}
-                      id={ref.itemId}
-                      disabled={busy || collection!.rideRefs.length < 2}
-                    >
-                      {ride ? (
-                        <RideRow
-                          ride={ride}
-                          lines={previewsByItem.get(ref.itemId)}
-                          onRemove={() => void handleRemoveItem(ref.itemId)}
-                        />
-                      ) : (
-                        <MissingItemRow
-                          kind="ride"
-                          onRemove={() => void handleRemoveItem(ref.itemId)}
-                        />
-                      )}
-                    </SortableRow>
-                  );
-                })}
-              </SortableItemList>
-            )}
-          </>
+          <SortableItemList
+            ariaLabel="Rides in this collection. Drag handle to reorder."
+            ids={collection!.rideRefs.map((r) => r.itemId)}
+            disabled={busy || collection!.rideRefs.length < 2}
+            onReorder={(from, to) => void handleReorder(from, to)}
+          >
+            {collection!.rideRefs.map((ref) => {
+              const ride = rideById.get(ref.rideId);
+              return (
+                <SortableRow
+                  key={ref.itemId}
+                  id={ref.itemId}
+                  disabled={busy || collection!.rideRefs.length < 2}
+                >
+                  {ride ? (
+                    <RideRow
+                      ride={ride}
+                      lines={previewsByItem.get(ref.itemId)}
+                      onRemove={() => void handleRemoveItem(ref.itemId)}
+                    />
+                  ) : (
+                    <MissingItemRow
+                      onRemove={() => void handleRemoveItem(ref.itemId)}
+                    />
+                  )}
+                </SortableRow>
+              );
+            })}
+          </SortableItemList>
         )}
       </Card>
 
       {showPicker && (
         <RoutePickerModal
-          trips={availableTrips}
           rides={availableRides}
-          loadingTrips={loadingTrips}
           loadingRides={loadingRides}
-          tripsError={tripsError}
           ridesError={ridesError}
-          hasAnyTrips={trips.length > 0}
           hasAnyRides={rides.length > 0}
           onClose={() => setShowPicker(false)}
           onAdd={(input) => void handleAddItems(input)}
-          onPlanTrip={() => router.push("/trips/planner")}
         />
       )}
     </div>
@@ -795,12 +658,8 @@ function RemoveRouteButton({
 }
 /**
  * Wraps a list of `SortableRow` children in dnd-kit's `DndContext` +
- * `SortableContext`. The component is intentionally generic — it doesn't
- * know whether the rows are trips or rides, only that each child carries an
- * `id` matching one of the `ids` prop entries. The owner page uses two
- * separate instances (one for trips, one for rides) so each section
- * reorders independently and the public-page positions stay grouped by
- * kind, mirroring the on-screen layout.
+ * `SortableContext`. Each child carries an `id` matching one of the `ids`
+ * prop entries; reordering emits the from/to indices into that list.
  */
 function SortableItemList({
   ariaLabel,
@@ -913,7 +772,7 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
         {t("No routes in this collection yet")}
       </p>
       <p className="mb-5 text-sm text-fg-dim">
-        {t("Add routes from your planned or completed trips.")}
+        {t("Add routes from your recorded rides.")}
       </p>
       <Button
         variant="primary"
@@ -924,54 +783,6 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
       >
         {t("Add routes")}
       </Button>
-    </div>
-  );
-}
-function TripRow({
-  trip,
-  lines,
-  onRemove,
-}: {
-  trip: TripSummary;
-  lines: number[][][] | undefined;
-  onRemove: () => void;
-}) {
-  // List-endpoint trips (TripSummary) don't carry per-day distances, so the
-  // distance is hidden when unknown — `null` rather than a confidently-wrong
-  // `0 km`. Geometry comes from the collection preview endpoint via `lines`.
-  const dayCount = trip.num_days;
-  const distance = tripDistanceKmOrNull(trip);
-  return (
-    <div className="flex items-center gap-3">
-      <Link
-        href={`/trips/${trip.id}`}
-        className="group flex min-w-0 flex-1 items-center gap-3"
-      >
-        <RouteThumb lines={lines} label={trip.name} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-bold text-ink transition group-hover:text-accent">
-            {trip.name}
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-fg-dim">
-            <span className="inline-flex items-center gap-1 text-fg-mute">
-              <Calendar size={13} aria-hidden="true" />
-              {dayCount}d
-            </span>
-            <span className="text-fg-mute">·</span>
-            <span className="truncate">{t("You")}</span>
-          </div>
-        </div>
-      </Link>
-      {distance !== null && (
-        <Mono className="shrink-0 text-[13px] font-bold text-ink">
-          {formatDistance(distance)}
-        </Mono>
-      )}
-      <StatusPill status={trip.status} />
-      <RemoveRouteButton
-        onClick={onRemove}
-        label={`Remove ${trip.name} from collection`}
-      />
     </div>
   );
 }
@@ -1026,19 +837,12 @@ function RideRow({
     </div>
   );
 }
-function MissingItemRow({
-  kind,
-  onRemove,
-}: {
-  kind: "trip" | "ride";
-  onRemove: () => void;
-}) {
-  const label = kind === "trip" ? "Trip" : "Ride";
+function MissingItemRow({ onRemove }: { onRemove: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="truncate text-[14px] font-bold text-fg-dim">
-          {t("{label} no longer available", { label })}
+          {t("Ride no longer available")}
         </p>
         <p className="text-[11px] text-fg-mute">
           {t("The route may have been deleted or belongs to another account.")}
@@ -1060,40 +864,23 @@ function LoadingTripRow() {
   );
 }
 // ─────────────────────────────────────────────────────────
-// Route picker modal — segmented "Trips | Rides" tabs.
-// Each tab maintains its own selection set so switching back and forth
-// doesn't accidentally drop the user's choices on the other side.
+// Route picker modal — add recorded rides to the collection.
 // ─────────────────────────────────────────────────────────
-type PickerTab = "trips" | "rides";
 function RoutePickerModal({
-  trips,
   rides,
-  loadingTrips,
   loadingRides,
-  tripsError,
   ridesError,
-  hasAnyTrips,
   hasAnyRides,
   onClose,
   onAdd,
-  onPlanTrip,
 }: {
-  trips: TripSummary[];
   rides: UserRide[];
-  loadingTrips: boolean;
   loadingRides: boolean;
-  tripsError: boolean;
   ridesError: boolean;
-  hasAnyTrips: boolean;
   hasAnyRides: boolean;
   onClose: () => void;
-  onAdd: (input: { tripIds: string[]; rideIds: string[] }) => void;
-  onPlanTrip: () => void;
+  onAdd: (input: { rideIds: string[] }) => void;
 }) {
-  const [tab, setTab] = useState<PickerTab>("trips");
-  const [selectedTrips, setSelectedTrips] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [selectedRides, setSelectedRides] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1107,20 +894,6 @@ function RoutePickerModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // Reset the search box on tab switch — search state is per-tab in spirit
-  // (different placeholder, different fields searched), and carrying it over
-  // would surface confusing "no results" messages when the active text
-  // doesn't match the new tab's data.
-  useEffect(() => {
-    setSearch("");
-  }, [tab]);
-  const visibleTrips = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return trips;
-    // `description` isn't on `TripSummaryDto` — search only matches
-    // `name`, which is what the wire actually carries here.
-    return trips.filter((trip) => trip.name.toLowerCase().includes(needle));
-  }, [trips, search]);
   const visibleRides = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return rides;
@@ -1130,24 +903,15 @@ function RoutePickerModal({
       return haystack.includes(needle);
     });
   }, [rides, search]);
-  const toggle = (kind: PickerTab, id: string) => {
-    if (kind === "trips") {
-      setSelectedTrips((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-    } else {
-      setSelectedRides((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-    }
+  const toggle = (id: string) => {
+    setSelectedRides((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
-  const totalSelected = selectedTrips.size + selectedRides.size;
+  const totalSelected = selectedRides.size;
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-paper/70 backdrop-blur-sm p-4"
@@ -1175,34 +939,13 @@ function RoutePickerModal({
         </div>
 
         <div className="flex flex-col gap-3 px-[22px] pb-3.5 pt-4">
-          <div
-            role="tablist"
-            aria-label={t("Add routes from")}
-            className="flex gap-1 rounded-[11px] bg-paper p-1"
-          >
-            <PickerTabButton
-              active={tab === "trips"}
-              onClick={() => setTab("trips")}
-              label="Trips"
-              count={trips.length}
-            />
-            <PickerTabButton
-              active={tab === "rides"}
-              onClick={() => setTab("rides")}
-              label="Rides"
-              count={rides.length}
-            />
-          </div>
-
           <div className="relative">
             <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-mute">
               <Search size={14} aria-hidden="true" />
             </span>
             <input
               type="text"
-              placeholder={
-                tab === "trips" ? "Search your trips…" : "Search your rides…"
-              }
+              placeholder="Search your rides…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-[10px] border border-line bg-cream py-2.5 pl-10 pr-3.5 text-sm text-ink placeholder:text-fg-mute focus:border-accent focus:outline-none"
@@ -1211,28 +954,15 @@ function RoutePickerModal({
         </div>
 
         <div className="min-h-[120px] flex-1 overflow-y-auto px-[22px]">
-          {tab === "trips" ? (
-            <TripPickerList
-              trips={trips}
-              visibleTrips={visibleTrips}
-              loading={loadingTrips}
-              error={tripsError}
-              hasAnyTrips={hasAnyTrips}
-              selected={selectedTrips}
-              onToggle={(id) => toggle("trips", id)}
-              onPlanTrip={onPlanTrip}
-            />
-          ) : (
-            <RidePickerList
-              rides={rides}
-              visibleRides={visibleRides}
-              loading={loadingRides}
-              error={ridesError}
-              hasAnyRides={hasAnyRides}
-              selected={selectedRides}
-              onToggle={(id) => toggle("rides", id)}
-            />
-          )}
+          <RidePickerList
+            rides={rides}
+            visibleRides={visibleRides}
+            loading={loadingRides}
+            error={ridesError}
+            hasAnyRides={hasAnyRides}
+            selected={selectedRides}
+            onToggle={toggle}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-line px-[22px] py-3.5">
@@ -1248,12 +978,7 @@ function RoutePickerModal({
               uppercase
               disabled={totalSelected === 0}
               leftIcon={<Plus size={14} />}
-              onClick={() =>
-                onAdd({
-                  tripIds: Array.from(selectedTrips),
-                  rideIds: Array.from(selectedRides),
-                })
-              }
+              onClick={() => onAdd({ rideIds: Array.from(selectedRides) })}
             >
               {t("Add")}
               {totalSelected > 0 ? ` ${totalSelected}` : ""}
@@ -1264,45 +989,11 @@ function RoutePickerModal({
     </div>
   );
 }
-function PickerTabButton({
-  active,
-  onClick,
-  label,
-  count,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-bold transition-colors ${
-        active
-          ? "bg-ink text-cream"
-          : "bg-transparent text-fg-dim hover:text-ink"
-      }`}
-    >
-      <span>{label}</span>
-      {count > 0 && (
-        <Mono
-          className={`text-[10px] ${active ? "text-cream/70" : "text-fg-mute"}`}
-        >
-          · {count}
-        </Mono>
-      )}
-    </button>
-  );
-}
 /**
  * One selectable row in the add-routes picker: custom checkbox, a route-glyph
- * thumbnail (the picker lists every owned trip/ride and has no per-item
- * geometry, so the thumb is a placeholder rather than a real preview), the
- * name, a mono meta line, and a status pill.
+ * thumbnail (the picker lists every owned ride and has no per-item geometry,
+ * so the thumb is a placeholder rather than a real preview), the name, a mono
+ * meta line, and a status pill.
  */
 function PickerRow({
   checked,
@@ -1355,111 +1046,6 @@ function PickerRow({
         <StatusPill status={status} />
       </label>
     </li>
-  );
-}
-function TripPickerList({
-  trips,
-  visibleTrips,
-  loading,
-  error,
-  hasAnyTrips,
-  selected,
-  onToggle,
-  onPlanTrip,
-}: {
-  trips: TripSummary[];
-  visibleTrips: TripSummary[];
-  loading: boolean;
-  error: boolean;
-  hasAnyTrips: boolean;
-  selected: Set<string>;
-  onToggle: (id: string) => void;
-  onPlanTrip: () => void;
-}) {
-  if (loading) {
-    return (
-      <div className="py-10 text-center text-sm text-fg-dim">
-        <Loader2
-          size={16}
-          className="animate-spin inline-block mr-2 align-[-3px]"
-        />
-        {t("Loading your trips\u2026")}
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
-      >
-        {t(
-          "Couldn't load your trips right now. Close this and try again in a moment. ",
-        )}
-      </div>
-    );
-  }
-  if (trips.length === 0) {
-    return hasAnyTrips ? (
-      <div className="py-8 text-center">
-        <p className="text-sm text-fg-dim mb-1">
-          {t("All your trips are already in this collection")}
-        </p>
-        <p className="text-xs text-fg-dim">
-          {t("Plan another trip to add it here.")}
-        </p>
-      </div>
-    ) : (
-      <div className="py-8 text-center">
-        <p className="text-sm text-fg-dim mb-1">
-          {t("You don't have any trips yet")}
-        </p>
-        <p className="text-xs text-fg-dim mb-4">
-          {t("Plan a trip first and it will show up here.")}
-        </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Plus size={14} />}
-          onClick={onPlanTrip}
-        >
-          {t("New trip")}
-        </Button>
-      </div>
-    );
-  }
-  if (visibleTrips.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-fg-dim">
-        {t("No trips match your search.")}
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col gap-2 pb-1">
-      {visibleTrips.map((trip) => {
-        // `distance === null` ⇒ summary-only; drop the distance segment from
-        // the meta line rather than rendering "0 km".
-        const distance = tripDistanceKmOrNull(trip);
-        const dayCount = trip.num_days;
-        const dayLabel =
-          dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount });
-        const meta =
-          distance !== null
-            ? `${dayLabel} · ${formatDistance(distance)}`
-            : dayLabel;
-        return (
-          <PickerRow
-            key={trip.id}
-            checked={selected.has(trip.id)}
-            onToggle={() => onToggle(trip.id)}
-            name={trip.name}
-            meta={meta}
-            status={trip.status}
-          />
-        );
-      })}
-    </ul>
   );
 }
 function RidePickerList({
@@ -1554,20 +1140,4 @@ function RidePickerList({
       })}
     </ul>
   );
-}
-// ─────────────────────────────────────────────────────────
-// Route geometry helpers
-// ─────────────────────────────────────────────────────────
-function combineTripRoutePoints(days: readonly TripDay[]): RoutePoint[] {
-  const out: RoutePoint[] = [];
-  for (const day of days) {
-    const coords = day.routeGeometry?.coordinates;
-    if (!coords) continue;
-    for (const [lng, lat] of coords) {
-      if (typeof lng === "number" && typeof lat === "number") {
-        out.push({ lat, lng });
-      }
-    }
-  }
-  return out;
 }

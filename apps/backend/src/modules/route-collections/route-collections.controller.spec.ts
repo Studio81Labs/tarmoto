@@ -41,8 +41,7 @@ describe('RouteCollectionsController', () => {
       delete: jest.fn().mockResolvedValue(undefined),
       addItem: jest.fn().mockResolvedValue({
         id: itemId,
-        trip_id: '00000000-0000-0000-0000-000000000010',
-        ride_id: null,
+        ride_id: '00000000-0000-0000-0000-000000000020',
         position: 0,
         created_at: '2026-04-20T10:00:00.000Z',
       }),
@@ -138,14 +137,14 @@ describe('RouteCollectionsController', () => {
     expect(service.delete).toHaveBeenCalledWith('user-1', collectionId);
   });
 
-  it('POST /collections/:id/items forwards trip_id', async () => {
+  it('POST /collections/:id/items forwards ride_id', async () => {
     const result = await controller.addItem(mockReq, collectionId, {
-      trip_id: '00000000-0000-0000-0000-000000000010',
+      ride_id: '00000000-0000-0000-0000-000000000020',
     });
     expect(service.addItem).toHaveBeenCalledWith('user-1', collectionId, {
-      trip_id: '00000000-0000-0000-0000-000000000010',
+      ride_id: '00000000-0000-0000-0000-000000000020',
     });
-    expect(result.trip_id).toBe('00000000-0000-0000-0000-000000000010');
+    expect(result.ride_id).toBe('00000000-0000-0000-0000-000000000020');
   });
 
   it('PATCH /collections/:id/items/reorder forwards the ordered item_ids', async () => {

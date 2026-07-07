@@ -1,15 +1,14 @@
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
 
 /**
- * Route export (US-39): GPX generation, share links, and mobile deep links
- * for a planned Trip. Frontend-only — the planner Trip state is the source of
- * truth; no backend round-trip is required to emit a file the user can hand
- * to Garmin, Calimoto, Kurviger, etc.
+ * Route export (US-39): GPX generation and share links for a planned Trip.
+ * Frontend-only — the planner Trip state is the source of truth; no backend
+ * round-trip is required to emit a file the user can hand to Garmin, Calimoto,
+ * Kurviger, etc.
  */
 
 const GPX_CREATOR = "Tarmoto Companion";
 const GPX_XMLNS = "http://www.topografix.com/GPX/1/1";
-const MOBILE_URL_SCHEME = "tarmoto";
 
 const WAYPOINT_LABEL: Record<Waypoint["type"], string> = {
   start: "Start",
@@ -78,18 +77,6 @@ export function tripFileName(trip: Trip, ext: string): string {
 export function buildTripShareUrl(trip: Trip, origin: string): string {
   const base = origin.replace(/\/$/, "");
   return `${base}/trips/${encodeURIComponent(trip.id)}`;
-}
-
-/**
- * Build the mobile deep link the "Push to mobile" action launches. The
- * mobile app routes `tarmoto://trips/import?tripId=...&token=...` to its
- * import screen, where the rider confirms and the snapshot is fetched
- * from `/trip-shares/:token` (no auth, read-only) and copied into their
- * library. The token is the share token returned by `POST /trip-shares`.
- */
-export function buildMobileDeepLink(tripId: string, token: string): string {
-  const params = new URLSearchParams({ tripId, token });
-  return `${MOBILE_URL_SCHEME}://trips/import?${params.toString()}`;
 }
 
 function formatDayLabel(day: TripDay): string {
